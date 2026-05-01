@@ -49,6 +49,19 @@
   #crOSBar .cr-bar-btn.warn{color:#ffd166}
   #crOSBar .cr-bar-btn .ic{font-size:13px;line-height:1}
   #crOSBar .cr-bar-btn .lbl{font-size:11px;letter-spacing:.3px}
+  /* v0.9.3 — Wallet pills. .cr-wallet-on glows mint when a wallet is connected;
+     plain dim styling otherwise so an unconnected user sees an obvious nudge. */
+  #crBarConnect{cursor:pointer;padding:3px 10px;border-radius:6px;font-size:11px;
+    letter-spacing:.3px;background:rgba(155,140,255,0.10);color:#cfd2dd;
+    border:1px solid rgba(155,140,255,0.22);transition:background .12s,color .12s,border-color .12s}
+  #crBarConnect:hover{background:rgba(155,140,255,0.20);color:#fff}
+  #crBarConnect.cr-wallet-on{background:rgba(61,220,151,0.12);color:#bff7df;
+    border-color:rgba(61,220,151,0.30);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  #crBarConnect.cr-wallet-on:hover{background:rgba(61,220,151,0.20)}
+  #crMenuConnect{cursor:pointer}
+  .splash .os-menubar #crMenuConnect{padding:1px 8px;border-radius:4px}
+  .splash .os-menubar #crMenuConnect.cr-wallet-on{background:#0a8d4a;color:#fff;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
   /* Perspective cycle button on the second row. */
   .cr-pers-btn{border:0;background:rgba(155,140,255,0.10);color:var(--dim);
     padding:6px 10px;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.4px;
@@ -3409,6 +3422,12 @@
   <div class="menu" id="crBarFile" title="Back to home (desktop)">Home</div>
   <div class="menu" id="crBarTutorial" title="Start / stop the Coach tutorial walkthrough">Tutorial</div>
   <div class="menu" id="crBarTheme" title="Cycle theme">Theme</div>
+  <!-- v0.9.3 — Wallet connect entry. Bounces through /solana-connect/ for the
+       handshake; on success the game receives ?wallet=<pubkey>&adapter=<name>
+       and persists it to localStorage.cr_wallet. All player-data localStorage
+       reads are namespaced by wallet, so unconnected players see a clean
+       slate (no Profile, no Maps, no Workbench data). -->
+  <div class="menu" id="crBarConnect" title="Connect a Solana wallet — required to load your Profile / Maps / Workbench data">Connect</div>
   <!-- v0.8k#24ce — Action buttons live next to the menus so they're visible
        on top of the chart during gameplay. Restart morphs to Save when a
        map is loaded. Coins toggles coin spawns. Profile + Terminal float
@@ -4519,6 +4538,9 @@
         <!-- v0.8k#24cm — Grid switcher retired. Desktop is back to free-form
              widget + icon positioning. -->
         <div class="menu" id="crMenuTheme" title="Cycle theme">Theme</div>
+        <!-- v0.9.3 — Wallet connect on the splash menubar. Same target as the
+             in-game crBarConnect; either entry routes through /solana-connect/. -->
+        <div class="menu" id="crMenuConnect" title="Connect a Solana wallet — required to load Profile / Maps / Workbench data">Connect</div>
         <div class="spacer" style="flex:1"></div>
         <div class="title" style="font-size:11px;color:#3a3a36">ChartRunner<span class="c"></span>OS</div>
         <div class="clock" id="crClock">--:--</div>
@@ -6366,6 +6388,105 @@ plot(out, color=color.orange, linewidth=2)</textarea>
 // from being applied (which would leak the in-game chrome over the splash
 // desktop). The TVChrome IIFE later toggles it via syncSplashClass.
 try{ document.body.classList.add('crSplashUp'); }catch(_){}
+
+/* =========================================================================
+ * crWallet — wallet-state holder + per-wallet localStorage namespacing
+ * v0.9.3 — Phase 0.5 wallet-gated player data.
+ *
+ * Flow: landing's Play CTA routes to /solana-connect/?next=play. The user
+ * connects Phantom/Backpack/Solflare there (real Wallet Standard handshake),
+ * then is bounced back to /play/?wallet=<pubkey>&adapter=<name>. This IIFE
+ * picks the params off the URL on first paint, persists them to
+ * localStorage.cr_wallet, and re-strips them from the URL.
+ *
+ * The interesting part is the localStorage shim: every cr_*_v1-style game
+ * data key is transparently namespaced by wallet pubkey, so:
+ *   - connected user A    → cr_maps_v1::AAAA...
+ *   - connected user B    → cr_maps_v1::BBBB...   (separate dataset)
+ *   - unconnected (guest) → cr_maps_v1::__guest__ (clean slate)
+ * UI prefs (cr_os_theme, cr_coins_enabled) stay unscoped — they're not
+ * "player data" in the wallet-gated sense. The shim is opt-in via the
+ * NS_KEYS list below; everything else passes through unchanged.
+ *
+ * Phase 2: replace the redirect-bounce with an inline wallet-adapter once
+ * we accept the dependency. The crWallet API stays stable so callers don't
+ * need to change.
+ * =======================================================================*/
+window.crWallet = (function(){
+  var KEY = 'cr_wallet';
+  var ADAPTER_KEY = 'cr_wallet_adapter';
+  // Game-data keys that should be partitioned per wallet. Add to this list
+  // when introducing a new persistent player-data store.
+  var NS_KEYS = {
+    'cr_maps_v1': 1,
+    'cr_workbench_v1': 1,
+    'cr_equipped_bots_v1': 1,
+    'cr_widgets_v1': 1,
+    'cr_indicators_v1': 1,
+    'cr_last_played_v1': 1,
+    'cr_racing_best': 1,
+    'cr_starred_tools_v1': 1,
+    'cr_pinned_widgets_v1': 1
+  };
+  var listeners = [];
+  function _read(k){ try { return localStorage.getItem(k); } catch(_){ return null; } }
+  // Hydrate from URL once on first run, then strip the params so screenshots
+  // don't leak wallet addresses.
+  try {
+    var u = new URL(window.location.href);
+    var w = u.searchParams.get('wallet');
+    var a = u.searchParams.get('adapter');
+    if (w) {
+      try { localStorage.setItem(KEY, w); } catch(_){}
+      if (a) { try { localStorage.setItem(ADAPTER_KEY, a); } catch(_){} }
+      u.searchParams.delete('wallet');
+      u.searchParams.delete('adapter');
+      window.history.replaceState({}, '', u.toString());
+    }
+  } catch(_){}
+  function get(){ return _read(KEY); }
+  function adapter(){ return _read(ADAPTER_KEY); }
+  function isConnected(){ return !!_read(KEY); }
+  function truncated(){
+    var a = _read(KEY);
+    return a ? (a.slice(0, 4) + '…' + a.slice(-4)) : '';
+  }
+  function disconnect(){
+    try { localStorage.removeItem(KEY); } catch(_){}
+    try { localStorage.removeItem(ADAPTER_KEY); } catch(_){}
+    listeners.forEach(function(fn){ try { fn(null); } catch(_){} });
+  }
+  function connect(){
+    // Bounce through the React+wallet-adapter app. It handshakes with the
+    // user's chosen wallet then redirects back to /play/?wallet=...&adapter=...
+    var ret = encodeURIComponent('/play/');
+    window.location.href = '../solana-connect/?next=play&return=' + ret;
+  }
+  function on(fn){
+    listeners.push(fn);
+    return function(){ listeners = listeners.filter(function(x){ return x !== fn; }); };
+  }
+  // Per-wallet namespacing shim. Wraps localStorage so every cr_*_v1 read or
+  // write is transparently scoped to the connected wallet (or __guest__).
+  // We patch the global localStorage prototype — single source of truth, all
+  // existing call sites get the new behavior with zero edits.
+  try {
+    var origGet = Storage.prototype.getItem;
+    var origSet = Storage.prototype.setItem;
+    var origRemove = Storage.prototype.removeItem;
+    function _ns(k){
+      if (typeof k !== 'string') return k;
+      if (!NS_KEYS[k]) return k;
+      var w = origGet.call(localStorage, KEY);
+      return k + '::' + (w || '__guest__');
+    }
+    Storage.prototype.getItem    = function(k){ return origGet.call(this, _ns(k)); };
+    Storage.prototype.setItem    = function(k, v){ return origSet.call(this, _ns(k), v); };
+    Storage.prototype.removeItem = function(k){ return origRemove.call(this, _ns(k)); };
+  } catch(_){}
+  return { get: get, adapter: adapter, isConnected: isConnected, truncated: truncated,
+           connect: connect, disconnect: disconnect, on: on };
+})();
 
 /* =========================================================================
  * ChartRunnerSDK — trading primitives as gameplay abilities
@@ -22455,6 +22576,36 @@ plot(diff, color=color.aqua)`,
     const splashTheme = document.getElementById('crMenuTheme');
     if(splashTheme) splashTheme.click();
   });
+  // v0.9.3 — Wallet connect button on the in-game OS bar. When connected,
+  // the button collapses to a truncated address pill and clicking it offers
+  // disconnect; when disconnected, clicking it bounces through
+  // /solana-connect/?next=play for the wallet handshake.
+  function _refreshWalletPills(){
+    if(typeof crWallet === 'undefined') return;
+    const connected = crWallet.isConnected();
+    const labelConnected = '🪙 ' + crWallet.truncated();
+    const titleConnected = 'Connected: ' + crWallet.get() + ' — click to disconnect';
+    const titleConnect   = 'Connect a Solana wallet — required to load your Profile / Maps / Workbench data';
+    ['crBarConnect','crMenuConnect'].forEach(function(id){
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.textContent = connected ? labelConnected : 'Connect';
+      el.title       = connected ? titleConnected : titleConnect;
+      el.classList.toggle('cr-wallet-on', connected);
+    });
+  }
+  function _onWalletPillClick(){
+    if(typeof crWallet === 'undefined') return;
+    if(crWallet.isConnected()){
+      const ok = window.confirm('Disconnect wallet?\n\nYour Profile, Maps, and Workbench data will be hidden until you reconnect. Saved data is preserved per wallet.');
+      if(ok){ crWallet.disconnect(); _refreshWalletPills(); try{ toast && toast('Wallet disconnected'); }catch(_){} }
+    } else {
+      crWallet.connect();
+    }
+  }
+  bind('crBarConnect', _onWalletPillClick);
+  bind('crMenuConnect', _onWalletPillClick);
+  _refreshWalletPills();
   // v0.8k#24cd — SDK + Help menus retired from the in-game OS bar per spec.
 
   // OS bar clock

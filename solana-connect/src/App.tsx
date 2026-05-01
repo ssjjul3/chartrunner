@@ -18,9 +18,26 @@ function pickInitialMemo(): string {
   return 'ChartRunner devnet · proof of strategy · ' + new Date().toISOString();
 }
 
+// Phase 0.9.3 — wallet-gated entry. When the landing page sends the player here
+// with ?next=play, we treat this app as the wallet-handshake step before the
+// game loads. After connect we hand off to /play/?wallet=<pubkey>&adapter=<name>
+// — the game persists those into localStorage.cr_wallet so all subsequent
+// player data (Profile, Maps, Workbench) reads under that wallet's namespace.
+function getNextTarget(): { path: string; isPlay: boolean } | null {
+  try {
+    const url = new URL(window.location.href);
+    const next = url.searchParams.get('next');
+    const ret  = url.searchParams.get('return');
+    if (next === 'play')        return { path: '../play/', isPlay: true };
+    if (ret && ret.startsWith('/')) return { path: ret,    isPlay: ret.includes('/play') };
+    return null;
+  } catch (_) { return null; }
+}
+
 export default function App() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction, connected, wallet } = useWallet();
+  const nextTarget = useMemo(getNextTarget, []);
 
   const [balanceLamports, setBalanceLamports] = useState<number | null>(null);
   const [memoText, setMemoText] = useState<string>(pickInitialMemo);
@@ -108,6 +125,17 @@ export default function App() {
     }
   }, [connection, memoText, publicKey, sendTransaction]);
 
+  // When the player came from "Play" on the landing page, hand off to the
+  // game with the wallet address in the URL. The game's crWallet IIFE picks
+  // it up on first paint and stashes it in localStorage.cr_wallet.
+  const continueToTarget = useCallback(() => {
+    if (!nextTarget || !pubkeyB58) return;
+    const url = new URL(nextTarget.path, window.location.href);
+    url.searchParams.set('wallet', pubkeyB58);
+    if (wallet?.adapter.name) url.searchParams.set('adapter', wallet.adapter.name);
+    window.location.href = url.toString();
+  }, [nextTarget, pubkeyB58, wallet]);
+
   return (
     <div className="page">
       <header className="hd">
@@ -117,6 +145,28 @@ export default function App() {
         </div>
         <span className="cluster-pill">devnet</span>
       </header>
+
+      {nextTarget?.isPlay && (
+        <section className="banner banner-ok" style={{ margin: '0 0 16px' }}>
+          {connected && pubkeyB58 ? (
+            <>
+              <div>
+                <strong>Wallet ready.</strong> Connected as{' '}
+                <code className="sig">{truncatePubkey(pubkeyB58)}</code> — your Profile, Maps,
+                and Workbench data will load under this wallet.
+              </div>
+              <button className="btn-link" onClick={continueToTarget} style={{ fontWeight: 700 }}>
+                ▶ Continue to ChartRunner →
+              </button>
+            </>
+          ) : (
+            <div>
+              <strong>One step before you play.</strong> Connect a Solana wallet (Phantom,
+              Backpack, or Solflare) so your Profile, Maps, and Workbench can load.
+            </div>
+          )}
+        </section>
+      )}
 
       <main className="cards">
         <section className="card">
