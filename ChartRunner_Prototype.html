@@ -6489,6 +6489,166 @@ window.crWallet = (function(){
 })();
 
 /* =========================================================================
+ * crChainSave — on-chain map anchoring via the chartrunner_maps program
+ * v0.9.4 — Phase 1 on-chain primitive.
+ *
+ * Game flow:
+ *   1. Player hits Save in the topbar → enters a name → map gets saved to
+ *      localStorage.cr_maps_v1 (existing behavior, unchanged).
+ *   2. If a wallet is connected, the player gets a follow-up confirm: "Also
+ *      anchor 'NAME' on Solana devnet?". If yes, this IIFE:
+ *      a) Reads the saved map JSON back out of localStorage.
+ *      b) Computes a canonical SHA-256 (sorted keys, no thumb / id / t).
+ *      c) Redirects to /solana-connect/?action=save-map&name=...&hash=hex
+ *         &return=/play/. The React app handles the wallet signing flow.
+ *   3. After signing, solana-connect bounces back to /play/?savedMap=NAME&sig=SIG.
+ *      This IIFE picks those off the URL on first paint, finds the matching
+ *      map in localStorage, and decorates it with { onChain: true, sig,
+ *      onChainAt }. Then strips the params from the URL.
+ *
+ * Why hash a SUBSET of the map instead of the whole thing:
+ *   - `id` and `t` change on every save → would make the hash useless for
+ *     proving "this is the same strategy".
+ *   - `thumb` is a ~10–40 KB JPEG data URL — expensive to hash, not part of
+ *     the gameplay-meaningful identity.
+ *   - The remaining fields (asset, TF, strategy, indicators, all overlays,
+ *     destruction state) ARE the strategy. That's what we want anchored.
+ * =======================================================================*/
+window.crChainSave = (function(){
+  var MAPS_KEY = 'cr_maps_v1';
+
+  // Fields excluded from the canonical hash. See block comment above.
+  var HASH_EXCLUDE = { id: 1, t: 1, thumb: 1, onChain: 1, sig: 1, onChainAt: 1 };
+
+  function _readMaps(){
+    try {
+      var raw = localStorage.getItem(MAPS_KEY);
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch(_){ return []; }
+  }
+  function _writeMaps(list){
+    try { localStorage.setItem(MAPS_KEY, JSON.stringify(list)); } catch(_){}
+  }
+
+  // Canonical JSON: sort keys recursively so the hash is deterministic.
+  // Without sorted keys, the same map saved on different builds (or different
+  // browser engines that preserve insertion order differently) could hash
+  // differently. Belt-and-braces.
+  function _canonical(obj){
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(_canonical);
+    var out = {};
+    Object.keys(obj).sort().forEach(function(k){
+      if (HASH_EXCLUDE[k]) return;
+      out[k] = _canonical(obj[k]);
+    });
+    return out;
+  }
+
+  function canonicalJson(map){
+    return JSON.stringify(_canonical(map));
+  }
+
+  // SHA-256 → 64-char hex string. Async; returns a promise.
+  async function sha256Hex(text){
+    var buf = new TextEncoder().encode(text);
+    var digest = await crypto.subtle.digest('SHA-256', buf);
+    var bytes = new Uint8Array(digest);
+    var hex = '';
+    for (var i = 0; i < bytes.length; i++) {
+      hex += bytes[i].toString(16).padStart(2, '0');
+    }
+    return hex;
+  }
+
+  // Look up a saved map by name (most-recent first since unshift), return null if missing.
+  function findByName(name){
+    var list = _readMaps();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].name === name) return list[i];
+    }
+    return null;
+  }
+
+  // Decorate the matching saved map with on-chain metadata, write back.
+  function markOnChain(name, sig){
+    var list = _readMaps();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].name === name) {
+        list[i].onChain   = true;
+        list[i].sig       = sig;
+        list[i].onChainAt = Date.now();
+        _writeMaps(list);
+        return list[i];
+      }
+    }
+    return null;
+  }
+
+  // Trigger the redirect-flow. Caller must have already saved the map locally
+  // (so we can hash its contents).
+  async function anchorByName(name){
+    var map = findByName(name);
+    if (!map){
+      try { toast && toast('Map not found locally — save first'); } catch(_){}
+      return false;
+    }
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
+      var wantConnect = window.confirm(
+        'Anchoring a map on Solana devnet requires a connected wallet. Connect now?'
+      );
+      if (wantConnect && crWallet) crWallet.connect();
+      return false;
+    }
+    try {
+      var canon = canonicalJson(map);
+      var hashHex = await sha256Hex(canon);
+      var url = '../solana-connect/?action=save-map'
+              + '&name=' + encodeURIComponent(name)
+              + '&hash=' + hashHex
+              + '&return=' + encodeURIComponent('/play/');
+      window.location.href = url;
+      return true;
+    } catch(err){
+      try { toast && toast('On-chain save failed: ' + (err.message || err)); } catch(_){}
+      return false;
+    }
+  }
+
+  // Hydrate from URL on first paint — handles the round-trip back from
+  // solana-connect. Strips params after consumption so screenshots don't leak.
+  try {
+    var u = new URL(window.location.href);
+    var savedMap = u.searchParams.get('savedMap');
+    var sig      = u.searchParams.get('sig');
+    if (savedMap && sig){
+      var entry = markOnChain(savedMap, sig);
+      // Defer the toast slightly — `toast()` may not exist yet at boot.
+      setTimeout(function(){
+        try {
+          if (entry) {
+            toast && toast('🪙 ' + savedMap + ' anchored on devnet · ' +
+                           sig.slice(0, 8) + '…');
+          }
+        } catch(_){}
+      }, 800);
+      u.searchParams.delete('savedMap');
+      u.searchParams.delete('sig');
+      window.history.replaceState({}, '', u.toString());
+    }
+  } catch(_){}
+
+  return {
+    canonicalJson:  canonicalJson,
+    sha256Hex:      sha256Hex,
+    findByName:     findByName,
+    anchorByName:   anchorByName,
+  };
+})();
+
+/* =========================================================================
  * ChartRunnerSDK — trading primitives as gameplay abilities
  * =======================================================================*/
 class ChartRunnerSDK {
@@ -18801,6 +18961,29 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
         try { if(typeof game !== 'undefined') game.currentMapId = m.id; } catch(_){}
         try { _refreshRestartLabel(); } catch(_){}
         if(typeof toast === 'function') toast('Saved · ' + trimmed);
+
+        // v0.9.4 — On-chain anchor follow-up. Only offered when a wallet is
+        // connected; otherwise the local save is the entire flow. The redirect
+        // takes the player to /solana-connect/?action=save-map; on success
+        // they bounce back to /play/?savedMap=...&sig=... and crChainSave's
+        // boot-time URL handler decorates the matching local entry with
+        // { onChain: true, sig, onChainAt }. Hash is computed canonically
+        // (sorted keys, thumb stripped) so re-saves of the same strategy
+        // produce the same hash.
+        try {
+          if (typeof crWallet !== 'undefined' && crWallet.isConnected() &&
+              typeof crChainSave !== 'undefined') {
+            const wantChain = window.confirm(
+              'Anchor "' + trimmed + '" on Solana devnet?\n\n' +
+              'Writes the SHA-256 of this map under your wallet. ~0.0009 SOL rent.\n' +
+              'Map JSON stays in your browser; only the hash + name + timestamp go on-chain.'
+            );
+            if (wantChain) {
+              // Fire-and-forget; the redirect happens inside anchorByName.
+              crChainSave.anchorByName(trimmed);
+            }
+          }
+        } catch(_){}
       } catch(err){
         if(typeof toast === 'function') toast('Save failed');
       }
