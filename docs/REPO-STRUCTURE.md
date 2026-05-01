@@ -1,6 +1,8 @@
 # Production Repo Structure
 
-Target layout for `github.com/<org>/chartrunner`.
+**Target** layout for `github.com/ssjjul3/chartrunner` once the SDK extraction (Phase 1) lands. Today's repo (v0.9.1) ships the single-file game + the Solana devnet React app + the landing page; the workspace split below is the next-phase migration target.
+
+For the **current** state of the shipping repo, see the top-level [README.md](../README.md) "Repo layout (current state)" section.
 
 ## Top-level
 

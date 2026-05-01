@@ -155,7 +155,9 @@ We're shipping ChartRunner with two open invites:
 
 Open source. Playable. Read the docs ↓
 
-→ github.com/<org>/chartrunner
+▶ ssjjul3.github.io/chartrunner          ← play
+🪙 ssjjul3.github.io/chartrunner/solana-connect ← devnet
+⌂ github.com/ssjjul3/chartrunner         ← repo
 ```
 
 ## Posting cadence (week 1 after launch)

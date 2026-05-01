@@ -90,7 +90,7 @@ Music drops.
 
 ## ⏱ 2:45 – 2:55 — Closing
 
-**On screen:** ChartRunner logo. URL: `chartrunner.xyz` or GitHub repo. X handle: `@chartrunner_xyz`.
+**On screen:** ChartRunner logo. URLs: `ssjjul3.github.io/chartrunner` (live demo) and `github.com/ssjjul3/chartrunner` (source). X handle: `@chartrunner_xyz` *(reserve before recording the final cut)*.
 
 **VO (whispered, low):**
 > "ChartRunner. Trade the chart. Survive the upside-down."

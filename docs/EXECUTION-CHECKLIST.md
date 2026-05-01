@@ -2,26 +2,30 @@
 
 Use this to drive the next 14 days from "MVP submission package built" → "shipped + first traction milestone hit."
 
-## Day 0 — Repo + deploy
+## Day 0 — Repo + deploy ✅ DONE
 
-- [ ] Create GitHub org `chartrunner-xyz` (or `<your-org>`)
-- [ ] Create public repo `chartrunner` under the org
-- [ ] Initial commit:
-  - [ ] `ChartRunner_Prototype.html`
-  - [ ] `chartrunner-prototype/` (deploy folder mirror)
-  - [ ] `README.md`
-  - [ ] `LICENSE` (MIT)
-  - [ ] `docs/` (all 9 files in this package)
-  - [ ] `PITCH-DECK.pptx`
-  - [ ] `.gitignore` for node_modules, .DS_Store, /tmp
-- [ ] Enable GitHub Pages:
-  - Settings → Pages → Source: `main` branch, `/chartrunner-prototype` folder
-  - Custom domain (optional): `chartrunner.xyz` → CNAME `<user>.github.io`
-- [ ] Verify the live URL loads + the first bracket placement works
-- [ ] Add the live URL to repo About + README badges
-- [ ] Push initial CI workflow (`.github/workflows/ci.yml`):
-  - parse-check on the HTML scripts
-  - run on every PR
+Shipped as v0.9.1. Repo: [github.com/ssjjul3/chartrunner](https://github.com/ssjjul3/chartrunner). Live: [ssjjul3.github.io/chartrunner](https://ssjjul3.github.io/chartrunner/).
+
+- [x] Public repo `ssjjul3/chartrunner` created
+- [x] Initial commit landed:
+  - [x] `ChartRunner_Prototype.html` (canonical game source)
+  - [x] `chartrunner-prototype/` (Pages deploy folder — landing page at `/`)
+  - [x] `README.md` with live URL badges + current repo layout
+  - [x] `LICENSE` (MIT)
+  - [x] `docs/` (all 9 markdown files)
+  - [x] `PITCH-DECK.pptx` + `PITCH-DECK.pdf`
+  - [x] `.gitignore` (node_modules, dist, build artifacts)
+  - [x] `solana-connect/` (Vite + React + wallet-adapter, devnet memo tx)
+  - [x] `skills/solana/` (single-file React+Vite Solana skill)
+  - [x] `.github/` (CI + Pages workflows + PR + issue templates)
+- [x] GitHub Pages enabled (`build_type=workflow`)
+- [x] Three live surfaces verified:
+  - [x] `ssjjul3.github.io/chartrunner/` → landing page
+  - [x] `ssjjul3.github.io/chartrunner/play/` → game
+  - [x] `ssjjul3.github.io/chartrunner/solana-connect/` → wallet connect + signed devnet memo
+- [x] CI workflow parse-checks the HTML on every PR
+- [x] Pages workflow auto-deploys on push to `main` (~2 min)
+- [ ] Custom domain (optional): `chartrunner.xyz` → CNAME `ssjjul3.github.io` *(skip until traction warrants the spend; github.io URL is fine for hackathon submission)*
 
 ## Day 1 — Social + identity
 

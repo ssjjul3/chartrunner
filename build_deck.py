@@ -183,7 +183,7 @@ add_text(s, Inches(0.9), Inches(6.4), Inches(8), Inches(0.4),
           {'text': '  ·  v0.9 submission package', 'color': DIM, 'size': 12}],
          font='Calibri')
 add_text(s, Inches(8.5), Inches(6.4), Inches(4), Inches(0.4),
-         "github.com/chartrunner-xyz",
+         "ssjjul3.github.io/chartrunner",
          size=12, color=DIM, align=PP_ALIGN.RIGHT, font='Consolas')
 
 set_notes(s,
@@ -716,17 +716,17 @@ add_text(s, Inches(0.7), Inches(5.3), Inches(12), Inches(0.5),
 add_rect(s, Inches(0.7), Inches(6.1), Inches(11.9), Inches(0.04), fill=DIVIDER)
 
 add_text(s, Inches(0.7), Inches(6.3), Inches(4.3), Inches(0.4),
-         [{'text': 'github.com/chartrunner-xyz/chartrunner', 'color': WHITE, 'size': 11, 'bold': True}],
+         [{'text': 'github.com/ssjjul3/chartrunner', 'color': WHITE, 'size': 11, 'bold': True}],
          font='Consolas')
 add_text(s, Inches(5.0), Inches(6.3), Inches(4), Inches(0.4),
-         [{'text': '@chartrunner_xyz', 'color': WHITE, 'size': 13, 'bold': True}],
-         font='Calibri', align=PP_ALIGN.CENTER)
+         [{'text': 'ssjjul3.github.io/chartrunner', 'color': WHITE, 'size': 12, 'bold': True}],
+         font='Consolas', align=PP_ALIGN.CENTER)
 add_text(s, Inches(8.8), Inches(6.3), Inches(4), Inches(0.4),
-         [{'text': 'chartrunner.xyz', 'color': WHITE, 'size': 13, 'bold': True}],
+         [{'text': 'jsg@julianroy.com', 'color': WHITE, 'size': 12, 'bold': True}],
          font='Calibri', align=PP_ALIGN.RIGHT)
 
 add_text(s, Inches(0.7), Inches(6.65), Inches(12), Inches(0.3),
-         "Repo · X · live demo",
+         "Repo  ·  Live demo  ·  Email",
          size=10, color=DIM, font='Calibri')
 
 page_number(s, 12, TOTAL)

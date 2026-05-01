@@ -2,9 +2,15 @@
 
 ## TL;DR
 
-A **single HTML file** you open in any modern browser. Real Binance candles. Six trading primitives wired to a framework-free SDK. Workbench Pine Script builder. Backtest tab. Multi-tracker Terminal. Drag-to-desktop widgets. Phone OS overlay. ~14,700 lines of vanilla JS. No build step. No npm. No wallet required.
+Three live surfaces shipped as v0.9.1:
 
-This is **Phase 0**. It's playable now. The architecture is shaped so Phase 2 (live Solana devnet trades) is a swap, not a rewrite.
+- **`/`** — defikingdoms-style landing page (single HTML, animated hero, mechanics grid, architecture diagram)
+- **`/play/`** — the playable game in a single HTML file (~25k lines vanilla JS, no build, no wallet, no install)
+- **`/solana-connect/`** — React + Vite + wallet-adapter app proving the on-chain edge (real Phantom/Backpack/Solflare connect + signed memo on Solana devnet)
+
+All three live at [ssjjul3.github.io/chartrunner](https://ssjjul3.github.io/chartrunner/). Repo: [github.com/ssjjul3/chartrunner](https://github.com/ssjjul3/chartrunner). Source: MIT. CI: parse-check on every PR + auto-deploy on push to `main` (~2 min build).
+
+This is **Phase 0**. The architecture is shaped so Phase 2 (live Solana mainnet trades) is a swap, not a rewrite — we've already proven the swap on devnet.
 
 ## What ships in the prototype
 
@@ -43,13 +49,27 @@ All six route through `ChartRunnerSDK`. Abilities never touch the canvas. The SD
 - All persisted to localStorage (`cr_workbench_v1`)
 
 ### OS desktop surface
-- **Profile** — Trader header + tabs: Balances · Stats · Missions
+- **Profile** — Trader header + tabs: Player · Balances · Stats · Missions
 - **Marketplace** — Game Shop ($RUN gear) · P2P ($SOL bots/maps/strategies)
-- **Terminal** — five tracker tabs: Darkflow / HyperTracker / SolanaTracker / CEXTracker / Strategies, each with multiple draggable panes
-- **Workbench** — five tabs: Bots / Strategies / Indicators / Backtest / App Builder
-- **Maps** — save chart setups (asset, TF, indicators, tools, strategy, destruction state) with thumbnail; load drops you into the game
+- **Terminal** — five tracker tabs + a `+` tab to spawn new windows: **Engine** (live game telemetry, real positions/P&L/logs from `crL3`) · HyperTracker · SolanaTracker · CEXTracker · Strategies. Every pane is draggable to the desktop OR to the in-game chart background.
+- **Token Terminal** — categorized token research dashboard with tabs: ★ **Winners** (default) · Losers · Volume Spike · Social Buzz · Signals · New · All. Each row is a draggable token profile card (price · onchain · holders · volume · signal · backtest · social).
+- **Workbench** — six tabs: Tools (manual ★-starring of laser tools) · Bots · Strategies · Indicators · **Terminal** (custom widget builder with row composer) · Backtest · App Builder
+- **Maps** — save chart setups (asset, TF, indicators, tools, strategy, destruction state) with thumbnail; load drops you into the game. **Save button in the in-game topbar** captures the current run with a custom name.
 - **Bot Terminal** — three tabs: Agents / Console / Chat — connect Claude / Telegram / Lobster / OpenClaw / Hermes
 - **Configs** — opens after mode pick (asset / strategy / perspective / TF) → Start Run
+
+### Tutorials (context-driven)
+- **Two separate tutorials**, picked automatically based on context:
+  - **Desktop OS** — when launched from the splash menubar, walks 12 steps through every OS app (Run, Configs, Workbench, Profile, Marketplace, Maps, Terminal, Token Term, Bot Term, SDK)
+  - **In-Game** — when launched from the in-game topbar, auto-launches a BTC run, then runs 14 **interactive gated steps** that wait for the player to actually do each move before advancing (move avatar, jump, place a bracket, place other primitives, toggle indicators, activate strategy, fall through to upside-down, pick up coins, pin a widget, etc.)
+
+### Solana devnet edge (`/solana-connect/`)
+- Standalone React + Vite + TypeScript app, deployed alongside the game
+- `@solana/wallet-adapter-react` v0.15+ — auto-discovers Phantom / Backpack / Solflare via Wallet Standard
+- Real signed memo transaction on Solana devnet (canonical Memo program)
+- Explorer-verifiable signature, devnet faucet link, ~5 second flow
+- `?memo=` query param for deep-linking from the game's topbar (carries strategy/run context)
+- Same `ChartRunnerSDK` event shape — Phase 2 is a swap to a real Anchor program, not a rewrite
 
 ### Phone OS overlay
 - Full mirror of the desktop OS: Coach (retired), Marketplace, Profile, Intel (retired), Maps, Terminal, Bot Terminal
