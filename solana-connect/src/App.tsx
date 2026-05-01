@@ -6,8 +6,22 @@ import { Transaction } from '@solana/web3.js';
 import { buildMemoInstruction } from './lib/memo';
 import { txUrl, addressUrl, FAUCET_URL } from './lib/explorer';
 import { lamportsToSol, truncatePubkey } from './lib/format';
+import { buildSaveMapInstruction, fromHex } from './lib/cr-maps-program';
 
 const CLUSTER = 'devnet' as const;
+
+// Phase 0.9.4 — three operating modes selected from URL params:
+//   mode = 'memo'      → default; freeform memo demo (existing behavior)
+//   mode = 'connect'   → ?next=play; wallet-only handshake before /play/
+//   mode = 'save-map'  → ?action=save-map&name=&hash=&return=; one-shot
+//                        save_map tx, then redirect back to the game
+type Mode = 'memo' | 'connect' | 'save-map';
+
+interface SaveMapParams {
+  name: string;
+  hashHex: string;
+  returnTo: string;   // e.g. /play/
+}
 
 function pickInitialMemo(): string {
   // Deep-link from the game's topbar: ?memo=BTC-15m-funding_shorts-... lands here pre-filled.
@@ -34,10 +48,36 @@ function getNextTarget(): { path: string; isPlay: boolean } | null {
   } catch (_) { return null; }
 }
 
+// Phase 0.9.4 — pull save-map params off the URL once on mount.
+function getSaveMapParams(): SaveMapParams | null {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('action') !== 'save-map') return null;
+    const name    = url.searchParams.get('name');
+    const hashHex = url.searchParams.get('hash');
+    const ret     = url.searchParams.get('return') || '/play/';
+    if (!name || !hashHex) return null;
+    if (name.length === 0 || name.length > 64) return null;
+    if (!/^[0-9a-fA-F]{64}$/.test(hashHex))    return null;
+    // Only allow same-origin returns; refuse arbitrary off-site URLs.
+    if (!ret.startsWith('/'))                  return null;
+    return { name, hashHex, returnTo: ret };
+  } catch (_) { return null; }
+}
+
+function getMode(saveMap: SaveMapParams | null, nextTarget: ReturnType<typeof getNextTarget>): Mode {
+  if (saveMap) return 'save-map';
+  if (nextTarget) return 'connect';
+  return 'memo';
+}
+
 export default function App() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction, connected, wallet } = useWallet();
-  const nextTarget = useMemo(getNextTarget, []);
+  const nextTarget    = useMemo(getNextTarget, []);
+  const saveMapParams = useMemo(getSaveMapParams, []);
+  const mode: Mode    = useMemo(() => getMode(saveMapParams, nextTarget),
+    [saveMapParams, nextTarget]);
 
   const [balanceLamports, setBalanceLamports] = useState<number | null>(null);
   const [memoText, setMemoText] = useState<string>(pickInitialMemo);
@@ -136,6 +176,65 @@ export default function App() {
     window.location.href = url.toString();
   }, [nextTarget, pubkeyB58, wallet]);
 
+  // Phase 0.9.4 — save_map call. Builds the Anchor instruction by hand
+  // (no @coral-xyz/anchor dep), prompts the wallet to sign, then redirects
+  // back to the game with the tx signature so the in-game Maps list can
+  // show "saved on-chain · view ↗".
+  const sendSaveMap = useCallback(async () => {
+    if (!publicKey)     { setError('Wallet not connected'); return; }
+    if (!saveMapParams) { setError('Missing save_map params'); return; }
+
+    setSending(true);
+    setError(null);
+    try {
+      const contentHash = fromHex(saveMapParams.hashHex);
+      const ix = buildSaveMapInstruction({
+        owner: publicKey,
+        name: saveMapParams.name,
+        contentHash,
+      });
+      const tx = new Transaction().add(ix);
+
+      const sig = await sendTransaction(tx, connection);
+
+      const latest = await connection.getLatestBlockhash('confirmed');
+      const result = await connection.confirmTransaction(
+        {
+          signature: sig,
+          blockhash: latest.blockhash,
+          lastValidBlockHeight: latest.lastValidBlockHeight,
+        },
+        'confirmed'
+      );
+      if (result.value.err) {
+        throw new Error('Tx failed: ' + JSON.stringify(result.value.err));
+      }
+
+      setLastSig(sig);
+
+      // Hand the game a recap. /play/?savedMap=<name>&sig=<sig>
+      // The crWallet IIFE strips ?wallet/?adapter; the game's Maps module
+      // listens for ?savedMap and decorates the matching localStorage entry
+      // with { onChain: true, sig, savedAt }.
+      const back = new URL(saveMapParams.returnTo, window.location.href);
+      back.searchParams.set('savedMap', saveMapParams.name);
+      back.searchParams.set('sig', sig);
+      // Preserve the wallet hand-off so the game stays connected on return.
+      back.searchParams.set('wallet', publicKey.toBase58());
+      if (wallet?.adapter.name) back.searchParams.set('adapter', wallet.adapter.name);
+      // Brief pause so the user sees the success banner before redirect.
+      window.setTimeout(() => { window.location.href = back.toString(); }, 1200);
+    } catch (err: any) {
+      if (err?.message && /user rejected|user denied|cancelled/i.test(err.message)) {
+        setError(null);
+        return;
+      }
+      setError(err?.message || String(err));
+    } finally {
+      setSending(false);
+    }
+  }, [connection, publicKey, saveMapParams, sendTransaction, wallet]);
+
   return (
     <div className="page">
       <header className="hd">
@@ -146,7 +245,7 @@ export default function App() {
         <span className="cluster-pill">devnet</span>
       </header>
 
-      {nextTarget?.isPlay && (
+      {mode === 'connect' && nextTarget?.isPlay && (
         <section className="banner banner-ok" style={{ margin: '0 0 16px' }}>
           {connected && pubkeyB58 ? (
             <>
@@ -165,6 +264,17 @@ export default function App() {
               Backpack, or Solflare) so your Profile, Maps, and Workbench can load.
             </div>
           )}
+        </section>
+      )}
+
+      {mode === 'save-map' && (
+        <section className="banner banner-ok" style={{ margin: '0 0 16px' }}>
+          <div>
+            <strong>Save map on-chain.</strong>{' '}
+            {connected
+              ? 'Sign the transaction below to anchor this map under your wallet.'
+              : 'Connect your wallet to sign the on-chain save.'}
+          </div>
         </section>
       )}
 
@@ -209,6 +319,63 @@ export default function App() {
           )}
         </section>
 
+        {mode === 'save-map' && saveMapParams ? (
+          <section className="card">
+            <h2 className="card-h">Save map on-chain</h2>
+            <p className="card-sub">
+              ChartRunner is asking you to anchor this map's identity on Solana devnet.
+              The map JSON itself stays in your browser — only the SHA-256 hash + name +
+              timestamp go on-chain. Costs ~0.0009 SOL of rent (one-time per map name).
+            </p>
+            <dl className="meta">
+              <div>
+                <dt>Map name</dt>
+                <dd><code className="sig">{saveMapParams.name}</code></dd>
+              </div>
+              <div>
+                <dt>Content hash</dt>
+                <dd>
+                  <code className="sig" title={saveMapParams.hashHex}>
+                    {saveMapParams.hashHex.slice(0, 8)}…{saveMapParams.hashHex.slice(-8)}
+                  </code>
+                </dd>
+              </div>
+              <div>
+                <dt>Program</dt>
+                <dd><code className="sig">chartrunner_maps</code></dd>
+              </div>
+            </dl>
+            <div className="memo-meta" style={{ marginTop: 12 }}>
+              <span style={{ fontSize: 11, opacity: 0.7 }}>devnet · ~0.0009 SOL rent</span>
+              <button
+                className="btn-primary"
+                onClick={sendSaveMap}
+                disabled={!connected || sending}
+              >
+                {sending ? 'Signing… (waiting for confirmation)' : '🪙 Save on-chain'}
+              </button>
+            </div>
+
+            {error && (
+              <div className="banner banner-err">
+                <strong>Failed:</strong> {error}
+                <button className="banner-x" onClick={() => setError(null)} aria-label="Dismiss">×</button>
+              </div>
+            )}
+
+            {lastSig && (
+              <div className="banner banner-ok">
+                <div>
+                  <strong>Saved on-chain.</strong> Returning to game…{' '}
+                  <code className="sig">{truncatePubkey(lastSig)}</code>
+                </div>
+                <a className="btn-link" href={txUrl(lastSig, CLUSTER)} target="_blank" rel="noreferrer">
+                  View on Explorer ↗
+                </a>
+              </div>
+            )}
+          </section>
+        ) : (
         <section className="card">
           <h2 className="card-h">Sign a memo on devnet</h2>
           <p className="card-sub">
@@ -260,6 +427,7 @@ export default function App() {
             </div>
           )}
         </section>
+        )}
 
         <footer className="ft">
           <a href="../" className="ft-back">← Back to ChartRunner</a>
