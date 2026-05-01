@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  parse-check:
+    name: Parse-check the single-file HTML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Validate every <script> body parses
+        run: |
+          node -e "
+            const fs = require('fs');
+            const html = fs.readFileSync('ChartRunner_Prototype.html', 'utf8');
+            const re = /<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g;
+            let i = 0, m;
+            while((m = re.exec(html))){
+              i++;
+              try { new Function(m[2]); }
+              catch(e){
+                console.error('FAIL script #' + i + ': ' + e.message);
+                process.exit(1);
+              }
+            }
+            console.log('OK: ' + i + ' inline script blocks parsed');
+          "
+
+      - name: chartrunner-prototype/index.html in sync with root
+        run: |
+          if [ -f chartrunner-prototype/index.html ]; then
+            if ! diff -q ChartRunner_Prototype.html chartrunner-prototype/index.html >/dev/null; then
+              echo "::warning::chartrunner-prototype/index.html drift vs root ChartRunner_Prototype.html"
+            fi
+          fi
