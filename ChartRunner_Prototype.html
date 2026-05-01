@@ -6489,6 +6489,283 @@ window.crWallet = (function(){
 })();
 
 /* =========================================================================
+ * crRegistry — multi-entity on-chain registry + marketplace dispatcher.
+ * v0.9.6 — Phase 1 generalisation of crChainSave.
+ *
+ * Wraps the chartrunner_registry Anchor program with a clean game-side API.
+ * Every Workbench entity (bot, strategy, indicator, app, backtest, widget,
+ * tool, token-profile) plus the saved Maps now route through this single
+ * IIFE for on-chain save / list / buy / cancel.
+ *
+ * API surface:
+ *   crRegistry.saveOnChain(type, name, contentJson, royaltyBps)
+ *   crRegistry.listOnMarket(type, name, priceSol)
+ *   crRegistry.buyFromMarket(type, name, sellerAddr, priceSol)
+ *   crRegistry.cancelListing(type, name)
+ *   crRegistry.markEntity(type, name, { onChain, sig, listed, buyer, ... })
+ *   crRegistry.canonicalJson(payload, excludeKeys)
+ *   crRegistry.findOnChain(type, name) → entry|null  (with metadata)
+ *
+ * Entity types map 1:1 to the EntityType enum in the Rust program:
+ *   Map=0  Strategy=1  Bot=2  Indicator=3  Backtest=4
+ *   App=5  TokenProfile=6  Widget=7  Tool=8
+ *
+ * URL handler runs on every game load and processes the redirect-back from
+ * /solana-connect/?action=save-entity (and friends). Strips ?regAction /
+ * ?regType / ?regName / ?sig from URL after consumption.
+ * =======================================================================*/
+window.crRegistry = (function(){
+  // Mirrors EntityType in cr-registry-program.ts and the Rust program.
+  var ENTITY = {
+    Map: 0, Strategy: 1, Bot: 2, Indicator: 3, Backtest: 4,
+    App: 5, TokenProfile: 6, Widget: 7, Tool: 8
+  };
+  var ENTITY_LABELS = ['Map','Strategy','Bot','Indicator','Backtest',
+                       'App','TokenProfile','Widget','Tool'];
+  // localStorage keys per entity type. Each holds a list of {name, onChain,
+  // sig, listed, price, buyer, ...} records that mirror what's on-chain.
+  var STORAGE_KEYS = {
+    0: 'cr_maps_v1',
+    1: 'cr_strategies_v1',
+    2: 'cr_workbench_v1',         // bots live inside the workbench struct
+    3: 'cr_indicators_v1',
+    4: 'cr_backtests_v1',
+    5: 'cr_workbench_v1',         // apps also under workbench
+    6: 'cr_token_profiles_v1',
+    7: 'cr_widgets_v1',
+    8: 'cr_starred_tools_v1',
+  };
+  // Fields excluded from the canonical hash for any entity type.
+  // `id`, `t`, `thumb` change per save and aren't part of identity.
+  // `onChain`, `sig`, `listed`, etc. are decoration metadata, not content.
+  var DEFAULT_HASH_EXCLUDE = {
+    id: 1, t: 1, ts: 1, thumb: 1, thumbnail: 1,
+    onChain: 1, sig: 1, onChainAt: 1, hash: 1,
+    listed: 1, listingPrice: 1, listingSig: 1, listingAt: 1,
+    boughtBy: 1, boughtAt: 1, boughtSig: 1
+  };
+
+  // ── Canonical JSON ──────────────────────────────────────────────────────
+  // Sort keys recursively, drop excluded fields. Without sorted keys the
+  // hash is non-deterministic across browsers (V8 vs JSC differ on order).
+  function _canonical(obj, exclude){
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(function(x){ return _canonical(x, exclude); });
+    var out = {};
+    Object.keys(obj).sort().forEach(function(k){
+      if (exclude[k]) return;
+      out[k] = _canonical(obj[k], exclude);
+    });
+    return out;
+  }
+  function canonicalJson(payload, extraExclude){
+    var ex = Object.assign({}, DEFAULT_HASH_EXCLUDE, extraExclude || {});
+    return JSON.stringify(_canonical(payload, ex));
+  }
+
+  // ── SHA-256 → hex ───────────────────────────────────────────────────────
+  async function sha256Hex(text){
+    var buf = new TextEncoder().encode(text);
+    var d = await crypto.subtle.digest('SHA-256', buf);
+    var bytes = new Uint8Array(d);
+    var hex = '';
+    for (var i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+    return hex;
+  }
+
+  // ── Generic localStorage shape per entity type ──────────────────────────
+  // We assume the existing per-type stores are arrays of objects with .name.
+  // Workbench is special (bots/strategies/indicators/apps in nested arrays);
+  // we read the right sub-array based on type.
+  function _readType(type){
+    var key = STORAGE_KEYS[type];
+    if (!key) return [];
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+      // Workbench shape: { bots:[], strategies:[], indicators:[], apps:[] }
+      if (parsed && typeof parsed === 'object') {
+        if (type === ENTITY.Bot && Array.isArray(parsed.bots))             return parsed.bots;
+        if (type === ENTITY.Strategy && Array.isArray(parsed.strategies))  return parsed.strategies;
+        if (type === ENTITY.Indicator && Array.isArray(parsed.indicators)) return parsed.indicators;
+        if (type === ENTITY.App && Array.isArray(parsed.apps))             return parsed.apps;
+      }
+      return [];
+    } catch(_){ return []; }
+  }
+  function _writeType(type, list){
+    var key = STORAGE_KEYS[type];
+    if (!key) return;
+    try {
+      // For workbench-shape stores, merge back into the parent object.
+      if (key === 'cr_workbench_v1') {
+        var raw = localStorage.getItem(key);
+        var wb = raw ? (JSON.parse(raw) || {}) : {};
+        if (type === ENTITY.Bot)       wb.bots       = list;
+        if (type === ENTITY.Strategy)  wb.strategies = list;
+        if (type === ENTITY.Indicator) wb.indicators = list;
+        if (type === ENTITY.App)       wb.apps       = list;
+        localStorage.setItem(key, JSON.stringify(wb));
+      } else {
+        localStorage.setItem(key, JSON.stringify(list));
+      }
+    } catch(_){}
+  }
+
+  function findEntity(type, name){
+    var list = _readType(type);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].name === name) return list[i];
+    }
+    return null;
+  }
+  // Patch a saved entity in place with new metadata fields, write back.
+  function markEntity(type, name, patch){
+    var list = _readType(type);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].name === name) {
+        Object.assign(list[i], patch);
+        _writeType(type, list);
+        return list[i];
+      }
+    }
+    return null;
+  }
+
+  // ── Action dispatchers — build the URL, redirect to /solana-connect/ ──
+  // The React app handles the wallet popup + signing; on success the user
+  // bounces back to /play/?regAction=...&regType=...&regName=...&sig=...
+  // and our boot URL handler decorates the local entity record.
+  async function saveOnChain(type, name, payload, royaltyBps){
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
+      var ok = window.confirm('On-chain save requires a connected wallet. Connect now?');
+      if (ok && crWallet) crWallet.connect();
+      return false;
+    }
+    try {
+      var canon  = canonicalJson(payload);
+      var hashHex = await sha256Hex(canon);
+      var url = '../solana-connect/?action=save-entity'
+              + '&type='     + encodeURIComponent(type)
+              + '&name='     + encodeURIComponent(name)
+              + '&hash='     + hashHex
+              + '&royalty='  + (royaltyBps|0)
+              + '&return='   + encodeURIComponent('/play/');
+      window.location.href = url;
+      return true;
+    } catch(err){
+      try { toast && toast('On-chain save failed: ' + (err.message || err)); } catch(_){}
+      return false;
+    }
+  }
+  function listOnMarket(type, name, priceSol){
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
+      var ok = window.confirm('Listing on the marketplace requires a connected wallet. Connect now?');
+      if (ok && crWallet) crWallet.connect();
+      return false;
+    }
+    var entity = findEntity(type, name);
+    if (!entity){
+      try { toast && toast('Entity not found locally — save first'); } catch(_){}
+      return false;
+    }
+    if (!entity.onChain){
+      var saveFirst = window.confirm(
+        '"' + name + '" is not on-chain yet. Save it on-chain first, then list?\n\n' +
+        '(Listing requires the entity to exist on the registry.)'
+      );
+      if (saveFirst) return saveOnChain(type, name, entity, 0);
+      return false;
+    }
+    var lamports = BigInt(Math.round(priceSol * 1e9));
+    var url = '../solana-connect/?action=list-entity'
+            + '&type='   + encodeURIComponent(type)
+            + '&name='   + encodeURIComponent(name)
+            + '&price='  + lamports.toString()
+            + '&return=' + encodeURIComponent('/play/');
+    window.location.href = url;
+    return true;
+  }
+  function buyFromMarket(type, name, sellerAddr, priceSol){
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
+      var ok = window.confirm('Buying on the marketplace requires a connected wallet. Connect now?');
+      if (ok && crWallet) crWallet.connect();
+      return false;
+    }
+    var lamports = BigInt(Math.round(priceSol * 1e9));
+    var url = '../solana-connect/?action=buy-entity'
+            + '&seller=' + encodeURIComponent(sellerAddr)
+            + '&type='   + encodeURIComponent(type)
+            + '&name='   + encodeURIComponent(name)
+            + '&price='  + lamports.toString()
+            + '&return=' + encodeURIComponent('/play/');
+    window.location.href = url;
+    return true;
+  }
+  function cancelListing(type, name){
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()) return false;
+    var url = '../solana-connect/?action=cancel-listing'
+            + '&type='   + encodeURIComponent(type)
+            + '&name='   + encodeURIComponent(name)
+            + '&return=' + encodeURIComponent('/play/');
+    window.location.href = url;
+    return true;
+  }
+
+  // ── URL handler — process redirect-back from /solana-connect/ ──────────
+  try {
+    var u = new URL(window.location.href);
+    var regAction = u.searchParams.get('regAction');
+    var regType   = u.searchParams.get('regType');
+    var regName   = u.searchParams.get('regName');
+    var sig       = u.searchParams.get('sig');
+    if (regAction && regType != null && regName && sig){
+      var t = parseInt(regType, 10);
+      var label = ENTITY_LABELS[t] || 'entity';
+      var patch = {};
+      var toastMsg = '';
+      if (regAction === 'save-entity'){
+        patch = { onChain: true, sig: sig, onChainAt: Date.now() };
+        toastMsg = '🪙 ' + label + ' "' + regName + '" anchored on devnet';
+      } else if (regAction === 'list-entity'){
+        patch = { listed: true, listingSig: sig, listingAt: Date.now() };
+        toastMsg = '📤 ' + label + ' "' + regName + '" listed on marketplace';
+      } else if (regAction === 'buy-entity'){
+        patch = { boughtSig: sig, boughtAt: Date.now() };
+        toastMsg = '💰 Bought ' + label + ' "' + regName + '" — license minted';
+      } else if (regAction === 'cancel-listing'){
+        patch = { listed: false, listingSig: null, listingPrice: null };
+        toastMsg = '✖ Listing cancelled';
+      }
+      if (Object.keys(patch).length) markEntity(t, regName, patch);
+      setTimeout(function(){
+        try { toast && toast(toastMsg + ' · ' + sig.slice(0, 8) + '…'); } catch(_){}
+      }, 800);
+      // Strip params so screenshots don't leak.
+      ['regAction','regType','regName','sig'].forEach(function(p){
+        u.searchParams.delete(p);
+      });
+      window.history.replaceState({}, '', u.toString());
+    }
+  } catch(_){}
+
+  return {
+    ENTITY:        ENTITY,
+    ENTITY_LABELS: ENTITY_LABELS,
+    canonicalJson: canonicalJson,
+    sha256Hex:     sha256Hex,
+    findEntity:    findEntity,
+    markEntity:    markEntity,
+    saveOnChain:   saveOnChain,
+    listOnMarket:  listOnMarket,
+    buyFromMarket: buyFromMarket,
+    cancelListing: cancelListing,
+  };
+})();
+
+/* =========================================================================
  * crChainSave — on-chain map anchoring via the chartrunner_maps program
  * v0.9.4 — Phase 1 on-chain primitive.
  *
@@ -14695,10 +14972,26 @@ function osRenderShopList(elId, list, opts){
     row.innerHTML = `<div class="ic">${it.ic}</div>
       <div><div class="nm">${it.nm}</div><div class="pr">${it.pr}</div>${metaLine}</div>
       <button class="buy">${sol ? 'Buy · $SOL' : 'Buy'}</button>`;
-    row.querySelector('.buy').addEventListener('click', ()=> toast(
-      sol ? 'P2P Marketplace — Phantom-Connect ships in Phase 2'
-          : 'Game Shop — Phase 2 (live $RUN balance)'
-    ));
+    row.querySelector('.buy').addEventListener('click', ()=> {
+      // v0.9.6 — P2P buys now route through crRegistry.buyFromMarket which
+      // bounces to /solana-connect/?action=buy-entity for the wallet popup.
+      // The seed listings (no `seller` field) keep the Phase-2 toast since
+      // they aren't real on-chain entities. Real listings will get a seller
+      // address and on-chain price once players start posting their own.
+      if (sol && it.seller && it.cat) {
+        var typeMap = { bots:2, maps:0, strategies:1, indicators:3, backtests:4, apps:5 };
+        var type = typeMap[it.cat];
+        if (type !== undefined && typeof crRegistry !== 'undefined') {
+          var priceSol = parseFloat(String(it.pr).replace(/[^\d.]/g, '')) || 0;
+          if (priceSol > 0) {
+            crRegistry.buyFromMarket(type, it.nm, it.seller, priceSol);
+            return;
+          }
+        }
+      }
+      toast(sol ? 'P2P Marketplace — Phantom-Connect ships in Phase 2'
+                : 'Game Shop — Phase 2 (live $RUN balance)');
+    });
     host.appendChild(row);
   });
 }
@@ -15621,6 +15914,83 @@ function _wbRenderTools(){
     });
   });
 }
+// v0.9.6 — On-chain action buttons for Workbench rows. Each renderer calls
+// this once per row (after building the row's innerHTML) to splice in 🪙 Save
+// + 📤 List + (when listed) ✖ Cancel buttons. The buttons route through
+// crRegistry which builds the URL and bounces to /solana-connect/ for the
+// wallet popup. State pulled from the entity's localStorage record (onChain,
+// listed, listingPrice flags set by the URL handler in crRegistry).
+function _wbAddChainActions(row, entityType, entity){
+  if (!row || !entity || typeof crRegistry === 'undefined') return;
+  // Find the trailing delete button so we insert before it.
+  const delBtn = row.querySelector('[data-del]');
+  // Reuse the existing entity record from the live wb.* array; this gives
+  // us the up-to-date onChain/listed flags. Fall back to crRegistry lookup.
+  const live = crRegistry.findEntity(entityType, entity.name) || entity;
+  const isOnChain = !!live.onChain;
+  const isListed  = !!live.listed;
+
+  // 🪙 Save on-chain (or "Anchored" badge if already there)
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'cr-go';
+  saveBtn.style.cssText = 'padding:4px 8px;font-size:10px;background:transparent;border:1px solid '
+    + (isOnChain ? '#3ddc97' : 'var(--line)') + ';color:'
+    + (isOnChain ? '#3ddc97' : 'var(--dim)');
+  saveBtn.title = isOnChain
+    ? 'Anchored on devnet · sig ' + (live.sig || '').slice(0, 8) + '…'
+    : 'Save SHA-256 of this ' + crRegistry.ENTITY_LABELS[entityType] + ' on Solana devnet';
+  saveBtn.textContent = isOnChain ? '🪙 ✓' : '🪙';
+  saveBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (isOnChain) {
+      try { toast && toast('Already anchored on devnet'); } catch(_){}
+      return;
+    }
+    crRegistry.saveOnChain(entityType, entity.name, entity, 0);
+  });
+
+  // 📤 List on Marketplace (or ✖ Cancel listing if listed)
+  const listBtn = document.createElement('button');
+  listBtn.type = 'button';
+  listBtn.className = 'cr-go';
+  listBtn.style.cssText = 'padding:4px 8px;font-size:10px;background:transparent;border:1px solid '
+    + (isListed ? '#ffd166' : 'var(--line)') + ';color:'
+    + (isListed ? '#ffd166' : 'var(--dim)');
+  if (isListed) {
+    listBtn.textContent = '✖';
+    listBtn.title = 'Cancel marketplace listing'
+      + (live.listingPrice ? ' (was ' + (live.listingPrice / 1e9).toFixed(3) + ' SOL)' : '');
+    listBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (window.confirm('Cancel marketplace listing for "' + entity.name + '"?')) {
+        crRegistry.cancelListing(entityType, entity.name);
+      }
+    });
+  } else {
+    listBtn.textContent = '📤';
+    listBtn.title = 'List this ' + crRegistry.ENTITY_LABELS[entityType] + ' on the P2P Marketplace';
+    listBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const priceStr = window.prompt('List price in SOL (e.g. 0.1):', '0.1');
+      if (priceStr == null) return;
+      const price = parseFloat(priceStr);
+      if (!Number.isFinite(price) || price <= 0) {
+        try { toast && toast('Invalid price'); } catch(_){}
+        return;
+      }
+      crRegistry.listOnMarket(entityType, entity.name, price);
+    });
+  }
+
+  if (delBtn) {
+    row.insertBefore(saveBtn, delBtn);
+    row.insertBefore(listBtn, delBtn);
+  } else {
+    row.appendChild(saveBtn);
+    row.appendChild(listBtn);
+  }
+}
 function _wbRenderBots(){
   const list = document.getElementById('wbBotList');
   const cnt  = document.getElementById('wbBotCount');
@@ -15655,6 +16025,8 @@ function _wbRenderBots(){
       _wbSave(); _wbRenderBots(); _wbRebuildBacktestTargets();
       if(typeof toast === 'function') toast('Bot deleted');
     });
+    // v0.9.6 — splice in 🪙 Save on-chain + 📤 List buttons
+    try { _wbAddChainActions(row, 2 /* Bot */, b); } catch(_){}
     list.appendChild(row);
   });
 }
@@ -15743,6 +16115,7 @@ function _wbRenderStrats(){
         _wbSave(); _wbRenderStrats(); _wbRebuildBacktestTargets();
         if(typeof toast === 'function') toast('Strategy deleted');
       });
+      try { _wbAddChainActions(row, 1 /* Strategy */, s); } catch(_){}
       list.appendChild(row);
     });
   } else if(!builtIns.length){
@@ -15792,6 +16165,7 @@ function _wbRenderInds(){
       _wbSave(); _wbRenderInds(); _wbRebuildBacktestTargets();
       if(typeof toast === 'function') toast('Indicator deleted');
     });
+    try { _wbAddChainActions(row, 3 /* Indicator */, i); } catch(_){}
     list.appendChild(row);
   });
 }
@@ -15883,6 +16257,7 @@ function _wbRenderApps(){
       _wbSave(); _wbRenderApps();
       if(typeof toast === 'function') toast('App uninstalled');
     });
+    try { _wbAddChainActions(row, 5 /* App */, a); } catch(_){}
     list.appendChild(row);
   });
 }

@@ -1,26 +1,54 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { Transaction } from '@solana/web3.js';
+import { PublicKey, Transaction } from '@solana/web3.js';
 
 import { buildMemoInstruction } from './lib/memo';
 import { txUrl, addressUrl, FAUCET_URL } from './lib/explorer';
 import { lamportsToSol, truncatePubkey } from './lib/format';
 import { buildSaveMapInstruction, fromHex } from './lib/cr-maps-program';
+import {
+  EntityType,
+  ENTITY_TYPE_NAMES,
+  buildSaveEntityIx,
+  buildListEntityIx,
+  buildBuyEntityIx,
+  buildCancelListingIx,
+  fromHex as fromHexRegistry,
+  lamportsToSol as registryLamportsToSol,
+} from './lib/cr-registry-program';
 
 const CLUSTER = 'devnet' as const;
 
-// Phase 0.9.4 — three operating modes selected from URL params:
+// Phase 0.9.6 — four runtime modes selected from URL params:
 //   mode = 'memo'      → default; freeform memo demo (existing behavior)
 //   mode = 'connect'   → ?next=play; wallet-only handshake before /play/
-//   mode = 'save-map'  → ?action=save-map&name=&hash=&return=; one-shot
-//                        save_map tx, then redirect back to the game
-type Mode = 'memo' | 'connect' | 'save-map';
+//   mode = 'save-map'  → legacy chartrunner_maps program (one-trick)
+//   mode = 'registry'  → multi-entity chartrunner_registry program. Sub-action
+//                        in ?action= determines which ix gets built:
+//                          save-entity / list-entity / buy-entity / cancel-listing
+type Mode = 'memo' | 'connect' | 'save-map' | 'registry';
+type RegistryAction = 'save-entity' | 'list-entity' | 'buy-entity' | 'cancel-listing';
 
 interface SaveMapParams {
   name: string;
   hashHex: string;
   returnTo: string;   // e.g. /play/
+}
+
+interface RegistryParams {
+  action:      RegistryAction;
+  entityType:  EntityType;
+  name:        string;
+  // save-entity only:
+  hashHex?:    string;
+  royaltyBps?: number;
+  // list-entity only:
+  priceLamports?: bigint;
+  // buy-entity only:
+  seller?:     string;        // base58 pubkey of the seller
+  // all:
+  returnTo:    string;
 }
 
 function pickInitialMemo(): string {
@@ -65,8 +93,75 @@ function getSaveMapParams(): SaveMapParams | null {
   } catch (_) { return null; }
 }
 
-function getMode(saveMap: SaveMapParams | null, nextTarget: ReturnType<typeof getNextTarget>): Mode {
-  if (saveMap) return 'save-map';
+// Phase 0.9.6 — pull registry-action params off the URL.
+//
+// URL conventions:
+//   /solana-connect/?action=save-entity&type=2&name=Whale-Wake&hash=<64hex>&royalty=500&return=/play/
+//   /solana-connect/?action=list-entity&type=2&name=Whale-Wake&price=500000000&return=/play/
+//   /solana-connect/?action=buy-entity&seller=<base58>&type=2&name=Whale-Wake&return=/play/
+//   /solana-connect/?action=cancel-listing&type=2&name=Whale-Wake&return=/play/
+function getRegistryParams(): RegistryParams | null {
+  try {
+    const url = new URL(window.location.href);
+    const action = url.searchParams.get('action');
+    if (action !== 'save-entity' && action !== 'list-entity' &&
+        action !== 'buy-entity'  && action !== 'cancel-listing') return null;
+
+    const typeRaw = url.searchParams.get('type');
+    const name    = url.searchParams.get('name');
+    const ret     = url.searchParams.get('return') || '/play/';
+    if (typeRaw == null || name == null) return null;
+    if (!ret.startsWith('/'))            return null;
+
+    const entityType = parseInt(typeRaw, 10);
+    if (!Number.isFinite(entityType) || entityType < 0 || entityType > 8) return null;
+    if (name.length === 0 || name.length > 64) return null;
+
+    const out: RegistryParams = {
+      action: action as RegistryAction,
+      entityType: entityType as EntityType,
+      name,
+      returnTo: ret,
+    };
+
+    if (action === 'save-entity') {
+      const hashHex = url.searchParams.get('hash');
+      if (!hashHex || !/^[0-9a-fA-F]{64}$/.test(hashHex)) return null;
+      out.hashHex = hashHex;
+      const r = parseInt(url.searchParams.get('royalty') || '0', 10);
+      out.royaltyBps = (Number.isFinite(r) && r >= 0 && r <= 5000) ? r : 0;
+    }
+    if (action === 'list-entity') {
+      const priceRaw = url.searchParams.get('price');
+      if (!priceRaw) return null;
+      try {
+        const p = BigInt(priceRaw);
+        if (p <= 0n) return null;
+        out.priceLamports = p;
+      } catch (_) { return null; }
+    }
+    if (action === 'buy-entity') {
+      const seller = url.searchParams.get('seller');
+      if (!seller) return null;
+      try { new PublicKey(seller); } catch (_) { return null; }
+      out.seller = seller;
+      // optional price hint for display only — not used in the ix
+      const priceRaw = url.searchParams.get('price');
+      if (priceRaw) {
+        try { out.priceLamports = BigInt(priceRaw); } catch (_) {}
+      }
+    }
+    return out;
+  } catch (_) { return null; }
+}
+
+function getMode(
+  saveMap: SaveMapParams | null,
+  registry: RegistryParams | null,
+  nextTarget: ReturnType<typeof getNextTarget>,
+): Mode {
+  if (registry) return 'registry';
+  if (saveMap)  return 'save-map';
   if (nextTarget) return 'connect';
   return 'memo';
 }
@@ -74,10 +169,13 @@ function getMode(saveMap: SaveMapParams | null, nextTarget: ReturnType<typeof ge
 export default function App() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction, connected, wallet } = useWallet();
-  const nextTarget    = useMemo(getNextTarget, []);
-  const saveMapParams = useMemo(getSaveMapParams, []);
-  const mode: Mode    = useMemo(() => getMode(saveMapParams, nextTarget),
-    [saveMapParams, nextTarget]);
+  const nextTarget     = useMemo(getNextTarget, []);
+  const saveMapParams  = useMemo(getSaveMapParams, []);
+  const registryParams = useMemo(getRegistryParams, []);
+  const mode: Mode     = useMemo(
+    () => getMode(saveMapParams, registryParams, nextTarget),
+    [saveMapParams, registryParams, nextTarget],
+  );
 
   const [balanceLamports, setBalanceLamports] = useState<number | null>(null);
   const [memoText, setMemoText] = useState<string>(pickInitialMemo);
@@ -235,6 +333,97 @@ export default function App() {
     }
   }, [connection, publicKey, saveMapParams, sendTransaction, wallet]);
 
+  // Phase 0.9.6 — registry tx dispatcher. Builds the right ix from
+  // registryParams.action, signs, confirms, then redirects back to the game
+  // with a sub-action recap so the in-game UI can show "saved on-chain · view ↗".
+  const sendRegistryTx = useCallback(async () => {
+    if (!publicKey)        { setError('Wallet not connected'); return; }
+    if (!registryParams)   { setError('Missing registry params'); return; }
+
+    setSending(true);
+    setError(null);
+    try {
+      let ix;
+      switch (registryParams.action) {
+        case 'save-entity': {
+          if (!registryParams.hashHex) throw new Error('Missing hash');
+          ix = buildSaveEntityIx({
+            owner: publicKey,
+            entityType: registryParams.entityType,
+            name: registryParams.name,
+            contentHash: fromHexRegistry(registryParams.hashHex),
+            royaltyBps: registryParams.royaltyBps ?? 0,
+          });
+          break;
+        }
+        case 'list-entity': {
+          if (!registryParams.priceLamports) throw new Error('Missing price');
+          ix = buildListEntityIx({
+            owner: publicKey,
+            entityType: registryParams.entityType,
+            name: registryParams.name,
+            priceLamports: registryParams.priceLamports,
+          });
+          break;
+        }
+        case 'buy-entity': {
+          if (!registryParams.seller) throw new Error('Missing seller');
+          ix = buildBuyEntityIx({
+            buyer: publicKey,
+            seller: new PublicKey(registryParams.seller),
+            entityType: registryParams.entityType,
+            name: registryParams.name,
+          });
+          break;
+        }
+        case 'cancel-listing': {
+          ix = buildCancelListingIx({
+            seller: publicKey,
+            entityType: registryParams.entityType,
+            name: registryParams.name,
+          });
+          break;
+        }
+      }
+
+      const tx = new Transaction().add(ix);
+      const sig = await sendTransaction(tx, connection);
+
+      const latest = await connection.getLatestBlockhash('confirmed');
+      const result = await connection.confirmTransaction(
+        {
+          signature: sig,
+          blockhash: latest.blockhash,
+          lastValidBlockHeight: latest.lastValidBlockHeight,
+        },
+        'confirmed',
+      );
+      if (result.value.err) {
+        throw new Error('Tx failed: ' + JSON.stringify(result.value.err));
+      }
+
+      setLastSig(sig);
+
+      // Hand back a recap to the game.
+      const back = new URL(registryParams.returnTo, window.location.href);
+      back.searchParams.set('regAction', registryParams.action);
+      back.searchParams.set('regType',   String(registryParams.entityType));
+      back.searchParams.set('regName',   registryParams.name);
+      back.searchParams.set('sig',       sig);
+      back.searchParams.set('wallet',    publicKey.toBase58());
+      if (wallet?.adapter.name) back.searchParams.set('adapter', wallet.adapter.name);
+      window.setTimeout(() => { window.location.href = back.toString(); }, 1200);
+    } catch (err: any) {
+      if (err?.message && /user rejected|user denied|cancelled/i.test(err.message)) {
+        setError(null);
+        return;
+      }
+      setError(err?.message || String(err));
+    } finally {
+      setSending(false);
+    }
+  }, [connection, publicKey, registryParams, sendTransaction, wallet]);
+
   return (
     <div className="page">
       <header className="hd">
@@ -274,6 +463,23 @@ export default function App() {
             {connected
               ? 'Sign the transaction below to anchor this map under your wallet.'
               : 'Connect your wallet to sign the on-chain save.'}
+          </div>
+        </section>
+      )}
+
+      {mode === 'registry' && registryParams && (
+        <section className="banner banner-ok" style={{ margin: '0 0 16px' }}>
+          <div>
+            <strong>
+              {registryParams.action === 'save-entity'    && 'Save '}
+              {registryParams.action === 'list-entity'    && 'List '}
+              {registryParams.action === 'buy-entity'     && 'Buy '}
+              {registryParams.action === 'cancel-listing' && 'Cancel listing for '}
+              {ENTITY_TYPE_NAMES[registryParams.entityType]} on-chain.
+            </strong>{' '}
+            {connected
+              ? 'Sign the transaction below to commit it to the chartrunner_registry program.'
+              : 'Connect your wallet to sign.'}
           </div>
         </section>
       )}
@@ -319,7 +525,105 @@ export default function App() {
           )}
         </section>
 
-        {mode === 'save-map' && saveMapParams ? (
+        {mode === 'registry' && registryParams ? (
+          <section className="card">
+            <h2 className="card-h">
+              {registryParams.action === 'save-entity'    && '🪙 Save '}
+              {registryParams.action === 'list-entity'    && '📤 List '}
+              {registryParams.action === 'buy-entity'     && '💰 Buy '}
+              {registryParams.action === 'cancel-listing' && '✖ Cancel listing for '}
+              {ENTITY_TYPE_NAMES[registryParams.entityType]}
+            </h2>
+            <p className="card-sub">
+              {registryParams.action === 'save-entity' && (
+                <>Anchors a SHA-256 of this {ENTITY_TYPE_NAMES[registryParams.entityType].toLowerCase()} under
+                your wallet in the chartrunner_registry program. Royalty {registryParams.royaltyBps ?? 0}/10000
+                bps. ~0.0011 SOL rent.</>
+              )}
+              {registryParams.action === 'list-entity' && (
+                <>Lists this entity for sale on the in-game P2P Marketplace. Other players sign a buy
+                tx; SOL routes to your wallet (minus 5% protocol fee).</>
+              )}
+              {registryParams.action === 'buy-entity' && (
+                <>Pays the seller for a license to this entity. You'll get a License PDA proving the
+                purchase. Original creator keeps royalty rights for resales.</>
+              )}
+              {registryParams.action === 'cancel-listing' && (
+                <>Removes this listing from the marketplace. Listing rent (~0.001 SOL) refunds to you.</>
+              )}
+            </p>
+            <dl className="meta">
+              <div>
+                <dt>Entity</dt>
+                <dd>
+                  <code className="sig">{registryParams.name}</code>{' '}
+                  <span style={{ opacity: 0.6, fontSize: 11 }}>
+                    ({ENTITY_TYPE_NAMES[registryParams.entityType]})
+                  </span>
+                </dd>
+              </div>
+              {registryParams.hashHex && (
+                <div>
+                  <dt>Content hash</dt>
+                  <dd>
+                    <code className="sig" title={registryParams.hashHex}>
+                      {registryParams.hashHex.slice(0, 8)}…{registryParams.hashHex.slice(-8)}
+                    </code>
+                  </dd>
+                </div>
+              )}
+              {registryParams.priceLamports && (
+                <div>
+                  <dt>Price</dt>
+                  <dd>{registryLamportsToSol(registryParams.priceLamports).toFixed(4)} SOL</dd>
+                </div>
+              )}
+              {registryParams.seller && (
+                <div>
+                  <dt>Seller</dt>
+                  <dd>
+                    <code className="sig" title={registryParams.seller}>
+                      {truncatePubkey(registryParams.seller)}
+                    </code>
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>Program</dt>
+                <dd><code className="sig">chartrunner_registry</code></dd>
+              </div>
+            </dl>
+            <div className="memo-meta" style={{ marginTop: 12 }}>
+              <span style={{ fontSize: 11, opacity: 0.7 }}>devnet</span>
+              <button
+                className="btn-primary"
+                onClick={sendRegistryTx}
+                disabled={!connected || sending}
+              >
+                {sending ? 'Signing… (waiting for confirmation)' : 'Sign + send'}
+              </button>
+            </div>
+
+            {error && (
+              <div className="banner banner-err">
+                <strong>Failed:</strong> {error}
+                <button className="banner-x" onClick={() => setError(null)} aria-label="Dismiss">×</button>
+              </div>
+            )}
+
+            {lastSig && (
+              <div className="banner banner-ok">
+                <div>
+                  <strong>Confirmed.</strong> Returning to game…{' '}
+                  <code className="sig">{truncatePubkey(lastSig)}</code>
+                </div>
+                <a className="btn-link" href={txUrl(lastSig, CLUSTER)} target="_blank" rel="noreferrer">
+                  View on Explorer ↗
+                </a>
+              </div>
+            )}
+          </section>
+        ) : mode === 'save-map' && saveMapParams ? (
           <section className="card">
             <h2 className="card-h">Save map on-chain</h2>
             <p className="card-sub">
