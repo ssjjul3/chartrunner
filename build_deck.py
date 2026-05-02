@@ -173,7 +173,7 @@ add_text(s, Inches(0.9), Inches(3.4), Inches(11), Inches(0.7),
 
 # subtag
 add_text(s, Inches(0.9), Inches(4.15), Inches(11), Inches(0.5),
-         "Gamified trading SDK · 2 Anchor programs · async multiplayer · single-file MVP",
+         "Gamified trading SDK · 2 Anchor programs · async multiplayer · single-file playable game",
          size=16, color=DIM, font='Calibri')
 
 # bottom strip
@@ -308,9 +308,9 @@ add_text(s, Inches(0.95), Inches(3.9), Inches(5.2), Inches(0.4),
 add_rect(s, Inches(0.95), Inches(4.45), Inches(5.2), Inches(0.04), fill=DIVIDER)
 
 stats = [
-    ("~14,700", "lines of vanilla JS"),
-    ("0", "external dependencies"),
-    ("0", "build steps"),
+    ("~25,000", "lines of vanilla JS in the game"),
+    ("0", "deps in the game runtime"),
+    ("2", "Anchor programs ready"),
     ("230+", "atomic version commits"),
 ]
 sx = 0.95
@@ -561,12 +561,12 @@ set_bg(s)
 add_text(s, Inches(0.7), Inches(0.5), Inches(8), Inches(0.6),
          "Roadmap", size=14, color=DIM, bold=True, font='Calibri')
 add_text(s, Inches(0.7), Inches(0.95), Inches(12), Inches(1.5),
-         "From single-file demo to live Solana trades.",
+         "From single-file playable game to live Solana trades.",
          size=32, color=WHITE, bold=True, font='Arial Black')
 
 # Three horizontal phases
 phases = [
-    ("Phase 0", "SHIPPED", "Playable single-file MVP\n· 2 Anchor programs ready\n· Wallet-gated entry\n· On-chain marketplace UI\n· Async multiplayer leaderboard", GREEN),
+    ("Phase 0", "SHIPPED", "Single-file playable game\n· 2 Anchor programs ready\n· Wallet-gated entry\n· On-chain marketplace UI\n· Async multiplayer leaderboard", GREEN),
     ("Phase 1", "ARCHITECTURE DONE", "ChartHost adapter layer\n· Drop UI on Dexscreener\n· Drop on TradingView\n· Drop on Birdeye\n· npm @chartrunner/sdk@0.1", GOLD),
     ("Phase 2", "DEPLOY-READY", "Programs ship in anchor/\n· Solana Playground deploy\n· Live mainnet trades\n· Marketplace settlement\n· Multi-venue adapters", PURPLE),
 ]
