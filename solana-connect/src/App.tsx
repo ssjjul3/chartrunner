@@ -14,6 +14,7 @@ import {
   buildListEntityIx,
   buildBuyEntityIx,
   buildCancelListingIx,
+  buildRecordRunIx,
   fromHex as fromHexRegistry,
   lamportsToSol as registryLamportsToSol,
 } from './lib/cr-registry-program';
@@ -28,7 +29,12 @@ const CLUSTER = 'devnet' as const;
 //                        in ?action= determines which ix gets built:
 //                          save-entity / list-entity / buy-entity / cancel-listing
 type Mode = 'memo' | 'connect' | 'save-map' | 'registry';
-type RegistryAction = 'save-entity' | 'list-entity' | 'buy-entity' | 'cancel-listing';
+type RegistryAction =
+  | 'save-entity'
+  | 'list-entity'
+  | 'buy-entity'
+  | 'cancel-listing'
+  | 'record-run';
 
 interface SaveMapParams {
   name: string;
@@ -47,6 +53,14 @@ interface RegistryParams {
   priceLamports?: bigint;
   // buy-entity only:
   seller?:     string;        // base58 pubkey of the seller
+  // record-run only:
+  runAsset?:        string;   // e.g. "BTCUSDT"
+  runTimeframe?:    string;   // e.g. "15m"
+  runScore?:        bigint;
+  runSharpeX100?:   number;
+  runDurationSecs?: number;
+  runMapHash?:      string;   // 64-char hex (32 bytes)
+  runNonce?:        bigint;   // unique per run for PDA derivation
   // all:
   returnTo:    string;
 }
@@ -104,14 +118,45 @@ function getRegistryParams(): RegistryParams | null {
   try {
     const url = new URL(window.location.href);
     const action = url.searchParams.get('action');
-    if (action !== 'save-entity' && action !== 'list-entity' &&
-        action !== 'buy-entity'  && action !== 'cancel-listing') return null;
+    if (action !== 'save-entity'    && action !== 'list-entity' &&
+        action !== 'buy-entity'     && action !== 'cancel-listing' &&
+        action !== 'record-run')    return null;
+
+    const ret = url.searchParams.get('return') || '/play/';
+    if (!ret.startsWith('/'))       return null;
+
+    // record-run carries its own field set (no entity name + type semantics);
+    // we still tag it with entityType=Map for the union-type stub.
+    if (action === 'record-run') {
+      const runAsset     = url.searchParams.get('runAsset');
+      const runTimeframe = url.searchParams.get('runTimeframe');
+      const runScoreRaw  = url.searchParams.get('runScore');
+      const runSharpeRaw = url.searchParams.get('runSharpeX100');
+      const runDurRaw    = url.searchParams.get('runDurationSecs');
+      const runMapHash   = url.searchParams.get('runMapHash');
+      const runNonceRaw  = url.searchParams.get('runNonce');
+      if (!runAsset || !runTimeframe || !runScoreRaw || !runMapHash || !runNonceRaw) return null;
+      if (!/^[0-9a-fA-F]{64}$/.test(runMapHash)) return null;
+      try {
+        return {
+          action: 'record-run',
+          entityType: EntityType.Map,
+          name: runAsset + ' · ' + runTimeframe,
+          runAsset,
+          runTimeframe,
+          runScore:        BigInt(runScoreRaw),
+          runSharpeX100:   parseInt(runSharpeRaw || '0', 10),
+          runDurationSecs: parseInt(runDurRaw    || '0', 10),
+          runMapHash,
+          runNonce:        BigInt(runNonceRaw),
+          returnTo: ret,
+        };
+      } catch (_) { return null; }
+    }
 
     const typeRaw = url.searchParams.get('type');
     const name    = url.searchParams.get('name');
-    const ret     = url.searchParams.get('return') || '/play/';
     if (typeRaw == null || name == null) return null;
-    if (!ret.startsWith('/'))            return null;
 
     const entityType = parseInt(typeRaw, 10);
     if (!Number.isFinite(entityType) || entityType < 0 || entityType > 8) return null;
@@ -384,6 +429,24 @@ export default function App() {
           });
           break;
         }
+        case 'record-run': {
+          if (!registryParams.runAsset || !registryParams.runTimeframe ||
+              registryParams.runScore == null || !registryParams.runMapHash ||
+              registryParams.runNonce == null) {
+            throw new Error('Missing run-record fields');
+          }
+          ix = buildRecordRunIx({
+            player:        publicKey,
+            nonce:         registryParams.runNonce,
+            asset:         registryParams.runAsset,
+            timeframe:     registryParams.runTimeframe,
+            score:         registryParams.runScore,
+            sharpeX100:    registryParams.runSharpeX100   ?? 0,
+            durationSecs:  registryParams.runDurationSecs ?? 0,
+            mapHash:       fromHexRegistry(registryParams.runMapHash),
+          });
+          break;
+        }
       }
 
       const tx = new Transaction().add(ix);
@@ -532,7 +595,8 @@ export default function App() {
               {registryParams.action === 'list-entity'    && '📤 List '}
               {registryParams.action === 'buy-entity'     && '💰 Buy '}
               {registryParams.action === 'cancel-listing' && '✖ Cancel listing for '}
-              {ENTITY_TYPE_NAMES[registryParams.entityType]}
+              {registryParams.action === 'record-run'     && '🏆 Record run on-chain'}
+              {registryParams.action !== 'record-run' && ENTITY_TYPE_NAMES[registryParams.entityType]}
             </h2>
             <p className="card-sub">
               {registryParams.action === 'save-entity' && (
@@ -551,8 +615,33 @@ export default function App() {
               {registryParams.action === 'cancel-listing' && (
                 <>Removes this listing from the marketplace. Listing rent (~0.001 SOL) refunds to you.</>
               )}
+              {registryParams.action === 'record-run' && (
+                <>Anchors this completed run on-chain so other players see it as a ghost overlay
+                on their own runs of the same asset + timeframe. Stores score, Sharpe, duration,
+                and map hash. ~0.0011 SOL rent.</>
+              )}
             </p>
             <dl className="meta">
+              {registryParams.action === 'record-run' ? (
+                <>
+                  <div>
+                    <dt>Asset · TF</dt>
+                    <dd><code className="sig">{registryParams.runAsset} · {registryParams.runTimeframe}</code></dd>
+                  </div>
+                  <div>
+                    <dt>Score</dt>
+                    <dd><code className="sig">{registryParams.runScore?.toString()}</code></dd>
+                  </div>
+                  <div>
+                    <dt>Sharpe</dt>
+                    <dd>{((registryParams.runSharpeX100 ?? 0) / 100).toFixed(2)}</dd>
+                  </div>
+                  <div>
+                    <dt>Duration</dt>
+                    <dd>{registryParams.runDurationSecs}s</dd>
+                  </div>
+                </>
+              ) : (
               <div>
                 <dt>Entity</dt>
                 <dd>
@@ -562,6 +651,7 @@ export default function App() {
                   </span>
                 </dd>
               </div>
+              )}
               {registryParams.hashHex && (
                 <div>
                   <dt>Content hash</dt>

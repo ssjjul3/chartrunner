@@ -6376,6 +6376,10 @@ plot(out, color=color.orange, linewidth=2)</textarea>
       </div>
       <div class="row" style="justify-content:center;margin-top:10px">
         <button class="btn" id="retry">Run again</button>
+        <!-- v0.9.7 — Record this run on-chain. Anchors (asset, tf, score,
+             sharpe, duration, mapHash) to the chartrunner_registry program;
+             other players see it as a top-10 ghost on their own chart. -->
+        <button class="btn ghost" id="recordOnChain" title="Anchor this run on Solana devnet so it appears on other players' leaderboards">🏆 Record on-chain</button>
         <button class="btn ghost" id="backMenu">Back to pitch</button>
       </div>
     </div>
@@ -6713,6 +6717,43 @@ window.crRegistry = (function(){
     window.location.href = url;
     return true;
   }
+  // v0.9.7 — Record a completed run on-chain. Fires the record_run ix in
+  // the registry program. Other players' games will pick this up via the
+  // crGhost RPC poll and render it as a labelled marker overlay on their
+  // own chart of the same asset+timeframe.
+  //
+  // Args: { asset, timeframe, score, sharpeX100, durationSecs, mapHashHex }
+  // Nonce is auto-generated from Date.now() to keep the PDA unique per run.
+  async function recordRun(opts){
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
+      var ok = window.confirm('Recording a run on-chain requires a connected wallet. Connect now?');
+      if (ok && crWallet) crWallet.connect();
+      return false;
+    }
+    var asset      = String(opts.asset || 'BTCUSDT').toUpperCase().slice(0, 16);
+    var timeframe  = String(opts.timeframe || '15m').slice(0, 8);
+    var score      = String(BigInt(Math.max(0, opts.score|0)));
+    var sharpeX100 = (opts.sharpeX100|0);
+    var durSecs    = (opts.durationSecs|0);
+    var mapHashHex = opts.mapHashHex;
+    if (!mapHashHex){
+      // If caller didn't supply one, hash the empty object (placeholder for
+      // freestyle runs not tied to a saved map).
+      mapHashHex = await sha256Hex('{}');
+    }
+    var nonce = String(BigInt(Date.now())) ;
+    var url = '../solana-connect/?action=record-run'
+            + '&runAsset='        + encodeURIComponent(asset)
+            + '&runTimeframe='    + encodeURIComponent(timeframe)
+            + '&runScore='        + encodeURIComponent(score)
+            + '&runSharpeX100='   + encodeURIComponent(sharpeX100)
+            + '&runDurationSecs=' + encodeURIComponent(durSecs)
+            + '&runMapHash='      + encodeURIComponent(mapHashHex)
+            + '&runNonce='        + encodeURIComponent(nonce)
+            + '&return='          + encodeURIComponent('/play/');
+    window.location.href = url;
+    return true;
+  }
 
   // ── URL handler — process redirect-back from /solana-connect/ ──────────
   try {
@@ -6762,6 +6803,308 @@ window.crRegistry = (function(){
     listOnMarket:  listOnMarket,
     buyFromMarket: buyFromMarket,
     cancelListing: cancelListing,
+    recordRun:     recordRun,
+  };
+})();
+
+/* =========================================================================
+ * crGhost — async multiplayer ghost-runs from on-chain leaderboard.
+ * v0.9.7 — Phase 1 multiplayer (no server, no WebSocket).
+ *
+ * Architecture:
+ *   1. Each completed run is anchored via crRegistry.recordRun → on-chain
+ *      RunRecord PDA (player, asset, timeframe, score, sharpe, mapHash).
+ *   2. On chart load (and every 60s after), this IIFE issues a JSON-RPC
+ *      call to Solana devnet's getProgramAccounts for the registry program
+ *      ID with a memcmp filter for the RunRecord account discriminator.
+ *   3. Returned base64 account blobs get parsed (manual Borsh in vanilla JS),
+ *      filtered to current asset+timeframe, sorted by score, top 10 cached.
+ *   4. The main canvas render loop calls crGhost.render(ctx, camera) once
+ *      per frame to overlay rank-colored markers + labels at each ghost's
+ *      "final candle" position (time-mapped to current chart x-coord).
+ *
+ * Why no full path replay:
+ *   - On-chain storage cost makes per-tick path samples infeasible
+ *     (~5 KB per sample × N ticks × per-run = $$$).
+ *   - Off-chain path storage (IPFS, Arweave) would require a storage
+ *     adapter that's out of session-scope.
+ *   - Endpoint-marker leaderboard delivers the "see other players' results
+ *     on YOUR chart" UX value at 1/1000th the cost.
+ *
+ * Phase 2: when storage adapter ships, RunRecord can carry a path_uri
+ * pointing at a CID; this IIFE fetches and renders the trajectory.
+ * =======================================================================*/
+window.crGhost = (function(){
+  // Hardcoded registry program ID. Same constant as
+  // solana-connect/src/lib/cr-registry-program.ts → CR_REGISTRY_PROGRAM_ID.
+  // Update this after Solana Playground deploys the real program.
+  var PROGRAM_ID  = 'ChRegSdLcj4N4ek3uW3RZE3pWYuKSTrgVLWeKQrU3yVz';
+  var RPC_URL     = 'https://api.devnet.solana.com';
+
+  // sha256("account:RunRecord")[0..8] — Anchor account-discriminator for
+  // the RunRecord struct. Matches what `#[account]` on RunRecord generates.
+  // Computed offline; same recipe as the ix discriminators.
+  var RUN_RECORD_DISCRIMINATOR_BYTES = null;  // lazy-computed on first use
+  var RUN_RECORD_DISCRIMINATOR_B58   = null;
+
+  // Cached top runs per (asset, timeframe) key. Refreshed every POLL_MS.
+  var POLL_MS = 60_000;
+  var _cache = {};   // key → [{ player, score, sharpe, duration, mapHash, ts, candleIdx }]
+  var _lastFetch = 0;
+  var _inflight = false;
+  var _enabled = true;
+
+  // ── Base58 encode (for memcmp filter; only path that needs it) ─────────
+  // Solana RPC's memcmp filter takes base58. We need to encode the 8-byte
+  // discriminator. Bitcoin alphabet, no I/O/0/l for ambiguity-free transport.
+  var B58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  function _b58encode(bytes){
+    var digits = [0];
+    for (var i = 0; i < bytes.length; i++) {
+      var carry = bytes[i];
+      for (var j = 0; j < digits.length; j++) {
+        carry += digits[j] << 8;
+        digits[j] = carry % 58;
+        carry = (carry / 58) | 0;
+      }
+      while (carry) { digits.push(carry % 58); carry = (carry / 58) | 0; }
+    }
+    var s = '';
+    for (var k = 0; k < bytes.length && bytes[k] === 0; k++) s += '1';
+    for (var m = digits.length - 1; m >= 0; m--) s += B58_ALPHABET[digits[m]];
+    return s;
+  }
+  function _b58decode(s){
+    var out = [0];
+    for (var i = 0; i < s.length; i++) {
+      var c = B58_ALPHABET.indexOf(s[i]);
+      if (c < 0) throw new Error('invalid base58');
+      var carry = c;
+      for (var j = 0; j < out.length; j++) {
+        carry += out[j] * 58;
+        out[j] = carry & 0xff;
+        carry >>= 8;
+      }
+      while (carry) { out.push(carry & 0xff); carry >>= 8; }
+    }
+    for (var k = 0; k < s.length && s[k] === '1'; k++) out.push(0);
+    return new Uint8Array(out.reverse());
+  }
+
+  // ── Discriminator computation ───────────────────────────────────────────
+  async function _ensureDiscriminator(){
+    if (RUN_RECORD_DISCRIMINATOR_B58) return;
+    var buf = new TextEncoder().encode('account:RunRecord');
+    var d = await crypto.subtle.digest('SHA-256', buf);
+    var bytes = new Uint8Array(d).slice(0, 8);
+    RUN_RECORD_DISCRIMINATOR_BYTES = bytes;
+    RUN_RECORD_DISCRIMINATOR_B58   = _b58encode(bytes);
+  }
+
+  // ── Base64 decode (RPC returns account data as base64) ──────────────────
+  function _b64decode(s){
+    var bin = atob(s);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  // ── Borsh decode for RunRecord ──────────────────────────────────────────
+  // Layout:
+  //   [0..8]   discriminator
+  //   [8..40]  player Pubkey
+  //   [40..48] nonce u64 LE
+  //   [48..64] asset [u8;16]
+  //   [64..72] timeframe [u8;8]
+  //   [72..80] score u64 LE
+  //   [80..84] sharpe_x100 i32 LE
+  //   [84..88] duration_secs u32 LE
+  //   [88..120] map_hash [u8;32]
+  //   [120..128] recorded_at i64 LE
+  //   [128] bump u8
+  function _decodeRunRecord(bytes){
+    if (bytes.length < 129) return null;
+    var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    var player   = _b58encode(bytes.slice(8, 40));
+    var nonce    = dv.getBigUint64(40, true);
+    var assetRaw = bytes.slice(48, 64);
+    var tfRaw    = bytes.slice(64, 72);
+    var score    = dv.getBigUint64(72, true);
+    var sharpe   = dv.getInt32(80, true);
+    var duration = dv.getUint32(84, true);
+    var mapHash  = bytes.slice(88, 120);
+    var ts       = dv.getBigInt64(120, true);
+    // Trim trailing nulls in fixed-byte strings.
+    function _trimAscii(b){
+      var end = b.length;
+      while (end > 0 && b[end - 1] === 0) end--;
+      return new TextDecoder().decode(b.slice(0, end));
+    }
+    return {
+      player:    player,
+      nonce:     nonce.toString(),
+      asset:     _trimAscii(assetRaw),
+      timeframe: _trimAscii(tfRaw),
+      score:     Number(score),     // safe; scores are well under 2^53
+      sharpe:    sharpe / 100,
+      duration:  duration,
+      mapHash:   mapHash,
+      ts:        Number(ts),
+    };
+  }
+
+  // ── RPC: getProgramAccounts ─────────────────────────────────────────────
+  async function _fetchAllRuns(){
+    if (_inflight) return;
+    _inflight = true;
+    try {
+      await _ensureDiscriminator();
+      var body = {
+        jsonrpc: '2.0', id: 1, method: 'getProgramAccounts',
+        params: [
+          PROGRAM_ID,
+          {
+            encoding: 'base64',
+            commitment: 'confirmed',
+            // Filter to RunRecord accounts only via discriminator memcmp.
+            filters: [
+              { memcmp: { offset: 0, bytes: RUN_RECORD_DISCRIMINATOR_B58 } },
+              { dataSize: 129 },
+            ],
+          },
+        ],
+      };
+      var r = await fetch(RPC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      var json = await r.json();
+      if (!json || !json.result) throw new Error('empty RPC response');
+      // Decode each account, group by (asset, timeframe), keep top 10 by score.
+      var byKey = {};
+      json.result.forEach(function(item){
+        try {
+          var b64 = item.account && item.account.data && item.account.data[0];
+          if (!b64) return;
+          var bytes = _b64decode(b64);
+          var rec = _decodeRunRecord(bytes);
+          if (!rec) return;
+          var k = rec.asset + '|' + rec.timeframe;
+          if (!byKey[k]) byKey[k] = [];
+          byKey[k].push(rec);
+        } catch(_){}
+      });
+      Object.keys(byKey).forEach(function(k){
+        byKey[k].sort(function(a, b){ return b.score - a.score; });
+        byKey[k] = byKey[k].slice(0, 10);
+      });
+      _cache = byKey;
+      _lastFetch = Date.now();
+      try { window.dispatchEvent(new CustomEvent('crGhost:updated', { detail: { keys: Object.keys(byKey) } })); } catch(_){}
+    } catch(err){
+      // RPC blip — keep the previous cache, don't error.
+      if (typeof console !== 'undefined') console.warn('crGhost fetch:', err.message || err);
+    } finally {
+      _inflight = false;
+    }
+  }
+
+  function getTopRuns(asset, timeframe){
+    if (!asset || !timeframe) return [];
+    var k = String(asset).toUpperCase() + '|' + String(timeframe);
+    return _cache[k] || [];
+  }
+
+  // ── Render: paint top-10 ghost markers as a column in the right gutter ──
+  // Strategy: don't try to project ghosts onto the live chart timeline (their
+  // recorded_at and the player's current candle window may not overlap).
+  // Instead render a fixed leaderboard panel docked to the right edge — same
+  // visual real-estate as the existing tracker chrome. Player still feels the
+  // "I'm racing other people" signal without ambiguous chart positioning.
+  function render(ctx, viewportW, viewportH){
+    if (!_enabled) return;
+    if (typeof currentAsset === 'undefined' || typeof timeframe === 'undefined') return;
+    // Map game's currentAsset (e.g. 'btc') to ticker form ('BTCUSDT').
+    var sym = String(currentAsset).toUpperCase() + 'USDT';
+    var runs = getTopRuns(sym, timeframe);
+    if (!runs.length) return;
+
+    // Panel: 220px wide, docked to the right at chart-vertical-middle.
+    var pad = 12, w = 220, lineH = 22;
+    var h = pad * 2 + 18 + runs.length * lineH;
+    var x = viewportW - w - pad;
+    var y = Math.max(60, Math.floor((viewportH - h) / 2));
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(10, 14, 28, 0.78)';
+    ctx.strokeStyle = 'rgba(155, 140, 255, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(x, y, w, h); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#9b8cff';
+    ctx.font = '600 11px ui-monospace,SFMono-Regular,Menlo,monospace';
+    ctx.fillText('🏆 ON-CHAIN LEADERBOARD', x + pad, y + pad + 10);
+    ctx.fillStyle = '#5a5a72';
+    ctx.font = '10px ui-monospace';
+    ctx.fillText(sym + ' · ' + timeframe, x + pad + 130, y + pad + 10);
+
+    var medals = ['🥇','🥈','🥉'];
+    runs.forEach(function(r, i){
+      var ry = y + pad + 18 + i * lineH + 14;
+      // Rank emoji + truncated wallet
+      ctx.fillStyle = i < 3 ? '#ffd166' : '#cfd2dd';
+      ctx.font = '11px ui-monospace';
+      var rank = i < 3 ? medals[i] : ('#' + (i + 1));
+      var addr = r.player.slice(0, 4) + '…' + r.player.slice(-4);
+      ctx.fillText(rank + '  ' + addr, x + pad, ry);
+      // Score (right-aligned)
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#3ddc97';
+      ctx.fillText(r.score.toLocaleString(), x + w - pad, ry);
+      ctx.textAlign = 'left';
+      // Sharpe sub-line (smaller, dim)
+      ctx.font = '9px ui-monospace';
+      ctx.fillStyle = '#5a5a72';
+      ctx.fillText('Sharpe ' + r.sharpe.toFixed(2) + ' · ' + r.duration + 's', x + pad + 14, ry + 9);
+    });
+
+    // "Live" pulse dot in corner — shows we're polling on-chain.
+    var pulse = (Math.sin(Date.now() / 600) * 0.5 + 0.5);
+    ctx.fillStyle = 'rgba(61, 220, 151, ' + (0.4 + pulse * 0.6) + ')';
+    ctx.beginPath(); ctx.arc(x + w - 8, y + 8, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // ── Boot: kick off the first fetch + schedule periodic refresh ─────────
+  function start(){
+    _enabled = true;
+    _fetchAllRuns();
+    setInterval(function(){
+      // Skip refresh if a fetch is already running or last one was recent.
+      if (_inflight || Date.now() - _lastFetch < POLL_MS) return;
+      _fetchAllRuns();
+    }, POLL_MS);
+  }
+  function stop(){ _enabled = false; }
+  function refresh(){ _fetchAllRuns(); }
+  function isEnabled(){ return _enabled; }
+
+  // Auto-start once the DOM is ready.
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(start, 1500);
+  } else {
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(start, 1500); });
+  }
+
+  return {
+    getTopRuns: getTopRuns,
+    refresh:    refresh,
+    render:     render,
+    start:      start,
+    stop:       stop,
+    isEnabled:  isEnabled,
   };
 })();
 
@@ -11216,6 +11559,12 @@ function frame(ts){
   // turn" behavior of classic Snake.
   if(game.running && !frozen && typeof sampleSnakeTrail === 'function') sampleSnakeTrail();
   render(dtReal);
+  // v0.9.7 — Async multiplayer overlay. crGhost paints a docked top-10
+  // leaderboard panel for the current asset+timeframe, fed by polling the
+  // chartrunner_registry program's RunRecord PDAs every 60s. Skipped when
+  // the panel is empty (no on-chain runs yet for this market) so it doesn't
+  // clutter the chart for new players.
+  try { if(typeof crGhost !== 'undefined') crGhost.render(ctx, W, H); } catch(_){}
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -19218,6 +19567,63 @@ function osRecordRunEnd(){
 }
 document.getElementById('retry').onclick = ()=>{ restart(); };
 document.getElementById('backMenu').onclick = ()=>{ hideEnd(); showSplash(); };
+// v0.9.7 — Record-on-chain handler. Reads (asset, tf, final score, sharpe,
+// duration) off the live game state, hashes the loaded map (or empty obj for
+// freestyle runs), then crRegistry.recordRun bounces through /solana-connect/
+// for the wallet popup. On return, the run shows up on every player's
+// leaderboard for this asset+timeframe via crGhost's RPC poll.
+{
+  const recBtn = document.getElementById('recordOnChain');
+  if (recBtn) {
+    recBtn.onclick = async () => {
+      try {
+        if (typeof crRegistry === 'undefined' || typeof crWallet === 'undefined') {
+          if (typeof toast === 'function') toast('Wallet integration unavailable');
+          return;
+        }
+        const asset      = (typeof currentAsset !== 'undefined') ?
+                           (String(currentAsset).toUpperCase() + 'USDT') : 'BTCUSDT';
+        const tf         = (typeof timeframe !== 'undefined') ? String(timeframe) : '15m';
+        const score      = (typeof game !== 'undefined') ? (game.score | 0) : 0;
+        // Sharpe pulled from the existing P&L tracker if available; otherwise 0.
+        const sharpe     = (typeof game !== 'undefined' && typeof game.sharpe === 'number')
+                           ? Math.round(game.sharpe * 100) : 0;
+        const duration   = (typeof game !== 'undefined' && game.runStartedAt)
+                           ? Math.max(1, Math.floor((Date.now() - game.runStartedAt) / 1000))
+                           : 60;
+        // If a map is currently loaded, hash that; otherwise hash an empty
+        // freestyle marker. The map hash links the run to its strategy
+        // context for downstream verification.
+        let mapHashHex = null;
+        if (typeof game !== 'undefined' && game.currentMapId &&
+            typeof crMaps !== 'undefined') {
+          const list = (() => { try { return JSON.parse(localStorage.getItem('cr_maps_v1') || '[]'); } catch (_) { return []; } })();
+          const m = list.find(x => x && x.id === game.currentMapId);
+          if (m) {
+            mapHashHex = await crRegistry.sha256Hex(crRegistry.canonicalJson(m));
+          }
+        }
+        if (!mapHashHex) mapHashHex = await crRegistry.sha256Hex('{"freestyle":true}');
+        const ok = window.confirm(
+          'Record this run on Solana devnet?\n\n' +
+          asset + ' · ' + tf + ' · score ' + score +
+          ' · Sharpe ' + (sharpe / 100).toFixed(2) +
+          ' · ' + duration + 's\n\n' +
+          'Other players will see this run on their on-chain leaderboard for ' + asset + ' ' + tf + '. ~0.0011 SOL rent.'
+        );
+        if (!ok) return;
+        crRegistry.recordRun({
+          asset, timeframe: tf,
+          score, sharpeX100: sharpe,
+          durationSecs: duration,
+          mapHashHex,
+        });
+      } catch (err) {
+        if (typeof toast === 'function') toast('Record failed: ' + (err.message || err));
+      }
+    };
+  }
+}
 // v0.8k#24cc — sdkBtn was deleted from the menudrawer; the null-deref here
 // was throwing at script-eval time and freezing the loading screen.
 { const _b = document.getElementById('sdkBtn'); if(_b) _b.onclick = toggleDrawer; }
