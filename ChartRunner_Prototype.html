@@ -17771,33 +17771,62 @@ function pickMode(mode){
   // Expose so probe abilities can flip scratch flags.
   if(typeof window !== 'undefined') window.crCampaignCoach = crCampaignCoach;
 
-  // v0.9.13 — Campaign mode chapters. Each launches a Time-is-Money run
-  // with the chapter ID stamped on game.campaignChapter, then starts the
-  // coach (v0.9.15) which drives the scripted lesson on top of the run.
+  // v0.9.13 — Campaign mode chapters. v0.9.18 — direct-launch with per-chapter
+  // preset (asset / timeframe / indicators) so the player skips the Configure
+  // Run window entirely and lands directly on the chart.
   const CAMPAIGN_CHAPTERS = {
-    1: { goal:'Place 1 bracket. Hit either the TP or the SL — both count.', tip:'Hotkey 2 = Bracket. Tap once to arm, click chart to drop.' },
-    2: { goal:'Toggle the Reference Levels indicator. Touch any pdH / pdL / dOpen line.', tip:'Menu drawer → Indicators → 🎯 Ref Levels.' },
-    3: { goal:'Get the Confluence badge to ≥6 (TRADEABLE).', tip:'Top-right badge. Click to expand. Stack components.' },
-    4: { goal:'Wait for a CCV match (★ banner) and trade with it.', tip:'Hotkey: ★ CCV Check probe shows what is firing now.' },
-    5: { goal:'See SFP, Failed Auction, BARR, OR H&S fire and trade with it.', tip:'Use the ⇄ ↺ ⚡ 👤 probe abilities.' },
-    6: { goal:'Build a strategy in Workbench → Quick Builder → Save.', tip:'Workbench app → Strategies tab. All sliders default-on.' },
-    7: { goal:'Spawn a real-data Terminal widget AND equip 1 bot.', tip:'Terminal → + → Confluence Signals. Workbench → Bots.' },
-    8: { goal:'Hit ≥3 closed-positive brackets in one run. No assistance.', tip:'Final exam. Pick a real Binance asset and a sane timeframe.' },
+    1: { goal:'Place 1 bracket. Hit either the TP or the SL — both count.',         tip:'Hotkey 2 = Bracket. Tap once to arm, click chart to drop.', asset:'btc', tf:'15m', indicators:[] },
+    2: { goal:'Toggle the Reference Levels indicator. Touch any pdH / pdL / dOpen line.', tip:'Menu drawer → Indicators → 🎯 Ref Levels.', asset:'btc', tf:'1h', indicators:['reflevels'] },
+    3: { goal:'Get the Confluence badge to ≥6 (TRADEABLE).',                         tip:'Top-right badge. Click to expand. Stack components.',          asset:'btc', tf:'1h', indicators:['reflevels','rsi'] },
+    4: { goal:'Wait for a CCV match (★ banner) and trade with it.',                  tip:'Hotkey: ★ CCV Check probe shows what is firing now.',         asset:'btc', tf:'15m', indicators:['reflevels','vrvp'] },
+    5: { goal:'See SFP, Failed Auction, BARR, OR H&S fire and trade with it.',       tip:'Use the ⇄ ↺ ⚡ 👤 probe abilities.',                            asset:'btc', tf:'1h', indicators:['reflevels','rsi'] },
+    6: { goal:'Build a strategy in Workbench → Quick Builder → Save.',               tip:'Workbench app → Strategies tab. All sliders default-on.',     asset:'btc', tf:'1h', indicators:['reflevels'] },
+    7: { goal:'Spawn a real-data Terminal widget AND equip 1 bot.',                  tip:'Terminal → + → Confluence Signals. Workbench → Bots.',         asset:'btc', tf:'1h', indicators:['reflevels','rsi'] },
+    8: { goal:'Hit ≥3 closed-positive brackets in one run. No assistance.',          tip:'Final exam — everything you have learned.',                    asset:'btc', tf:'1h', indicators:['reflevels','rsi','vrvp'] },
   };
+  function _launchCampaignChapter(num){
+    const ch = CAMPAIGN_CHAPTERS[num];
+    if(!ch) return;
+    try { game.campaignChapter = num; } catch(_){}
+    try { game.mode = 'timeismoney'; game.pendingMode = 'timeismoney'; } catch(_){}
+    // Apply preset: asset, timeframe, perspective.
+    try { if(typeof currentAsset !== 'undefined' && ch.asset) currentAsset = ch.asset; } catch(_){}
+    try { if(typeof timeframe !== 'undefined' && ch.tf) timeframe = ch.tf; } catch(_){}
+    try { if(typeof perspective !== 'undefined') perspective = 'auto'; } catch(_){}
+    // Apply indicator preset (clear, then add the chapter's chosen ids).
+    try {
+      if(typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active){
+        INDICATOR_STATE.active.clear();
+        for(const id of (ch.indicators || [])) INDICATOR_STATE.active.add(id);
+        try { if(typeof _saveIndicators === 'function') _saveIndicators(); } catch(_){}
+      }
+    } catch(_){}
+    // No strategy — clean slate for lessons.
+    try { if(typeof game !== 'undefined') game.strategy = 'none'; } catch(_){}
+    // Stamp last-played snapshot so the Game menu can re-open this chart.
+    try {
+      const snap = {
+        mode: 'timeismoney', campaignChapter: num,
+        asset: ch.asset, timeframe: ch.tf,
+        strategy: 'none',
+        indicators: (ch.indicators || []).slice(),
+        indParams: {}, perspective: 'auto', t: Date.now(),
+      };
+      localStorage.setItem('cr_last_played_v1', JSON.stringify(snap));
+    } catch(_){}
+    // Close ANY open OS windows so the chart is unobstructed.
+    try { document.querySelectorAll('.os-window.on, .os-window.show').forEach(w => { w.classList.remove('on'); w.classList.remove('show'); }); } catch(_){}
+    // Direct restart — bypasses the Configure Run window entirely.
+    try { if(typeof restart === 'function') restart(); } catch(_){}
+    // Banner + coach after the chart has loaded.
+    setTimeout(() => {
+      try { showBanner('📘 Campaign Ch.' + num, ch.goal); } catch(_){}
+      try { if(window.crCampaignCoach && typeof window.crCampaignCoach.start === 'function') window.crCampaignCoach.start(num); } catch(_){}
+    }, 700);
+  }
   for(let i = 1; i <= 8; i++){
     const id = 'modeCampaign' + i;
-    const ch = CAMPAIGN_CHAPTERS[i];
-    bind(id, () => {
-      try { game.campaignChapter = i; } catch(_){}
-      try { showBanner('📘 Campaign Ch.' + i, ch.goal); } catch(_){}
-      // Launch as a Time-is-Money run so the player has a real chart + no
-      // hostiles. The coach drives the lesson sequence on top of it.
-      pickMode('timeismoney');
-      // Defer coach start until the run window dismisses + chart loads.
-      setTimeout(() => {
-        try { crCampaignCoach.start(i); } catch(_){}
-      }, 900);
-    });
+    bind(id, () => _launchCampaignChapter(i));
   }
   // v0.9.13 — Subcategory tab strip. Filters .modecard visibility by data-cat.
   document.querySelectorAll('#crModeTabs button').forEach(btn => {
