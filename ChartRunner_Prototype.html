@@ -6148,6 +6148,7 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
           <p style="margin:0 0 10px;font-size:12px">Build bots, strategies, indicators in Pine Script. Equipped bots fly around your avatar as orbs and detect setups in-run.</p>
           <div class="crTerm-tabs">
             <button class="crTerm-tab active" data-wbview="tools" type="button">TOOLS</button>
+            <button class="crTerm-tab" data-wbview="primitives" type="button">PRIMITIVES</button>
             <button class="crTerm-tab" data-wbview="bots" type="button">BOTS</button>
             <button class="crTerm-tab" data-wbview="strats" type="button">STRATEGIES</button>
             <button class="crTerm-tab" data-wbview="inds" type="button">INDICATORS</button>
@@ -6177,6 +6178,14 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                 <div id="wbToolList" style="display:flex;flex-direction:column;gap:6px;max-height:380px;overflow:auto"></div>
               </div>
             </div>
+          </div>
+          <!-- v0.9.23 — PRIMITIVES view: catalog of all 18 SDK primitive
+               placements (forecast 4 + fib 3 + orders 11) surfaced as cards
+               with icon, label, kind, hint. These are what hotkey 3 (the green
+               primitives laser) shows; this tab is the read-only reference. -->
+          <div class="crTerm-view hidden" id="crWBViewPrimitives">
+            <p style="margin:0 0 10px;font-size:11px;color:var(--dim)">All trading primitives that fire through ChartRunnerSDK. Each row is a chart-click placement reachable from <b style="color:#14f195">hotkey 3</b> (green primitives laser). Single-click on the chart to drop a 1-click primitive; click two anchors for a 2-anchor primitive. Setup guide overlays appear top-center while placing.</p>
+            <div id="wbPrimList" style="display:flex;flex-direction:column;gap:8px;max-height:540px;overflow:auto"></div>
           </div>
           <!-- BOTS view -->
           <div class="crTerm-view hidden" id="crWBViewBots">
@@ -10255,8 +10264,8 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
   //           the spine of the SDK and should never be missing from hotkey-3.
   const palette = (typeof game !== 'undefined' && game.laserPalette) || 'tools';
   // v0.9.22 — Primitives palette spans 3 categories (forecast + fib + orders).
-  // Force-set covers the canonical SDK surface so hotkey 3 always shows the
-  // full v0.9.8 tier 1-4 primitives, not just bracket+oco+fib*.
+  // v0.9.23 — Tools palette EXCLUDES primitive categories so the two palettes
+  // never overlap. Bracket / OCO / Fib / Orders only appear on hotkey 3 now.
   const PRIMITIVE_CATS = new Set(['fib','forecast','orders']);
   const PRIMITIVE_FORCE = new Set([
     // forecast — entry primitives
@@ -10273,7 +10282,10 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
     const inEquipped = equippedSet.has(t.id);
     const inPrimForce = palette === 'primitives' && PRIMITIVE_FORCE.has(t.id);
     if(!inEquipped && !inPrimForce) return;
+    // Primitives palette: only fib/forecast/orders.
     if(palette === 'primitives' && !PRIMITIVE_CATS.has(t.cat)) return;
+    // v0.9.23 — Tools palette: exclude primitive categories (clean separation).
+    if(palette === 'tools' && PRIMITIVE_CATS.has(t.cat)) return;
     if(!byCat[t.cat]) byCat[t.cat] = [];
     byCat[t.cat].push(t);
   });
@@ -19181,6 +19193,73 @@ function _wbToolEquipNone(){
   _wbSave(); _wbRenderTools();
   if(typeof toast === 'function') toast('All laser tools unequipped');
 }
+/* v0.9.23 — Workbench Primitives tab. Read-only catalog of all 18 SDK
+ * primitive placements grouped by category (forecast / fib / orders) with
+ * icon, label, kind (1-click / 2-anchor), step instructions, and hint.
+ * Hovers turn green; clicks toast with the hotkey reminder. */
+function _wbRenderPrimitives(){
+  const list = document.getElementById('wbPrimList');
+  if(!list || typeof WB_LASER_TOOLS === 'undefined') return;
+  const PRIM_CATS = ['forecast','fib','orders'];
+  const CAT_LABELS = { forecast:'🎯 Forecasting', fib:'🪜 Fibonacci', orders:'◇ Orders' };
+  const CAT_BLURB = {
+    forecast: 'Entry primitives — bracket, OCO, position visualizers.',
+    fib:      'Fibonacci tools — retracement, extension, ladder. Champion Zone + Golden Extension shaded.',
+    orders:   'Tier 1-4 SDK primitives — limit, stop-loss, take-profit, scale-out, magnet, perp flip, TWAP, iceberg, etc.',
+  };
+  list.innerHTML = '';
+  for(const cat of PRIM_CATS){
+    const tools = WB_LASER_TOOLS.filter(t => t.cat === cat);
+    if(!tools.length) continue;
+    const hd = document.createElement('div');
+    hd.style.cssText = 'font-size:11px;color:#7ee787;text-transform:uppercase;letter-spacing:.5px;font-weight:700;padding:10px 0 4px;border-bottom:1px solid rgba(126,231,135,0.20);margin-bottom:4px';
+    hd.textContent = CAT_LABELS[cat] || cat;
+    list.appendChild(hd);
+    const blurb = document.createElement('div');
+    blurb.style.cssText = 'font-size:10.5px;color:var(--dim);padding:0 0 8px';
+    blurb.textContent = CAT_BLURB[cat] || '';
+    list.appendChild(blurb);
+    for(const t of tools){
+      const guide = (typeof TOOL_SETUP_GUIDES !== 'undefined') ? TOOL_SETUP_GUIDES[t.id] : null;
+      const style = (typeof _toolStyle === 'function') ? _toolStyle(t.id) : null;
+      const color = style ? style.color : '#7ad6ff';
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border:1px solid rgba(180,200,230,0.10);border-radius:8px;background:rgba(10,15,28,.4);transition:background .12s ease, border-color .12s ease;cursor:pointer';
+      row.onmouseenter = () => { row.style.background='rgba(20,241,149,0.06)'; row.style.borderColor='rgba(20,241,149,0.30)'; };
+      row.onmouseleave = () => { row.style.background='rgba(10,15,28,.4)';   row.style.borderColor='rgba(180,200,230,0.10)'; };
+      row.onclick = () => { if(typeof toast === 'function') toast('Hotkey 3 → pick "'+t.label+'"'); };
+      const ic = document.createElement('div');
+      ic.style.cssText = 'font-size:18px;width:26px;text-align:center;flex-shrink:0;color:'+color;
+      ic.textContent = t.ic || '◇';
+      row.appendChild(ic);
+      const body = document.createElement('div');
+      body.style.cssText = 'flex:1;min-width:0';
+      const head = document.createElement('div');
+      head.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--fg)';
+      head.innerHTML = '<span>'+t.label+'</span><span style="font-size:9px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;padding:1px 6px;border-radius:4px;background:rgba(180,200,230,0.10);color:'+color+'">'+(t.cls||'1-click')+'</span>'+(t.star?'<span style="color:#ffd166;font-size:11px">★</span>':'');
+      body.appendChild(head);
+      const desc = document.createElement('div');
+      desc.style.cssText = 'font-size:10.5px;color:var(--dim);margin-top:3px;line-height:1.4';
+      desc.textContent = t.desc || '';
+      body.appendChild(desc);
+      if(guide){
+        const steps = document.createElement('div');
+        steps.style.cssText = 'font-size:10px;color:'+color+';margin-top:4px;font-family:ui-monospace,Menlo,monospace';
+        steps.textContent = '→ ' + guide.steps.join('  ·  ');
+        body.appendChild(steps);
+        if(guide.hint){
+          const hint = document.createElement('div');
+          hint.style.cssText = 'font-size:9.5px;color:rgba(180,200,230,0.55);margin-top:2px;font-style:italic';
+          hint.textContent = guide.hint;
+          body.appendChild(hint);
+        }
+      }
+      row.appendChild(body);
+      list.appendChild(row);
+    }
+  }
+}
+
 function _wbRenderTools(){
   const list = document.getElementById('wbToolList');
   const cnt  = document.getElementById('wbToolEquipCount');
@@ -21103,11 +21182,12 @@ function _wbWireUI(){
     btn.addEventListener('click', () => {
       const view = btn.getAttribute('data-wbview');
       tabs.forEach(b => b.classList.toggle('active', b === btn));
-      [['tools','crWBViewTools'],['bots','crWBViewBots'],['strats','crWBViewStrats'],['inds','crWBViewInds'],['term','crWBViewTerm'],['back','crWBViewBack'],['app','crWBViewApp']].forEach(([k, id]) => {
+      [['tools','crWBViewTools'],['primitives','crWBViewPrimitives'],['bots','crWBViewBots'],['strats','crWBViewStrats'],['inds','crWBViewInds'],['term','crWBViewTerm'],['back','crWBViewBack'],['app','crWBViewApp']].forEach(([k, id]) => {
         const el = document.getElementById(id);
         if(el) el.classList.toggle('hidden', view !== k);
       });
       if(view === 'tools') _wbRenderTools();
+      if(view === 'primitives') _wbRenderPrimitives();
       if(view === 'back') _wbRebuildBacktestTargets();
       if(view === 'app')  _wbRenderApps();
       if(view === 'term') _wbRenderTerms();
