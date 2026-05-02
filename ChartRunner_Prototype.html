@@ -7300,15 +7300,16 @@ class ChartRunnerSDK {
       inverseBracket: true,
       closeAll:       true,
       toggleIndicator: true,
-      // v0.9.7d — hedgeParachute is no longer 'reframe' — standalone now
-      // opens a real inverseBracket alongside the visual buffer. radar and
-      // rescue still reframe in TV mode (their standalone paths are
-      // gameplay-only — visual scan + immunity). Phase 1 follow-up: lift
-      // those two to 'true' the same way once their standalone paths route
-      // through real primitives.
+      // v0.9.8j — All three former 'reframe' primitives now route through
+      // real underlying actions in standalone too:
+      //   - hedgeParachute (v0.9.7d): opens real inverseBracket + 6s buffer
+      //   - liquidityRadar (v0.9.8j): toggles in-game VRVP indicator + 5s scan
+      //   - rescueDrone    (v0.9.8j): calls closeAll() + arms immunity effect
+      // The SDK promise 'every ability is a real trading primitive' now
+      // holds uniformly without the asterisk. capabilities flag = true.
       hedgeParachute: true,
-      liquidityRadar: 'reframe', // tv → toggleIndicator('VolumeProfileFixedRange')
-      rescueDrone:    'reframe', // tv → closeAll()
+      liquidityRadar: true,
+      rescueDrone:    true,
       // v0.9.8 — Tier 1: missing-basics that real traders expect. All five
       // are fully implementable in standalone via the existing openOrders
       // bookkeeping; no reframe needed.
@@ -7494,8 +7495,28 @@ class ChartRunnerSDK {
       this._emit('reframe', { from: 'liquidityRadar', to: 'toggleIndicator' });
       return this.toggleIndicator({ name: 'VolumeProfileFixedRange', duration: 5 });
     }
-    const e={id:this._id(),type:'radar',until:performance.now()/1000+5,range};
-    this.activeEffects.push(e); this._emit('effect',{kind:'radar',effect:e}); return e;
+    // v0.9.8j — Standalone now ALSO toggles the in-game VRVP indicator
+    // alongside the 5s visual scan. Mirrors the v0.9.7d hedge pattern:
+    // standalone is no longer a pure power-up timer; it actually surfaces
+    // the same volume-profile data a real trader uses, just with a
+    // gameplay-flavored coat of paint (the scan beam).
+    try {
+      if (typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active) {
+        if (!INDICATOR_STATE.active.has('vrvp')) {
+          INDICATOR_STATE.active.add('vrvp');
+          // Flag for auto-disable so the indicator only stays on for the
+          // 5-second scan window. A simple setTimeout — game already
+          // tolerates indicator state mutations from outside its own UI.
+          setTimeout(() => {
+            try { INDICATOR_STATE.active.delete('vrvp'); } catch(_){}
+          }, 5000);
+        }
+      }
+    } catch(_){}
+    const e = {id:this._id(),type:'radar',until:performance.now()/1000+5,range};
+    this.activeEffects.push(e);
+    this._emit('effect',{kind:'radar',effect:e});
+    return e;
   }
   rescueDrone(){
     if(this.hostMode !== 'standalone'){
@@ -7504,8 +7525,15 @@ class ChartRunnerSDK {
       this._emit('reframe', { from: 'rescueDrone', to: 'closeAll' });
       return this.closeAll();
     }
-    const e={id:this._id(),type:'rescue',armed:true};
-    this.activeEffects.push(e); this._emit('effect',{kind:'rescue',effect:e}); return e;
+    // v0.9.8j — Standalone now ALSO calls closeAll() in addition to arming
+    // the immunity effect. Player gets BOTH the gameplay shield AND a real
+    // position flatten — the SDK promise ('every ability is a real trading
+    // primitive') holds uniformly. Same fix shape as v0.9.7d hedge.
+    const flattened = this.closeAll();
+    const e = {id:this._id(),type:'rescue',armed:true,flattenedCount:(flattened?flattened.count:0)};
+    this.activeEffects.push(e);
+    this._emit('effect',{kind:'rescue',effect:e,flattened:flattened});
+    return e;
   }
 
   // ─── v0.9.8 TIER 1 ─ Missing-basics every real trader expects ────────
@@ -9858,10 +9886,49 @@ function openPrimitivesMenu(){
         toast('IfThen armed @ ' + trig.toFixed(2));
     }},
     // ── TIER 3: Solana / HL signature ───────────────────────────────────
-    { id:'fundSnipe',  ic:'💸',nm:'Funding Snipe', desc:'Auto-enter when funding flips',  tier:'T3', fire: () => { sdk.fundingSnipe({ asset:'BTC', threshold:-0.05, side:'buy' }); toast('Funding snipe armed'); }},
+    { id:'fundSnipe',  ic:'💸',nm:'Funding Snipe', desc:'Phase 2 · arms a paper trigger', tier:'T3', fire: () => {
+        // v0.9.8j — Honest defer. Standalone has no live funding-rate feed
+        // (would need a Binance / Hyperliquid websocket subscription that
+        // breaks the no-deps rule). The primitive arms a 'pendingSnipe'
+        // record so the architecture is real, but no fill will fire until
+        // Phase 2 wires a real feed via the ChartHost adapter. Toast spells
+        // out what the player gets vs what's coming.
+        sdk.fundingSnipe({ asset:'BTC', threshold:-0.05, side:'buy', risk:20 });
+        try {
+          toast('Funding snipe ARMED (paper) · BTC · enter LONG when funding < -0.05%');
+          setTimeout(() => toast('Phase 2: live funding feed via ChartHost adapter'), 1800);
+        } catch(_){}
+    }},
     { id:'borrowShort',ic:'📉',nm:'Borrow Short', desc:'DeFi-flow short on SOL',         tier:'T3', fire: () => { sdk.borrowShort({ asset:'SOL', size:1, price: here }); toast('Borrow-short opened'); }},
     { id:'guard',      ic:'🛟',nm:'Liquidation Guard', desc:'Auto-add margin near liq',  tier:'T3', requires:'bracket', fire: () => { sdk.liquidationGuard({ id: liveBracket.id, marginRatio:0.15, addAmount:10 }); toast('Liq guard armed'); }},
-    { id:'copyTrade',  ic:'👥',nm:'Copy Trade',   desc:'Mirror a wallet (Phase 2)',      tier:'T3', fire: () => { sdk.copyTrade({ walletAddr:'TBD', sizeMultiplier:1.0 }); toast('Copy-trade subscribed (paper)'); }},
+    { id:'copyTrade',  ic:'👥',nm:'Copy Trade',   desc:'Mirror a wallet (Phase 2)',      tier:'T3', fire: () => {
+        // v0.9.8j — Real wallet picker. Prompt for the followee's pubkey,
+        // validate base58 length (32-44 chars typical for Solana), prompt for
+        // size multiplier. Default multiplier = 1.0 (mirror 1:1). The actual
+        // mirror logic is Phase 2 (subscribe to followee's RunRecord events
+        // off the on-chain leaderboard) — this gets the wiring right today.
+        const pickedAddr = window.prompt(
+          'Wallet address to copy-trade (Solana base58 pubkey):\n\n'
+          + 'Tip: in Phase 2 this picker will become a list of top players from\n'
+          + 'the on-chain leaderboard, not a freeform input.',
+          ''
+        );
+        if (pickedAddr == null) return;
+        const trimmed = pickedAddr.trim();
+        if (trimmed.length < 32 || trimmed.length > 44) {
+          try { toast('Invalid wallet address (expected 32-44 chars)'); } catch(_){}
+          return;
+        }
+        const multStr = window.prompt('Size multiplier (1.0 = mirror 1:1, 0.5 = half-size):', '1.0');
+        if (multStr == null) return;
+        const mult = parseFloat(multStr);
+        if (!Number.isFinite(mult) || mult <= 0 || mult > 10) {
+          try { toast('Invalid multiplier (must be 0 < x ≤ 10)'); } catch(_){}
+          return;
+        }
+        sdk.copyTrade({ walletAddr: trimmed, sizeMultiplier: mult, autoStop: true });
+        try { toast('Copy-trade armed @ ' + trimmed.slice(0, 4) + '…' + trimmed.slice(-4) + ' × ' + mult); } catch(_){}
+    }},
     { id:'perpFlip',   ic:'⇌', nm:'Perp Flip',   desc:'Close + open inverse',           tier:'T3', requires:'bracket', fire: () => { sdk.perpFlip({ id: liveBracket.id, price: here }); toast('Position flipped'); }},
     // ── TIER 4: gameplay-flavored ──────────────────────────────────────
     { id:'comboCondor',ic:'🦅',nm:'Combo: Iron Condor', desc:'Pre-baked range setup',   tier:'T4', fire: () => { sdk.comboTrade({ setup:'ironCondor', price: here }); toast('Iron condor placed'); }},
