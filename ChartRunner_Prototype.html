@@ -9972,14 +9972,51 @@ function openPrimitivesMenu(){
     menu.style.left = '20%'; menu.style.top = '15%';
   }
 
-  // Header
+  // Header — also the drag handle for the whole menu (v0.9.8k).
   const head = document.createElement('div');
-  head.style.cssText = 'padding:8px 14px 6px;border-bottom:1px solid rgba(155,140,255,0.18);display:flex;align-items:center;gap:8px';
+  head.style.cssText = 'padding:8px 14px 6px;border-bottom:1px solid rgba(155,140,255,0.18);display:flex;align-items:center;gap:8px;cursor:move;user-select:none;-webkit-user-select:none';
+  head.title = 'Drag to move · click items to fire';
   head.innerHTML = '<span style="font-weight:700;color:#9b8cff">⚡ Primitives</span>'
     + '<span style="font-size:10px;color:#6a6e78;margin-left:auto">'
     + (hasLive ? 'live bracket: #' + liveBracket.id : 'no live position')
     + '</span>';
   menu.appendChild(head);
+
+  // v0.9.8k — Drag-to-move via the header. Mirrors the OS-window drag pattern
+  // used elsewhere in the game (terminal panes, profile windows). Pointer
+  // events instead of mouse* so it works on trackpad + touch + pen alike.
+  // Position is clamped to the viewport so the menu can't be lost off-screen.
+  let _drag = null;
+  head.addEventListener('pointerdown', (e) => {
+    // Ignore right-click + middle-click; they shouldn't drag.
+    if (e.button !== 0) return;
+    const rect = menu.getBoundingClientRect();
+    _drag = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    try { head.setPointerCapture(e.pointerId); } catch(_){}
+    head.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+  head.addEventListener('pointermove', (e) => {
+    if (!_drag) return;
+    const rect = menu.getBoundingClientRect();
+    const w = rect.width, h = rect.height;
+    let nx = e.clientX - _drag.dx;
+    let ny = e.clientY - _drag.dy;
+    // Clamp inside viewport with 8px breathing room so the menu can't
+    // get hidden behind a window edge.
+    nx = Math.max(8, Math.min(window.innerWidth  - w - 8, nx));
+    ny = Math.max(8, Math.min(window.innerHeight - h - 8, ny));
+    menu.style.left = nx + 'px';
+    menu.style.top  = ny + 'px';
+  });
+  const _endDrag = (e) => {
+    if (!_drag) return;
+    _drag = null;
+    head.style.cursor = 'move';
+    try { head.releasePointerCapture(e.pointerId); } catch(_){}
+  };
+  head.addEventListener('pointerup',     _endDrag);
+  head.addEventListener('pointercancel', _endDrag);
 
   let prevTier = null;
   items.forEach(it => {
