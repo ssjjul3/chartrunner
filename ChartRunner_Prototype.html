@@ -12308,18 +12308,43 @@ function updateWeapons(dt){
           b.hits.add(key);
           // v0.9.24 — Shooting a tagged trade-primitive line cancels the linked
           // SDK order (limit) or clears the SL/TP modifier on the linked bracket.
-          if(hl.tradeKind && hl.tradeOrderId != null){
+          // v0.9.25 — Extended to all 11 primitives + 2-anchor (TWAP/iceberg)
+          // where shooting one anchor also removes the paired anchor via
+          // groupId match.
+          if(hl.tradeKind){
             try {
-              if(hl.tradeKind === 'limit'){
-                if(typeof sdk.cancelOrder === 'function') sdk.cancelOrder({ id: hl.tradeOrderId });
-                else { const o = sdk.openOrders.find(x => x.id === hl.tradeOrderId); if(o) o.cancelled = true; }
-              } else if(hl.tradeKind === 'stopLossAt'){
-                const o = sdk.openOrders.find(x => x.id === hl.tradeOrderId); if(o) o.sl = null;
-              } else if(hl.tradeKind === 'takeProfitAt'){
-                const o = sdk.openOrders.find(x => x.id === hl.tradeOrderId); if(o) o.tp = null;
+              if(hl.tradeOrderId != null){
+                if(hl.tradeKind === 'limit' || hl.tradeKind === 'borrowShortAt' ||
+                   hl.tradeKind === 'twap' || hl.tradeKind === 'iceberg' ||
+                   hl.tradeKind === 'liqGuardAt'){
+                  // Standalone-order primitives → cancel the order entirely.
+                  if(typeof sdk.cancelOrder === 'function') sdk.cancelOrder({ id: hl.tradeOrderId });
+                  else { const o = sdk.openOrders.find(x => x.id === hl.tradeOrderId); if(o) o.cancelled = true; }
+                } else {
+                  // Bracket-modifier primitives → clear the matching field on the linked bracket.
+                  const o = sdk.openOrders.find(x => x.id === hl.tradeOrderId);
+                  if(o){
+                    if(hl.tradeKind === 'stopLossAt') o.sl = null;
+                    else if(hl.tradeKind === 'takeProfitAt') o.tp = null;
+                    else if(hl.tradeKind === 'trailingTpAt') o.trailing = null;
+                    else if(hl.tradeKind === 'scaleOutAt') o.scaleOutPrice = null;
+                    else if(hl.tradeKind === 'magnetAt') o.magnet = null;
+                    else if(hl.tradeKind === 'perpFlipAt') o.flipPrice = null;
+                  }
+                }
               }
             } catch(_){}
             try { toast(hl.tradeKind + ' shot · order updated'); } catch(_){}
+            // 2-anchor groupId sync: also remove the paired anchor.
+            if(hl.tradeGroup){
+              try {
+                const peers = game.anchorLines
+                  .map((x, idx) => ({ x, idx }))
+                  .filter(p => p.x !== hl && p.x.tradeGroup === hl.tradeGroup);
+                // Splice from highest idx down to keep indices stable.
+                peers.sort((a,b) => b.idx - a.idx).forEach(p => game.anchorLines.splice(p.idx, 1));
+              } catch(_){}
+            }
           }
           game.anchorLines.splice(i, 1);
           consume('HLine');
@@ -15799,11 +15824,18 @@ function drawAnchorLines(){
       perpFlipAt:   { color:'163,113,247',  ic:'⇌',  name:'FLIP'  },
       borrowShortAt:{ color:'255,91,127',   ic:'⇩',  name:'SHORT' },
       liqGuardAt:   { color:'255,209,102',  ic:'🛡', name:'LIQ G' },
+      // v0.9.25 — 2-anchor primitives. Each anchor draws its own labeled line;
+      // the tradeAnchor field ('a1'/'a2' for TWAP, 'hi'/'lo' for iceberg)
+      // suffixes the label so the player sees which endpoint they're moving.
+      twap:         { color:'123,227,243',  ic:'∼', name:'TWAP'  },
+      iceberg:      { color:'121,192,255',  ic:'❄', name:'ICE'   },
     };
     const tk = a.tradeKind && TRADE_PALETTE[a.tradeKind];
     const baseRGB = tk ? tk.color : '155,140,255';
     const labelIc = tk ? tk.ic : '━';
-    const labelNm = tk ? tk.name : '';
+    // v0.9.25 — Append anchor suffix for 2-anchor primitives (TWAP/iceberg)
+    // so each line reads "TWAP·a1" / "TWAP·a2" or "ICE·hi" / "ICE·lo".
+    const labelNm = tk ? (tk.name + (a.tradeAnchor ? '·'+a.tradeAnchor : '')) : '';
     ctx.lineWidth = isSel ? 2.4 : 1.6;
     ctx.strokeStyle = isSel
       ? `rgba(${baseRGB},${1.0*alpha})`
@@ -16931,28 +16963,42 @@ function commitLaserSingleClick(toolId, sx, sy, wxAt, priceAt, originUp, exitFn)
           else o.trailing = { active:true, distance:dist*0.5 };
           toast('Trailing TP armed @ '+fmtPrice(priceAt));
         } catch(e){ toast('Trailing TP failed: '+e.message); }
+        try { game.anchorLines.push({ id:game.anchorNextId++, wx:wxAt, py:priceAt, t:0, upsideDown:originUp, tradeKind:'trailingTpAt', tradeOrderId:o.id }); } catch(_){}
       }
     }
     else if(toolId === 'scaleOutAt'){
       const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
       if(!o){ toast('Scale-out needs an open bracket'); }
-      else { try { if(typeof sdk.scaleOut === 'function') sdk.scaleOut({ id:o.id, atPrice:priceAt, fraction:0.5 }); toast('Scale-out 50% @ '+fmtPrice(priceAt)); } catch(e){ toast('Scale-out failed: '+e.message); } }
+      else {
+        try { if(typeof sdk.scaleOut === 'function') sdk.scaleOut({ id:o.id, atPrice:priceAt, fraction:0.5 }); toast('Scale-out 50% @ '+fmtPrice(priceAt)); } catch(e){ toast('Scale-out failed: '+e.message); }
+        try { game.anchorLines.push({ id:game.anchorNextId++, wx:wxAt, py:priceAt, t:0, upsideDown:originUp, tradeKind:'scaleOutAt', tradeOrderId:o.id }); } catch(_){}
+      }
     }
     else if(toolId === 'magnetAt'){
       const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
       if(!o){ toast('Magnet needs an open bracket'); }
-      else { try { sdk.magnet({ id:o.id, target:priceAt, strength:0.5 }); toast('🧲 Magnet → '+fmtPrice(priceAt)); } catch(e){ toast('Magnet failed: '+e.message); } }
+      else {
+        try { sdk.magnet({ id:o.id, target:priceAt, strength:0.5 }); toast('🧲 Magnet → '+fmtPrice(priceAt)); } catch(e){ toast('Magnet failed: '+e.message); }
+        try { game.anchorLines.push({ id:game.anchorNextId++, wx:wxAt, py:priceAt, t:0, upsideDown:originUp, tradeKind:'magnetAt', tradeOrderId:o.id }); } catch(_){}
+      }
     }
     else if(toolId === 'perpFlipAt'){
       const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
       if(!o){ toast('Perp flip needs an open bracket'); }
-      else { try { if(typeof sdk.perpFlip === 'function') sdk.perpFlip({ id:o.id, price:priceAt }); toast('Perp flipped @ '+fmtPrice(priceAt)); } catch(e){ toast('Perp flip failed: '+e.message); } }
+      else {
+        try { if(typeof sdk.perpFlip === 'function') sdk.perpFlip({ id:o.id, price:priceAt }); toast('Perp flipped @ '+fmtPrice(priceAt)); } catch(e){ toast('Perp flip failed: '+e.message); }
+        try { game.anchorLines.push({ id:game.anchorNextId++, wx:wxAt, py:priceAt, t:0, upsideDown:originUp, tradeKind:'perpFlipAt', tradeOrderId:o.id }); } catch(_){}
+      }
     }
     else if(toolId === 'borrowShortAt'){
-      try { if(typeof sdk.borrowShort === 'function') sdk.borrowShort({ price:priceAt, size:4 }); toast('Borrow-short @ '+fmtPrice(priceAt)); } catch(e){ toast('Borrow-short failed: '+e.message); }
+      let order = null;
+      try { if(typeof sdk.borrowShort === 'function') order = sdk.borrowShort({ price:priceAt, size:4 }); toast('Borrow-short @ '+fmtPrice(priceAt)); } catch(e){ toast('Borrow-short failed: '+e.message); }
+      try { game.anchorLines.push({ id:game.anchorNextId++, wx:wxAt, py:priceAt, t:0, upsideDown:originUp, tradeKind:'borrowShortAt', tradeOrderId: order ? order.id : null }); } catch(_){}
     }
     else if(toolId === 'liqGuardAt'){
-      try { if(typeof sdk.liquidationGuard === 'function') sdk.liquidationGuard({ price:priceAt }); toast('🛡 Liq guard @ '+fmtPrice(priceAt)); } catch(e){ toast('Liq guard failed: '+e.message); }
+      let order = null;
+      try { if(typeof sdk.liquidationGuard === 'function') order = sdk.liquidationGuard({ price:priceAt }); toast('🛡 Liq guard @ '+fmtPrice(priceAt)); } catch(e){ toast('Liq guard failed: '+e.message); }
+      try { game.anchorLines.push({ id:game.anchorNextId++, wx:wxAt, py:priceAt, t:0, upsideDown:originUp, tradeKind:'liqGuardAt', tradeOrderId: order ? order.id : null }); } catch(_){}
     }
     else {
       toast(toolId + ' · click handled');
@@ -17204,21 +17250,40 @@ function commitLaserTwoAnchor(tool, a1, a2){
     }
     else {
       // v0.9.22 — Tier 2 SDK primitives.
+      // v0.9.25 — Push TWO linked anchorLines (groupId-paired) so each anchor
+      // is independently draggable/shootable. Drag either to retune the range;
+      // shooting either cancels the linked SDK order; deleting either deletes
+      // both via the groupId match.
       if(tool === 'twap'){
         const side = (p2 < p1) ? 'buy' : 'sell';
         const slices = 5;
+        let order = null;
         try {
-          if(typeof sdk.twap === 'function') sdk.twap({ side, slices, fromPrice:p1, toPrice:p2, totalSize: 20 });
+          if(typeof sdk.twap === 'function') order = sdk.twap({ side, slices, fromPrice:p1, toPrice:p2, totalSize: 20 });
           toast('TWAP · '+slices+' slices ('+(side.toUpperCase())+')');
         } catch(e){ toast('TWAP failed: '+e.message); }
+        try {
+          const groupId = 'twap_'+Date.now();
+          const orderId = order && order.id ? order.id : null;
+          game.anchorLines.push({ id:game.anchorNextId++, wx:a1.wx, py:p1, t:0, upsideDown:originUp, tradeKind:'twap', tradeSide:side, tradeOrderId:orderId, tradeGroup:groupId, tradeAnchor:'a1' });
+          game.anchorLines.push({ id:game.anchorNextId++, wx:a2.wx, py:p2, t:0, upsideDown:originUp, tradeKind:'twap', tradeSide:side, tradeOrderId:orderId, tradeGroup:groupId, tradeAnchor:'a2' });
+        } catch(_){}
         return;
       }
       if(tool === 'iceberg'){
         const side = (p2 < p1) ? 'buy' : 'sell';
+        const hi = Math.max(p1,p2), lo = Math.min(p1,p2);
+        let order = null;
         try {
-          if(typeof sdk.iceberg === 'function') sdk.iceberg({ side, fromPrice:Math.max(p1,p2), toPrice:Math.min(p1,p2), visibleSize: 4, totalSize: 20 });
+          if(typeof sdk.iceberg === 'function') order = sdk.iceberg({ side, fromPrice:hi, toPrice:lo, visibleSize: 4, totalSize: 20 });
           toast('Iceberg · 4 visible / 20 total ('+(side.toUpperCase())+')');
         } catch(e){ toast('Iceberg failed: '+e.message); }
+        try {
+          const groupId = 'ice_'+Date.now();
+          const orderId = order && order.id ? order.id : null;
+          game.anchorLines.push({ id:game.anchorNextId++, wx:a1.wx, py:hi, t:0, upsideDown:originUp, tradeKind:'iceberg', tradeSide:side, tradeOrderId:orderId, tradeGroup:groupId, tradeAnchor:'hi' });
+          game.anchorLines.push({ id:game.anchorNextId++, wx:a2.wx, py:lo, t:0, upsideDown:originUp, tradeKind:'iceberg', tradeSide:side, tradeOrderId:orderId, tradeGroup:groupId, tradeAnchor:'lo' });
+        } catch(_){}
         return;
       }
       toast(tool + ' · 2-anchor handled');
@@ -25136,12 +25201,16 @@ cv.addEventListener('dblclick', e=>{
     // mini-settings dialog instead of just the plain HLine drag toast.
     const a = hit.overlay;
     if(a && a.tradeKind){
+      // v0.9.25 — All 11 primitives have a label; 2-anchor primitives append
+      // the anchor suffix so the prompt reads "TWAP·a1 price ($78,500):".
       const TRADE_LABEL = {
         limit:'Limit', stopLossAt:'Stop Loss', takeProfitAt:'Take Profit',
         trailingTpAt:'Trailing TP', scaleOutAt:'Scale Out', magnetAt:'Magnet',
         perpFlipAt:'Perp Flip', borrowShortAt:'Borrow Short', liqGuardAt:'Liq Guard',
+        twap:'TWAP', iceberg:'Iceberg',
       };
-      const lbl = TRADE_LABEL[a.tradeKind] || a.tradeKind;
+      const baseLbl = TRADE_LABEL[a.tradeKind] || a.tradeKind;
+      const lbl = baseLbl + (a.tradeAnchor ? '·'+a.tradeAnchor : '');
       const cur = (typeof fmtPrice === 'function') ? fmtPrice(a.py) : a.py;
       const newPx = (typeof prompt === 'function') ? prompt(lbl + ' price (current ' + cur + '):', String(a.py.toFixed(2))) : null;
       if(newPx === null) return;
@@ -25155,6 +25224,20 @@ cv.addEventListener('dblclick', e=>{
           if(a.tradeKind === 'limit') linkedOrder.price = px;
           else if(a.tradeKind === 'stopLossAt') linkedOrder.sl = px;
           else if(a.tradeKind === 'takeProfitAt') linkedOrder.tp = px;
+          else if(a.tradeKind === 'trailingTpAt'){ if(linkedOrder.trailing) linkedOrder.trailing.activatePrice = px; }
+          else if(a.tradeKind === 'scaleOutAt') linkedOrder.scaleOutPrice = px;
+          else if(a.tradeKind === 'magnetAt'){ if(linkedOrder.magnet) linkedOrder.magnet.target = px; }
+          else if(a.tradeKind === 'perpFlipAt') linkedOrder.flipPrice = px;
+          else if(a.tradeKind === 'borrowShortAt') linkedOrder.price = px;
+          else if(a.tradeKind === 'liqGuardAt') linkedOrder.guardPrice = px;
+          else if(a.tradeKind === 'twap'){
+            if(a.tradeAnchor === 'a1') linkedOrder.fromPrice = px;
+            else if(a.tradeAnchor === 'a2') linkedOrder.toPrice = px;
+          }
+          else if(a.tradeKind === 'iceberg'){
+            if(a.tradeAnchor === 'hi') linkedOrder.fromPrice = px;
+            else if(a.tradeAnchor === 'lo') linkedOrder.toPrice = px;
+          }
         }
       } catch(_){}
       try { toast(lbl + ' → ' + fmtPrice(px)); } catch(_){}
@@ -25383,6 +25466,8 @@ window.addEventListener('mousemove', e=>{
       ov.py = overlayDrag.snap.py + dPrice;
       // v0.9.24 — If this line is tagged as a trade primitive (limit/SL/TP),
       // sync the new price back to the linked SDK order in real time.
+      // v0.9.25 — Extended to all 11 primitives + 2-anchor (TWAP/iceberg)
+      // where dragging an anchor updates the matching endpoint of the order.
       if(ov.tradeKind && ov.tradeOrderId != null){
         try {
           const linked = sdk.openOrders.find(o => o.id === ov.tradeOrderId);
@@ -25390,6 +25475,20 @@ window.addEventListener('mousemove', e=>{
             if(ov.tradeKind === 'limit') linked.price = ov.py;
             else if(ov.tradeKind === 'stopLossAt') linked.sl = ov.py;
             else if(ov.tradeKind === 'takeProfitAt') linked.tp = ov.py;
+            else if(ov.tradeKind === 'trailingTpAt'){ if(linked.trailing) linked.trailing.activatePrice = ov.py; }
+            else if(ov.tradeKind === 'scaleOutAt') linked.scaleOutPrice = ov.py;
+            else if(ov.tradeKind === 'magnetAt'){ if(linked.magnet) linked.magnet.target = ov.py; }
+            else if(ov.tradeKind === 'perpFlipAt') linked.flipPrice = ov.py;
+            else if(ov.tradeKind === 'borrowShortAt') linked.price = ov.py;
+            else if(ov.tradeKind === 'liqGuardAt') linked.guardPrice = ov.py;
+            else if(ov.tradeKind === 'twap'){
+              if(ov.tradeAnchor === 'a1') linked.fromPrice = ov.py;
+              else if(ov.tradeAnchor === 'a2') linked.toPrice = ov.py;
+            }
+            else if(ov.tradeKind === 'iceberg'){
+              if(ov.tradeAnchor === 'hi') linked.fromPrice = ov.py;
+              else if(ov.tradeAnchor === 'lo') linked.toPrice = ov.py;
+            }
           }
         } catch(_){}
       }
