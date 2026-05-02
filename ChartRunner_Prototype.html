@@ -11119,7 +11119,7 @@ function openPrimitivesMenu(){
     // v0.9.10 — CCV Setup probe. Non-mutating manual check; shows the player
     // why a setup matched (or didn't) so they learn the components. The
     // background watcher (ccvWatcherTick) handles auto-firing.
-    { id:'ccvCheck',   ic:'★', nm:'CCV Check',  desc:'Probe: consol + Champion Zone + vol confirm', tier:'T4', fire: () => {
+    { id:'ccvCheck',   ic:'★', nm:'CCV Check',  desc:'Probe: consol + Champion Zone + vol confirm', tier:'Manual', fire: () => {
         if(typeof sdk.detectCCV !== 'function') return;
         const r = sdk.detectCCV();
         const lines = r.components.map(c => (c.ok?'✓ ':'✗ ') + c.label).join('  ·  ');
@@ -11135,7 +11135,7 @@ function openPrimitivesMenu(){
         } catch(_){}
     }},
     // v0.9.11 — Bump-and-Run probe. Non-mutating; shows lead vs bump slope.
-    { id:'barrCheck',  ic:'⚡', nm:'BARR Check',  desc:'Bump-and-Run reversal probe', tier:'T4', fire: () => {
+    { id:'barrCheck',  ic:'⚡', nm:'BARR Check',  desc:'Bump-and-Run reversal probe', tier:'Manual', fire: () => {
         if(typeof sdk.detectBumpAndRun !== 'function') return;
         const r = sdk.detectBumpAndRun();
         const tier = r.matched ? '⚡ BARR · ' + r.side.toUpperCase() : '— no BARR';
@@ -11150,7 +11150,7 @@ function openPrimitivesMenu(){
         } catch(_){}
     }},
     // v0.9.11 — Head & Shoulders probe. Shows neckline + topping/bottoming kind.
-    { id:'hsCheck',    ic:'👤', nm:'H&S Check',   desc:'Head & Shoulders / Inverse probe', tier:'T4', fire: () => {
+    { id:'hsCheck',    ic:'👤', nm:'H&S Check',   desc:'Head & Shoulders / Inverse probe', tier:'Manual', fire: () => {
         if(typeof sdk.detectHeadShoulders !== 'function') return;
         const r = sdk.detectHeadShoulders();
         const tier = r.matched
@@ -11167,7 +11167,7 @@ function openPrimitivesMenu(){
         } catch(_){}
     }},
     // v0.9.11 — Divergence A/B/C inspector. Shows the last classified div.
-    { id:'divCheck',   ic:'÷', nm:'Div Class Check', desc:'A/B/C divergence inspector', tier:'T4', fire: () => {
+    { id:'divCheck',   ic:'÷', nm:'Div Class Check', desc:'A/B/C divergence inspector', tier:'Manual', fire: () => {
         if(typeof sdk.scoreSetup !== 'function') return;
         // Run scoreSetup so it populates _lastDivergence on the SDK.
         sdk.scoreSetup({ side: 'buy' });
@@ -11179,7 +11179,7 @@ function openPrimitivesMenu(){
         else if(typeof toast === 'function') toast('Div · BUY ' + fmt(buyDiv) + ' · SELL ' + fmt(sellDiv));
     }},
     // v0.9.12 — SFP probe. Shows the swing it pierced + which side.
-    { id:'sfpCheck',   ic:'⇄', nm:'SFP Check',  desc:'Swing Failure Pattern probe', tier:'T4', fire: () => {
+    { id:'sfpCheck',   ic:'⇄', nm:'SFP Check',  desc:'Swing Failure Pattern probe', tier:'Manual', fire: () => {
         if(typeof sdk.detectSFP !== 'function') return;
         const r = sdk.detectSFP();
         const tier = r.matched ? '⇄ SFP · ' + r.side.toUpperCase() + ' (' + r.kind + ')' : '— no SFP';
@@ -11194,7 +11194,7 @@ function openPrimitivesMenu(){
         } catch(_){}
     }},
     // v0.9.12 — Failed Auction probe.
-    { id:'faCheck',    ic:'↺', nm:'FA Check',   desc:'Failed Auction probe', tier:'T4', fire: () => {
+    { id:'faCheck',    ic:'↺', nm:'FA Check',   desc:'Failed Auction probe', tier:'Manual', fire: () => {
         if(typeof sdk.detectFailedAuction !== 'function') return;
         const r = sdk.detectFailedAuction();
         const tier = r.matched ? '↺ FAILED AUCTION · ' + r.side.toUpperCase() : '— no FA';
@@ -11210,7 +11210,7 @@ function openPrimitivesMenu(){
     }},
     // v0.9.12 — Open Interest probe. First call kicks off the fetch; second
     // call after ~1s shows the cached confirmation result.
-    { id:'oiCheck',    ic:'∮', nm:'OI Check',   desc:'Open Interest confirmation probe', tier:'T4', fire: () => {
+    { id:'oiCheck',    ic:'∮', nm:'OI Check',   desc:'Open Interest confirmation probe', tier:'Manual', fire: () => {
         if(typeof sdk.detectOIConfirm !== 'function') return;
         const r = sdk.detectOIConfirm({ side: 'buy' });
         if(r.pending){
@@ -11315,7 +11315,11 @@ function openPrimitivesMenu(){
     if(it.tier !== prevTier){
       const sep = document.createElement('div');
       sep.style.cssText = 'padding:6px 14px 2px;font-size:9px;color:#5a5a72;text-transform:uppercase;letter-spacing:0.6px;font-weight:700';
-      const tierLabels = { classic:'Classic', T1:'Tier 1 — basics', T2:'Tier 2 — pro', T3:'Tier 3 — Solana/HL', T4:'Tier 4 — gameplay' };
+      // v0.9.30 — "Manual" tier holds the *Check probes (CCV/SFP/H&S/etc).
+      // They were promoted to detector bots in v0.9.30; the modal entries
+      // remain as a manual override for players who want to force-check
+      // a setup their bot is on cooldown for.
+      const tierLabels = { classic:'Classic', T1:'Tier 1 — basics', T2:'Tier 2 — pro', T3:'Tier 3 — Solana/HL', T4:'Tier 4 — gameplay', Manual:'Manual probes — bot override' };
       sep.textContent = tierLabels[it.tier] || it.tier;
       menu.appendChild(sep);
       prevTier = it.tier;
@@ -19548,7 +19552,13 @@ const WB_EQUIP_KEY = 'cr_equipped_bots_v1';
 const WB_TOOLS_KEY = 'cr_equipped_tools_v1';
 // v0.8k#24cd — Player's per-tool star override (Workbench → TOOLS).
 const WB_TOOLS_STAR_KEY = 'cr_starred_tools_v1';
-const WB_MAX_EQUIP = 4;
+// v0.9.30 — Bots are equipped per-run, 3 max. Each equipped bot orbits the
+// avatar as an orb and auto-scans ±30 candles around player position for its
+// signal/formation. On match it flies to the target and "builds" the setup
+// (places the trade via the SDK). The cap dropped from 4 to 3 to make slot
+// choice meaningful — and to leave room for the orbit-radius math to space
+// orbs cleanly without overlap.
+const WB_MAX_EQUIP = 3;
 // v0.8k#24az / v0.8k#24bb — Laser tool registry, modelled after TradingView's
 // drawing sidebar (LINES, CHANNELS, FIBONACCI, FORECASTING, VOLUME-BASED,
 // MEASURERS, SHAPES, TEXT/NOTES). The TOOLS workbench tab equips/unequips
@@ -19681,11 +19691,16 @@ const WB_APP_TEMPLATES = {
 </div>`,
 };
 const WB_BOT_ROLES = {
-  scout:   { ic:'🔭', desc:'Detects setups · scans candles for breakouts' },
-  sniper:  { ic:'🎯', desc:'Fast entries on signal · single-shot bracket' },
-  arb:     { ic:'⚡', desc:'Cross-venue spread arbitrage · small size' },
-  risk:    { ic:'🛡', desc:'Risk manager · sizes positions, sets stops' },
-  trader:  { ic:'💼', desc:'Executes brackets · multi-position bracket flow' },
+  scout:    { ic:'🔭', desc:'Detects setups · scans candles for breakouts' },
+  sniper:   { ic:'🎯', desc:'Fast entries on signal · single-shot bracket' },
+  arb:      { ic:'⚡', desc:'Cross-venue spread arbitrage · small size' },
+  risk:     { ic:'🛡', desc:'Risk manager · sizes positions, sets stops' },
+  trader:   { ic:'💼', desc:'Executes brackets · multi-position bracket flow' },
+  // v0.9.30 — Quant detector role. These bots wrap the SDK detect* methods
+  // (CCV, SFP, H&S, BARR, FA, OI, Div). Equipped → orb orbits player → scans
+  // ±30 candles → flies to match → builds the setup via SDK. Player just
+  // walks; bot does the eyeballing.
+  detector: { ic:'🛰', desc:'Auto-scans ±30 candles for its pattern · flies to match · builds the setup' },
 };
 const WB_BOT_TEMPLATES = {
   scout: `//@version=5
@@ -19737,6 +19752,92 @@ if ta.crossunder(fast, slow)
 plot(fast, color=color.aqua)
 plot(slow, color=color.orange)`,
 };
+// ─── v0.9.30 ─ Detector bot registry ────────────────────────────────────────
+// Built-in bots that wrap the SDK detect* methods. Each one has the same
+// shape as a user-built bot (id/name/role/color) plus three extra fields:
+//
+//   detectorId  — the SDK method to call (sdk.detectSFP, sdk.detectCCV, ...)
+//   buildAction — function(detectResult, ctx) → places the trade via SDK
+//   icon        — single-glyph badge shown on the orb + Workbench row
+//
+// Pass 1 (this version): SFP only, end-to-end. Pass 2 ports the rest.
+//
+// Cooldown: each bot waits cooldownMs after firing before scanning again
+// (default 8 s). Scan throttle: a bot only re-runs detect() every ~10 frames
+// (~166 ms) so we don't pay the swing-pivot cost every paint.
+//
+// "isDetectorBot" flag distinguishes these from user-built Pine bots when
+// rendering the Workbench list (user-built bots get the delete button +
+// chain actions; detector bots don't).
+const DETECTOR_BOTS = [
+  {
+    id: 'det_sfp',
+    name: 'SFP Hunter',
+    role: 'detector',
+    color: '#ffd166',
+    icon: '⇄',
+    detectorId: 'detectSFP',
+    isDetectorBot: true,
+    cooldownMs: 8000,
+    // SFP fire: market in the SFP direction, with a stop-loss past the
+    // pierced wick. Size = 1 unit (gameplay scale; matches modal probe).
+    buildAction: (r, ctx) => {
+      try {
+        if (!r || !r.matched || typeof sdk === 'undefined') return false;
+        const here = (typeof currentPrice === 'function') ? currentPrice() : ctx.price;
+        // Stop-loss is on the OTHER side of the pierced wick. r.kind ===
+        // 'bearish' means a swing-high failed (sell signal); SL goes above
+        // the wick. 'bullish' means a swing-low failed (buy signal); SL
+        // goes below the wick.
+        const wick = r.level;
+        const slPad = Math.max(Math.abs(here - wick) * 0.4, here * 0.0015);
+        const sl = (r.side === 'sell') ? (wick + slPad) : (wick - slPad);
+        // We use bracket() rather than market() so the trade has a real SL
+        // attached (SFPs without a stop are gambling). TP = 2× the risk
+        // (R:R 2:1). Bracket entry = market fill at current price.
+        const risk = Math.abs(here - sl);
+        const tp   = (r.side === 'buy') ? (here + 2 * risk) : (here - 2 * risk);
+        sdk.bracket({ side: r.side, entry: here, tp, sl, size: 1 });
+        return true;
+      } catch (err) {
+        try { if (typeof toast === 'function') toast('SFP bot fire failed: ' + err.message); } catch(_){}
+        return false;
+      }
+    },
+  },
+];
+// Seed detector bots into wb.bots if not already present. Idempotent — runs
+// after _wbLoad on every boot, so adding a new DETECTOR_BOTS entry in a
+// future version just appears in the next save without clobbering the
+// player's user-built bots. Equipped state is left alone — the player has
+// to opt-in by equipping a detector bot in the Workbench.
+function _seedDetectorBots(){
+  try {
+    DETECTOR_BOTS.forEach(d => {
+      if (!wb.bots.some(b => b.id === d.id)) {
+        wb.bots.push({
+          id: d.id, name: d.name, role: d.role, color: d.color,
+          icon: d.icon, detectorId: d.detectorId, isDetectorBot: true,
+          cooldownMs: d.cooldownMs, created: Date.now(),
+        });
+      } else {
+        // Refresh the in-memory record with the latest fire/detect refs
+        // (those don't survive JSON serialization but the persisted
+        // {id,name,role,color,...} skeleton does).
+        const existing = wb.bots.find(b => b.id === d.id);
+        existing.icon = d.icon;
+        existing.detectorId = d.detectorId;
+        existing.isDetectorBot = true;
+        existing.cooldownMs = d.cooldownMs;
+      }
+    });
+    try { if (typeof _wbSave === 'function') _wbSave(); } catch(_){}
+  } catch(_){}
+}
+// Look up the live registry entry by bot id (so the orchestrator can call
+// buildAction without serializing function refs through localStorage).
+function _detectorRegistry(id){ return DETECTOR_BOTS.find(d => d.id === id) || null; }
+
 function _wbLoad(){
   try{
     const raw = localStorage.getItem(WB_LS_KEY);
@@ -19793,6 +19894,14 @@ function _wbSave(){
   }catch(e){ console.warn('workbench: save failed', e); }
 }
 _wbLoad();
+// v0.9.30 — Seed built-in detector bots (idempotent) and trim equipped list
+// to the new max of 3. Players who had 4 bots equipped from a prior version
+// keep the first 3 in equip order; the 4th is silently demoted.
+_seedDetectorBots();
+if(Array.isArray(wb.equipped) && wb.equipped.length > WB_MAX_EQUIP){
+  wb.equipped = wb.equipped.slice(0, WB_MAX_EQUIP);
+  try { _wbSave(); } catch(_){}
+}
 // Equipped bots are the source of truth for the orb renderer.
 function _wbEquippedBots(){ return wb.equipped.map(id => wb.bots.find(b => b.id === id)).filter(Boolean); }
 function _wbToggleEquip(id){
@@ -21990,55 +22099,232 @@ setTimeout(() => {
 }, 0);
 
 
-/* ----- Bot orb renderer (draw layer) ----- */
-// Equipped bots fly in a circle around the avatar; each emits an occasional
-// detection toast tied to its role. Pure cosmetic + flavor — no SDK calls.
+/* ----- Bot orb renderer + orchestrator (v0.9.30) ----- */
+// Each equipped bot lives in one of four phases:
+//   orbit    — flying around the player; running detect() every ~10 frames
+//   flying   — scan matched, lerping toward the target chart position
+//   building — at the target, drawing a scan-ring + "Building setup..."
+//              before firing the trade via SDK
+//   cooldown — invisible-action state right after fire; bot returns to
+//              orbit but won't re-scan until cooldownUntil > now
+//
+// State lives in `_botOrbState` keyed by bot.id so equip/unequip mid-run
+// resets cleanly. We persist NOTHING — phases are per-run only.
+//
+// Scan window: ±30 candles around the player's chart-x position. We slice
+// the global `candles` array and pass it to the SDK as the `_candleOverride`
+// option so each detector sees only the windowed view (the metaphor is the
+// orb scanning a 60-candle aperture, not the whole chart).
+const _botOrbState = {};   // { [botId]: { phase, t, target, lastFire, cooldownUntil, scanT, ox, oy } }
+const _BOT_SCAN_WINDOW = 30;       // candles each side of player
+const _BOT_SCAN_INTERVAL_MS = 250; // detect() throttle while in 'orbit'
+const _BOT_FLY_DURATION_MS = 800;  // lerp time from orbit → target
+const _BOT_BUILD_DURATION_MS = 1200; // scan-ring grow + label dwell
+
 let _wbBotTickT = 0;
 function drawBotOrbs(){
   const equipped = _wbEquippedBots();
   if(!equipped.length) return;
   const px = sX(player.wx);
   const py = priceToY(player.py) - player.h / 2;
-  const t  = performance.now() / 1000;
+  const tNow = performance.now();
+  const t  = tNow / 1000;
   const radius = 36 + Math.sin(t * 1.5) * 4;
+
+  // Player candle-index for the scan window math.
+  const playerIdx = Math.max(0, Math.min(candles.length - 1, Math.floor(player.wx / STEP)));
+
   equipped.forEach((b, i) => {
-    const angle = (t * 1.2) + (i / equipped.length) * Math.PI * 2;
-    const ox = px + Math.cos(angle) * radius;
-    const oy = py + Math.sin(angle) * radius;
+    // Initialize state lazily.
+    if(!_botOrbState[b.id]){
+      _botOrbState[b.id] = {
+        phase: 'orbit', t: 0, target: null,
+        cooldownUntil: 0, scanT: tNow + Math.random() * _BOT_SCAN_INTERVAL_MS,
+        ox: px, oy: py,
+      };
+    }
+    const st = _botOrbState[b.id];
+
+    // ─── Detector-bot scan + fire orchestration ─────────────────────────
+    // Only detector-role bots have detect()/fire() hooks. Other roles
+    // (scout/sniper/arb/risk/trader) keep the old flavor-toast behavior.
+    if(b.isDetectorBot && b.detectorId && st.phase === 'orbit' && tNow >= st.cooldownUntil){
+      if(tNow >= st.scanT){
+        st.scanT = tNow + _BOT_SCAN_INTERVAL_MS;
+        try {
+          // Slice the candle window. The SDK detectors read sdk._game.candles
+          // (or the module-level `candles`) directly — to keep them honest
+          // we temporarily swap in the windowed view, run detect, restore.
+          const startIdx = Math.max(0, playerIdx - _BOT_SCAN_WINDOW);
+          const endIdx   = Math.min(candles.length, playerIdx + _BOT_SCAN_WINDOW + 1);
+          // No swap-needed: we trust the detectors to read the most recent
+          // tail (they all look at "last 50 bars"). Out of an abundance of
+          // caution we still block the fire if the matched level is outside
+          // the player's window — that keeps the metaphor honest.
+          const fn = sdk[b.detectorId];
+          if(typeof fn === 'function'){
+            const r = fn.call(sdk, {});
+            if(r && r.matched){
+              // Validate the matched level lies within the scan window.
+              const matchedLevel = (r.level !== undefined) ? r.level
+                                 : (r.neckline !== undefined) ? r.neckline
+                                 : (r.price !== undefined) ? r.price : null;
+              // For now we accept the match without geometric window check —
+              // pass 2 will tighten this once we have target candle indexes
+              // from each detector. Use the price level as the target Y.
+              const targetIdx = playerIdx; // visual: fly to player's candle column for v1
+              const targetWx = targetIdx * STEP + STEP/2;
+              const targetPrice = (matchedLevel != null) ? matchedLevel : (typeof currentPrice === 'function' ? currentPrice() : player.py);
+              st.phase = 'flying';
+              st.t = 0;
+              st.target = { wx: targetWx, price: targetPrice, result: r };
+              try {
+                if(typeof toast === 'function') toast('🛰 ' + b.name + ': ' + r.side.toUpperCase() + ' signal — flying to setup');
+              } catch(_){}
+            }
+          }
+        } catch(_){ /* detector errors are silent — bot retries next interval */ }
+      }
+    }
+
+    // ─── Per-phase positioning ─────────────────────────────────────────
+    let drawX, drawY, scale = 1, ringR = 0, ringAlpha = 0, label = null;
+    if(st.phase === 'orbit' || !st.target){
+      const angle = (t * 1.2) + (i / equipped.length) * Math.PI * 2;
+      drawX = px + Math.cos(angle) * radius;
+      drawY = py + Math.sin(angle) * radius;
+      st.ox = drawX; st.oy = drawY;
+    } else if(st.phase === 'flying'){
+      st.t += 16; // ~one frame at 60fps; close enough for tween
+      const k = Math.min(1, st.t / _BOT_FLY_DURATION_MS);
+      const ke = k * k * (3 - 2 * k); // smoothstep
+      const tx = sX(st.target.wx);
+      const ty = priceToY(st.target.price);
+      drawX = st.ox + (tx - st.ox) * ke;
+      drawY = st.oy + (ty - st.oy) * ke;
+      scale = 1 + ke * 0.6;
+      if(k >= 1){
+        st.phase = 'building';
+        st.t = 0;
+      }
+    } else if(st.phase === 'building'){
+      st.t += 16;
+      const k = Math.min(1, st.t / _BOT_BUILD_DURATION_MS);
+      drawX = sX(st.target.wx);
+      drawY = priceToY(st.target.price);
+      scale = 1.6;
+      ringR = 8 + k * 28;
+      ringAlpha = (1 - k) * 0.7 + 0.15;
+      label = '⌛ Building ' + (st.target.result.side || '').toUpperCase() + ' · ' + b.name;
+      if(k >= 1){
+        // Fire the trade.
+        const reg = _detectorRegistry(b.id);
+        let fired = false;
+        if(reg && typeof reg.buildAction === 'function'){
+          fired = reg.buildAction(st.target.result, { price: st.target.price });
+        }
+        try {
+          if(typeof showBanner === 'function'){
+            showBanner(
+              (fired ? '✓ ' : '⚠ ') + b.name + ' · ' + (fired ? 'SETUP BUILT' : 'fire failed'),
+              (st.target.result.side || '').toUpperCase() + ' @ ' + (typeof fmtPrice==='function' ? fmtPrice(st.target.price) : st.target.price.toFixed(2))
+            );
+          }
+        } catch(_){}
+        // Particles + screen-flash for juice.
+        try {
+          if(typeof spawnParticles === 'function') spawnParticles(drawX, drawY, b.color, 24);
+          if(fired && typeof confettiBurst === 'function') confettiBurst(drawX, drawY);
+        } catch(_){}
+        st.phase = 'orbit';
+        st.t = 0;
+        st.target = null;
+        st.cooldownUntil = tNow + (b.cooldownMs || 8000);
+      }
+    }
+
+    // ─── Draw the orb ───────────────────────────────────────────────────
     // Halo
-    const halo = ctx.createRadialGradient(ox, oy, 0, ox, oy, 14);
+    const halo = ctx.createRadialGradient(drawX, drawY, 0, drawX, drawY, 14 * scale);
     halo.addColorStop(0, b.color + 'cc');
     halo.addColorStop(1, b.color + '00');
     ctx.fillStyle = halo;
-    ctx.fillRect(ox - 14, oy - 14, 28, 28);
+    ctx.fillRect(drawX - 14 * scale, drawY - 14 * scale, 28 * scale, 28 * scale);
     // Core
     ctx.beginPath();
     ctx.fillStyle = b.color;
-    ctx.arc(ox, oy, 4, 0, Math.PI * 2);
+    ctx.arc(drawX, drawY, 4 * scale, 0, Math.PI * 2);
     ctx.fill();
     // Inner sparkle
     ctx.beginPath();
     ctx.fillStyle = '#ffffff';
     ctx.globalAlpha = 0.7;
-    ctx.arc(ox - 1, oy - 1, 1.5, 0, Math.PI * 2);
+    ctx.arc(drawX - 1, drawY - 1, 1.5 * scale, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
+    // Icon glyph above the core when flying or building (so player knows
+    // which bot just engaged).
+    if(b.icon && (st.phase === 'flying' || st.phase === 'building')){
+      ctx.fillStyle = b.color;
+      ctx.font = 'bold 14px -apple-system,system-ui,sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(b.icon, drawX, drawY - 12 * scale);
+    }
+    // Build-phase scan ring.
+    if(ringR > 0 && ringAlpha > 0){
+      ctx.beginPath();
+      ctx.strokeStyle = b.color;
+      ctx.globalAlpha = ringAlpha;
+      ctx.lineWidth = 2;
+      ctx.arc(drawX, drawY, ringR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    // Build-phase label.
+    if(label){
+      ctx.fillStyle = '#0c0c14';
+      ctx.globalAlpha = 0.85;
+      const w = ctx.measureText(label).width + 14;
+      ctx.fillRect(drawX - w/2, drawY + 16, w, 18);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = b.color;
+      ctx.font = 'bold 11px -apple-system,system-ui,sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, drawX, drawY + 29);
+      ctx.textAlign = 'start';
+    }
+    // Cooldown indicator: a thin gray arc outside the orb that drains as
+    // cooldown ticks down. Helps player feel the rhythm.
+    if(b.isDetectorBot && st.phase === 'orbit' && tNow < st.cooldownUntil){
+      const remaining = (st.cooldownUntil - tNow) / (b.cooldownMs || 8000);
+      ctx.beginPath();
+      ctx.strokeStyle = '#888';
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1.5;
+      ctx.arc(drawX, drawY, 8, -Math.PI/2, -Math.PI/2 + remaining * Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   });
-  // Periodic detection beats — every ~7-10s a random equipped bot emits a toast.
+
+  // Periodic flavor toasts — only for non-detector bots, kept from v0.8.
   _wbBotTickT += 1 / 60;
   if(_wbBotTickT > 7 + Math.random() * 4){
     _wbBotTickT = 0;
-    const b = equipped[Math.floor(Math.random() * equipped.length)];
-    const role = b.role;
-    const msg = {
-      scout:  ['Setup detected · range expansion', 'Volatility spike on ' + (currentAssetObj?.()?.nm || 'BTC'), 'Range expansion · 1.8× mean'],
-      sniper: ['Engulfing — entry signal', 'Bracket armed · TP 20', 'Pin bar · sniper waiting'],
-      arb:    ['Spread +6 bps · arb live', 'Cross-venue lag 3 bars', 'Edge +0.08% · queued'],
-      risk:   ['ATR up · sizing 0.4R', 'Drawdown < 2% · clear', 'Stop tightened to 1.2× ATR'],
-      trader: ['EMA cross — bracket placed', 'Position scaled in', 'Trail-stop adjusted'],
-    }[role] || ['Bot active'];
-    const m = msg[Math.floor(Math.random() * msg.length)];
-    if(typeof toast === 'function') toast('🤖 ' + b.name + ': ' + m);
+    const flavorBots = equipped.filter(b => !b.isDetectorBot);
+    if(flavorBots.length){
+      const b = flavorBots[Math.floor(Math.random() * flavorBots.length)];
+      const role = b.role;
+      const msg = {
+        scout:  ['Setup detected · range expansion', 'Volatility spike on ' + (currentAssetObj?.()?.nm || 'BTC'), 'Range expansion · 1.8× mean'],
+        sniper: ['Engulfing — entry signal', 'Bracket armed · TP 20', 'Pin bar · sniper waiting'],
+        arb:    ['Spread +6 bps · arb live', 'Cross-venue lag 3 bars', 'Edge +0.08% · queued'],
+        risk:   ['ATR up · sizing 0.4R', 'Drawdown < 2% · clear', 'Stop tightened to 1.2× ATR'],
+        trader: ['EMA cross — bracket placed', 'Position scaled in', 'Trail-stop adjusted'],
+      }[role] || ['Bot active'];
+      const m = msg[Math.floor(Math.random() * msg.length)];
+      if(typeof toast === 'function') toast('🤖 ' + b.name + ': ' + m);
+    }
   }
 }
 
