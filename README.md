@@ -4,8 +4,9 @@
 
 [![Live](https://img.shields.io/badge/live-ssjjul3.github.io%2Fchartrunner-14F195)](https://ssjjul3.github.io/chartrunner/)
 [![Solana](https://img.shields.io/badge/solana-devnet%20live-9945FF)](https://ssjjul3.github.io/chartrunner/solana-connect/)
-[![Phase](https://img.shields.io/badge/phase-0.9.1%20MVP-success)](#status)
-[![Stack](https://img.shields.io/badge/stack-vanilla%20JS%20%2B%20Vite-blue)](#stack)
+[![Phase](https://img.shields.io/badge/phase-0.9.7%20multiplayer-success)](#status)
+[![Anchor](https://img.shields.io/badge/anchor-2%20programs%20ready-orange)](anchor/)
+[![Stack](https://img.shields.io/badge/stack-vanilla%20JS%20%2B%20Vite%20%2B%20Rust-blue)](#stack)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
 ## Live now
@@ -25,15 +26,20 @@ The hard architectural rule: **abilities never touch the canvas, the SDK is the 
 
 ## Status
 
-**Phase 0.9.1 — MVP shipped.** Three surfaces live on GitHub Pages.
+**Phase 0.9.7 — multiplayer leaderboard shipped.** Three surfaces live on GitHub Pages, two Anchor programs ready to deploy, async on-chain leaderboard wired end-to-end.
 
 | Phase | Goal | State |
 |---|---|---|
 | **0** | Playable single-file game · onboarding · juice · simplicity | ✅ Shipped |
 | **0.5** | Devnet wallet + signed transaction (proof of on-chain edge) | ✅ Live at `/solana-connect/` |
-| **0.9** | Public landing · repo · CI · Pages deploy | ✅ Shipped (this commit) |
+| **0.9** | Public landing · repo · CI · Pages deploy | ✅ Shipped |
+| **0.9.3** | Wallet-gated entry + Connect button on both topbars + per-wallet localStorage | ✅ Shipped |
+| **0.9.4** | `chartrunner_maps` Anchor program + on-chain SaveMap flow | 🟡 Code complete · deploy pending |
+| **0.9.5** | P2P Marketplace expanded to 6 categories (Backtests, Indicators, Apps added) | ✅ Shipped |
+| **0.9.6** | `chartrunner_registry` — multi-entity on-chain + marketplace (list/buy/cancel) | 🟡 Code complete · deploy pending |
+| **0.9.7** | Async multiplayer — `crGhost` IIFE + on-chain leaderboard + Record-on-chain button | 🟡 Code complete · deploy pending |
 | **1** | SDK pull-over · drop the runtime onto Dexscreener / TradingView | 🟡 Architecture done · in `sdk/` next |
-| **2** | Anchor programs (RegisterStrategy · RecordRun · SaveMap) on devnet → mainnet | 🟢 Planned |
+| **2** | Anchor programs deployed to devnet → mainnet · marketplace settlement live | 🟢 Programs ready · pending Solana Playground deploy |
 
 ## Why this matters
 
@@ -41,35 +47,75 @@ The hard architectural rule: **abilities never touch the canvas, the SDK is the 
 
 Hyperliquid + Phantom flipped the wallet UX. Memecoin season trained 8M+ wallets to swap on-chain. The infra is here. The skill on-ramp is missing. We're the on-ramp.
 
-## What's in v0.9.1
+## What's in v0.9.7
 
 ### The game (`/play/`)
 - Real Binance klines (15 timeframes, 1m → 1M) loaded live, swappable across BTC/ETH/SOL/XRP/BNB/LINK/HYPE/TRX/DOGE/+more
 - Three avatar physics modes — runner / flight / upside-down
 - Six trading primitives wired to a framework-free `ChartRunnerSDK` — bracket, ladder, OCO, hedge, radar, rescue
 - Two-anchor laser placement for Bracket / Ladder / Fib Ladder / OCO
-- Workbench Pine Script builder for custom bots, strategies, indicators, **terminal widgets**, and full apps
+- Workbench Pine Script builder for custom bots, strategies, indicators, terminal widgets, and full apps
+- **🪙 Save on-chain + 📤 List on Marketplace buttons** on every Workbench Bot/Strategy/Indicator/App row
 - Backtest tab with paper-mode simulator
-- Desktop OS surface — Profile · Marketplace · Terminal · Workbench · Maps · Bot Terminal · **Token Terminal** · Configs
-- Multi-tracker Terminal: **Engine** (live game telemetry) · HyperTracker · SolanaTracker · CEXTracker · Strategies + `+` tab to spawn new windows
+- Desktop OS surface — Profile · Marketplace · Terminal · Workbench · Maps · Bot Terminal · Token Terminal · Configs
+- Multi-tracker Terminal: Engine (live game telemetry) · HyperTracker · SolanaTracker · CEXTracker · Strategies + `+` tab to spawn new windows
 - Drag-to-desktop AND drag-to-chart-background widgets
 - Click-on-name editing (button composer for any widget)
 - Two-tutorial system — Desktop OS walkthrough + interactive in-game mechanics tutorial (gated on actually doing the move)
-- Save run as a Map from the in-game topbar
+- Save run as a Map → optional **on-chain anchor** confirm on save
 - Mobile phone OS overlay with the same surfaces
 
+### Wallet integration (Phase 0.9.3+)
+- **Wallet-gated entry** — landing's Play CTAs route through `/solana-connect/?next=play` for the handshake first
+- **Connect button** on both the in-game topbar and the desktop OS menubar (mint pill when connected, click to disconnect with confirm)
+- **Per-wallet localStorage namespacing** via `Storage.prototype` shim — each connected wallet sees its own Profile, Maps, Workbench data; guest mode is a clean slate (`__guest__` namespace)
+- **`crWallet` IIFE** owns wallet state; `crRegistry` IIFE wraps the on-chain dispatcher
+
+### On-chain (Phase 0.9.4 + 0.9.6 + 0.9.7) — `anchor/programs/`
+- **`chartrunner_maps`** — single instruction `save_map(name, content_hash)` → PDA per (wallet, name)
+- **`chartrunner_registry`** — multi-entity registry + marketplace, six instructions:
+  - `save_entity(type, name, hash, royalty_bps)` — supports 9 entity types (Map · Strategy · Bot · Indicator · Backtest · App · TokenProfile · Widget · Tool)
+  - `delete_entity(type, name)` — owner-only, refunds rent
+  - `list_entity(type, name, price)` — creates Listing PDA on the marketplace
+  - `buy_entity(type, name)` — escrow tx: 95% to seller, 5% to protocol treasury, mints License PDA for buyer
+  - `cancel_listing(type, name)` — seller-only, refunds listing rent
+  - `record_run(asset, tf, score, sharpe, duration, map_hash, nonce)` — leaderboard substrate
+- **TS instruction builders** — hand-rolled in `solana-connect/src/lib/cr-*.ts`, no `@coral-xyz/anchor` dep, ~600 lines covering all 7 instructions
+- **Anchor program code-complete; deployment via Solana Playground** is the one remaining step to flip from placeholder Program IDs to live devnet addresses
+
+### P2P Marketplace (Phase 0.9.5+) — six categories
+- **Bots** — Pine bot orbs that detect setups in real time
+- **Maps** — full saved chart setups (asset, TF, indicators, overlays, destruction state, thumbnail)
+- **Strategies** — Pine strategy code with hash anchored to creator
+- **Backtests** — verified results (Sharpe / WR / MaxDD) hash-anchored to parent strategy
+- **Indicators** — Pine overlay/badge/panel indicators
+- **Apps** — HTML widgets that install as desktop OS icons
+- **Real on-chain Buy flow** — clicking Buy on a listing with seller info routes through `/solana-connect/?action=buy-entity` for wallet popup + signed tx
+
+### Async multiplayer (Phase 0.9.7) — `crGhost` IIFE
+- **On-chain leaderboard** docked to the right edge of the chart, top-10 ranked by score for the current (asset, timeframe)
+- **No server, no WebSocket** — vanilla-JS RPC client polls `chartrunner_registry` `getProgramAccounts` every 60s with memcmp filter for `RunRecord` discriminator
+- **Manual Borsh decode** in 30 lines (no `@solana/web3.js` dep; keeps single-file constraint intact)
+- **🏆 Record on-chain button** on the run-end screen — anchors (asset, tf, score, sharpe, duration, map_hash) so other players see the run on their leaderboard
+- **Live pulse dot** in the panel corner signals on-chain polling activity
+
 ### Solana edge (`/solana-connect/`)
-- React + Vite + TypeScript + `@solana/wallet-adapter-react`
-- Wallet Standard discovery (Phantom, Backpack, Solflare, Glow, etc. — all auto-detected)
-- Real signed memo transaction on Solana devnet (canonical Memo program)
-- Explorer-verifiable signature, devnet faucet link, ~5 second flow
-- `?memo=...` query param for deep-linking from the game's topbar
+- React 18 + Vite 5 + TypeScript strict + `@solana/wallet-adapter-react`
+- Wallet Standard auto-discovery (Phantom, Backpack, Solflare, Glow, etc.)
+- **Five operating modes** selected by URL params:
+  - `memo` — default; freeform memo demo
+  - `connect` — `?next=play`; wallet-only handshake before `/play/`
+  - `save-map` — legacy `chartrunner_maps` flow (one-trick)
+  - `registry` — multi-action handler for the registry program (save / list / buy / cancel / record-run)
+- Explorer-verifiable signatures, devnet faucet link
+- One-card UI per action with full metadata preview before signing
 
 ### Landing (`/`)
 - defikingdoms-style single-file landing
 - Animated candle chart hero with drifting Invader sprite
 - Bracket-flow canvas demo (laser → click → click → bracket on a 7s loop)
 - 6-card mechanics grid · architecture diagram · Solana section · 3-phase roadmap
+- **All Play CTAs route through wallet handshake** (v0.9.3+)
 - All inline, no external deps, dark mode
 
 ## Stack
@@ -77,8 +123,9 @@ Hyperliquid + Phantom flipped the wallet UX. Memecoin season trained 8M+ wallets
 | Surface | Stack | Build |
 |---|---|---|
 | Landing | Single HTML file · vanilla JS · canvas | None |
-| Game | Single HTML file · vanilla JS · canvas | None |
+| Game | Single HTML file · vanilla JS · canvas (~25 KB minified equiv) | None |
 | Solana connect | React 18 · TypeScript strict · Vite 5 · `@solana/web3.js` 1.95 · wallet-adapter | `npm run build` |
+| Anchor programs | Rust · Anchor 0.30.1 · Solana 1.18.x | `anchor build` (or Solana Playground) |
 | Skills | `skills/chartrunner` (game work) · `skills/solana` (devnet React work) | — |
 | CI | GitHub Actions: parse-check HTML + Vite build + Pages deploy | Auto on push |
 
@@ -142,11 +189,25 @@ chartrunner/
 │   └── README.md
 ├── solana-connect/                     # Vite + React Solana devnet page
 │   ├── src/
-│   │   ├── App.tsx
+│   │   ├── App.tsx                     # 5 modes: memo / connect / save-map / registry
 │   │   ├── main.tsx
-│   │   └── lib/{memo,explorer,format}.ts
+│   │   └── lib/
+│   │       ├── memo.ts · explorer.ts · format.ts
+│   │       ├── cr-maps-program.ts      # Manual ix builder for chartrunner_maps
+│   │       └── cr-registry-program.ts  # Manual ix builder for chartrunner_registry
 │   ├── package.json · vite.config.ts · tsconfig.json
 │   └── README.md
+├── anchor/                             # Anchor workspace — 2 programs
+│   ├── Anchor.toml
+│   ├── Cargo.toml
+│   ├── programs/
+│   │   ├── chartrunner-maps/           # Single instruction: save_map
+│   │   │   └── src/lib.rs
+│   │   └── chartrunner-registry/       # 9-entity registry + marketplace + record_run
+│   │       └── src/lib.rs
+│   ├── tests/                          # Mocha smoke tests
+│   ├── package.json
+│   └── README.md                       # Toolchain install + Playground deploy guide
 ├── skills/
 │   ├── chartrunner/                    # Game-work skill (auto-loaded)
 │   └── solana/                         # Solana single-file React skill
@@ -201,9 +262,9 @@ CI parse-checks the HTML on every PR. The full Pages deploy runs on `main` push 
 
 - **Email:** jsg@julianroy.com
 - **GitHub:** [@ssjjul3](https://github.com/ssjjul3) · [chartrunner](https://github.com/ssjjul3/chartrunner)
-- **X:** [@chartrunner_xyz](https://x.com/chartrunner_xyz) *(reserve before public launch)*
+- **X:** [@chartrunner_xyz](https://x.com/chartrunner_xyz)
 - **Demo:** https://ssjjul3.github.io/chartrunner/
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Built without an Anchor program (yet — Phase 2). Built without raising a round (yet — open to seed conversations after first traction milestones).
+MIT — see [LICENSE](LICENSE). Two Anchor programs (`chartrunner_maps` + `chartrunner_registry`) ship code-complete in `anchor/` — runtime requires the one-time Solana Playground deploy described in [`anchor/README.md`](anchor/README.md). Built without raising a round (yet — open to seed conversations after first traction milestones).

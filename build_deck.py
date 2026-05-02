@@ -173,14 +173,14 @@ add_text(s, Inches(0.9), Inches(3.4), Inches(11), Inches(0.7),
 
 # subtag
 add_text(s, Inches(0.9), Inches(4.15), Inches(11), Inches(0.5),
-         "Gamified trading SDK · Solana devnet · single-file MVP",
+         "Gamified trading SDK · 2 Anchor programs · async multiplayer · single-file MVP",
          size=16, color=DIM, font='Calibri')
 
 # bottom strip
 add_rect(s, Inches(0.9), Inches(6.3), Inches(11.5), Inches(0.05), fill=DIVIDER)
 add_text(s, Inches(0.9), Inches(6.4), Inches(8), Inches(0.4),
-         [{'text': 'Phase 0 — MVP shipped', 'color': GREEN, 'bold': True, 'size': 12},
-          {'text': '  ·  v0.9 submission package', 'color': DIM, 'size': 12}],
+         [{'text': 'Phase 0.9.7 — multiplayer leaderboard shipped', 'color': GREEN, 'bold': True, 'size': 12},
+          {'text': '  ·  registry + marketplace + leaderboard', 'color': DIM, 'size': 12}],
          font='Calibri')
 add_text(s, Inches(8.5), Inches(6.4), Inches(4), Inches(0.4),
          "ssjjul3.github.io/chartrunner",
@@ -483,7 +483,7 @@ add_text(s, Inches(6.3), Inches(2.7), Inches(6), Inches(0.5),
          "Milestones already met", size=16, color=GREEN, bold=True, font='Calibri')
 
 ms = [
-    ("Phase 0 MVP", "Single-file playable, 9 OS apps, 5 trackers, 6 SDK primitives", True),
+    ("Phase 0.9.7 shipped", "2 Anchor programs · 9 entity types · marketplace + leaderboard · single-file game", True),
     ("Phase 1 SDK skeleton", "ES modules, RiskManager parity tests, demo page", True),
     ("M5 Solana paper-mode", "Ed25519 wallet + session + approver + parity vectors", True),
     ("Constitutional rule", "Enforced across 230+ commits — SDK never bypassed", True),
@@ -566,9 +566,9 @@ add_text(s, Inches(0.7), Inches(0.95), Inches(12), Inches(1.5),
 
 # Three horizontal phases
 phases = [
-    ("Phase 0", "SHIPPED", "Playable single-file MVP\n· Real Binance candles\n· 6 SDK primitives\n· 5 tracker views\n· Workbench Pine builder", GREEN),
+    ("Phase 0", "SHIPPED", "Playable single-file MVP\n· 2 Anchor programs ready\n· Wallet-gated entry\n· On-chain marketplace UI\n· Async multiplayer leaderboard", GREEN),
     ("Phase 1", "ARCHITECTURE DONE", "ChartHost adapter layer\n· Drop UI on Dexscreener\n· Drop on TradingView\n· Drop on Birdeye\n· npm @chartrunner/sdk@0.1", GOLD),
-    ("Phase 2", "PLANNED", "Live Solana devnet\n· Phantom-Connect\n· Real on-chain fills\n· P2P creator economy\n· Multi-venue adapters", PURPLE),
+    ("Phase 2", "DEPLOY-READY", "Programs ship in anchor/\n· Solana Playground deploy\n· Live mainnet trades\n· Marketplace settlement\n· Multi-venue adapters", PURPLE),
 ]
 gw, gh, gx0, gy = Inches(4.0), Inches(4.0), Inches(0.7), Inches(2.5)
 for i, (lbl, status, body, color) in enumerate(phases):

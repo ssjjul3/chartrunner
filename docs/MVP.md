@@ -2,15 +2,17 @@
 
 ## TL;DR
 
-Three live surfaces shipped as v0.9.1:
+Three live frontend surfaces + two Anchor programs, shipped as v0.9.7:
 
-- **`/`** — defikingdoms-style landing page (single HTML, animated hero, mechanics grid, architecture diagram)
-- **`/play/`** — the playable game in a single HTML file (~25k lines vanilla JS, no build, no wallet, no install)
-- **`/solana-connect/`** — React + Vite + wallet-adapter app proving the on-chain edge (real Phantom/Backpack/Solflare connect + signed memo on Solana devnet)
+- **`/`** — defikingdoms-style landing page (single HTML, animated hero, mechanics grid, architecture diagram). All Play CTAs route through wallet handshake.
+- **`/play/`** — the playable game in a single HTML file (~25k lines vanilla JS, no build, no install). Wallet-gated player data; per-wallet localStorage namespacing; on-chain Save/List/Buy buttons throughout the Workbench; async multiplayer leaderboard panel.
+- **`/solana-connect/`** — React + Vite + wallet-adapter app with five operating modes (memo / connect / save-map / registry actions / record-run). Real Phantom/Backpack/Solflare connect + signed devnet transactions.
+- **`anchor/programs/chartrunner_maps`** — Single-instruction Anchor program (`save_map`). Code complete, deploy pending.
+- **`anchor/programs/chartrunner_registry`** — Multi-entity registry + marketplace + leaderboard substrate. 9 entity types, 6 instructions including escrow-based marketplace with 5% protocol fee. Code complete, deploy pending.
 
-All three live at [ssjjul3.github.io/chartrunner](https://ssjjul3.github.io/chartrunner/). Repo: [github.com/ssjjul3/chartrunner](https://github.com/ssjjul3/chartrunner). Source: MIT. CI: parse-check on every PR + auto-deploy on push to `main` (~2 min build).
+Frontend lives at [ssjjul3.github.io/chartrunner](https://ssjjul3.github.io/chartrunner/). Repo: [github.com/ssjjul3/chartrunner](https://github.com/ssjjul3/chartrunner). Source: MIT. CI: parse-check + Vite build + Pages deploy on push to `main` (~2 min build).
 
-This is **Phase 0**. The architecture is shaped so Phase 2 (live Solana mainnet trades) is a swap, not a rewrite — we've already proven the swap on devnet.
+The architecture is shaped so Phase 2 (live mainnet trades + marketplace settlement) is a one-line program-ID swap per program — code path is identical between today's placeholder IDs and tomorrow's live mainnet IDs.
 
 ## What ships in the prototype
 
@@ -66,10 +68,49 @@ All six route through `ChartRunnerSDK`. Abilities never touch the canvas. The SD
 ### Solana devnet edge (`/solana-connect/`)
 - Standalone React + Vite + TypeScript app, deployed alongside the game
 - `@solana/wallet-adapter-react` v0.15+ — auto-discovers Phantom / Backpack / Solflare via Wallet Standard
-- Real signed memo transaction on Solana devnet (canonical Memo program)
-- Explorer-verifiable signature, devnet faucet link, ~5 second flow
-- `?memo=` query param for deep-linking from the game's topbar (carries strategy/run context)
-- Same `ChartRunnerSDK` event shape — Phase 2 is a swap to a real Anchor program, not a rewrite
+- **Five operating modes** selected by URL params: `memo`, `connect`, `save-map`, `registry` (sub-actions: save-entity / list-entity / buy-entity / cancel-listing / record-run)
+- Hand-rolled Anchor instruction builders in `src/lib/cr-{maps,registry}-program.ts` — no `@coral-xyz/anchor` dep, ~600 lines total
+- Real signed transactions on Solana devnet (Memo program + chartrunner_maps + chartrunner_registry)
+- Explorer-verifiable signatures, devnet faucet link, ~5 second flow per tx
+- `?memo=` / `?action=...` query params for deep-linking from the game's topbar (carry name / hash / price / seller context)
+- Same `ChartRunnerSDK` event shape — Phase 2 (mainnet) is a one-line program-ID swap, not a rewrite
+
+### On-chain layer (Phase 0.9.4 + 0.9.6 + 0.9.7) — `anchor/programs/`
+
+Two Anchor programs ship code-complete; deployment via Solana Playground is the one remaining step.
+
+**`chartrunner_maps`** — single instruction `save_map(name, content_hash)`. PDA per `(wallet, name)`. Stores SHA-256 hash + saved_at. ~95 lines Rust.
+
+**`chartrunner_registry`** — multi-entity registry + marketplace + leaderboard, six instructions:
+- `save_entity(type, name, hash, royalty_bps)` — supports 9 entity types: Map, Strategy, Bot, Indicator, Backtest, App, TokenProfile, Widget, Tool
+- `delete_entity(type, name)` — owner-only, refunds rent
+- `list_entity(type, name, price)` — creates Listing PDA
+- `buy_entity(type, name)` — escrow tx: 95% to seller, 5% to protocol treasury, mints License PDA for buyer
+- `cancel_listing(type, name)` — seller-only, refunds rent
+- `record_run(asset, tf, score, sharpe, duration, map_hash, nonce)` — leaderboard substrate; queried by the in-game ghost overlay
+
+~430 lines Rust. Mocha smoke tests in `anchor/tests/`. PDA seeds keyed by `(b"entity", entity_type, owner, name)` for collision-free namespacing across types and players.
+
+### Wallet integration (Phase 0.9.3+)
+- **Wallet-gated entry** — landing's Play CTAs route through `/solana-connect/?next=play` for the wallet handshake first
+- **Connect button** on both the in-game OS bar and the splash desktop menubar — collapses to mint pill (`🪙 ABCD…WXYZ`) when connected, click to disconnect with confirm
+- **Per-wallet localStorage namespacing** via `Storage.prototype` shim — each connected wallet sees its own Profile, Maps, Workbench data; guest mode is a clean `__guest__` slate
+- **`crWallet` IIFE** owns wallet state; **`crRegistry` IIFE** wraps the on-chain dispatcher; **`crGhost` IIFE** handles the leaderboard polling
+
+### P2P Marketplace (Phase 0.9.5+) — six categories on-chain
+- **Bots** · **Maps** · **Strategies** · **Backtests** · **Indicators** · **Apps**
+- Each entity type maps to a distinct discriminator in `chartrunner_registry`
+- Buy buttons route through `/solana-connect/?action=buy-entity` for wallet popup + signed tx
+- 5% protocol fee, mints License PDA proving the purchase
+- "🪙 Save on-chain" + "📤 List on Marketplace" buttons in every Workbench tab
+- Backtests carry hash linking to parent strategy → buyers can re-hash to verify metrics
+
+### Async multiplayer (Phase 0.9.7) — `crGhost` IIFE
+- **Docked top-10 leaderboard panel** on the right edge of the chart, ranked by score for the current `(asset, timeframe)`
+- **No server, no WebSocket** — vanilla JS RPC client polls `chartrunner_registry` every 60s via `getProgramAccounts` with memcmp filter for `RunRecord` discriminator
+- **Manual Borsh decode** in 30 lines (no `@solana/web3.js` dep — the game stays single-file)
+- **🏆 Record on-chain** button on the run-end screen — anchors (asset, tf, score, sharpe, duration, map_hash) to the registry program
+- **Live pulse dot** in the panel corner signals on-chain polling activity
 
 ### Phone OS overlay
 - Full mirror of the desktop OS: Coach (retired), Marketplace, Profile, Intel (retired), Maps, Terminal, Bot Terminal
@@ -90,20 +131,32 @@ All six route through `ChartRunnerSDK`. Abilities never touch the canvas. The SD
 ### Save/Load
 - `crMaps` — save chart setups with full destruction state (which indicator sub-lines / vol bars / VRVP buckets / strategy markers were shot down) + thumbnail; up to 30 maps; restoring drops player into the saved chart
 
-## What's mocked (Phase 0)
-- Wallet (Phantom-Connect ships in Phase 2)
-- Solana transactions
-- On-chain fills
+## What's live vs pending (Phase 0.9.7)
 
-The `ChartRunnerSDK` surface is shaped so a real DEX adapter drops in cleanly.
+| Surface | State |
+|---|---|
+| Wallet connect (Phantom / Backpack / Solflare) | ✅ Live on `/solana-connect/` |
+| Wallet-gated entry (landing → connect → game) | ✅ Live |
+| Per-wallet localStorage namespacing | ✅ Live |
+| Anchor program code (`chartrunner_maps` + `chartrunner_registry`) | ✅ Code complete in `anchor/` |
+| Anchor program **deployment** to devnet | 🟡 Pending Solana Playground deploy |
+| Memo program tx on devnet | ✅ Live |
+| In-game Save/List/Buy on-chain flows | ✅ UI live, txs sign and submit (will fail until programs deploy) |
+| Async multiplayer leaderboard | ✅ UI live, polls real RPC (empty until first runs recorded) |
+| Trading primitives placing real Solana mainnet trades | ❌ Phase 2 (mainnet adapter) |
+| Real Solana DEX adapter | ❌ Phase 2 |
+| WebSocket live candles | ❌ Currently REST polled |
+| Mobile touch controls | ❌ Desktop only |
 
-## What's NOT in the MVP yet (next ships)
-- WebSocket live candles (REST polled)
-- Mobile touch controls (desktop only for now)
-- Signed run summaries
-- Leaderboards
-- Per-asset P&L tracking
-- Real Solana devnet adapter
+The `ChartRunnerSDK` surface is shaped so a real DEX adapter drops in cleanly. The `chartrunner_registry` program ID swap from placeholder → live devnet is mechanical (one constant in three files).
+
+## What's NOT in the MVP yet (deferred to Phase 1.5 / 2)
+- Full ghost-trajectory replay (requires IPFS/Arweave path storage)
+- Real-time multiplayer (requires WebSocket server, breaks single-file rule)
+- Resale royalty escrow (license becomes resalable, royalty back to creator)
+- WebSocket live candles
+- Mobile touch controls
+- Signed run summaries beyond `record_run`
 
 ## Build credibility — the hard rules
 
@@ -120,19 +173,26 @@ These rules are why Phase 1 (drop the game UI on top of Dexscreener / TradingVie
 
 | Metric | Value |
 |---|---|
-| **Lines of code (single file)** | ~14,700 |
-| **External dependencies** | 0 |
-| **Build steps** | 0 |
-| **Trading primitives wired** | 6 |
+| **Lines of code (single file game)** | ~25,000 |
+| **External dependencies in the game** | 0 |
+| **Build steps for the game** | 0 |
+| **Anchor programs** | 2 (`chartrunner_maps` + `chartrunner_registry`) |
+| **On-chain instructions** | 7 (save_map · save_entity · delete_entity · list_entity · buy_entity · cancel_listing · record_run) |
+| **On-chain entity types in registry** | 9 (Map · Strategy · Bot · Indicator · Backtest · App · TokenProfile · Widget · Tool) |
+| **Trading primitives wired to SDK** | 6 (bracket / ladder / OCO / hedge / radar / rescue) |
 | **Indicators implemented** | 9 |
-| **OS apps shipping** | 9 (Run, Marketplace, Profile, Workbench, Maps, Terminal, Bot Terminal, Configs, +custom-built apps) |
-| **Tracker views** | 5 (Darkflow / HyperTracker / SolanaTracker / CEXTracker / Strategies) |
+| **OS apps shipping** | 9+ (Run · Marketplace · Profile · Workbench · Maps · Terminal · Bot Terminal · Token Terminal · Configs · custom-built apps) |
+| **P2P Marketplace categories** | 6 (Bots · Maps · Strategies · Backtests · Indicators · Apps) |
+| **Tracker views** | 5 (Engine / HyperTracker / SolanaTracker / CEXTracker / Strategies) |
 | **Themes** | 3 (Platinum / Solana / Ascii) |
-| **Persistence keys** | 4 (`cr_maps_v1` / `cr_workbench_v1` / `cr_equipped_bots_v1` / `cr_widgets_v1`) |
+| **Wallet-namespaced persistence keys** | 9 (cr_maps_v1, cr_workbench_v1, cr_equipped_bots_v1, cr_widgets_v1, cr_indicators_v1, cr_last_played_v1, cr_racing_best, cr_starred_tools_v1, cr_pinned_widgets_v1) |
+| **Solana devnet operating modes** | 5 (memo / connect / save-map / registry / record-run) |
 
 ## Why this is credible (not a slide deck)
 
-- It runs. Right now. Open the file.
+- It runs. Right now. Open the file in any browser.
 - It carries 230+ atomic version commits — each one a vetted change with comments explaining the why.
 - The SDK is real. The constitutional rule is real. The Phase 2 swap is structural, not aspirational.
-- The single-file constraint forced architectural discipline most prototypes don't survive. The fact that a 14,700-line game is one HTML file *is* the credibility.
+- The single-file constraint forced architectural discipline most prototypes don't survive. The fact that a 25,000-line game is one HTML file *is* the credibility.
+- **Two Anchor programs ship as Rust source** in `anchor/programs/` — not slideware, not "would build." The instruction discriminators are precomputed; the TS clients build the wire-format ix by hand and bind to declared Program IDs. Everything except the one Solana CLI deploy command is done.
+- **The marketplace economy is wired end-to-end** as code. Buy a strategy → wallet popup → escrow tx → seller gets 95% → treasury gets 5% → buyer gets a License PDA. The on-chain runtime is the only remaining gate.
