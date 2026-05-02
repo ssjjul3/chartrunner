@@ -11,6 +11,7 @@ import {
   EntityType,
   ENTITY_TYPE_NAMES,
   buildSaveEntityIx,
+  buildDeleteEntityIx,
   buildListEntityIx,
   buildBuyEntityIx,
   buildCancelListingIx,
@@ -31,6 +32,7 @@ const CLUSTER = 'devnet' as const;
 type Mode = 'memo' | 'connect' | 'save-map' | 'registry';
 type RegistryAction =
   | 'save-entity'
+  | 'delete-entity'
   | 'list-entity'
   | 'buy-entity'
   | 'cancel-listing'
@@ -118,9 +120,9 @@ function getRegistryParams(): RegistryParams | null {
   try {
     const url = new URL(window.location.href);
     const action = url.searchParams.get('action');
-    if (action !== 'save-entity'    && action !== 'list-entity' &&
-        action !== 'buy-entity'     && action !== 'cancel-listing' &&
-        action !== 'record-run')    return null;
+    if (action !== 'save-entity'    && action !== 'delete-entity' &&
+        action !== 'list-entity'    && action !== 'buy-entity' &&
+        action !== 'cancel-listing' && action !== 'record-run')    return null;
 
     const ret = url.searchParams.get('return') || '/play/';
     if (!ret.startsWith('/'))       return null;
@@ -433,6 +435,16 @@ export default function App() {
           });
           break;
         }
+        case 'delete-entity': {
+          // v0.9.8h — Closes the entity PDA, refunds rent (~0.0011 SOL).
+          // Only owner can call (Anchor `has_one = owner` on the account).
+          ix = buildDeleteEntityIx({
+            owner: publicKey,
+            entityType: registryParams.entityType,
+            name: registryParams.name,
+          });
+          break;
+        }
         case 'record-run': {
           if (!registryParams.runAsset || !registryParams.runTimeframe ||
               registryParams.runScore == null || !registryParams.runMapHash ||
@@ -604,6 +616,7 @@ export default function App() {
           <section className="card">
             <h2 className="card-h">
               {registryParams.action === 'save-entity'    && '🪙 Save '}
+              {registryParams.action === 'delete-entity'  && '🗑 Unanchor '}
               {registryParams.action === 'list-entity'    && '📤 List '}
               {registryParams.action === 'buy-entity'     && '💰 Buy '}
               {registryParams.action === 'cancel-listing' && '✖ Cancel listing for '}
@@ -626,6 +639,10 @@ export default function App() {
               )}
               {registryParams.action === 'cancel-listing' && (
                 <>Removes this listing from the marketplace. Listing rent (~0.001 SOL) refunds to you.</>
+              )}
+              {registryParams.action === 'delete-entity' && (
+                <>Closes the on-chain PDA for this entity. Rent (~0.0011 SOL) refunds to your wallet.
+                Your local copy is preserved — you can re-anchor it later if you want.</>
               )}
               {registryParams.action === 'record-run' && (
                 <>Anchors this completed run on-chain so other players see it as a ghost overlay

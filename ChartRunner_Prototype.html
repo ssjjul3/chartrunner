@@ -6494,16 +6494,23 @@ window.crRegistry = (function(){
   };
   var ENTITY_LABELS = ['Map','Strategy','Bot','Indicator','Backtest',
                        'App','TokenProfile','Widget','Tool'];
-  // localStorage keys per entity type. Each holds a list of {name, onChain,
-  // sig, listed, price, buyer, ...} records that mirror what's on-chain.
+  // v0.9.8g — localStorage keys per entity type. Bot, Strategy, Indicator,
+  // Backtest, and App ALL live inside the cr_workbench_v1 JSON (under .bots
+  // / .strategies / .indicators / .backtests / .apps). The previous mapping
+  // pointed Strategy/Indicator/Backtest at separate top-level keys that the
+  // game never writes — every findEntity() call returned null, so every
+  // 'on-chain save' from those tabs hit empty stores. Now all five point at
+  // the workbench JSON; _readType / _writeType resolve the right sub-array.
+  // TokenProfile has no in-game UI yet — keeping the dedicated key as a
+  // forward-compat slot so the eventual TokenProfile builder can write here.
   var STORAGE_KEYS = {
     0: 'cr_maps_v1',
-    1: 'cr_strategies_v1',
-    2: 'cr_workbench_v1',         // bots live inside the workbench struct
-    3: 'cr_indicators_v1',
-    4: 'cr_backtests_v1',
-    5: 'cr_workbench_v1',         // apps also under workbench
-    6: 'cr_token_profiles_v1',
+    1: 'cr_workbench_v1',         // Strategy → wb.strategies
+    2: 'cr_workbench_v1',         // Bot       → wb.bots
+    3: 'cr_workbench_v1',         // Indicator → wb.indicators
+    4: 'cr_workbench_v1',         // Backtest  → wb.backtests
+    5: 'cr_workbench_v1',         // App       → wb.apps
+    6: 'cr_token_profiles_v1',    // TokenProfile (no UI yet; reserved)
     7: 'cr_widgets_v1',
     8: 'cr_starred_tools_v1',
   };
@@ -6557,12 +6564,13 @@ window.crRegistry = (function(){
       if (!raw) return [];
       var parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
-      // Workbench shape: { bots:[], strategies:[], indicators:[], apps:[] }
+      // Workbench shape: { bots:[], strategies:[], indicators:[], backtests:[], apps:[] }
       if (parsed && typeof parsed === 'object') {
-        if (type === ENTITY.Bot && Array.isArray(parsed.bots))             return parsed.bots;
-        if (type === ENTITY.Strategy && Array.isArray(parsed.strategies))  return parsed.strategies;
+        if (type === ENTITY.Bot       && Array.isArray(parsed.bots))       return parsed.bots;
+        if (type === ENTITY.Strategy  && Array.isArray(parsed.strategies)) return parsed.strategies;
         if (type === ENTITY.Indicator && Array.isArray(parsed.indicators)) return parsed.indicators;
-        if (type === ENTITY.App && Array.isArray(parsed.apps))             return parsed.apps;
+        if (type === ENTITY.Backtest  && Array.isArray(parsed.backtests))  return parsed.backtests;
+        if (type === ENTITY.App       && Array.isArray(parsed.apps))       return parsed.apps;
       }
       return [];
     } catch(_){ return []; }
@@ -6578,6 +6586,7 @@ window.crRegistry = (function(){
         if (type === ENTITY.Bot)       wb.bots       = list;
         if (type === ENTITY.Strategy)  wb.strategies = list;
         if (type === ENTITY.Indicator) wb.indicators = list;
+        if (type === ENTITY.Backtest)  wb.backtests  = list;
         if (type === ENTITY.App)       wb.apps       = list;
         localStorage.setItem(key, JSON.stringify(wb));
       } else {
@@ -6685,6 +6694,25 @@ window.crRegistry = (function(){
     window.location.href = url;
     return true;
   }
+  // v0.9.8h — On-chain unanchor. Calls delete_entity in the registry program;
+  // the PDA is closed, rent (~0.0011 SOL) refunds to the player. Local
+  // localStorage record is left intact (the player can re-anchor later).
+  // The matching React handler is the new ?action=delete-entity mode in
+  // solana-connect's App.tsx; on success the URL handler clears the
+  // entity's onChain/sig metadata.
+  function deleteFromChain(type, name){
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
+      var ok = window.confirm('Removing on-chain anchor requires a connected wallet. Connect now?');
+      if (ok && crWallet) crWallet.connect();
+      return false;
+    }
+    var url = '../solana-connect/?action=delete-entity'
+            + '&type='   + encodeURIComponent(type)
+            + '&name='   + encodeURIComponent(name)
+            + '&return=' + encodeURIComponent('/play/');
+    window.location.href = url;
+    return true;
+  }
   // v0.9.7 — Record a completed run on-chain. Fires the record_run ix in
   // the registry program. Other players' games will pick this up via the
   // crGhost RPC poll and render it as a labelled marker overlay on their
@@ -6747,6 +6775,12 @@ window.crRegistry = (function(){
       } else if (regAction === 'cancel-listing'){
         patch = { listed: false, listingSig: null, listingPrice: null };
         toastMsg = '✖ Listing cancelled';
+      } else if (regAction === 'delete-entity'){
+        // v0.9.8h — On-chain unanchor: clear the metadata that proves
+        // anchoring. Local entity is preserved so player can re-anchor.
+        patch = { onChain: false, sig: null, onChainAt: null,
+                  listed: false, listingSig: null, listingPrice: null };
+        toastMsg = '🗑 ' + label + ' "' + regName + '" unanchored · rent refunded';
       }
       if (Object.keys(patch).length) markEntity(t, regName, patch);
       setTimeout(function(){
@@ -6767,11 +6801,12 @@ window.crRegistry = (function(){
     sha256Hex:     sha256Hex,
     findEntity:    findEntity,
     markEntity:    markEntity,
-    saveOnChain:   saveOnChain,
-    listOnMarket:  listOnMarket,
-    buyFromMarket: buyFromMarket,
-    cancelListing: cancelListing,
-    recordRun:     recordRun,
+    saveOnChain:    saveOnChain,
+    listOnMarket:   listOnMarket,
+    buyFromMarket:  buyFromMarket,
+    cancelListing:  cancelListing,
+    deleteFromChain: deleteFromChain,
+    recordRun:      recordRun,
   };
 })();
 
@@ -8375,7 +8410,10 @@ window.addEventListener('keydown', e=>{
   if(k==='0'){ if(bracketEditor.open||ladderEditor.open) return; camera.panX=0; camera.panY=0; camera.zoomX=1; camera.zoomY=1; camera.manualUntil=0; toast('Chart reset'); return; }
   // v0.8M#1 — R (restart) hotkey retired. Use phone keypad-4 (press M, then 4).
   // if(k==='r'){ restart(); return; }
-  if(k==='f'){ if(player.upsideDown) exitUpsideDown(); else toggleFly(); return; }
+  // v0.9.8i — F (fly toggle / surface from upside-down) hotkey retired per user.
+  // Both behaviors remain reachable via the double-tap-arrow state-chain
+  // (↑↑ surfaces from upside-down → enters flight) so no functionality lost.
+  // if(k==='f'){ if(player.upsideDown) exitUpsideDown(); else toggleFly(); return; }
   if(k==='m'){ toggleMenu(); return; }
   // v0.8k#18 — `T` hotkey retired. Trails live on slot 1 (see key-1 tap/hold
   // above). Leave this block empty so future bindings don't conflict.
@@ -16910,12 +16948,36 @@ function _wbAddChainActions(row, entityType, entity){
     });
   }
 
+  // v0.9.8h — 🪙× Unanchor. Only visible when entity is anchored on-chain.
+  // Calls delete_entity in the registry program; PDA closes, rent refunds.
+  // Local localStorage record is preserved so player can re-anchor later.
+  let unanchorBtn = null;
+  if (isOnChain) {
+    unanchorBtn = document.createElement('button');
+    unanchorBtn.type = 'button';
+    unanchorBtn.className = 'cr-go';
+    unanchorBtn.style.cssText = 'padding:4px 8px;font-size:10px;background:transparent;border:1px solid rgba(255,107,107,0.4);color:#ff6b6b';
+    unanchorBtn.title = 'Remove on-chain anchor (refunds ~0.0011 SOL rent). '
+      + 'Local copy preserved — you can re-anchor later.';
+    unanchorBtn.textContent = '🪙×';
+    unanchorBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (window.confirm('Unanchor "' + entity.name + '" from Solana devnet?\n\n'
+        + 'The on-chain PDA will be closed and ~0.0011 SOL rent refunded.\n'
+        + 'Your local copy stays intact — you can re-anchor later.')) {
+        crRegistry.deleteFromChain(entityType, entity.name);
+      }
+    });
+  }
+
   if (delBtn) {
     row.insertBefore(saveBtn, delBtn);
     row.insertBefore(listBtn, delBtn);
+    if (unanchorBtn) row.insertBefore(unanchorBtn, delBtn);
   } else {
     row.appendChild(saveBtn);
     row.appendChild(listBtn);
+    if (unanchorBtn) row.appendChild(unanchorBtn);
   }
 }
 function _wbRenderBots(){
