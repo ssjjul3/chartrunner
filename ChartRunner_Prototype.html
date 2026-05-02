@@ -12306,6 +12306,21 @@ function updateWeapons(dt){
         if(b.hits.has(key)) continue;
         if(Math.abs(b.sy - priceToY(hl.py)) < HIT_PX){
           b.hits.add(key);
+          // v0.9.24 — Shooting a tagged trade-primitive line cancels the linked
+          // SDK order (limit) or clears the SL/TP modifier on the linked bracket.
+          if(hl.tradeKind && hl.tradeOrderId != null){
+            try {
+              if(hl.tradeKind === 'limit'){
+                if(typeof sdk.cancelOrder === 'function') sdk.cancelOrder({ id: hl.tradeOrderId });
+                else { const o = sdk.openOrders.find(x => x.id === hl.tradeOrderId); if(o) o.cancelled = true; }
+              } else if(hl.tradeKind === 'stopLossAt'){
+                const o = sdk.openOrders.find(x => x.id === hl.tradeOrderId); if(o) o.sl = null;
+              } else if(hl.tradeKind === 'takeProfitAt'){
+                const o = sdk.openOrders.find(x => x.id === hl.tradeOrderId); if(o) o.tp = null;
+              }
+            } catch(_){}
+            try { toast(hl.tradeKind + ' shot · order updated'); } catch(_){}
+          }
           game.anchorLines.splice(i, 1);
           consume('HLine');
         }
@@ -15771,32 +15786,63 @@ function drawAnchorLines(){
     // both sides regardless of which world placed them — no dim, no dashed.
     const sameWorld = true;
     const alpha = 1;
+    // v0.9.24 — Color + label by tradeKind so the same drag/shoot/edit hline
+    // infrastructure renders limit / stopLoss / takeProfit / etc. visually
+    // distinct without a new overlay kind. Default = original purple HLine.
+    const TRADE_PALETTE = {
+      limit:        { color:'123,227,243',  ic:'◇', name:'LIMIT' },
+      stopLossAt:   { color:'255,91,127',   ic:'⛔', name:'SL'    },
+      takeProfitAt: { color:'61,220,151',   ic:'🏁', name:'TP'    },
+      trailingTpAt: { color:'61,220,151',   ic:'🎢', name:'TRL TP'},
+      scaleOutAt:   { color:'255,184,107',  ic:'⊟',  name:'SCALE' },
+      magnetAt:     { color:'181,138,255',  ic:'🧲', name:'MAGNET'},
+      perpFlipAt:   { color:'163,113,247',  ic:'⇌',  name:'FLIP'  },
+      borrowShortAt:{ color:'255,91,127',   ic:'⇩',  name:'SHORT' },
+      liqGuardAt:   { color:'255,209,102',  ic:'🛡', name:'LIQ G' },
+    };
+    const tk = a.tradeKind && TRADE_PALETTE[a.tradeKind];
+    const baseRGB = tk ? tk.color : '155,140,255';
+    const labelIc = tk ? tk.ic : '━';
+    const labelNm = tk ? tk.name : '';
     ctx.lineWidth = isSel ? 2.4 : 1.6;
     ctx.strokeStyle = isSel
-      ? `rgba(155,140,255,${1.0*alpha})`
-      : `rgba(155,140,255,${0.85*alpha})`;
-    ctx.setLineDash(sameWorld ? [] : [4,4]);
+      ? `rgba(${baseRGB},${1.0*alpha})`
+      : `rgba(${baseRGB},${0.85*alpha})`;
+    // Trade primitives use a dashed line so they're visually distinct from
+    // the regular ridable HLine (solid).
+    ctx.setLineDash(tk ? [6,4] : (sameWorld ? [] : [4,4]));
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    ctx.setLineDash([]);
     // Anchor drop-point marker
     const ax = sX(a.wx);
     if(ax >= -10 && ax <= W+10){
-      ctx.fillStyle = 'rgba(155,140,255,0.95)';
+      ctx.fillStyle = `rgba(${baseRGB},0.95)`;
       ctx.beginPath(); ctx.arc(ax, y, 4, 0, Math.PI*2); ctx.fill();
     }
     // Price label pill — panel-stuck lines show their RSI-scale value (0-100),
-    // free lines show the dollar price.
-    ctx.fillStyle = 'rgba(155,140,255,0.95)';
-    ctx.font = '10px ui-monospace,monospace';
+    // free lines show the dollar price. Trade primitives prefix with TRADE label.
+    ctx.fillStyle = `rgba(${baseRGB},0.95)`;
+    ctx.font = tk ? 'bold 10px ui-monospace,monospace' : '10px ui-monospace,monospace';
+    let labelText;
     if(a.panelStick){
       const pb = getIndicatorPanelBounds();
       const indVal = pb ? (100 * (1 - (a.panelFrac || 0))) : null;
-      const lbl = indVal != null ? indVal.toFixed(1) : fmtPrice(a.py);
-      ctx.fillText('━ '+lbl, W-92, y-4);
+      labelText = labelIc + ' ' + (indVal != null ? indVal.toFixed(1) : fmtPrice(a.py));
     } else {
-      ctx.fillText('━ '+fmtPrice(a.py), W-92, y-4);
+      labelText = labelIc + (tk ? ' '+labelNm+' ' : ' ') + fmtPrice(a.py);
+    }
+    // Background pill for trade primitives so the colored text is readable.
+    if(tk){
+      const tw = ctx.measureText(labelText).width + 8;
+      ctx.fillStyle = 'rgba(10,15,28,0.85)';
+      ctx.fillRect(W - 18 - tw, y - 8, tw, 16);
+      ctx.fillStyle = `rgba(${baseRGB},0.95)`;
+      ctx.fillText(labelText, W - 14 - tw + 4, y + 3);
+    } else {
+      ctx.fillText(labelText, W-92, y-4);
     }
     if(isSel){
-      ctx.fillStyle = 'rgba(155,140,255,0.95)';
+      ctx.fillStyle = `rgba(${baseRGB},0.95)`;
       ctx.fillRect(W-14, y-4, 8, 8);
       ctx.strokeStyle = 'rgba(10,14,24,0.9)'; ctx.lineWidth = 1;
       ctx.strokeRect(W-14, y-4, 8, 8);
@@ -16831,21 +16877,49 @@ function commitLaserSingleClick(toolId, sx, sy, wxAt, priceAt, originUp, exitFn)
     }
     /* v0.9.22 — Tier 1-4 SDK primitive placements. Each routes to the
        matching sdk.* method with click price as the target. Side is
-       inferred from click position relative to current price. */
+       inferred from click position relative to current price.
+       v0.9.24 — Each also pushes a tagged anchorLine record so the placement
+       gets the full hline drag/shoot/edit treatment. The tradeKind tag drives
+       per-primitive color + label in drawAnchorLines. */
     else if(toolId === 'limit'){
       const here = currentPrice();
       const side = (priceAt < here) ? 'buy' : 'sell';
-      try { sdk.limit({ side, price: priceAt, size: 4 }); toast((side==='buy'?'Buy':'Sell')+' limit @ '+fmtPrice(priceAt)); } catch(e){ toast('Limit failed: '+e.message); }
+      let order = null;
+      try { order = sdk.limit({ side, price: priceAt, size: 4 }); toast((side==='buy'?'Buy':'Sell')+' limit @ '+fmtPrice(priceAt)); } catch(e){ toast('Limit failed: '+e.message); }
+      if(order){
+        try {
+          game.anchorLines.push({
+            id: game.anchorNextId++, wx: wxAt, py: priceAt, t: 0, upsideDown: originUp,
+            tradeKind: 'limit', tradeSide: side, tradeOrderId: order.id,
+          });
+        } catch(_){}
+      }
     }
     else if(toolId === 'stopLossAt'){
       const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
       if(!o){ toast('Stop-loss needs an open bracket'); }
-      else { try { sdk.editOrder ? sdk.editOrder({ id:o.id, sl:priceAt }) : (o.sl = priceAt); toast('SL → '+fmtPrice(priceAt)); } catch(e){ toast('SL failed: '+e.message); } }
+      else {
+        try { sdk.editOrder ? sdk.editOrder({ id:o.id, sl:priceAt }) : (o.sl = priceAt); toast('SL → '+fmtPrice(priceAt)); } catch(e){ toast('SL failed: '+e.message); }
+        try {
+          game.anchorLines.push({
+            id: game.anchorNextId++, wx: wxAt, py: priceAt, t: 0, upsideDown: originUp,
+            tradeKind: 'stopLossAt', tradeOrderId: o.id,
+          });
+        } catch(_){}
+      }
     }
     else if(toolId === 'takeProfitAt'){
       const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
       if(!o){ toast('TP needs an open bracket'); }
-      else { try { sdk.editOrder ? sdk.editOrder({ id:o.id, tp:priceAt }) : (o.tp = priceAt); toast('TP → '+fmtPrice(priceAt)); } catch(e){ toast('TP failed: '+e.message); } }
+      else {
+        try { sdk.editOrder ? sdk.editOrder({ id:o.id, tp:priceAt }) : (o.tp = priceAt); toast('TP → '+fmtPrice(priceAt)); } catch(e){ toast('TP failed: '+e.message); }
+        try {
+          game.anchorLines.push({
+            id: game.anchorNextId++, wx: wxAt, py: priceAt, t: 0, upsideDown: originUp,
+            tradeKind: 'takeProfitAt', tradeOrderId: o.id,
+          });
+        } catch(_){}
+      }
     }
     else if(toolId === 'trailingTpAt'){
       const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
@@ -25058,6 +25132,34 @@ cv.addEventListener('dblclick', e=>{
     return;
   }
   if(hit.kind === 'hline'){
+    // v0.9.24 — Tagged trade primitives (limit/stopLoss/takeProfit) open a
+    // mini-settings dialog instead of just the plain HLine drag toast.
+    const a = hit.overlay;
+    if(a && a.tradeKind){
+      const TRADE_LABEL = {
+        limit:'Limit', stopLossAt:'Stop Loss', takeProfitAt:'Take Profit',
+        trailingTpAt:'Trailing TP', scaleOutAt:'Scale Out', magnetAt:'Magnet',
+        perpFlipAt:'Perp Flip', borrowShortAt:'Borrow Short', liqGuardAt:'Liq Guard',
+      };
+      const lbl = TRADE_LABEL[a.tradeKind] || a.tradeKind;
+      const cur = (typeof fmtPrice === 'function') ? fmtPrice(a.py) : a.py;
+      const newPx = (typeof prompt === 'function') ? prompt(lbl + ' price (current ' + cur + '):', String(a.py.toFixed(2))) : null;
+      if(newPx === null) return;
+      const px = parseFloat(newPx);
+      if(!isFinite(px) || px <= 0){ try { toast('Invalid price'); } catch(_){} return; }
+      a.py = px;
+      // Re-route to the SDK so the underlying order updates.
+      try {
+        const linkedOrder = sdk.openOrders.find(o => o.id === a.tradeOrderId);
+        if(linkedOrder){
+          if(a.tradeKind === 'limit') linkedOrder.price = px;
+          else if(a.tradeKind === 'stopLossAt') linkedOrder.sl = px;
+          else if(a.tradeKind === 'takeProfitAt') linkedOrder.tp = px;
+        }
+      } catch(_){}
+      try { toast(lbl + ' → ' + fmtPrice(px)); } catch(_){}
+      return;
+    }
     try { toast('HLine · drag to move · Del to remove'); } catch(_){}
     return;
   }
@@ -25279,6 +25381,18 @@ window.addEventListener('mousemove', e=>{
     } else if(overlayDrag.kind === 'hline'){
       // v0.8k#22 — HLine: simple y-axis translate.
       ov.py = overlayDrag.snap.py + dPrice;
+      // v0.9.24 — If this line is tagged as a trade primitive (limit/SL/TP),
+      // sync the new price back to the linked SDK order in real time.
+      if(ov.tradeKind && ov.tradeOrderId != null){
+        try {
+          const linked = sdk.openOrders.find(o => o.id === ov.tradeOrderId);
+          if(linked){
+            if(ov.tradeKind === 'limit') linked.price = ov.py;
+            else if(ov.tradeKind === 'stopLossAt') linked.sl = ov.py;
+            else if(ov.tradeKind === 'takeProfitAt') linked.tp = ov.py;
+          }
+        } catch(_){}
+      }
     } else if(overlayDrag.kind === 'vwap'){
       // v0.8k#22 — VWAP anchor drag: move the anchor candle forward/back by
       // the user's wx delta, clamp to valid candle index. Curve recomputes
