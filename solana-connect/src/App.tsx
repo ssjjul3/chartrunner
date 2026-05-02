@@ -841,7 +841,7 @@ export default function App() {
         <footer className="ft">
           <a href="../" className="ft-back">← Back to ChartRunner</a>
           <span className="ft-meta">
-            Source: <a href="https://github.com/" target="_blank" rel="noreferrer">github.com/&lt;you&gt;/chartrunner</a>{' '}
+            Source: <a href="https://github.com/ssjjul3/chartrunner" target="_blank" rel="noreferrer">github.com/ssjjul3/chartrunner</a>{' '}
             · MIT
           </span>
         </footer>

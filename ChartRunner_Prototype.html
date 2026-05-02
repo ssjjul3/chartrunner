@@ -5041,16 +5041,24 @@
         </div>
         <div class="os-wbody">
           <p>ChartRunnerSDK — the trading primitives that the game runs on. Same surface drops on top of Dexscreener / TradingView in Phase 1.</p>
-          <div class="cr-sdkSnippet">// Phase 0 — every ability calls into the SDK
-sdk.placeBracket({ side:'long', entry, sl, tp, risk:0.5 })
-sdk.placeLadder ({ side:'long', levels, totalRisk:1.2 })
-sdk.placeOCO    ({ a, b })
-sdk.openHedge   ({ side:'short', size:0.3 })
-sdk.radarScan() // → { signal, confidence, hint }
-sdk.rescue(positionId)
+          <div class="cr-sdkSnippet">// Phase 0.9.8 — every ability calls into the SDK
+sdk.bracket({ side:'buy', price, slDistance:60, rr:2.0, risk:20 })
+sdk.ladder({ side:'buy', rungs:5, spacing:30, size:4, price })
+sdk.fibLadder({ side:'buy', size:4, price, base:60 })
+sdk.oco({ upper:80, lower:-80, size:6, price })
+sdk.hedgeParachute({ duration:6, side:'buy', price, risk:20 })
+sdk.liquidityRadar({ range:320 })
+sdk.rescueDrone()
+sdk.trailStop({ id, distance })
 
-sdk.on('order:filled', e =&gt; { /* ... */ })
-sdk.on('position:closed', e =&gt; { /* ... */ })</div>
+// v0.9.8 Tier 1+: market, limit, stopLoss, takeProfit, scaleOut,
+//                 twap, iceberg, trailingTakeProfit, ocoBracket, ifThen,
+//                 fundingSnipe, borrowShort, liquidationGuard, copyTrade,
+//                 perpFlip, comboTrade, autoFib, magnet, recordRun
+
+sdk.on('order',        e =&gt; { /* { kind, order } */ })
+sdk.on('fill',         e =&gt; { /* { order, price } */ })
+sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
           <div style="margin-top:10px;font-size:11px;color:#5a5a52">
             <b>Phase 1:</b> drop the game UI as an overlay on Dexscreener charts (bookmarklet + ChartHost adapter). <b>Phase 2:</b> swap the mock backend for a Solana adapter.
           </div>
@@ -23637,11 +23645,17 @@ function log(msg){
       const side = (parts[2] || 'long').toLowerCase();
       const risk = parseFloat((parts[3] || '0.5R').replace(/r$/i,'')) || 0.5;
       try{
-        if(typeof sdk !== 'undefined' && sdk.placeBracket){
+        // v0.9.8e — Was calling sdk.placeBracket which doesn't exist on the
+        // SDK class — silent dead branch hidden by the typeof guard. The
+        // real method is sdk.bracket(price, ...). We preserve the spirit of
+        // the original snippet (entry/sl/tp/risk) by translating into the
+        // bracket() shape: it takes price + slDistance and computes SL/TP.
+        if(typeof sdk !== 'undefined' && typeof sdk.bracket === 'function'){
           const px = (typeof currentPrice === 'function') ? currentPrice() : 100;
-          const order = sdk.placeBracket({ side, entry:px, sl:px * (side==='long'?0.99:1.01), tp:px * (side==='long'?1.02:0.98), risk });
+          const slDistance = px * 0.01;  // 1% stop default, matches the old 0.99/1.01 ratio
+          const order = sdk.bracket({ side: side==='long'?'buy':'sell', price:px, slDistance, rr:2.0, risk:risk*40 });
           termLog('  → bracket ' + (order && order.id ? '#'+order.id : 'placed') + ' · ' + sym + ' ' + side.toUpperCase() + ' ' + risk + 'R');
-        } else { termLog('  sdk.placeBracket unavailable'); }
+        } else { termLog('  sdk.bracket unavailable'); }
       }catch(err){ termLog('  error: ' + err.message); }
       return;
     }
