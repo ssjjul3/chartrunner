@@ -10342,7 +10342,7 @@ function closeTvSettingsDialog(){
 function openTvSettingsDialog(overlay){
   closeTvSettingsDialog();
   if(!overlay) return;
-  const titleMap = { vwap:'Anchored VWAP', avwap:'Anchored VWAP', fibRetrace:'Fib retracement', frvp:'FRVP' };
+  const titleMap = { vwap:'Anchored VWAP', avwap:'Anchored VWAP', fibRetrace:'Fib retracement', fibExt:'Fib extension', frvp:'FRVP' };
   const title = titleMap[overlay.kind] || (overlay.kind || 'Settings');
   const backdrop = document.createElement('div');
   backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center';
@@ -10362,7 +10362,7 @@ function openTvSettingsDialog(overlay){
   const tabsBar = document.createElement('div');
   tabsBar.style.cssText = 'display:flex;gap:24px;padding:10px 18px 0;border-bottom:1px solid #2c2e36;position:relative';
   const tabs = ['Inputs','Style','Coordinates','Visibility'];
-  let active = (overlay.kind === 'fibRetrace') ? 'Style' : 'Inputs';
+  let active = (overlay.kind === 'fibRetrace' || overlay.kind === 'fibExt') ? 'Style' : 'Inputs';
   const tabBtns = {};
   tabs.forEach(t => {
     const b = document.createElement('button');
@@ -10463,9 +10463,14 @@ function openTvSettingsDialog(overlay){
         row('Show on Hours',   mkChk(cfg.vis_hours   !== false, v => cfg.vis_hours = v));
         row('Show on Days',    mkChk(cfg.vis_days    !== false, v => cfg.vis_days  = v));
       }
-    } else if(overlay.kind === 'fibRetrace'){
+    } else if(overlay.kind === 'fibRetrace' || overlay.kind === 'fibExt'){
       if(active === 'Style'){
         row('Trend line', mkChk(overlay.trendLine !== false, v => overlay.trendLine = v));
+        if(overlay.kind === 'fibRetrace'){
+          row('Champion Zone band (0.618–0.66)', mkChk(overlay.championBand !== false, v => overlay.championBand = v));
+        } else {
+          row('Golden Extension band (1.5–1.7)', mkChk(overlay.goldenBand !== false, v => overlay.goldenBand = v));
+        }
         row('Extend', mkSelect([
           { v:'none',  l:"Don't extend" },
           { v:'right', l:'Extend right' },
@@ -12214,7 +12219,7 @@ function updateWeapons(dt){
                         || Math.abs(b.sy - yT) < HIT_PX || Math.abs(b.sy - yB) < HIT_PX;
             if(onEdge) hit = true;
           }
-        } else if(k === 'fibRetrace' && typeof ov.py1 === 'number'){
+        } else if((k === 'fibRetrace' || k === 'fibExt') && typeof ov.py1 === 'number'){
           const xL = Math.min(sX(ov.wx1), sX(ov.wx2));
           const xR = Math.max(sX(ov.wx1), sX(ov.wx2));
           if(b.sx >= xL - HIT_PX && b.sx <= xR + HIT_PX){
@@ -16082,6 +16087,54 @@ function drawTvOverlays(){
         ctx.fillStyle = lv.color;
         ctx.fillText(lv.lvl + ' (' + fmtPrice(py) + ')', xR + 4, y + 4);
       }
+    } else if(k === 'fibExt'){
+      // v0.9.14 — Fib extension renderer. TV convention: lv=0 at p2 (the
+      // impulse end), lv=1 at p1 (the impulse start). Extensions live
+      // ABOVE 1.0 (price = p2 + (p1-p2)*lv with lv>1). The 1.618 "golden
+      // extension" is the canonical TP; we shade a thin band around it.
+      const p1 = ov.py1, p2 = ov.py2;
+      const x1 = sX(ov.wx1), x2 = sX(ov.wx2);
+      const xL = Math.min(x1,x2), xR = Math.max(x1,x2);
+      const extendXR = (ov.extend === 'left')  ? xR : W;
+      const extendXL = (ov.extend === 'right') ? xL : ((ov.extend === 'both') ? 0 : xL);
+      ctx.lineWidth = 1.2;
+      // Golden Extension band — shade between 1.5 and 1.7 (centered on 1.618).
+      if(ov.goldenBand !== false){
+        const pUpper = p2 + (p1 - p2) * 1.7;
+        const pLower = p2 + (p1 - p2) * 1.5;
+        const yUpper = priceToY(pUpper);
+        const yLower = priceToY(pLower);
+        const yTop = Math.min(yUpper, yLower);
+        const yBot = Math.max(yUpper, yLower);
+        if(isFinite(yTop) && isFinite(yBot) && yBot - yTop > 0){
+          const pulse = 0.16 + 0.08 * Math.sin((ov.t || 0) * 0.04);
+          ctx.fillStyle = 'rgba(25,118,210,' + pulse.toFixed(3) + ')';
+          ctx.fillRect(extendXL, yTop, extendXR - extendXL, yBot - yTop);
+          ctx.fillStyle = 'rgba(100,181,246,0.95)';
+          ctx.font = 'bold 10px ui-monospace,monospace';
+          ctx.fillText('★ GOLDEN EXTENSION 1.618', extendXL + 4, yTop + 11);
+        }
+      }
+      // Impulse leg trendline (between anchors).
+      if(ov.trendLine !== false){
+        ctx.strokeStyle = 'rgba(160,170,190,0.7)'; ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.moveTo(x1, priceToY(p1)); ctx.lineTo(x2, priceToY(p2)); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.font = '10px ui-monospace,monospace';
+      for(const lv of (ov.levels || [])){
+        if(!lv.on) continue;
+        const py = p2 + (p1 - p2) * lv.lvl;
+        const y  = priceToY(py);
+        if(!isFinite(y) || y < -50 || y > H + 50) continue;
+        ctx.strokeStyle = lv.color;
+        // 1.618 gets a thicker line; helps it stand out without the band.
+        ctx.lineWidth = (lv.lvl === 1.618) ? 1.8 : 1.0;
+        ctx.beginPath(); ctx.moveTo(extendXL, y); ctx.lineTo(extendXR, y); ctx.stroke();
+        ctx.fillStyle = lv.color;
+        ctx.fillText(lv.lvl + ' (' + fmtPrice(py) + ')', xR + 4, y + 4);
+      }
+      ctx.lineWidth = 1.2;
     } else if(k === 'frvp'){
       // Volume profile bars on the LEFT of the box (matches Style.Placement = Left).
       const x1 = sX(ov.wx1), x2 = sX(ov.wx2);
@@ -16514,6 +16567,35 @@ function commitLaserTwoAnchor(tool, a1, a2){
       try { spawnFloat(sxMid, syMid-14, 'FIB · CHAMPION ZONE', '#ffd166'); } catch(_){}
       toast('Fib retracement · 8 levels · Champion Zone shaded');
     }
+    else if(tool === 'fibExt'){
+      // v0.9.14 — Fib extension. Same 2-anchor placement as fibRetrace, but
+      // levels project ABOVE 1.0 (i.e. beyond the impulse leg) for
+      // take-profit targeting. Anchor1 = swing low, Anchor2 = swing high
+      // (or vice versa for shorts). Drawn extending right past anchor2.
+      const levels = [
+        { lvl:1,     color:'#888'    },
+        { lvl:1.272, color:'#bd9b00' },
+        { lvl:1.414, color:'#ffffff' },
+        { lvl:1.618, color:'#1976d2' },   // golden extension — primary TP
+        { lvl:2,     color:'#7e57c2' },
+        { lvl:2.272, color:'#ce93d8' },
+        { lvl:2.618, color:'#ab47bc' },
+        { lvl:3.618, color:'#e91e63' },
+        { lvl:4.236, color:'#ec407a' },
+      ];
+      game.tvOverlays.push({
+        id: game.tvNextId++, kind:'fibExt',
+        wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price,
+        levels: levels.map(l => ({...l, on:true})),
+        trendLine: true, extend:'right', t:0, upsideDown: originUp,
+        // The "golden extension" 1.618 is the primary TP target; we shade
+        // a thin band around it the same way Champion Zone is shaded on
+        // the retracement tool, so the player's eye lands on the high-WR level.
+        goldenBand: true,
+      });
+      try { spawnFloat(sxMid, syMid-14, 'FIB EXT · TP TARGETS', '#1976d2'); } catch(_){}
+      toast('Fib extension · 9 levels · 1.618 golden extension shaded');
+    }
     else if(tool === 'frvp'){
       // Fixed Range Volume Profile — compute histogram of volume across price
       // bins between candle indices for the bar range. Drawn as horizontal
@@ -16586,6 +16668,7 @@ function drawLaserAnchorsAndPreview(){
     longPos:   'LONG POSITION',
     shortPos:  'SHORT POSITION',
     fibRetrace:'FIB RETRACEMENT',
+    fibExt:    'FIB EXTENSION',
     frvp:      'FRVP',
     priceRange:'PRICE RANGE',
     dateRange: 'DATE RANGE',
@@ -18046,8 +18129,11 @@ const WB_LASER_TOOLS = [
   { id:'flatChannel',  ic:'═',  label:'Flat top/bottom',  cat:'channels', cls:'2-anchor', desc:'Horizontal channel between anchors.', live:false },
   { id:'disjoint',     ic:'⊥',  label:'Disjoint channel', cat:'channels', cls:'3-anchor', desc:'Channel with offset rails.', live:false },
   // — FIBONACCI —
-  { id:'fibRetrace',   ic:'🪜', label:'Fib retracement',  cat:'fib',      cls:'2-anchor', desc:'Fibonacci retracement levels between two anchors. 0 / 0.236 / 0.382 / 0.5 / 0.618 / 0.786 / 1 by default.', live:true,  star:true },
-  { id:'fibExt',       ic:'🌀', label:'Trend-based fib extension', cat:'fib', cls:'3-anchor', desc:'Fib extension levels — 1.618 / 2.618 / 3.618 / 4.236.', live:false },
+  { id:'fibRetrace',   ic:'🪜', label:'Fib retracement',  cat:'fib',      cls:'2-anchor', desc:'Fibonacci retracement levels between two anchors. 0 / 0.236 / 0.382 / 0.5 / 0.618 / 0.66 / 0.786 / 1 by default. Champion Zone 0.618–0.66 shaded.', live:true,  star:true },
+  { id:'fibExt',       ic:'🎯', label:'Fib extension',    cat:'fib',      cls:'2-anchor', desc:'Fibonacci extension levels (1.272 / 1.414 / 1.618 / 2 / 2.272 / 2.618 / 3.618 / 4.236) projected beyond the impulse leg. Golden 1.618 band shaded — primary TP target.', live:true,  star:true },
+  // v0.9.14 — Old 3-anchor 'Trend-based fib extension' stub retired (id collided
+  // with the new live 2-anchor fibExt). Re-add later under id 'fibExt3' if a
+  // proper TradingView trend-based projection is needed.
   { id:'fibChannel',   ic:'╲',  label:'Fib channel',      cat:'fib',      cls:'3-anchor', desc:'Diagonal Fib channel.', live:false, star:true },
   { id:'fibTimeZone',  ic:'┊',  label:'Fib time zone',    cat:'fib',      cls:'2-anchor', desc:'Vertical Fib time spacing.', live:false },
   { id:'fibLadder',    ic:'🪶', label:'Fib ladder (orders)', cat:'fib',   cls:'2-anchor', desc:'Fibonacci-spaced order ladder between two anchors.', live:true },
