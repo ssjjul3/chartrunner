@@ -3633,6 +3633,26 @@
         <div class="rOpenRow"><span><span class="ic">O</span>OCO pairs</span><span class="v" id="crSideOcosCnt">0</span></div>
       </div>
     </div>
+    <!-- v0.9.20 — Run Controls live here in-game (lite profile). 2×2 grid of
+         the four actions that used to live on the topbar. Each delegates to
+         the original (hidden) topbar handler so no behavior change. -->
+    <div class="rCard">
+      <div class="k">Run Controls</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+        <button class="menu cr-bar-btn" id="crLiteRestart" type="button" title="Restart run · clears every drawing" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px;font-size:11px">
+          <span class="ic">↻</span><span class="lbl">Reset</span>
+        </button>
+        <button class="menu cr-bar-btn" id="crLiteSave" type="button" title="Save current run to Maps" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px;font-size:11px">
+          <span class="ic">💾</span><span class="lbl">Save</span>
+        </button>
+        <button class="menu cr-bar-btn" id="crLiteCoins" type="button" title="Toggle coin pickups" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px;font-size:11px">
+          <span class="ic">🪙</span><span class="lbl">Coins</span>
+        </button>
+        <button class="menu" id="crLiteConnect" type="button" title="Connect a Solana wallet" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px;cursor:pointer;font-size:11px">
+          <span class="ic">🔗</span><span class="lbl">Connect</span>
+        </button>
+      </div>
+    </div>
   </div>
   <div class="rPanel hidden" id="crSidePanelMission">
     <div class="rCard">
@@ -5010,28 +5030,10 @@
               </div>
             </div>
           </div>
-          <!-- v0.9.17 — Run Controls. Reset / Save / Coins / Connect Wallet
-               moved here from the in-game topbar so the topbar stays clean.
-               Each button mirrors the data-action of its old topbar twin and
-               proxies clicks via the shared handler — no behavior change. -->
-          <div class="os-section">
-            <h4>Run Controls</h4>
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px">
-              <button class="menu cr-bar-btn" id="crProfRestart" type="button" title="Restart run · clears every drawing" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px">
-                <span class="ic">↻</span><span class="lbl">Reset</span>
-              </button>
-              <button class="menu cr-bar-btn" id="crProfSave" type="button" title="Save current run to Maps (give it a name)" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px">
-                <span class="ic">💾</span><span class="lbl">Save</span>
-              </button>
-              <button class="menu cr-bar-btn" id="crProfCoins" type="button" title="Toggle coin pickups" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px">
-                <span class="ic">🪙</span><span class="lbl">Coins</span>
-              </button>
-              <button class="menu" id="crProfConnect" type="button" title="Connect a Solana wallet" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px;cursor:pointer">
-                <span class="ic">🔗</span><span class="lbl">Connect</span>
-              </button>
-            </div>
-            <p style="margin:6px 0 0;font-size:10px;color:#5a5a52">Wallet status, coin toggle, and run controls live here now (was the in-game topbar).</p>
-          </div>
+          <!-- v0.9.20 — Run Controls moved out of desktop Profile and into the
+               in-game lite profile (right sidebar Wallet tab). Find them at
+               the bottom of #crSidePanelWallet during gameplay. -->
+          <p style="margin:6px 0 0;font-size:10px;color:#5a5a52">Tip · Run controls (Reset / Save / Coins / Connect) live in the in-game right-sidebar Wallet panel.</p>
           <!-- v0.8k#24w/#24av/#24bq — Tabs: Player · Balances · Stats · Missions. -->
           <div class="crTerm-tabs" style="margin-top:8px">
             <button class="crTerm-tab active" data-profview="player" type="button">PLAYER</button>
@@ -9261,6 +9263,7 @@ window.addEventListener('keydown', e=>{
         toast('Placement cancelled');
       } else {
         game.laserAiming = false;
+        game.laserPalette = null;
         try{closeLaserSpawnMenu();}catch(_){ }
         // v0.8k#24k — Restore the OS cursor on exit (cursor:none was set during aim).
         try { cv.style.cursor = ''; } catch(_){}
@@ -10238,10 +10241,14 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
     return () => armTwoAnchor(id, def.label);
   };
   // Build per-category tool lists, intersected with the equipped set.
+  // v0.9.19 — Primitives palette (hotkey 3) restricts to fib + forecast only.
+  const palette = (typeof game !== 'undefined' && game.laserPalette) || 'tools';
+  const PRIMITIVE_CATS = new Set(['fib','forecast']);
   const byCat = {};
   WB_TOOL_CATEGORIES.forEach(c => byCat[c.id] = []);
   WB_LASER_TOOLS.forEach(t => {
     if(!equippedSet.has(t.id)) return;
+    if(palette === 'primitives' && !PRIMITIVE_CATS.has(t.cat)) return;
     if(!byCat[t.cat]) byCat[t.cat] = [];
     byCat[t.cat].push(t);
   });
@@ -10738,10 +10745,11 @@ const ABILITIES = [
     // v0.8k#21 — Toggle laser aim mode. On entry: freeze avatar and initialise
     // the dot 280px ahead along player.facing. On exit: unfreeze. update()
     // early-returns while aiming, so no gravity / no walk. Mouse moves the dot.
-    if(game.laserAiming){
+    if(game.laserAiming && game.laserPalette !== 'primitives'){
       game.laserAiming = false;
       game.laserPhase = 'idle';
       game.laserTool = null;
+      game.laserPalette = null;
       game.laserAnchor1 = null;
       game.laserAnchor2Preview = null;
       try { closeLaserSpawnMenu(); } catch(_){}
@@ -10753,6 +10761,7 @@ const ABILITIES = [
     game.laserAiming = true;
     game.laserPhase = 'idle';
     game.laserTool = null;
+    game.laserPalette = 'tools';   // v0.9.19 — distinguishes from green primitives laser on slot 3
     game.laserAnchor1 = null;
     game.laserAnchor2Preview = null;
     const dirX = (player.facing === -1) ? -1 : 1;
@@ -10760,14 +10769,41 @@ const ABILITIES = [
     game.laserDot.sy = priceToY(player.py);
     toast('Laser aim — move mouse · press 2 or Esc to exit');
   }},
-  // v0.9.8 — Slot 3 expanded from "instant OCO" to a primitives picker menu.
-  // 18 new primitives shipped in the SDK across tiers 1-4; the menu surfaces
-  // every one that's safely callable with default args (skips ones that need
-  // user input like ifThen's `then` callback). OCO is preserved as the first
-  // entry so muscle memory survives — single-tap → menu, click OCO → same
-  // instant fire as before.
-  {key:'3',ic:'⚡', nm:'Primitives', maxCharges:3, charges:3, use:()=>{
-    if(typeof openPrimitivesMenu === 'function') openPrimitivesMenu();
+  // v0.9.19 — Slot 3 = GREEN LASER · Primitives palette. Same aim flow as the
+  // regular laser (slot 2) but tinted green and pre-filtered to trading
+  // primitives (Fibonacci + Forecast categories: bracket, ladder, fibLadder,
+  // fibRetrace, fibExt, longPos, shortPos, OCO). Single-tap = aim mode;
+  // press 3 again or Esc to exit. Hold Shift+3 for the legacy modal picker.
+  {key:'3',ic:'⚡', nm:'Primitives', maxCharges:3, charges:3, use:(e)=>{
+    // Shift+3 = legacy modal picker (kept for power users).
+    if(e && e.shiftKey){
+      if(typeof openPrimitivesMenu === 'function') openPrimitivesMenu();
+      return;
+    }
+    if(game.laserAiming && game.laserPalette === 'primitives'){
+      // Toggle off if already in primitives-laser mode.
+      game.laserAiming = false;
+      game.laserPhase = 'idle';
+      game.laserTool = null;
+      game.laserPalette = null;
+      game.laserAnchor1 = null;
+      game.laserAnchor2Preview = null;
+      try { closeLaserSpawnMenu(); } catch(_){}
+      try { cv.style.cursor = ''; } catch(_){}
+      toast('Primitives laser off');
+      return;
+    }
+    // If regular tools-laser was on, switch palettes without re-arming.
+    game.laserAiming = true;
+    game.laserPhase = 'idle';
+    game.laserTool = null;
+    game.laserPalette = 'primitives';
+    game.laserAnchor1 = null;
+    game.laserAnchor2Preview = null;
+    const dirX = (player.facing === -1) ? -1 : 1;
+    game.laserDot.sx = sX(player.wx) + dirX * 280;
+    game.laserDot.sy = priceToY(player.py);
+    toast('🟢 Primitives laser — pick a primitive · press 3 or Esc to exit');
   }},
 ];
 
@@ -16358,7 +16394,21 @@ const TOOL_VISUAL_STYLES = {
   rune:       { color:'#7ee787', glow:'rgba(126,231,135,0.45)',name:'Rune Mark',        icon:'⛧' },
 };
 const _DEFAULT_TOOL_STYLE = { color:'#ff5b7f', glow:'rgba(255,91,127,0.45)', name:'Tool', icon:'⚡' };
-function _toolStyle(tool){ return TOOL_VISUAL_STYLES[tool] || _DEFAULT_TOOL_STYLE; }
+// v0.9.19 — Idle (no tool yet) palette tint. Hotkey 2 = pink (tools), hotkey 3 = green (primitives).
+const _PALETTE_IDLE_STYLE = {
+  primitives: { color:'#14f195', glow:'rgba(20,241,149,0.45)', name:'Primitives', icon:'⚡' },
+  tools:      { color:'#ff5b7f', glow:'rgba(255,91,127,0.45)', name:'Tools',      icon:'⚡' },
+};
+function _toolStyle(tool){
+  if(TOOL_VISUAL_STYLES[tool]) return TOOL_VISUAL_STYLES[tool];
+  // Idle beam: no tool selected yet → tint based on which laser palette is active.
+  try {
+    if(typeof game !== 'undefined' && game.laserPalette && _PALETTE_IDLE_STYLE[game.laserPalette]){
+      return _PALETTE_IDLE_STYLE[game.laserPalette];
+    }
+  } catch(_){}
+  return _DEFAULT_TOOL_STYLE;
+}
 
 const TOOL_SETUP_GUIDES = {
   // Single-click primitives — drop at one location.
@@ -20979,27 +21029,27 @@ function _wbWireUI(){
 // some windows are conditionally rendered — wrap in setTimeout to be safe).
 setTimeout(_wbWireUI, 0);
 
-// v0.9.17 — Profile-side run-control buttons forward to the original topbar
-// handlers. The topbar buttons stay in the DOM (hidden) so every existing
-// click handler keeps working — Profile entries just .click() through.
+// v0.9.20 — In-game lite-profile run-control buttons forward to the original
+// (hidden) topbar handlers. The topbar buttons stay in the DOM so every
+// existing click handler keeps working — lite-profile entries just .click().
 setTimeout(() => {
-  const proxy = (profileId, topbarId) => {
-    const p = document.getElementById(profileId);
+  const proxy = (liteId, topbarId) => {
+    const p = document.getElementById(liteId);
     const t = document.getElementById(topbarId);
     if(p && t){
       p.addEventListener('click', e => { e.stopPropagation(); t.click(); });
     }
   };
-  proxy('crProfRestart', 'crBarRestart');
-  proxy('crProfSave',    'crBarSave');
-  proxy('crProfCoins',   'crBarCoins');
-  proxy('crProfConnect', 'crBarConnect');
-  // Mirror the wallet-connected glow from the topbar entry → Profile entry,
-  // so the player sees their connection status without opening the topbar.
+  proxy('crLiteRestart', 'crBarRestart');
+  proxy('crLiteSave',    'crBarSave');
+  proxy('crLiteCoins',   'crBarCoins');
+  proxy('crLiteConnect', 'crBarConnect');
+  // Mirror the wallet-connected glow from the topbar entry → lite-profile
+  // entry so the player sees their connection status without opening menus.
   try {
     const sync = () => {
       const t = document.getElementById('crBarConnect');
-      const p = document.getElementById('crProfConnect');
+      const p = document.getElementById('crLiteConnect');
       if(t && p){
         const on = t.classList.contains('cr-wallet-on');
         p.classList.toggle('cr-wallet-on', on);
@@ -21008,7 +21058,6 @@ setTimeout(() => {
       }
     };
     sync();
-    // Re-sync when the topbar text/class changes (wallet flow swaps it).
     const t = document.getElementById('crBarConnect');
     if(t && typeof MutationObserver !== 'undefined'){
       new MutationObserver(sync).observe(t, { attributes:true, childList:true, subtree:true });
