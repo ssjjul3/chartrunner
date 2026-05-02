@@ -11294,8 +11294,24 @@ function openPrimitivesMenu(){
   head.addEventListener('pointerup',     _endDrag);
   head.addEventListener('pointercancel', _endDrag);
 
+  // v0.9.29 — Campaign mode probe filter. When a chapter is active and declared
+  // a probe whitelist (game.campaignProbeSet), only show abilities whose id is
+  // in the set, plus the always-available basics (market/marketSell). Final
+  // chapter uses '*' which means no filter. Outside campaign, no filter applies.
+  const probeSet = (typeof game !== 'undefined') ? game.campaignProbeSet : null;
+  const ALWAYS_AVAILABLE = new Set(['market', 'marketSell']);
+  const filteredItems = (probeSet && probeSet !== '*')
+    ? items.filter(it => probeSet.has(it.id) || ALWAYS_AVAILABLE.has(it.id))
+    : items;
+  if(probeSet && probeSet !== '*'){
+    const note = document.createElement('div');
+    note.style.cssText = 'padding:6px 14px;font-size:10px;color:#9b8cff;background:rgba(155,140,255,0.06);border-bottom:1px solid rgba(155,140,255,0.18)';
+    note.textContent = '🎓 Campaign chapter — probes locked to this lesson';
+    menu.appendChild(note);
+  }
+
   let prevTier = null;
-  items.forEach(it => {
+  filteredItems.forEach(it => {
     if(it.tier !== prevTier){
       const sep = document.createElement('div');
       sep.style.cssText = 'padding:6px 14px 2px;font-size:9px;color:#5a5a72;text-transform:uppercase;letter-spacing:0.6px;font-weight:700';
@@ -17980,6 +17996,19 @@ function pickMode(mode){
   if(typeof game !== 'undefined') game.pendingMode = mode;
   const lbl = document.getElementById('crCfgModeLabel');
   if(lbl) lbl.textContent = _MODE_LABELS[mode] || mode;
+  // v0.9.29 — If the player exits Campaign (picks a non-campaign mode), restore
+  // the loadout that was saved before any chapter took over wb.equippedTools.
+  // The campaign launcher itself bypasses pickMode() entirely (calls restart
+  // directly), so this only fires for the non-campaign exit path.
+  try {
+    if(window._crCampaignSavedLoadout && typeof wb !== 'undefined'){
+      wb.equippedTools = window._crCampaignSavedLoadout.slice();
+      window._crCampaignSavedLoadout = null;
+      try { if(typeof _wbSave === 'function') _wbSave(); } catch(_){}
+    }
+    // Clear chapter probe filter so the Shift+3 modal shows the full ability set again.
+    if(typeof game !== 'undefined'){ game.campaignChapter = null; game.campaignProbeSet = null; }
+  } catch(_){}
   // Close the Run window (mode picker), then open Configs in its place.
   const runWin = document.getElementById('win-run');
   if(runWin) runWin.classList.remove('on');
@@ -18247,21 +18276,58 @@ function pickMode(mode){
   // v0.9.13 — Campaign mode chapters. v0.9.18 — direct-launch with per-chapter
   // preset (asset / timeframe / indicators) so the player skips the Configure
   // Run window entirely and lands directly on the chart.
+  // v0.9.29 — Each chapter declares `loadout` — the SET of laser-tool ids
+  // (primitives + drawing tools) the chapter scope allows. Plus `probes` —
+  // ability ids surfaced in the modal Shift+3 picker for that chapter.
+  // The lock applies on chapter launch (overrides wb.equippedTools), restores
+  // on next non-campaign run. Cumulative — each chapter unlocks what's
+  // explained AND inherits the prior chapter's loadout.
   const CAMPAIGN_CHAPTERS = {
-    1: { goal:'Place 1 bracket. Hit either the TP or the SL — both count.',         tip:'Hotkey 2 = Bracket. Tap once to arm, click chart to drop.', asset:'btc', tf:'15m', indicators:[] },
-    2: { goal:'Toggle the Reference Levels indicator. Touch any pdH / pdL / dOpen line.', tip:'Menu drawer → Indicators → 🎯 Ref Levels.', asset:'btc', tf:'1h', indicators:['reflevels'] },
-    3: { goal:'Get the Confluence badge to ≥6 (TRADEABLE).',                         tip:'Top-right badge. Click to expand. Stack components.',          asset:'btc', tf:'1h', indicators:['reflevels','rsi'] },
-    4: { goal:'Wait for a CCV match (★ banner) and trade with it.',                  tip:'Hotkey: ★ CCV Check probe shows what is firing now.',         asset:'btc', tf:'15m', indicators:['reflevels','vrvp'] },
-    5: { goal:'See SFP, Failed Auction, BARR, OR H&S fire and trade with it.',       tip:'Use the ⇄ ↺ ⚡ 👤 probe abilities.',                            asset:'btc', tf:'1h', indicators:['reflevels','rsi'] },
-    6: { goal:'Build a strategy in Workbench → Quick Builder → Save.',               tip:'Workbench app → Strategies tab. All sliders default-on.',     asset:'btc', tf:'1h', indicators:['reflevels'] },
-    7: { goal:'Spawn a real-data Terminal widget AND equip 1 bot.',                  tip:'Terminal → + → Confluence Signals. Workbench → Bots.',         asset:'btc', tf:'1h', indicators:['reflevels','rsi'] },
-    8: { goal:'Hit ≥3 closed-positive brackets in one run. No assistance.',          tip:'Final exam — everything you have learned.',                    asset:'btc', tf:'1h', indicators:['reflevels','rsi','vrvp'] },
+    1: { goal:'Place 1 bracket. Hit either the TP or the SL — both count.',         tip:'Hotkey 2 = Bracket. Tap once to arm, click chart to drop.', asset:'btc', tf:'15m', indicators:[],
+         loadout:['bracket'], probes:[] },
+    2: { goal:'Toggle the Reference Levels indicator. Touch any pdH / pdL / dOpen line.', tip:'Menu drawer → Indicators → 🎯 Ref Levels.', asset:'btc', tf:'1h', indicators:['reflevels'],
+         loadout:['bracket'], probes:[] },
+    3: { goal:'Get the Confluence badge to ≥6 (TRADEABLE).',                         tip:'Top-right badge. Click to expand. Stack components.',          asset:'btc', tf:'1h', indicators:['reflevels','rsi'],
+         loadout:['bracket'], probes:[] },
+    4: { goal:'Wait for a CCV match (★ banner) and trade with it.',                  tip:'Hotkey: ★ CCV Check probe shows what is firing now.',         asset:'btc', tf:'15m', indicators:['reflevels','vrvp'],
+         loadout:['bracket','stopLossAt','takeProfitAt'], probes:['ccvCheck'] },
+    5: { goal:'See SFP, Failed Auction, BARR, OR H&S fire and trade with it.',       tip:'Use the ⇄ ↺ ⚡ 👤 probe abilities.',                            asset:'btc', tf:'1h', indicators:['reflevels','rsi'],
+         loadout:['bracket','oco','stopLossAt','takeProfitAt'], probes:['ccvCheck','sfpCheck','faCheck','barrCheck','hsCheck','divCheck'] },
+    6: { goal:'Build a strategy in Workbench → Quick Builder → Save.',               tip:'Workbench app → Strategies tab. All sliders default-on.',     asset:'btc', tf:'1h', indicators:['reflevels'],
+         loadout:['bracket','oco','fibLadder','fibRetrace','fibExt','stopLossAt','takeProfitAt'], probes:['ccvCheck','sfpCheck','faCheck','barrCheck','hsCheck','divCheck'] },
+    7: { goal:'Spawn a real-data Terminal widget AND equip 1 bot.',                  tip:'Terminal → + → Confluence Signals. Workbench → Bots.',         asset:'btc', tf:'1h', indicators:['reflevels','rsi'],
+         loadout:['bracket','oco','limit','fibLadder','fibRetrace','fibExt','stopLossAt','takeProfitAt','trailingTpAt','scaleOutAt'], probes:['ccvCheck','sfpCheck','faCheck','barrCheck','hsCheck','divCheck','oiCheck'] },
+    8: { goal:'Hit ≥3 closed-positive brackets in one run. No assistance.',          tip:'Final exam — everything you have learned.',                    asset:'btc', tf:'1h', indicators:['reflevels','rsi','vrvp'],
+         loadout:'*' /* unlock everything */, probes:'*' },
   };
   function _launchCampaignChapter(num){
     const ch = CAMPAIGN_CHAPTERS[num];
     if(!ch) return;
     try { game.campaignChapter = num; } catch(_){}
     try { game.mode = 'timeismoney'; game.pendingMode = 'timeismoney'; } catch(_){}
+    // v0.9.29 — Stash the player's global loadout + probe-set BEFORE we override
+    // for the chapter scope. Restored next time a non-campaign mode is picked,
+    // OR when the player exits Campaign and starts a fresh run.
+    try {
+      if(!window._crCampaignSavedLoadout && typeof wb !== 'undefined' && Array.isArray(wb.equippedTools)){
+        window._crCampaignSavedLoadout = wb.equippedTools.slice();
+      }
+    } catch(_){}
+    // v0.9.29 — Apply chapter loadout lock. '*' = no lock (chapter 8 final).
+    try {
+      if(ch.loadout && ch.loadout !== '*' && typeof wb !== 'undefined'){
+        wb.equippedTools = ch.loadout.slice();
+        try { if(typeof _wbSave === 'function') _wbSave(); } catch(_){}
+      } else if(ch.loadout === '*' && window._crCampaignSavedLoadout){
+        // Final chapter — restore the player's full saved loadout.
+        wb.equippedTools = window._crCampaignSavedLoadout.slice();
+        try { if(typeof _wbSave === 'function') _wbSave(); } catch(_){}
+      }
+    } catch(_){}
+    // Stamp chapter probe-set on game so the modal abilities renderer can filter.
+    try {
+      game.campaignProbeSet = (ch.probes === '*') ? '*' : new Set(ch.probes || []);
+    } catch(_){}
     // Apply preset: asset, timeframe, perspective.
     try { if(typeof currentAsset !== 'undefined' && ch.asset) currentAsset = ch.asset; } catch(_){}
     try { if(typeof timeframe !== 'undefined' && ch.tf) timeframe = ch.tf; } catch(_){}
