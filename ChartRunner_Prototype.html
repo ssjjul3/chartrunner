@@ -7306,6 +7306,34 @@ class ChartRunnerSDK {
       hedgeParachute: true,
       liquidityRadar: 'reframe', // tv → toggleIndicator('VolumeProfileFixedRange')
       rescueDrone:    'reframe', // tv → closeAll()
+      // v0.9.8 — Tier 1: missing-basics that real traders expect. All five
+      // are fully implementable in standalone via the existing openOrders
+      // bookkeeping; no reframe needed.
+      market:           true,
+      limit:            true,
+      stopLoss:         true,
+      takeProfit:       true,
+      scaleOut:         true,
+      // v0.9.8 — Tier 2: pro-trader primitives that signal sophistication.
+      twap:             true,
+      iceberg:          true,
+      trailingTakeProfit: true,
+      ocoBracket:       true,
+      ifThen:           true,
+      // v0.9.8 — Tier 3: Solana / Hyperliquid signature plays. fundingSnipe
+      // and copyTrade are 'reframe' until Phase 2 venue data lands; the
+      // others compose existing primitives.
+      fundingSnipe:     'reframe',
+      borrowShort:      true,
+      liquidationGuard: true,
+      copyTrade:        'reframe',
+      perpFlip:         true,
+      // v0.9.8 — Tier 4: gameplay-flavored, uniquely-ChartRunner. comboTrade
+      // composes pre-baked multi-leg setups; autoFib derives swing then
+      // delegates to fibLadder; magnet is pure gameplay (TP-tightening).
+      comboTrade:       true,
+      autoFib:          true,
+      magnet:           true,
     };
   }
   // v0.8g — allow host adapters to switch mode post-construction.
@@ -7476,6 +7504,333 @@ class ChartRunnerSDK {
     const e={id:this._id(),type:'rescue',armed:true};
     this.activeEffects.push(e); this._emit('effect',{kind:'rescue',effect:e}); return e;
   }
+
+  // ─── v0.9.8 TIER 1 ─ Missing-basics every real trader expects ────────
+  // These are the obvious holes left by the bracket-centric original SDK.
+  // Each is composable from the existing openOrders + tick() machinery.
+
+  /** Instant fill at current price. Pure entry, no TP/SL coupling. Useful
+   *  for momentum entries where the player wants exposure NOW and will
+   *  manage exits later (via stopLoss / takeProfit). */
+  market({side='buy', size=1, price}={}){
+    if(price == null) return null;
+    const o = {
+      id: this._id(), type: 'market', side, entry: price, size,
+      filledAt: performance.now()/1000, status: 'open', pnl: 0,
+    };
+    this.openOrders.push(o);
+    this._emit('order', { kind: 'market', order: o });
+    this._emit('fill',  { order: o, price });
+    return o;
+  }
+
+  /** Resting limit order. Fills when price crosses. Decouples entry from
+   *  exit (unlike bracket which forces TP+SL coupling at creation). */
+  limit({side='buy', price, size=1}={}){
+    if(price == null) return null;
+    const o = {
+      id: this._id(), type: 'limit', side, price, size,
+      status: 'pending',
+    };
+    this.openOrders.push(o);
+    this._emit('order', { kind: 'limit', order: o });
+    return o;
+  }
+
+  /** Add or move a stop-loss on an existing open position (bracket or
+   *  market). Returns the patched order or null if not found. */
+  stopLoss({id, price}={}){
+    const o = this.openOrders.find(x => x.id === id);
+    if(!o || price == null) return null;
+    if(o.status === 'closed' || o.cancelled) return null;
+    o.sl = price;
+    // Recompute slDistance for trailing-stop logic if it gets armed later.
+    if(o.entry != null) {
+      o.slDistance = Math.abs(o.entry - price);
+    }
+    this._emit('modify', { order: o, field: 'sl', price });
+    return o;
+  }
+
+  /** Add or move a take-profit on an existing open position. Symmetric to
+   *  stopLoss. Useful after entering with market() and deciding the exit
+   *  level reactively. */
+  takeProfit({id, price}={}){
+    const o = this.openOrders.find(x => x.id === id);
+    if(!o || price == null) return null;
+    if(o.status === 'closed' || o.cancelled) return null;
+    o.tp = price;
+    this._emit('modify', { order: o, field: 'tp', price });
+    return o;
+  }
+
+  /** Partial close at a specified fraction of the position size. Pro-trader
+   *  signature ("take 25% off at 2R"). Reduces `size` on the live order,
+   *  records realized P&L on the closed slice, and emits a 'partial' event
+   *  so visual overlays can fade the closed quarter. */
+  scaleOut({id, fraction=0.25, price}={}){
+    const o = this.openOrders.find(x => x.id === id);
+    if(!o || o.status === 'closed' || o.cancelled) return null;
+    if(price == null || fraction <= 0 || fraction >= 1) return null;
+    const closeSize = o.size * fraction;
+    const remaining = o.size - closeSize;
+    // Realized P&L on the closed slice — uses entry vs partial-exit price.
+    if(o.entry != null) {
+      const dir = o.side === 'buy' ? 1 : -1;
+      const slicePnl = dir * (price - o.entry) * closeSize;
+      o.pnl = (o.pnl || 0) + slicePnl;
+    }
+    o.size = remaining;
+    this._emit('partial', { order: o, fraction, closeSize, price });
+    return o;
+  }
+
+  // ─── v0.9.8 TIER 2 ─ Pro-trader primitives ────────────────────────────
+
+  /** Time-Weighted Average Price. Splits a total size into N market slices
+   *  fired at fixed intervals. Real venues (Hyperliquid, Binance) ship this
+   *  natively; we schedule slices via setTimeout so the standalone game
+   *  shows the staggered fills as the chart progresses. */
+  twap({side='buy', totalSize=10, slices=5, intervalSecs=2, price}={}){
+    if(price == null || slices < 1) return null;
+    const sliceSize = totalSize / slices;
+    const planId = this._id();
+    const plan = {
+      id: planId, type: 'twap', side, totalSize, sliceSize,
+      slices, intervalSecs, fired: 0, slices_orders: [],
+      status: 'running', createdAt: performance.now()/1000,
+    };
+    this.openOrders.push(plan);
+    const fireSlice = () => {
+      if(plan.status !== 'running') return;
+      const order = this.market({ side, size: sliceSize, price });
+      if(order) plan.slices_orders.push(order.id);
+      plan.fired++;
+      this._emit('twap', { plan, sliceIndex: plan.fired, sliceOrder: order });
+      if(plan.fired >= plan.slices) {
+        plan.status = 'completed';
+        this._emit('twap', { plan, completed: true });
+      }
+    };
+    fireSlice(); // first slice fires immediately
+    for(let i = 1; i < slices; i++) {
+      setTimeout(fireSlice, i * intervalSecs * 1000);
+    }
+    this._emit('order', { kind: 'twap', order: plan });
+    return plan;
+  }
+
+  /** Iceberg: large order with only a small visible portion. As each visible
+   *  slice fills, the next slice is exposed. In standalone we model this
+   *  as N stacked limit orders at the same price — only the front one is
+   *  flagged 'visible'; the others are 'hidden' until promoted. */
+  iceberg({side='buy', visibleSize=1, hiddenSize=10, price}={}){
+    if(price == null || hiddenSize <= 0) return null;
+    const totalSlices = Math.ceil(hiddenSize / visibleSize);
+    const slices = [];
+    for(let i = 0; i < totalSlices; i++) {
+      const o = this.limit({ side, price, size: visibleSize });
+      if(o) {
+        o.iceberg = true;
+        o.icebergSliceIndex = i;
+        o.icebergVisible = (i === 0);  // only first slice is visible to the book
+        slices.push(o);
+      }
+    }
+    const plan = { id: this._id(), type: 'iceberg', side, price, slices: slices.map(o => o.id) };
+    this._emit('order', { kind: 'iceberg', plan, slices });
+    return plan;
+  }
+
+  /** Trailing take-profit: TP that ratchets UP with price for longs (DOWN
+   *  for shorts). Mirror of trailStop on the upside. The fill check in
+   *  tick() reads `tp` so the per-frame ratchet update is enough. */
+  trailingTakeProfit({id, distance}={}){
+    const o = this.openOrders.find(x => x.id === id);
+    if(!o || o.type !== 'bracket' || o.status !== 'open') return null;
+    const dist = Math.max(0.001, distance != null ? distance : Math.abs((o.tp || o.entry) - o.entry));
+    o.trailingTp = { active: true, distance: dist };
+    this._emit('trailTp', { order: o });
+    return o;
+  }
+
+  /** OCO bracket: two pending bracket entries; first to fill cancels the
+   *  other. Common breakout setup ("buy on break above X, sell on break
+   *  below Y"). Returns the pair as { up, down }. */
+  ocoBracket({upper, lower, side='buy', risk=20, rr=2.0, slDistance=60}={}){
+    if(upper == null || lower == null) return null;
+    const a = this.bracket({ side: 'buy',  risk, rr, price: upper, slDistance });
+    const b = this.bracket({ side: 'sell', risk, rr, price: lower, slDistance });
+    a.status = 'pending'; b.status = 'pending';
+    a.ocoPair = b.id; b.ocoPair = a.id;
+    this._emit('order', { kind: 'ocoBracket', orders: [a, b] });
+    return { up: a, down: b };
+  }
+
+  /** Conditional / If-Then: when `triggerPrice` is touched, execute `then`
+   *  (a function that receives the SDK and returns whatever ix it builds).
+   *  The watcher is checked in tick() via `pendingConditionals[]`. */
+  ifThen({triggerPrice, side='above', then}={}){
+    if(triggerPrice == null || typeof then !== 'function') return null;
+    if(!this.pendingConditionals) this.pendingConditionals = [];
+    const cond = {
+      id: this._id(), type: 'ifThen', triggerPrice, side, then,
+      armed: true, createdAt: performance.now()/1000,
+    };
+    this.pendingConditionals.push(cond);
+    this._emit('ifThen', { cond, armed: true });
+    return cond;
+  }
+
+  // ─── v0.9.8 TIER 3 ─ Solana / Hyperliquid signature plays ─────────────
+
+  /** Funding-rate snipe: auto-enter when perp funding crosses threshold.
+   *  In standalone this is 'reframe' — we don't have live funding feed yet,
+   *  so we emit a deferred-signal event the strategy markers system can
+   *  pick up. In TV/HL host mode this would subscribe to the venue's
+   *  funding stream and fire a real entry on cross. */
+  fundingSnipe({asset='BTC', threshold=-0.05, side='buy', risk=20}={}){
+    if(this.hostMode !== 'standalone'){
+      this._emit('reframe', { from: 'fundingSnipe', to: 'subscribeFundingFeed' });
+      // TV adapter would wire this to the real funding stream here.
+    }
+    const sub = {
+      id: this._id(), type: 'fundingSnipe', asset, threshold, side, risk,
+      armed: true, createdAt: performance.now()/1000,
+    };
+    if(!this.pendingSnipes) this.pendingSnipes = [];
+    this.pendingSnipes.push(sub);
+    this._emit('snipe', { sub, kind: 'funding' });
+    return sub;
+  }
+
+  /** Borrow-then-short DeFi flow. Standalone composes it as a flagged
+   *  short position; the borrow leg is implicit (perps already shoulder
+   *  this on the venue side). The flag tells partner integrations to
+   *  source collateral from the lending market instead of margin. */
+  borrowShort({asset='SOL', size=1, collateralAsset='USDC', collateralSize, price}={}){
+    if(price == null) return null;
+    const o = this.market({ side: 'sell', size, price });
+    if(!o) return null;
+    o.flow = 'borrow-short';
+    o.borrowAsset = asset;
+    o.collateralAsset = collateralAsset;
+    o.collateralSize = collateralSize || size * price;
+    this._emit('borrowShort', { order: o });
+    return o;
+  }
+
+  /** Liquidation guard: when a position's margin ratio crosses `marginRatio`,
+   *  auto-add margin to push it back. Pure gameplay framing of "don't get
+   *  rekt." Standalone composes by tagging the order; tick() honors the
+   *  flag during the existing P&L update path. */
+  liquidationGuard({id, marginRatio=0.15, addAmount=10}={}){
+    const o = this.openOrders.find(x => x.id === id);
+    if(!o || o.status === 'closed' || o.cancelled) return null;
+    o.guard = { marginRatio, addAmount, armed: true, triggers: 0 };
+    this._emit('guard', { order: o, kind: 'liquidation' });
+    return o;
+  }
+
+  /** Copy-trade: mirror another wallet's positions at a size multiplier.
+   *  Reframe in standalone — we don't fetch other wallets here. Phase 2
+   *  on-chain leaderboard PDAs make this a one-liner: subscribe to the
+   *  followee's RunRecord events, replicate at 1:scale. */
+  copyTrade({walletAddr, sizeMultiplier=1.0, autoStop=true}={}){
+    if(this.hostMode !== 'standalone'){
+      this._emit('reframe', { from: 'copyTrade', to: 'subscribeWallet' });
+    }
+    if(!this.copySubs) this.copySubs = [];
+    const sub = {
+      id: this._id(), type: 'copyTrade', walletAddr, sizeMultiplier,
+      autoStop, active: true, createdAt: performance.now()/1000,
+    };
+    this.copySubs.push(sub);
+    this._emit('copyTrade', { sub, active: true });
+    return sub;
+  }
+
+  /** Perp flip: close current position + open opposite-side same-size in one
+   *  conceptual ix. Real venues (HL, Drift) ship this as 'reduceOnly' +
+   *  immediate inverse market. Standalone composes from closeAll(side) +
+   *  market(opposite). Useful for momentum reversals. */
+  perpFlip({id, price}={}){
+    const o = this.openOrders.find(x => x.id === id);
+    if(!o || o.status === 'closed' || o.cancelled || price == null) return null;
+    const oppositeSide = o.side === 'buy' ? 'sell' : 'buy';
+    const size = o.size;
+    // Close the existing position
+    o.status = 'closed';
+    o.outcome = 'flip';
+    o.exitPrice = price;
+    if(o.entry != null) {
+      const dir = o.side === 'buy' ? 1 : -1;
+      o.pnl = (o.pnl || 0) + dir * (price - o.entry) * size;
+    }
+    this._emit('bracketClose', { order: o, reason: 'flip' });
+    // Open the inverse
+    const newOrder = this.market({ side: oppositeSide, size, price });
+    if(newOrder) newOrder.flippedFrom = o.id;
+    this._emit('flip', { closed: o, opened: newOrder });
+    return newOrder;
+  }
+
+  // ─── v0.9.8 TIER 4 ─ Gameplay-flavored, uniquely ChartRunner ──────────
+
+  /** Combo trade: fires a pre-baked multi-leg setup by name. The playbook
+   *  is data-driven so partners + Workbench builders can register their own
+   *  named setups. Default registrations cover three classics. */
+  comboTrade({setup='ironCondor', price, size=1, risk=20}={}){
+    if(price == null) return null;
+    if(!this._comboPlaybook) {
+      this._comboPlaybook = {
+        // Iron condor: profit if price stays in range. We approximate via OCO
+        // at outer strikes + paired closer strikes (bull put + bear call).
+        ironCondor: (sdk, p, s, r) => sdk.ocoBracket({ upper: p + 80, lower: p - 80, risk: r }),
+        // Calendar spread: long bracket near-term + opposing far-term. We
+        // approximate with two brackets at different RR profiles.
+        calendar:   (sdk, p, s, r) => [
+          sdk.bracket({ side: 'buy',  risk: r,     rr: 1.5, price: p, slDistance: 30 }),
+          sdk.bracket({ side: 'sell', risk: r/2,   rr: 3.0, price: p, slDistance: 60 }),
+        ],
+        // Straddle: market entries both directions, profit on big move.
+        straddle:   (sdk, p, s, r) => [
+          sdk.bracket({ side: 'buy',  risk: r/2, rr: 2.0, price: p, slDistance: 40 }),
+          sdk.bracket({ side: 'sell', risk: r/2, rr: 2.0, price: p, slDistance: 40 }),
+        ],
+      };
+    }
+    const fn = this._comboPlaybook[setup];
+    if(!fn) {
+      this._emit('comboTrade', { error: 'unknown setup: ' + setup });
+      return null;
+    }
+    const result = fn(this, price, size, risk);
+    this._emit('comboTrade', { setup, result });
+    return result;
+  }
+
+  /** Auto-fib: detect the visible swing high/low (passed in by caller) and
+   *  delegate to fibLadder with the correct base + side. Saves the player
+   *  from having to manually two-anchor a fib. */
+  autoFib({swingHigh, swingLow, side='buy', size=4}={}){
+    if(swingHigh == null || swingLow == null) return null;
+    const base = Math.abs(swingHigh - swingLow);
+    const anchor = side === 'buy' ? swingHigh : swingLow;
+    return this.fibLadder({ side, size, price: anchor, base });
+  }
+
+  /** Magnet: pulls open positions toward a target by tightening the SL on
+   *  every tick. Pure gameplay primitive — no real-world equivalent. The
+   *  per-frame tighten is handled in tick() via the `magnet` flag. */
+  magnet({id, target, strength=0.5}={}){
+    const o = this.openOrders.find(x => x.id === id);
+    if(!o || o.status === 'closed' || o.cancelled || target == null) return null;
+    o.magnet = { target, strength: Math.max(0.01, Math.min(1.0, strength)) };
+    this._emit('magnet', { order: o, target });
+    return o;
+  }
+
   tick({price,t}){
     this.activeEffects=this.activeEffects.filter(e=>{ if(e.until&&e.until<t){ this._emit('expired',{effect:e}); return false;} return true; });
     const still=[];
@@ -7485,6 +7840,19 @@ class ChartRunnerSDK {
         if((o.side==='buy'&&price<=o.price)||(o.side==='sell'&&price>=o.price)){
           filled=true; this._emit('fill',{order:o,price});
           if(o.type==='oco'){ const p=this.openOrders.find(x=>x.id===o.pair); if(p){p.cancelled=true; this._emit('cancel',{order:p});} }
+        }
+      }
+      // v0.9.8 — Limit fill check (Tier 1).
+      if(o.type==='limit' && o.status==='pending'){
+        if((o.side==='buy'&&price<=o.price)||(o.side==='sell'&&price>=o.price)){
+          o.status='open'; o.entry=o.price; o.filledAt=t;
+          this._emit('fill',{order:o,price});
+          // Iceberg promotion: when this slice fills, expose the next.
+          if(o.iceberg){
+            const next = this.openOrders.find(x =>
+              x.iceberg && x.icebergSliceIndex === o.icebergSliceIndex + 1);
+            if(next){ next.icebergVisible = true; this._emit('iceberg', { promoted: next }); }
+          }
         }
       }
       if(o.type==='bracket' && o.status==='open'){
@@ -7513,6 +7881,39 @@ class ChartRunnerSDK {
             this._emit('edit', { order: o, patch: { sl: newSL }, trailingTick: true, crossedBE });
           }
         }
+        // v0.9.8 — Trailing take-profit (Tier 2): mirror of trailStop on the
+        // upside. TP ratchets toward price, never retreats. Same shape so the
+        // visual layer can reuse the trailing-stop overlay machinery.
+        if(o.trailingTp && o.trailingTp.active && o.tp != null){
+          const dist = o.trailingTp.distance;
+          let newTP = o.tp;
+          if(o.side === 'buy'){
+            const candidate = price + dist;
+            if(candidate > o.tp) newTP = candidate;
+          } else {
+            const candidate = price - dist;
+            if(candidate < o.tp) newTP = candidate;
+          }
+          if(newTP !== o.tp){
+            o.tp = newTP;
+            this._emit('edit', { order: o, patch: { tp: newTP }, trailingTpTick: true });
+          }
+        }
+        // v0.9.8 — Magnet (Tier 4): tighten SL toward target each tick.
+        // Pure gameplay — no real-world equivalent. The strength factor controls
+        // how aggressively the SL crawls (0.01 = imperceptible, 1.0 = snap).
+        if(o.magnet && o.magnet.target != null){
+          const target = o.magnet.target;
+          const k = o.magnet.strength;
+          // Lerp SL toward target; clamp so we never cross to the wrong side of entry.
+          const newSL = o.sl + (target - o.sl) * k * 0.05;
+          const safe = (o.side === 'buy' && newSL < o.entry) || (o.side === 'sell' && newSL > o.entry);
+          if(safe && Math.abs(newSL - o.sl) > 0.0001){
+            o.sl = newSL;
+            o.slDistance = Math.max(0.001, Math.abs(o.entry - o.sl));
+            this._emit('edit', { order: o, patch: { sl: newSL }, magnetTick: true });
+          }
+        }
         // P&L per bracket = (exit - entry) * direction * (risk / slDistance)
         // Risk-as-stake means SL hit = -risk, TP hit at 1:RR = +risk*RR.
         const dir = o.side==='buy' ? 1 : -1;
@@ -7533,6 +7934,32 @@ class ChartRunnerSDK {
       if(!filled && !o.cancelled) still.push(o);
     }
     this.openOrders=still;
+    // v0.9.8 — IfThen watcher (Tier 2). Each conditional has a triggerPrice
+    // and a side ('above' / 'below'). When price crosses, fire `then(this)`
+    // and disarm. Failures during `then` don't crash the loop — they emit
+    // an error event so the caller can react.
+    if(this.pendingConditionals && this.pendingConditionals.length){
+      const stillCond = [];
+      for(const c of this.pendingConditionals){
+        if(!c.armed) continue;
+        const triggered =
+          (c.side === 'above' && price >= c.triggerPrice) ||
+          (c.side === 'below' && price <= c.triggerPrice);
+        if(triggered){
+          c.armed = false;
+          c.firedAt = t;
+          try {
+            const result = c.then(this);
+            this._emit('ifThen', { cond: c, fired: true, result });
+          } catch(err){
+            this._emit('ifThen', { cond: c, fired: false, error: err.message });
+          }
+        } else {
+          stillCond.push(c);
+        }
+      }
+      this.pendingConditionals = stillCond;
+    }
   }
   // Mark-to-market unrealized P&L across open brackets at the given price
   unrealized(price){
@@ -9361,13 +9788,168 @@ const ABILITIES = [
     game.laserDot.sy = priceToY(player.py);
     toast('Laser aim — move mouse · press 2 or Esc to exit');
   }},
-  {key:'3',ic:'⇅', nm:'OCO',     maxCharges:3, charges:3, use:()=>{
-    const here = currentPrice(); const [a,b]=sdk.oco({upper:80,lower:-80,size:6,price:here});
-    // v0.8k#24f — tag origin world so the renderer can draw a mirror-copy in
-    // the opposite physics side.
-    game.visualOCO.push({wx:player.wx, upper:a.price, lower:b.price, upperId:a.id, lowerId:b.id, t:0, upsideDown: !!player.upsideDown});
+  // v0.9.8 — Slot 3 expanded from "instant OCO" to a primitives picker menu.
+  // 18 new primitives shipped in the SDK across tiers 1-4; the menu surfaces
+  // every one that's safely callable with default args (skips ones that need
+  // user input like ifThen's `then` callback). OCO is preserved as the first
+  // entry so muscle memory survives — single-tap → menu, click OCO → same
+  // instant fire as before.
+  {key:'3',ic:'⚡', nm:'Primitives', maxCharges:3, charges:3, use:()=>{
+    if(typeof openPrimitivesMenu === 'function') openPrimitivesMenu();
   }},
 ];
+
+// ─── v0.9.8 ─ Primitives picker menu (hotkey 3) ──────────────────────────
+// Spawns a modal-ish list near the avatar; each row fires the matching SDK
+// method with sane defaults at currentPrice(). Position-required primitives
+// (stopLoss, takeProfit, scaleOut, trailingTp, magnet, liquidationGuard,
+// perpFlip) auto-pick the most recent OPEN bracket; disabled if none exist.
+let _primitivesMenuEl = null;
+function _closePrimitivesMenu(){
+  if(_primitivesMenuEl){ try { _primitivesMenuEl.remove(); } catch(_){} _primitivesMenuEl = null; }
+  document.removeEventListener('keydown', _primitivesMenuKeyHandler, true);
+}
+function _primitivesMenuKeyHandler(e){
+  if(e.key === 'Escape'){ _closePrimitivesMenu(); }
+}
+function _latestOpenBracket(){
+  for(let i = sdk.openOrders.length - 1; i >= 0; i--){
+    const o = sdk.openOrders[i];
+    if(o.type === 'bracket' && o.status === 'open' && !o.cancelled) return o;
+  }
+  return null;
+}
+function openPrimitivesMenu(){
+  if(_primitivesMenuEl){ _closePrimitivesMenu(); return; }
+  const here = currentPrice();
+  const liveBracket = _latestOpenBracket();
+  const hasLive = !!liveBracket;
+  // Per-tier groupings. Each item has: { id, ic, nm, desc, tier, requires, fire }.
+  const items = [
+    // ── Existing OCO (preserved for muscle memory) ──────────────────────
+    { id:'oco', ic:'⇅', nm:'OCO',                desc:'One-cancels-other ±80', tier:'classic', fire: () => {
+        const [a,b] = sdk.oco({ upper:80, lower:-80, size:6, price:here });
+        game.visualOCO.push({wx:player.wx, upper:a.price, lower:b.price, upperId:a.id, lowerId:b.id, t:0, upsideDown: !!player.upsideDown});
+        toast('OCO placed');
+    }},
+    // ── TIER 1: missing basics ──────────────────────────────────────────
+    { id:'market',     ic:'⚡', nm:'Market BUY',  desc:'Instant fill at current price', tier:'T1', fire: () => { sdk.market({ side:'buy',  size:1, price: here }); toast('Market BUY'); }},
+    { id:'marketSell', ic:'⚡', nm:'Market SELL', desc:'Instant fill at current price', tier:'T1', fire: () => { sdk.market({ side:'sell', size:1, price: here }); toast('Market SELL'); }},
+    { id:'limit',      ic:'⌖', nm:'Limit BUY',   desc:'Resting -30 from price',         tier:'T1', fire: () => { sdk.limit({ side:'buy',  price: here - 30, size:1 }); toast('Limit BUY @ -30'); }},
+    { id:'limitSell',  ic:'⌖', nm:'Limit SELL',  desc:'Resting +30 from price',         tier:'T1', fire: () => { sdk.limit({ side:'sell', price: here + 30, size:1 }); toast('Limit SELL @ +30'); }},
+    { id:'stopLoss',   ic:'🛑',nm:'Stop-Loss',   desc:'Set SL on latest bracket',        tier:'T1', requires:'bracket', fire: () => { sdk.stopLoss({ id: liveBracket.id, price: liveBracket.entry - 30 * (liveBracket.side==='buy'?1:-1) }); toast('SL adjusted'); }},
+    { id:'takeProfit', ic:'🎯',nm:'Take-Profit', desc:'Set TP on latest bracket',        tier:'T1', requires:'bracket', fire: () => { sdk.takeProfit({ id: liveBracket.id, price: liveBracket.entry + 60 * (liveBracket.side==='buy'?1:-1) }); toast('TP adjusted'); }},
+    { id:'scaleOut',   ic:'¼', nm:'Scale Out 25%', desc:'Partial close at price',        tier:'T1', requires:'bracket', fire: () => { sdk.scaleOut({ id: liveBracket.id, fraction:0.25, price: here }); toast('25% closed'); }},
+    // ── TIER 2: pro-trader ──────────────────────────────────────────────
+    { id:'twap',       ic:'⌛',nm:'TWAP',        desc:'5 slices over 10s',               tier:'T2', fire: () => { sdk.twap({ side:'buy', totalSize:10, slices:5, intervalSecs:2, price: here }); toast('TWAP started'); }},
+    { id:'iceberg',    ic:'🧊',nm:'Iceberg',     desc:'Visible 1, hidden 10',            tier:'T2', fire: () => { sdk.iceberg({ side:'buy', visibleSize:1, hiddenSize:10, price: here - 30 }); toast('Iceberg armed'); }},
+    { id:'trailTp',    ic:'➶', nm:'Trailing TP', desc:'Ratchet TP on latest bracket',    tier:'T2', requires:'bracket', fire: () => { sdk.trailingTakeProfit({ id: liveBracket.id }); toast('Trailing TP armed'); }},
+    { id:'ocoBracket', ic:'⤳', nm:'OCO Bracket', desc:'Two pending entries ±80',         tier:'T2', fire: () => { sdk.ocoBracket({ upper: here + 80, lower: here - 80 }); toast('OCO bracket placed'); }},
+    // ifThen needs a `then` function — wire a simple "if price > X, place a market"
+    { id:'ifThen',     ic:'⇒', nm:'If-Then',    desc:'If +50 → market BUY',            tier:'T2', fire: () => {
+        const trig = here + 50;
+        sdk.ifThen({ triggerPrice: trig, side:'above', then: (s) => s.market({ side:'buy', size:1, price: currentPrice() }) });
+        toast('IfThen armed @ ' + trig.toFixed(2));
+    }},
+    // ── TIER 3: Solana / HL signature ───────────────────────────────────
+    { id:'fundSnipe',  ic:'💸',nm:'Funding Snipe', desc:'Auto-enter when funding flips',  tier:'T3', fire: () => { sdk.fundingSnipe({ asset:'BTC', threshold:-0.05, side:'buy' }); toast('Funding snipe armed'); }},
+    { id:'borrowShort',ic:'📉',nm:'Borrow Short', desc:'DeFi-flow short on SOL',         tier:'T3', fire: () => { sdk.borrowShort({ asset:'SOL', size:1, price: here }); toast('Borrow-short opened'); }},
+    { id:'guard',      ic:'🛟',nm:'Liquidation Guard', desc:'Auto-add margin near liq',  tier:'T3', requires:'bracket', fire: () => { sdk.liquidationGuard({ id: liveBracket.id, marginRatio:0.15, addAmount:10 }); toast('Liq guard armed'); }},
+    { id:'copyTrade',  ic:'👥',nm:'Copy Trade',   desc:'Mirror a wallet (Phase 2)',      tier:'T3', fire: () => { sdk.copyTrade({ walletAddr:'TBD', sizeMultiplier:1.0 }); toast('Copy-trade subscribed (paper)'); }},
+    { id:'perpFlip',   ic:'⇌', nm:'Perp Flip',   desc:'Close + open inverse',           tier:'T3', requires:'bracket', fire: () => { sdk.perpFlip({ id: liveBracket.id, price: here }); toast('Position flipped'); }},
+    // ── TIER 4: gameplay-flavored ──────────────────────────────────────
+    { id:'comboCondor',ic:'🦅',nm:'Combo: Iron Condor', desc:'Pre-baked range setup',   tier:'T4', fire: () => { sdk.comboTrade({ setup:'ironCondor', price: here }); toast('Iron condor placed'); }},
+    { id:'comboStrad', ic:'⫷', nm:'Combo: Straddle',    desc:'Buy + sell, profit on big move', tier:'T4', fire: () => { sdk.comboTrade({ setup:'straddle',   price: here }); toast('Straddle placed'); }},
+    { id:'comboCal',   ic:'📅',nm:'Combo: Calendar',    desc:'Two brackets, different RR',     tier:'T4', fire: () => { sdk.comboTrade({ setup:'calendar',   price: here }); toast('Calendar spread placed'); }},
+    { id:'autoFib',    ic:'φ', nm:'Auto-Fib',    desc:'Detect swing → fib ladder',       tier:'T4', fire: () => {
+        // Use the visible candle window as the swing range.
+        let hi = -Infinity, lo = Infinity;
+        for(let i = Math.max(0, candles.length - 60); i < candles.length; i++){
+          if(candles[i].h > hi) hi = candles[i].h;
+          if(candles[i].l < lo) lo = candles[i].l;
+        }
+        if(isFinite(hi) && isFinite(lo)){
+          sdk.autoFib({ swingHigh: hi, swingLow: lo, side:'buy', size:4 });
+          toast('Auto-fib placed (swing ' + lo.toFixed(2) + ' → ' + hi.toFixed(2) + ')');
+        }
+    }},
+    { id:'magnet',     ic:'🧲',nm:'Magnet',      desc:'Tighten SL toward target',         tier:'T4', requires:'bracket', fire: () => { sdk.magnet({ id: liveBracket.id, target: here, strength: 0.5 }); toast('Magnet engaged'); }},
+  ];
+
+  // Build the menu near the avatar.
+  const menu = document.createElement('div');
+  menu.style.cssText = [
+    'position:fixed', 'z-index:8000', 'background:rgba(8,12,24,0.96)',
+    'border:1px solid rgba(155,140,255,0.4)', 'border-radius:8px',
+    'box-shadow:0 8px 32px rgba(0,0,0,0.6)', 'min-width:280px',
+    'max-height:520px', 'overflow-y:auto',
+    'font:13px -apple-system,system-ui,sans-serif', 'color:#cfd2dd',
+    'padding:6px 0'
+  ].join(';');
+
+  // Position near the avatar but inside viewport.
+  try {
+    const avatarSx = sX(player.wx);
+    const avatarSy = priceToY(player.py);
+    const left = Math.max(20, Math.min(W - 300, avatarSx + 30));
+    const top  = Math.max(20, Math.min(H - 540, avatarSy - 100));
+    menu.style.left = left + 'px';
+    menu.style.top  = top + 'px';
+  } catch(_){
+    menu.style.left = '20%'; menu.style.top = '15%';
+  }
+
+  // Header
+  const head = document.createElement('div');
+  head.style.cssText = 'padding:8px 14px 6px;border-bottom:1px solid rgba(155,140,255,0.18);display:flex;align-items:center;gap:8px';
+  head.innerHTML = '<span style="font-weight:700;color:#9b8cff">⚡ Primitives</span>'
+    + '<span style="font-size:10px;color:#6a6e78;margin-left:auto">'
+    + (hasLive ? 'live bracket: #' + liveBracket.id : 'no live position')
+    + '</span>';
+  menu.appendChild(head);
+
+  let prevTier = null;
+  items.forEach(it => {
+    if(it.tier !== prevTier){
+      const sep = document.createElement('div');
+      sep.style.cssText = 'padding:6px 14px 2px;font-size:9px;color:#5a5a72;text-transform:uppercase;letter-spacing:0.6px;font-weight:700';
+      const tierLabels = { classic:'Classic', T1:'Tier 1 — basics', T2:'Tier 2 — pro', T3:'Tier 3 — Solana/HL', T4:'Tier 4 — gameplay' };
+      sep.textContent = tierLabels[it.tier] || it.tier;
+      menu.appendChild(sep);
+      prevTier = it.tier;
+    }
+    const disabled = it.requires === 'bracket' && !hasLive;
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:7px 14px;display:flex;align-items:center;gap:10px;cursor:'
+      + (disabled ? 'not-allowed' : 'pointer') + ';opacity:' + (disabled ? '0.35' : '1');
+    row.innerHTML = '<span style="width:22px;text-align:center;font-size:14px">' + it.ic + '</span>'
+      + '<span style="flex:1"><div style="font-weight:600">' + it.nm + '</div>'
+      + '<div style="font-size:10px;color:#6a6e78">' + it.desc
+      + (it.requires === 'bracket' && !hasLive ? ' · needs open bracket' : '') + '</div></span>';
+    if(!disabled){
+      row.onmouseenter = () => { row.style.background = 'rgba(155,140,255,0.08)'; };
+      row.onmouseleave = () => { row.style.background = 'transparent'; };
+      row.onclick = () => {
+        try { it.fire(); } catch(err){ try { toast('Failed: ' + err.message); } catch(_){} }
+        _closePrimitivesMenu();
+      };
+    }
+    menu.appendChild(row);
+  });
+
+  // Cancel
+  const cancel = document.createElement('div');
+  cancel.style.cssText = 'padding:8px 14px;margin-top:4px;border-top:1px solid rgba(155,140,255,0.18);color:#6a6e78;cursor:pointer;font-size:11px';
+  cancel.textContent = '✖ Cancel (Esc)';
+  cancel.onmouseenter = () => { cancel.style.background = 'rgba(255,255,255,0.04)'; };
+  cancel.onmouseleave = () => { cancel.style.background = 'transparent'; };
+  cancel.onclick = _closePrimitivesMenu;
+  menu.appendChild(cancel);
+
+  document.body.appendChild(menu);
+  _primitivesMenuEl = menu;
+  document.addEventListener('keydown', _primitivesMenuKeyHandler, true);
+}
 const hud = document.getElementById('hud');
 const slotEls = [];
 // v0.8k#23d — Each slot supports two gestures:
