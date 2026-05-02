@@ -51,6 +51,10 @@
   #crOSBar .cr-bar-btn .lbl{font-size:11px;letter-spacing:.3px}
   /* v0.9.3 — Wallet pills. .cr-wallet-on glows mint when a wallet is connected;
      plain dim styling otherwise so an unconnected user sees an obvious nudge. */
+  /* v0.9.17 — Topbar Reset / Save / Coins / Connect moved to Profile.
+     Buttons stay in DOM (hidden) so existing click handlers keep working;
+     the new Profile buttons forward via .click(). */
+  #crBarRestart, #crBarSave, #crBarCoins, #crBarConnect{display:none !important}
   #crBarConnect{cursor:pointer;padding:3px 10px;border-radius:6px;font-size:11px;
     letter-spacing:.3px;background:rgba(155,140,255,0.10);color:#cfd2dd;
     border:1px solid rgba(155,140,255,0.22);transition:background .12s,color .12s,border-color .12s}
@@ -5005,6 +5009,28 @@
                 <div style="font-size:10px;color:#5a5a52">Avatar: Invader (unified)</div>
               </div>
             </div>
+          </div>
+          <!-- v0.9.17 — Run Controls. Reset / Save / Coins / Connect Wallet
+               moved here from the in-game topbar so the topbar stays clean.
+               Each button mirrors the data-action of its old topbar twin and
+               proxies clicks via the shared handler — no behavior change. -->
+          <div class="os-section">
+            <h4>Run Controls</h4>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px">
+              <button class="menu cr-bar-btn" id="crProfRestart" type="button" title="Restart run · clears every drawing" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px">
+                <span class="ic">↻</span><span class="lbl">Reset</span>
+              </button>
+              <button class="menu cr-bar-btn" id="crProfSave" type="button" title="Save current run to Maps (give it a name)" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px">
+                <span class="ic">💾</span><span class="lbl">Save</span>
+              </button>
+              <button class="menu cr-bar-btn" id="crProfCoins" type="button" title="Toggle coin pickups" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px">
+                <span class="ic">🪙</span><span class="lbl">Coins</span>
+              </button>
+              <button class="menu" id="crProfConnect" type="button" title="Connect a Solana wallet" style="margin:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px;cursor:pointer">
+                <span class="ic">🔗</span><span class="lbl">Connect</span>
+              </button>
+            </div>
+            <p style="margin:6px 0 0;font-size:10px;color:#5a5a52">Wallet status, coin toggle, and run controls live here now (was the in-game topbar).</p>
           </div>
           <!-- v0.8k#24w/#24av/#24bq — Tabs: Player · Balances · Stats · Missions. -->
           <div class="crTerm-tabs" style="margin-top:8px">
@@ -14030,6 +14056,7 @@ function render(){
   // zoom with the chart plane instead of floating as a fixed overlay.
   if(typeof _chartAnchorTick === 'function') _chartAnchorTick();
   drawLaserSight();
+  drawSetupGuide();   // v0.9.16 — Per-tool setup instruction card
   drawLaserAnchorsAndPreview();
   drawPickups();
   drawMonsters();
@@ -16295,39 +16322,273 @@ function drawRuneMarks(){
   }
   ctx.restore();
 }
+/* ============================================================
+ * v0.9.16 — Tool-aware laser beam + setup guide
+ * ------------------------------------------------------------
+ * The pink laser beam is now color-keyed by the active trading
+ * primitive. Each tool gets:
+ *   - A vivid 3-layer beam (white-hot core + colored mid + glow halo)
+ *   - Spark particles trailing toward the target
+ *   - A floating "setup guide" card top-center explaining what to
+ *     click, how many anchors, what each anchor means
+ *   - Confetti burst on commit
+ *
+ * The visual styles + step scripts live in TOOL_VISUAL_STYLES and
+ * TOOL_SETUP_GUIDES so adding a new primitive is one entry per
+ * registry — no edits to the renderer needed.
+ * ============================================================ */
+const TOOL_VISUAL_STYLES = {
+  // category color → primary beam tint
+  bracket:    { color:'#14f195', glow:'rgba(20,241,149,0.45)', name:'Bracket',         icon:'🎯' },
+  oco:        { color:'#ff5b7f', glow:'rgba(255,91,127,0.45)', name:'OCO',              icon:'⊙' },
+  ladder:     { color:'#7ad6ff', glow:'rgba(122,214,255,0.45)',name:'Ladder',           icon:'🪜' },
+  fibLadder:  { color:'#ffd166', glow:'rgba(255,209,102,0.45)',name:'Fib Ladder',       icon:'🪶' },
+  fibRetrace: { color:'#ffd166', glow:'rgba(255,209,102,0.45)',name:'Fib Retracement',  icon:'🪜' },
+  fibExt:     { color:'#1976d2', glow:'rgba(25,118,210,0.45)', name:'Fib Extension',    icon:'🎯' },
+  trendline:  { color:'#7ad6ff', glow:'rgba(122,214,255,0.45)',name:'Trendline',        icon:'╱' },
+  ray:        { color:'#7ad6ff', glow:'rgba(122,214,255,0.45)',name:'Ray',              icon:'➚' },
+  extLine:    { color:'#7ad6ff', glow:'rgba(122,214,255,0.45)',name:'Extended Line',    icon:'⇿' },
+  hLine:      { color:'#a371f7', glow:'rgba(163,113,247,0.45)',name:'Horizontal Line',  icon:'━' },
+  vline:      { color:'#a371f7', glow:'rgba(163,113,247,0.45)',name:'Vertical Line',    icon:'│' },
+  vwap:       { color:'#b58aff', glow:'rgba(181,138,255,0.45)',name:'Anchored VWAP',    icon:'V' },
+  longPos:    { color:'#3ddc97', glow:'rgba(61,220,151,0.45)', name:'Long Position',    icon:'📈' },
+  shortPos:   { color:'#ff5b7f', glow:'rgba(255,91,127,0.45)', name:'Short Position',   icon:'📉' },
+  rect:       { color:'#a371f7', glow:'rgba(163,113,247,0.45)',name:'Rectangle',        icon:'▭' },
+  frvp:       { color:'#ffd166', glow:'rgba(255,209,102,0.45)',name:'Fixed Range VP',   icon:'📶' },
+  rune:       { color:'#7ee787', glow:'rgba(126,231,135,0.45)',name:'Rune Mark',        icon:'⛧' },
+};
+const _DEFAULT_TOOL_STYLE = { color:'#ff5b7f', glow:'rgba(255,91,127,0.45)', name:'Tool', icon:'⚡' };
+function _toolStyle(tool){ return TOOL_VISUAL_STYLES[tool] || _DEFAULT_TOOL_STYLE; }
+
+const TOOL_SETUP_GUIDES = {
+  // Single-click primitives — drop at one location.
+  bracket:    { kind:'single-click', steps:['Click anywhere on the chart to drop the bracket'], hint:'Auto-arms entry at click price · TP +2R · SL −1R' },
+  hLine:      { kind:'single-click', steps:['Click to drop a horizontal line at that price'], hint:'Use as a manual support / resistance level · ridable' },
+  vline:      { kind:'single-click', steps:['Click a candle to drop a vertical line'], hint:'Time anchor · marks an event' },
+  vwap:       { kind:'single-click', steps:['Click a candle to anchor the VWAP'], hint:'VWAP recomputes from the anchor candle forward' },
+  rune:       { kind:'single-click', steps:['Click any chart spot to plant a rune'], hint:'Personal note marker · survives across timeframes' },
+  // Two-anchor primitives — click two points.
+  ladder:     { kind:'two-anchor',  steps:['Click anchor 1 · top of the ladder', 'Click anchor 2 · bottom of the ladder'], hint:'5 fib-spaced orders ladder between the two prices · real SDK orders' },
+  fibLadder:  { kind:'two-anchor',  steps:['Click swing low (anchor 1)',         'Click swing high (anchor 2)'],            hint:'Order ladder at fib offsets · 0.236 / 0.382 / 0.5 / 0.618 / 0.786' },
+  fibRetrace: { kind:'two-anchor',  steps:['Click swing 1 (start of leg)',       'Click swing 2 (end of leg)'],             hint:'Levels 0–1 · Champion Zone 0.618–0.66 shaded' },
+  fibExt:     { kind:'two-anchor',  steps:['Click impulse start (anchor 1)',     'Click impulse end (anchor 2)'],           hint:'Levels >1.0 projected as TP targets · 1.618 Golden Extension band' },
+  oco:        { kind:'two-anchor',  steps:['Click upper trigger (sell)',         'Click lower trigger (buy)'],              hint:'One-cancels-other · whichever fires first cancels the other' },
+  trendline:  { kind:'two-anchor',  steps:['Click anchor 1',                     'Click anchor 2'],                          hint:'Diagonal line · ridable rail · monster wall in Monster Mode' },
+  ray:        { kind:'two-anchor',  steps:['Click anchor 1',                     'Click anchor 2 (extends right)'],          hint:'Half-line through both anchors, extends to right edge' },
+  extLine:    { kind:'two-anchor',  steps:['Click anchor 1',                     'Click anchor 2'],                          hint:'Full line through both anchors, extends both directions' },
+  longPos:    { kind:'two-anchor',  steps:['Click entry price',                  'Click stop loss price'],                   hint:'Long position visualizer · TP auto-projects at 1:2 RR' },
+  shortPos:   { kind:'two-anchor',  steps:['Click entry price',                  'Click stop loss price'],                   hint:'Short position visualizer · TP auto-projects at 1:2 RR' },
+  rect:       { kind:'two-anchor',  steps:['Click anchor 1 (one corner)',        'Click anchor 2 (opposite corner)'],        hint:'Rectangle · highlight a price + time region' },
+  frvp:       { kind:'two-anchor',  steps:['Click time anchor 1',                'Click time anchor 2'],                     hint:'Fixed Range Volume Profile between two timestamps' },
+};
+
+// Spark particles trailing along the laser beam toward target.
+let _laserSparks = [];
+function _spawnLaserSpark(sx, sy, ex, ey, color){
+  const t = Math.random();
+  _laserSparks.push({
+    x: sx + (ex - sx) * t,
+    y: sy + (ey - sy) * t,
+    vx: (ex - sx) * 0.012 + (Math.random()-0.5) * 0.6,
+    vy: (ey - sy) * 0.012 + (Math.random()-0.5) * 0.6,
+    life: 1.0,
+    color,
+  });
+}
+
 function drawLaserSight(){
   // v0.8k#21 — Stateful aim mode: while game.laserAiming is true, draw a
   // solid (no-fade) beam from the frozen player to game.laserDot (screen
   // coords updated by the mouse-move listener). Press 7 again or Esc to exit.
+  // v0.9.16 — Beam color + glow + particle style now keyed off game.laserTool.
   if(!game.laserAiming) return;
   if(!game.running) return;
+  const tool = game.laserTool || '';
+  const style = _toolStyle(tool);
   const sx = sX(player.wx), sy = priceToY(player.py);
   const ex = game.laserDot.sx, ey = game.laserDot.sy;
+  const dx = ex - sx, dy = ey - sy;
+  const dist = Math.hypot(dx, dy);
   ctx.save();
-  // Beam — full-length, constant alpha (no gradient fade)
-  ctx.strokeStyle = 'rgba(255,91,127,0.9)';
-  ctx.lineWidth = 1.6;
-  ctx.setLineDash([6,4]);
+
+  // ─── Beam: 3 stacked strokes for a glow + core look ─────────────────
+  // 1) Wide soft halo
+  ctx.strokeStyle = style.glow;
+  ctx.lineWidth = 8;
+  ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
-  ctx.setLineDash([]);
-  // Crosshair at the dot — small + readable, not pulsing
-  ctx.strokeStyle = 'rgba(255,91,127,0.95)';
+  // 2) Medium colored beam
+  ctx.strokeStyle = style.color;
+  ctx.lineWidth = 2.4;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+  // 3) Hot white core
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 0.9;
+  ctx.globalAlpha = 0.95;
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // ─── Spark particles streaming along the beam ───────────────────────
+  // Spawn 1-2 sparks per frame; cheap.
+  if(dist > 30){
+    _spawnLaserSpark(sx, sy, ex, ey, style.color);
+    if(Math.random() < 0.35) _spawnLaserSpark(sx, sy, ex, ey, style.color);
+  }
+  // Update + render existing sparks.
+  for(let i = _laserSparks.length - 1; i >= 0; i--){
+    const s = _laserSparks[i];
+    s.x += s.vx; s.y += s.vy; s.life -= 0.04;
+    if(s.life <= 0){ _laserSparks.splice(i, 1); continue; }
+    ctx.globalAlpha = Math.max(0, s.life);
+    ctx.fillStyle = s.color;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 1.6, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // ─── Crosshair at the dot ──────────────────────────────────────────
+  // Pulsing outer ring keyed off performance.now() for a "live" feel.
+  const pulse = 1 + 0.18 * Math.sin(performance.now() * 0.008);
+  ctx.strokeStyle = style.color;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(ex, ey, 9 * pulse, 0, Math.PI*2);
+  ctx.stroke();
+  // Crosshair lines
   ctx.lineWidth = 1.4;
   ctx.beginPath();
-  ctx.arc(ex, ey, 7, 0, Math.PI*2);
-  ctx.moveTo(ex-10, ey); ctx.lineTo(ex-4, ey);
-  ctx.moveTo(ex+4,  ey); ctx.lineTo(ex+10, ey);
-  ctx.moveTo(ex, ey-10); ctx.lineTo(ex, ey-4);
-  ctx.moveTo(ex, ey+4);  ctx.lineTo(ex, ey+10);
+  ctx.moveTo(ex-12, ey); ctx.lineTo(ex-4, ey);
+  ctx.moveTo(ex+4,  ey); ctx.lineTo(ex+12, ey);
+  ctx.moveTo(ex, ey-12); ctx.lineTo(ex, ey-4);
+  ctx.moveTo(ex, ey+4);  ctx.lineTo(ex, ey+12);
   ctx.stroke();
-  // Centre dot
-  ctx.fillStyle = 'rgba(255,91,127,1)';
+  // Centre dot — bright white-hot
+  ctx.fillStyle = '#ffffff';
   ctx.beginPath(); ctx.arc(ex, ey, 2.5, 0, Math.PI*2); ctx.fill();
-  // Price readout at the dot
+  ctx.fillStyle = style.color;
+  ctx.beginPath(); ctx.arc(ex, ey, 1.4, 0, Math.PI*2); ctx.fill();
+
+  // ─── Price readout at the dot ──────────────────────────────────────
   const priceAtDot = yToPrice(ey);
-  ctx.fillStyle = 'rgba(255,91,127,0.95)';
-  ctx.font = '11px ui-monospace,monospace';
-  try { ctx.fillText(fmtPrice(priceAtDot), ex+12, ey-10); } catch(_){}
+  ctx.fillStyle = '#0c0c14';
+  ctx.fillRect(ex+10, ey-22, 80, 16);
+  ctx.fillStyle = style.color;
+  ctx.font = 'bold 11px ui-monospace,monospace';
+  try { ctx.fillText(fmtPrice(priceAtDot), ex+14, ey-10); } catch(_){}
+  ctx.restore();
+}
+
+/* ============================================================
+ * v0.9.16 — Setup Guide overlay
+ * ------------------------------------------------------------
+ * Floating instructional card top-center showing the player how
+ * to use the active primitive. Per-tool: icon + name, current
+ * step text, step counter, animated demo glyph (single-click
+ * pulse / two-anchor sequence / range select). Auto-advances as
+ * the player clicks anchors. Closes when the tool commits.
+ * ============================================================ */
+function drawSetupGuide(){
+  if(!game.laserAiming) return;
+  const tool = game.laserTool;
+  if(!tool) return;
+  const guide = TOOL_SETUP_GUIDES[tool];
+  if(!guide) return;
+  const style = _toolStyle(tool);
+  // Step index based on phase: anchor1 → 0, anchor2 → 1, idle/single-click → 0.
+  let stepIdx = 0;
+  if(game.laserPhase === 'anchor2') stepIdx = 1;
+  if(stepIdx >= guide.steps.length) stepIdx = guide.steps.length - 1;
+
+  ctx.save();
+  // Card geometry (top-center, fixed size).
+  const cardW = 480, cardH = 92;
+  const cx = (W - cardW) / 2, cy = 80;
+  // Background — subtle gradient via 2 overlaid rects + colored top strip
+  const grad = ctx.createLinearGradient(0, cy, 0, cy + cardH);
+  grad.addColorStop(0, 'rgba(20,30,55,0.95)');
+  grad.addColorStop(1, 'rgba(12,18,35,0.95)');
+  ctx.fillStyle = grad;
+  // Rounded rect
+  const r = 10;
+  ctx.beginPath();
+  ctx.moveTo(cx+r, cy);
+  ctx.lineTo(cx+cardW-r, cy); ctx.quadraticCurveTo(cx+cardW, cy, cx+cardW, cy+r);
+  ctx.lineTo(cx+cardW, cy+cardH-r); ctx.quadraticCurveTo(cx+cardW, cy+cardH, cx+cardW-r, cy+cardH);
+  ctx.lineTo(cx+r, cy+cardH); ctx.quadraticCurveTo(cx, cy+cardH, cx, cy+cardH-r);
+  ctx.lineTo(cx, cy+r); ctx.quadraticCurveTo(cx, cy, cx+r, cy);
+  ctx.closePath();
+  ctx.fill();
+  // Glowing border in tool color
+  ctx.strokeStyle = style.color;
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = style.glow;
+  ctx.shadowBlur = 8;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Icon + name — left side
+  ctx.fillStyle = style.color;
+  ctx.font = 'bold 22px ui-monospace,monospace';
+  ctx.fillText(style.icon, cx + 14, cy + 32);
+  ctx.font = 'bold 13px ui-monospace,monospace';
+  ctx.fillText(style.name.toUpperCase(), cx + 50, cy + 22);
+  // Step counter
+  ctx.fillStyle = 'rgba(180,200,230,0.55)';
+  ctx.font = '9px ui-monospace,monospace';
+  ctx.fillText('STEP ' + (stepIdx+1) + ' OF ' + guide.steps.length + ' · ' + guide.kind.toUpperCase().replace('-',' '), cx + 50, cy + 36);
+  // Step instruction
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 13px ui-monospace,monospace';
+  ctx.fillText(guide.steps[stepIdx], cx + 14, cy + 60);
+  // Hint
+  ctx.fillStyle = 'rgba(180,200,230,0.7)';
+  ctx.font = '10px ui-monospace,monospace';
+  ctx.fillText(guide.hint, cx + 14, cy + 78);
+
+  // Animated step dots (right side) — pulses on the current step.
+  const dotsX = cx + cardW - 14 - guide.steps.length * 12;
+  const dotsY = cy + 16;
+  for(let i = 0; i < guide.steps.length; i++){
+    const isCur = i === stepIdx;
+    const isDone = i < stepIdx;
+    const dotR = isCur ? (4.5 + 1.5 * Math.sin(performance.now() * 0.006)) : 3.5;
+    ctx.fillStyle = isDone ? '#7ee787' : (isCur ? style.color : 'rgba(180,200,230,0.25)');
+    ctx.beginPath(); ctx.arc(dotsX + i * 12, dotsY, dotR, 0, Math.PI*2); ctx.fill();
+  }
+  // Mini demo glyph — bottom-right, animates the click pattern.
+  const glyphX = cx + cardW - 50, glyphY = cy + cardH - 20;
+  const tNow = performance.now();
+  if(guide.kind === 'single-click'){
+    // Pulsing crosshair + downward arrow indicating "drop here"
+    const p = 0.6 + 0.4 * Math.sin(tNow * 0.005);
+    ctx.strokeStyle = style.color;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = p;
+    ctx.beginPath(); ctx.arc(glyphX, glyphY, 8, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(glyphX, glyphY-12); ctx.lineTo(glyphX, glyphY+12); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(glyphX-12, glyphY); ctx.lineTo(glyphX+12, glyphY); ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else if(guide.kind === 'two-anchor'){
+    // Two dots connected by a ghost line; the "current" dot pulses.
+    const phase = (tNow * 0.001) % 2;
+    ctx.strokeStyle = style.color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3,3]);
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath(); ctx.moveTo(glyphX-14, glyphY-6); ctx.lineTo(glyphX+14, glyphY+6); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    // Anchor 1 — solid if step 1+, pulsing yellow if current.
+    const a1Cur = (stepIdx === 0);
+    ctx.fillStyle = a1Cur ? '#ffd166' : style.color;
+    const a1R = 4 + (a1Cur ? 1.4 * Math.abs(Math.sin(tNow * 0.005)) : 0);
+    ctx.beginPath(); ctx.arc(glyphX-14, glyphY-6, a1R, 0, Math.PI*2); ctx.fill();
+    // Anchor 2
+    const a2Cur = (stepIdx === 1);
+    ctx.fillStyle = a2Cur ? '#ffd166' : (stepIdx >= 1 ? style.color : 'rgba(180,200,230,0.3)');
+    const a2R = 4 + (a2Cur ? 1.4 * Math.abs(Math.sin(tNow * 0.005)) : 0);
+    ctx.beginPath(); ctx.arc(glyphX+14, glyphY+6, a2R, 0, Math.PI*2); ctx.fill();
+  }
   ctx.restore();
 }
 // v0.8k#24j — Snap a screen-space point to the nearest candle landmark: wick
@@ -16384,6 +16645,12 @@ function snapToCandle(sx, sy){
 // dispatchTool when the player picks a 1-click tool. Pushes overlay onto the
 // appropriate game array, then exits laser mode.
 function commitLaserSingleClick(toolId, sx, sy, wxAt, priceAt, originUp, exitFn){
+  // v0.9.16 — Tool-colored confetti at click point + brief hit-stop.
+  try {
+    const _s = (typeof _toolStyle === 'function') ? _toolStyle(toolId) : null;
+    if(_s && typeof spawnParticles === 'function') spawnParticles(sx, sy, _s.color, 18, 200);
+    if(typeof hitStop === 'function') hitStop(40);
+  } catch(_){}
   try {
     if(toolId === 'hline'){
       let panelStick = false, panelFrac = 0;
@@ -16466,6 +16733,15 @@ function commitLaserTwoAnchor(tool, a1, a2){
   const wxMid = (a1.wx + a2.wx) * 0.5;
   const sxMid = (a1.sx + a2.sx) * 0.5;
   const syMid = (a1.sy + a2.sy) * 0.5;
+  // v0.9.16 — Confetti burst at anchor 2 in the tool's color so commit feels juicy.
+  try {
+    const _s = (typeof _toolStyle === 'function') ? _toolStyle(tool) : null;
+    if(_s && typeof spawnParticles === 'function'){
+      spawnParticles(a2.sx, a2.sy, _s.color, 22, 220);
+      spawnParticles(a1.sx, a1.sy, _s.color, 12, 140);
+    }
+    if(typeof hitStop === 'function') hitStop(40);
+  } catch(_){}
   try {
     if(tool === 'ladder'){
       const rungs = 5;
@@ -20673,6 +20949,43 @@ function _wbWireUI(){
 // Wire after DOM is ready (script tag is end-of-body so DOM exists, but
 // some windows are conditionally rendered — wrap in setTimeout to be safe).
 setTimeout(_wbWireUI, 0);
+
+// v0.9.17 — Profile-side run-control buttons forward to the original topbar
+// handlers. The topbar buttons stay in the DOM (hidden) so every existing
+// click handler keeps working — Profile entries just .click() through.
+setTimeout(() => {
+  const proxy = (profileId, topbarId) => {
+    const p = document.getElementById(profileId);
+    const t = document.getElementById(topbarId);
+    if(p && t){
+      p.addEventListener('click', e => { e.stopPropagation(); t.click(); });
+    }
+  };
+  proxy('crProfRestart', 'crBarRestart');
+  proxy('crProfSave',    'crBarSave');
+  proxy('crProfCoins',   'crBarCoins');
+  proxy('crProfConnect', 'crBarConnect');
+  // Mirror the wallet-connected glow from the topbar entry → Profile entry,
+  // so the player sees their connection status without opening the topbar.
+  try {
+    const sync = () => {
+      const t = document.getElementById('crBarConnect');
+      const p = document.getElementById('crProfConnect');
+      if(t && p){
+        const on = t.classList.contains('cr-wallet-on');
+        p.classList.toggle('cr-wallet-on', on);
+        const lbl = p.querySelector('.lbl');
+        if(lbl) lbl.textContent = on ? 'Connected' : 'Connect';
+      }
+    };
+    sync();
+    // Re-sync when the topbar text/class changes (wallet flow swaps it).
+    const t = document.getElementById('crBarConnect');
+    if(t && typeof MutationObserver !== 'undefined'){
+      new MutationObserver(sync).observe(t, { attributes:true, childList:true, subtree:true });
+    }
+  } catch(_){}
+}, 0);
 
 
 /* ----- Bot orb renderer (draw layer) ----- */
