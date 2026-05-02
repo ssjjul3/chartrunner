@@ -388,7 +388,11 @@ export default function App() {
     setSending(true);
     setError(null);
     try {
-      let ix;
+      // v0.9.8c — Explicit type so TS strict mode doesn't trip on
+      // implicit-any. The switch must produce an ix in every reachable case;
+      // we throw on missing-required-fields above each builder call so
+      // execution can't continue with a half-built ix.
+      let ix: import('@solana/web3.js').TransactionInstruction;
       switch (registryParams.action) {
         case 'save-entity': {
           if (!registryParams.hashHex) throw new Error('Missing hash');
@@ -446,6 +450,14 @@ export default function App() {
             mapHash:       fromHexRegistry(registryParams.runMapHash),
           });
           break;
+        }
+        default: {
+          // Exhaustive switch guard. RegistryAction is a string-union of the
+          // five cases above; this branch is unreachable. Throwing here keeps
+          // TS strict-mode 'definitely-assigned' analysis happy without a
+          // sentinel value.
+          const _exhaustive: never = registryParams.action;
+          throw new Error('Unhandled registry action: ' + _exhaustive);
         }
       }
 
