@@ -11004,23 +11004,25 @@ function openPrimitivesMenu(){
   // Per-tier groupings. Each item has: { id, ic, nm, desc, tier, requires, fire }.
   const items = [
     // ── Existing OCO (preserved for muscle memory) ──────────────────────
-    { id:'oco', ic:'⇅', nm:'OCO',                desc:'One-cancels-other ±80', tier:'classic', fire: () => {
+    // v0.9.27b — Modal abilities cleanup. Removed 9 entries that overlapped with
+    // laser placements (limit, limitSell, stopLoss, takeProfit, iceberg, trailTp,
+    // borrowShort, perpFlip, magnet — all of those have strictly-better laser
+    // versions on hotkey 3 with chart-anchored prices instead of hard-coded
+    // offsets). Kept and renamed: oco/twap/scaleOut now read as "Quick" variants
+    // since they're materially different from their laser cousins (instant fire
+    // from current price vs anchored placement). Market BUY/SELL stay because
+    // they have no chart-click semantics (fire-at-current is the unique feature).
+    { id:'ocoQuick', ic:'⇅', nm:'OCO Quick (±80)',  desc:'Instant OCO ±80 from current price · use Hotkey 3 for anchored OCO', tier:'classic', fire: () => {
         const [a,b] = sdk.oco({ upper:80, lower:-80, size:6, price:here });
         game.visualOCO.push({wx:player.wx, upper:a.price, lower:b.price, upperId:a.id, lowerId:b.id, t:0, upsideDown: !!player.upsideDown});
-        toast('OCO placed');
+        toast('OCO Quick · ±80');
     }},
     // ── TIER 1: missing basics ──────────────────────────────────────────
     { id:'market',     ic:'⚡', nm:'Market BUY',  desc:'Instant fill at current price', tier:'T1', fire: () => { sdk.market({ side:'buy',  size:1, price: here }); toast('Market BUY'); }},
     { id:'marketSell', ic:'⚡', nm:'Market SELL', desc:'Instant fill at current price', tier:'T1', fire: () => { sdk.market({ side:'sell', size:1, price: here }); toast('Market SELL'); }},
-    { id:'limit',      ic:'⌖', nm:'Limit BUY',   desc:'Resting -30 from price',         tier:'T1', fire: () => { sdk.limit({ side:'buy',  price: here - 30, size:1 }); toast('Limit BUY @ -30'); }},
-    { id:'limitSell',  ic:'⌖', nm:'Limit SELL',  desc:'Resting +30 from price',         tier:'T1', fire: () => { sdk.limit({ side:'sell', price: here + 30, size:1 }); toast('Limit SELL @ +30'); }},
-    { id:'stopLoss',   ic:'🛑',nm:'Stop-Loss',   desc:'Set SL on latest bracket',        tier:'T1', requires:'bracket', fire: () => { sdk.stopLoss({ id: liveBracket.id, price: liveBracket.entry - 30 * (liveBracket.side==='buy'?1:-1) }); toast('SL adjusted'); }},
-    { id:'takeProfit', ic:'🎯',nm:'Take-Profit', desc:'Set TP on latest bracket',        tier:'T1', requires:'bracket', fire: () => { sdk.takeProfit({ id: liveBracket.id, price: liveBracket.entry + 60 * (liveBracket.side==='buy'?1:-1) }); toast('TP adjusted'); }},
-    { id:'scaleOut',   ic:'¼', nm:'Scale Out 25%', desc:'Partial close at price',        tier:'T1', requires:'bracket', fire: () => { sdk.scaleOut({ id: liveBracket.id, fraction:0.25, price: here }); toast('25% closed'); }},
+    { id:'scaleOutQuick', ic:'¼', nm:'Quick Scale ¼', desc:'Close 25% of latest bracket at current price · use Hotkey 3 for anchored scale-out', tier:'T1', requires:'bracket', fire: () => { sdk.scaleOut({ id: liveBracket.id, fraction:0.25, price: here }); toast('Quick scale ¼'); }},
     // ── TIER 2: pro-trader ──────────────────────────────────────────────
-    { id:'twap',       ic:'⌛',nm:'TWAP',        desc:'5 slices over 10s',               tier:'T2', fire: () => { sdk.twap({ side:'buy', totalSize:10, slices:5, intervalSecs:2, price: here }); toast('TWAP started'); }},
-    { id:'iceberg',    ic:'🧊',nm:'Iceberg',     desc:'Visible 1, hidden 10',            tier:'T2', fire: () => { sdk.iceberg({ side:'buy', visibleSize:1, hiddenSize:10, price: here - 30 }); toast('Iceberg armed'); }},
-    { id:'trailTp',    ic:'➶', nm:'Trailing TP', desc:'Ratchet TP on latest bracket',    tier:'T2', requires:'bracket', fire: () => { sdk.trailingTakeProfit({ id: liveBracket.id }); toast('Trailing TP armed'); }},
+    { id:'twapTime',   ic:'⌛',nm:'TWAP-time (5×2s)', desc:'Time-sliced TWAP — 5 slices over 10s · use Hotkey 3 for price-ranged TWAP', tier:'T2', fire: () => { sdk.twap({ side:'buy', totalSize:10, slices:5, intervalSecs:2, price: here }); toast('TWAP-time started'); }},
     { id:'ocoBracket', ic:'⤳', nm:'OCO Bracket', desc:'Two pending entries ±80',         tier:'T2', fire: () => { sdk.ocoBracket({ upper: here + 80, lower: here - 80 }); toast('OCO bracket placed'); }},
     // ifThen needs a `then` function — wire a simple "if price > X, place a market"
     { id:'ifThen',     ic:'⇒', nm:'If-Then',    desc:'If +50 → market BUY',            tier:'T2', fire: () => {
@@ -11042,8 +11044,10 @@ function openPrimitivesMenu(){
           setTimeout(() => toast('Phase 2: live funding feed via ChartHost adapter'), 1800);
         } catch(_){}
     }},
-    { id:'borrowShort',ic:'📉',nm:'Borrow Short', desc:'DeFi-flow short on SOL',         tier:'T3', fire: () => { sdk.borrowShort({ asset:'SOL', size:1, price: here }); toast('Borrow-short opened'); }},
-    { id:'guard',      ic:'🛟',nm:'Liquidation Guard', desc:'Auto-add margin near liq',  tier:'T3', requires:'bracket', fire: () => { sdk.liquidationGuard({ id: liveBracket.id, marginRatio:0.15, addAmount:10 }); toast('Liq guard armed'); }},
+    // v0.9.27b — borrowShort retired (laser borrowShortAt covers it). Guard
+    // stays because it's a different mechanic (auto-margin top-up vs the laser's
+    // hard SL line at click price).
+    { id:'guard',      ic:'🛟',nm:'Liquidation Guard', desc:'Auto-add margin near liq · DIFFERENT from laser liqGuardAt (hard SL line)', tier:'T3', requires:'bracket', fire: () => { sdk.liquidationGuard({ id: liveBracket.id, marginRatio:0.15, addAmount:10 }); toast('Liq guard armed'); }},
     { id:'copyTrade',  ic:'👥',nm:'Copy Trade',   desc:'Mirror a wallet (Phase 2)',      tier:'T3', fire: () => {
         // v0.9.8j — Real wallet picker. Prompt for the followee's pubkey,
         // validate base58 length (32-44 chars typical for Solana), prompt for
@@ -11072,7 +11076,7 @@ function openPrimitivesMenu(){
         sdk.copyTrade({ walletAddr: trimmed, sizeMultiplier: mult, autoStop: true });
         try { toast('Copy-trade armed @ ' + trimmed.slice(0, 4) + '…' + trimmed.slice(-4) + ' × ' + mult); } catch(_){}
     }},
-    { id:'perpFlip',   ic:'⇌', nm:'Perp Flip',   desc:'Close + open inverse',           tier:'T3', requires:'bracket', fire: () => { sdk.perpFlip({ id: liveBracket.id, price: here }); toast('Position flipped'); }},
+    // v0.9.27b — perpFlip retired (laser perpFlipAt covers it).
     // ── TIER 4: gameplay-flavored ──────────────────────────────────────
     { id:'comboCondor',ic:'🦅',nm:'Combo: Iron Condor', desc:'Pre-baked range setup',   tier:'T4', fire: () => { sdk.comboTrade({ setup:'ironCondor', price: here }); toast('Iron condor placed'); }},
     { id:'comboStrad', ic:'⫷', nm:'Combo: Straddle',    desc:'Buy + sell, profit on big move', tier:'T4', fire: () => { sdk.comboTrade({ setup:'straddle',   price: here }); toast('Straddle placed'); }},
@@ -11096,7 +11100,7 @@ function openPrimitivesMenu(){
           toast('Auto-fib · Champion Zone shaded (' + side.toUpperCase() + ' swing)');
         }
     }},
-    { id:'magnet',     ic:'🧲',nm:'Magnet',      desc:'Tighten SL toward target',         tier:'T4', requires:'bracket', fire: () => { sdk.magnet({ id: liveBracket.id, target: here, strength: 0.5 }); toast('Magnet engaged'); }},
+    // v0.9.27b — magnet retired (laser magnetAt covers it · click point = target).
     // v0.9.10 — CCV Setup probe. Non-mutating manual check; shows the player
     // why a setup matched (or didn't) so they learn the components. The
     // background watcher (ccvWatcherTick) handles auto-firing.
