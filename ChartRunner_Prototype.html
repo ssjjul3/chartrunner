@@ -4615,6 +4615,15 @@
           <div class="lbl">Workbench</div>
           <div class="kbd">Pine · Build</div>
         </button>
+        <!-- v0.9.26 — Trading Journal: documents and comments manual + bot trades.
+             Columns mirror Igor's Trade Entry Checklist (asset, TF, side, entry,
+             SL, TP, R:R, risk%, confluence pre-trade, setup type, ref levels,
+             result, PnL, notes). Two tabs: Manual / Bot. -->
+        <button class="os-icon" data-prog="journal" title="Trading Journal — log every manual + bot trade with full Trade Entry Checklist columns">
+          <div class="ico">📓</div>
+          <div class="lbl">Journal</div>
+          <div class="kbd">Manual · Bot</div>
+        </button>
         <!-- v0.8k#24ce — Token Terminal: live token research dashboard.
              Categorized lists (Winners surfaced first), per-token profile
              card with onchain + holder + signal data, profiles draggable
@@ -6476,6 +6485,128 @@ plot(out, color=color.orange, linewidth=2)</textarea>
                 <div id="wbAppList" style="display:flex;flex-direction:column;gap:6px;max-height:380px;overflow:auto"></div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.9.26 — Trading Journal app. Two tabs (Manual / Bot) + full Trade
+           Entry Checklist columns mirroring quant.pdf's Igor template:
+           date · asset · TF · side · entry · SL · TP · R:R · risk% · confluence
+           score (pre-trade) · setup type · ref levels · result · PnL · notes.
+           Manual tab: form to log new entries + table of past entries.
+           Bot tab: auto-populated from sdk.openOrders for orders flagged
+           bot=true + a free comment column. -->
+      <div class="os-window" id="win-journal" style="width:min(1100px,calc(100% - 60px));max-width:1100px">
+        <div class="os-wbar">
+          <div class="dots"><span class="dot red"></span><span class="dot yel"></span><span class="dot grn"></span></div>
+          <div class="ttl">📓 Trading Journal · Igor Template</div>
+          <div class="spacer"></div>
+          <button class="wclose" data-close>Close</button>
+        </div>
+        <div class="os-wbody">
+          <p style="margin:0 0 8px;font-size:11px;color:var(--dim)">Documents every trade against the quant.pdf Trade Entry Checklist. Manual tab: log discretionary entries with full annotation. Bot tab: auto-imports bot-fired orders (flagged with <code>bot:true</code> on the SDK order) for after-action review.</p>
+          <div class="crTerm-tabs" id="crJournalTabs" style="margin-top:6px">
+            <button class="crTerm-tab active" data-jrntab="manual" type="button">MANUAL</button>
+            <button class="crTerm-tab" data-jrntab="bot" type="button">BOT</button>
+            <button class="crTerm-tab" data-jrntab="stats" type="button">STATS</button>
+          </div>
+
+          <!-- ── MANUAL TAB ────────────────────────────────────────────── -->
+          <div class="crTerm-view" id="crJournalViewManual">
+            <!-- New-entry form: 2-col grid, sane defaults pre-filled from current run state. -->
+            <div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0 10px;background:rgba(126,231,135,0.04)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div style="font-size:11px;font-weight:700;color:#7ee787;text-transform:uppercase;letter-spacing:.4px">📝 Log New Trade</div>
+                <button class="cr-go" id="crJrnPrefill" type="button" style="font-size:10px;padding:4px 10px;background:transparent;border:1px solid var(--line);color:var(--dim)">↻ Prefill from current run</button>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;font-size:11px">
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Asset</span>
+                  <input type="text" id="crJrnAsset" placeholder="BTC" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                </label>
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Timeframe</span>
+                  <select id="crJrnTf" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                    <option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option>
+                  </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Side</span>
+                  <select id="crJrnSide" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                    <option value="buy">LONG</option><option value="sell">SHORT</option>
+                  </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Setup Type</span>
+                  <select id="crJrnSetup" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                    <option value="">— pick —</option>
+                    <option value="ccv">CCV (consol + champion + vol)</option>
+                    <option value="sfp">SFP (swing failure)</option>
+                    <option value="fa">Failed Auction</option>
+                    <option value="barr">Bump-and-Run</option>
+                    <option value="hs">Head &amp; Shoulders</option>
+                    <option value="div_a">Class A divergence</option>
+                    <option value="div_b">Class B divergence</option>
+                    <option value="champion">Champions Channel</option>
+                    <option value="breakout">Consolidation breakout</option>
+                    <option value="ref_level">Reference level reaction</option>
+                    <option value="trend">Trend follow</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Entry $</span>
+                  <input type="number" id="crJrnEntry" step="0.01" placeholder="78200" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                </label>
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Stop $</span>
+                  <input type="number" id="crJrnSl" step="0.01" placeholder="77800" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                </label>
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Target $</span>
+                  <input type="number" id="crJrnTp" step="0.01" placeholder="79000" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                </label>
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Risk %</span>
+                  <input type="number" id="crJrnRisk" step="0.1" value="1.0" placeholder="1.0" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                </label>
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Confluence (0–20)</span>
+                  <input type="number" id="crJrnConf" step="1" min="0" max="20" placeholder="auto" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                </label>
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Levels Near</span>
+                  <input type="text" id="crJrnLevels" placeholder="pdPOC, dOpen" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                </label>
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Result</span>
+                  <select id="crJrnResult" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                    <option value="open">OPEN</option><option value="win">WIN</option><option value="loss">LOSS</option><option value="be">BE</option>
+                  </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">PnL $</span>
+                  <input type="number" id="crJrnPnl" step="0.01" placeholder="0" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                </label>
+              </div>
+              <textarea id="crJrnNotes" rows="2" placeholder="Notes — why I took it · what I saw · what I should have seen…" style="margin-top:6px;padding:6px 8px;width:100%;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace;resize:vertical;box-sizing:border-box"></textarea>
+              <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
+                <button class="cr-go" id="crJrnAdd" type="button">📝 Log Trade</button>
+              </div>
+            </div>
+            <!-- Entries table -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 6px">
+              <h4 style="margin:0">My Trades <span id="crJrnCount" style="color:var(--dim);font-weight:400">(0)</span></h4>
+              <div style="display:flex;gap:6px">
+                <button class="cr-go" id="crJrnExport" type="button" style="font-size:10px;padding:4px 10px;background:transparent;border:1px solid var(--line);color:var(--dim)">⬇ Export CSV</button>
+                <button class="cr-go" id="crJrnClear" type="button" style="font-size:10px;padding:4px 10px;background:transparent;border:1px solid var(--line);color:#ff5b7f">× Clear all</button>
+              </div>
+            </div>
+            <div id="crJrnList" style="border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.4);max-height:340px;overflow:auto"></div>
+          </div>
+
+          <!-- ── BOT TAB ───────────────────────────────────────────────── -->
+          <div class="crTerm-view hidden" id="crJournalViewBot">
+            <p style="margin:10px 0 8px;font-size:11px;color:var(--dim)">Auto-imported from <code>sdk.openOrders</code> for orders fired by equipped bots (flagged <code>bot:true</code>). Each row supports a free comment for after-action review.</p>
+            <div style="display:flex;gap:6px;margin-bottom:8px">
+              <button class="cr-go" id="crJrnBotRefresh" type="button" style="font-size:11px;padding:5px 11px">↻ Refresh from SDK</button>
+              <button class="cr-go" id="crJrnBotExport" type="button" style="font-size:11px;padding:5px 11px;background:transparent;border:1px solid var(--line);color:var(--dim)">⬇ Export CSV</button>
+            </div>
+            <div id="crJrnBotList" style="border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.4);max-height:480px;overflow:auto"></div>
+          </div>
+
+          <!-- ── STATS TAB ─────────────────────────────────────────────── -->
+          <div class="crTerm-view hidden" id="crJournalViewStats">
+            <p style="margin:10px 0 8px;font-size:11px;color:var(--dim)">Aggregate stats across both manual and bot trades. R:R × Win Rate matrix mirrors the Igor expectancy table.</p>
+            <div id="crJrnStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px"></div>
           </div>
         </div>
       </div>
@@ -18315,7 +18446,7 @@ function pickMode(mode){
  * =======================================================================*/
 // v0.8k#24k — `inventory` removed from OS programs (window retired). `profile`
 // stays as a stub redirect — most callers route to wallet via the dock now.
-const OS_PROGRAMS = ['run','shop','configs','profile','stats','workbench'];
+const OS_PROGRAMS = ['run','shop','configs','profile','stats','workbench','journal'];
 const osStatus = document.getElementById('osStatus');
 function osOpenWindow(prog){
   if(!OS_PROGRAMS.includes(prog)) return;
@@ -18331,6 +18462,7 @@ function osOpenWindow(prog){
   if(prog==='configs')   osRefreshConfigs();
   if(prog==='run')       osRefreshRun();
   if(prog==='workbench') { try { _wbRenderTools(); _wbRenderBots(); _wbRenderStrats(); _wbRenderInds(); _wbRebuildBacktestTargets(); _wbRenderBackHistory(); } catch(_){} }
+  if(prog==='journal')   { try { _crJrnRenderManual(); _crJrnRenderBot(); _crJrnRenderStats(); _crJrnPrefillFromRun(); } catch(_){} }
   osStatus.textContent = prog;
 }
 function osCloseAllWindows(){
@@ -18346,6 +18478,269 @@ document.querySelectorAll('#osGrid .os-icon').forEach(btn=>{
 document.querySelectorAll('.os-window [data-close]').forEach(btn=>{
   btn.addEventListener('click', osCloseAllWindows);
 });
+
+/* ============================================================
+ * v0.9.26 — Trading Journal IIFE
+ * ------------------------------------------------------------
+ * Per-wallet localStorage namespace (cr_journal_v1). Two views:
+ *   manual — player-logged trades with full Trade Entry Checklist
+ *   bot    — auto-imported bot orders + free comment column
+ *   stats  — aggregate WR / R:R matrix
+ * Export to CSV via a Blob URL anchor click.
+ * ============================================================ */
+const CR_JRN_KEY = 'cr_journal_v1';
+function _crJrnLoad(){
+  try { const raw = localStorage.getItem(CR_JRN_KEY); if(!raw) return { manual:[], botComments:{} };
+    const p = JSON.parse(raw);
+    return { manual: Array.isArray(p.manual) ? p.manual : [], botComments: (p.botComments && typeof p.botComments === 'object') ? p.botComments : {} };
+  } catch(_){ return { manual:[], botComments:{} }; }
+}
+function _crJrnSave(d){
+  try { localStorage.setItem(CR_JRN_KEY, JSON.stringify(d)); } catch(_){}
+}
+function _crJrnPrefillFromRun(){
+  // Auto-fill the Asset / TF / Confluence fields from the live run state when
+  // the journal opens. Player can override before logging.
+  try {
+    const a = document.getElementById('crJrnAsset');
+    if(a && !a.value) a.value = (typeof currentAsset === 'string' ? currentAsset.toUpperCase() : 'BTC');
+    const tf = document.getElementById('crJrnTf');
+    if(tf && typeof timeframe === 'string') tf.value = timeframe;
+    const conf = document.getElementById('crJrnConf');
+    if(conf && !conf.value && typeof sdk !== 'undefined' && typeof sdk.scoreSetup === 'function'){
+      try {
+        const r = sdk.scoreSetup({ side: 'buy' });
+        conf.value = String(r.score|0);
+      } catch(_){}
+    }
+    const lev = document.getElementById('crJrnLevels');
+    if(lev && !lev.value && typeof computeReferenceLevels === 'function'){
+      try {
+        const L = computeReferenceLevels();
+        if(L){
+          const nearby = ['dOpen','pdHigh','pdLow','pdClose','pdVAH','pdPOC','pdVAL','IBH','IBL']
+            .filter(k => typeof L[k] === 'number');
+          lev.value = nearby.slice(0,3).join(', ');
+        }
+      } catch(_){}
+    }
+  } catch(_){}
+}
+function _crJrnRRFromForm(entry, sl, tp){
+  const slDist = Math.abs(entry - sl), tpDist = Math.abs(tp - entry);
+  if(slDist <= 0) return 0;
+  return tpDist / slDist;
+}
+function _crJrnRenderManual(){
+  const list = document.getElementById('crJrnList');
+  const cnt  = document.getElementById('crJrnCount');
+  if(!list) return;
+  const data = _crJrnLoad();
+  if(cnt) cnt.textContent = '(' + data.manual.length + ')';
+  if(!data.manual.length){
+    list.innerHTML = '<div style="padding:14px;font-size:11px;color:var(--dim);font-style:italic;text-align:center">No trades logged yet. Fill the form above and hit Log Trade.</div>';
+    return;
+  }
+  // Header row.
+  const cols = ['When','Asset/TF','Side','Setup','Entry','SL','TP','R:R','Risk','Conf','Levels','Result','PnL','Notes'];
+  let html = '<div style="display:grid;grid-template-columns:90px 70px 50px 90px 70px 70px 70px 50px 50px 50px 90px 60px 70px 1fr 30px;gap:0;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;background:rgba(20,30,55,0.4);border-bottom:1px solid var(--line);font-weight:700">';
+  for(const c of cols) html += '<div>'+c+'</div>';
+  html += '<div></div></div>';
+  for(let i = data.manual.length - 1; i >= 0; i--){
+    const t = data.manual[i];
+    const rr = (t.rr != null) ? Number(t.rr).toFixed(2) : '—';
+    const pnlColor = t.pnl > 0 ? '#3ddc97' : (t.pnl < 0 ? '#ff5b7f' : 'var(--dim)');
+    const resColor = { win:'#3ddc97', loss:'#ff5b7f', be:'#ffd166', open:'#7be3f3' }[t.result] || 'var(--dim)';
+    html += '<div style="display:grid;grid-template-columns:90px 70px 50px 90px 70px 70px 70px 50px 50px 50px 90px 60px 70px 1fr 30px;gap:0;font-size:10.5px;padding:6px 8px;border-bottom:1px solid rgba(180,200,230,0.06);align-items:center">';
+    html += '<div style="color:var(--dim);font-family:ui-monospace,Menlo,monospace">'+(t.dateStr||'—')+'</div>';
+    html += '<div><b>'+(t.asset||'?')+'</b><span style="color:var(--dim)"> '+(t.tf||'')+'</span></div>';
+    html += '<div style="color:'+(t.side==='buy'?'#3ddc97':'#ff5b7f')+';font-weight:700">'+(t.side==='buy'?'L':'S')+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px">'+(t.setup||'—')+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace">'+(t.entry!=null?Number(t.entry).toFixed(2):'—')+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace;color:#ff5b7f">'+(t.sl!=null?Number(t.sl).toFixed(2):'—')+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace;color:#3ddc97">'+(t.tp!=null?Number(t.tp).toFixed(2):'—')+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace;font-weight:700">'+rr+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace">'+(t.risk!=null?Number(t.risk).toFixed(1)+'%':'—')+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace;color:'+(t.conf>=11?'#7ee787':(t.conf>=6?'#ffd166':'var(--dim)'))+';font-weight:700">'+(t.conf!=null?t.conf+'/20':'—')+'</div>';
+    html += '<div style="font-size:9.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+(t.levels||'')+'">'+(t.levels||'—')+'</div>';
+    html += '<div style="color:'+resColor+';font-weight:700">'+(t.result||'—').toUpperCase()+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace;color:'+pnlColor+';font-weight:700">'+(t.pnl!=null?(t.pnl>=0?'+':'')+'$'+Math.abs(t.pnl).toFixed(2):'—')+'</div>';
+    html += '<div style="font-size:9.5px;color:#cfd2db;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+(t.notes||'').replace(/"/g,'&quot;')+'">'+(t.notes||'')+'</div>';
+    html += '<div><button class="cr-go" type="button" data-jrn-del="'+i+'" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--line);color:var(--dim)">×</button></div>';
+    html += '</div>';
+  }
+  list.innerHTML = html;
+  list.querySelectorAll('[data-jrn-del]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = +btn.getAttribute('data-jrn-del');
+      const d = _crJrnLoad();
+      d.manual.splice(i, 1);
+      _crJrnSave(d);
+      _crJrnRenderManual();
+      _crJrnRenderStats();
+    });
+  });
+}
+function _crJrnRenderBot(){
+  const list = document.getElementById('crJrnBotList');
+  if(!list) return;
+  const data = _crJrnLoad();
+  let bots = [];
+  try {
+    if(typeof sdk !== 'undefined' && Array.isArray(sdk.openOrders)){
+      bots = sdk.openOrders.filter(o => o && (o.bot === true || (typeof o.botId === 'string' && o.botId.length)));
+    }
+  } catch(_){}
+  if(!bots.length){
+    list.innerHTML = '<div style="padding:14px;font-size:11px;color:var(--dim);font-style:italic;text-align:center">No bot trades yet. Equip a bot in Workbench → Bots; auto-imports as it fires orders.</div>';
+    return;
+  }
+  const cols = ['Bot','Asset/TF','Side','Type','Entry','SL/TP','Status','PnL','Comment'];
+  let html = '<div style="display:grid;grid-template-columns:120px 80px 50px 80px 80px 130px 70px 70px 1fr 30px;gap:0;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;background:rgba(20,30,55,0.4);border-bottom:1px solid var(--line);font-weight:700">';
+  for(const c of cols) html += '<div>'+c+'</div>';
+  html += '<div></div></div>';
+  for(const o of bots){
+    const cmt = data.botComments[o.id] || '';
+    const slTp = (o.sl != null ? Number(o.sl).toFixed(2) : '—') + ' / ' + (o.tp != null ? Number(o.tp).toFixed(2) : '—');
+    const pnl = (o.pnl != null) ? o.pnl : (o.entry != null && typeof candles !== 'undefined' && candles.length ? (o.side === 'buy' ? candles[candles.length-1].c - o.entry : o.entry - candles[candles.length-1].c) : null);
+    const pnlColor = (pnl > 0) ? '#3ddc97' : (pnl < 0 ? '#ff5b7f' : 'var(--dim)');
+    html += '<div style="display:grid;grid-template-columns:120px 80px 50px 80px 80px 130px 70px 70px 1fr 30px;gap:0;font-size:10.5px;padding:6px 8px;border-bottom:1px solid rgba(180,200,230,0.06);align-items:center">';
+    html += '<div style="font-weight:700;color:#9b8cff">'+(o.botId || 'bot')+'</div>';
+    html += '<div><b>'+((typeof currentAsset==='string'?currentAsset.toUpperCase():'?'))+'</b><span style="color:var(--dim)"> '+((typeof timeframe==='string'?timeframe:''))+'</span></div>';
+    html += '<div style="color:'+(o.side==='buy'?'#3ddc97':'#ff5b7f')+';font-weight:700">'+(o.side==='buy'?'L':'S')+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px">'+(o.type||'?')+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace">'+(o.entry!=null?Number(o.entry).toFixed(2):(o.price!=null?Number(o.price).toFixed(2):'—'))+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px">'+slTp+'</div>';
+    html += '<div style="font-weight:700;color:'+(o.status==='closed'?'var(--dim)':'#7ee787')+'">'+(o.status||'open').toUpperCase()+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace;color:'+pnlColor+';font-weight:700">'+(pnl!=null?(pnl>=0?'+':'')+'$'+Math.abs(pnl).toFixed(2):'—')+'</div>';
+    html += '<div><input type="text" data-jrn-bot-cmt="'+o.id+'" value="'+(cmt.replace(/"/g,'&quot;'))+'" placeholder="comment…" style="width:100%;padding:3px 6px;border:1px solid var(--line);border-radius:3px;background:rgba(10,15,28,.6);color:var(--fg);font:10px ui-monospace,Menlo,monospace"></div>';
+    html += '<div></div>';
+    html += '</div>';
+  }
+  list.innerHTML = html;
+  list.querySelectorAll('[data-jrn-bot-cmt]').forEach(input => {
+    input.addEventListener('input', () => {
+      const id = input.getAttribute('data-jrn-bot-cmt');
+      const d = _crJrnLoad();
+      d.botComments[id] = input.value;
+      _crJrnSave(d);
+    });
+  });
+}
+function _crJrnRenderStats(){
+  const host = document.getElementById('crJrnStats');
+  if(!host) return;
+  const d = _crJrnLoad();
+  const closed = d.manual.filter(t => t.result === 'win' || t.result === 'loss');
+  const wins = closed.filter(t => t.result === 'win').length;
+  const losses = closed.filter(t => t.result === 'loss').length;
+  const wr = closed.length ? (wins / closed.length * 100).toFixed(1) : '—';
+  const totalPnl = d.manual.reduce((s,t) => s + (Number(t.pnl)||0), 0);
+  const avgRR = closed.length ? (closed.reduce((s,t) => s + (Number(t.rr)||0), 0) / closed.length).toFixed(2) : '—';
+  const cards = [
+    { k:'Total trades', v:d.manual.length, sub:closed.length+' closed' },
+    { k:'Win rate', v:wr+(wr==='—'?'':'%'), sub:wins+'W / '+losses+'L' },
+    { k:'Total PnL', v:(totalPnl>=0?'+':'')+'$'+totalPnl.toFixed(2), sub:'' },
+    { k:'Avg R:R', v:avgRR, sub:closed.length+' closed' },
+  ];
+  let html = '';
+  for(const c of cards){
+    html += '<div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:rgba(10,15,28,.4)">';
+    html += '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px">'+c.k+'</div>';
+    html += '<div style="font-size:20px;font-weight:700;margin-top:4px">'+c.v+'</div>';
+    html += '<div style="font-size:10px;color:var(--dim);margin-top:2px">'+c.sub+'</div>';
+    html += '</div>';
+  }
+  host.innerHTML = html;
+}
+function _crJrnExportCSV(rows, headers, filename){
+  const escape = s => '"'+String(s==null?'':s).replace(/"/g,'""')+'"';
+  const lines = [headers.map(escape).join(',')];
+  for(const r of rows) lines.push(headers.map(h => escape(r[h])).join(','));
+  const blob = new Blob([lines.join('\n')], { type:'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+// Wire form actions, tab switches, and keyboard.
+setTimeout(() => {
+  const tabs = document.querySelectorAll('#crJournalTabs button');
+  tabs.forEach(b => b.addEventListener('click', () => {
+    const cat = b.getAttribute('data-jrntab');
+    tabs.forEach(x => x.classList.toggle('active', x === b));
+    [['manual','crJournalViewManual'],['bot','crJournalViewBot'],['stats','crJournalViewStats']].forEach(([k,id]) => {
+      const el = document.getElementById(id);
+      if(el) el.classList.toggle('hidden', cat !== k);
+    });
+    if(cat === 'manual') _crJrnRenderManual();
+    if(cat === 'bot') _crJrnRenderBot();
+    if(cat === 'stats') _crJrnRenderStats();
+  }));
+  const addBtn = document.getElementById('crJrnAdd');
+  if(addBtn) addBtn.addEventListener('click', () => {
+    const get = id => document.getElementById(id);
+    const entry = parseFloat(get('crJrnEntry').value) || null;
+    const sl    = parseFloat(get('crJrnSl').value) || null;
+    const tp    = parseFloat(get('crJrnTp').value) || null;
+    const t = {
+      id: 't_' + Date.now() + '_' + Math.floor(Math.random()*1000),
+      ts: Date.now(),
+      dateStr: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString().slice(0,5),
+      asset: (get('crJrnAsset').value || '').toUpperCase(),
+      tf: get('crJrnTf').value,
+      side: get('crJrnSide').value,
+      setup: get('crJrnSetup').value,
+      entry, sl, tp,
+      rr: (entry && sl && tp) ? _crJrnRRFromForm(entry, sl, tp) : null,
+      risk: parseFloat(get('crJrnRisk').value) || null,
+      conf: parseInt(get('crJrnConf').value, 10),
+      levels: get('crJrnLevels').value,
+      result: get('crJrnResult').value,
+      pnl: parseFloat(get('crJrnPnl').value) || 0,
+      notes: get('crJrnNotes').value,
+    };
+    if(!isFinite(t.conf)) t.conf = null;
+    const d = _crJrnLoad();
+    d.manual.push(t);
+    _crJrnSave(d);
+    // Clear value-only fields, keep asset/TF/side for fast re-entry.
+    ['crJrnEntry','crJrnSl','crJrnTp','crJrnConf','crJrnLevels','crJrnPnl','crJrnNotes'].forEach(k => { const el = get(k); if(el) el.value = ''; });
+    _crJrnRenderManual();
+    _crJrnRenderStats();
+    try { toast('Trade logged · ' + t.asset + ' ' + t.side.toUpperCase()); } catch(_){}
+  });
+  const prefillBtn = document.getElementById('crJrnPrefill');
+  if(prefillBtn) prefillBtn.addEventListener('click', _crJrnPrefillFromRun);
+  const exportBtn = document.getElementById('crJrnExport');
+  if(exportBtn) exportBtn.addEventListener('click', () => {
+    const d = _crJrnLoad();
+    const headers = ['dateStr','asset','tf','side','setup','entry','sl','tp','rr','risk','conf','levels','result','pnl','notes'];
+    _crJrnExportCSV(d.manual, headers, 'chartrunner_journal_'+Date.now()+'.csv');
+  });
+  const clearBtn = document.getElementById('crJrnClear');
+  if(clearBtn) clearBtn.addEventListener('click', () => {
+    if(!confirm('Delete ALL journal entries? This cannot be undone.')) return;
+    const d = _crJrnLoad();
+    d.manual = [];
+    _crJrnSave(d);
+    _crJrnRenderManual(); _crJrnRenderStats();
+  });
+  const botRefreshBtn = document.getElementById('crJrnBotRefresh');
+  if(botRefreshBtn) botRefreshBtn.addEventListener('click', _crJrnRenderBot);
+  const botExportBtn = document.getElementById('crJrnBotExport');
+  if(botExportBtn) botExportBtn.addEventListener('click', () => {
+    const d = _crJrnLoad();
+    const orders = (typeof sdk !== 'undefined' && Array.isArray(sdk.openOrders)) ? sdk.openOrders.filter(o => o && (o.bot || o.botId)) : [];
+    const rows = orders.map(o => ({
+      botId: o.botId || 'bot', side: o.side, type: o.type,
+      entry: o.entry || o.price, sl: o.sl, tp: o.tp,
+      status: o.status, pnl: o.pnl, comment: d.botComments[o.id] || '',
+    }));
+    _crJrnExportCSV(rows, ['botId','side','type','entry','sl','tp','status','pnl','comment'], 'chartrunner_botjournal_'+Date.now()+'.csv');
+  });
+}, 0);
 
 // Profile content
 // v0.8k#24k — Profile + Wallet merged. The standalone Profile window is gone
