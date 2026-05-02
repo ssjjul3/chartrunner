@@ -6388,6 +6388,7 @@ plot(out, color=color.orange, linewidth=2)</textarea>
                     <option value="reflevels">Reference Levels (dOpen / pdH/L / VAH/POC/VAL / IBH/IBL)</option>
                     <option value="watchlist">Watchlist (BTC / ETH / SOL / HYPE / DOGE)</option>
                     <option value="indicators">Live Indicators (RSI · ATR · SMA · Vol)</option>
+                    <option value="confluence">⭐ Confluence Score (11 components · drag each out as own widget)</option>
                     <option value="custom">Custom (empty — add rows in editor)</option>
                   </select>
                   <!-- v0.8k#24cf — Raw HTML textarea retired. The widget's
@@ -6576,6 +6577,20 @@ plot(out, color=color.orange, linewidth=2)</textarea>
                 <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">PnL $</span>
                   <input type="number" id="crJrnPnl" step="0.01" placeholder="0" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
                 </label>
+              </div>
+              <!-- v0.9.27 — Igor Pre-Trade Checklist. The journal IS the checklist
+                   not just a column log. Each box maps to a quant.pdf entry rule;
+                   trade gets a ✓N/6 badge in the table view based on count checked. -->
+              <div style="margin-top:8px;padding:8px 10px;border:1px solid rgba(126,231,135,0.20);border-radius:6px;background:rgba(126,231,135,0.04)">
+                <div style="font-size:10px;color:#7ee787;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px">📋 Pre-Trade Checklist (Igor)</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 12px;font-size:11px">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkHTF"> HTF aligned</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkLevel"> Level present</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkVol"> Volume confirms</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkMomentum"> Momentum agrees</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkRR"> Min R:R hit</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkConf"> Confluence ≥6</label>
+                </div>
               </div>
               <textarea id="crJrnNotes" rows="2" placeholder="Notes — why I took it · what I saw · what I should have seen…" style="margin-top:6px;padding:6px 8px;width:100%;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace;resize:vertical;box-sizing:border-box"></textarea>
               <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
@@ -14942,14 +14957,17 @@ function drawIndicators(){
  * ============================================================ */
 let SCORE_BADGE_STATE = (function(){
   const KEY = 'cr_score_badge_v1';
-  let saved = { enabled: true, expanded: false, side: 'buy' };
+  // v0.9.28 — Default OFF. The 11 confluence components live in the Terminal
+  // → Confluence tab now (each is a draggable widget). The legacy canvas badge
+  // is kept in code for opt-in via menu drawer, but no longer renders by default.
+  let saved = { enabled: false, expanded: false, side: 'buy' };
   try {
     const raw = localStorage.getItem(KEY);
     if(raw){
       const p = JSON.parse(raw);
       if(p && typeof p === 'object'){
         saved = {
-          enabled:  p.enabled !== false,
+          enabled:  p.enabled === true,   // explicit opt-in only
           expanded: !!p.expanded,
           side:     (p.side === 'sell') ? 'sell' : 'buy',
         };
@@ -18529,6 +18547,19 @@ function _crJrnPrefillFromRun(){
         }
       } catch(_){}
     }
+    // v0.9.27 — Pre-tick the Igor checklist boxes from live SDK state. Player
+    // can override before logging. HTF / Level / Conf are checkable from data;
+    // Vol / Momentum / RR need player judgment so stay unchecked.
+    try {
+      if(typeof sdk !== 'undefined' && typeof sdk.scoreSetup === 'function'){
+        const r = sdk.scoreSetup({ side: 'buy' });
+        const has = id => r.components.some(c => c.id === id);
+        const get = id => document.getElementById(id);
+        if(get('crJrnChkHTF'))   get('crJrnChkHTF').checked   = has('htf_trend');
+        if(get('crJrnChkLevel')) get('crJrnChkLevel').checked = has('ref_level');
+        if(get('crJrnChkConf'))  get('crJrnChkConf').checked  = (r.score >= 6);
+      }
+    } catch(_){}
   } catch(_){}
 }
 function _crJrnRRFromForm(entry, sl, tp){
@@ -18546,9 +18577,10 @@ function _crJrnRenderManual(){
     list.innerHTML = '<div style="padding:14px;font-size:11px;color:var(--dim);font-style:italic;text-align:center">No trades logged yet. Fill the form above and hit Log Trade.</div>';
     return;
   }
-  // Header row.
-  const cols = ['When','Asset/TF','Side','Setup','Entry','SL','TP','R:R','Risk','Conf','Levels','Result','PnL','Notes'];
-  let html = '<div style="display:grid;grid-template-columns:90px 70px 50px 90px 70px 70px 70px 50px 50px 50px 90px 60px 70px 1fr 30px;gap:0;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;background:rgba(20,30,55,0.4);border-bottom:1px solid var(--line);font-weight:700">';
+  // Header row. v0.9.27 — added Chk column for the Igor pre-trade checklist badge.
+  const cols = ['When','Asset/TF','Side','Setup','Entry','SL','TP','R:R','Risk','Conf','Chk','Levels','Result','PnL','Notes'];
+  const grid = '90px 70px 50px 90px 70px 70px 70px 50px 50px 50px 50px 90px 60px 70px 1fr 30px';
+  let html = '<div style="display:grid;grid-template-columns:'+grid+';gap:0;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;background:rgba(20,30,55,0.4);border-bottom:1px solid var(--line);font-weight:700">';
   for(const c of cols) html += '<div>'+c+'</div>';
   html += '<div></div></div>';
   for(let i = data.manual.length - 1; i >= 0; i--){
@@ -18556,7 +18588,12 @@ function _crJrnRenderManual(){
     const rr = (t.rr != null) ? Number(t.rr).toFixed(2) : '—';
     const pnlColor = t.pnl > 0 ? '#3ddc97' : (t.pnl < 0 ? '#ff5b7f' : 'var(--dim)');
     const resColor = { win:'#3ddc97', loss:'#ff5b7f', be:'#ffd166', open:'#7be3f3' }[t.result] || 'var(--dim)';
-    html += '<div style="display:grid;grid-template-columns:90px 70px 50px 90px 70px 70px 70px 50px 50px 50px 90px 60px 70px 1fr 30px;gap:0;font-size:10.5px;padding:6px 8px;border-bottom:1px solid rgba(180,200,230,0.06);align-items:center">';
+    // v0.9.27 — Pre-trade checklist badge: ✓N/6 colored by completeness.
+    const ckObj = t.checklist || {};
+    const ckCount = ['htf','level','volume','momentum','rr','conf'].filter(k => !!ckObj[k]).length;
+    const ckColor = ckCount === 6 ? '#7ee787' : (ckCount >= 4 ? '#ffd166' : (ckCount >= 1 ? '#ffb86b' : 'var(--dim)'));
+    const ckTitle = 'HTF '+(ckObj.htf?'✓':'✗')+' · Level '+(ckObj.level?'✓':'✗')+' · Vol '+(ckObj.volume?'✓':'✗')+' · Mom '+(ckObj.momentum?'✓':'✗')+' · RR '+(ckObj.rr?'✓':'✗')+' · Conf '+(ckObj.conf?'✓':'✗');
+    html += '<div style="display:grid;grid-template-columns:'+grid+';gap:0;font-size:10.5px;padding:6px 8px;border-bottom:1px solid rgba(180,200,230,0.06);align-items:center">';
     html += '<div style="color:var(--dim);font-family:ui-monospace,Menlo,monospace">'+(t.dateStr||'—')+'</div>';
     html += '<div><b>'+(t.asset||'?')+'</b><span style="color:var(--dim)"> '+(t.tf||'')+'</span></div>';
     html += '<div style="color:'+(t.side==='buy'?'#3ddc97':'#ff5b7f')+';font-weight:700">'+(t.side==='buy'?'L':'S')+'</div>';
@@ -18567,6 +18604,7 @@ function _crJrnRenderManual(){
     html += '<div style="font-family:ui-monospace,Menlo,monospace;font-weight:700">'+rr+'</div>';
     html += '<div style="font-family:ui-monospace,Menlo,monospace">'+(t.risk!=null?Number(t.risk).toFixed(1)+'%':'—')+'</div>';
     html += '<div style="font-family:ui-monospace,Menlo,monospace;color:'+(t.conf>=11?'#7ee787':(t.conf>=6?'#ffd166':'var(--dim)'))+';font-weight:700">'+(t.conf!=null?t.conf+'/20':'—')+'</div>';
+    html += '<div style="font-family:ui-monospace,Menlo,monospace;font-weight:700;color:'+ckColor+'" title="'+ckTitle+'">✓'+ckCount+'/6</div>';
     html += '<div style="font-size:9.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+(t.levels||'')+'">'+(t.levels||'—')+'</div>';
     html += '<div style="color:'+resColor+';font-weight:700">'+(t.result||'—').toUpperCase()+'</div>';
     html += '<div style="font-family:ui-monospace,Menlo,monospace;color:'+pnlColor+';font-weight:700">'+(t.pnl!=null?(t.pnl>=0?'+':'')+'$'+Math.abs(t.pnl).toFixed(2):'—')+'</div>';
@@ -18689,6 +18727,16 @@ setTimeout(() => {
     const entry = parseFloat(get('crJrnEntry').value) || null;
     const sl    = parseFloat(get('crJrnSl').value) || null;
     const tp    = parseFloat(get('crJrnTp').value) || null;
+    // v0.9.27 — Capture the 6-box Igor pre-trade checklist alongside the trade
+    // so the journal IS the checklist, not just a column log.
+    const checklist = {
+      htf:      !!get('crJrnChkHTF').checked,
+      level:    !!get('crJrnChkLevel').checked,
+      volume:   !!get('crJrnChkVol').checked,
+      momentum: !!get('crJrnChkMomentum').checked,
+      rr:       !!get('crJrnChkRR').checked,
+      conf:     !!get('crJrnChkConf').checked,
+    };
     const t = {
       id: 't_' + Date.now() + '_' + Math.floor(Math.random()*1000),
       ts: Date.now(),
@@ -18705,13 +18753,15 @@ setTimeout(() => {
       result: get('crJrnResult').value,
       pnl: parseFloat(get('crJrnPnl').value) || 0,
       notes: get('crJrnNotes').value,
+      checklist,
     };
     if(!isFinite(t.conf)) t.conf = null;
     const d = _crJrnLoad();
     d.manual.push(t);
     _crJrnSave(d);
-    // Clear value-only fields, keep asset/TF/side for fast re-entry.
+    // Clear value-only fields, keep asset/TF/side/checklist for fast re-entry.
     ['crJrnEntry','crJrnSl','crJrnTp','crJrnConf','crJrnLevels','crJrnPnl','crJrnNotes'].forEach(k => { const el = get(k); if(el) el.value = ''; });
+    ['crJrnChkHTF','crJrnChkLevel','crJrnChkVol','crJrnChkMomentum','crJrnChkRR','crJrnChkConf'].forEach(k => { const el = get(k); if(el) el.checked = false; });
     _crJrnRenderManual();
     _crJrnRenderStats();
     try { toast('Trade logged · ' + t.asset + ' ' + t.side.toUpperCase()); } catch(_){}
@@ -18721,8 +18771,19 @@ setTimeout(() => {
   const exportBtn = document.getElementById('crJrnExport');
   if(exportBtn) exportBtn.addEventListener('click', () => {
     const d = _crJrnLoad();
-    const headers = ['dateStr','asset','tf','side','setup','entry','sl','tp','rr','risk','conf','levels','result','pnl','notes'];
-    _crJrnExportCSV(d.manual, headers, 'chartrunner_journal_'+Date.now()+'.csv');
+    // v0.9.27 — Flatten the checklist sub-object into 6 separate boolean cols.
+    const rows = d.manual.map(t => ({
+      ...t,
+      ck_htf:      t.checklist && t.checklist.htf      ? '1' : '0',
+      ck_level:    t.checklist && t.checklist.level    ? '1' : '0',
+      ck_volume:   t.checklist && t.checklist.volume   ? '1' : '0',
+      ck_momentum: t.checklist && t.checklist.momentum ? '1' : '0',
+      ck_rr:       t.checklist && t.checklist.rr       ? '1' : '0',
+      ck_conf:     t.checklist && t.checklist.conf     ? '1' : '0',
+    }));
+    const headers = ['dateStr','asset','tf','side','setup','entry','sl','tp','rr','risk','conf','levels','result','pnl','notes',
+      'ck_htf','ck_level','ck_volume','ck_momentum','ck_rr','ck_conf'];
+    _crJrnExportCSV(rows, headers, 'chartrunner_journal_'+Date.now()+'.csv');
   });
   const clearBtn = document.getElementById('crJrnClear');
   if(clearBtn) clearBtn.addEventListener('click', () => {
@@ -20641,6 +20702,20 @@ const TERM_BIND_OPTIONS = [
   { key:'score_quality',   label:'Confluence score (0–17)' },
   { key:'score_tier',      label:'Confluence tier' },
   { key:'score_breakdown', label:'Confluence breakdown (multi-line)' },
+  // v0.9.28 — Per-component confluence binds. Each shows live ✓/✗ + pts for
+  // one component of sdk.scoreSetup. Spawn as separate Terminal widgets, drag
+  // each to desktop or chart background.
+  { key:'conf_htf_trend',      label:'⇡ HTF trend aligned' },
+  { key:'conf_ref_level',      label:'◇ Reference level near' },
+  { key:'conf_vol_node',       label:'◉ Volume node (POC)' },
+  { key:'conf_div_a',          label:'÷ Class A divergence' },
+  { key:'conf_div_b',          label:'÷ Class B divergence' },
+  { key:'conf_champion',       label:'★ Champions Channel' },
+  { key:'conf_breakout',       label:'⤴ Consolidation breakout' },
+  { key:'conf_sfp',            label:'⇄ SFP at swing' },
+  { key:'conf_failed_auction', label:'↺ Failed Auction' },
+  { key:'conf_ccv',            label:'★ CCV composite' },
+  { key:'conf_oi',             label:'∮ OI confirmation' },
   { key:'rsi',             label:'RSI(14) live' },
   { key:'atr',             label:'ATR(14) live' },
   { key:'sma50',           label:'SMA(50) live' },
@@ -20759,6 +20834,24 @@ const WB_TERM_TEMPLATES = {
     { kind:'kv', label:'SMA(50)',   bind:'sma50' },
     { kind:'kv', label:'SMA(200)',  bind:'sma200' },
     { kind:'kv', label:'Vol vs med', bind:'volRel' },
+  ],
+  // v0.9.28 — All 11 confluence components in a single widget. Player can
+  // spawn this once for the full picture, OR spawn one bind at a time via the
+  // composer to get 11 separately-draggable mini-widgets (one per component).
+  confluence: [
+    { kind:'big', label:'',       bind:'score_quality' },
+    { kind:'kv',  label:'Tier',   bind:'score_tier' },
+    { kind:'kv',  label:'⇡ HTF',           bind:'conf_htf_trend' },
+    { kind:'kv',  label:'◇ Ref Level',     bind:'conf_ref_level' },
+    { kind:'kv',  label:'◉ Vol Node',      bind:'conf_vol_node' },
+    { kind:'kv',  label:'÷ Class A Div',   bind:'conf_div_a' },
+    { kind:'kv',  label:'÷ Class B Div',   bind:'conf_div_b' },
+    { kind:'kv',  label:'★ Champion Zone', bind:'conf_champion' },
+    { kind:'kv',  label:'⤴ Breakout',      bind:'conf_breakout' },
+    { kind:'kv',  label:'⇄ SFP',           bind:'conf_sfp' },
+    { kind:'kv',  label:'↺ Failed Auct.',  bind:'conf_failed_auction' },
+    { kind:'kv',  label:'★ CCV',           bind:'conf_ccv' },
+    { kind:'kv',  label:'∮ OI',            bind:'conf_oi' },
   ],
   custom: [],
 };
@@ -21324,6 +21417,15 @@ function _wbTermBind(rootEl){
         data.score_quality   = r.score + '/' + (r.max || 20);
         data.score_tier      = r.recommendation;
         data.score_breakdown = r.components.map(c => '+' + c.pts + ' ' + c.label).join('\n') || '—';
+        // v0.9.28 — Per-component binds. Each conf_<id> resolves to "✓ +N pts"
+        // when the component is active, "✗ —" otherwise. Lets the player spawn
+        // any single component as its own draggable widget on hotkey 3.
+        const COMPONENT_IDS = ['htf_trend','ref_level','vol_node','div_a','div_b','champion','breakout','sfp','failed_auction','ccv','barr','hs','oi'];
+        const hits = new Map(r.components.map(c => [c.id, c.pts]));
+        for(const id of COMPONENT_IDS){
+          const pts = hits.get(id);
+          data['conf_'+id] = (pts != null) ? ('✓ +' + pts) : '✗ —';
+        }
       } catch(_){}
     }
     // v0.9.12 — SFP / Failed Auction / OI binds.
