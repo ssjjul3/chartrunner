@@ -674,7 +674,10 @@ export default function App() {
                   </dd>
                 </div>
               )}
-              {registryParams.priceLamports && (
+              {/* v0.9.8d — Coerce to boolean. Without `!!`, `bigint && JSX`
+                  returns `0n` when priceLamports is zero, and React rejects
+                  bigint as a ReactNode (TS2322). */}
+              {!!registryParams.priceLamports && (
                 <div>
                   <dt>Price</dt>
                   <dd>{registryLamportsToSol(registryParams.priceLamports).toFixed(4)} SOL</dd>
