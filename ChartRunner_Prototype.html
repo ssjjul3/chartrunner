@@ -7297,7 +7297,13 @@ class ChartRunnerSDK {
       inverseBracket: true,
       closeAll:       true,
       toggleIndicator: true,
-      hedgeParachute: 'reframe', // tv → inverseBracket with tight TP
+      // v0.9.7d — hedgeParachute is no longer 'reframe' — standalone now
+      // opens a real inverseBracket alongside the visual buffer. radar and
+      // rescue still reframe in TV mode (their standalone paths are
+      // gameplay-only — visual scan + immunity). Phase 1 follow-up: lift
+      // those two to 'true' the same way once their standalone paths route
+      // through real primitives.
+      hedgeParachute: true,
       liquidityRadar: 'reframe', // tv → toggleIndicator('VolumeProfileFixedRange')
       rescueDrone:    'reframe', // tv → closeAll()
     };
@@ -7426,8 +7432,30 @@ class ChartRunnerSDK {
       this._emit('reframe', { from: 'hedgeParachute', to: 'inverseBracket' });
       return this.inverseBracket({ side, risk, rr: 1.0, price, slDistance: 40 });
     }
-    const e={id:this._id(),type:'hedge',until:performance.now()/1000+duration};
-    this.activeEffects.push(e); this._emit('effect',{kind:'hedge',effect:e}); return e;
+    // v0.9.7d — Standalone hedge now opens a REAL inverseBracket alongside the
+    // 6-second visual buffer effect. Closes the previous gap where standalone
+    // was a pure power-up timer with no underlying position. Now the SDK
+    // promise ("every ability is a real trading primitive") holds uniformly:
+    //   - Price provided → real opposing bracket fires + buffer effect for game-feel
+    //   - Price missing  → buffer-only fallback (preserves legacy callers + the
+    //     safety-net trigger paths that don't have price context)
+    // The buffer effect carries `orderId` so any future tracker can join the
+    // visual shield to the underlying position.
+    let realOrder = null;
+    if (price != null) {
+      realOrder = this.inverseBracket({ side, risk, rr: 1.0, price, slDistance: 40 });
+    }
+    const e = {
+      id: this._id(),
+      type: 'hedge',
+      until: performance.now() / 1000 + duration,
+      orderId: realOrder ? realOrder.id : null,
+    };
+    this.activeEffects.push(e);
+    this._emit('effect', { kind: 'hedge', effect: e, order: realOrder });
+    // Return the underlying order when one was opened so callers can edit /
+    // cancel it; fall back to the effect for the buffer-only path.
+    return realOrder || e;
   }
   liquidityRadar({range=320}={}){
     if(this.hostMode !== 'standalone'){
