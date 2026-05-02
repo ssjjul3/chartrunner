@@ -1,4 +1,4 @@
-# ChartRunnerSDK Reference — v0.9.21
+# ChartRunnerSDK Reference — v0.9.22
 
 The SDK is the only thing that issues orders. Abilities call into it; renderers read its event stream. This is the keystone that makes Phase 1 (drop on Dexscreener / TradingView) and Phase 2 (Solana wallet) a swap, not a rewrite.
 
@@ -194,6 +194,80 @@ const lev = computeReferenceLevels();
 ```
 
 `pdVAH/pdPOC/pdVAL` use a 24-bin volume bucket and expand from POC outward until 70% of total volume is captured (standard Market Profile value-area definition).
+
+---
+
+## Laser placements (v0.9.22) — chart-click → SDK route
+
+Hotkey 3 opens the green primitives laser. The spawn menu shows 18 entries across 3 categories. Each click on the chart maps to a specific `sdk.*` call with the click price as the target. This is the discoverable surface for everything in the capabilities table above.
+
+### Forecasting (4) — placement primitives
+
+| ID | Icon | Class | Routes to |
+|---|---|---|---|
+| `bracket` | 🎯 | 2-anchor | `sdk.bracket({side, price, slDistance, rr, risk})` · side from anchor chronology |
+| `oco` | ⇅ | 2-anchor | upper trigger = sell, lower = buy · OCO pair |
+| `longPos` | 📈 | 2-anchor | Long position visualizer · TP auto-projects at 1:2 RR |
+| `shortPos` | 📉 | 2-anchor | Short position visualizer · TP auto-projects at 1:2 RR |
+
+### Fibonacci (3) — placement primitives
+
+| ID | Icon | Class | Routes to |
+|---|---|---|---|
+| `fibRetrace` | 🪜 | 2-anchor | Levels 0–1 + Champion Zone (0.618–0.66) shaded |
+| `fibExt` | 🎯 | 2-anchor | Levels 1+ + Golden Extension (1.5–1.7) shaded |
+| `fibLadder` | 🪶 | 2-anchor | `sdk.fibLadder({side, size, price, base})` · real SDK orders at fib offsets |
+
+### Orders (11, v0.9.22) — tier 1-4 SDK primitive placements
+
+| ID | Icon | Class | Routes to |
+|---|---|---|---|
+| `limit` | ◇ | 1-click | `sdk.limit({side, price, size:4})` · side inferred from click vs current price |
+| `stopLossAt` | ⛔ | 1-click | Modify most-recent open bracket: `o.sl = clickPrice` |
+| `takeProfitAt` | 🏁 | 1-click | Modify most-recent open bracket: `o.tp = clickPrice` |
+| `trailingTpAt` | 🎢 | 1-click | `sdk.trailingTakeProfit({id, activatePrice, trailDistance})` · trail = 50% of (click − entry) |
+| `scaleOutAt` | ⊟ | 1-click | `sdk.scaleOut({id, atPrice, fraction:0.5})` |
+| `magnetAt` | 🧲 | 1-click | `sdk.magnet({id, target, strength:0.5})` |
+| `perpFlipAt` | ⇌ | 1-click | `sdk.perpFlip({id, price})` · close + open inverse |
+| `borrowShortAt` | ⇩ | 1-click | `sdk.borrowShort({price, size:4})` |
+| `liqGuardAt` | 🛡 | 1-click | `sdk.liquidationGuard({price})` |
+| `twap` | ∼ | 2-anchor | `sdk.twap({side, slices:5, fromPrice, toPrice, totalSize:20})` |
+| `iceberg` | ❄ | 2-anchor | `sdk.iceberg({side, fromPrice, toPrice, visibleSize:4, totalSize:20})` |
+
+### Visual treatment per primitive
+
+Every entry has a `TOOL_VISUAL_STYLES` record:
+
+```js
+{ color:'#14f195', glow:'rgba(20,241,149,0.45)', name:'Bracket', icon:'🎯' }
+```
+
+The 3-layer beam (white core + colored mid + glow halo) tints to `color`, spark particles use `color`, the setup-guide card border uses `color`, and the commit-confetti burst uses `color`.
+
+### Setup guide per primitive
+
+Every entry has a `TOOL_SETUP_GUIDES` record:
+
+```js
+{ kind:'1-click' | '2-anchor', steps:['Click chart…', …], hint:'Side inferred from…' }
+```
+
+`drawSetupGuide()` (called in the render loop while `game.laserAiming === true`) renders the floating top-center card showing the current step + hint + animated demo glyph.
+
+### Adding a new primitive
+
+One entry in `WB_LASER_TOOLS`, one entry in `TOOL_VISUAL_STYLES`, one entry in `TOOL_SETUP_GUIDES`, one ID in `PRIMITIVE_FORCE`, plus one `else if(toolId === 'newOne')` branch in `commitLaserSingleClick` (or `commitLaserTwoAnchor` for 2-anchor primitives). That's the full surface for adding a new chart-placeable primitive — no rendering changes required.
+
+### What's NOT in the laser menu (still Shift+3 modal picker)
+
+These primitives have no meaningful "click here" semantics — they fire at current price or need composition:
+
+- `market` — fires now at current price
+- `closeAll` · `hedgeParachute` · `liquidityRadar` · `rescueDrone` · `inverseBracket`
+- `ifThen` — needs a JS callback
+- `comboTrade` variants — `ironCondor` · `straddle` · `calendar`
+- `fundingSnipe` · `copyTrade` — Phase 2 reframe (need venue feed)
+- `autoFib` — uses last visible swing (also available as the φ ability)
 
 ---
 

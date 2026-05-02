@@ -310,6 +310,116 @@ After v0.9.21 the primitives laser shows two categories with all 7 primitives:
 
 ---
 
+## v0.9.22 — Primitives laser expanded (18 entries across 3 categories)
+
+The hotkey 3 menu was showing 7 entries (forecast 4 + fib 3) — far short of the 18 tier-1-4 SDK primitives that v0.9.8 shipped. v0.9.22 surfaces the missing 11 as laser-placement entries in a new **Orders** category, with full visual treatment.
+
+### New Workbench tool category — `'orders'`
+
+Added to `WB_TOOL_CATEGORIES`:
+```js
+{ id:'orders', label:'Orders', ic:'◇' }
+```
+
+Added to `PRIMITIVE_CATS` so it shows on hotkey 3:
+```js
+const PRIMITIVE_CATS = new Set(['fib','forecast','orders']);
+```
+
+### 11 new `WB_LASER_TOOLS` entries
+
+**1-click placements (9):**
+
+| ID | Icon | Label | SDK route |
+|---|---|---|---|
+| `limit` | ◇ | Limit order | `sdk.limit({side, price, size:4})` — side inferred from click position vs current price |
+| `stopLossAt` | ⛔ | Stop loss | Modify most-recent open bracket's `sl` to click price |
+| `takeProfitAt` | 🏁 | Take profit | Modify most-recent open bracket's `tp` to click price |
+| `trailingTpAt` | 🎢 | Trailing take-profit | `sdk.trailingTakeProfit({id, activatePrice, trailDistance})` · trail = 50% of distance from entry |
+| `scaleOutAt` | ⊟ | Scale out | `sdk.scaleOut({id, atPrice, fraction:0.5})` |
+| `magnetAt` | 🧲 | Magnet to target | `sdk.magnet({id, target, strength:0.5})` |
+| `perpFlipAt` | ⇌ | Perp flip | `sdk.perpFlip({id, price})` · close existing + open inverse |
+| `borrowShortAt` | ⇩ | Borrow short | `sdk.borrowShort({price, size:4})` |
+| `liqGuardAt` | 🛡 | Liquidation guard | `sdk.liquidationGuard({price})` |
+
+**2-anchor placements (2):**
+
+| ID | Icon | Label | SDK route |
+|---|---|---|---|
+| `twap` | ∼ | TWAP | `sdk.twap({side, slices:5, fromPrice:p1, toPrice:p2, totalSize:20})` |
+| `iceberg` | ❄ | Iceberg | `sdk.iceberg({side, fromPrice, toPrice, visibleSize:4, totalSize:20})` |
+
+### Wiring
+
+- `commitLaserSingleClick` extended with 9 new `else if` branches — each finds the latest open bracket if needed, calls the matching SDK method, toasts result with click price
+- `commitLaserTwoAnchor` extended with twap + iceberg branches — side inferred from anchor chronology
+- `TOOL_VISUAL_STYLES` extended with 11 new color/glow entries
+- `TOOL_SETUP_GUIDES` extended with 11 new step-script entries
+- `PRIMITIVE_FORCE` set expanded from 7 IDs to 18 IDs so all primitives auto-equip in primitives palette regardless of player's Workbench equipped set
+
+### Result
+
+Hotkey 3 menu now reads:
+
+```
+PRIMITIVES                        @ $78,206
+─────────────────────────────────
+FORECASTING
+  🎯 Bracket
+  ⇅ OCO
+  📈 Long Position
+  📉 Short Position
+─────────────────────────────────
+FIBONACCI
+  🪜 Fib retracement
+  🎯 Fib extension
+  🪶 Fib ladder
+─────────────────────────────────
+ORDERS
+  ◇ Limit order
+  ⛔ Stop loss
+  🏁 Take profit
+  🎢 Trailing take-profit
+  ⊟ Scale out
+  🧲 Magnet to target
+  ⇌ Perp flip
+  ⇩ Borrow short
+  🛡 Liquidation guard
+  ∼ TWAP
+  ❄ Iceberg
+```
+
+### What's still in the modal Shift+3 picker (no chart click needed)
+
+These primitives don't have a meaningful "click here" semantics so they stayed in the legacy modal:
+- `market` (fires now at current price)
+- `closeAll`, `hedgeParachute`, `liquidityRadar`, `rescueDrone`, `inverseBracket`
+- `ifThen` (needs JS callback)
+- `comboTrade` variants — `ironCondor`, `straddle`, `calendar`
+- `fundingSnipe`, `copyTrade` (Phase 2 reframe)
+- `autoFib` (uses last visible swing — also available as the φ ability)
+
+---
+
+## Deploy bundling notes
+
+13 conceptual versions in source-code comments → 8 actual deploy commits:
+
+| Deploy commit | Bundles |
+|---|---|
+| `595f8d3` v0.9.13 | v0.9.9 + v0.9.10 + v0.9.11 + v0.9.12 + v0.9.13 — full quant.pdf Tier 1 (all 10 detectors), Workbench Quick Builder, real-data Terminal widgets, play-app subcategories, sleeker mode cards |
+| `daa6cd0` v0.9.14 | v0.9.14 — Fib Extension tool |
+| `a6ee269` v0.9.15 | v0.9.15 — Campaign coach IIFE + chapter scripts |
+| `d26ce84` v0.9.17 | v0.9.16 + v0.9.17 — tool-aware laser + setup guide + commit confetti + topbar→Profile move |
+| `33d7f81` v0.9.18 | v0.9.18 — Campaign chapters direct-launch with preset |
+| `7237e50` v0.9.20 | v0.9.20 — Run Controls (wrong target) |
+| `1c60780` v0.9.20b | v0.9.20b — Run Controls relocated to lite profile |
+| `dfc0564` v0.9.22 | v0.9.19 + v0.9.21 + v0.9.22 — hotkey 3 green primitives laser + PRIMITIVES header + 11 new tier-1-4 primitive placements |
+
+**Why this matters:** the changelog above describes 13 conceptual chunks for narrative clarity, but `git log --oneline` will only show the 8 commits. If you're auditing what actually shipped to Pages, `git log` is authoritative; this changelog is a finer-grained design intent log.
+
+---
+
 ## What's still pending (not shipped)
 
 - **Solana Playground deploy** — single highest-ROI deferred item per `AUDIT-v0.9.8.md`. ~20 minutes paste-and-deploy unblocks ~10 separate "tx fails: program not found" gaps + populates leaderboard + makes License PDAs real.

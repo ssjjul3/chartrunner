@@ -4,7 +4,7 @@
 
 [![Live](https://img.shields.io/badge/live-ssjjul3.github.io%2Fchartrunner-14F195)](https://ssjjul3.github.io/chartrunner/)
 [![Solana](https://img.shields.io/badge/solana-devnet%20live-9945FF)](https://ssjjul3.github.io/chartrunner/solana-connect/)
-[![Phase](https://img.shields.io/badge/phase-0.9.21%20quant%20tier%201-success)](#status)
+[![Phase](https://img.shields.io/badge/phase-0.9.22%20full%20primitives%20laser-success)](#status)
 [![Anchor](https://img.shields.io/badge/anchor-2%20programs%20ready-orange)](anchor/)
 [![Stack](https://img.shields.io/badge/stack-vanilla%20JS%20%2B%20Vite%20%2B%20Rust-blue)](#stack)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
@@ -42,6 +42,7 @@ The hard architectural rule: **abilities never touch the canvas, the SDK is the 
 | **0.9.13–0.9.14** | Play-app subcategories (Regular/Campaign/Minigame/PVP) + sleeker mode cards + Fib Extension tool | ✅ Shipped |
 | **0.9.15–0.9.16** | 8-chapter Campaign coach + tool-aware laser beam + per-primitive setup guide + commit confetti | ✅ Shipped |
 | **0.9.17–0.9.21** | Run Controls → in-game lite profile · hotkey 3 = green primitives laser · campaign chapters direct-launch | ✅ Shipped |
+| **0.9.22** | Primitives laser expanded — 18 entries · 11 tier-1-4 SDK primitives surfaced as click placements (limit/stopLoss/takeProfit/trailingTp/scaleOut/magnet/perpFlip/borrowShort/liqGuard/twap/iceberg) | ✅ Shipped |
 | **1** | SDK pull-over · drop runtime onto Dexscreener / TradingView | 🟡 Architecture done · in `sdk/` next |
 | **2** | Anchor programs deployed to devnet → mainnet | 🟢 Programs ready · pending Solana Playground deploy |
 
@@ -51,7 +52,11 @@ The hard architectural rule: **abilities never touch the canvas, the SDK is the 
 
 Hyperliquid + Phantom flipped the wallet UX. Memecoin season trained 8M+ wallets to swap on-chain. The infra is here. The skill on-ramp is missing. We're the on-ramp.
 
-## What's in v0.9.21
+## What's in v0.9.22
+
+> **v0.9.22 (latest deploy)** expanded the green primitives laser (hotkey 3) from 7 → **18 entries** across 3 categories. New **Orders category** surfaces 11 tier-1-to-4 SDK primitives as one-click chart placements: limit, stopLoss-at, takeProfit-at, trailingTP-at, scaleOut-at, magnet-at, perpFlip-at, borrowShort-at, liqGuard-at, plus 2 two-anchor primitives (TWAP, Iceberg). Each gets per-tool color, glow, setup guide card, and commit confetti.
+
+## What's in v0.9.21 (still current)
 
 ### Quant brain — `sdk.scoreSetup()` spine + 10 detectors (Tier 1 from quant.pdf, all live)
 
