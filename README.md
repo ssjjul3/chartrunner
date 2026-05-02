@@ -4,7 +4,7 @@
 
 [![Live](https://img.shields.io/badge/live-ssjjul3.github.io%2Fchartrunner-14F195)](https://ssjjul3.github.io/chartrunner/)
 [![Solana](https://img.shields.io/badge/solana-devnet%20live-9945FF)](https://ssjjul3.github.io/chartrunner/solana-connect/)
-[![Phase](https://img.shields.io/badge/phase-0.9.7%20multiplayer-success)](#status)
+[![Phase](https://img.shields.io/badge/phase-0.9.21%20quant%20tier%201-success)](#status)
 [![Anchor](https://img.shields.io/badge/anchor-2%20programs%20ready-orange)](anchor/)
 [![Stack](https://img.shields.io/badge/stack-vanilla%20JS%20%2B%20Vite%20%2B%20Rust-blue)](#stack)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
@@ -26,20 +26,24 @@ The hard architectural rule: **abilities never touch the canvas, the SDK is the 
 
 ## Status
 
-**Phase 0.9.7 — multiplayer leaderboard shipped.** Three surfaces live on GitHub Pages, two Anchor programs ready to deploy, async on-chain leaderboard wired end-to-end.
+**Phase 0.9.21 — quant.pdf Tier 1 complete + Campaign coach.** Three surfaces live on GitHub Pages, two Anchor programs ready to deploy, async on-chain leaderboard wired end-to-end, full quant scoring spine + 10 SDK detectors + 8-chapter scripted Campaign + tool-aware laser system.
 
 | Phase | Goal | State |
 |---|---|---|
 | **0** | Playable single-file game · onboarding · juice · simplicity | ✅ Shipped |
-| **0.5** | Devnet wallet + signed transaction (proof of on-chain edge) | ✅ Live at `/solana-connect/` |
+| **0.5** | Devnet wallet + signed transaction | ✅ Live at `/solana-connect/` |
 | **0.9** | Public landing · repo · CI · Pages deploy | ✅ Shipped |
-| **0.9.3** | Wallet-gated entry + Connect button on both topbars + per-wallet localStorage | ✅ Shipped |
-| **0.9.4** | `chartrunner_maps` Anchor program + on-chain SaveMap flow | 🟡 Code complete · deploy pending |
-| **0.9.5** | P2P Marketplace expanded to 6 categories (Backtests, Indicators, Apps added) | ✅ Shipped |
-| **0.9.6** | `chartrunner_registry` — multi-entity on-chain + marketplace (list/buy/cancel) | 🟡 Code complete · deploy pending |
-| **0.9.7** | Async multiplayer — `crGhost` IIFE + on-chain leaderboard + Record-on-chain button | 🟡 Code complete · deploy pending |
-| **1** | SDK pull-over · drop the runtime onto Dexscreener / TradingView | 🟡 Architecture done · in `sdk/` next |
-| **2** | Anchor programs deployed to devnet → mainnet · marketplace settlement live | 🟢 Programs ready · pending Solana Playground deploy |
+| **0.9.3** | Wallet-gated entry + per-wallet localStorage | ✅ Shipped |
+| **0.9.4** | `chartrunner_maps` program + on-chain SaveMap | 🟡 Code complete · deploy pending |
+| **0.9.5** | P2P Marketplace, 6 categories | ✅ Shipped |
+| **0.9.6** | `chartrunner_registry` — multi-entity + marketplace | 🟡 Code complete · deploy pending |
+| **0.9.7** | Async multiplayer leaderboard | 🟡 Code complete · deploy pending |
+| **0.9.9–0.9.12** | quant.pdf Tier 1 — scoring spine + 10 detectors + Workbench Quick Builder + real-data Terminal widgets | ✅ Shipped |
+| **0.9.13–0.9.14** | Play-app subcategories (Regular/Campaign/Minigame/PVP) + sleeker mode cards + Fib Extension tool | ✅ Shipped |
+| **0.9.15–0.9.16** | 8-chapter Campaign coach + tool-aware laser beam + per-primitive setup guide + commit confetti | ✅ Shipped |
+| **0.9.17–0.9.21** | Run Controls → in-game lite profile · hotkey 3 = green primitives laser · campaign chapters direct-launch | ✅ Shipped |
+| **1** | SDK pull-over · drop runtime onto Dexscreener / TradingView | 🟡 Architecture done · in `sdk/` next |
+| **2** | Anchor programs deployed to devnet → mainnet | 🟢 Programs ready · pending Solana Playground deploy |
 
 ## Why this matters
 
@@ -47,23 +51,79 @@ The hard architectural rule: **abilities never touch the canvas, the SDK is the 
 
 Hyperliquid + Phantom flipped the wallet UX. Memecoin season trained 8M+ wallets to swap on-chain. The infra is here. The skill on-ramp is missing. We're the on-ramp.
 
-## What's in v0.9.7
+## What's in v0.9.21
 
-### The game (`/play/`)
-- Real Binance klines (15 timeframes, 1m → 1M) loaded live, swappable across BTC/ETH/SOL/XRP/BNB/LINK/HYPE/TRX/DOGE/+more
+### Quant brain — `sdk.scoreSetup()` spine + 10 detectors (Tier 1 from quant.pdf, all live)
+
+A **Signal Quality Scoring system** mirrors institutional confluence weighting from a 39-page trading methodology PDF. Top-right HUD pill shows live 0–20 score with tier label (WAIT / TRADEABLE / STRONG / PRIME) — players trade only ≥6 setups.
+
+| Component | SDK method | Pts | Detection |
+|---|---|---|---|
+| HTF trend alignment | (inline) | +2 | Last close vs SMA(50) vs SMA(200) |
+| Reference level proximity | `computeReferenceLevels` | +2 | Within ATR/4 of dOpen / pdH/L/C / pdVAH/POC/VAL / IBH/IBL |
+| Volume node bonus | (inline) | +1 | Nearest level is pdPOC |
+| Class A/B/C divergence | `_findSwings` + RSI | +2/+1/0 | Real swing-based geometry classifier |
+| Champions Channel | (inline + autoFib band) | +2 | Price in 0.55–0.66 fib retrace of last 50-bar swing |
+| Consolidation breakout | (inline) | +2 | Recent 20-bar range / prior 20-bar range < 0.6 + close outside |
+| SFP | `sdk.detectSFP` | +2 | Wick beyond real swing high/low + close back inside |
+| Failed Auction | `sdk.detectFailedAuction` | +2 | Open outside prior-day VA + accept back inside |
+| OI confirmation | `sdk.detectOIConfirm` | +1 | Binance Futures `/openInterestHist` REST · OI direction matches price |
+| Bump-and-Run reversal | `sdk.detectBumpAndRun` | +1 | Bulkowski's BARR — bump slope ≥2× lead slope + run pierces lead trendline |
+| Head & Shoulders / Inverse | `sdk.detectHeadShoulders` | +2 | 5-swing matcher — shoulders within 5%, head >2% above, neckline pierce |
+| **CCV composite mega-bonus** | `sdk.detectCCV` | +1 | All three (consolidation + Champion Zone + volume) fire (PDF cites ~80% WR) |
+
+Per-frame **CCV watcher** (`ccvWatcherTick`) auto-fires a banner + optional auto-bracket when CCV matches. Five **probe abilities** in the menu let players manually inspect any detector and see ✓/✗ per component.
+
+### Reference Levels overlay (`reflevels` indicator)
+
+Toggleable horizontal lines for the canonical Igor / quant.pdf level template: **dOpen** (today's open), **pdHigh/Low/Close**, **pdVAH/POC/VAL** (prior-day value area, 70% capture, 24-bin volume bucket expansion from POC), **IBH/IBL** (initial balance high/low — first hour of session). Per-level checkboxes + opacity slider. Cached on `game._refLevelsCache` keyed by candle/asset/timeframe.
+
+### Champions Channel autoFib upgrade
+
+Fib retracement now ships an 8-level default (added 0.66) with a pulsing yellow shaded band between 0.618–0.66 ("CHAMPION ZONE 0.618–0.66" label). PDF cites 68% bounce probability inside this band. Auto-fib also infers swing chronology and pushes the fibRetrace overlay alongside the order ladder.
+
+### Fib Extension tool (v0.9.14)
+
+New 2-anchor laser tool — 9 default levels (1, 1.272, 1.414, **1.618 Golden Extension** with thicker stroke + pulsing blue band 1.5–1.7, 2, 2.272, 2.618, 3.618, 4.236). Extends right past anchor 2 by default. Use for take-profit targets.
+
+### Workbench Quick Builder (no-code strategy builder)
+
+Strategy + Indicator builder views get a "⚡ Quick Builder · No-code" panel above the existing Pine textareas. **Strategies:** all 12 confluence components shown as toggleable rows with weight sliders (0 to max). Side picker (Long/Short/Both), min-score slider (1–17), risk %, R:R, live preview button (calls `sdk.scoreSetup()` on current candles). **Indicators:** preset dropdown clones any built-in INDICATORS entry, color picker, per-param sliders. Saves snapshots alongside Pine code so future edits restore form state.
+
+### Real-data Terminal widgets
+
+Terminal `+` builder gets four new template kinds: **Confluence Signals** (live score + tier + breakdown), **Reference Levels** (all 9 levels), **Watchlist** (BTC/ETH/SOL/HYPE/DOGE async-cached tickers), **Live Indicators** (RSI/ATR/SMA50/SMA200/Vol vs median). All bind values refresh on the 1s `_wbTermBind` tick — no mocks.
+
+### Tool-aware laser beam + setup guide overlay (v0.9.16)
+
+Per-primitive 3-layer beam (white-hot core + colored mid + glow halo) with spark particles. Color keyed off the active tool: bracket=green, OCO=red, fib=gold, fibExt=blue, etc. **Setup guide card** (top-center floating banner) shows per-primitive: icon + name + step counter + current step ("Click swing low") + animated demo glyph (single-click pulse / two-anchor sequence) + small-print hint. Confetti burst in tool color at click point on commit.
+
+### Hotkey 3 = green primitives laser (v0.9.19 + v0.9.21)
+
+Slot 3 toggles a parallel laser-aim mode tinted green. Spawn menu reads **"PRIMITIVES"** in the header (not "TOOLS") and is filtered to Fibonacci + Forecast categories. Auto-equips the canonical primitive set regardless of player's Workbench tools: Bracket · OCO · Long Position · Short Position · Fib Ladder · Fib Retracement · Fib Extension. Shift+3 still opens the legacy modal picker.
+
+### Play app subcategories + 8-chapter Campaign coach (v0.9.13–v0.9.18)
+
+Run-window pill tabs: **Regular** (Time is Money, Trade) · **Campaign** (8 chapters) · **Minigame** (Snake, Racing, Monster) · **PVP** (Battle Arena). Sleeker mode cards (smaller min-height, refined typography). Each Campaign chapter direct-launches into a preset BTC/USDT chart (skips Configure Run window) with per-chapter indicators pre-equipped, then `crCampaignCoach` activates a top-center banner that gates progression on real game events (SDK orders, indicator toggles, score thresholds). 19 scripted steps total across the 8 chapters; player can Skip or wait for auto-advance.
+
+### Run Controls in lite profile (v0.9.20b)
+
+Reset / Save / Coins / Connect Wallet moved off the topbar (now hidden) into the in-game lite profile widget (`#crLightProfile`) as a 2×2 button grid. Wallet-connected glow mirrors via MutationObserver. Topbar buttons stay in DOM so existing handlers still work — lite profile entries just `.click()` through.
+
+### The game (`/play/`) — pre-existing surfaces
+
+- Real Binance klines (15 timeframes, 1m → 1M), 9+ assets
 - Three avatar physics modes — runner / flight / upside-down
-- Six trading primitives wired to a framework-free `ChartRunnerSDK` — bracket, ladder, OCO, hedge, radar, rescue
-- Two-anchor laser placement for Bracket / Ladder / Fib Ladder / OCO
-- Workbench Pine Script builder for custom bots, strategies, indicators, terminal widgets, and full apps
-- **🪙 Save on-chain + 📤 List on Marketplace buttons** on every Workbench Bot/Strategy/Indicator/App row
+- Original 6 SDK primitives + 18 new tier-1-to-4 primitives shipped in v0.9.8
+- Two-anchor laser placement for every two-anchor primitive
+- Workbench Pine Script builder for custom bots, strategies, indicators, terminal widgets, full apps
+- 🪙 Save on-chain + 📤 List on Marketplace buttons on every Workbench row
 - Backtest tab with paper-mode simulator
-- Desktop OS surface — Profile · Marketplace · Terminal · Workbench · Maps · Bot Terminal · Token Terminal · Configs
-- Multi-tracker Terminal: Engine (live game telemetry) · HyperTracker · SolanaTracker · CEXTracker · Strategies + `+` tab to spawn new windows
+- Desktop OS — Profile · Marketplace · Terminal · Workbench · Maps · Bot Terminal · Token Terminal · Configs
+- Multi-tracker Terminal: Engine · HyperTracker · SolanaTracker · CEXTracker · Strategies + `+` tab
 - Drag-to-desktop AND drag-to-chart-background widgets
-- Click-on-name editing (button composer for any widget)
-- Two-tutorial system — Desktop OS walkthrough + interactive in-game mechanics tutorial (gated on actually doing the move)
-- Save run as a Map → optional **on-chain anchor** confirm on save
-- Mobile phone OS overlay with the same surfaces
+- Save run as a Map → optional on-chain anchor confirm
+- Mobile phone OS overlay
 
 ### Wallet integration (Phase 0.9.3+)
 - **Wallet-gated entry** — landing's Play CTAs route through `/solana-connect/?next=play` for the handshake first

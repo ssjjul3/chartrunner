@@ -27,6 +27,26 @@ Shipped as v0.9.1. Repo: [github.com/ssjjul3/chartrunner](https://github.com/ssj
 - [x] Pages workflow auto-deploys on push to `main` (~2 min)
 - [ ] Custom domain (optional): `chartrunner.xyz` → CNAME `ssjjul3.github.io` *(skip until traction warrants the spend; github.io URL is fine for hackathon submission)*
 
+## v0.9.x sweep — quant.pdf Tier 1 + Campaign coach ✅ DONE
+
+Shipped between v0.9.9 and v0.9.21. Full per-version notes in [`CHANGELOG-v0.9.x.md`](CHANGELOG-v0.9.x.md).
+
+- [x] **v0.9.9** — Reference Levels overlay + Signal Quality Scoring spine + Workbench Quick Builder + real-data Terminal widgets
+- [x] **v0.9.10** — Champions Channel autoFib upgrade (0.618–0.66 shaded band) + CCV Setup detector + per-frame watcher + auto-bracket
+- [x] **v0.9.11** — Class A/B/C divergence reclassifier + Bump-and-Run + Head & Shoulders + 3 probe abilities + score ceiling 17 → 20
+- [x] **v0.9.12** — SFP detector + Failed Auction detector + OI confirmation (Binance Futures REST) + 3 probe abilities + 4 new Terminal binds
+- [x] **v0.9.13** — Play-app subcategory tabs (Regular / Campaign / Minigame / PVP) + sleeker mode-card design + 8 Campaign chapters scaffolded
+- [x] **v0.9.14** — Fib Extension tool (2-anchor, 9 levels, 1.618 Golden Extension band, shares fibRetrace edit dialog)
+- [x] **v0.9.15** — Campaign coach IIFE (CSS scaffold + script registry + state machine + chapter scripts wired)
+- [x] **v0.9.16** — Tool-aware laser beam (3-layer + spark particles, color per primitive) + setup guide overlay (per-tool step card) + commit confetti
+- [x] **v0.9.17** — Topbar Reset/Save/Coins/Connect hidden, moved into Profile (later relocated in v0.9.20b)
+- [x] **v0.9.18** — Campaign chapters direct-launch with per-chapter preset (asset/TF/indicators), bypasses Configure Run window
+- [x] **v0.9.19** — Hotkey 3 = green primitives laser (palette filter + idle beam tint, Shift+3 keeps legacy modal picker)
+- [x] **v0.9.20b** — Run Controls relocated to in-game lite profile widget (`#crLightProfile`) — 2×2 button grid below loadout chips
+- [x] **v0.9.21** — Primitives laser header reads PRIMITIVES (was TOOLS) + green tint + auto-equips canonical SDK primitives
+
+**Quant.pdf Tier 1 status: ✅ COMPLETE** — all 10 detectors live, side-aware in `scoreSetup`, with probe abilities. Tier 2 (CVD / footprint / TPO) blocked on Phase 1 ChartHost adapter. Tier 3 (regime / LOB / pairs) Phase 2.
+
 ## Day 1 — Social + identity
 
 - [ ] Reserve `@chartrunner_xyz` on X

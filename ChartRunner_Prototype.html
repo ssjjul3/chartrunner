@@ -10172,9 +10172,15 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
   // Header bar above pane.
   const headerBar = document.createElement('div');
   headerBar.style.cssText = 'padding:6px 12px;font-size:11px;color:#9aa0aa;border-bottom:1px solid rgba(106,110,120,0.3);text-transform:uppercase;letter-spacing:.6px;display:flex;justify-content:space-between;align-items:center';
-  const headerTitle = document.createElement('span'); headerTitle.textContent = 'Tools';
+  // v0.9.21 — Header label + price tint follow the active laser palette so
+  // hotkey-3 (primitives) reads PRIMITIVES + green; hotkey-2 (tools) reads
+  // TOOLS + pink. Falls back to TOOLS when palette is unset.
+  const _hdrPalette = (typeof game !== 'undefined' && game.laserPalette) || 'tools';
+  const _hdrTitle   = (_hdrPalette === 'primitives') ? 'Primitives' : 'Tools';
+  const _hdrColor   = (_hdrPalette === 'primitives') ? '#14f195'    : '#ff5b7f';
+  const headerTitle = document.createElement('span'); headerTitle.textContent = _hdrTitle;
   const headerPrice = document.createElement('span');
-  headerPrice.style.cssText = 'color:#ff5b7f;font-weight:600;letter-spacing:.4px;font-size:10px';
+  headerPrice.style.cssText = 'color:'+_hdrColor+';font-weight:600;letter-spacing:.4px;font-size:10px';
   headerPrice.textContent = '@ ' + fmtPrice(priceAt);
   headerBar.appendChild(headerTitle); headerBar.appendChild(headerPrice);
   const paneWrap = document.createElement('div');
@@ -10243,12 +10249,30 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
   };
   // Build per-category tool lists, intersected with the equipped set.
   // v0.9.19 — Primitives palette (hotkey 3) restricts to fib + forecast only.
+  // v0.9.21 — Primitives palette ALWAYS includes the canonical primitive set
+  //           regardless of the player's equipped Workbench tools — Bracket,
+  //           OCO, Long/Short Position, Fib Ladder/Retracement/Extension are
+  //           the spine of the SDK and should never be missing from hotkey-3.
   const palette = (typeof game !== 'undefined' && game.laserPalette) || 'tools';
-  const PRIMITIVE_CATS = new Set(['fib','forecast']);
+  // v0.9.22 — Primitives palette spans 3 categories (forecast + fib + orders).
+  // Force-set covers the canonical SDK surface so hotkey 3 always shows the
+  // full v0.9.8 tier 1-4 primitives, not just bracket+oco+fib*.
+  const PRIMITIVE_CATS = new Set(['fib','forecast','orders']);
+  const PRIMITIVE_FORCE = new Set([
+    // forecast — entry primitives
+    'bracket','oco','longPos','shortPos',
+    // fibonacci — placement primitives
+    'fibLadder','fibRetrace','fibExt',
+    // orders — tier 1-4 SDK primitives (v0.9.22)
+    'limit','stopLossAt','takeProfitAt','trailingTpAt','scaleOutAt','magnetAt',
+    'perpFlipAt','borrowShortAt','liqGuardAt','twap','iceberg',
+  ]);
   const byCat = {};
   WB_TOOL_CATEGORIES.forEach(c => byCat[c.id] = []);
   WB_LASER_TOOLS.forEach(t => {
-    if(!equippedSet.has(t.id)) return;
+    const inEquipped = equippedSet.has(t.id);
+    const inPrimForce = palette === 'primitives' && PRIMITIVE_FORCE.has(t.id);
+    if(!inEquipped && !inPrimForce) return;
     if(palette === 'primitives' && !PRIMITIVE_CATS.has(t.cat)) return;
     if(!byCat[t.cat]) byCat[t.cat] = [];
     byCat[t.cat].push(t);
@@ -16393,6 +16417,18 @@ const TOOL_VISUAL_STYLES = {
   rect:       { color:'#a371f7', glow:'rgba(163,113,247,0.45)',name:'Rectangle',        icon:'▭' },
   frvp:       { color:'#ffd166', glow:'rgba(255,209,102,0.45)',name:'Fixed Range VP',   icon:'📶' },
   rune:       { color:'#7ee787', glow:'rgba(126,231,135,0.45)',name:'Rune Mark',        icon:'⛧' },
+  // v0.9.22 — Tier 1-4 SDK primitive placements.
+  limit:           { color:'#7be3f3', glow:'rgba(123,227,243,0.45)', name:'Limit Order',         icon:'◇' },
+  stopLossAt:      { color:'#ff5b7f', glow:'rgba(255,91,127,0.45)',  name:'Stop Loss',           icon:'⛔' },
+  takeProfitAt:    { color:'#3ddc97', glow:'rgba(61,220,151,0.45)',  name:'Take Profit',         icon:'🏁' },
+  trailingTpAt:    { color:'#3ddc97', glow:'rgba(61,220,151,0.45)',  name:'Trailing TP',         icon:'🎢' },
+  scaleOutAt:      { color:'#ffb86b', glow:'rgba(255,184,107,0.45)', name:'Scale Out',           icon:'⊟' },
+  magnetAt:        { color:'#b58aff', glow:'rgba(181,138,255,0.45)', name:'Magnet to Target',    icon:'🧲' },
+  perpFlipAt:      { color:'#a371f7', glow:'rgba(163,113,247,0.45)', name:'Perp Flip',           icon:'⇌' },
+  borrowShortAt:   { color:'#ff5b7f', glow:'rgba(255,91,127,0.45)',  name:'Borrow Short',        icon:'⇩' },
+  liqGuardAt:      { color:'#ffd166', glow:'rgba(255,209,102,0.45)', name:'Liquidation Guard',   icon:'🛡' },
+  twap:            { color:'#7be3f3', glow:'rgba(123,227,243,0.45)', name:'TWAP',                icon:'∼' },
+  iceberg:         { color:'#79c0ff', glow:'rgba(121,192,255,0.45)', name:'Iceberg',             icon:'❄' },
 };
 const _DEFAULT_TOOL_STYLE = { color:'#ff5b7f', glow:'rgba(255,91,127,0.45)', name:'Tool', icon:'⚡' };
 // v0.9.19 — Idle (no tool yet) palette tint. Hotkey 2 = pink (tools), hotkey 3 = green (primitives).
@@ -16431,6 +16467,18 @@ const TOOL_SETUP_GUIDES = {
   shortPos:   { kind:'two-anchor',  steps:['Click entry price',                  'Click stop loss price'],                   hint:'Short position visualizer · TP auto-projects at 1:2 RR' },
   rect:       { kind:'two-anchor',  steps:['Click anchor 1 (one corner)',        'Click anchor 2 (opposite corner)'],        hint:'Rectangle · highlight a price + time region' },
   frvp:       { kind:'two-anchor',  steps:['Click time anchor 1',                'Click time anchor 2'],                     hint:'Fixed Range Volume Profile between two timestamps' },
+  // v0.9.22 — Tier 1-4 SDK primitive setup guides.
+  limit:           { kind:'single-click', steps:['Click chart to place a limit order at that price'], hint:'Side inferred from click position vs current price' },
+  stopLossAt:      { kind:'single-click', steps:['Click chart to set the stop-loss for the most-recent open bracket'], hint:'Needs an active bracket · TIER 1' },
+  takeProfitAt:    { kind:'single-click', steps:['Click chart to set the take-profit for the most-recent open bracket'], hint:'Needs an active bracket · TIER 1' },
+  trailingTpAt:    { kind:'single-click', steps:['Click chart to arm a trailing take-profit'], hint:'Trail distance = 50% of (click − entry) · TIER 2' },
+  scaleOutAt:      { kind:'single-click', steps:['Click chart to scale out 50% at that price'], hint:'Partial close · TIER 1' },
+  magnetAt:        { kind:'single-click', steps:['Click chart to engage the magnet primitive on the most-recent open bracket'], hint:'TP tightens toward target every tick · TIER 4' },
+  perpFlipAt:      { kind:'single-click', steps:['Click chart to flip the open bracket and reopen at the click price'], hint:'Closes existing + opens inverse · TIER 3' },
+  borrowShortAt:   { kind:'single-click', steps:['Click chart to open a borrow-short position at that price'], hint:'Solana / HL signature play · TIER 3' },
+  liqGuardAt:      { kind:'single-click', steps:['Click chart to set a liquidation guard at that price'], hint:'Hard SL that survives every other trigger · TIER 3' },
+  twap:            { kind:'two-anchor',  steps:['Click time anchor 1', 'Click time anchor 2'], hint:'Splits 20 size into 5 slices between the two prices · TIER 2' },
+  iceberg:         { kind:'two-anchor',  steps:['Click upper price', 'Click lower price'], hint:'Hidden-size order · 4 visible / 20 total · TIER 2' },
 };
 
 // Spark particles trailing along the laser beam toward target.
@@ -16769,6 +16817,57 @@ function commitLaserSingleClick(toolId, sx, sy, wxAt, priceAt, originUp, exitFn)
         toast('Text added');
       }
     }
+    /* v0.9.22 — Tier 1-4 SDK primitive placements. Each routes to the
+       matching sdk.* method with click price as the target. Side is
+       inferred from click position relative to current price. */
+    else if(toolId === 'limit'){
+      const here = currentPrice();
+      const side = (priceAt < here) ? 'buy' : 'sell';
+      try { sdk.limit({ side, price: priceAt, size: 4 }); toast((side==='buy'?'Buy':'Sell')+' limit @ '+fmtPrice(priceAt)); } catch(e){ toast('Limit failed: '+e.message); }
+    }
+    else if(toolId === 'stopLossAt'){
+      const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
+      if(!o){ toast('Stop-loss needs an open bracket'); }
+      else { try { sdk.editOrder ? sdk.editOrder({ id:o.id, sl:priceAt }) : (o.sl = priceAt); toast('SL → '+fmtPrice(priceAt)); } catch(e){ toast('SL failed: '+e.message); } }
+    }
+    else if(toolId === 'takeProfitAt'){
+      const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
+      if(!o){ toast('TP needs an open bracket'); }
+      else { try { sdk.editOrder ? sdk.editOrder({ id:o.id, tp:priceAt }) : (o.tp = priceAt); toast('TP → '+fmtPrice(priceAt)); } catch(e){ toast('TP failed: '+e.message); } }
+    }
+    else if(toolId === 'trailingTpAt'){
+      const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
+      if(!o){ toast('Trailing TP needs an open bracket'); }
+      else {
+        try {
+          const dist = Math.abs(priceAt - o.entry);
+          if(typeof sdk.trailingTakeProfit === 'function') sdk.trailingTakeProfit({ id:o.id, activatePrice:priceAt, trailDistance:dist*0.5 });
+          else o.trailing = { active:true, distance:dist*0.5 };
+          toast('Trailing TP armed @ '+fmtPrice(priceAt));
+        } catch(e){ toast('Trailing TP failed: '+e.message); }
+      }
+    }
+    else if(toolId === 'scaleOutAt'){
+      const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
+      if(!o){ toast('Scale-out needs an open bracket'); }
+      else { try { if(typeof sdk.scaleOut === 'function') sdk.scaleOut({ id:o.id, atPrice:priceAt, fraction:0.5 }); toast('Scale-out 50% @ '+fmtPrice(priceAt)); } catch(e){ toast('Scale-out failed: '+e.message); } }
+    }
+    else if(toolId === 'magnetAt'){
+      const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
+      if(!o){ toast('Magnet needs an open bracket'); }
+      else { try { sdk.magnet({ id:o.id, target:priceAt, strength:0.5 }); toast('🧲 Magnet → '+fmtPrice(priceAt)); } catch(e){ toast('Magnet failed: '+e.message); } }
+    }
+    else if(toolId === 'perpFlipAt'){
+      const o = (function(){ for(let i=sdk.openOrders.length-1;i>=0;i--){ const x=sdk.openOrders[i]; if(x.type==='bracket' && x.status==='open') return x; } return null; })();
+      if(!o){ toast('Perp flip needs an open bracket'); }
+      else { try { if(typeof sdk.perpFlip === 'function') sdk.perpFlip({ id:o.id, price:priceAt }); toast('Perp flipped @ '+fmtPrice(priceAt)); } catch(e){ toast('Perp flip failed: '+e.message); } }
+    }
+    else if(toolId === 'borrowShortAt'){
+      try { if(typeof sdk.borrowShort === 'function') sdk.borrowShort({ price:priceAt, size:4 }); toast('Borrow-short @ '+fmtPrice(priceAt)); } catch(e){ toast('Borrow-short failed: '+e.message); }
+    }
+    else if(toolId === 'liqGuardAt'){
+      try { if(typeof sdk.liquidationGuard === 'function') sdk.liquidationGuard({ price:priceAt }); toast('🛡 Liq guard @ '+fmtPrice(priceAt)); } catch(e){ toast('Liq guard failed: '+e.message); }
+    }
     else {
       toast(toolId + ' · click handled');
     }
@@ -17018,6 +17117,24 @@ function commitLaserTwoAnchor(tool, a1, a2){
       toast('Fixed range volume profile · ' + rows + ' rows');
     }
     else {
+      // v0.9.22 — Tier 2 SDK primitives.
+      if(tool === 'twap'){
+        const side = (p2 < p1) ? 'buy' : 'sell';
+        const slices = 5;
+        try {
+          if(typeof sdk.twap === 'function') sdk.twap({ side, slices, fromPrice:p1, toPrice:p2, totalSize: 20 });
+          toast('TWAP · '+slices+' slices ('+(side.toUpperCase())+')');
+        } catch(e){ toast('TWAP failed: '+e.message); }
+        return;
+      }
+      if(tool === 'iceberg'){
+        const side = (p2 < p1) ? 'buy' : 'sell';
+        try {
+          if(typeof sdk.iceberg === 'function') sdk.iceberg({ side, fromPrice:Math.max(p1,p2), toPrice:Math.min(p1,p2), visibleSize: 4, totalSize: 20 });
+          toast('Iceberg · 4 visible / 20 total ('+(side.toUpperCase())+')');
+        } catch(e){ toast('Iceberg failed: '+e.message); }
+        return;
+      }
       toast(tool + ' · 2-anchor handled');
     }
   } catch(err){ toast('Tool error · ' + (err.message||err)); }
@@ -18815,6 +18932,20 @@ const WB_LASER_TOOLS = [
   { id:'textNote',     ic:'T',  label:'Text',             cat:'text',     cls:'1-click',  desc:'Add a text label at clicked point.', live:true,  star:true },
   { id:'priceLabel',   ic:'$',  label:'Price label',      cat:'text',     cls:'1-click',  desc:'Pinned price callout.', live:true },
   { id:'flag',         ic:'⚑',  label:'Flag mark',        cat:'text',     cls:'1-click',  desc:'Flag marker on candle.', live:true },
+  // — ORDERS — v0.9.22 — Tier 1-4 SDK primitives surfaced as laser placements
+  // so hotkey 3 (primitives palette) shows the full SDK surface, not just
+  // bracket+oco+fib. 1-click = drop at click price; 2-anchor = between two prices.
+  { id:'limit',                ic:'◇',  label:'Limit order',          cat:'orders', cls:'1-click', desc:'Place a limit order at the click price. Fills when price reaches the level.', live:true, star:true },
+  { id:'stopLossAt',           ic:'⛔',  label:'Stop loss',            cat:'orders', cls:'1-click', desc:'Modify the most-recent open bracket to set its stop-loss at the click price.', live:true, star:true },
+  { id:'takeProfitAt',         ic:'🏁',  label:'Take profit',          cat:'orders', cls:'1-click', desc:'Modify the most-recent open bracket to set its take-profit at the click price.', live:true, star:true },
+  { id:'trailingTpAt',         ic:'🎢',  label:'Trailing take-profit', cat:'orders', cls:'1-click', desc:'Arm a trailing TP starting at the click price.', live:true },
+  { id:'scaleOutAt',           ic:'⊟',  label:'Scale out',            cat:'orders', cls:'1-click', desc:'Partial close at the click price (default 50%).', live:true },
+  { id:'magnetAt',             ic:'🧲',  label:'Magnet to target',     cat:'orders', cls:'1-click', desc:'Engage the magnet primitive on the most-recent open bracket toward the click point.', live:true },
+  { id:'perpFlipAt',           ic:'⇌',  label:'Perp flip',            cat:'orders', cls:'1-click', desc:'Close the open bracket and open the inverse at the click price.', live:true },
+  { id:'borrowShortAt',        ic:'⇩',  label:'Borrow short',         cat:'orders', cls:'1-click', desc:'Open a borrow-short position at the click price.', live:true },
+  { id:'liqGuardAt',           ic:'🛡',  label:'Liquidation guard',    cat:'orders', cls:'1-click', desc:'Set a hard liquidation guard at the click price.', live:true },
+  { id:'twap',                 ic:'∼',  label:'TWAP',                 cat:'orders', cls:'2-anchor', desc:'Time-weighted average price — splits into N orders between two anchors.', live:true },
+  { id:'iceberg',              ic:'❄',  label:'Iceberg',              cat:'orders', cls:'2-anchor', desc:'Hidden-size order — only the top slice is visible at a time.', live:true },
 ];
 const WB_TOOL_CATEGORIES = [
   { id:'lines',    label:'Lines',         ic:'╱' },
@@ -18822,6 +18953,7 @@ const WB_TOOL_CATEGORIES = [
   { id:'fib',      label:'Fibonacci',     ic:'🪜' },
   { id:'gann',     label:'Gann',          ic:'▦' },
   { id:'forecast', label:'Forecasting',   ic:'🎯' },
+  { id:'orders',   label:'Orders',        ic:'◇' },   // v0.9.22 — Tier 1-4 SDK primitive placements
   { id:'volume',   label:'Volume-based',  ic:'∿' },
   { id:'measure',  label:'Measurers',     ic:'⇕' },
   { id:'shapes',   label:'Shapes',        ic:'▭' },
