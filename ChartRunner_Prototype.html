@@ -13313,16 +13313,21 @@ function rebuildWorld(){
   // Pickups & hazards derived from the loaded candle data (deterministic per run)
   game.pickups.length=0; game.hazards.length=0;
   const r = mulberry32(candles.length*7919 | 0);
-  for(let i=3;i<candles.length-3;i++){
-    if(r()<0.18){
-      const wx = i*STEP + STEP/2;
-      // v0.8k#24k — Restock (recharge) pickup retired. Tools are unlimited
-      // from the laser menu now, so the "refill item charges" mechanic is
-      // gone. Pickups split into 'tick' (~82%) + 'creds' (~18%) only.
-      const rr = r();
-      const kind = rr < 0.82 ? 'tick' : 'creds';
-      const py = candles[i].h + (80 + r()*160)/priceScale;
-      game.pickups.push({wx, py, kind, taken:false});
+  // v0.9.48 — Coins (and any pickup) are off in Campaign mode so the only
+  // chart-floating object the player has to engage with is the lesson item.
+  const _coinsOff = (typeof game !== 'undefined') && (game.coinsDisabled === true || game.campaignChapter);
+  if(!_coinsOff){
+    for(let i=3;i<candles.length-3;i++){
+      if(r()<0.18){
+        const wx = i*STEP + STEP/2;
+        // v0.8k#24k — Restock (recharge) pickup retired. Tools are unlimited
+        // from the laser menu now, so the "refill item charges" mechanic is
+        // gone. Pickups split into 'tick' (~82%) + 'creds' (~18%) only.
+        const rr = r();
+        const kind = rr < 0.82 ? 'tick' : 'creds';
+        const py = candles[i].h + (80 + r()*160)/priceScale;
+        game.pickups.push({wx, py, kind, taken:false});
+      }
     }
   }
   // v0.8k#19 — Hazard bands removed from gameplay per user request. The old
@@ -18449,6 +18454,62 @@ function pickMode(mode){
             } catch(_){ return false; }
           } },
       ],
+      // v0.9.48 — Single-step chapters per category. Each finishes the moment
+      // the player engages with the lesson item. Run auto-ends and pays $RUN.
+      9: [
+        { text:'Place a Trendline.', tip:'Hotkey 2 → Trendline → click anchor 1, then anchor 2.',
+          complete:()=> {
+            try { return (game.tvOverlays||[]).some(o => o.tool === 'trendline' || o.kind === 'trendline'); } catch(_){ return false; }
+          } },
+      ],
+      10: [
+        { text:'Place a Horizontal Line.', tip:'Hotkey 2 → HLine → single click at any price level.',
+          complete:()=> {
+            try { return (game.anchorLines||[]).some(l => l.tradeKind === 'hline' || l.kind === 'hline'); } catch(_){ return false; }
+          } },
+      ],
+      11: [
+        { text:'Place an Anchored VWAP.', tip:'Hotkey 2 → Anchored VWAP → click an anchor candle.',
+          complete:()=> {
+            try { return (game.tvOverlays||[]).some(o => o.tool === 'anchoredVwap' || o.kind === 'vwap'); } catch(_){ return false; }
+          } },
+      ],
+      12: [
+        { text:'Place an OCO.', tip:'Hotkey 3 → OCO → click upper level, then lower level.',
+          complete:()=> {
+            try { return (game.visualOCO||[]).length >= 1; } catch(_){ return false; }
+          } },
+      ],
+      13: [
+        { text:'Place a Limit order.', tip:'Hotkey 3 → Limit → click at the price you want filled.',
+          complete:()=> {
+            try { return (sdk.openOrders||[]).some(o => o.type === 'limit'); } catch(_){ return false; }
+          } },
+      ],
+      14: [
+        { text:'Activate the HL Funding Shorts strategy.', tip:'Top-bar Strat pill → HL Funding Shorts.',
+          complete:()=> {
+            try { return game && game.strategy === 'hl_funding_shorts'; } catch(_){ return false; }
+          } },
+      ],
+      15: [
+        { text:'Toggle the RSI indicator.', tip:'☰ Menu drawer → Indicators → RSI.',
+          complete:()=> {
+            try { return INDICATOR_STATE.active.has('rsi'); } catch(_){ return false; }
+          } },
+      ],
+      16: [
+        { text:'Equip the SFP Hunter detector bot.', tip:'Workbench → Bots → click SFP Hunter to equip.',
+          complete:()=> {
+            try { return (wb.equipped||[]).indexOf('det_sfp') >= 0; } catch(_){ return false; }
+          } },
+      ],
+      17: [
+        { text:'Equip the CCV Hunter detector bot.', tip:'Workbench → Bots → click CCV Hunter to equip.',
+          complete:()=> {
+            try { return (wb.equipped||[]).indexOf('det_ccv') >= 0; } catch(_){ return false; }
+          } },
+      ],
     };
     function spotlight(selector){
       clearSpotlight();
@@ -18467,20 +18528,21 @@ function pickMode(mode){
       if(el) return el;
       el = document.createElement('div');
       el.id = 'crCoachOverlay';
+      // v0.9.48 — NEXT button removed. Steps only advance when the player
+      // actually does the move (poll detects via `complete()` predicate).
+      // SKIP stays as the explicit opt-out.
       el.innerHTML =
         '<div class="crCoachHd">' +
-          '<div class="crCoachTitle">📘 Coach</div>' +
+          '<div class="crCoachTitle">📘 Coach · Paper trade</div>' +
           '<div class="crCoachDots" id="crCoachDots"></div>' +
         '</div>' +
         '<div class="crCoachStep" id="crCoachStep">…</div>' +
         '<div class="crCoachTip" id="crCoachTip"></div>' +
         '<div class="crCoachActions">' +
-          '<button class="crCoachBtn" id="crCoachSkip">Skip</button>' +
-          '<button class="crCoachBtn primary" id="crCoachNext">Next ›</button>' +
+          '<button class="crCoachBtn" id="crCoachSkip">Skip chapter</button>' +
         '</div>';
       document.body.appendChild(el);
       el.querySelector('#crCoachSkip').addEventListener('click', () => dismiss());
-      el.querySelector('#crCoachNext').addEventListener('click', () => advance());
       return el;
     }
     function render(){
@@ -18533,9 +18595,28 @@ function pickMode(mode){
       stepIdx++;
       stepStartCounters = { _stepStart: Date.now() };
       if(stepIdx >= script.length){
-        try { showBanner('🎓 Chapter ' + chapter + ' complete!', 'Open Run window for the next chapter.'); } catch(_){}
+        // v0.9.48 — Chapter complete: pay $RUN reward (idempotent per
+        // chapter), end the run, return to splash so the player isn't
+        // stranded on a chart with no further objective.
+        const REWARD = 50;
+        try {
+          const claimedKey = 'cr_campaign_claimed_v1';
+          const claimed = JSON.parse(localStorage.getItem(claimedKey) || '{}') || {};
+          if(!claimed[chapter]){
+            claimed[chapter] = Date.now();
+            localStorage.setItem(claimedKey, JSON.stringify(claimed));
+            if(typeof game !== 'undefined') game.run = (game.run|0) + REWARD;
+            try { spawnFloat(window.innerWidth/2, 130, '+' + REWARD + ' $RUN', '#ffd166'); } catch(_){}
+          }
+        } catch(_){}
+        try { showBanner('🎓 Chapter ' + chapter + ' complete!', '+' + REWARD + ' $RUN reward · paper-trade'); } catch(_){}
         try { confettiBurst(); } catch(_){}
         dismiss();
+        // Auto-finish: end the run + return to splash.
+        setTimeout(() => {
+          try { if(typeof game !== 'undefined'){ game.running = false; game.campaignChapter = null; game.campaignProbeSet = null; game.papertrade = false; } } catch(_){}
+          try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
+        }, 1400);
         return;
       }
       try { spawnFloat(window.innerWidth/2, 90, '✓ STEP DONE', '#7ee787'); } catch(_){}
@@ -18545,6 +18626,25 @@ function pickMode(mode){
       stop();
       const el = document.getElementById('crCoachOverlay');
       if(el) el.classList.remove('on');
+      // v0.9.48 — Fix "desktop chrome stays after exiting campaign" bug.
+      // Clean up campaign-specific state and bounce back to splash so the
+      // player isn't stranded on a chart with stale OS chrome visible.
+      try {
+        if(typeof game !== 'undefined'){
+          game.running = false;
+          game.campaignChapter = null;
+          game.campaignProbeSet = null;
+          game.papertrade = false;
+        }
+      } catch(_){}
+      try {
+        if(window._crCampaignSavedLoadout && typeof wb !== 'undefined'){
+          wb.equippedTools = window._crCampaignSavedLoadout.slice();
+          window._crCampaignSavedLoadout = null;
+          try { if(typeof _wbSave === 'function') _wbSave(); } catch(_){}
+        }
+      } catch(_){}
+      try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
     }
     function stop(){
       active = false;
@@ -18592,12 +18692,33 @@ function pickMode(mode){
          loadout:['bracket','oco','limit','fibLadder','fibRetrace','fibExt','stopLossAt','takeProfitAt','trailingTpAt','scaleOutAt'], probes:['ccvCheck','sfpCheck','faCheck','barrCheck','hsCheck','divCheck','oiCheck'] },
     8: { goal:'Hit ≥3 closed-positive brackets in one run. No assistance.',          tip:'Final exam — everything you have learned.',                    asset:'btc', tf:'1h', indicators:['reflevels','rsi','vrvp'],
          loadout:'*' /* unlock everything */, probes:'*' },
+    // v0.9.48 — One chapter per category. Each teaches a single item (one
+    // tool, one primitive, one strategy, one indicator, one bot). Force
+    // BTC + 15m at launch (overridden by _launchCampaignChapter regardless).
+    // Loadout intentionally minimal — only the lesson item is equipped.
+    9:  { goal:'Place a Trendline (Tools Laser).',     tip:'Hotkey 2 → Trendline → click anchor 1 then anchor 2.',     asset:'btc', tf:'15m', indicators:[], loadout:['trendline'],   probes:[] },
+    10: { goal:'Place a Horizontal Line (Tools).',      tip:'Hotkey 2 → HLine → single click at the level.',           asset:'btc', tf:'15m', indicators:[], loadout:['hline'],       probes:[] },
+    11: { goal:'Place an Anchored VWAP (Tools).',       tip:'Hotkey 2 → Anchored VWAP → click an anchor candle.',      asset:'btc', tf:'15m', indicators:[], loadout:['anchoredVwap'], probes:[] },
+    12: { goal:'Place an OCO (Primitive).',             tip:'Hotkey 3 → OCO → click upper, then lower.',                asset:'btc', tf:'15m', indicators:[], loadout:['oco'],         probes:[] },
+    13: { goal:'Place a Limit (Primitive).',            tip:'Hotkey 3 → Limit → click at the level you want filled.',   asset:'btc', tf:'15m', indicators:[], loadout:['limit'],       probes:[] },
+    14: { goal:'Activate the HL Funding Shorts strategy.', tip:'Strat pill in topbar → HL Funding Shorts.',             asset:'btc', tf:'15m', indicators:[], loadout:[],              probes:[] },
+    15: { goal:'Toggle the RSI indicator.',             tip:'☰ Menu → Indicators → RSI.',                              asset:'btc', tf:'15m', indicators:[], loadout:[],              probes:[] },
+    16: { goal:'Equip the SFP Hunter detector bot.',    tip:'Workbench → Bots → click SFP Hunter to equip.',           asset:'btc', tf:'15m', indicators:[], loadout:[],              probes:[] },
+    17: { goal:'Equip the CCV Hunter detector bot.',    tip:'Workbench → Bots → click CCV Hunter to equip.',           asset:'btc', tf:'15m', indicators:[], loadout:[],              probes:[] },
   };
   function _launchCampaignChapter(num){
     const ch = CAMPAIGN_CHAPTERS[num];
     if(!ch) return;
     try { game.campaignChapter = num; } catch(_){}
     try { game.mode = 'timeismoney'; game.pendingMode = 'timeismoney'; } catch(_){}
+    // v0.9.48 — Campaign mode is paper-trade, BTC 15m, no coins, no clutter.
+    // The lesson item is the only thing the player should engage with.
+    try { game.papertrade = true; } catch(_){}
+    try { game.coinsDisabled = true; } catch(_){}
+    // Force BTC + 15m regardless of what the chapter declares — the user
+    // wants every campaign run to start consistent.
+    ch.asset = 'btc';
+    ch.tf = '15m';
     // v0.9.29 — Stash the player's global loadout + probe-set BEFORE we override
     // for the chapter scope. Restored next time a non-campaign mode is picked,
     // OR when the player exits Campaign and starts a fresh run.
@@ -18650,16 +18771,35 @@ function pickMode(mode){
     try { document.querySelectorAll('.os-window.on, .os-window.show').forEach(w => { w.classList.remove('on'); w.classList.remove('show'); }); } catch(_){}
     // Direct restart — bypasses the Configure Run window entirely.
     try { if(typeof restart === 'function') restart(); } catch(_){}
+    // v0.9.48 — Position the player 50 candles before the latest candle so
+    // there's room to walk forward and observe price action. Done after a
+    // tick so the candle stream + camera have initialized.
+    setTimeout(() => {
+      try {
+        if(typeof candles !== 'undefined' && candles.length > 50 && typeof STEP === 'number'){
+          const targetIdx = Math.max(0, candles.length - 50);
+          const targetWx = targetIdx * STEP + STEP/2;
+          if(typeof player !== 'undefined') player.wx = targetWx;
+          if(typeof camera !== 'undefined') camera.wx = targetWx - (typeof W === 'number' ? W/2 : 400);
+        }
+      } catch(_){}
+    }, 250);
     // Banner + coach after the chart has loaded.
     setTimeout(() => {
-      try { showBanner('📘 Campaign Ch.' + num, ch.goal); } catch(_){}
+      try { showBanner('📘 Campaign Ch.' + num + ' · Paper trade', ch.goal); } catch(_){}
       try { if(window.crCampaignCoach && typeof window.crCampaignCoach.start === 'function') window.crCampaignCoach.start(num); } catch(_){}
     }, 700);
   }
-  for(let i = 1; i <= 8; i++){
+  // v0.9.48 — Extended to 17 chapters (8 originals + 9 category-focused).
+  // The card DOM for chapters 9+ doesn't exist yet, but binding is safe
+  // because bind() no-ops on missing IDs. window.crLaunchCampaignChapter
+  // is exposed for any UI that wants to fire by id (e.g. a future card
+  // generator or a deep-link).
+  for(let i = 1; i <= 17; i++){
     const id = 'modeCampaign' + i;
     bind(id, () => _launchCampaignChapter(i));
   }
+  try { window.crLaunchCampaignChapter = _launchCampaignChapter; } catch(_){}
   // v0.9.13 — Subcategory tab strip. Filters .modecard visibility by data-cat.
   document.querySelectorAll('#crModeTabs button').forEach(btn => {
     btn.addEventListener('click', () => {
