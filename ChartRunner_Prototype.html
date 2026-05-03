@@ -27648,6 +27648,7 @@ function log(msg){
   function toggleOsInvaderCursor(){
     if(osInvaderActive){
       osInvaderActive = false;
+      try { window.crOsInvaderActive = false; } catch(_){}
       if(osInvaderEl && osInvaderEl.parentNode) osInvaderEl.parentNode.removeChild(osInvaderEl);
       osInvaderEl = null;
       osInvaderDragging = false;
@@ -27665,9 +27666,13 @@ function log(msg){
       return;
     }
     osInvaderActive = true;
+    // v0.9.38 — Expose a global flag + data attribute so the desktop-shoot
+    // IIFE can reliably detect avatar presence without selector guessing.
+    try { window.crOsInvaderActive = true; } catch(_){}
     // Build the avatar overlay. pointer-events:auto so the user can grab it.
     const canv = document.createElement('canvas');
     canv.width = 36; canv.height = 24;
+    canv.dataset.crOsInvader = '1';
     canv.style.cssText = [
       'position:fixed', 'left:0', 'top:0',
       'width:36px', 'height:24px',
@@ -31700,16 +31705,13 @@ const crL3 = (function(){
  * destroy animation. App icons (.os-icon) stay immune.
  * =======================================================================*/
 (function(){
-  // Internal flag, only true while the Player-menu avatar is alive AND the
-  // user has armed shoot mode with X.
-  let _shootArmed = false;
-
+  // v0.9.38 — Avatar's purpose IS to shoot, so dropping the explicit arm
+  // toggle: while the Player-menu avatar is up, any click on a widget or
+  // OS window fires a bolt at it. Apps stay immune. The avatar's own drag
+  // gesture is preserved (clicks on the avatar itself don't fire).
   function _avatarActive(){
-    // The existing Player-menu code stores its own state in a closure as
-    // `osInvaderActive`. We exposed window.toggleOsInvaderCursor — for
-    // the read side we look for the avatar element's presence in the DOM.
-    return !!document.querySelector('canvas[data-cr-os-invader]') ||
-           !!document.querySelector('body > canvas[style*="z-index: 99999"]');
+    if(window.crOsInvaderActive === true) return true;
+    return !!document.querySelector('canvas[data-cr-os-invader]');
   }
   function _splashOn(){
     const sp = document.getElementById('splash');
@@ -31834,13 +31836,15 @@ const crL3 = (function(){
       else if(target.kind === 'window') _destroyWindow(target.el);
     }, 260);
   }
-  // Click anywhere on the desktop while shoot mode is armed → fire at the
-  // element under the cursor (only if it's a valid target). Gated by the
-  // Player-menu avatar being active — without that, clicks pass through.
+  // Click anywhere on the desktop while the Player-menu avatar is up → fire
+  // at the element under the cursor (only widgets and OS windows are valid
+  // targets). Click on the avatar itself = drag, NOT a shot.
   function _onDocClick(e){
-    if(!_shootArmed) return;
     if(!_splashOn()) return;
     if(!_avatarActive()) return;
+    // Don't shoot when clicking the avatar canvas itself (it's the drag
+    // handle for the existing Player-menu avatar).
+    if(e.target && e.target.dataset && e.target.dataset.crOsInvader === '1') return;
     const el = document.elementFromPoint(e.clientX, e.clientY);
     const t = _classifyTarget(el);
     if(!t) return;
@@ -31859,25 +31863,9 @@ const crL3 = (function(){
     e.preventDefault(); e.stopPropagation();
     _fireAt(t, e);
   }
-  // X toggles shoot mode (only meaningful while the Player-menu avatar is up).
-  function _onKeyDown(e){
-    if(!_splashOn()) return;
-    if(!_avatarActive()) return;
-    if(e.key && e.key.toUpperCase() === 'X' && !e.repeat){
-      const tag = (document.activeElement && document.activeElement.tagName) || '';
-      if(tag === 'INPUT' || tag === 'TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable)) return;
-      _shootArmed = !_shootArmed;
-      try {
-        if(typeof toast === 'function'){
-          toast(_shootArmed ? '🔫 Shoot mode ARMED — click widgets/windows to destroy (apps immune)'
-                            : '✋ Shoot mode disarmed');
-        }
-      } catch(_){}
-    }
-  }
   function _boot(){
-    document.addEventListener('click', _onDocClick, true); // capture phase
-    document.addEventListener('keydown', _onKeyDown);
+    // Capture phase so we beat the widget's own click handlers (drag/edit).
+    document.addEventListener('click', _onDocClick, true);
   }
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', _boot);
