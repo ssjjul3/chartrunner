@@ -31705,10 +31705,17 @@ const crL3 = (function(){
  * destroy animation. App icons (.os-icon) stay immune.
  * =======================================================================*/
 (function(){
-  // v0.9.38 — Avatar's purpose IS to shoot, so dropping the explicit arm
-  // toggle: while the Player-menu avatar is up, any click on a widget or
-  // OS window fires a bolt at it. Apps stay immune. The avatar's own drag
-  // gesture is preserved (clicks on the avatar itself don't fire).
+  // v0.9.39 — Same trigger as in-game: press SPACE while desktop is visible
+  // and the Player-menu avatar is up. Bolt fires from the avatar toward the
+  // current cursor position. Hits on widgets/windows destroy them; apps are
+  // immune; empty desktop just shoots a vanity bolt that flies off-screen.
+  // (Earlier versions tried click-to-shoot which conflicted with widget
+  // drag/edit handlers and required an extra arm toggle. Space is what the
+  // muscle memory expects.)
+  let _lastShotAt = 0;             // simple cooldown so holding space doesn't spam
+  const _SHOT_COOLDOWN_MS = 220;
+  let _cursor = { x: window.innerWidth/2, y: window.innerHeight/2 };
+
   function _avatarActive(){
     if(window.crOsInvaderActive === true) return true;
     return !!document.querySelector('canvas[data-cr-os-invader]');
@@ -31774,24 +31781,33 @@ const crL3 = (function(){
       el.style.opacity = '';
     }, 320);
   }
-  // Spawn a bolt projectile that interpolates from the live Player-menu
-  // avatar to the target's center, then triggers the destroy fx. Falls
-  // back to the cursor position if the avatar element isn't found.
-  function _fireAt(target, evt){
-    if(!target) return;
-    const avatarEl = document.querySelector('body > canvas[style*="z-index: 99999"]');
+  // Spawn a bolt projectile that flies from the live Player-menu avatar to
+  // a destination point. If the destination overlaps a valid target, run
+  // the destroy fx on impact; otherwise the bolt is just vanity.
+  function _fireToward(destX, destY, target){
+    const avatarEl = document.querySelector('canvas[data-cr-os-invader]');
     let sx, sy;
     if(avatarEl){
       const aRect = avatarEl.getBoundingClientRect();
       sx = aRect.left + aRect.width/2;
       sy = aRect.top  + aRect.height/2;
-    } else if(evt){
-      sx = evt.clientX; sy = evt.clientY;
     } else {
-      sx = 100; sy = window.innerHeight - 100;
+      sx = window.innerWidth / 2; sy = window.innerHeight - 100;
     }
-    const dx = tRect.left + tRect.width/2;
-    const dy = tRect.top  + tRect.height/2;
+    // If a target was identified, snap the destination to its center; if
+    // not, extend the bolt past the cursor so it visibly flies off-screen.
+    let dx, dy;
+    if(target){
+      const tRect = target.el.getBoundingClientRect();
+      dx = tRect.left + tRect.width/2;
+      dy = tRect.top  + tRect.height/2;
+    } else {
+      const ddx = destX - sx, ddy = destY - sy;
+      const len = Math.hypot(ddx, ddy) || 1;
+      const reach = Math.max(window.innerWidth, window.innerHeight);
+      dx = sx + (ddx / len) * reach;
+      dy = sy + (ddy / len) * reach;
+    }
     const bolt = document.createElement('div');
     const tint = (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195';
     bolt.style.cssText = [
@@ -31836,36 +31852,48 @@ const crL3 = (function(){
       else if(target.kind === 'window') _destroyWindow(target.el);
     }, 260);
   }
-  // Click anywhere on the desktop while the Player-menu avatar is up → fire
-  // at the element under the cursor (only widgets and OS windows are valid
-  // targets). Click on the avatar itself = drag, NOT a shot.
-  function _onDocClick(e){
+  // Track cursor position so SPACE knows where to aim.
+  function _onMouseMove(e){
+    _cursor.x = e.clientX; _cursor.y = e.clientY;
+  }
+  // SPACE while desktop is visible + Player-menu avatar is up → fire bolt
+  // toward the cursor. If a widget/window is under the cursor, destroy it
+  // on impact. App icons under the cursor get the immune floater. Empty
+  // space just shoots a vanity bolt off-screen.
+  function _onKeyDown(e){
+    if(e.key !== ' ' && e.code !== 'Space') return;
     if(!_splashOn()) return;
     if(!_avatarActive()) return;
-    // Don't shoot when clicking the avatar canvas itself (it's the drag
-    // handle for the existing Player-menu avatar).
-    if(e.target && e.target.dataset && e.target.dataset.crOsInvader === '1') return;
-    const el = document.elementFromPoint(e.clientX, e.clientY);
+    // Don't intercept space when typing into an input/textarea.
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if(tag === 'INPUT' || tag === 'TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable)) return;
+    // Cooldown so holding the key doesn't spam.
+    const now = performance.now();
+    if(now - _lastShotAt < _SHOT_COOLDOWN_MS) {
+      e.preventDefault(); return;
+    }
+    _lastShotAt = now;
+    e.preventDefault(); e.stopPropagation();
+    // Resolve what's under the cursor.
+    const el = document.elementFromPoint(_cursor.x, _cursor.y);
     const t = _classifyTarget(el);
-    if(!t) return;
-    if(t.kind === 'app'){
+    if(t && t.kind === 'app'){
       try {
         const im = document.createElement('div');
         im.textContent = '🛡 app immune';
-        im.style.cssText = 'position:fixed;left:' + e.clientX + 'px;top:' + (e.clientY-24) + 'px;z-index:99999;pointer-events:none;color:#ffd166;font:11px ui-monospace,Menlo,monospace;text-shadow:0 1px 4px #000;transition:transform .5s ease,opacity .5s ease';
+        im.style.cssText = 'position:fixed;left:' + _cursor.x + 'px;top:' + (_cursor.y-24) + 'px;z-index:99999;pointer-events:none;color:#ffd166;font:11px ui-monospace,Menlo,monospace;text-shadow:0 1px 4px #000;transition:transform .5s ease,opacity .5s ease';
         document.body.appendChild(im);
         requestAnimationFrame(() => { im.style.transform = 'translateY(-20px)'; im.style.opacity = '0'; });
         setTimeout(() => { try { if(im.parentNode) im.parentNode.removeChild(im); } catch(_){} }, 520);
       } catch(_){}
-      e.preventDefault(); e.stopPropagation();
+      _fireToward(_cursor.x, _cursor.y, null); // visual bolt, no destruction
       return;
     }
-    e.preventDefault(); e.stopPropagation();
-    _fireAt(t, e);
+    _fireToward(_cursor.x, _cursor.y, t || null);
   }
   function _boot(){
-    // Capture phase so we beat the widget's own click handlers (drag/edit).
-    document.addEventListener('click', _onDocClick, true);
+    document.addEventListener('mousemove', _onMouseMove, { passive: true });
+    document.addEventListener('keydown',   _onKeyDown,   true); // capture so we beat other handlers
   }
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', _boot);
