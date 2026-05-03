@@ -18090,21 +18090,24 @@ function drawPlayer(){
     ctx.shadowBlur=10;
     // v0.8k#24bt — Avatar choice (Invader / Snake) drives which sprite renders.
     // Snake length grows with collected coins (game.snakeLen).
+    // v0.9.34 — Skin/gear/weapon read from playerLoadout via _drawLoadoutAvatar.
+    // Upside-down still forces the red combat tint via forceTint.
+    const _forceTintFlight = player.upsideDown ? '#ff5b7f' : null;
     if(typeof playerLoadout !== 'undefined' && playerLoadout.avatar === 'snake'){
       // v0.8k#24bu — Trail-aware draw: head + body bend along the path the
       // head walked, like classic Snake. Uses screen-space placement for
       // body segments, so we have to undo the local-frame transform first.
       ctx.restore();
       ctx.shadowBlur = 0;
-      drawSnakeAtTrail(sx, sy, player.upsideDown ? '#ff5b7f' : undefined,
+      drawSnakeAtTrail(sx, sy, _forceTintFlight,
                        game.snakeLen || 1, player.upsideDown);
       ctx.save(); ctx.translate(sx, sy);
       ctx.translate(0, Math.sin(performance.now()/200)*1.5);
       ctx.scale(player.facing, player.upsideDown ? -1 : 1);
-    } else if(typeof playerLoadout !== 'undefined' && playerLoadout.avatar === 'pacman'){
-      drawPacman(ctx, 2, player.upsideDown ? '#ff5b7f' : undefined);
+    } else if(typeof _drawLoadoutAvatar === 'function'){
+      _drawLoadoutAvatar(ctx, 2, { upsideDown: player.upsideDown, forceTint: _forceTintFlight, snakeLen: game.snakeLen });
     } else {
-      drawInvader(ctx, 2, player.upsideDown ? '#ff5b7f' : undefined);
+      drawInvader(ctx, 2, _forceTintFlight);
     }
     ctx.shadowBlur=0;
     if(keys['arrowleft']||keys['arrowright']||keys['arrowup']||keys['arrowdown']||keys['a']||keys['d']||keys['w']||keys['s']||dashing){
@@ -18135,19 +18138,21 @@ function drawPlayer(){
       // AND sprite tint flip per world (green upper, red upside-down).
       ctx.shadowColor = player.upsideDown ? 'rgba(255,91,127,0.7)' : 'rgba(20,241,149,0.5)';
       ctx.shadowBlur = player.upsideDown ? 10 : 8;
+      // v0.9.34 — Same loadout-aware path as the flight branch above.
+      const _forceTintRunner = player.upsideDown ? '#ff5b7f' : null;
       if(typeof playerLoadout !== 'undefined' && playerLoadout.avatar === 'snake'){
         // Restore to screen space, paint trail-aware snake, then re-establish
         // local frame so the rest of this branch (motion lines etc.) keeps working.
         ctx.restore();
         ctx.shadowBlur = 0;
-        drawSnakeAtTrail(sx, sy, player.upsideDown ? '#ff5b7f' : undefined,
+        drawSnakeAtTrail(sx, sy, _forceTintRunner,
                          game.snakeLen || 1, player.upsideDown);
         ctx.save(); ctx.translate(sx, sy);
         ctx.scale(player.facing, player.upsideDown ? -1 : 1);
-      } else if(typeof playerLoadout !== 'undefined' && playerLoadout.avatar === 'pacman'){
-        drawPacman(ctx, 1.6, player.upsideDown ? '#ff5b7f' : undefined);
+      } else if(typeof _drawLoadoutAvatar === 'function'){
+        _drawLoadoutAvatar(ctx, 1.6, { upsideDown: player.upsideDown, forceTint: _forceTintRunner, snakeLen: game.snakeLen });
       } else {
-        drawInvader(ctx, 1.6, player.upsideDown ? '#ff5b7f' : undefined);
+        drawInvader(ctx, 1.6, _forceTintRunner);
       }
       ctx.shadowBlur = 0;
       // dash motion lines
@@ -19279,17 +19284,24 @@ function osRefreshProfile(){
     const ctx2 = cv2.getContext('2d');
     ctx2.clearRect(0, 0, cv2.width, cv2.height);
     ctx2.save();
-    // v0.8k#24ap (revised) — Drawing logic restored to the original (scale 3,
-    // shadowBlur 8). The canvas's intrinsic resolution stays 56×56; CSS scales
-    // the displayed element down to 14×14 with image-rendering:pixelated, so
-    // the sprite stays sharp and shrinks via crisp pixel scaling rather than
-    // re-rendering at a smaller scale (which softened it).
+    // v0.9.34 — Use the shared loadout-aware renderer so this thumbnail shows
+    // exactly what the in-game avatar will look like (skin tint + gear halo +
+    // weapon badge). Outer shadow color now comes from the chosen skin.
     ctx2.translate(cv2.width/2, cv2.height/2 + 4);
-    ctx2.shadowColor = 'rgba(20,241,149,0.6)';
+    const tint = (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195';
+    ctx2.shadowColor = tint + 'cc';
     ctx2.shadowBlur = 8;
-    drawInvader(ctx2, 3);
+    if (typeof _drawLoadoutAvatar === 'function') {
+      _drawLoadoutAvatar(ctx2, 3, { glow: true, badge: true, snakeLen: 5 });
+    } else if (typeof drawInvader === 'function') {
+      drawInvader(ctx2, 3);
+    }
     ctx2.restore();
   }
+  // v0.9.34 — Also refresh the lite-profile in-game avatar preview if its
+  // canvas exists, so equipping in the OS thumbnail propagates instantly to
+  // every visible surface.
+  try { if (typeof _refreshLightProfile === 'function') _refreshLightProfile(); } catch(_){}
 }
 // Persist/load trader name
 try{
@@ -19560,6 +19572,91 @@ const playerLoadout = (function(){
 function _savePlayerLoadout(){
   try { localStorage.setItem(PLAYER_LOADOUT_KEY, JSON.stringify(playerLoadout)); } catch(_){}
 }
+
+// ─── v0.9.34 ─ Single source of truth for avatar rendering ───────────────────
+// All three surfaces (desktop Profile thumbnail, in-game flight avatar, in-game
+// runner avatar) call _drawLoadoutAvatar so the player sees the same sprite
+// everywhere. Skin tints the sprite color, gear paints a coloured halo behind
+// it, weapon stamps a small badge near the sprite.
+const SKIN_TINTS = {
+  'invader-green':  '#14f195',
+  'invader-red':    '#ff5b7f',
+  'invader-yellow': '#ffd166',
+  'invader-purple': '#9945ff',
+};
+const GEAR_GLOW = {
+  none:   null,
+  kevlar: { color: '#7be3f3', radius: 12 }, // cyan shield
+  thrust: { color: '#ffa94d', radius: 14 }, // orange flame
+  magnet: { color: '#e879f9', radius: 13 }, // magenta aura
+};
+const WEAPON_BADGE = {
+  default: null,
+  laser:   { stroke: '#ff5b7f', kind: 'dot' },
+  spread:  { stroke: '#ffd166', kind: 'fan' },
+  beam:    { stroke: '#7be3f3', kind: 'bar' },
+};
+function _loadoutSkinTint(){
+  if (typeof playerLoadout === 'undefined') return '#14f195';
+  return SKIN_TINTS[playerLoadout.skin] || '#14f195';
+}
+// ctx is expected to be already-translated to the avatar center. scale is the
+// sprite scale. opts: { upsideDown:bool, glow:bool=true, badge:bool=true,
+// snakeLen:number, forceTint:string|null }.
+function _drawLoadoutAvatar(ctx, scale, opts){
+  opts = opts || {};
+  const lo = (typeof playerLoadout !== 'undefined') ? playerLoadout : { avatar:'invader', skin:'invader-green', gear:'none', weapon:'default' };
+  // Skin tint resolves last: explicit forceTint overrides (e.g. red for the
+  // upside-down combat sprite). Falls back to the player's chosen skin.
+  const tint = opts.forceTint || _loadoutSkinTint();
+  // Gear glow — drawn FIRST so it sits behind the sprite.
+  if (opts.glow !== false) {
+    const g = GEAR_GLOW[lo.gear];
+    if (g) {
+      const halo = ctx.createRadialGradient(0, 0, 1, 0, 0, g.radius * scale);
+      halo.addColorStop(0,   g.color + 'cc');
+      halo.addColorStop(0.5, g.color + '55');
+      halo.addColorStop(1,   g.color + '00');
+      ctx.save();
+      ctx.fillStyle = halo;
+      const r = g.radius * scale;
+      ctx.fillRect(-r, -r, r*2, r*2);
+      ctx.restore();
+    }
+  }
+  // Sprite. Snake honors its growing-length state when caller passes snakeLen.
+  if (lo.avatar === 'snake' && typeof drawSnake === 'function') {
+    drawSnake(ctx, scale, tint, Math.max(4, opts.snakeLen || 4));
+  } else if (lo.avatar === 'pacman' && typeof drawPacman === 'function') {
+    drawPacman(ctx, scale, tint);
+  } else if (typeof drawInvader === 'function') {
+    drawInvader(ctx, scale, tint);
+  }
+  // Weapon badge — drawn LAST so it sits in front of the sprite.
+  if (opts.badge !== false) {
+    const w = WEAPON_BADGE[lo.weapon];
+    if (w) {
+      ctx.save();
+      ctx.strokeStyle = w.stroke;
+      ctx.fillStyle = w.stroke;
+      ctx.lineWidth = 1.5;
+      const off = 6 * scale;
+      if (w.kind === 'dot') {
+        ctx.beginPath(); ctx.arc(off, -off*0.4, 1.6 * scale, 0, Math.PI*2); ctx.fill();
+      } else if (w.kind === 'fan') {
+        for (let i = -1; i <= 1; i++) {
+          ctx.beginPath();
+          ctx.moveTo(off, -off*0.2);
+          ctx.lineTo(off + 4*scale, -off*0.2 + i * 2.5 * scale);
+          ctx.stroke();
+        }
+      } else if (w.kind === 'bar') {
+        ctx.fillRect(off, -off*0.6, 1.4 * scale, 5 * scale);
+      }
+      ctx.restore();
+    }
+  }
+}
 function _renderPlayerSlot(host, opt, isActive, onClick){
   const slot = document.createElement('div');
   slot.className = 'cfg-ind-slot' + (isActive ? ' active' : '');
@@ -19628,6 +19725,9 @@ function _renderPlayerTab(){
       playerLoadout.avatar = b.dataset.avatar;
       _savePlayerLoadout();
       _renderPlayerTab();
+      // v0.9.34 — Propagate to every avatar surface (desktop thumb + lite
+      // profile preview + in-game render reads playerLoadout per frame).
+      try { if (typeof osRefreshProfile === 'function') osRefreshProfile(); } catch(_){}
       if(typeof toast === 'function') toast('Avatar: ' + b.textContent.trim());
     };
   });
@@ -19644,6 +19744,9 @@ function _renderPlayerTab(){
         playerLoadout[slotKey] = next;
         _savePlayerLoadout();
         _renderPlayerTab();
+        // v0.9.34 — Refresh desktop thumbnail + lite-profile preview after any
+        // skin/gear/vehicle/weapon change so the player sees their pick land.
+        try { if (typeof osRefreshProfile === 'function') osRefreshProfile(); } catch(_){}
         if(typeof onApply === 'function') onApply(next);
         if(typeof toast === 'function'){
           toast(slotKey.charAt(0).toUpperCase() + slotKey.slice(1) + ': '
@@ -22394,11 +22497,19 @@ function _wEditStart(rootEl){
   }
 
   // Build the form HTML. v0.8k#24cf — Body composition is button-driven only.
+  // v0.9.35 — Widget names are no longer adjustable. The name shown here is
+  // derived from the widget's source (for wbterm: wb.terms entry; for
+  // pane/map/chat/coach/terminal: _wTitleFor lookup) and presented as a
+  // read-only badge. The Name <input> + titleOverride writes are gone so
+  // editing only governs body composition (wbterm rows) and icon.
   let formHTML =
     '<div class="cr-w-edit" style="display:flex;flex-direction:column;gap:6px;font-size:10px">' +
-      '<div style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">EDITING · click name to save</div>' +
-      '<label style="font-size:9px;color:var(--dim)">Name</label>' +
-      '<input data-edit-name type="text" placeholder="Widget name" value="' + esc(curName) + '" style="padding:4px 6px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">';
+      '<div style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">EDITING · click Save to apply</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px dashed var(--line);border-radius:4px;background:rgba(10,15,28,.4);font:11px ui-monospace,Menlo,monospace;color:var(--dim)">' +
+        '<span style="font-size:13px">' + esc(curIcon) + '</span>' +
+        '<span style="color:var(--fg);font-weight:700">' + esc(curName) + '</span>' +
+        '<span style="margin-left:auto;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim)">name locked</span>' +
+      '</div>';
   if(isWbterm){
     formHTML +=
       '<label style="font-size:9px;color:var(--dim)">Icon</label>' +
@@ -22415,7 +22526,7 @@ function _wEditStart(rootEl){
       '<div data-rows-host style="display:flex;flex-direction:column;gap:3px;max-height:240px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:4px;background:rgba(0,0,0,.18)"></div>';
   } else {
     formHTML +=
-      '<div style="font-size:10px;color:var(--dim);font-style:italic;padding:4px 0">This widget’s body is sourced live. Edit the title above; press Save to apply.</div>';
+      '<div style="font-size:10px;color:var(--dim);font-style:italic;padding:4px 0">This widget’s body and name are sourced live — nothing here to edit. Drag to reposition, double-click to close edit mode.</div>';
   }
   formHTML +=
       '<div style="display:flex;gap:4px;margin-top:4px">' +
@@ -22567,12 +22678,13 @@ function _wEditSave(rootEl){
   const w = found.w;
   const body = rootEl.querySelector('.wBody');
   if(!body) return;
-  const nameEl = body.querySelector('[data-edit-name]');
+  // v0.9.35 — Name is no longer editable. Only icon (wbterm) and the row
+  // composer (wbterm) get persisted. titleOverride writes are removed; any
+  // legacy override sitting on a non-wbterm widget is shed on next save.
   const iconEl = body.querySelector('[data-edit-icon]');
   if(w.type === 'wbterm'){
     const t = (typeof wb !== 'undefined') ? wb.terms.find(x => x.id === w.sourceId) : null;
     if(t){
-      if(nameEl) t.name = (nameEl.value || '').trim() || t.name;
       if(iconEl) t.icon = (iconEl.value || '').trim() || t.icon;
       // v0.8k#24cf — Persist the row composer's working copy. No raw body.
       if(Array.isArray(body._wEditWorkingRows)){
@@ -22583,13 +22695,10 @@ function _wEditSave(rootEl){
       try { _wbRenderTerms(); } catch(_){}
     }
   } else {
-    if(nameEl){
-      const v = (nameEl.value || '').trim();
-      if(v) w.titleOverride = v;
-      else delete w.titleOverride;
-    }
-    // v0.8k#24cf — Body is no longer editable as raw HTML on non-wbterm
-    // widgets; only the title can be overridden via this editor.
+    // Strip any legacy titleOverride/bodyOverride sitting on this widget so
+    // the live source name takes over from this point forward.
+    if(w.titleOverride != null) delete w.titleOverride;
+    if(w.bodyOverride  != null) delete w.bodyOverride;
     _wEditPersist(found);
   }
   rootEl.classList.remove('cr-w-editing');
@@ -31550,6 +31659,277 @@ const crL3 = (function(){
     document.addEventListener('DOMContentLoaded', () => requestAnimationFrame(tick));
   } else {
     requestAnimationFrame(tick);
+  }
+})();
+
+/* =========================================================================
+ * v0.9.36 — Desktop avatar shoots widgets + windows (apps immune)
+ * -------------------------------------------------------------------------
+ * Adds a small movable avatar to the OS desktop. The avatar uses the
+ * player's loadout (skin tint, gear glow, weapon badge) via the shared
+ * _drawLoadoutAvatar helper. It follows the cursor with a soft lerp.
+ *
+ * Click on a widget (.cr-widget) or an OS window (.os-window) to fire a
+ * laser bolt at it. Hits play a destroy animation (red flash + shake +
+ * scale-down + fade) and then remove the element from the DOM AND from
+ * its backing store (widgets.items / chartWidgets.items / window display).
+ * App icons (.os-icon) are explicitly excluded — clicks on them keep
+ * their original launch behavior.
+ *
+ * Designed as a single IIFE that boots after DOMContentLoaded. Gracefully
+ * no-ops if the splash root or required helpers aren't available.
+ * =======================================================================*/
+(function(){
+  const SHOOT_KEY = 'X'; // press X to toggle shoot mode (UX safety)
+  let _shootArmed = false;
+  let _avatar = null;
+  let _ax = 0, _ay = 0;     // current avatar position (lerped)
+  let _tx = 0, _ty = 0;     // target position (cursor or rest spot)
+  let _projectiles = [];    // active in-flight bolts
+  let _bobT = 0;
+
+  function _splashOn(){
+    const sp = document.getElementById('splash');
+    return sp && sp.style.display !== 'none' && !sp.classList.contains('hidden');
+  }
+  // Identify whether an element should accept a shot. Widgets and OS
+  // windows are valid targets; apps and everything else are immune.
+  function _classifyTarget(el){
+    if(!el) return null;
+    let cur = el;
+    for(let depth = 0; depth < 8 && cur; depth++, cur = cur.parentElement){
+      if(cur.classList && cur.classList.contains('cr-widget')) return { kind: 'widget', el: cur };
+      if(cur.classList && cur.classList.contains('os-window')) return { kind: 'window', el: cur };
+      if(cur.classList && cur.classList.contains('os-icon'))   return { kind: 'app',    el: cur };
+    }
+    return null;
+  }
+  // Remove a widget from the right backing store + DOM with a destroy fx.
+  function _destroyWidget(el){
+    const id = el.dataset && el.dataset.id;
+    el.style.transition = 'transform .35s ease, opacity .35s ease, filter .35s ease';
+    el.style.filter = 'brightness(2.4) saturate(0.4) hue-rotate(-20deg)';
+    el.style.transform = (el.style.transform || '') + ' scale(.4) rotate(' + (Math.random()*40-20).toFixed(1) + 'deg)';
+    el.style.opacity = '0';
+    setTimeout(() => {
+      try {
+        if(id){
+          if(typeof widgets !== 'undefined' && Array.isArray(widgets.items)){
+            widgets.items = widgets.items.filter(x => x.id !== id);
+            try { if(typeof _wSave === 'function') _wSave(); } catch(_){}
+          }
+          if(typeof chartWidgets !== 'undefined' && Array.isArray(chartWidgets.items)){
+            chartWidgets.items = chartWidgets.items.filter(x => x.id !== id);
+            try { if(typeof _cwSave === 'function') _cwSave(); } catch(_){}
+          }
+        }
+        if(el.parentNode) el.parentNode.removeChild(el);
+        try { if(typeof renderWidgets === 'function') renderWidgets(); } catch(_){}
+        try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+      } catch(_){}
+    }, 360);
+  }
+  // Close an OS window — prefer the standard .wclose button if present so
+  // app-side cleanup still runs; otherwise just remove the .on class.
+  function _destroyWindow(el){
+    el.style.transition = 'transform .3s ease, opacity .3s ease, filter .3s ease';
+    el.style.filter = 'brightness(1.8) saturate(0.4)';
+    el.style.transform = (el.style.transform || '') + ' scale(.85)';
+    el.style.opacity = '0';
+    setTimeout(() => {
+      try {
+        const closeBtn = el.querySelector('.wclose, [data-close]');
+        if(closeBtn) closeBtn.click();
+        else el.classList.remove('on');
+      } catch(_){}
+      // Reset transient styling so the window can re-open cleanly later.
+      el.style.transition = '';
+      el.style.filter = '';
+      el.style.transform = '';
+      el.style.opacity = '';
+    }, 320);
+  }
+  // Spawn a bolt projectile that interpolates from the avatar to the
+  // target's center, then triggers the destroy fx.
+  function _fireAt(target){
+    if(!target || !_avatar) return;
+    const aRect = _avatar.getBoundingClientRect();
+    const tRect = target.el.getBoundingClientRect();
+    const sx = aRect.left + aRect.width/2;
+    const sy = aRect.top  + aRect.height/2;
+    const dx = tRect.left + tRect.width/2;
+    const dy = tRect.top  + tRect.height/2;
+    const bolt = document.createElement('div');
+    const tint = (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195';
+    bolt.style.cssText = [
+      'position:fixed','z-index:99999','pointer-events:none',
+      'left:' + sx + 'px','top:' + sy + 'px',
+      'width:14px','height:3px','margin-left:-7px','margin-top:-1.5px',
+      'background:' + tint, 'border-radius:2px',
+      'box-shadow:0 0 12px ' + tint + ', 0 0 4px #fff',
+      'transform-origin:center center',
+      'transition:left .26s linear, top .26s linear, opacity .12s ease .22s',
+    ].join(';');
+    const angle = Math.atan2(dy - sy, dx - sx) * 180 / Math.PI;
+    bolt.style.transform = 'rotate(' + angle.toFixed(1) + 'deg)';
+    document.body.appendChild(bolt);
+    requestAnimationFrame(() => {
+      bolt.style.left = dx + 'px';
+      bolt.style.top  = dy + 'px';
+    });
+    setTimeout(() => {
+      // Hit fx — small ring + screen-flash on the target.
+      try {
+        const ring = document.createElement('div');
+        ring.style.cssText = [
+          'position:fixed','z-index:99998','pointer-events:none',
+          'left:' + dx + 'px','top:' + dy + 'px',
+          'width:8px','height:8px','margin-left:-4px','margin-top:-4px',
+          'border-radius:50%','border:2px solid ' + tint,
+          'transition:all .35s ease',
+        ].join(';');
+        document.body.appendChild(ring);
+        requestAnimationFrame(() => {
+          ring.style.width = '60px'; ring.style.height = '60px';
+          ring.style.marginLeft = '-30px'; ring.style.marginTop = '-30px';
+          ring.style.opacity = '0';
+        });
+        setTimeout(() => { try { if(ring.parentNode) ring.parentNode.removeChild(ring); } catch(_){} }, 360);
+      } catch(_){}
+      bolt.style.opacity = '0';
+      setTimeout(() => { try { if(bolt.parentNode) bolt.parentNode.removeChild(bolt); } catch(_){} }, 140);
+      // Resolve and destroy the actual target.
+      if(target.kind === 'widget') _destroyWidget(target.el);
+      else if(target.kind === 'window') _destroyWindow(target.el);
+    }, 260);
+  }
+  // Build the avatar canvas and inject into the splash root.
+  function _initAvatar(){
+    if(_avatar) return _avatar;
+    const sp = document.getElementById('splash');
+    if(!sp) return null;
+    const canvas = document.createElement('canvas');
+    canvas.id = 'osDesktopAvatar';
+    canvas.width = 56; canvas.height = 56;
+    canvas.title = 'You · click widgets/windows to shoot · X to arm/disarm shoot mode';
+    canvas.style.cssText = [
+      'position:fixed','z-index:9500','width:42px','height:42px',
+      'left:60px','bottom:60px','image-rendering:pixelated',
+      'cursor:grab','filter:drop-shadow(0 4px 10px rgba(0,0,0,.6))',
+      'transition:filter .15s ease',
+    ].join(';');
+    sp.appendChild(canvas);
+    _avatar = canvas;
+    _ax = 60; _ay = window.innerHeight - 60 - 42;
+    _tx = _ax; _ty = _ay;
+    // Drag to move (so player can park the avatar).
+    let dragging = false, dragDx = 0, dragDy = 0;
+    canvas.addEventListener('pointerdown', (e) => {
+      if(e.button !== 0) return;
+      const r = canvas.getBoundingClientRect();
+      dragDx = e.clientX - r.left; dragDy = e.clientY - r.top;
+      dragging = true;
+      try { canvas.setPointerCapture(e.pointerId); } catch(_){}
+      canvas.style.cursor = 'grabbing';
+      e.preventDefault(); e.stopPropagation();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if(!dragging) return;
+      _tx = e.clientX - dragDx; _ty = e.clientY - dragDy;
+    });
+    const endDrag = (e) => {
+      if(!dragging) return;
+      dragging = false;
+      canvas.style.cursor = 'grab';
+      try { canvas.releasePointerCapture(e.pointerId); } catch(_){}
+    };
+    canvas.addEventListener('pointerup', endDrag);
+    canvas.addEventListener('pointercancel', endDrag);
+    return canvas;
+  }
+  // Per-frame: bob, lerp toward _tx/_ty, render via the loadout helper.
+  function _tick(){
+    if(_avatar){
+      _ax += (_tx - _ax) * 0.18;
+      _ay += (_ty - _ay) * 0.18;
+      _avatar.style.left = (_ax|0) + 'px';
+      _avatar.style.top  = (_ay|0) + 'px';
+      _bobT += 0.06;
+      const ctx = _avatar.getContext('2d');
+      ctx.clearRect(0, 0, 56, 56);
+      ctx.save();
+      ctx.translate(28, 30 + Math.sin(_bobT) * 1.5);
+      const tint = (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195';
+      ctx.shadowColor = (_shootArmed ? '#ff5b7f' : tint) + 'cc';
+      ctx.shadowBlur = _shootArmed ? 12 : 8;
+      if(typeof _drawLoadoutAvatar === 'function'){
+        _drawLoadoutAvatar(ctx, 2.4, { glow: true, badge: true, snakeLen: 5 });
+      } else if(typeof drawInvader === 'function'){
+        drawInvader(ctx, 2.4, tint);
+      }
+      ctx.restore();
+      // Visual glow when shoot mode is armed.
+      _avatar.style.filter = _shootArmed
+        ? 'drop-shadow(0 0 14px #ff5b7f) drop-shadow(0 4px 10px rgba(0,0,0,.6))'
+        : 'drop-shadow(0 4px 10px rgba(0,0,0,.6))';
+    }
+    requestAnimationFrame(_tick);
+  }
+  // Click anywhere on the desktop while shoot mode is armed → fire at the
+  // element under the cursor (only if it's a valid target).
+  function _onDocClick(e){
+    if(!_shootArmed) return;
+    if(!_splashOn()) return;
+    if(e.target === _avatar) return; // don't shoot self
+    // elementFromPoint to bypass any covering layers from the avatar itself.
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const t = _classifyTarget(el);
+    if(!t) return;
+    if(t.kind === 'app'){
+      // Apps are immune — flash a small "🛡 immune" badge then bail.
+      try {
+        const im = document.createElement('div');
+        im.textContent = '🛡 app immune';
+        im.style.cssText = 'position:fixed;left:' + e.clientX + 'px;top:' + (e.clientY-24) + 'px;z-index:99999;pointer-events:none;color:#ffd166;font:11px ui-monospace,Menlo,monospace;text-shadow:0 1px 4px #000;transition:transform .5s ease,opacity .5s ease';
+        document.body.appendChild(im);
+        requestAnimationFrame(() => { im.style.transform = 'translateY(-20px)'; im.style.opacity = '0'; });
+        setTimeout(() => { try { if(im.parentNode) im.parentNode.removeChild(im); } catch(_){} }, 520);
+      } catch(_){}
+      e.preventDefault(); e.stopPropagation();
+      return;
+    }
+    // Valid target → fire and consume the click so it doesn't trigger the
+    // widget's own click handler (e.g. window focus).
+    e.preventDefault(); e.stopPropagation();
+    _fireAt(t);
+  }
+  // Toggle shoot mode with X. Show a small toast on toggle.
+  function _onKeyDown(e){
+    if(!_splashOn()) return;
+    if(e.key && e.key.toUpperCase() === SHOOT_KEY && !e.repeat){
+      // Don't intercept when the user is typing in a text field.
+      const tag = (document.activeElement && document.activeElement.tagName) || '';
+      if(tag === 'INPUT' || tag === 'TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable)) return;
+      _shootArmed = !_shootArmed;
+      try {
+        if(typeof toast === 'function'){
+          toast(_shootArmed ? '🔫 Shoot mode ARMED — click widgets/windows to destroy (apps immune)'
+                            : '✋ Shoot mode disarmed');
+        }
+      } catch(_){}
+    }
+  }
+  // Wait for splash + DOM to exist, then boot.
+  function _boot(){
+    _initAvatar();
+    document.addEventListener('click', _onDocClick, true); // capture phase so we beat widget handlers
+    document.addEventListener('keydown', _onKeyDown);
+    requestAnimationFrame(_tick);
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', _boot);
+  } else {
+    _boot();
   }
 })();
 </script>
