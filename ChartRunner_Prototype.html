@@ -6500,12 +6500,12 @@ plot(out, color=color.orange, linewidth=2)</textarea>
       <div class="os-window" id="win-journal" style="width:min(1100px,calc(100% - 60px));max-width:1100px">
         <div class="os-wbar">
           <div class="dots"><span class="dot red"></span><span class="dot yel"></span><span class="dot grn"></span></div>
-          <div class="ttl">📓 Trading Journal · Igor Template</div>
+          <div class="ttl">📓 Trading Journal · Live Auto-Log</div>
           <div class="spacer"></div>
           <button class="wclose" data-close>Close</button>
         </div>
         <div class="os-wbody">
-          <p style="margin:0 0 8px;font-size:11px;color:var(--dim)">Documents every trade against the quant.pdf Trade Entry Checklist. Manual tab: log discretionary entries with full annotation. Bot tab: auto-imports bot-fired orders (flagged with <code>bot:true</code> on the SDK order) for after-action review.</p>
+          <p style="margin:0 0 8px;font-size:11px;color:var(--dim)">Auto-logs every order placed during a run. <b>Manual tab</b>: trades you placed (laser, hotkeys, modal). <b>Bot tab</b>: trades fired by equipped detector bots. Each entry snapshots live scoreSetup, reference levels, and the 6-box checklist at order time — no typing required.</p>
           <div class="crTerm-tabs" id="crJournalTabs" style="margin-top:6px">
             <button class="crTerm-tab active" data-jrntab="manual" type="button">MANUAL</button>
             <button class="crTerm-tab" data-jrntab="bot" type="button">BOT</button>
@@ -6514,12 +6514,24 @@ plot(out, color=color.orange, linewidth=2)</textarea>
 
           <!-- ── MANUAL TAB ────────────────────────────────────────────── -->
           <div class="crTerm-view" id="crJournalViewManual">
-            <!-- New-entry form: 2-col grid, sane defaults pre-filled from current run state. -->
-            <div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0 10px;background:rgba(126,231,135,0.04)">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <div style="font-size:11px;font-weight:700;color:#7ee787;text-transform:uppercase;letter-spacing:.4px">📝 Log New Trade</div>
-                <button class="cr-go" id="crJrnPrefill" type="button" style="font-size:10px;padding:4px 10px;background:transparent;border:1px solid var(--line);color:var(--dim)">↻ Prefill from current run</button>
-              </div>
+            <!-- v0.9.31 — Auto-log status banner. Manual entries arrive here
+                 from the SDK order stream; the form below is now for paper-trade
+                 logging (a trade you took outside the SDK). The pulsing dot is a
+                 live indicator that the listener is wired. -->
+            <div id="crJrnAutoStatus" style="display:flex;align-items:center;gap:8px;padding:8px 12px;margin:10px 0 8px;border:1px solid rgba(62,221,151,0.3);border-radius:6px;background:rgba(62,221,151,0.06);font-size:11px">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3ddc97;box-shadow:0 0 6px #3ddc97;animation:crJrnPulse 1.6s infinite"></span>
+              <span style="color:#3ddc97;font-weight:700;letter-spacing:.4px">LIVE</span>
+              <span style="color:var(--dim)">Every trade you place auto-logs with score, levels, and checklist snapshot. Click any row to add notes / setup / result.</span>
+              <span style="margin-left:auto;color:var(--dim);font-size:10px" id="crJrnAutoCount">0 auto-logged this run</span>
+            </div>
+            <style>@keyframes crJrnPulse{0%,100%{opacity:1}50%{opacity:.35}}</style>
+            <!-- Paper-trade form: collapsed by default. Click header to expand. -->
+            <details id="crJrnPaperWrap" style="border:1px solid var(--line);border-radius:8px;padding:0;margin:0 0 10px;background:rgba(155,140,255,0.04)">
+              <summary style="padding:8px 12px;cursor:pointer;font-size:11px;font-weight:700;color:#9b8cff;text-transform:uppercase;letter-spacing:.4px;list-style:none;display:flex;align-items:center;justify-content:space-between">
+                <span>📝 Paper trade · log a discretionary entry</span>
+                <button class="cr-go" id="crJrnPrefill" type="button" style="font-size:10px;padding:4px 10px;background:transparent;border:1px solid var(--line);color:var(--dim)">↻ Prefill from live state</button>
+              </summary>
+              <div style="padding:0 12px 10px">
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;font-size:11px">
                 <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)">Asset</span>
                   <input type="text" id="crJrnAsset" placeholder="BTC" style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
@@ -6581,22 +6593,26 @@ plot(out, color=color.orange, linewidth=2)</textarea>
               <!-- v0.9.27 — Igor Pre-Trade Checklist. The journal IS the checklist
                    not just a column log. Each box maps to a quant.pdf entry rule;
                    trade gets a ✓N/6 badge in the table view based on count checked. -->
-              <div style="margin-top:8px;padding:8px 10px;border:1px solid rgba(126,231,135,0.20);border-radius:6px;background:rgba(126,231,135,0.04)">
-                <div style="font-size:10px;color:#7ee787;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px">📋 Pre-Trade Checklist (Igor)</div>
+              <!-- v0.9.31 — Checklist labels are now ChartRunner-native: each
+                   maps directly to a scoreSetup component or game primitive
+                   (htf_trend, ref_level, vol_node, div_a/b, R:R math, score). -->
+              <div style="margin-top:8px;padding:8px 10px;border:1px solid rgba(155,140,255,0.20);border-radius:6px;background:rgba(155,140,255,0.04)">
+                <div style="font-size:10px;color:#9b8cff;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px">📋 Pre-Trade Checklist · ChartRunner</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 12px;font-size:11px">
-                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkHTF"> HTF aligned</label>
-                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkLevel"> Level present</label>
-                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkVol"> Volume confirms</label>
-                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkMomentum"> Momentum agrees</label>
-                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkRR"> Min R:R hit</label>
-                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crJrnChkConf"> Confluence ≥6</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="scoreSetup htf_trend component"><input type="checkbox" id="crJrnChkHTF"> HTF trend aligned</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="At dOpen / pdH / pdL / pdPOC / pdVAH / pdVAL / IBH / IBL"><input type="checkbox" id="crJrnChkLevel"> At ref level</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="scoreSetup vol_node component (POC tag)"><input type="checkbox" id="crJrnChkVol"> Vol node tag</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Class A or Class B divergence present"><input type="checkbox" id="crJrnChkMomentum"> Divergence (A/B)</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Computed R:R from entry/SL/TP ≥ 2"><input type="checkbox" id="crJrnChkRR"> R:R ≥ 2:1</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="scoreSetup total ≥ 6 (TRADEABLE tier)"><input type="checkbox" id="crJrnChkConf"> Score ≥ 6 (TRADEABLE)</label>
                 </div>
               </div>
               <textarea id="crJrnNotes" rows="2" placeholder="Notes — why I took it · what I saw · what I should have seen…" style="margin-top:6px;padding:6px 8px;width:100%;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace;resize:vertical;box-sizing:border-box"></textarea>
               <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
-                <button class="cr-go" id="crJrnAdd" type="button">📝 Log Trade</button>
+                <button class="cr-go" id="crJrnAdd" type="button">📝 Log paper trade</button>
               </div>
-            </div>
+              </div>
+            </details>
             <!-- Entries table -->
             <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 6px">
               <h4 style="margin:0">My Trades <span id="crJrnCount" style="color:var(--dim);font-weight:400">(0)</span></h4>
@@ -18637,6 +18653,153 @@ function _crJrnRRFromForm(entry, sl, tp){
   if(slDist <= 0) return 0;
   return tpDist / slDist;
 }
+
+// ─── v0.9.31 ─ Live auto-log from SDK order stream ──────────────────────────
+// Subscribed to sdk.on('order') and sdk.on('fill'). Every NON-bot order placed
+// during a run gets snapshotted into the journal with live state captured at
+// order time:
+//   - score from sdk.scoreSetup (side-aware)
+//   - matched components → setup type (auto-detected)
+//   - reference levels nearest to entry price → "Levels Near"
+//   - 6-box checklist auto-evaluated from scoreSetup components
+// Bot orders skip auto-log here — the Bot tab handles them via its own poll.
+//
+// Dedup: track logged IDs in a Set so re-emits don't double-insert.
+const _crJrnLoggedIds = new Set();
+let _crJrnAutoCountThisRun = 0;
+function _crJrnAutoLogOrder(order){
+  try {
+    if (!order || !order.id) return;
+    // Skip bot-fired orders (they go to the Bot tab).
+    if (order.bot === true || (typeof order.botId === 'string' && order.botId.length)) return;
+    // Dedup.
+    if (_crJrnLoggedIds.has(order.id)) return;
+    _crJrnLoggedIds.add(order.id);
+
+    // Side / entry / sl / tp from the order shape. Bracket has all four;
+    // limit/market have entry only — sl/tp default to null.
+    const side  = order.side || 'buy';
+    const entry = order.entry != null ? order.entry : order.price;
+    const sl    = order.sl != null ? order.sl : null;
+    const tp    = order.tp != null ? order.tp : null;
+    const rr    = (entry != null && sl != null && tp != null) ? _crJrnRRFromForm(entry, sl, tp) : null;
+
+    // Snapshot live scoreSetup at order time.
+    let conf = null, components = [], setupAuto = '';
+    try {
+      if (typeof sdk !== 'undefined' && typeof sdk.scoreSetup === 'function') {
+        const r = sdk.scoreSetup({ side });
+        conf = r.score | 0;
+        components = r.components || [];
+        // Auto-detect setup type by checking which detector is currently
+        // matching. Priority: CCV > SFP > H&S > BARR > FA > Champion > Div >
+        // Breakout > Ref level. First match wins.
+        const has = id => components.some(c => c.id === id);
+        if (has('ccv')) setupAuto = 'ccv';
+        else if (has('sfp')) setupAuto = 'sfp';
+        else if (has('hs') || has('head_shoulders')) setupAuto = 'hs';
+        else if (has('barr')) setupAuto = 'barr';
+        else if (has('failed_auction')) setupAuto = 'fa';
+        else if (has('champion')) setupAuto = 'champion';
+        else if (has('div_a') || has('div_b')) setupAuto = (has('div_a') ? 'div_a' : 'div_b');
+        else if (has('breakout')) setupAuto = 'breakout';
+        else if (has('ref_level')) setupAuto = 'ref_level';
+      }
+    } catch(_){}
+
+    // Reference levels nearest to entry: pick the 3 closest by absolute price
+    // distance so the "Levels Near" column reads useful, not generic.
+    let levelsStr = '';
+    try {
+      if (typeof computeReferenceLevels === 'function' && entry != null) {
+        const L = computeReferenceLevels();
+        if (L) {
+          const candidates = ['dOpen','pdHigh','pdLow','pdClose','pdVAH','pdPOC','pdVAL','IBH','IBL']
+            .filter(k => typeof L[k] === 'number')
+            .map(k => ({ k, dist: Math.abs(entry - L[k]) }))
+            .sort((a, b) => a.dist - b.dist)
+            .slice(0, 3)
+            .map(x => x.k);
+          levelsStr = candidates.join(', ');
+        }
+      }
+    } catch(_){}
+
+    // Auto-eval the 6-box checklist from live data.
+    const has = id => components.some(c => c.id === id);
+    const checklist = {
+      htf:      has('htf_trend'),
+      level:    has('ref_level'),
+      volume:   has('vol_node'),
+      momentum: has('div_a') || has('div_b'),
+      rr:       (rr != null && rr >= 2),
+      conf:     (conf != null && conf >= 6),
+    };
+
+    const t = {
+      id: 't_' + order.id,        // tie back to the SDK order
+      orderId: order.id,
+      ts: Date.now(),
+      dateStr: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString().slice(0, 5),
+      asset: (typeof currentAsset === 'string' ? currentAsset.toUpperCase() : 'BTC'),
+      tf: (typeof timeframe === 'string') ? timeframe : '15m',
+      side, setup: setupAuto,
+      entry, sl, tp, rr,
+      risk: 1.0,                  // default; player can override later
+      conf, levels: levelsStr,
+      result: 'open',
+      pnl: 0,
+      notes: '',
+      checklist,
+      auto: true,                 // marks this row as auto-logged
+      kind: order.type || 'market',
+    };
+
+    const d = _crJrnLoad();
+    d.manual.push(t);
+    _crJrnSave(d);
+    _crJrnAutoCountThisRun++;
+
+    // Re-render the manual list if the journal window is currently visible.
+    try {
+      const win = document.getElementById('win-journal');
+      if (win && win.classList && !win.classList.contains('hidden')) {
+        _crJrnRenderManual();
+        _crJrnRenderStats();
+      }
+    } catch(_){}
+    // Update the live counter on the auto-status banner.
+    try {
+      const c = document.getElementById('crJrnAutoCount');
+      if (c) c.textContent = _crJrnAutoCountThisRun + ' auto-logged this run';
+    } catch(_){}
+  } catch(_){}
+}
+
+// Update result/PnL on fill or close events.
+function _crJrnUpdateFromFill(order, fillPrice){
+  try {
+    if (!order || !order.id) return;
+    const d = _crJrnLoad();
+    const t = d.manual.find(x => x.orderId === order.id);
+    if (!t) return;
+    // For market/limit fills: stamp entry if missing, mark as open.
+    if (t.entry == null && fillPrice != null) t.entry = fillPrice;
+    // For bracket close: derive result from final PnL.
+    if (order.status === 'closed') {
+      t.result = (order.pnl > 0) ? 'win' : (order.pnl < 0 ? 'loss' : 'be');
+      t.pnl = order.pnl != null ? order.pnl : 0;
+    }
+    _crJrnSave(d);
+    try {
+      const win = document.getElementById('win-journal');
+      if (win && !win.classList.contains('hidden')) {
+        _crJrnRenderManual();
+        _crJrnRenderStats();
+      }
+    } catch(_){}
+  } catch(_){}
+}
 function _crJrnRenderManual(){
   const list = document.getElementById('crJrnList');
   const cnt  = document.getElementById('crJrnCount');
@@ -18663,8 +18826,12 @@ function _crJrnRenderManual(){
     const ckCount = ['htf','level','volume','momentum','rr','conf'].filter(k => !!ckObj[k]).length;
     const ckColor = ckCount === 6 ? '#7ee787' : (ckCount >= 4 ? '#ffd166' : (ckCount >= 1 ? '#ffb86b' : 'var(--dim)'));
     const ckTitle = 'HTF '+(ckObj.htf?'✓':'✗')+' · Level '+(ckObj.level?'✓':'✗')+' · Vol '+(ckObj.volume?'✓':'✗')+' · Mom '+(ckObj.momentum?'✓':'✗')+' · RR '+(ckObj.rr?'✓':'✗')+' · Conf '+(ckObj.conf?'✓':'✗');
-    html += '<div style="display:grid;grid-template-columns:'+grid+';gap:0;font-size:10.5px;padding:6px 8px;border-bottom:1px solid rgba(180,200,230,0.06);align-items:center">';
-    html += '<div style="color:var(--dim);font-family:ui-monospace,Menlo,monospace">'+(t.dateStr||'—')+'</div>';
+    html += '<div style="display:grid;grid-template-columns:'+grid+';gap:0;font-size:10.5px;padding:6px 8px;border-bottom:1px solid rgba(180,200,230,0.06);align-items:center"'+(t.auto?' title="Auto-logged from SDK order"':'')+'>';
+    // v0.9.31 — Auto-logged rows get a small green dot prefix on the date
+    // column so the player can scan at-a-glance which entries came from
+    // the live SDK stream vs which were paper-trade manual entries.
+    const autoDot = t.auto ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#3ddc97;margin-right:4px;vertical-align:middle" title="Auto-logged"></span>' : '';
+    html += '<div style="color:var(--dim);font-family:ui-monospace,Menlo,monospace">'+autoDot+(t.dateStr||'—')+'</div>';
     html += '<div><b>'+(t.asset||'?')+'</b><span style="color:var(--dim)"> '+(t.tf||'')+'</span></div>';
     html += '<div style="color:'+(t.side==='buy'?'#3ddc97':'#ff5b7f')+';font-weight:700">'+(t.side==='buy'?'L':'S')+'</div>';
     html += '<div style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px">'+(t.setup||'—')+'</div>';
@@ -18876,6 +19043,36 @@ setTimeout(() => {
     }));
     _crJrnExportCSV(rows, ['botId','side','type','entry','sl','tp','status','pnl','comment'], 'chartrunner_botjournal_'+Date.now()+'.csv');
   });
+
+  // ─── v0.9.31 ─ Wire SDK event listeners for live auto-log ───────────────
+  // Subscribe ONCE at IIFE init. Every order event runs through the
+  // auto-logger which short-circuits for bot-fired orders. Fill / close
+  // events update the existing row's result + pnl.
+  try {
+    if (typeof sdk !== 'undefined' && typeof sdk.on === 'function') {
+      sdk.on('order', e => {
+        try {
+          if (!e) return;
+          // Different kinds carry the order object differently. Bracket /
+          // market / limit / twap / iceberg pass {kind, order}; ladder /
+          // OCO / ocoBracket pass {kind, orders} (an array — we log the
+          // first as the representative entry).
+          const o = e.order || (Array.isArray(e.orders) ? e.orders[0] : null);
+          if (o) _crJrnAutoLogOrder(o);
+        } catch(_){}
+      });
+      sdk.on('fill', e => {
+        try {
+          if (!e || !e.order) return;
+          _crJrnUpdateFromFill(e.order, e.price);
+        } catch(_){}
+      });
+      // No 'close' event in the SDK; bracket closures still trigger 'fill'
+      // for the closing leg, and the order's status flips to 'closed' inside
+      // the SDK's close path before the fill fires. So _crJrnUpdateFromFill
+      // can detect closure from order.status.
+    }
+  } catch(_){}
 }, 0);
 
 // Profile content
