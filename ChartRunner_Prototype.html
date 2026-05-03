@@ -5239,7 +5239,7 @@
           <!-- v0.8k#24w/#24av/#24bq — Tabs: Player · Balances · Stats · Missions. -->
           <div class="crTerm-tabs" style="margin-top:8px">
             <button class="crTerm-tab active" data-profview="player" type="button">PLAYER</button>
-            <button class="crTerm-tab" data-profview="bal" type="button">BALANCES</button>
+            <button class="crTerm-tab" data-profview="bal" type="button">WALLET</button>
             <button class="crTerm-tab" data-profview="stats" type="button">STATS</button>
             <button class="crTerm-tab" data-profview="missions" type="button">MISSIONS</button>
           </div>
@@ -5310,23 +5310,32 @@
             </div>
             <p class="md-note" style="margin:14px 0 0">Bots fly as orbs around your avatar in-game (max 3 visible here · 4 total in Workbench → Bots). Build new bots in Workbench → Bots.</p>
           </div>
+          <!-- v0.9.42 — Wallet view. Renamed from Balances. Surfaces connection
+               status + a holdings list. Defaults: SOL / USDC / RUN (always
+               shown, even at 0). Player can add more tokens; the addition is
+               persisted per-wallet in localStorage. crWallet (existing
+               Solana adapter) provides isConnected / get / truncated. -->
           <div class="crTerm-view hidden" id="crProfileViewBal">
-            <p style="margin:0 0 8px;font-size:11px;color:#5a5a52">Mock wallet — session-local. End-of-run swap ships in v0.8e.</p>
-            <div class="cr-walletGrid">
-              <div class="cr-walletCell">
-                <div class="k">$CRDS · session</div>
-                <div class="v" id="crWalletCrds">0</div>
-                <div class="sub">Earned this run.</div>
-              </div>
-              <div class="cr-walletCell">
-                <div class="k">$RUN · persisted</div>
-                <div class="v" id="crWalletRun">0</div>
-                <div class="sub">Hard token · Solana.</div>
-              </div>
+            <!-- Connection banner -->
+            <div id="crWalletStatus" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin:0 0 10px;background:rgba(10,15,28,.5);font-size:12px">
+              <span id="crWalletDot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#5a5a72;box-shadow:0 0 6px rgba(0,0,0,.4)"></span>
+              <span id="crWalletStatusText" style="color:var(--dim)">Not connected — click Connect in the topbar to load on-chain holdings</span>
+              <button class="cr-go" id="crWalletConnectBtn" type="button" style="margin-left:auto;font-size:10px;padding:4px 10px">Connect</button>
             </div>
-            <!-- v0.8k#24aq — Tokenomics block moved here from Intel so balances
-                 + token-supply / swap-rate context live side-by-side. -->
-            <h4 style="margin:12px 0 6px;font-size:12px;color:#5a5a52;text-transform:uppercase;letter-spacing:.4px">Tokenomics</h4>
+            <!-- Holdings list -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0 6px">
+              <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim)">Holdings</h4>
+              <button class="cr-go" id="crWalletRefreshBtn" type="button" style="font-size:10px;padding:3px 8px;background:transparent;border:1px solid var(--line);color:var(--dim)">↻ Refresh</button>
+            </div>
+            <div id="crWalletHoldings" style="display:flex;flex-direction:column;gap:6px"></div>
+            <!-- Add-token form -->
+            <div style="display:flex;gap:6px;margin:10px 0 4px;align-items:center">
+              <input type="text" id="crWalletAddSym" placeholder="BONK, JUP, ETH…" maxlength="10" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace;text-transform:uppercase">
+              <button class="cr-go" id="crWalletAddBtn" type="button" style="font-size:11px;padding:6px 12px">+ Add token</button>
+            </div>
+            <p style="margin:4px 0 0;font-size:10px;color:var(--dim)">SOL · USDC · RUN are pinned defaults and can't be removed. Custom tokens persist per wallet address.</p>
+            <!-- v0.8k#24aq — Tokenomics block (kept). -->
+            <h4 style="margin:14px 0 6px;font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px">Tokenomics</h4>
             <div class="cr-walletGrid">
               <div class="cr-walletCell">
                 <div class="k">Swap rate</div>
@@ -19581,9 +19590,150 @@ function osRefreshShop(){
       if(statsV)  statsV.classList.toggle('hidden',  view !== 'stats');
       if(misV)    misV.classList.toggle('hidden',    view !== 'missions');
       if(view === 'player' && typeof _renderPlayerTab === 'function') _renderPlayerTab();
+      if(view === 'bal' && typeof _crWalletRender === 'function') _crWalletRender();
     });
   });
 })();
+
+// ─── v0.9.42 ─ Profile Wallet tab ────────────────────────────────────────────
+// Renamed from "Balances". Surfaces Solana wallet connection + a holdings
+// list. SOL / USDC / RUN are pinned defaults (always shown, even at 0).
+// Player can append other tokens; the addition is persisted per wallet
+// address in localStorage (cr_wallet_tokens_v1::<addr> or ::guest).
+const CR_WALLET_TOKENS_KEY = 'cr_wallet_tokens_v1';
+const CR_WALLET_DEFAULTS = ['SOL', 'USDC', 'RUN']; // pinned, can't be removed
+function _crWalletAddrKey(){
+  try {
+    if (typeof crWallet !== 'undefined' && crWallet.isConnected && crWallet.isConnected()) {
+      return crWallet.get();
+    }
+  } catch(_){}
+  return 'guest';
+}
+function _crWalletLoadTokens(){
+  try {
+    const raw = localStorage.getItem(CR_WALLET_TOKENS_KEY + '::' + _crWalletAddrKey());
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter(s => typeof s === 'string') : [];
+  } catch(_){ return []; }
+}
+function _crWalletSaveTokens(extras){
+  try { localStorage.setItem(CR_WALLET_TOKENS_KEY + '::' + _crWalletAddrKey(), JSON.stringify(extras)); } catch(_){}
+}
+function _crWalletAllSymbols(){
+  // Defaults first, then user-added (deduped, uppercased).
+  const extras = _crWalletLoadTokens()
+    .map(s => String(s || '').trim().toUpperCase())
+    .filter(s => s && CR_WALLET_DEFAULTS.indexOf(s) < 0);
+  return CR_WALLET_DEFAULTS.concat(extras);
+}
+function _crWalletBalanceFor(sym){
+  // No live RPC — return 0 unless a known mock source has the value. RUN
+  // mirrors game.run if available so the player sees something familiar.
+  try {
+    if (sym === 'RUN' && typeof game !== 'undefined' && typeof game.run === 'number') return game.run;
+  } catch(_){}
+  return 0;
+}
+function _crWalletRender(){
+  const dot      = document.getElementById('crWalletDot');
+  const stat     = document.getElementById('crWalletStatusText');
+  const connBtn  = document.getElementById('crWalletConnectBtn');
+  const list     = document.getElementById('crWalletHoldings');
+  let connected = false, addr = '';
+  try {
+    if (typeof crWallet !== 'undefined') {
+      connected = !!(crWallet.isConnected && crWallet.isConnected());
+      if (connected) addr = (crWallet.truncated ? crWallet.truncated() : crWallet.get());
+    }
+  } catch(_){}
+  if (dot) {
+    dot.style.background = connected ? '#3ddc97' : '#5a5a72';
+    dot.style.boxShadow  = connected ? '0 0 8px #3ddc97' : '0 0 6px rgba(0,0,0,.4)';
+  }
+  if (stat) {
+    stat.textContent = connected
+      ? 'Connected · ' + addr
+      : 'Not connected — click Connect to load on-chain holdings';
+    stat.style.color = connected ? 'var(--fg)' : 'var(--dim)';
+  }
+  if (connBtn) {
+    connBtn.textContent = connected ? 'Disconnect' : 'Connect';
+  }
+  if (!list) return;
+  const symbols = _crWalletAllSymbols();
+  list.innerHTML = '';
+  symbols.forEach(sym => {
+    const isDefault = CR_WALLET_DEFAULTS.indexOf(sym) >= 0;
+    const bal = _crWalletBalanceFor(sym);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4);font-size:12px';
+    row.innerHTML =
+      '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,rgba(20,241,149,.18),rgba(153,69,255,.18));border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font:bold 10px ui-monospace,Menlo,monospace;color:var(--fg)">' + sym.slice(0,3) + '</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-weight:700;color:var(--fg)">$' + sym + (isDefault ? '' : ' <span style="font-size:9px;color:var(--dim);font-weight:400;text-transform:uppercase;letter-spacing:.4px">custom</span>') + '</div>' +
+        '<div style="font-size:10px;color:var(--dim)">' + (sym === 'RUN' ? 'Run-token · in-game P&L' : (sym === 'SOL' ? 'Solana · gas + native' : (sym === 'USDC' ? 'USD-C stable · default quote' : 'SPL token · custom'))) + '</div>' +
+      '</div>' +
+      '<div style="font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--fg);min-width:80px;text-align:right">' + (bal === 0 ? '0' : bal.toLocaleString('en-US')) + '</div>' +
+      (isDefault ? '' : '<button class="cr-go" data-wallet-rm="' + sym + '" type="button" style="font-size:10px;padding:3px 7px;background:transparent;border:1px solid var(--line);color:#ff5b7f">×</button>');
+    list.appendChild(row);
+  });
+  list.querySelectorAll('[data-wallet-rm]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sym = btn.getAttribute('data-wallet-rm');
+      const extras = _crWalletLoadTokens().filter(s => s !== sym);
+      _crWalletSaveTokens(extras);
+      _crWalletRender();
+      try { toast && toast('$' + sym + ' removed from wallet'); } catch(_){}
+    });
+  });
+}
+// Wire add-token, refresh, connect/disconnect controls. Runs after DOM ready.
+setTimeout(() => {
+  const addBtn   = document.getElementById('crWalletAddBtn');
+  const addInput = document.getElementById('crWalletAddSym');
+  const refresh  = document.getElementById('crWalletRefreshBtn');
+  const connect  = document.getElementById('crWalletConnectBtn');
+  const doAdd = () => {
+    if (!addInput) return;
+    const sym = (addInput.value || '').trim().toUpperCase();
+    if (!sym || !/^[A-Z0-9]{2,10}$/.test(sym)) {
+      try { toast && toast('Token symbol must be 2-10 uppercase letters / digits'); } catch(_){}
+      return;
+    }
+    if (CR_WALLET_DEFAULTS.indexOf(sym) >= 0) {
+      try { toast && toast('$' + sym + ' is already a default'); } catch(_){}
+      addInput.value = '';
+      return;
+    }
+    const extras = _crWalletLoadTokens();
+    if (extras.indexOf(sym) >= 0) {
+      try { toast && toast('$' + sym + ' is already in your wallet'); } catch(_){}
+      return;
+    }
+    extras.push(sym);
+    _crWalletSaveTokens(extras);
+    addInput.value = '';
+    _crWalletRender();
+    try { toast && toast('$' + sym + ' added to wallet'); } catch(_){}
+  };
+  if (addBtn) addBtn.addEventListener('click', doAdd);
+  if (addInput) addInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+  if (refresh) refresh.addEventListener('click', _crWalletRender);
+  if (connect) connect.addEventListener('click', () => {
+    try {
+      if (typeof crWallet === 'undefined') return;
+      if (crWallet.isConnected && crWallet.isConnected()) {
+        if (window.confirm('Disconnect wallet?')) crWallet.disconnect();
+      } else if (crWallet.connect) {
+        crWallet.connect();
+      }
+      setTimeout(_crWalletRender, 100);
+    } catch(_){}
+  });
+  // Initial render so the tab is populated even if user opens it once.
+  _crWalletRender();
+}, 0);
 // v0.8k#24bq — Player loadout state. Persisted under cr_player_loadout_v1
 // so selections survive reloads. The bots sub-grid is a view onto the
 // existing Workbench wb.equipped[] (no parallel array), so picking bots
