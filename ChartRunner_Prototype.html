@@ -18086,7 +18086,10 @@ function drawPlayer(){
     ctx.scale(player.facing, player.upsideDown ? -1 : 1);
     // v0.8k#24k — Unified avatar: always Invader, even when flying upside-down.
     // The 180° vertical flip + RED sprite + red glow communicates upside-down.
-    ctx.shadowColor = player.upsideDown ? 'rgba(255,91,127,0.8)' : 'rgba(20,241,149,0.7)';
+    // v0.9.37 — Upper-world shadow now follows the player's chosen skin tint
+    // (so picking RED in Profile reads as red in-game, not green-glow + red-sprite).
+    const _flightSkin = (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195';
+    ctx.shadowColor = player.upsideDown ? 'rgba(255,91,127,0.8)' : (_flightSkin + 'b3');
     ctx.shadowBlur=10;
     // v0.8k#24bt — Avatar choice (Invader / Snake) drives which sprite renders.
     // Snake length grows with collected coins (game.snakeLen).
@@ -18136,7 +18139,10 @@ function drawPlayer(){
       ctx.scale(player.facing, player.upsideDown ? -1 : 1);
       // v0.8k#24k — Unified Invader sprite for the on-foot avatar. Both glow
       // AND sprite tint flip per world (green upper, red upside-down).
-      ctx.shadowColor = player.upsideDown ? 'rgba(255,91,127,0.7)' : 'rgba(20,241,149,0.5)';
+      // v0.9.37 — Runner shadow follows the chosen skin tint so colour
+      // pick is visible immediately. Upside-down still forces red glow.
+      const _runnerSkin = (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195';
+      ctx.shadowColor = player.upsideDown ? 'rgba(255,91,127,0.7)' : (_runnerSkin + '80');
       ctx.shadowBlur = player.upsideDown ? 10 : 8;
       // v0.9.34 — Same loadout-aware path as the flight branch above.
       const _forceTintRunner = player.upsideDown ? '#ff5b7f' : null;
@@ -19725,9 +19731,11 @@ function _renderPlayerTab(){
       playerLoadout.avatar = b.dataset.avatar;
       _savePlayerLoadout();
       _renderPlayerTab();
-      // v0.9.34 — Propagate to every avatar surface (desktop thumb + lite
-      // profile preview + in-game render reads playerLoadout per frame).
+      // v0.9.34/37 — Propagate to every avatar surface (desktop Profile
+      // thumbnail, lite-profile preview, AND the live Player-menu avatar
+      // if it's active). In-game render reads playerLoadout per frame.
       try { if (typeof osRefreshProfile === 'function') osRefreshProfile(); } catch(_){}
+      try { if (typeof window.refreshOsInvaderAvatar === 'function') window.refreshOsInvaderAvatar(); } catch(_){}
       if(typeof toast === 'function') toast('Avatar: ' + b.textContent.trim());
     };
   });
@@ -19744,9 +19752,10 @@ function _renderPlayerTab(){
         playerLoadout[slotKey] = next;
         _savePlayerLoadout();
         _renderPlayerTab();
-        // v0.9.34 — Refresh desktop thumbnail + lite-profile preview after any
-        // skin/gear/vehicle/weapon change so the player sees their pick land.
+        // v0.9.34/37 — Refresh every avatar surface: Profile thumbnail, lite-
+        // profile preview, AND the Player-menu desktop avatar (if it's up).
         try { if (typeof osRefreshProfile === 'function') osRefreshProfile(); } catch(_){}
+        try { if (typeof window.refreshOsInvaderAvatar === 'function') window.refreshOsInvaderAvatar(); } catch(_){}
         if(typeof onApply === 'function') onApply(next);
         if(typeof toast === 'function'){
           toast(slotKey.charAt(0).toUpperCase() + slotKey.slice(1) + ': '
@@ -27613,14 +27622,29 @@ function log(msg){
     c.clearRect(0,0,canv.width,canv.height);
     c.save();
     c.translate(canv.width/2, canv.height/2 - 4);
-    c.shadowColor = color || 'rgba(20,241,149,0.6)';
+    // v0.9.37 — Honour the player's loadout (skin/gear/weapon/avatar) so the
+    // desktop avatar matches what the Profile picker showed and what the
+    // in-game runner will look like. forceTint lets callers (e.g. shoot
+    // mode) still override with red etc.
+    const tint = color || ((typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195');
+    c.shadowColor = tint + 'cc';
     c.shadowBlur = 6;
-    drawInvader(c, 2, color);
+    if(typeof _drawLoadoutAvatar === 'function'){
+      _drawLoadoutAvatar(c, 2, { glow: true, badge: true, snakeLen: 5, forceTint: color || null });
+    } else if(typeof drawInvader === 'function'){
+      drawInvader(c, 2, tint);
+    }
     c.restore();
   }
   // v0.8k#24k — Exposed on window so hideSplash() can disable edit mode
   // when leaving the OS Desktop into a game run.
   window.toggleOsInvaderCursor = toggleOsInvaderCursor;
+  // v0.9.37 — Re-render the live avatar canvas (if active) using the latest
+  // playerLoadout. Called by the slot-picker when player changes skin/gear
+  // /weapon/avatar so the on-screen avatar updates without re-toggling.
+  window.refreshOsInvaderAvatar = function(){
+    if(osInvaderActive && osInvaderEl) _drawOsInvaderInto(osInvaderEl);
+  };
   function toggleOsInvaderCursor(){
     if(osInvaderActive){
       osInvaderActive = false;
@@ -31663,31 +31687,30 @@ const crL3 = (function(){
 })();
 
 /* =========================================================================
- * v0.9.36 — Desktop avatar shoots widgets + windows (apps immune)
+ * v0.9.36 / v0.9.37 — Shoot widgets + windows (apps immune)
  * -------------------------------------------------------------------------
- * Adds a small movable avatar to the OS desktop. The avatar uses the
- * player's loadout (skin tint, gear glow, weapon badge) via the shared
- * _drawLoadoutAvatar helper. It follows the cursor with a soft lerp.
+ * v0.9.37 fix: The existing Player-menu avatar (toggleOsInvaderCursor) is
+ * the only desktop avatar. We do NOT spawn our own — instead this IIFE
+ * piggybacks on `window.osInvaderActive` and only enables click-to-shoot
+ * while that avatar is present. Without the Player menu being clicked,
+ * everything here is a no-op. (The previous version added a second always-
+ * on avatar that boot-spawned regardless of the Player menu.)
  *
  * Click on a widget (.cr-widget) or an OS window (.os-window) to fire a
- * laser bolt at it. Hits play a destroy animation (red flash + shake +
- * scale-down + fade) and then remove the element from the DOM AND from
- * its backing store (widgets.items / chartWidgets.items / window display).
- * App icons (.os-icon) are explicitly excluded — clicks on them keep
- * their original launch behavior.
- *
- * Designed as a single IIFE that boots after DOMContentLoaded. Gracefully
- * no-ops if the splash root or required helpers aren't available.
+ * destroy animation. App icons (.os-icon) stay immune.
  * =======================================================================*/
 (function(){
-  const SHOOT_KEY = 'X'; // press X to toggle shoot mode (UX safety)
+  // Internal flag, only true while the Player-menu avatar is alive AND the
+  // user has armed shoot mode with X.
   let _shootArmed = false;
-  let _avatar = null;
-  let _ax = 0, _ay = 0;     // current avatar position (lerped)
-  let _tx = 0, _ty = 0;     // target position (cursor or rest spot)
-  let _projectiles = [];    // active in-flight bolts
-  let _bobT = 0;
 
+  function _avatarActive(){
+    // The existing Player-menu code stores its own state in a closure as
+    // `osInvaderActive`. We exposed window.toggleOsInvaderCursor — for
+    // the read side we look for the avatar element's presence in the DOM.
+    return !!document.querySelector('canvas[data-cr-os-invader]') ||
+           !!document.querySelector('body > canvas[style*="z-index: 99999"]');
+  }
   function _splashOn(){
     const sp = document.getElementById('splash');
     return sp && sp.style.display !== 'none' && !sp.classList.contains('hidden');
@@ -31749,14 +31772,22 @@ const crL3 = (function(){
       el.style.opacity = '';
     }, 320);
   }
-  // Spawn a bolt projectile that interpolates from the avatar to the
-  // target's center, then triggers the destroy fx.
-  function _fireAt(target){
-    if(!target || !_avatar) return;
-    const aRect = _avatar.getBoundingClientRect();
-    const tRect = target.el.getBoundingClientRect();
-    const sx = aRect.left + aRect.width/2;
-    const sy = aRect.top  + aRect.height/2;
+  // Spawn a bolt projectile that interpolates from the live Player-menu
+  // avatar to the target's center, then triggers the destroy fx. Falls
+  // back to the cursor position if the avatar element isn't found.
+  function _fireAt(target, evt){
+    if(!target) return;
+    const avatarEl = document.querySelector('body > canvas[style*="z-index: 99999"]');
+    let sx, sy;
+    if(avatarEl){
+      const aRect = avatarEl.getBoundingClientRect();
+      sx = aRect.left + aRect.width/2;
+      sy = aRect.top  + aRect.height/2;
+    } else if(evt){
+      sx = evt.clientX; sy = evt.clientY;
+    } else {
+      sx = 100; sy = window.innerHeight - 100;
+    }
     const dx = tRect.left + tRect.width/2;
     const dy = tRect.top  + tRect.height/2;
     const bolt = document.createElement('div');
@@ -31803,90 +31834,17 @@ const crL3 = (function(){
       else if(target.kind === 'window') _destroyWindow(target.el);
     }, 260);
   }
-  // Build the avatar canvas and inject into the splash root.
-  function _initAvatar(){
-    if(_avatar) return _avatar;
-    const sp = document.getElementById('splash');
-    if(!sp) return null;
-    const canvas = document.createElement('canvas');
-    canvas.id = 'osDesktopAvatar';
-    canvas.width = 56; canvas.height = 56;
-    canvas.title = 'You · click widgets/windows to shoot · X to arm/disarm shoot mode';
-    canvas.style.cssText = [
-      'position:fixed','z-index:9500','width:42px','height:42px',
-      'left:60px','bottom:60px','image-rendering:pixelated',
-      'cursor:grab','filter:drop-shadow(0 4px 10px rgba(0,0,0,.6))',
-      'transition:filter .15s ease',
-    ].join(';');
-    sp.appendChild(canvas);
-    _avatar = canvas;
-    _ax = 60; _ay = window.innerHeight - 60 - 42;
-    _tx = _ax; _ty = _ay;
-    // Drag to move (so player can park the avatar).
-    let dragging = false, dragDx = 0, dragDy = 0;
-    canvas.addEventListener('pointerdown', (e) => {
-      if(e.button !== 0) return;
-      const r = canvas.getBoundingClientRect();
-      dragDx = e.clientX - r.left; dragDy = e.clientY - r.top;
-      dragging = true;
-      try { canvas.setPointerCapture(e.pointerId); } catch(_){}
-      canvas.style.cursor = 'grabbing';
-      e.preventDefault(); e.stopPropagation();
-    });
-    canvas.addEventListener('pointermove', (e) => {
-      if(!dragging) return;
-      _tx = e.clientX - dragDx; _ty = e.clientY - dragDy;
-    });
-    const endDrag = (e) => {
-      if(!dragging) return;
-      dragging = false;
-      canvas.style.cursor = 'grab';
-      try { canvas.releasePointerCapture(e.pointerId); } catch(_){}
-    };
-    canvas.addEventListener('pointerup', endDrag);
-    canvas.addEventListener('pointercancel', endDrag);
-    return canvas;
-  }
-  // Per-frame: bob, lerp toward _tx/_ty, render via the loadout helper.
-  function _tick(){
-    if(_avatar){
-      _ax += (_tx - _ax) * 0.18;
-      _ay += (_ty - _ay) * 0.18;
-      _avatar.style.left = (_ax|0) + 'px';
-      _avatar.style.top  = (_ay|0) + 'px';
-      _bobT += 0.06;
-      const ctx = _avatar.getContext('2d');
-      ctx.clearRect(0, 0, 56, 56);
-      ctx.save();
-      ctx.translate(28, 30 + Math.sin(_bobT) * 1.5);
-      const tint = (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195';
-      ctx.shadowColor = (_shootArmed ? '#ff5b7f' : tint) + 'cc';
-      ctx.shadowBlur = _shootArmed ? 12 : 8;
-      if(typeof _drawLoadoutAvatar === 'function'){
-        _drawLoadoutAvatar(ctx, 2.4, { glow: true, badge: true, snakeLen: 5 });
-      } else if(typeof drawInvader === 'function'){
-        drawInvader(ctx, 2.4, tint);
-      }
-      ctx.restore();
-      // Visual glow when shoot mode is armed.
-      _avatar.style.filter = _shootArmed
-        ? 'drop-shadow(0 0 14px #ff5b7f) drop-shadow(0 4px 10px rgba(0,0,0,.6))'
-        : 'drop-shadow(0 4px 10px rgba(0,0,0,.6))';
-    }
-    requestAnimationFrame(_tick);
-  }
   // Click anywhere on the desktop while shoot mode is armed → fire at the
-  // element under the cursor (only if it's a valid target).
+  // element under the cursor (only if it's a valid target). Gated by the
+  // Player-menu avatar being active — without that, clicks pass through.
   function _onDocClick(e){
     if(!_shootArmed) return;
     if(!_splashOn()) return;
-    if(e.target === _avatar) return; // don't shoot self
-    // elementFromPoint to bypass any covering layers from the avatar itself.
+    if(!_avatarActive()) return;
     const el = document.elementFromPoint(e.clientX, e.clientY);
     const t = _classifyTarget(el);
     if(!t) return;
     if(t.kind === 'app'){
-      // Apps are immune — flash a small "🛡 immune" badge then bail.
       try {
         const im = document.createElement('div');
         im.textContent = '🛡 app immune';
@@ -31898,16 +31856,14 @@ const crL3 = (function(){
       e.preventDefault(); e.stopPropagation();
       return;
     }
-    // Valid target → fire and consume the click so it doesn't trigger the
-    // widget's own click handler (e.g. window focus).
     e.preventDefault(); e.stopPropagation();
-    _fireAt(t);
+    _fireAt(t, e);
   }
-  // Toggle shoot mode with X. Show a small toast on toggle.
+  // X toggles shoot mode (only meaningful while the Player-menu avatar is up).
   function _onKeyDown(e){
     if(!_splashOn()) return;
-    if(e.key && e.key.toUpperCase() === SHOOT_KEY && !e.repeat){
-      // Don't intercept when the user is typing in a text field.
+    if(!_avatarActive()) return;
+    if(e.key && e.key.toUpperCase() === 'X' && !e.repeat){
       const tag = (document.activeElement && document.activeElement.tagName) || '';
       if(tag === 'INPUT' || tag === 'TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable)) return;
       _shootArmed = !_shootArmed;
@@ -31919,12 +31875,9 @@ const crL3 = (function(){
       } catch(_){}
     }
   }
-  // Wait for splash + DOM to exist, then boot.
   function _boot(){
-    _initAvatar();
-    document.addEventListener('click', _onDocClick, true); // capture phase so we beat widget handlers
+    document.addEventListener('click', _onDocClick, true); // capture phase
     document.addEventListener('keydown', _onKeyDown);
-    requestAnimationFrame(_tick);
   }
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', _boot);
