@@ -6380,13 +6380,29 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
               </div>
             </div>
           </div>
-          <!-- v0.9.23 — PRIMITIVES view: catalog of all 18 SDK primitive
-               placements (forecast 4 + fib 3 + orders 11) surfaced as cards
-               with icon, label, kind, hint. These are what hotkey 3 (the green
-               primitives laser) shows; this tab is the read-only reference. -->
+          <!-- v0.9.23 / v0.9.41 — PRIMITIVES view: now mirrors Tools tab layout.
+               Left: Laser Loadout (Stars / Equip All / Equip None + equipped
+               summary). Right: Available Primitives (click row to equip,
+               ☆/★ to toggle favorite). Equipped primitives appear in the
+               hotkey 3 spawn menu in-run. -->
           <div class="crTerm-view hidden" id="crWBViewPrimitives">
-            <p style="margin:0 0 10px;font-size:11px;color:var(--dim)">All trading primitives that fire through ChartRunnerSDK. Each row is a chart-click placement reachable from <b style="color:#14f195">hotkey 3</b> (green primitives laser). Single-click on the chart to drop a 1-click primitive; click two anchors for a 2-anchor primitive. Setup guide overlays appear top-center while placing.</p>
-            <div id="wbPrimList" style="display:flex;flex-direction:column;gap:8px;max-height:540px;overflow:auto"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <h4 style="margin:0 0 6px">Primitives Laser Loadout</h4>
+                <p style="margin:0 0 8px;font-size:11px;color:var(--dim)">Press <b style="color:var(--fg)">3</b> in-run to aim the green Primitives Laser, then click a candle to open the spawn menu. Only primitives equipped here will appear.</p>
+                <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+                  <button class="cr-go" id="wbPrimEquipStars" type="button" style="flex:1;min-width:90px">★ Stars only</button>
+                  <button class="cr-go" id="wbPrimEquipAll" type="button" style="flex:1;min-width:90px;background:transparent;border:1px solid var(--line);color:var(--fg)">Equip All</button>
+                  <button class="cr-go" id="wbPrimEquipNone" type="button" style="flex:1;min-width:90px;background:transparent;border:1px solid var(--line);color:var(--dim)">Equip None</button>
+                </div>
+                <div id="wbPrimEquippedSummary" style="padding:10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.5);font-size:11px;color:var(--dim);font-style:italic">Loading…</div>
+              </div>
+              <div>
+                <h4 style="margin:0 0 6px">Available Primitives <span id="wbPrimEquipCount" style="color:var(--dim);font-weight:400">(0/0)</span></h4>
+                <p style="margin:0 0 8px;font-size:11px;color:var(--dim)">Click a primitive to equip / unequip. Equipped primitives glow green.</p>
+                <div id="wbPrimList" style="display:flex;flex-direction:column;gap:6px;max-height:380px;overflow:auto"></div>
+              </div>
+            </div>
           </div>
           <!-- BOTS view -->
           <div class="crTerm-view hidden" id="crWBViewBots">
@@ -18787,7 +18803,7 @@ function osOpenWindow(prog){
   // v0.8k#24l — cleanup pass: dropped 'inventory' dispatch (osRefreshInventory + window retired).
   if(prog==='configs')   osRefreshConfigs();
   if(prog==='run')       osRefreshRun();
-  if(prog==='workbench') { try { _wbRenderTools(); _wbRenderBots(); _wbRenderStrats(); _wbRenderInds(); _wbRebuildBacktestTargets(); _wbRenderBackHistory(); } catch(_){} }
+  if(prog==='workbench') { try { _wbRenderTools(); _wbRenderPrimitives(); _wbRenderBots(); _wbRenderStrats(); _wbRenderInds(); _wbRebuildBacktestTargets(); _wbRenderBackHistory(); } catch(_){} }
   if(prog==='journal')   { try { _crJrnRenderManual(); _crJrnRenderBot(); _crJrnRenderStats(); _crJrnPrefillFromRun(); } catch(_){} }
   osStatus.textContent = prog;
 }
@@ -20684,6 +20700,19 @@ function _wbToggleEquip(id){
   _wbRenderBots();
 }
 // v0.8k#24az — Laser tool loadout helpers.
+// v0.9.41 — Scope helpers: 'tools' = non-primitive cats; 'primitives' = the
+// three primitive cats (forecast/fib/orders). Tools tab and Primitives tab
+// each manage their own slice of wb.equippedTools without touching the other.
+function _wbIsPrimCat(catId){ return PRIMITIVE_CATS && PRIMITIVE_CATS.has(catId); }
+function _wbIdsForScope(scope){
+  return WB_LASER_TOOLS
+    .filter(t => scope === 'primitives' ? _wbIsPrimCat(t.cat) : !_wbIsPrimCat(t.cat))
+    .map(t => t.id);
+}
+function _wbRerenderBoth(){
+  try { _wbRenderTools(); } catch(_){}
+  try { _wbRenderPrimitives(); } catch(_){}
+}
 function _wbToolEquipped(id){ return wb.equippedTools.indexOf(id) >= 0; }
 function _wbToggleTool(id){
   const def = WB_LASER_TOOLS.find(t => t.id === id);
@@ -20696,21 +20725,26 @@ function _wbToggleTool(id){
     if(typeof toast === 'function') toast((def?def.label:id) + ' equipped');
   }
   _wbSave();
-  _wbRenderTools();
+  _wbRerenderBoth();
 }
-function _wbToolEquipAll(){
-  wb.equippedTools = WB_LASER_TOOLS.map(t => t.id);
-  _wbSave(); _wbRenderTools();
-  if(typeof toast === 'function') toast('All laser tools equipped');
+function _wbToolEquipAll(scope){
+  scope = scope || 'tools';
+  // Replace the in-scope IDs while preserving the other scope's selections.
+  const inScope = new Set(_wbIdsForScope(scope));
+  const keep = wb.equippedTools.filter(id => !inScope.has(id));
+  wb.equippedTools = keep.concat(Array.from(inScope));
+  _wbSave(); _wbRerenderBoth();
+  if(typeof toast === 'function') toast('All ' + (scope==='primitives'?'primitives':'laser tools') + ' equipped');
 }
-function _wbToolEquipStars(){
-  // v0.8k#24cd — "Stars only" pulls from the player-customizable star list,
-  // not the static defaults. So clicking ★ on a tool and then "Stars only"
-  // really uses what the player picked.
-  const stars = (wb.starredTools && wb.starredTools.length) ? wb.starredTools.slice() : _wbDefaultEquipped();
-  wb.equippedTools = stars;
-  _wbSave(); _wbRenderTools();
-  if(typeof toast === 'function') toast('Loadout = ★ favorites (' + stars.length + ')');
+function _wbToolEquipStars(scope){
+  scope = scope || 'tools';
+  const inScope = new Set(_wbIdsForScope(scope));
+  const stars = ((wb.starredTools && wb.starredTools.length) ? wb.starredTools : _wbDefaultEquipped())
+    .filter(id => inScope.has(id));
+  const keep = wb.equippedTools.filter(id => !inScope.has(id));
+  wb.equippedTools = keep.concat(stars);
+  _wbSave(); _wbRerenderBoth();
+  if(typeof toast === 'function') toast(scope==='primitives'?'Primitives = ★ favorites ('+stars.length+')':'Loadout = ★ favorites ('+stars.length+')');
 }
 // v0.8k#24cd — Star toggle: per-tool ★/☆ flip, persists, re-renders.
 function _wbToolStarred(id){
@@ -20728,86 +20762,139 @@ function _wbToggleStar(id){
     if(typeof toast === 'function') toast((def?def.label:id) + ' ★ starred');
   }
   _wbSave();
-  _wbRenderTools();
+  _wbRerenderBoth();
 }
-function _wbToolEquipNone(){
-  wb.equippedTools = [];
-  _wbSave(); _wbRenderTools();
-  if(typeof toast === 'function') toast('All laser tools unequipped');
+function _wbToolEquipNone(scope){
+  scope = scope || 'tools';
+  const inScope = new Set(_wbIdsForScope(scope));
+  wb.equippedTools = wb.equippedTools.filter(id => !inScope.has(id));
+  _wbSave(); _wbRerenderBoth();
+  if(typeof toast === 'function') toast('All ' + (scope==='primitives'?'primitives':'laser tools') + ' unequipped');
 }
 /* v0.9.23 — Workbench Primitives tab. Read-only catalog of all 18 SDK
  * primitive placements grouped by category (forecast / fib / orders) with
  * icon, label, kind (1-click / 2-anchor), step instructions, and hint.
  * Hovers turn green; clicks toast with the hotkey reminder. */
 function _wbRenderPrimitives(){
+  // v0.9.41 — Primitives tab now mirrors Tools tab: equipped summary on the
+  // left, click-to-equip rows on the right. Reuses _wbToolEquipped /
+  // _wbToggleTool / _wbToolStarred so a single wb.equippedTools array drives
+  // both tabs. The in-game laser palette filter (line 10655) routes by cat
+  // so equipping here only affects hotkey 3, not hotkey 2.
   const list = document.getElementById('wbPrimList');
-  if(!list || typeof WB_LASER_TOOLS === 'undefined') return;
-  const PRIM_CATS = ['forecast','fib','orders'];
-  const CAT_LABELS = { forecast:'🎯 Forecasting', fib:'🪜 Fibonacci', orders:'◇ Orders' };
-  const CAT_BLURB = {
-    forecast: 'Entry primitives — bracket, OCO, position visualizers.',
-    fib:      'Fibonacci tools — retracement, extension, ladder. Champion Zone + Golden Extension shaded.',
-    orders:   'Tier 1-4 SDK primitives — limit, stop-loss, take-profit, scale-out, magnet, perp flip, TWAP, iceberg, etc.',
-  };
+  const cnt  = document.getElementById('wbPrimEquipCount');
+  const sum  = document.getElementById('wbPrimEquippedSummary');
+  if(typeof WB_LASER_TOOLS === 'undefined') return;
+  const primDefs = WB_LASER_TOOLS.filter(t => _wbIsPrimCat(t.cat));
+  const total = primDefs.length;
+  const equippedPrims = wb.equippedTools.filter(id => {
+    const d = WB_LASER_TOOLS.find(t => t.id === id);
+    return d && _wbIsPrimCat(d.cat);
+  });
+  const eqN = equippedPrims.length;
+  if(cnt) cnt.textContent = '(' + eqN + '/' + total + ')';
+  if(sum){
+    if(eqN === 0){
+      sum.style.fontStyle = 'italic';
+      sum.style.color = '#ff5b7f';
+      sum.innerHTML = 'Primitives laser is empty — hotkey 3 menu will only show <b>Cancel</b>. Equip at least one primitive on the right.';
+    } else {
+      const labels = equippedPrims
+        .map(id => _wbToolDef(id))
+        .filter(Boolean)
+        .map(t => '<span style="display:inline-block;padding:2px 6px;margin:2px 4px 2px 0;border:1px solid rgba(126,231,135,0.6);border-radius:4px;background:rgba(126,231,135,0.12);color:#7ee787;font-size:10px">'+t.ic+' '+t.label+'</span>')
+        .join('');
+      sum.style.fontStyle = 'normal';
+      sum.style.color = 'var(--fg)';
+      sum.innerHTML = '<div style="font-size:10px;color:var(--dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Equipped (' + eqN + '/' + total + ')</div>' + labels;
+    }
+  }
+  if(!list) return;
   list.innerHTML = '';
-  for(const cat of PRIM_CATS){
-    const tools = WB_LASER_TOOLS.filter(t => t.cat === cat);
-    if(!tools.length) continue;
-    const hd = document.createElement('div');
-    hd.style.cssText = 'font-size:11px;color:#7ee787;text-transform:uppercase;letter-spacing:.5px;font-weight:700;padding:10px 0 4px;border-bottom:1px solid rgba(126,231,135,0.20);margin-bottom:4px';
-    hd.textContent = CAT_LABELS[cat] || cat;
-    list.appendChild(hd);
-    const blurb = document.createElement('div');
-    blurb.style.cssText = 'font-size:10.5px;color:var(--dim);padding:0 0 8px';
-    blurb.textContent = CAT_BLURB[cat] || '';
-    list.appendChild(blurb);
-    for(const t of tools){
-      const guide = (typeof TOOL_SETUP_GUIDES !== 'undefined') ? TOOL_SETUP_GUIDES[t.id] : null;
-      const style = (typeof _toolStyle === 'function') ? _toolStyle(t.id) : null;
-      const color = style ? style.color : '#7ad6ff';
+  // Group rows by primitive category, same shape as Tools tab.
+  const PRIM_CAT_ORDER = ['forecast','fib','orders'];
+  const PRIM_CAT_LABELS = { forecast:'🎯 Forecasting', fib:'🪜 Fibonacci', orders:'◇ Orders' };
+  PRIM_CAT_ORDER.forEach(catId => {
+    const tools = WB_LASER_TOOLS.filter(t => t.cat === catId);
+    if(!tools.length) return;
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:8px;margin:8px 0 4px;padding:0 4px;font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--dim);text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:4px';
+    header.innerHTML = '<span style="font-size:12px">'+(PRIM_CAT_LABELS[catId]||catId).split(' ')[0]+'</span> ' + ((PRIM_CAT_LABELS[catId]||catId).split(' ').slice(1).join(' ') || catId) + ' <span style="margin-left:auto;font-weight:400">(' + tools.length + ')</span>';
+    list.appendChild(header);
+    tools.forEach(t => {
+      const eq = _wbToolEquipped(t.id);
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border:1px solid rgba(180,200,230,0.10);border-radius:8px;background:rgba(10,15,28,.4);transition:background .12s ease, border-color .12s ease;cursor:pointer';
-      row.onmouseenter = () => { row.style.background='rgba(20,241,149,0.06)'; row.style.borderColor='rgba(20,241,149,0.30)'; };
-      row.onmouseleave = () => { row.style.background='rgba(10,15,28,.4)';   row.style.borderColor='rgba(180,200,230,0.10)'; };
-      row.onclick = () => { if(typeof toast === 'function') toast('Hotkey 3 → pick "'+t.label+'"'); };
+      row.style.cssText = [
+        'display:flex','align-items:center','gap:10px',
+        'padding:6px 10px',
+        'border:1px solid ' + (eq ? 'rgba(126,231,135,0.6)' : 'var(--line)'),
+        'border-radius:6px',
+        'background:' + (eq ? 'rgba(126,231,135,0.10)' : 'rgba(10,15,28,0.4)'),
+        'cursor:pointer',
+        'transition:background .12s,border-color .12s',
+        'opacity:' + (t.live ? '1' : '0.65')
+      ].join(';');
+      row.onmouseenter = ()=>{ row.style.background = eq ? 'rgba(126,231,135,0.18)' : 'rgba(155,140,255,0.12)'; };
+      row.onmouseleave = ()=>{ row.style.background = eq ? 'rgba(126,231,135,0.10)' : 'rgba(10,15,28,0.4)'; };
+      row.onclick = ()=> _wbToggleTool(t.id);
       const ic = document.createElement('div');
-      ic.style.cssText = 'font-size:18px;width:26px;text-align:center;flex-shrink:0;color:'+color;
-      ic.textContent = t.ic || '◇';
-      row.appendChild(ic);
+      ic.textContent = t.ic;
+      ic.style.cssText = 'font-size:16px;line-height:1;width:22px;text-align:center';
       const body = document.createElement('div');
       body.style.cssText = 'flex:1;min-width:0';
       const head = document.createElement('div');
-      head.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--fg)';
-      head.innerHTML = '<span>'+t.label+'</span><span style="font-size:9px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;padding:1px 6px;border-radius:4px;background:rgba(180,200,230,0.10);color:'+color+'">'+(t.cls||'1-click')+'</span>'+(t.star?'<span style="color:#ffd166;font-size:11px">★</span>':'');
-      body.appendChild(head);
-      const desc = document.createElement('div');
-      desc.style.cssText = 'font-size:10.5px;color:var(--dim);margin-top:3px;line-height:1.4';
-      desc.textContent = t.desc || '';
-      body.appendChild(desc);
-      if(guide){
-        const steps = document.createElement('div');
-        steps.style.cssText = 'font-size:10px;color:'+color+';margin-top:4px;font-family:ui-monospace,Menlo,monospace';
-        steps.textContent = '→ ' + guide.steps.join('  ·  ');
-        body.appendChild(steps);
-        if(guide.hint){
-          const hint = document.createElement('div');
-          hint.style.cssText = 'font-size:9.5px;color:rgba(180,200,230,0.55);margin-top:2px;font-style:italic';
-          hint.textContent = guide.hint;
-          body.appendChild(hint);
-        }
+      head.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+      const name = document.createElement('div');
+      name.textContent = t.label;
+      name.style.cssText = 'font-weight:700;font-size:12px;color:var(--fg)';
+      head.appendChild(name);
+      // Star toggle — same behavior as Tools tab.
+      const fav = document.createElement('button');
+      fav.type = 'button';
+      const starred = _wbToolStarred(t.id);
+      fav.textContent = starred ? '★' : '☆';
+      fav.title = starred ? 'Unstar — remove from ★ favorites' : 'Star — add to ★ favorites';
+      fav.style.cssText = 'background:transparent;border:0;cursor:pointer;padding:0 4px;font-size:14px;line-height:1;color:' + (starred ? '#ffd166' : 'var(--dim)');
+      fav.addEventListener('mouseenter', () => { fav.style.color = '#ffd166'; });
+      fav.addEventListener('mouseleave', () => { fav.style.color = starred ? '#ffd166' : 'var(--dim)'; });
+      fav.addEventListener('click', (e) => { e.stopPropagation(); _wbToggleStar(t.id); });
+      head.appendChild(fav);
+      const tag = document.createElement('span');
+      tag.textContent = t.cls;
+      tag.style.cssText = 'font-size:9px;padding:1px 5px;border:1px solid var(--line);border-radius:3px;color:var(--dim);text-transform:uppercase;letter-spacing:.3px';
+      head.appendChild(tag);
+      if(!t.live){
+        const soon = document.createElement('span');
+        soon.textContent = 'SOON';
+        soon.style.cssText = 'font-size:9px;padding:1px 5px;border:1px solid rgba(255,209,102,.5);border-radius:3px;color:#ffd166;background:rgba(255,209,102,.1);letter-spacing:.3px';
+        head.appendChild(soon);
       }
-      row.appendChild(body);
+      const desc = document.createElement('div');
+      desc.textContent = t.desc;
+      desc.style.cssText = 'font-size:11px;color:var(--dim);margin-top:2px;line-height:1.35';
+      body.appendChild(head); body.appendChild(desc);
+      const state = document.createElement('div');
+      state.textContent = eq ? '✓' : '+';
+      state.style.cssText = 'font-size:14px;font-weight:700;color:' + (eq ? '#7ee787' : 'var(--dim)') + ';white-space:nowrap;width:18px;text-align:center';
+      row.appendChild(ic); row.appendChild(body); row.appendChild(state);
       list.appendChild(row);
-    }
-  }
+    });
+  });
 }
 
 function _wbRenderTools(){
   const list = document.getElementById('wbToolList');
   const cnt  = document.getElementById('wbToolEquipCount');
   const sum  = document.getElementById('wbToolEquippedSummary');
-  const total = WB_LASER_TOOLS.length;
-  const eqN = wb.equippedTools.length;
+  // v0.9.41 — Tools tab now excludes primitive cats (those have their own
+  // Primitives tab). Counts and equipped summary are scoped to non-primitive.
+  const toolDefs = WB_LASER_TOOLS.filter(t => !_wbIsPrimCat(t.cat));
+  const total = toolDefs.length;
+  const equippedTools = wb.equippedTools.filter(id => {
+    const d = WB_LASER_TOOLS.find(t => t.id === id);
+    return d && !_wbIsPrimCat(d.cat);
+  });
+  const eqN = equippedTools.length;
   if(cnt) cnt.textContent = '(' + eqN + '/' + total + ')';
   if(sum){
     if(eqN === 0){
@@ -20815,7 +20902,7 @@ function _wbRenderTools(){
       sum.style.color = '#ff5b7f';
       sum.innerHTML = 'Laser is empty — the spawn menu will only show <b>Cancel</b>. Equip at least one tool on the right.';
     } else {
-      const labels = wb.equippedTools
+      const labels = equippedTools
         .map(id => _wbToolDef(id))
         .filter(Boolean)
         .map(t => '<span style="display:inline-block;padding:2px 6px;margin:2px 4px 2px 0;border:1px solid rgba(61,220,151,0.6);border-radius:4px;background:rgba(61,220,151,0.12);color:#3ddc97;font-size:10px">'+t.ic+' '+t.label+'</span>')
@@ -20828,7 +20915,9 @@ function _wbRenderTools(){
   if(!list) return;
   list.innerHTML = '';
   // v0.8k#24bb — Group rows by category (matches TV sidebar groups).
+  // v0.9.41 — Skip primitive cats; they live in the Primitives tab.
   WB_TOOL_CATEGORIES.forEach(cat => {
+    if(_wbIsPrimCat(cat.id)) return;
     const tools = WB_LASER_TOOLS.filter(t => t.cat === cat.id);
     if(!tools.length) return;
     const header = document.createElement('div');
@@ -22800,9 +22889,15 @@ function _wbWireUI(){
   bind('wbAppTemplate', 'click', _wbAppApplyTemplate);
   bind('wbTermBuild',    'click', _wbBuildTerm);
   bind('wbTermTemplate', 'click', _wbTermApplyTemplate);
-  bind('wbToolEquipStars', 'click', _wbToolEquipStars);
-  bind('wbToolEquipAll',   'click', _wbToolEquipAll);
-  bind('wbToolEquipNone',  'click', _wbToolEquipNone);
+  // v0.9.41 — Tools-tab buttons scope to non-primitive cats; Primitives-tab
+  // buttons scope to forecast/fib/orders cats. Each tab manages its own
+  // slice of wb.equippedTools without disturbing the other.
+  bind('wbToolEquipStars', 'click', () => _wbToolEquipStars('tools'));
+  bind('wbToolEquipAll',   'click', () => _wbToolEquipAll('tools'));
+  bind('wbToolEquipNone',  'click', () => _wbToolEquipNone('tools'));
+  bind('wbPrimEquipStars', 'click', () => _wbToolEquipStars('primitives'));
+  bind('wbPrimEquipAll',   'click', () => _wbToolEquipAll('primitives'));
+  bind('wbPrimEquipNone',  'click', () => _wbToolEquipNone('primitives'));
   // v0.9.9 — Quick Builder wiring (Strategy + Indicator views).
   bind('wbStratPreview', 'click', _wbStratQuickPreview);
   bind('wbStratGenCode', 'click', _wbStratQuickGenPine);
@@ -28422,7 +28517,7 @@ function log(msg){
     else if(prog === 'shop'){ try{ if(typeof osRefreshShop === 'function') osRefreshShop(); }catch{} }
     else if(prog === 'profile'){ try{ if(typeof osRefreshProfile === 'function') osRefreshProfile(); }catch{} }
     else if(prog === 'configs'){ try{ if(typeof osRefreshConfigs === 'function') osRefreshConfigs(); }catch{} }
-    else if(prog === 'workbench'){ try{ if(typeof _wbRenderBots === 'function'){ if(typeof _wbRenderTools === 'function') _wbRenderTools(); _wbRenderBots(); _wbRenderStrats(); _wbRenderInds(); _wbRebuildBacktestTargets(); _wbRenderBackHistory(); } }catch{} }
+    else if(prog === 'workbench'){ try{ if(typeof _wbRenderBots === 'function'){ if(typeof _wbRenderTools === 'function') _wbRenderTools(); _wbRenderPrimitives(); _wbRenderBots(); _wbRenderStrats(); _wbRenderInds(); _wbRebuildBacktestTargets(); _wbRenderBackHistory(); } }catch{} }
     // v0.8k#24ce — Token Terminal refresh hook.
     else if(prog === 'tokenterm'){ try { if(typeof osRefreshTokenTerm === 'function') osRefreshTokenTerm(); } catch(_){} }
     // sdk + marketplace are dead-windows (no icons since v0.8M#1).
