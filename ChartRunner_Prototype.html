@@ -18830,7 +18830,7 @@ function osOpenWindow(prog){
   // v0.8k#24l — cleanup pass: dropped 'inventory' dispatch (osRefreshInventory + window retired).
   if(prog==='configs')   osRefreshConfigs();
   if(prog==='run')       osRefreshRun();
-  if(prog==='workbench') { try { _wbRenderTools(); _wbRenderPrimitives(); _wbRenderBots(); _wbRenderStrats(); _wbRenderInds(); _wbRebuildBacktestTargets(); _wbRenderBackHistory(); } catch(_){} }
+  if(prog==='workbench') { try { try{_wbRenderTools();}catch(e){console.warn('wbTools',e)} try{_wbRenderPrimitives();}catch(e){console.warn('wbPrim',e)} try{_wbRenderBots();}catch(e){console.warn('wbBots',e)} try{_wbRenderStrats();}catch(e){console.warn('wbStrats',e)} try{_wbRenderInds();}catch(e){console.warn('wbInds',e)} try{_wbRenderTerms();}catch(e){console.warn('wbTerms',e)} try{_wbRenderApps();}catch(e){console.warn('wbApps',e)} try{_wbRebuildBacktestTargets();}catch(e){console.warn('wbBack',e)} try{_wbRenderBackHistory();}catch(e){console.warn('wbHist',e)} } catch(_){} }
   if(prog==='journal')   { try { _crJrnRenderManual(); _crJrnRenderBot(); _crJrnRenderStats(); _crJrnPrefillFromRun(); } catch(_){} }
   osStatus.textContent = prog;
 }
@@ -20908,6 +20908,54 @@ function _wbFilterByCategory(items, tabKey){
 // to the new max of 3. Players who had 4 bots equipped from a prior version
 // keep the first 3 in equip order; the 4th is silently demoted.
 _seedDetectorBots();
+// v0.9.45 — Seed in-game indicators / terminal widgets / apps so each list
+// has at least one entry under the new "In-game" sub-tab. All idempotent —
+// a player who saved a same-id entry keeps theirs; new players get these
+// fresh. Existing user entries are unaffected.
+const _WB_INGAME_SEEDS = {
+  indicators: [
+    { id: 'ind_inGame_rsi',   name: 'RSI 14',          kind: 'oscillator', code: '// in-game · 14-period RSI' },
+    { id: 'ind_inGame_atr',   name: 'ATR 14',          kind: 'overlay',    code: '// in-game · 14-period ATR' },
+    { id: 'ind_inGame_vwap',  name: 'Anchored VWAP',   kind: 'overlay',    code: '// in-game · session VWAP' },
+    { id: 'ind_inGame_refLv', name: 'Reference Levels',kind: 'overlay',    code: '// in-game · dOpen / pdH / pdL / pdPOC / pdVAH / pdVAL / IBH / IBL' },
+  ],
+  terms: [
+    { id: 'term_inGame_stats',   name: 'Stats Card',         icon: '◆', rows: [{ kind:'kv', label:'Asset',    bind:'asset' },{ kind:'kv', label:'Last Px', bind:'lastPx' },{ kind:'kv', label:'P&L', bind:'pnl' },{ kind:'kv', label:'Score', bind:'score_quality' }] },
+    { id: 'term_inGame_ticker',  name: 'Big Ticker',         icon: '⌧', rows: [{ kind:'big', label:'', bind:'lastPx' },{ kind:'kv', label:'Score', bind:'score_quality' }] },
+    { id: 'term_inGame_signals', name: 'Confluence Signals', icon: '★', rows: [{ kind:'kv', label:'Score', bind:'score_quality' },{ kind:'kv', label:'Tier', bind:'score_tier' },{ kind:'log', label:'', bind:'score_breakdown' }] },
+  ],
+  apps: [
+    { id: 'app_inGame_pnl',      name: 'P&L Tracker', icon: '📊', type: 'dashboard', source: 'orders', html: '' },
+    { id: 'app_inGame_notes',    name: 'Trade Notes', icon: '📝', type: 'notes',     source: 'none',   html: '' },
+  ],
+};
+function _seedInGame(){
+  try {
+    _WB_INGAME_SEEDS.indicators.forEach(d => {
+      if(!wb.indicators.some(x => x.id === d.id)){
+        wb.indicators.push(Object.assign({}, d, { created: Date.now(), category: 'in-game' }));
+      } else {
+        const ex = wb.indicators.find(x => x.id === d.id); if(ex) ex.category = 'in-game';
+      }
+    });
+    _WB_INGAME_SEEDS.terms.forEach(d => {
+      if(!wb.terms.some(x => x.id === d.id)){
+        wb.terms.push(Object.assign({}, d, { created: Date.now(), category: 'in-game' }));
+      } else {
+        const ex = wb.terms.find(x => x.id === d.id); if(ex) ex.category = 'in-game';
+      }
+    });
+    _WB_INGAME_SEEDS.apps.forEach(d => {
+      if(!wb.apps.some(x => x.id === d.id)){
+        wb.apps.push(Object.assign({}, d, { created: Date.now(), category: 'in-game' }));
+      } else {
+        const ex = wb.apps.find(x => x.id === d.id); if(ex) ex.category = 'in-game';
+      }
+    });
+    try { _wbSave(); } catch(_){}
+  } catch(_){}
+}
+_seedInGame();
 if(Array.isArray(wb.equipped) && wb.equipped.length > WB_MAX_EQUIP){
   wb.equipped = wb.equipped.slice(0, WB_MAX_EQUIP);
   try { _wbSave(); } catch(_){}
@@ -20934,7 +20982,13 @@ function _wbToggleEquip(id){
 // v0.9.41 — Scope helpers: 'tools' = non-primitive cats; 'primitives' = the
 // three primitive cats (forecast/fib/orders). Tools tab and Primitives tab
 // each manage their own slice of wb.equippedTools without touching the other.
-function _wbIsPrimCat(catId){ return PRIMITIVE_CATS && PRIMITIVE_CATS.has(catId); }
+// v0.9.45 — Module-scope mirror. The original PRIMITIVE_CATS lives inside
+// openLaserSpawnMenu; referencing it from here threw ReferenceError and
+// blanked the entire Workbench (the shared try/catch in the boot path
+// swallowed the throw and skipped every subsequent renderer). Keep this
+// in sync with the inner const if more cats are ever added.
+const _WB_PRIM_CATS = new Set(['fib','forecast','orders']);
+function _wbIsPrimCat(catId){ return _WB_PRIM_CATS.has(catId); }
 function _wbIdsForScope(scope){
   return WB_LASER_TOOLS
     .filter(t => scope === 'primitives' ? _wbIsPrimCat(t.cat) : !_wbIsPrimCat(t.cat))
@@ -23331,6 +23385,10 @@ function _wbWireUI(){
       });
       if(view === 'tools') _wbRenderTools();
       if(view === 'primitives') _wbRenderPrimitives();
+      // v0.9.45 — Missing renderers added so subcategory clicks repaint.
+      if(view === 'bots')  _wbRenderBots();
+      if(view === 'strats') _wbRenderStrats();
+      if(view === 'inds')  _wbRenderInds();
       if(view === 'back') _wbRebuildBacktestTargets();
       if(view === 'app')  _wbRenderApps();
       if(view === 'term') _wbRenderTerms();
@@ -29037,7 +29095,7 @@ function log(msg){
     else if(prog === 'shop'){ try{ if(typeof osRefreshShop === 'function') osRefreshShop(); }catch{} }
     else if(prog === 'profile'){ try{ if(typeof osRefreshProfile === 'function') osRefreshProfile(); }catch{} }
     else if(prog === 'configs'){ try{ if(typeof osRefreshConfigs === 'function') osRefreshConfigs(); }catch{} }
-    else if(prog === 'workbench'){ try{ if(typeof _wbRenderBots === 'function'){ if(typeof _wbRenderTools === 'function') _wbRenderTools(); _wbRenderPrimitives(); _wbRenderBots(); _wbRenderStrats(); _wbRenderInds(); _wbRebuildBacktestTargets(); _wbRenderBackHistory(); } }catch{} }
+    else if(prog === 'workbench'){ try{ if(typeof _wbRenderBots === 'function'){ if(typeof _wbRenderTools === 'function') try{_wbRenderTools();}catch(e){console.warn('wbTools',e)} try{_wbRenderPrimitives();}catch(e){console.warn('wbPrim',e)} try{_wbRenderBots();}catch(e){console.warn('wbBots',e)} try{_wbRenderStrats();}catch(e){console.warn('wbStrats',e)} try{_wbRenderInds();}catch(e){console.warn('wbInds',e)} try{_wbRenderTerms();}catch(e){console.warn('wbTerms',e)} try{_wbRenderApps();}catch(e){console.warn('wbApps',e)} try{_wbRebuildBacktestTargets();}catch(e){console.warn('wbBack',e)} try{_wbRenderBackHistory();}catch(e){console.warn('wbHist',e)} } }catch{} }
     // v0.8k#24ce — Token Terminal refresh hook.
     else if(prog === 'tokenterm'){ try { if(typeof osRefreshTokenTerm === 'function') osRefreshTokenTerm(); } catch(_){} }
     // sdk + marketplace are dead-windows (no icons since v0.8M#1).
