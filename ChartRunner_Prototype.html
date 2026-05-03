@@ -19805,6 +19805,222 @@ const DETECTOR_BOTS = [
       }
     },
   },
+  // v0.9.30 pass 2 — CCV Hunter. Champion Zone tag = entry. Side comes from
+  // the detector (buy = expect reversal up out of discount zone). SL beyond
+  // the Champion Zone outer edge (~1.5× ATR proxy), TP at 2R.
+  {
+    id: 'det_ccv',
+    name: 'CCV Hunter',
+    role: 'detector',
+    color: '#9b8cff',
+    icon: '★',
+    detectorId: 'detectCCV',
+    isDetectorBot: true,
+    cooldownMs: 9000,
+    buildAction: (r, ctx) => {
+      try {
+        if (!r || !r.matched || typeof sdk === 'undefined') return false;
+        const here = (typeof currentPrice === 'function') ? currentPrice() : ctx.price;
+        // ATR proxy = 1% of price (matches the magnitude of the OHLC moves
+        // we see across BTC/ETH/SOL on 15m bars). Real ATR would require
+        // a TR series; this proxy is good enough for game-feel risk sizing.
+        const atr = here * 0.01;
+        const sl = (r.side === 'buy') ? (here - 1.5 * atr) : (here + 1.5 * atr);
+        const tp = (r.side === 'buy') ? (here + 3 * atr) : (here - 3 * atr);
+        sdk.bracket({ side: r.side, entry: here, tp, sl, size: 1 });
+        return true;
+      } catch (err) { return false; }
+    },
+  },
+  // v0.9.30 pass 2 — H&S Hunter. Standard play: enter on neckline retest /
+  // break, SL beyond the head (the head IS the invalidation), TP = head
+  // distance projected from neckline (measured-move target).
+  {
+    id: 'det_hs',
+    name: 'H&S Hunter',
+    role: 'detector',
+    color: '#ff6b6b',
+    icon: '👤',
+    detectorId: 'detectHeadShoulders',
+    isDetectorBot: true,
+    cooldownMs: 12000,
+    buildAction: (r, ctx) => {
+      try {
+        if (!r || !r.matched || typeof sdk === 'undefined') return false;
+        const here = (typeof currentPrice === 'function') ? currentPrice() : ctx.price;
+        const headDist = Math.abs(r.H.price - r.neckline);
+        const sl = r.H.price; // head price = invalidation
+        const tp = (r.side === 'sell') ? (r.neckline - headDist) : (r.neckline + headDist);
+        sdk.bracket({ side: r.side, entry: here, tp, sl, size: 1 });
+        return true;
+      } catch (err) { return false; }
+    },
+  },
+  // v0.9.30 pass 2 — BARR Hunter (Bump-and-Run Reversal). Trade against the
+  // bump direction with TP = where the lead trendline projects to today
+  // (r.leadAtNow). SL on the far side of the current price by half the
+  // distance to the target (1:2 implicit RR floor since target is past where
+  // we are now).
+  {
+    id: 'det_barr',
+    name: 'BARR Hunter',
+    role: 'detector',
+    color: '#ffa94d',
+    icon: '⚡',
+    detectorId: 'detectBumpAndRun',
+    isDetectorBot: true,
+    cooldownMs: 11000,
+    buildAction: (r, ctx) => {
+      try {
+        if (!r || !r.matched || typeof sdk === 'undefined') return false;
+        const here = (typeof currentPrice === 'function') ? currentPrice() : ctx.price;
+        const target = r.leadAtNow;
+        if (!isFinite(target)) return false;
+        const slPad = Math.max(Math.abs(here - target) * 0.5, here * 0.005);
+        const sl = (r.side === 'buy') ? (here - slPad) : (here + slPad);
+        sdk.bracket({ side: r.side, entry: here, tp: target, sl, size: 1 });
+        return true;
+      } catch (err) { return false; }
+    },
+  },
+  // v0.9.30 pass 2 — FA Hunter (Failed Auction). Mean-reversion play: when
+  // the day opened outside prior-day value area and accepted back inside,
+  // the play is to fade toward POC. Read pdPOC from computeReferenceLevels
+  // and target it; SL beyond the day open (the level that "failed").
+  {
+    id: 'det_fa',
+    name: 'FA Hunter',
+    role: 'detector',
+    color: '#4ecdc4',
+    icon: '↺',
+    detectorId: 'detectFailedAuction',
+    isDetectorBot: true,
+    cooldownMs: 14000,
+    buildAction: (r, ctx) => {
+      try {
+        if (!r || !r.matched || typeof sdk === 'undefined') return false;
+        const here = (typeof currentPrice === 'function') ? currentPrice() : ctx.price;
+        let target = here;
+        try {
+          const lev = (typeof computeReferenceLevels === 'function') ? computeReferenceLevels() : null;
+          if (lev) {
+            // Prefer pdPOC if present; fall back to value-area midpoint.
+            target = (lev.pdPOC != null) ? lev.pdPOC
+                   : (lev.pdVAH != null && lev.pdVAL != null) ? (lev.pdVAH + lev.pdVAL) / 2
+                   : here;
+          }
+        } catch(_){}
+        // SL beyond the day open (the level the auction failed at).
+        const failedLevel = r.dOpen;
+        const sl = (r.side === 'buy') ? Math.min(here, failedLevel) - here * 0.003
+                                      : Math.max(here, failedLevel) + here * 0.003;
+        sdk.bracket({ side: r.side, entry: here, tp: target, sl, size: 1 });
+        return true;
+      } catch (err) { return false; }
+    },
+  },
+  // v0.9.30 pass 2 — OI Hunter. Special: this bot doesn't fire a trade. It
+  // arms a sizing-boost flag (`game.oiBoost`) that any subsequent player
+  // bracket can read for 30s. Detector is async (Binance REST poll cached
+  // 60s per symbol+period); first call returns pending, next call within
+  // window returns the cached confirmation. We pass an explicit side to
+  // satisfy the SDK signature; the detector returns whichever direction
+  // actually confirmed.
+  {
+    id: 'det_oi',
+    name: 'OI Sentinel',
+    role: 'detector',
+    color: '#7ee787',
+    icon: '∮',
+    isDetectorBot: true,
+    cooldownMs: 30000, // longer — OI confirmations are infrequent
+    detect: (sdk, ctx) => {
+      try {
+        const r = sdk.detectOIConfirm({ side: 'buy' });
+        // pending fetch — pretend "no match" so orchestrator skips this tick.
+        if (r && r.pending) return { matched: false };
+        return r;
+      } catch(_){ return { matched: false }; }
+    },
+    buildAction: (r, ctx) => {
+      try {
+        if (!r || !r.matched) return false;
+        // Stamp a 30s boost flag instead of placing a trade. Other systems
+        // (or a future bracket-sizing helper) can read this and scale up.
+        if (typeof game !== 'undefined') {
+          game.oiBoost = {
+            side: r.side, kind: r.kind,
+            oiChg: r.oiChg, pChg: r.pChg,
+            expires: Date.now() + 30000,
+          };
+        }
+        try {
+          if (typeof showBanner === 'function') {
+            showBanner(
+              '∮ OI CONFIRMS · ' + (r.side || '').toUpperCase(),
+              'OI ' + (r.oiChg * 100).toFixed(2) + '% · price ' + (r.pChg * 100).toFixed(2) + '% · next 30s sized 1.5×'
+            );
+          }
+        } catch(_){}
+        return true;
+      } catch (err) { return false; }
+    },
+  },
+  // v0.9.30 pass 2 — Div Hunter. Wraps scoreSetup to populate _lastDivergence,
+  // then synthesizes a result from it. Trades against the momentum (Class A
+  // div = price HH but RSI LH → expect reversal). SL beyond the swing extreme
+  // we just made.
+  {
+    id: 'det_div',
+    name: 'Divergence Hunter',
+    role: 'detector',
+    color: '#e879f9',
+    icon: '÷',
+    isDetectorBot: true,
+    cooldownMs: 10000,
+    detect: (sdk, ctx) => {
+      try {
+        if (typeof sdk.scoreSetup !== 'function') return { matched: false };
+        // Try BUY side first; if Class A or B div is present, we trade UP.
+        // Otherwise try SELL side.
+        sdk.scoreSetup({ side: 'buy' });
+        let div = sdk._lastDivergence;
+        let side = 'buy';
+        if (!div || (div.cls !== 'A' && div.cls !== 'B')) {
+          sdk.scoreSetup({ side: 'sell' });
+          div = sdk._lastDivergence;
+          side = 'sell';
+        }
+        if (!div || (div.cls !== 'A' && div.cls !== 'B')) return { matched: false };
+        return {
+          matched: true,
+          side,
+          cls: div.cls,
+          priceA: div.priceA, priceB: div.priceB,
+          rsiA: div.rsiA, rsiB: div.rsiB,
+          // Use the latest swing price as the visual target/SL anchor.
+          level: div.priceB,
+          price: div.priceB,
+        };
+      } catch(_){ return { matched: false }; }
+    },
+    buildAction: (r, ctx) => {
+      try {
+        if (!r || !r.matched || typeof sdk === 'undefined') return false;
+        const here = (typeof currentPrice === 'function') ? currentPrice() : ctx.price;
+        // SL beyond the latest swing extreme (priceB). For BUY div (HH price
+        // + LH RSI), priceB IS the high — SL goes above it. For SELL div,
+        // priceB IS the low — SL goes below.
+        const swingExtreme = r.priceB;
+        const slPad = here * 0.003;
+        const sl = (r.side === 'buy') ? (swingExtreme + slPad) : (swingExtreme - slPad);
+        const risk = Math.abs(here - sl);
+        const tp = (r.side === 'buy') ? (here + 2 * risk) : (here - 2 * risk);
+        sdk.bracket({ side: r.side, entry: here, tp, sl, size: 1 });
+        return true;
+      } catch (err) { return false; }
+    },
+  },
 ];
 // Seed detector bots into wb.bots if not already present. Idempotent — runs
 // after _wbLoad on every boot, so adding a new DETECTOR_BOTS entry in a
@@ -20264,6 +20480,14 @@ function _wbRenderBots(){
     });
     row.querySelector('[data-del]').addEventListener('click', e => {
       e.stopPropagation();
+      // v0.9.30 — Built-in detector bots can't be deleted (they'd just be
+      // re-seeded on next page load anyway, and the built-in fire actions
+      // live in DETECTOR_BOTS, not in the saved row). Player can still
+      // unequip them — that's the intended off switch.
+      if(b.isDetectorBot){
+        if(typeof toast === 'function') toast('Built-in bot — unequip instead of delete');
+        return;
+      }
       wb.bots = wb.bots.filter(x => x.id !== b.id);
       wb.equipped = wb.equipped.filter(x => x !== b.id);
       _wbSave(); _wbRenderBots(); _wbRebuildBacktestTargets();
@@ -22148,23 +22372,22 @@ function drawBotOrbs(){
     // ─── Detector-bot scan + fire orchestration ─────────────────────────
     // Only detector-role bots have detect()/fire() hooks. Other roles
     // (scout/sniper/arb/risk/trader) keep the old flavor-toast behavior.
-    if(b.isDetectorBot && b.detectorId && st.phase === 'orbit' && tNow >= st.cooldownUntil){
+    if(b.isDetectorBot && st.phase === 'orbit' && tNow >= st.cooldownUntil){
       if(tNow >= st.scanT){
         st.scanT = tNow + _BOT_SCAN_INTERVAL_MS;
         try {
-          // Slice the candle window. The SDK detectors read sdk._game.candles
-          // (or the module-level `candles`) directly — to keep them honest
-          // we temporarily swap in the windowed view, run detect, restore.
-          const startIdx = Math.max(0, playerIdx - _BOT_SCAN_WINDOW);
-          const endIdx   = Math.min(candles.length, playerIdx + _BOT_SCAN_WINDOW + 1);
-          // No swap-needed: we trust the detectors to read the most recent
-          // tail (they all look at "last 50 bars"). Out of an abundance of
-          // caution we still block the fire if the matched level is outside
-          // the player's window — that keeps the metaphor honest.
-          const fn = sdk[b.detectorId];
-          if(typeof fn === 'function'){
-            const r = fn.call(sdk, {});
-            if(r && r.matched){
+          // Two paths: a registry entry can either provide a custom detect()
+          // function (Div bot uses scoreSetup + _lastDivergence; OI bot needs
+          // explicit side hint) or rely on the simple sdk[detectorId]({}) call
+          // (SFP/CCV/H&S/BARR/FA all work this way).
+          const reg = _detectorRegistry(b.id);
+          let r = null;
+          if(reg && typeof reg.detect === 'function'){
+            r = reg.detect(sdk, { playerIdx, scanWindow: _BOT_SCAN_WINDOW });
+          } else if(b.detectorId && typeof sdk[b.detectorId] === 'function'){
+            r = sdk[b.detectorId].call(sdk, {});
+          }
+          if(r && r.matched){
               // Validate the matched level lies within the scan window.
               const matchedLevel = (r.level !== undefined) ? r.level
                                  : (r.neckline !== undefined) ? r.neckline
@@ -22181,7 +22404,6 @@ function drawBotOrbs(){
               try {
                 if(typeof toast === 'function') toast('🛰 ' + b.name + ': ' + r.side.toUpperCase() + ' signal — flying to setup');
               } catch(_){}
-            }
           }
         } catch(_){ /* detector errors are silent — bot retries next interval */ }
       }
