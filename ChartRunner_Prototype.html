@@ -20182,21 +20182,11 @@ function _drawLoadoutAvatar(ctx, scale, opts){
   // Skin tint resolves last: explicit forceTint overrides (e.g. red for the
   // upside-down combat sprite). Falls back to the player's chosen skin.
   const tint = opts.forceTint || _loadoutSkinTint();
-  // Gear glow — drawn FIRST so it sits behind the sprite.
-  if (opts.glow !== false) {
-    const g = GEAR_GLOW[lo.gear];
-    if (g) {
-      const halo = ctx.createRadialGradient(0, 0, 1, 0, 0, g.radius * scale);
-      halo.addColorStop(0,   g.color + 'cc');
-      halo.addColorStop(0.5, g.color + '55');
-      halo.addColorStop(1,   g.color + '00');
-      ctx.save();
-      ctx.fillStyle = halo;
-      const r = g.radius * scale;
-      ctx.fillRect(-r, -r, r*2, r*2);
-      ctx.restore();
-    }
-  }
+  // v0.9.50 — Gear-glow halo removed (was a radial-gradient ring drawn behind
+  // the sprite, controlled by GEAR_GLOW[lo.gear]). The aura cluttered the
+  // sprite on the desktop and in-game; gear is now signalled by the badge +
+  // future per-gear effects, not a passive halo. Kept GEAR_GLOW table intact
+  // in case a later version brings back a toggleable version.
   // Sprite. Snake honors its growing-length state when caller passes snakeLen.
   if (lo.avatar === 'snake' && typeof drawSnake === 'function') {
     drawSnake(ctx, scale, tint, Math.max(4, opts.snakeLen || 4));
@@ -28677,20 +28667,18 @@ function log(msg){
     const c = canv.getContext('2d');
     c.clearRect(0,0,canv.width,canv.height);
     c.save();
-    c.translate(canv.width/2, canv.height/2 - 6);
+    c.translate(canv.width/2, canv.height/2 - 4);
     // v0.9.37 — Honour the player's loadout (skin/gear/weapon/avatar) so the
     // desktop avatar matches what the Profile picker showed and what the
     // in-game runner will look like. forceTint lets callers (e.g. shoot
     // mode) still override with red etc.
-    // v0.9.50 — Sprite scale 2 → 3.2 to match the 72×48 canvas. Below ~3 the
-    // silhouette is unreadable on a hi-res monitor.
+    // v0.9.50 — Aura removed: dropped the canvas shadow + pass glow:false so
+    // the gear halo doesn't render around the desktop avatar.
     const tint = color || ((typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195');
-    c.shadowColor = tint + 'cc';
-    c.shadowBlur = 8;
     if(typeof _drawLoadoutAvatar === 'function'){
-      _drawLoadoutAvatar(c, 3.2, { glow: true, badge: true, snakeLen: 5, forceTint: color || null });
+      _drawLoadoutAvatar(c, 2, { glow: false, badge: true, snakeLen: 5, forceTint: color || null });
     } else if(typeof drawInvader === 'function'){
-      drawInvader(c, 3.2, tint);
+      drawInvader(c, 2, tint);
     }
     c.restore();
   }
@@ -28728,16 +28716,12 @@ function log(msg){
     // IIFE can reliably detect avatar presence without selector guessing.
     try { window.crOsInvaderActive = true; } catch(_){}
     // Build the avatar overlay. pointer-events:auto so the user can grab it.
-    // v0.9.50 — Bumped from 36×24 → 72×48. At 36×24 on a hi-res screen the
-    // sprite collapsed into an unreadable blob (especially Snake/Pacman with
-    // a weapon badge + gear glow on top). Doubling the canvas + bumping the
-    // sprite scale to 3.2 gives the silhouette enough pixels to read.
     const canv = document.createElement('canvas');
-    canv.width = 72; canv.height = 48;
+    canv.width = 36; canv.height = 24;
     canv.dataset.crOsInvader = '1';
     canv.style.cssText = [
       'position:fixed', 'left:0', 'top:0',
-      'width:72px', 'height:48px',
+      'width:36px', 'height:24px',
       'pointer-events:auto',
       'cursor:grab',
       'z-index:99999',
@@ -28750,8 +28734,8 @@ function log(msg){
     osInvaderEl = canv;
     const place = ()=>{
       if(!osInvaderEl) return;
-      osInvaderEl.style.left = (osInvaderX - 36) + 'px';
-      osInvaderEl.style.top  = (osInvaderY - 24) + 'px';
+      osInvaderEl.style.left = (osInvaderX - 18) + 'px';
+      osInvaderEl.style.top  = (osInvaderY - 12) + 'px';
     };
     place();
     // Helpers — does a mousedown target the avatar itself? interactive UI?
