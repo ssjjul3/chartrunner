@@ -488,8 +488,16 @@
   #crCoachOverlay .crCoachDot{width:7px;height:7px;border-radius:50%;background:rgba(180,200,230,.18);transition:background .15s ease}
   #crCoachOverlay .crCoachDot.done{background:#7ee787}
   #crCoachOverlay .crCoachDot.cur{background:#ffd166;box-shadow:0 0 6px rgba(255,209,102,.7)}
-  #crCoachOverlay .crCoachStep{font-size:13px;line-height:1.5;color:var(--fg);margin:6px 0 4px}
+  #crCoachOverlay .crCoachStep{font-size:13px;line-height:1.5;color:var(--fg);margin:4px 0 4px}
   #crCoachOverlay .crCoachTip{font-size:10.5px;color:var(--dim);line-height:1.45}
+  /* v0.9.53 — Step-kind chip. EXPLAIN / CHOOSE / EXECUTE color-coded so the
+     player knows which slot of the 3-step arc they're in. */
+  #crCoachOverlay .crCoachStepKind{display:inline-block;font:700 9px ui-monospace,Menlo,monospace;
+    letter-spacing:.6px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);
+    color:var(--dim);background:rgba(10,15,28,.4);margin:4px 0 2px}
+  #crCoachOverlay .crCoachStepKind[data-kind="explain"]{color:#9b8cff;border-color:rgba(155,140,255,.45);background:rgba(155,140,255,.08)}
+  #crCoachOverlay .crCoachStepKind[data-kind="choose"]{color:#ffd166;border-color:rgba(255,209,102,.45);background:rgba(255,209,102,.08)}
+  #crCoachOverlay .crCoachStepKind[data-kind="execute"]{color:#7ee787;border-color:rgba(126,231,135,.45);background:rgba(126,231,135,.10)}
   #crCoachOverlay .crCoachActions{display:flex;gap:6px;margin-top:10px;justify-content:flex-end}
   #crCoachOverlay .crCoachBtn{appearance:none;border:1px solid var(--line);background:transparent;color:var(--dim);font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.4px;text-transform:uppercase;padding:5px 11px;border-radius:6px;cursor:pointer;transition:all .12s ease}
   #crCoachOverlay .crCoachBtn:hover{color:var(--fg);border-color:rgba(20,241,149,.45)}
@@ -18845,52 +18853,70 @@ function pickMode(mode){
     let pollTimer = null;
     let spotlitEl = null;
     let stepStartCounters = null;
+    // v0.9.53 — Refactored every chapter to a 3-step EXPLAIN → CHOOSE →
+    // EXECUTE format. Each step has a single text field. Baseline state is
+    // captured at chapter start so pre-existing strategies / widgets / bots
+    // don't false-complete the EXECUTE step. A Next button is always visible
+    // so the player can manually advance if a detector misfires.
+    //
+    //   step.kind = 'explain' | 'choose' | 'execute'
+    //   step.text  — single instruction (no tip line in v0.9.53+)
+    //   step.complete(baseline) — optional. Auto-advances when truthy.
+    //   step.target — optional CSS selector to halo with the spotlight ring.
     const SCRIPTS = {
-      // v0.9.49 — Retrofit chapters 1-8 to single-step format.
-      // Match the v0.9.48 pattern of 9-17: one decisive interaction, the run
-      // auto-finishes on first detection, +50 $RUN paid out, return to splash.
-      // Old multi-step scripts removed — they made the player feel babysat
-      // and slowed the loop. Simpler is better for a first-pass tutorial.
       1: [
-        { text:'Place a Bracket order.', tip:'Hotkey 2 → Bracket → click anywhere on the chart.',
-          complete:()=> {
-            try { return (sdk.openOrders||[]).some(o => o.type === 'bracket'); } catch(_){ return false; }
-          } },
+        { kind:'explain', text:'A Bracket pairs your entry with a stop-loss and take-profit in one click. Pros use it because risk is locked in BEFORE the candle moves.' },
+        { kind:'choose',  text:'Press hotkey 2 to arm the laser, then pick 🎯 Bracket from the spawn menu.',
+          complete:()=> { try { return game && game.laserTool === 'bracket'; } catch(_){ return false; } } },
+        { kind:'execute', text:'Click anywhere on the chart to drop the bracket.',
+          complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'bracket').length > (b.brackets||0); } catch(_){ return false; } } },
       ],
       2: [
-        { text:'Toggle the Reference Levels indicator on.', tip:'☰ Menu → Indicators → 🎯 Ref Levels.',
-          complete:()=> {
-            try { return INDICATOR_STATE.active.has('reflevels'); } catch(_){ return false; }
-          } },
+        { kind:'explain', text:'Reference Levels mark the prices pros watch every day: yesterday\'s OHLC, today\'s open, and the prior-day Volume Profile (VAH / POC / VAL). Price treats them as magnets.' },
+        { kind:'choose',  text:'Open the menu drawer at the top-right of the chart (☰).',
+          complete:()=> { try { return !!document.querySelector('.menudrawer.open'); } catch(_){ return false; } } },
+        { kind:'execute', text:'Toggle 🎯 Ref Levels on in the Indicators section.',
+          complete:()=> { try { return INDICATOR_STATE.active.has('reflevels'); } catch(_){ return false; } } },
       ],
       3: [
-        { text:'Open the Confluence Score badge.', tip:'Top-right of the chart — click the badge to expand.',
-          complete:()=> {
-            try { return SCORE_BADGE_STATE.expanded === true; } catch(_){ return false; }
-          } },
+        { kind:'explain', text:'The Confluence Score badge sums up to 10 quality signals (HTF trend, level proximity, divergences, patterns, CCV…). Trade only setups scoring ≥ 6 (TRADEABLE).' },
+        { kind:'choose',  text:'Look for the Score badge in the top-right of the chart — it shows the live score and tier label.',
+          target:'#crScoreBadge, .score-badge' },
+        { kind:'execute', text:'Click the badge to expand the per-component breakdown.',
+          complete:()=> { try { return SCORE_BADGE_STATE.expanded === true; } catch(_){ return false; } } },
       ],
       4: [
-        { text:'Probe with the ★ CCV Check ability.', tip:'Open Abilities (Shift+3) → ★ CCV Check.',
-          complete:()=> { return !!(crCampaignCoach._ccvProbed); } },
+        { kind:'explain', text:'CCV = Consolidation + Champion Zone + Volume. When all three fire together, historical win rate is ~80%. The probe shows ✓ or ✗ for each component live.' },
+        { kind:'choose',  text:'Open the Abilities modal (Shift + 3).',
+          complete:()=> { try { return !!document.querySelector('#crAbilityModal.on, .ability-modal.on, #crAbilities.on'); } catch(_){ return false; } } },
+        { kind:'execute', text:'Click ★ CCV Check to probe the current setup.',
+          complete:()=> !!(crCampaignCoach._ccvProbed) },
       ],
       5: [
-        { text:'Probe with any pattern check (SFP / FA / BARR / H&S).', tip:'Open Abilities (Shift+3) → pick any pattern probe.',
-          complete:()=> { return !!(crCampaignCoach._patternProbed); } },
+        { kind:'explain', text:'Four high-probability patterns: SFP (sweep & reverse), Failed Auction (mean reversion), BARR (Bump-and-Run), H&S (Head & Shoulders). Each has its own probe ability.' },
+        { kind:'choose',  text:'Open the Abilities modal (Shift + 3).',
+          complete:()=> { try { return !!document.querySelector('#crAbilityModal.on, .ability-modal.on, #crAbilities.on'); } catch(_){ return false; } } },
+        { kind:'execute', text:'Click any pattern probe (⇄ SFP, ↺ FA, ⚡ BARR, 👤 H&S).',
+          complete:()=> !!(crCampaignCoach._patternProbed) },
       ],
       6: [
-        { text:'Build a strategy in Workbench → Quick Builder.', tip:'Open Workbench → Strategies tab → click 📈 Build Strategy.',
-          complete:()=> {
-            try { return (wb.strategies || []).length >= 1; } catch(_){ return false; }
-          } },
+        { kind:'explain', text:'The Workbench Quick Builder stitches confluence components into a strategy without writing Pine code. All sliders default-on so a single click ships a working scanner.' },
+        { kind:'choose',  text:'Open the Workbench app and click the Strategies tab.',
+          complete:()=> { try { return !!document.querySelector('#win-workbench.on') && !!document.querySelector('#crWBViewStrats:not(.hidden)'); } catch(_){ return false; } } },
+        { kind:'execute', text:'Click 📈 Build Strategy → Save to ship one.',
+          complete:(b)=> { try { return (wb.strategies||[]).length > (b.strategies||0); } catch(_){ return false; } } },
       ],
       7: [
-        { text:'Spawn a live Terminal widget.', tip:'Open Bot Terminal → + → pick any widget.',
-          complete:()=> {
-            return document.querySelectorAll('[data-wbterm-id]').length >= 1;
-          } },
+        { kind:'explain', text:'Terminal widgets pin live data feeds (price, score, levels, RSI…). Bots are detector orbs that fly around your runner and flag setups in-run.' },
+        { kind:'choose',  text:'Open Bot Terminal and press + to spawn a widget.',
+          complete:()=> { try { return !!document.querySelector('#win-bot.on, [data-prog="bot"].on'); } catch(_){ return false; } } },
+        { kind:'execute', text:'Pick any widget so a live data card lands on your terminal.',
+          complete:(b)=> { try { return document.querySelectorAll('[data-wbterm-id]').length > (b.widgets||0); } catch(_){ return false; } } },
       ],
       8: [
-        { text:'Place a Bracket — final run, you choose the timing.', tip:'No hints. Trust your read. Hit ≥1 win to graduate.',
+        { kind:'explain', text:'Final exam — no hints, no presets. You\'ve learned brackets, levels, score, CCV, patterns, strategies, terminals, bots. Time to put it together.' },
+        { kind:'choose',  text:'Read the chart. Pick your moment. The Score badge tells you when it\'s tradeable (≥ 6).' },
+        { kind:'execute', text:'Place a bracket and hold to a winning close. Hit ≥ 1 win to graduate.',
           complete:()=> {
             try {
               const winCount = (sdk.openOrders||[]).filter(o => o.type === 'bracket' && o.status === 'closed' && (o.pnl||0) > 0).length;
@@ -18899,60 +18925,79 @@ function pickMode(mode){
             } catch(_){ return false; }
           } },
       ],
-      // v0.9.48 — Single-step chapters per category. Each finishes the moment
-      // the player engages with the lesson item. Run auto-ends and pays $RUN.
       9: [
-        { text:'Place a Trendline.', tip:'Hotkey 2 → Trendline → click anchor 1, then anchor 2.',
-          complete:()=> {
-            try { return (game.tvOverlays||[]).some(o => o.tool === 'trendline' || o.kind === 'trendline'); } catch(_){ return false; }
-          } },
+        { kind:'explain', text:'Trendlines connect two anchor points to mark dynamic support / resistance. Break-and-retest is one of the cleanest setups in trading.' },
+        { kind:'choose',  text:'Press hotkey 2 → Trendline.',
+          complete:()=> { try { return game && game.laserTool === 'trendline'; } catch(_){ return false; } } },
+        { kind:'execute', text:'Click anchor 1, then anchor 2.',
+          complete:(b)=> { try { return (game.tvOverlays||[]).filter(o => o.tool === 'trendline' || o.kind === 'trendline').length > (b.trendlines||0); } catch(_){ return false; } } },
       ],
       10: [
-        { text:'Place a Horizontal Line.', tip:'Hotkey 2 → HLine → single click at any price level.',
-          complete:()=> {
-            try { return (game.anchorLines||[]).some(l => l.tradeKind === 'hline' || l.kind === 'hline'); } catch(_){ return false; }
-          } },
+        { kind:'explain', text:'A horizontal line pins a single price level you want to watch. Round numbers, prior swing highs / lows, untouched gaps — all qualify.' },
+        { kind:'choose',  text:'Press hotkey 2 → HLine.',
+          complete:()=> { try { return game && (game.laserTool === 'hLine' || game.laserTool === 'hline'); } catch(_){ return false; } } },
+        { kind:'execute', text:'Click at any price level on the chart.',
+          complete:(b)=> { try { return (game.anchorLines||[]).filter(l => l.tradeKind === 'hline' || l.kind === 'hline').length > (b.hlines||0); } catch(_){ return false; } } },
       ],
       11: [
-        { text:'Place an Anchored VWAP.', tip:'Hotkey 2 → Anchored VWAP → click an anchor candle.',
-          complete:()=> {
-            try { return (game.tvOverlays||[]).some(o => o.tool === 'anchoredVwap' || o.kind === 'vwap'); } catch(_){ return false; }
-          } },
+        { kind:'explain', text:'Anchored VWAP averages price by volume from a candle of your choosing. Anchor it on a swing high or session open and institutions trade against it.' },
+        { kind:'choose',  text:'Press hotkey 2 → Anchored VWAP.',
+          complete:()=> { try { return game && game.laserTool === 'anchoredVwap'; } catch(_){ return false; } } },
+        { kind:'execute', text:'Click the anchor candle.',
+          complete:(b)=> { try { return (game.tvOverlays||[]).filter(o => o.tool === 'anchoredVwap' || o.kind === 'vwap').length > (b.vwaps||0); } catch(_){ return false; } } },
       ],
       12: [
-        { text:'Place an OCO.', tip:'Hotkey 3 → OCO → click upper level, then lower level.',
-          complete:()=> {
-            try { return (game.visualOCO||[]).length >= 1; } catch(_){ return false; }
-          } },
+        { kind:'explain', text:'One-Cancels-Other pairs your stop-loss and take-profit so when one fills, the other auto-cancels. Cleaner than two separate orders.' },
+        { kind:'choose',  text:'Press hotkey 3 → OCO.',
+          complete:()=> { try { return game && game.laserTool === 'oco'; } catch(_){ return false; } } },
+        { kind:'execute', text:'Click the upper level, then the lower level.',
+          complete:(b)=> { try { return (game.visualOCO||[]).length > (b.ocos||0); } catch(_){ return false; } } },
       ],
       13: [
-        { text:'Place a Limit order.', tip:'Hotkey 3 → Limit → click at the price you want filled.',
-          complete:()=> {
-            try { return (sdk.openOrders||[]).some(o => o.type === 'limit'); } catch(_){ return false; }
-          } },
+        { kind:'explain', text:'A Limit order parks at a price. The candle has to come to you — fills only at your level or better. Lower fees than a market order, plus precision.' },
+        { kind:'choose',  text:'Press hotkey 3 → Limit.',
+          complete:()=> { try { return game && game.laserTool === 'limit'; } catch(_){ return false; } } },
+        { kind:'execute', text:'Click at the price you want to be filled at.',
+          complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'limit').length > (b.limits||0); } catch(_){ return false; } } },
       ],
       14: [
-        { text:'Activate the HL Funding Shorts strategy.', tip:'Top-bar Strat pill → HL Funding Shorts.',
-          complete:()=> {
-            try { return game && game.strategy === 'hl_funding_shorts'; } catch(_){ return false; }
-          } },
+        { kind:'explain', text:'When perpetual funding goes deeply positive, longs are paying shorts to keep their position. The HL Funding Shorts strategy scans for extreme funding and arms a short.' },
+        { kind:'choose',  text:'Find the Strat pill on the topbar.',
+          target:'#stratToggle, .strat-pill, #crBarStrat' },
+        { kind:'execute', text:'Switch the strategy to HL Funding Shorts.',
+          complete:()=> { try { return game && game.strategy === 'hl_funding_shorts'; } catch(_){ return false; } } },
       ],
       15: [
-        { text:'Toggle the RSI indicator.', tip:'☰ Menu drawer → Indicators → RSI.',
-          complete:()=> {
-            try { return INDICATOR_STATE.active.has('rsi'); } catch(_){ return false; }
-          } },
+        { kind:'explain', text:'RSI (Relative Strength Index) measures momentum on a 0–100 scale. Above 70 = overbought, below 30 = oversold. Pros watch RSI for divergence (price diverges from momentum).' },
+        { kind:'choose',  text:'Open the menu drawer (☰ top-right of the chart).',
+          complete:()=> { try { return !!document.querySelector('.menudrawer.open'); } catch(_){ return false; } } },
+        { kind:'execute', text:'Toggle RSI on in the Indicators section.',
+          complete:()=> { try { return INDICATOR_STATE.active.has('rsi'); } catch(_){ return false; } } },
       ],
       16: [
-        { text:'Equip the SFP Hunter detector bot.', tip:'Workbench → Bots → click SFP Hunter to equip.',
-          complete:()=> {
-            try { return (wb.equipped||[]).indexOf('det_sfp') >= 0; } catch(_){ return false; }
+        { kind:'explain', text:'Detector bots are autonomous scanners that orbit your runner. SFP Hunter watches for swing-failure patterns and flags them in real time so you don\'t have to babysit the chart.' },
+        { kind:'choose',  text:'Open Workbench and click the Bots tab.',
+          complete:()=> { try { return !!document.querySelector('#win-workbench.on') && !!document.querySelector('#crWBViewBots:not(.hidden)'); } catch(_){ return false; } } },
+        { kind:'execute', text:'Click SFP Hunter to equip it (the row turns mint-green when active).',
+          complete:(b)=> {
+            try {
+              const had = (b.bots||[]).indexOf('det_sfp') >= 0;
+              const has = (wb.equipped||[]).indexOf('det_sfp') >= 0;
+              return has && !had;
+            } catch(_){ return false; }
           } },
       ],
       17: [
-        { text:'Equip the CCV Hunter detector bot.', tip:'Workbench → Bots → click CCV Hunter to equip.',
-          complete:()=> {
-            try { return (wb.equipped||[]).indexOf('det_ccv') >= 0; } catch(_){ return false; }
+        { kind:'explain', text:'CCV Hunter scans for the Champion + Consolidation + Volume composite — the ~80% WR setup from Chapter 4 — and flags it the moment all three fire.' },
+        { kind:'choose',  text:'Open Workbench and click the Bots tab.',
+          complete:()=> { try { return !!document.querySelector('#win-workbench.on') && !!document.querySelector('#crWBViewBots:not(.hidden)'); } catch(_){ return false; } } },
+        { kind:'execute', text:'Click CCV Hunter to equip it.',
+          complete:(b)=> {
+            try {
+              const had = (b.bots||[]).indexOf('det_ccv') >= 0;
+              const has = (wb.equipped||[]).indexOf('det_ccv') >= 0;
+              return has && !had;
+            } catch(_){ return false; }
           } },
       ],
     };
@@ -18973,30 +19018,55 @@ function pickMode(mode){
       if(el) return el;
       el = document.createElement('div');
       el.id = 'crCoachOverlay';
-      // v0.9.48 — NEXT button removed. Steps only advance when the player
-      // actually does the move (poll detects via `complete()` predicate).
-      // SKIP stays as the explicit opt-out.
+      // v0.9.53 — Three-step EXPLAIN / CHOOSE / EXECUTE format. Each step
+      // shows a kind label, the instruction, plus Next + Skip. Auto-advance
+      // still runs via the poll for steps that have a complete() predicate;
+      // the Next button gives the player a manual escape if a detector
+      // misfires (the "buggy" complaint).
       el.innerHTML =
         '<div class="crCoachHd">' +
           '<div class="crCoachTitle">📘 Coach · Paper trade</div>' +
           '<div class="crCoachDots" id="crCoachDots"></div>' +
         '</div>' +
+        '<div class="crCoachStepKind" id="crCoachStepKind">EXPLAIN</div>' +
         '<div class="crCoachStep" id="crCoachStep">…</div>' +
-        '<div class="crCoachTip" id="crCoachTip"></div>' +
         '<div class="crCoachActions">' +
           '<button class="crCoachBtn" id="crCoachSkip">Skip chapter</button>' +
+          '<button class="crCoachBtn primary" id="crCoachNext">Next →</button>' +
         '</div>';
       document.body.appendChild(el);
       el.querySelector('#crCoachSkip').addEventListener('click', () => dismiss());
+      el.querySelector('#crCoachNext').addEventListener('click', () => advance());
       return el;
+    }
+    function _captureBaseline(){
+      try {
+        return {
+          brackets:    (typeof sdk !== 'undefined' && sdk.openOrders ? sdk.openOrders.filter(o => o.type === 'bracket').length : 0),
+          limits:      (typeof sdk !== 'undefined' && sdk.openOrders ? sdk.openOrders.filter(o => o.type === 'limit').length : 0),
+          strategies:  (typeof wb !== 'undefined' && wb.strategies ? wb.strategies.length : 0),
+          widgets:     document.querySelectorAll('[data-wbterm-id]').length,
+          bots:        (typeof wb !== 'undefined' && wb.equipped ? wb.equipped.slice() : []),
+          trendlines:  (typeof game !== 'undefined' && game.tvOverlays ? game.tvOverlays.filter(o => o.tool === 'trendline' || o.kind === 'trendline').length : 0),
+          vwaps:       (typeof game !== 'undefined' && game.tvOverlays ? game.tvOverlays.filter(o => o.tool === 'anchoredVwap' || o.kind === 'vwap').length : 0),
+          hlines:      (typeof game !== 'undefined' && game.anchorLines ? game.anchorLines.filter(l => l.tradeKind === 'hline' || l.kind === 'hline').length : 0),
+          ocos:        (typeof game !== 'undefined' && game.visualOCO ? game.visualOCO.length : 0),
+        };
+      } catch(_){ return {}; }
     }
     function render(){
       const el = ensureOverlay();
       const script = SCRIPTS[chapter];
       if(!script || !script[stepIdx]){ dismiss(); return; }
       const step = script[stepIdx];
-      el.querySelector('#crCoachStep').innerHTML = '<span class="crCoachOk">' + (stepIdx+1) + '/' + script.length + '</span>' + step.text;
-      el.querySelector('#crCoachTip').textContent = step.tip || '';
+      const kindLabel = (step.kind || 'step').toUpperCase();
+      const kindEl = el.querySelector('#crCoachStepKind');
+      if(kindEl){
+        kindEl.textContent = kindLabel;
+        kindEl.dataset.kind = step.kind || 'step';
+      }
+      el.querySelector('#crCoachStep').innerHTML =
+        '<span class="crCoachOk">' + (stepIdx+1) + '/' + script.length + '</span>' + step.text;
       const dots = el.querySelector('#crCoachDots');
       dots.innerHTML = '';
       for(let i=0; i<script.length; i++){
@@ -19005,6 +19075,11 @@ function pickMode(mode){
         dots.appendChild(d);
       }
       spotlight(step.target);
+      // Final EXECUTE step → button reads "Finish" instead of "Next →".
+      const nextBtn = el.querySelector('#crCoachNext');
+      if(nextBtn){
+        nextBtn.textContent = (stepIdx >= script.length - 1) ? 'Finish' : 'Next →';
+      }
       el.classList.add('on');
     }
     function start(chapterNum){
@@ -19013,6 +19088,10 @@ function pickMode(mode){
       chapter = chapterNum;
       stepIdx = 0;
       stepStartCounters = { _stepStart: Date.now() };
+      // v0.9.53 — Snapshot pre-chapter state so EXECUTE predicates compare
+      // against a fresh baseline (fixes false-completion when the player
+      // already had a strategy / widget / bot equipped before launching).
+      crCampaignCoach._baseline = _captureBaseline();
       // Reset event-flag scratch state.
       crCampaignCoach._ccvProbed = false;
       crCampaignCoach._ccvMatched = false;
@@ -19029,9 +19108,11 @@ function pickMode(mode){
       if(!script) { dismiss(); return; }
       const step = script[stepIdx];
       if(!step){ dismiss(); return; }
+      // v0.9.53 — explain steps have no auto-advance; player taps Next.
+      if(typeof step.complete !== 'function') return;
       try {
-        const ctx = { _stepStart: stepStartCounters._stepStart };
-        if(step.complete.call(ctx)) advance();
+        const baseline = crCampaignCoach._baseline || {};
+        if(step.complete.call(baseline, baseline)) advance();
       } catch(_){}
     }
     function advance(){
