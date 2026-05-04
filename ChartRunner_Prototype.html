@@ -5708,6 +5708,25 @@
                in-game lite profile (right sidebar Wallet tab). Find them at
                the bottom of #crSidePanelWallet during gameplay. -->
           <p style="margin:6px 0 0;font-size:10px;color:#5a5a52">Tip · Run controls (Reset / Save / Coins / Connect) live in the in-game right-sidebar Wallet panel.</p>
+          <!-- v0.9.57 — In-game CRDS → RUN exchange surfaced on desktop. The
+               same 100:1 swap that lives on the in-run shop, accessible here
+               so players can convert between sessions instead of mid-run. -->
+          <div class="os-section" id="profileExchangeSection" style="margin-top:12px">
+            <h4 style="margin:0 0 6px">In-game balance</h4>
+            <div id="profileExchangeCard" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,209,102,.06);border:1px solid rgba(255,209,102,.25);border-radius:10px;flex-wrap:wrap">
+              <div style="display:flex;flex-direction:column;gap:2px;min-width:90px">
+                <span style="font-size:9px;letter-spacing:.5px;color:var(--dim);text-transform:uppercase">$CRDS</span>
+                <span id="profileCrdsBal" style="font:700 16px ui-monospace,Menlo,monospace;color:#9b8cff">0</span>
+              </div>
+              <div style="font-size:18px;color:var(--dim)">→</div>
+              <div style="display:flex;flex-direction:column;gap:2px;min-width:90px">
+                <span style="font-size:9px;letter-spacing:.5px;color:var(--dim);text-transform:uppercase">$RUN</span>
+                <span id="profileRunBal" style="font:700 16px ui-monospace,Menlo,monospace;color:#ffd166">0</span>
+              </div>
+              <button id="profileExchangeBtn" type="button" class="cr-go" style="margin-left:auto;font-size:11px;padding:7px 14px">Trade 100 → 1</button>
+            </div>
+            <p style="margin:6px 0 0;font-size:10px;color:#5a5a52">Burn 100 $CRDS earned in-run to mint 1 $RUN. Persistent across sessions; powers the campaign chapter rewards and future Phase 2 on-chain mint.</p>
+          </div>
           <!-- v0.8k#24w/#24av/#24bq — Tabs: Player · Balances · Stats · Missions. -->
           <div class="crTerm-tabs" style="margin-top:8px">
             <button class="crTerm-tab active" data-profview="player" type="button">PLAYER</button>
@@ -12431,22 +12450,66 @@ function buyVehicle(id){
 }
 // v0.8h — $CRDS → $RUN exchange. 100:1 first-test. Emits a visible float and
 // a log entry so the swap is unambiguous. Will move to an on-chain router later.
+// v0.9.57 — Made desktop-safe: no longer requires the in-game `player` object,
+// gracefully no-ops missing log/spawnFloat, and refreshes the Profile-window
+// card so the new desktop-side exchange UI stays in sync.
 function exchangeCrdsToRun(){
   if(!game) return;
-  if((game.crds ?? 0) < CRDS_PER_RUN){ toast(`Need ${CRDS_PER_RUN} $CRDS`); return; }
+  if((game.crds ?? 0) < CRDS_PER_RUN){
+    try { toast && toast(`Need ${CRDS_PER_RUN} $CRDS`); } catch(_){}
+    return;
+  }
   game.crds -= CRDS_PER_RUN;
   game.run  += 1;
-  renderShop();
+  try { renderShop && renderShop(); } catch(_){}
+  // In-game HUD pills (only present during a run)
   try {
-    document.getElementById('crds').textContent = String(game.crds);
-    document.getElementById('run').textContent  = String(game.run);
+    const crdsEl = document.getElementById('crds');
+    const runEl  = document.getElementById('run');
+    if(crdsEl) crdsEl.textContent = String(game.crds);
+    if(runEl)  runEl.textContent  = String(game.run);
   } catch(_){}
-  log(`exchange -${CRDS_PER_RUN} $CRDS → +1 $RUN`);
+  // Desktop Profile-window card (always present in DOM)
+  try { _refreshProfileExchange && _refreshProfileExchange(); } catch(_){}
+  try { log && log(`exchange -${CRDS_PER_RUN} $CRDS → +1 $RUN`); } catch(_){}
+  // In-game floats — only when player object is alive (i.e. mid-run).
   try {
-    spawnFloat?.(player.wx, player.wy+32, `-${CRDS_PER_RUN} $CRDS`, '#9b8cff');
-    spawnFloat?.(player.wx, player.wy+16, '+1 $RUN', '#ffd166');
+    if(typeof player !== 'undefined' && player && spawnFloat){
+      spawnFloat(player.wx, player.wy+32, `-${CRDS_PER_RUN} $CRDS`, '#9b8cff');
+      spawnFloat(player.wx, player.wy+16, '+1 $RUN', '#ffd166');
+    }
   } catch(_){}
 }
+// v0.9.57 — Profile-window CRDS→RUN card refresh. Reads the live game balance,
+// updates the labels + button state. Cheap; called on every exchange + on a
+// 1 Hz interval below.
+function _refreshProfileExchange(){
+  try {
+    const crdsEl = document.getElementById('profileCrdsBal');
+    const runEl  = document.getElementById('profileRunBal');
+    const btn    = document.getElementById('profileExchangeBtn');
+    const crds = (typeof game !== 'undefined' && game.crds) ? (game.crds | 0) : 0;
+    const run  = (typeof game !== 'undefined' && game.run)  ? (game.run  | 0) : 0;
+    if(crdsEl) crdsEl.textContent = String(crds);
+    if(runEl)  runEl.textContent  = String(run);
+    if(btn){
+      const canTrade = crds >= CRDS_PER_RUN;
+      btn.disabled = !canTrade;
+      btn.textContent = canTrade ? 'Trade 100 → 1' : `Need ${CRDS_PER_RUN} $CRDS`;
+      btn.style.opacity = canTrade ? '1' : '0.5';
+      btn.style.cursor  = canTrade ? 'pointer' : 'not-allowed';
+    }
+  } catch(_){}
+}
+// Wire the desktop exchange button + a 1 Hz tick so the labels stay live.
+try {
+  const _profileBtn = document.getElementById('profileExchangeBtn');
+  if(_profileBtn){
+    _profileBtn.addEventListener('click', exchangeCrdsToRun);
+  }
+  setInterval(_refreshProfileExchange, 1000);
+  _refreshProfileExchange();
+} catch(_){}
 if(shopExchangeBtn){ shopExchangeBtn.addEventListener('click', exchangeCrdsToRun); }
 const _shopCloseBtn = document.getElementById('shopClose');
 if(_shopCloseBtn){ _shopCloseBtn.onclick = closeShop; }
