@@ -1000,6 +1000,47 @@
   .cr-boot .bar i{display:block;height:100%;width:0%;background:repeating-linear-gradient(
     90deg,#3454a8 0 8px,#5a78c8 8px 16px);animation:crBootBar 1.6s linear forwards}
   .cr-boot .hint{font-size:10px;color:#5a5a52;letter-spacing:.5px}
+  /* v0.9.51 — Login form on the boot dialog. Mac-OS-9 At-Ease aesthetic:
+     beveled chrome inputs, default-action button with the classic blue
+     pulsing ring around it (the OS9 default-button cue). */
+  .cr-boot .crBootLogin{display:flex;flex-direction:column;gap:10px;
+    width:280px;margin-top:4px;font-family:var(--cr-mono)}
+  .cr-boot .crLoginRow{display:flex;align-items:center;gap:10px;font-size:12px}
+  .cr-boot .crLoginRow label{flex:0 0 72px;text-align:right;color:#1a1a18;
+    font-weight:600;letter-spacing:.2px}
+  .cr-boot .crLoginRow input{flex:1;height:22px;padding:2px 6px;
+    border:1px solid #3a3a36;background:#fff;color:#1a1a18;
+    font:12px var(--cr-mono);outline:0;border-radius:0;
+    box-shadow:inset 1px 1px 0 #9a9a90, inset -1px -1px 0 #f4f4ee}
+  .cr-boot .crLoginRow input:focus{border-color:#3454a8;
+    box-shadow:inset 1px 1px 0 #9a9a90, inset -1px -1px 0 #f4f4ee,
+               0 0 0 1px #3454a8}
+  .cr-boot .crLoginActions{display:flex;justify-content:flex-end;
+    margin-top:2px}
+  .cr-boot .crLoginBtn{appearance:none;cursor:pointer;
+    font:600 12px var(--cr-mono);color:#1a1a18;
+    background:linear-gradient(180deg,#f4f4ee 0%,#dcdcd2 50%,#c8c8be 100%);
+    border:1px solid #3a3a36;border-radius:8px;padding:5px 18px;
+    box-shadow:inset 1px 1px 0 #fff, inset -1px -1px 0 #9a9a90,
+               1px 1px 0 rgba(0,0,0,.18);
+    letter-spacing:.3px;transition:transform .08s ease, box-shadow .12s ease}
+  .cr-boot .crLoginBtn:hover{filter:brightness(1.03)}
+  .cr-boot .crLoginBtn:active{transform:translateY(1px);
+    box-shadow:inset -1px -1px 0 #fff, inset 1px 1px 0 #9a9a90}
+  .cr-boot .crLoginBtn.primary{
+    /* Default-button cue — the classic OS9 pulsing thick blue outline */
+    box-shadow:inset 1px 1px 0 #fff, inset -1px -1px 0 #9a9a90,
+               0 0 0 2px #3454a8, 0 0 0 3px #1a1a18,
+               0 0 6px rgba(52,84,168,.55);
+    animation:crBootDefaultPulse 1.6s ease-in-out infinite}
+  @keyframes crBootDefaultPulse{
+    0%,100%{box-shadow:inset 1px 1px 0 #fff, inset -1px -1px 0 #9a9a90,
+                       0 0 0 2px #3454a8, 0 0 0 3px #1a1a18,
+                       0 0 6px rgba(52,84,168,.55)}
+    50%{box-shadow:inset 1px 1px 0 #fff, inset -1px -1px 0 #9a9a90,
+                   0 0 0 2px #5a78c8, 0 0 0 3px #1a1a18,
+                   0 0 12px rgba(90,120,200,.85)}
+  }
   @keyframes crBootIn{from{opacity:0}to{opacity:1}}
   @keyframes crBootOut{from{opacity:1}to{opacity:0}}
   @keyframes crBootBar{from{width:0%}to{width:100%}}
@@ -4072,9 +4113,12 @@
 
 
 <!-- v0.8L — ChartRunnerOS boot overlay. Renders above everything (z-index 50)
-     for ~2 seconds on every page load, then fades out to reveal the desktop.
-     Click anywhere to skip. SVG happy-Mac is procedurally drawn — no asset
-     dependencies (Hard Rule #5). -->
+     on every page load. SVG happy-Mac is procedurally drawn — no asset
+     dependencies (Hard Rule #5).
+     v0.9.51 — Replaced auto-dismissing welcome banner with a Mac-OS-9 Platinum
+     login dialog. Sign In or Enter submits; Esc skips. Name persists into the
+     player profile (#profileName / localStorage 'cr_profile_name_v1'). Password
+     is decorative — any non-empty value passes (no real auth in Phase 0). -->
 <div class="cr-boot" id="crBoot">
   <svg class="happymac" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <!-- Compact Mac silhouette -->
@@ -4098,8 +4142,23 @@
   </svg>
   <div class="title">Welcome to ChartRunnerOS</div>
   <div class="ver">v0.8L · Platinum Edition</div>
-  <div class="bar"><i></i></div>
-  <div class="hint">click anywhere to skip</div>
+  <form class="crBootLogin" id="crBootLogin" autocomplete="off" novalidate>
+    <div class="crLoginRow">
+      <label for="crBootName">Name</label>
+      <input type="text" id="crBootName" name="username" maxlength="20"
+             placeholder="anon_runner" spellcheck="false" autocapitalize="off"
+             autocomplete="off"/>
+    </div>
+    <div class="crLoginRow">
+      <label for="crBootPass">Password</label>
+      <input type="password" id="crBootPass" name="password" maxlength="32"
+             placeholder="••••••••" autocomplete="off"/>
+    </div>
+    <div class="crLoginActions">
+      <button type="submit" id="crBootSignIn" class="crLoginBtn primary">Sign In</button>
+    </div>
+  </form>
+  <div class="hint">press Esc to skip</div>
 </div>
 <div id="stage">
   <canvas id="cv"></canvas>
@@ -28538,6 +28597,10 @@ function log(msg){
  * =======================================================================*/
 (function ChartRunnerOSExt(){
   // ---- Boot overlay ----------------------------------------------------
+  // v0.9.51 — Login form: dismiss only on Sign In / Enter / Esc. Auto-dismiss
+  // and click-anywhere-to-skip retired so the form actually gates entry.
+  // Username persists into the profile (localStorage 'cr_profile_name_v1' is
+  // what #profileName already reads on load — set both for compat).
   const boot = document.getElementById('crBoot');
   if(boot){
     let dismissed = false;
@@ -28547,11 +28610,49 @@ function log(msg){
       boot.classList.add('out');
       setTimeout(()=>{ if(boot && boot.parentNode) boot.parentNode.removeChild(boot); }, 380);
     }
-    // Auto-dismiss after the progress bar finishes (~1.6s) + small grace.
-    setTimeout(dismissBoot, 1900);
-    boot.addEventListener('click', dismissBoot, { once:false });
-    boot.addEventListener('keydown', dismissBoot, { once:false });
-    // Esc anywhere skips
+    const form    = document.getElementById('crBootLogin');
+    const nameEl  = document.getElementById('crBootName');
+    const passEl  = document.getElementById('crBootPass');
+    // Pre-fill name from saved profile if present.
+    try {
+      const saved = localStorage.getItem('cr_profile_name_v1');
+      if(saved && nameEl) nameEl.value = saved;
+    } catch(_){}
+    // Focus the name field so Enter works without an extra click.
+    setTimeout(() => { try { (nameEl && !nameEl.value ? nameEl : passEl).focus(); } catch(_){} }, 60);
+    function trySignIn(){
+      const name = (nameEl && nameEl.value || '').trim();
+      const pass = (passEl && passEl.value || '');
+      if(!name || !pass){
+        // Subtle nudge — flash the empty field instead of toasting.
+        const target = !name ? nameEl : passEl;
+        if(target){
+          target.style.transition = 'box-shadow .15s ease';
+          target.style.boxShadow = 'inset 0 0 0 2px #c83232';
+          target.focus();
+          setTimeout(() => { target.style.boxShadow = ''; }, 380);
+        }
+        return;
+      }
+      // Persist name to the profile. The lite-profile / Wallet view picks this
+      // up on next render via the same localStorage key.
+      try {
+        localStorage.setItem('cr_profile_name_v1', name);
+        const profileNameEl = document.getElementById('profileName');
+        if(profileNameEl) profileNameEl.value = name;
+      } catch(_){}
+      dismissBoot();
+    }
+    if(form) form.addEventListener('submit', e => { e.preventDefault(); trySignIn(); });
+    // Enter inside either input also submits (form submit covers this, but be
+    // explicit for the password field where Safari sometimes eats it).
+    [nameEl, passEl].forEach(el => {
+      if(!el) return;
+      el.addEventListener('keydown', e => {
+        if(e.key === 'Enter'){ e.preventDefault(); trySignIn(); }
+      });
+    });
+    // Esc anywhere skips (kept as power-user / dev escape hatch).
     window.addEventListener('keydown', e => { if(e.key === 'Escape') dismissBoot(); }, { once:true });
   }
 
