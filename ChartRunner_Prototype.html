@@ -23457,8 +23457,11 @@ const TOK_BINANCE_PAIR = {
   // hype / pump / mog / fart: no Binance pair (yet) — synth fallback.
 };
 const _TOK_LIVE_TTL_MS = 30000;
-const _tokLiveCache = {};   // { 'btc|1h': { t, px, ch24, vol24, closes:[…] } }
+const _tokLiveCache = {};   // { 'btc|1h': { t, px, ch24, vol24, closes:[…], klines:[{o,h,l,c,t}] } }
 const _tokLiveInflight = {}; // dedup concurrent fetches
+// v0.9.54 — Once we've seen live data for an id, keep using the most recent
+// snapshot indefinitely as a fallback. This stops the "price on/off" flicker
+// where a stale-cache miss would drop the widget back to synth-seeded values.
 function _tokFetchLive(id, tf){
   const pair = TOK_BINANCE_PAIR[id];
   if(!pair) return null;
@@ -23475,12 +23478,17 @@ function _tokFetchLive(id, tf){
     delete _tokLiveInflight[key];
     if(!t24 || !kl || !Array.isArray(kl)) return;
     const closes = kl.map(k => parseFloat(k[4])).filter(v => !isNaN(v));
+    // v0.9.54 — Also keep full OHLC so the candle chart toggle has data.
+    const klines = kl.map(k => ({
+      t: +k[0], o: parseFloat(k[1]), h: parseFloat(k[2]),
+      l: parseFloat(k[3]), c: parseFloat(k[4]), v: parseFloat(k[5])
+    })).filter(b => !isNaN(b.o) && !isNaN(b.c));
     _tokLiveCache[key] = {
       t: Date.now(),
       px: parseFloat(t24.lastPrice),
       ch24: parseFloat(t24.priceChangePercent),
       vol24: parseFloat(t24.quoteVolume),
-      closes,
+      closes, klines,
     };
     // Re-render visible surfaces so the new data lands on screen.
     try { _tokRenderList(); } catch(_){}
@@ -23490,11 +23498,13 @@ function _tokFetchLive(id, tf){
   }).catch(() => { delete _tokLiveInflight[key]; });
   return cached || null;
 }
+// v0.9.54 — Always return the cached entry if one exists, regardless of TTL.
+// Renderers prefer fresh data but should NOT flip back to synth on a stale
+// miss — that's what caused the "price on / off" flicker. Staleness is now
+// indicated by the `●` dot color (mint = fresh, amber = >TTL).
 function _tokLiveOrNull(id, tf){
   const key = id + '|' + (tf || _tokTF(id));
-  const c = _tokLiveCache[key];
-  if(c && (Date.now() - c.t) < _TOK_LIVE_TTL_MS * 4) return c; // tolerant read
-  return null;
+  return _tokLiveCache[key] || null;
 }
 // Draw a mini sparkline from a closes[] array into a canvas.
 function _tokDrawSparkline(canvas, closes, color){
@@ -23987,6 +23997,10 @@ function _wEditStart(rootEl){
   const found = _wEditFindWidgetData(rootEl);
   if(!found) return;
   const w = found.w;
+  // v0.9.54 — Token widgets are 100% live-sourced (name, body, sparkline). The
+  // edit modal had nothing to offer except a "name locked" badge, which only
+  // confused players. Disable edit-mode entirely for type='token'.
+  if(w.type === 'token') return;
   rootEl.classList.add('cr-w-editing');
   const body = rootEl.querySelector('.wBody');
   if(!body) return;
@@ -24228,6 +24242,11 @@ function _wEditSave(rootEl){
   if(typeof toast === 'function') toast('Saved');
 }
 function _wEditToggle(rootEl){
+  // v0.9.54 — Token widgets opt out of edit-mode (live-sourced, nothing to edit).
+  try {
+    const found = _wEditFindWidgetData(rootEl);
+    if(found && found.w && found.w.type === 'token') return;
+  } catch(_){}
   if(_wEditIsEditing(rootEl)) _wEditSave(rootEl);
   else                        _wEditStart(rootEl);
 }
@@ -24799,36 +24818,64 @@ function _wBodyHTML(w){
     const body = (typeof _wbTermBodyHTML === 'function') ? _wbTermBodyHTML(t) : (t.body || '');
     return '<div class="wbterm-body small" data-wbterm-id="' + t.id + '">' + body + '</div>';
   }
-  // v0.8k#24ce — Token widget body. Compact profile card — price, 24h%,
-  // signal, market cap, holders. Re-rendered every renderWidgets() pass
-  // (5s) which already pulls fresh _tokSnapshot data.
+  // v0.9.54 — Token widget body, full pass:
+  // - Chart-type toggle (line ↔ candle), persisted on the widget
+  // - Holdings field (from localStorage cr_tok_holdings_v1)
+  // - Sparkline canvas grows with widget body height (auto-adjust on resize)
+  // - Active TF transitions visually (CSS transition on bg/border)
+  // - Snapshot prefers cached live data so price stops flickering on/off
   if(w.type === 'token'){
     const s = (typeof _tokSnapshot === 'function') ? _tokSnapshot(w.sourceId) : null;
     if(!s) return '<div class="dim">token unavailable</div>';
-    // v0.9.43 — Trigger live fetch (no-op if cached) so the widget gets
-    // fresh data on every renderWidgets pass without spamming Binance.
     if(s.hasBinance){ try { _tokFetchLive(s.def.id, s.tf); } catch(_){} }
     const sigC = _tokSignalColor(s.signal);
     const sparkId = 'wTokSpark_' + w.id;
-    // TF strip — same options as the profile picker. data-w-tok-tf carries
-    // both the TF and the widget's source id so the delegated handler can
-    // route the click. Active TF gets a green tint.
+    // Chart type lives on the widget itself so each pinned widget can pick
+    // independently. Default = 'line'.
+    if(w.tokChart !== 'candle' && w.tokChart !== 'line') w.tokChart = 'line';
+    const isCandle = (w.tokChart === 'candle');
+    // Player holdings — keyed by token id. Read-only field for now; players
+    // can edit via _tokSetHoldings (wired below).
+    const holding = (typeof _tokGetHolding === 'function') ? _tokGetHolding(s.def.id) : 0;
+    const holdingValue = (holding && s.px) ? (holding * s.px) : 0;
     const tfStrip = _TOK_TFS.map(tf => {
       const on = (tf === s.tf);
-      return '<button type="button" data-w-tok-tf="' + tf + '" data-w-tok-id="' + s.def.id + '" style="padding:2px 5px;font-size:9px;letter-spacing:.3px;text-transform:uppercase;border:1px solid ' + (on ? 'rgba(20,241,149,0.55)' : 'var(--line)') + ';background:' + (on ? 'rgba(20,241,149,0.10)' : 'transparent') + ';color:' + (on ? '#3ddc97' : 'var(--dim)') + ';border-radius:3px;cursor:pointer;font-family:ui-monospace,Menlo,monospace">' + tf + '</button>';
+      return '<button type="button" data-w-tok-tf="' + tf + '" data-w-tok-id="' + s.def.id +
+        '" style="padding:2px 5px;font-size:9px;letter-spacing:.3px;text-transform:uppercase;border:1px solid ' +
+        (on ? 'rgba(20,241,149,0.55)' : 'var(--line)') + ';background:' + (on ? 'rgba(20,241,149,0.10)' : 'transparent') +
+        ';color:' + (on ? '#3ddc97' : 'var(--dim)') +
+        ';border-radius:3px;cursor:pointer;font-family:ui-monospace,Menlo,monospace;transition:background .18s ease, border-color .18s ease, color .18s ease">' + tf + '</button>';
     }).join('');
+    // Tiny chart-type toggle (line ↔ candle) just to the right of the TF strip.
+    const chartToggle =
+      '<button type="button" data-w-tok-chart="' + (isCandle ? 'line' : 'candle') + '" data-w-tok-wid="' + w.id +
+      '" title="Switch to ' + (isCandle ? 'line' : 'candle') + '" style="margin-left:auto;padding:2px 6px;font-size:10px;line-height:1;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--fg);border-radius:3px;cursor:pointer;font-family:ui-monospace,Menlo,monospace">' +
+      (isCandle ? '🕯' : '📈') + '</button>';
+    // Live dot color: mint if fresh (<TTL), amber if stale.
+    const cached = (typeof _tokLiveCache !== 'undefined' && s.hasBinance) ? _tokLiveCache[s.def.id + '|' + s.tf] : null;
+    const fresh = cached && (Date.now() - cached.t) < _TOK_LIVE_TTL_MS;
+    const dotColor = s.live ? (fresh ? '#3ddc97' : '#ffd166') : '#5a5a72';
     return '' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
-        '<div><div style="font-weight:700;font-size:14px">' + s.def.tag + (s.live ? ' <span style="font-size:8px;color:#3ddc97">●</span>' : '') + '</div>' +
+        '<div><div style="font-weight:700;font-size:14px">' + s.def.tag + ' <span style="font-size:8px;color:' + dotColor + '">●</span></div>' +
         '<div class="dim" style="font-size:9px">' + s.def.chain + ' · ' + s.tf + '</div></div>' +
         '<div style="text-align:right">' +
           '<div style="font-weight:700;font-variant-numeric:tabular-nums">' + _tokFmtPx(s.px) + '</div>' +
           '<div style="font-weight:700;font-variant-numeric:tabular-nums;font-size:10px;color:' + (s.ch24 >= 0 ? '#3ddc97' : '#ff5b7f') + '">' + (s.ch24 >= 0 ? '+' : '') + s.ch24.toFixed(1) + '%</div>' +
         '</div>' +
       '</div>' +
-      '<canvas id="' + sparkId + '" data-w-tok-spark="' + s.def.id + '" style="display:block;width:100%;height:36px;margin-top:6px;background:rgba(0,0,0,.18);border-radius:3px"></canvas>' +
-      '<div style="display:flex;gap:3px;margin-top:5px;flex-wrap:wrap">' + tfStrip + '</div>' +
+      '<canvas id="' + sparkId + '" data-w-tok-spark="' + s.def.id + '" data-w-tok-chart-type="' + (isCandle ? 'candle' : 'line') + '" style="display:block;width:100%;height:auto;aspect-ratio:5 / 1;min-height:36px;margin-top:6px;background:rgba(0,0,0,.18);border-radius:3px;transition:opacity .15s ease"></canvas>' +
+      '<div style="display:flex;gap:3px;margin-top:5px;flex-wrap:wrap;align-items:center">' + tfStrip + chartToggle + '</div>' +
       '<div style="margin-top:6px;padding:3px 6px;border-radius:3px;font-size:9px;letter-spacing:.4px;font-weight:700;color:' + sigC + ';background:rgba(255,255,255,.04);border:1px solid ' + sigC + ';text-align:center">' + s.signal + '</div>' +
+      // v0.9.54 — Holdings row. Click qty to edit via prompt(). Total = qty × px.
+      '<div data-w-tok-hold="' + s.def.id + '" style="margin-top:6px;padding:5px 6px;border:1px dashed var(--line);border-radius:3px;display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:10px">' +
+        '<span class="dim" style="font-size:9px;letter-spacing:.4px;text-transform:uppercase">Holdings</span>' +
+        '<span style="font-variant-numeric:tabular-nums;cursor:pointer" title="Click to edit">' +
+          '<b>' + (holding ? holding.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '0') + '</b>' +
+          ' <span class="dim">' + s.def.tag + '</span>' +
+          (holdingValue ? ' <span style="color:#3ddc97">≈ ' + _tokFmtBig(holdingValue) + '</span>' : '') +
+        '</span>' +
+      '</div>' +
       '<div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:9px">' +
         '<div><span class="dim">MC</span> <b>' + _tokFmtBig(s.mc) + '</b></div>' +
         '<div><span class="dim">Vol</span> <b>' + _tokFmtBig(s.vol24) + '</b></div>' +
@@ -24975,18 +25022,125 @@ function _wEnsureLayer(){
   if(!layer || layer._tokWired) return;
   layer._tokWired = true;
   layer.addEventListener('click', (e) => {
-    const btn = e.target.closest && e.target.closest('[data-w-tok-tf]');
-    if(!btn) return;
-    e.stopPropagation();
-    const tf = btn.getAttribute('data-w-tok-tf');
-    const id = btn.getAttribute('data-w-tok-id');
-    if(!tf || !id || typeof _tokSetTF !== 'function') return;
-    _tokSetTF(id, tf);
-    try { renderWidgets(); } catch(_){}
-    try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
-    try { if(typeof _tokRenderProfile === 'function') _tokRenderProfile(); } catch(_){}
+    // TF switch
+    const tfBtn = e.target.closest && e.target.closest('[data-w-tok-tf]');
+    if(tfBtn){
+      e.stopPropagation();
+      const tf = tfBtn.getAttribute('data-w-tok-tf');
+      const id = tfBtn.getAttribute('data-w-tok-id');
+      if(!tf || !id || typeof _tokSetTF !== 'function') return;
+      // v0.9.54 — Smooth TF switch: fade the canvas, swap state, fade back in.
+      const card = tfBtn.closest('.cr-widget');
+      const cv = card && card.querySelector('canvas[data-w-tok-spark]');
+      if(cv){ cv.style.opacity = '0.35'; }
+      _tokSetTF(id, tf);
+      try { renderWidgets(); } catch(_){}
+      try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+      try { if(typeof _tokRenderProfile === 'function') _tokRenderProfile(); } catch(_){}
+      // The canvas in the freshly re-rendered DOM is a different node, so we
+      // re-find and ramp opacity back up. setTimeout lets the new node mount.
+      setTimeout(() => {
+        const card2 = layer.querySelector('.cr-widget [data-w-tok-spark="' + id + '"]');
+        if(card2){ card2.style.opacity = '0'; requestAnimationFrame(() => { card2.style.opacity = '1'; }); }
+      }, 30);
+      return;
+    }
+    // v0.9.54 — Chart-type toggle (line ↔ candle). Persisted on the widget.
+    const chartBtn = e.target.closest && e.target.closest('[data-w-tok-chart]');
+    if(chartBtn){
+      e.stopPropagation();
+      const next = chartBtn.getAttribute('data-w-tok-chart');
+      const wid  = chartBtn.getAttribute('data-w-tok-wid');
+      if(!next || !wid || typeof widgets === 'undefined') return;
+      const w = widgets.find(x => String(x.id) === String(wid));
+      if(w){
+        w.tokChart = (next === 'candle') ? 'candle' : 'line';
+        try { _wPersist && _wPersist(); } catch(_){}
+        try { renderWidgets(); } catch(_){}
+        try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+      }
+      return;
+    }
+    // v0.9.54 — Holdings field click → prompt for new holding amount.
+    const holdRow = e.target.closest && e.target.closest('[data-w-tok-hold]');
+    if(holdRow){
+      e.stopPropagation();
+      const id = holdRow.getAttribute('data-w-tok-hold');
+      if(!id || typeof _tokSetHolding !== 'function') return;
+      const cur = (typeof _tokGetHolding === 'function') ? _tokGetHolding(id) : 0;
+      const v = window.prompt('Holdings (' + id.toUpperCase() + ') — qty owned:', String(cur || 0));
+      if(v == null) return;
+      const n = parseFloat(v);
+      if(isNaN(n) || n < 0){ try { toast('Invalid amount'); } catch(_){} return; }
+      _tokSetHolding(id, n);
+      try { renderWidgets(); } catch(_){}
+      try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+      return;
+    }
   });
 })();
+/* v0.9.54 — Player holdings store. Mocked locally; will hook into the wallet
+ * adapter in Phase 2. Map of token-id → qty (number). Click on a token
+ * widget's Holdings row to edit. */
+const _TOK_HOLDINGS_KEY = 'cr_tok_holdings_v1';
+let _tokHoldingsCache = null;
+function _tokLoadHoldings(){
+  if(_tokHoldingsCache) return _tokHoldingsCache;
+  try { _tokHoldingsCache = JSON.parse(localStorage.getItem(_TOK_HOLDINGS_KEY) || '{}') || {}; }
+  catch(_){ _tokHoldingsCache = {}; }
+  return _tokHoldingsCache;
+}
+function _tokGetHolding(id){
+  const h = _tokLoadHoldings();
+  return (h && typeof h[id] === 'number') ? h[id] : 0;
+}
+function _tokSetHolding(id, qty){
+  const h = _tokLoadHoldings();
+  if(!qty) delete h[id]; else h[id] = qty;
+  try { localStorage.setItem(_TOK_HOLDINGS_KEY, JSON.stringify(h)); } catch(_){}
+  _tokHoldingsCache = h;
+}
+/* v0.9.54 — Candle sparkline. Same signature as _tokDrawSparkline but takes
+ * klines [{o,h,l,c,...}, …] instead of closes[]. Auto-scales bar width to
+ * canvas width; mint = up bars, salmon = down bars. */
+function _tokDrawCandles(canvas, klines){
+  if(!canvas || !Array.isArray(klines) || klines.length < 1) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || canvas.width;
+  const cssH = canvas.clientHeight || canvas.height;
+  if(canvas.width !== cssW * dpr) canvas.width = cssW * dpr;
+  if(canvas.height !== cssH * dpr) canvas.height = cssH * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  let lo = Infinity, hi = -Infinity;
+  for(const k of klines){ if(k.l < lo) lo = k.l; if(k.h > hi) hi = k.h; }
+  const span = (hi - lo) || 1;
+  const n = klines.length;
+  const slot = cssW / n;
+  const bw   = Math.max(1, Math.floor(slot * 0.7));
+  for(let i = 0; i < n; i++){
+    const k = klines[i];
+    const xMid = i * slot + slot / 2;
+    const yH = cssH - ((k.h - lo) / span) * (cssH - 2) - 1;
+    const yL = cssH - ((k.l - lo) / span) * (cssH - 2) - 1;
+    const yO = cssH - ((k.o - lo) / span) * (cssH - 2) - 1;
+    const yC = cssH - ((k.c - lo) / span) * (cssH - 2) - 1;
+    const up = k.c >= k.o;
+    const color = up ? '#3ddc97' : '#ff5b7f';
+    // Wick
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(xMid, yH); ctx.lineTo(xMid, yL);
+    ctx.stroke();
+    // Body
+    ctx.fillStyle = color;
+    const yTop = Math.min(yO, yC);
+    const yBot = Math.max(yO, yC);
+    ctx.fillRect(Math.round(xMid - bw / 2), Math.round(yTop), bw, Math.max(1, Math.round(yBot - yTop)));
+  }
+}
 // Repaint every token sparkline (in widgets and in the profile card) on
 // each render pass. Called from a periodic poller and from renderWidgets
 // when invoked via the click handler above.
@@ -24996,6 +25150,12 @@ function _crPaintTokSparks(){
       const id = cv.getAttribute('data-w-tok-spark');
       const tf = (typeof _tokTF === 'function') ? _tokTF(id) : '1h';
       const cached = (typeof _tokLiveOrNull === 'function') ? _tokLiveOrNull(id, tf) : null;
+      // v0.9.54 — Dispatch to candle drawer when the host widget asks for it.
+      const isCandle = cv.getAttribute('data-w-tok-chart-type') === 'candle';
+      if(isCandle && cached && Array.isArray(cached.klines) && cached.klines.length >= 1){
+        _tokDrawCandles(cv, cached.klines);
+        return;
+      }
       if(cached && cached.closes && cached.closes.length >= 2){
         _tokDrawSparkline(cv, cached.closes);
       } else {
