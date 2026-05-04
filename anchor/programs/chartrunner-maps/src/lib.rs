@@ -27,7 +27,7 @@
 
 use anchor_lang::prelude::*;
 
-declare_id!("ChMapsdLcj4N4ek3uW3RZE3pWYuKSTrgVLWeKQrU3yVz");
+declare_id!("DbzEqKfgCBqneR6Yuc17yEPc1fbVeqTeGy721f1n3UvH");
 
 #[program]
 pub mod chartrunner_maps {
