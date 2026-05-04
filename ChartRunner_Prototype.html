@@ -485,7 +485,11 @@
   #crCoachOverlay{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;background:linear-gradient(180deg,rgba(20,30,55,.95),rgba(12,18,35,.95));border:1px solid rgba(20,241,149,.45);border-radius:12px;padding:12px 18px;color:var(--fg);font:12px/1.45 ui-monospace,Menlo,monospace;min-width:380px;max-width:560px;box-shadow:0 12px 36px rgba(0,0,0,.55), 0 0 0 1px rgba(20,241,149,.10) inset;display:none;pointer-events:auto}
   #crCoachOverlay.on{display:block;animation:crCoachIn .25s ease-out}
   @keyframes crCoachIn{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translateX(-50%)}}
-  #crCoachOverlay .crCoachHd{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+  /* v0.9.53d — Header is the drag handle. cursor:grab signals it; the
+     body / buttons stay click-through normally. */
+  #crCoachOverlay .crCoachHd{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;cursor:grab;user-select:none}
+  #crCoachOverlay.dragging .crCoachHd{cursor:grabbing}
+  #crCoachOverlay.dragging{transition:none !important}
   #crCoachOverlay .crCoachTitle{font-weight:700;font-size:11px;color:#7ee787;letter-spacing:.6px;text-transform:uppercase}
   #crCoachOverlay .crCoachDots{display:flex;gap:3px}
   #crCoachOverlay .crCoachDot{width:7px;height:7px;border-radius:50%;background:rgba(180,200,230,.18);transition:background .15s ease}
@@ -19040,7 +19044,80 @@ function pickMode(mode){
       document.body.appendChild(el);
       el.querySelector('#crCoachSkip').addEventListener('click', () => dismiss());
       el.querySelector('#crCoachNext').addEventListener('click', () => advance());
+      // v0.9.53d — Drag the coach card by its header. Persists position to
+      // 'cr_coach_pos_v1' so it stays where the player left it across
+      // chapters / page reloads. Once dragged, the centered transform is
+      // dropped — element switches to absolute pixel coords (top + left).
+      _wireCoachDrag(el);
+      _restoreCoachPos(el);
       return el;
+    }
+    const COACH_POS_KEY = 'cr_coach_pos_v1';
+    function _wireCoachDrag(el){
+      const handle = el.querySelector('.crCoachHd');
+      if(!handle) return;
+      let drag = null; // { startX, startY, originLeft, originTop }
+      const PAD = 4;   // keep at least 4px from any viewport edge
+      function onDown(ev){
+        if(ev.button !== 0) return;          // left button only
+        if(ev.target.closest('.crCoachBtn')) return; // don't grab over buttons
+        ev.preventDefault();
+        const r = el.getBoundingClientRect();
+        // Switch to pixel-coord positioning on first grab so subsequent
+        // movement is straightforward (top + left, no transform).
+        el.style.left = r.left + 'px';
+        el.style.top  = r.top  + 'px';
+        el.style.right = '';
+        el.style.bottom = '';
+        el.style.transform = 'none';
+        el.classList.add('dragging');
+        drag = {
+          dx: ev.clientX - r.left,
+          dy: ev.clientY - r.top,
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup',   onUp, { once:true });
+      }
+      function onMove(ev){
+        if(!drag) return;
+        const w = el.offsetWidth, h = el.offsetHeight;
+        const maxX = window.innerWidth  - w - PAD;
+        const maxY = window.innerHeight - h - PAD;
+        const x = Math.max(PAD, Math.min(maxX, ev.clientX - drag.dx));
+        const y = Math.max(PAD, Math.min(maxY, ev.clientY - drag.dy));
+        el.style.left = x + 'px';
+        el.style.top  = y + 'px';
+      }
+      function onUp(){
+        if(!drag) return;
+        document.removeEventListener('mousemove', onMove);
+        el.classList.remove('dragging');
+        try {
+          const r = el.getBoundingClientRect();
+          localStorage.setItem(COACH_POS_KEY, JSON.stringify({ left: r.left, top: r.top }));
+        } catch(_){}
+        drag = null;
+      }
+      handle.addEventListener('mousedown', onDown);
+    }
+    function _restoreCoachPos(el){
+      try {
+        const raw = localStorage.getItem(COACH_POS_KEY);
+        if(!raw) return;
+        const p = JSON.parse(raw);
+        if(!p || typeof p.left !== 'number' || typeof p.top !== 'number') return;
+        const w = el.offsetWidth || 380, h = el.offsetHeight || 100;
+        const PAD = 4;
+        const maxX = window.innerWidth  - w - PAD;
+        const maxY = window.innerHeight - h - PAD;
+        const left = Math.max(PAD, Math.min(maxX, p.left));
+        const top  = Math.max(PAD, Math.min(maxY, p.top));
+        el.style.left = left + 'px';
+        el.style.top  = top  + 'px';
+        el.style.right = '';
+        el.style.bottom = '';
+        el.style.transform = 'none';
+      } catch(_){}
     }
     function _captureBaseline(){
       try {
