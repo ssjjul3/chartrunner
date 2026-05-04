@@ -1024,7 +1024,11 @@
      beveled chrome inputs, default-action button with the classic blue
      pulsing ring around it (the OS9 default-button cue). */
   .cr-boot .crBootLogin{display:flex;flex-direction:column;gap:10px;
-    width:280px;margin-top:4px;font-family:var(--cr-mono)}
+    width:340px;margin-top:4px;font-family:var(--cr-mono)}
+  /* v0.9.7 — wallet-login note. Replaces the Name + Password rows. */
+  .cr-boot .crLoginNote{font:11px/1.45 var(--cr-mono);color:#3a3a36;
+    text-align:center;padding:6px 4px 2px;letter-spacing:.1px}
+  .cr-boot .crLoginActions{justify-content:space-between;gap:8px}
   .cr-boot .crLoginRow{display:flex;align-items:center;gap:10px;font-size:12px}
   .cr-boot .crLoginRow label{flex:0 0 72px;text-align:right;color:#1a1a18;
     font-weight:600;letter-spacing:.2px}
@@ -4396,24 +4400,20 @@
     <line x1="14" y1="55" x2="28" y2="55" stroke="#1a1a18" stroke-width="0.8"/>
   </svg>
   <div class="title">Welcome to ChartRunnerOS</div>
-  <div class="ver">v0.8L · Platinum Edition</div>
+  <div class="ver">v0.9.7 · Platinum Edition</div>
+  <!-- v0.9.7 — wallet-first login. Name/password retired; player auths
+       through the same /solana-connect/ flow as in-game crBarConnect.
+       Guest mode preserved for tire-kickers (anon_runner namespace). -->
   <form class="crBootLogin" id="crBootLogin" autocomplete="off" novalidate>
-    <div class="crLoginRow">
-      <label for="crBootName">Name</label>
-      <input type="text" id="crBootName" name="username" maxlength="20"
-             placeholder="anon_runner" spellcheck="false" autocapitalize="off"
-             autocomplete="off"/>
-    </div>
-    <div class="crLoginRow">
-      <label for="crBootPass">Password</label>
-      <input type="password" id="crBootPass" name="password" maxlength="32"
-             placeholder="••••••••" autocomplete="off"/>
+    <div class="crLoginNote">
+      Sign in with a Solana wallet to record runs on-chain, save maps to your namespace, and appear on the live multiplayer leaderboard.
     </div>
     <div class="crLoginActions">
-      <button type="submit" id="crBootSignIn" class="crLoginBtn primary">Sign In</button>
+      <button type="button" id="crBootGuest"   class="crLoginBtn">Continue as Guest</button>
+      <button type="submit" id="crBootConnect" class="crLoginBtn primary">🪙 Connect Wallet</button>
     </div>
   </form>
-  <div class="hint">press Esc to skip</div>
+  <div class="hint">press Esc to skip · runs as Guest</div>
 </div>
 <div id="stage">
   <canvas id="cv"></canvas>
@@ -7591,6 +7591,9 @@ window.crWallet = (function(){
     if (w) {
       try { localStorage.setItem(KEY, w); } catch(_){}
       if (a) { try { localStorage.setItem(ADAPTER_KEY, a); } catch(_){} }
+      // v0.9.7 — Wallet connect supersedes guest mode. Clear the flag so the
+      // boot login + Start Run gate read this player's status correctly.
+      try { localStorage.removeItem('cr_guest_mode_v1'); } catch(_){}
       u.searchParams.delete('wallet');
       u.searchParams.delete('adapter');
       window.history.replaceState({}, '', u.toString());
@@ -19726,6 +19729,20 @@ function pickMode(mode){
     }catch(_){}
   });
   if(start) start.addEventListener('click', () => {
+    // v0.9.7 — Wallet gate. Fresh visitors who never saw the boot login (or
+    // had it auto-dismissed) get bounced to it on first Start Run. Players
+    // who explicitly chose "Continue as Guest" (cr_guest_mode_v1) skip the
+    // gate and play unauthenticated. Connecting a wallet at any point also
+    // skips it. The login's Connect Wallet button kicks off /solana-connect/
+    // and the player returns to a connected session.
+    try {
+      const guestMode = localStorage.getItem('cr_guest_mode_v1') === '1';
+      if(typeof crWallet !== 'undefined' && !crWallet.isConnected() && !guestMode &&
+         typeof window.crShowBootLogin === 'function'){
+        window.crShowBootLogin();
+        return;
+      }
+    } catch(_){}
     const pending = (typeof game !== 'undefined' && game.pendingMode) ? game.pendingMode : 'timeismoney';
     if(typeof game !== 'undefined') game.mode = pending;
     const cfg = document.getElementById('win-configs');
@@ -29300,78 +29317,88 @@ function log(msg){
  * =======================================================================*/
 (function ChartRunnerOSExt(){
   // ---- Boot overlay ----------------------------------------------------
-  // v0.9.51 — Login form: dismiss only on Sign In / Enter / Esc. Auto-dismiss
-  // and click-anywhere-to-skip retired so the form actually gates entry.
-  // Username persists into the profile (localStorage 'cr_profile_name_v1' is
-  // what #profileName already reads on load — set both for compat).
+  // v0.9.7 — Wallet-first login. The old Name+Password gate has been retired;
+  // players authenticate by connecting a Solana wallet through the same
+  // /solana-connect/ flow as crBarConnect. Guests can press "Continue as
+  // Guest" or Esc — they play with the anon_runner namespace and lose access
+  // to on-chain saves / leaderboards.
+  //
+  // crBoot is kept in the DOM after the first dismiss (just hidden via the
+  // .out class) so the Play→login gate at crCfgStart can re-show it without
+  // re-scaffolding markup.
   const boot = document.getElementById('crBoot');
   if(boot){
-    let dismissed = false;
     function dismissBoot(){
-      if(dismissed) return;
-      dismissed = true;
       boot.classList.add('out');
-      setTimeout(()=>{ if(boot && boot.parentNode) boot.parentNode.removeChild(boot); }, 380);
+      // Stop blocking pointer events so the desktop is interactive.
+      boot.style.pointerEvents = 'none';
     }
-    const form    = document.getElementById('crBootLogin');
-    const nameEl  = document.getElementById('crBootName');
-    const passEl  = document.getElementById('crBootPass');
-    // Pre-fill name from saved profile if present.
+    function showBoot(){
+      boot.classList.remove('out');
+      boot.style.pointerEvents = '';
+    }
+    // Expose for the Play-button gate (crCfgStart) to re-trigger.
+    window.crShowBootLogin = showBoot;
+
+    // If the player already has a connected wallet (returning visitor or
+    // bounce-back from /solana-connect/?wallet=...), skip the gate entirely.
+    let alreadyConnected = false;
     try {
-      const saved = localStorage.getItem('cr_profile_name_v1');
-      if(saved && nameEl) nameEl.value = saved;
-    } catch(_){}
-    // Focus the name field so Enter works without an extra click.
-    setTimeout(() => { try { (nameEl && !nameEl.value ? nameEl : passEl).focus(); } catch(_){} }, 60);
-    function trySignIn(){
-      const name = (nameEl && nameEl.value || '').trim();
-      const pass = (passEl && passEl.value || '');
-      if(!name || !pass){
-        // Subtle nudge — flash the empty field instead of toasting.
-        const target = !name ? nameEl : passEl;
-        if(target){
-          target.style.transition = 'box-shadow .15s ease';
-          target.style.boxShadow = 'inset 0 0 0 2px #c83232';
-          target.focus();
-          setTimeout(() => { target.style.boxShadow = ''; }, 380);
-        }
-        return;
+      if(typeof crWallet !== 'undefined' && crWallet.isConnected()){
+        dismissBoot();
+        alreadyConnected = true;
       }
-      // Persist name to the profile. The lite-profile / Wallet view picks this
-      // up on next render via the same localStorage key.
+    } catch(_){}
+
+    if(!alreadyConnected){
+    const form        = document.getElementById('crBootLogin');
+    const connectBtn  = document.getElementById('crBootConnect');
+    const guestBtn    = document.getElementById('crBootGuest');
+
+    function doConnect(){
+      // Bounce through the React+wallet-adapter app. On return, crWallet
+      // hydrates from the URL and the next-paint check above auto-dismisses.
       try {
-        localStorage.setItem('cr_profile_name_v1', name);
+        if(typeof crWallet !== 'undefined' && crWallet.connect){
+          crWallet.connect();
+        } else {
+          // Fallback: hand-built redirect if crWallet hasn't loaded yet.
+          window.location.href = '../solana-connect/?next=play&return=' + encodeURIComponent('/play/');
+        }
+      } catch(_){}
+    }
+    function doGuest(){
+      // Persist a default profile name so downstream profile/UI reads work.
+      // Also flag explicit guest mode so the Start Run gate doesn't bounce
+      // the player back to login on every run start. Connecting a wallet
+      // later clears the flag (handled in crWallet's connect path).
+      try {
+        const existing = localStorage.getItem('cr_profile_name_v1');
+        if(!existing) localStorage.setItem('cr_profile_name_v1', 'anon_runner');
+        localStorage.setItem('cr_guest_mode_v1', '1');
         const profileNameEl = document.getElementById('profileName');
-        if(profileNameEl) profileNameEl.value = name;
+        if(profileNameEl && !profileNameEl.value) profileNameEl.value = 'anon_runner';
       } catch(_){}
       dismissBoot();
-      // v0.9.56 — First-boot auto-tutorial. Without this, a fresh player lands
-      // on the desktop with zero guidance — the OS tutorial only fires when
-      // they hit the menubar Tutorial button (which they have no reason to).
-      // Gated on localStorage so the prompt only ever fires once.
+      // v0.9.56 — First-boot auto-tutorial gated on localStorage so the
+      // walkthrough only fires once (across both wallet + guest entries).
       try {
         const FIRST_BOOT_KEY = 'cr_first_boot_v1';
         if(!localStorage.getItem(FIRST_BOOT_KEY)){
           localStorage.setItem(FIRST_BOOT_KEY, String(Date.now()));
-          // Fire a beat after the boot fade completes (380ms) + a touch of
-          // breathing room so the desktop is visible before the coach appears.
           setTimeout(() => {
             try { if(typeof window.crCoachTutorial === 'function') window.crCoachTutorial(true, 'os'); } catch(_){}
           }, 700);
         }
       } catch(_){}
     }
-    if(form) form.addEventListener('submit', e => { e.preventDefault(); trySignIn(); });
-    // Enter inside either input also submits (form submit covers this, but be
-    // explicit for the password field where Safari sometimes eats it).
-    [nameEl, passEl].forEach(el => {
-      if(!el) return;
-      el.addEventListener('keydown', e => {
-        if(e.key === 'Enter'){ e.preventDefault(); trySignIn(); }
-      });
-    });
-    // Esc anywhere skips (kept as power-user / dev escape hatch).
-    window.addEventListener('keydown', e => { if(e.key === 'Escape') dismissBoot(); }, { once:true });
+
+    if(form)       form.addEventListener('submit', e => { e.preventDefault(); doConnect(); });
+    if(connectBtn) connectBtn.addEventListener('click', e => { e.preventDefault(); doConnect(); });
+    if(guestBtn)   guestBtn.addEventListener('click',   e => { e.preventDefault(); doGuest();   });
+    // Esc → guest (preserves the v0.9.51 "skip" semantics).
+    window.addEventListener('keydown', e => { if(e.key === 'Escape') doGuest(); }, { once:true });
+    } // end if(!alreadyConnected)
   }
 
   // ---- Apple menubar clock --------------------------------------------
@@ -29397,7 +29424,7 @@ function log(msg){
     const el = document.getElementById(id);
     if(el) el.addEventListener('click', fn);
   }
-  bindMenu('crMenuApple',  ()=> typeof toast === 'function' && toast('ChartRunnerOS v0.8L — Platinum Edition'));
+  bindMenu('crMenuApple',  ()=> typeof toast === 'function' && toast('ChartRunnerOS v0.9.7 — Platinum Edition'));
   // v0.8k#24bz / v0.8k#24ca — Home (now Game) opens the LAST-PLAYED chart
   // when one exists, otherwise falls back to the ChartRunner launcher.
   // The snapshot is written by the Configure-Run "Start Run" button and
@@ -31086,7 +31113,7 @@ plot(diff, color=color.aqua)`,
     const el = document.getElementById(id);
     if(el) el.addEventListener('click', fn);
   }
-  bind('crBarApple',  () => typeof toast === 'function' && toast('ChartRunnerOS v0.8L'));
+  bind('crBarApple',  () => typeof toast === 'function' && toast('ChartRunnerOS v0.9.7'));
   // v0.8k#24cg — Body-level Home button just shows the splash desktop,
   // exactly as before. The splash menubar's "Game" item is the one that
   // resumes the last-played chart.
