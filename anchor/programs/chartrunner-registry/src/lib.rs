@@ -47,7 +47,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
-declare_id!("ChRegSdLcj4N4ek3uW3RZE3pWYuKSTrgVLWeKQrU3yVz");
+declare_id!("ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn");
 
 pub const MAX_NAME_LEN: usize = 64;
 pub const MAX_ROYALTY_BPS: u16 = 5000;       // 50% cap to prevent abuse
@@ -267,7 +267,7 @@ pub struct SaveEntity<'info> {
         init_if_needed,
         payer = owner,
         space = 8 + EntityRecord::SIZE,
-        seeds = [b"entity", &[entity_type], owner.key().as_ref(), name.as_bytes()],
+        seeds = [b"entity".as_ref(), &[entity_type], owner.key().as_ref(), name.as_bytes()],
         bump,
     )]
     pub entity: Account<'info, EntityRecord>,
@@ -283,7 +283,7 @@ pub struct DeleteEntity<'info> {
         mut,
         close = owner,
         has_one = owner,
-        seeds = [b"entity", &[entity_type], owner.key().as_ref(), name.as_bytes()],
+        seeds = [b"entity".as_ref(), &[entity_type], owner.key().as_ref(), name.as_bytes()],
         bump = entity.bump,
     )]
     pub entity: Account<'info, EntityRecord>,
@@ -295,7 +295,7 @@ pub struct DeleteEntity<'info> {
 #[instruction(entity_type: u8, name: String, price_lamports: u64)]
 pub struct ListEntity<'info> {
     #[account(
-        seeds = [b"entity", &[entity_type], owner.key().as_ref(), name.as_bytes()],
+        seeds = [b"entity".as_ref(), &[entity_type], owner.key().as_ref(), name.as_bytes()],
         bump = entity.bump,
         has_one = owner,
     )]
@@ -317,7 +317,7 @@ pub struct ListEntity<'info> {
 #[instruction(entity_type: u8, name: String)]
 pub struct BuyEntity<'info> {
     #[account(
-        seeds = [b"entity", &[entity_type], seller.key().as_ref(), name.as_bytes()],
+        seeds = [b"entity".as_ref(), &[entity_type], seller.key().as_ref(), name.as_bytes()],
         bump = entity.bump,
     )]
     pub entity: Account<'info, EntityRecord>,
@@ -354,7 +354,7 @@ pub struct BuyEntity<'info> {
 #[instruction(entity_type: u8, name: String)]
 pub struct CancelListing<'info> {
     #[account(
-        seeds = [b"entity", &[entity_type], seller.key().as_ref(), name.as_bytes()],
+        seeds = [b"entity".as_ref(), &[entity_type], seller.key().as_ref(), name.as_bytes()],
         bump = entity.bump,
     )]
     pub entity: Account<'info, EntityRecord>,
