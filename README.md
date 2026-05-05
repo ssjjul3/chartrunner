@@ -31,7 +31,7 @@ IDLs committed at [`anchor/target/idl/*.json`](anchor/target/idl/). Source at [`
 
 ## What it is
 
-A **gamified trading SDK** shipped as a playable browser prototype. Players run on real Binance candles, drop into the upside-down to fight bears on volatility, and every ability — bracket, ladder, OCO, hedge, radar, rescue — is a real trading primitive that routes through `ChartRunnerSDK`. The same SDK plugs into a real Solana adapter in Phase 2 — and the on-chain marketplace + leaderboard primitives are live on devnet today.
+A **gamified trading SDK** that works with any chart. Players run on real candle data (Binance, Coinbase, Bitfinex, Hyperliquid — any OHLCV source), drop into the upside-down on volatility, and every ability — bracket, ladder, OCO, hedge, radar, rescue — is a real trading primitive that routes through `ChartRunnerSDK`. The same SDK plugs into a real Solana adapter in Phase 2 — and the on-chain marketplace + leaderboard primitives are live on devnet today.
 
 The hard architectural rule: **abilities never touch the canvas, the SDK is the only thing that issues orders.** That's what made Phase 2 a swap, not a rewrite.
 
@@ -41,7 +41,7 @@ The hard architectural rule: **abilities never touch the canvas, the SDK is the 
 
 | Phase | Goal | State |
 |---|---|---|
-| **0** | Playable single-file game · onboarding · juice · simplicity | ✅ Shipped |
+| **0** | Playable game prototype · onboarding · juice · simplicity | ✅ Shipped |
 | **0.5** | Devnet wallet + signed transaction | ✅ Live at `/solana-connect/` |
 | **0.9** | Public landing · repo · CI · Pages deploy | ✅ Shipped |
 | **0.9.3** | Wallet-gated entry + per-wallet localStorage | ✅ Shipped |
@@ -187,7 +187,7 @@ Reset / Save / Coins / Connect Wallet moved off the topbar (now hidden) into the
 - One-card UI per action with full metadata preview before signing
 
 ### Landing (`/`)
-- defikingdoms-style single-file landing
+- defikingdoms-style landing page
 - Animated candle chart hero with drifting Invader sprite
 - Bracket-flow canvas demo (laser → click → click → bracket on a 7s loop)
 - 6-card mechanics grid · architecture diagram · Solana section · 3-phase roadmap
@@ -198,8 +198,8 @@ Reset / Save / Coins / Connect Wallet moved off the topbar (now hidden) into the
 
 | Surface | Stack | Build |
 |---|---|---|
-| Landing | Single HTML file · vanilla JS · canvas | None |
-| Game | Single HTML file · vanilla JS · canvas (~25 KB minified equiv) | None |
+| Landing | Static HTML · vanilla JS · canvas | None |
+| Game prototype | Single HTML file · vanilla JS · canvas (~25 KB minified equiv) | None (build-free by design — see hard rule below) |
 | Solana connect | React 18 · TypeScript strict · Vite 5 · `@solana/web3.js` 1.95 · wallet-adapter | `npm run build` |
 | Anchor programs | Rust · Anchor 0.30.1 · Solana 1.18.x | `anchor build` (or Solana Playground) |
 | Skills | `skills/chartrunner` (game work) · `skills/solana` (devnet React work) | — |
@@ -235,7 +235,7 @@ The single architectural rule: **ChartRunnerSDK is the only thing that issues or
 
 ## Run locally
 
-### The game (single file, no build)
+### The game prototype (no install)
 ```bash
 git clone https://github.com/ssjjul3/chartrunner.git
 cd chartrunner
@@ -259,7 +259,7 @@ You'll need a Solana wallet extension (Phantom or Backpack). Get devnet SOL from
 
 ```
 chartrunner/
-├── ChartRunner_Prototype.html          # The single-file game (canonical source)
+├── ChartRunner_Prototype.html          # Game prototype (canonical source · 1.8MB)
 ├── chartrunner-prototype/              # Pages deploy folder
 │   ├── index.html                      #   → landing page (root URL)
 │   └── README.md

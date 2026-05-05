@@ -184,7 +184,7 @@ Themes are pure CSS — implementation is `data-theme="..."` on `.splash` plus p
 
 
 
-Single-file playable prototype of the **Gamified Trading SDK** idea from the brainstorm in this folder. Opens directly in any modern browser — no build, no install, no wallet.
+Playable client of the **Gamified Trading SDK** — opens directly in any modern browser, no build, no install, no wallet to start. The full system also includes the ChartRunnerSDK TypeScript modules, a React wallet bridge at `/solana-connect/`, and two Anchor programs deployed on Solana devnet (chartrunner_maps + chartrunner_registry).
 
 **File:** `ChartRunner_Prototype.html`
 **Phase 0 plan:** `ChartRunner_Phase0_Plan.md`
@@ -346,7 +346,7 @@ Second slice of the items arc. Charges now have a real economy: killable bosses 
 - **Bear bosses.** An 8% roll on every monster spawn produces a **boss** variant instead of a grunt/floater/runner. Bosses are larger, slower (speed 45 vs 70-95), HP 6 (vs 1-2), render with a pulsing pink/green silhouette and an above-head HP bar. Their hitbox is ~2× so they're still fair to aim at. Two-hit lasers chew them in 3 shots; gun bullets take 6.
 - **Loot orbs.** On boss kill, a cyan pulsing orb with an **"L"** glyph drops at the boss's death spot. Collecting it grants **+2 charges on every item** that isn't already maxed, plus **+20 $CRDS**, plus a "LOOT" banner. The boss kill itself also pays +5 $RUN + 8 $CRDS + 100 score.
 - **$CRDS shop.** Press **B** or open Menu → Shop to bring up a modal that lists all 7 items with their current charges and a "+1 · N $CRDS" button per row. Prices scale with scarcity — Ladder/Bracket 6, OCO/Hedge/Radar 10, Magnez 12, Rescue 16. Buttons disable at max charges or insufficient $CRDS. Closing the shop is **Esc**, **B**, or the Close button. While the shop is open every other key is swallowed so a stray `1`/`w`/`space` doesn't leak into the game.
-- **Economy loop.** The new circuit: survive the upside-down → kill bosses for $CRDS and loot → spend $CRDS at the shop to top up the items you use most → place more brackets → survive longer. Restock orbs from v1 are still around but far rarer than boss drops now that bosses exist as a reliable source.
+- **Economy loop.** The new circuit: drop into the upside-down → kill bosses for $CRDS and loot → spend $CRDS at the shop to top up the items you use most → place more brackets → run longer. Restock orbs from v1 are still around but far rarer than boss drops now that bosses exist as a reliable source.
 - **No persistent progression yet.** Charges (and $CRDS) reset at the start of every run. Future v0.7b-items v3 will tackle maxCharges upgrades, tier unlocks, and the "end-of-run forced spend" the original backlog called for.
 
 ## What's new in v0.7b-items — "items replace cooldowns"
