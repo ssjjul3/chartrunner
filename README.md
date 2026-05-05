@@ -2,10 +2,10 @@
 
 > **Fortnite meets Space Invaders meets a trading chart.** Every trade is a game move.
 
-[![Live](https://img.shields.io/badge/live-ssjjul3.github.io%2Fchartrunner-14F195)](https://ssjjul3.github.io/chartrunner/)
-[![Solana](https://img.shields.io/badge/solana-devnet%20live-9945FF)](https://ssjjul3.github.io/chartrunner/solana-connect/)
-[![Phase](https://img.shields.io/badge/phase-0.9.22%20full%20primitives%20laser-success)](#status)
-[![Anchor](https://img.shields.io/badge/anchor-2%20programs%20ready-orange)](anchor/)
+[![Live](https://img.shields.io/badge/live-chartrunner.xyz-14F195)](https://chartrunner.xyz/)
+[![Solana](https://img.shields.io/badge/solana-devnet%20chain%20LIVE-9945FF)](https://chartrunner.xyz/solana-connect/)
+[![Phase](https://img.shields.io/badge/phase-0.9.7%20multiplayer%20on--chain-success)](#status)
+[![Anchor](https://img.shields.io/badge/anchor-2%20programs%20deployed-brightgreen)](anchor/)
 [![Stack](https://img.shields.io/badge/stack-vanilla%20JS%20%2B%20Vite%20%2B%20Rust-blue)](#stack)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
@@ -13,20 +13,31 @@
 
 | Surface | URL | What it is |
 |---|---|---|
-| 🎮 **Landing** | https://ssjjul3.github.io/chartrunner/ | Project page · pitch · animated hero |
-| 🕹 **Game** | https://ssjjul3.github.io/chartrunner/play/ | The playable prototype — no install, no wallet |
-| 🪙 **Solana devnet** | https://ssjjul3.github.io/chartrunner/solana-connect/ | Real wallet connect + signed memo on devnet |
-| 📖 **Pitch deck** | [PITCH-DECK.pdf](PITCH-DECK.pdf) · [.pptx](PITCH-DECK.pptx) | 12 slides, narrated speaker notes |
+| 🎮 **Landing** | https://chartrunner.xyz/ | Project page · pitch · animated hero |
+| 🕹 **Game** | https://chartrunner.xyz/play/ | The playable prototype · wallet-first boot login |
+| 🪙 **Wallet bridge** | https://chartrunner.xyz/solana-connect/ | Phantom / Backpack / Solflare → devnet handshake |
+| 📖 **Pitch deck** | [PITCH-DECK.pdf](PITCH-DECK.pdf) · [.pptx](PITCH-DECK.pptx) | Full pitch · 22 slides incl. v0.9.7 update |
+
+## On-chain — Phase 2 LIVE on Solana devnet
+
+Both Anchor programs are **deployed and verifiable on Solana Explorer.** Players mint real `RunRecord` PDAs from inside the game; async multiplayer leaderboard polls every 60s and renders ghost markers on every player's chart for the same asset.
+
+| Program | Address | Job |
+|---|---|---|
+| `chartrunner_maps` | [`DbzEqKfgCBqneR6Yuc17yEPc1fbVeqTeGy721f1n3UvH`](https://explorer.solana.com/address/DbzEqKfgCBqneR6Yuc17yEPc1fbVeqTeGy721f1n3UvH?cluster=devnet) | SHA-256 map index, PDA per (wallet, name) |
+| `chartrunner_registry` | [`ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn`](https://explorer.solana.com/address/ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn?cluster=devnet) | 9-entity registry · first-sale marketplace · run leaderboard |
+
+IDLs committed at [`anchor/target/idl/*.json`](anchor/target/idl/). Source at [`anchor/programs/chartrunner-{maps,registry}/src/lib.rs`](anchor/programs/).
 
 ## What it is
 
-A **gamified trading SDK** shipped as a playable browser prototype. Players run on real Binance candles, drop into the upside-down to fight bears on volatility, and every ability — bracket, ladder, OCO, hedge, radar, rescue — is a real trading primitive that routes through `ChartRunnerSDK`. The same SDK plugs into a real Solana adapter in Phase 2.
+A **gamified trading SDK** shipped as a playable browser prototype. Players run on real Binance candles, drop into the upside-down to fight bears on volatility, and every ability — bracket, ladder, OCO, hedge, radar, rescue — is a real trading primitive that routes through `ChartRunnerSDK`. The same SDK plugs into a real Solana adapter in Phase 2 — and the on-chain marketplace + leaderboard primitives are live on devnet today.
 
-The hard architectural rule: **abilities never touch the canvas, the SDK is the only thing that issues orders.** That's what makes Phase 2 a swap, not a rewrite.
+The hard architectural rule: **abilities never touch the canvas, the SDK is the only thing that issues orders.** That's what made Phase 2 a swap, not a rewrite.
 
 ## Status
 
-**Phase 0.9.21 — quant.pdf Tier 1 complete + Campaign coach.** Three surfaces live on GitHub Pages, two Anchor programs ready to deploy, async on-chain leaderboard wired end-to-end, full quant scoring spine + 10 SDK detectors + 8-chapter scripted Campaign + tool-aware laser system.
+**Phase 2 chain LIVE · v0.9.7 multiplayer on devnet.** Four deploy surfaces all working on chartrunner.xyz, two Anchor programs deployed and verifiable on Solana Explorer, wallet-first boot login (Phantom / Backpack / Solflare), async on-chain leaderboard rendering ghost markers from real `RunRecord` PDAs, full quant scoring spine + 10 SDK detectors + 8-chapter scripted Campaign + tool-aware laser system.
 
 | Phase | Goal | State |
 |---|---|---|
@@ -34,17 +45,17 @@ The hard architectural rule: **abilities never touch the canvas, the SDK is the 
 | **0.5** | Devnet wallet + signed transaction | ✅ Live at `/solana-connect/` |
 | **0.9** | Public landing · repo · CI · Pages deploy | ✅ Shipped |
 | **0.9.3** | Wallet-gated entry + per-wallet localStorage | ✅ Shipped |
-| **0.9.4** | `chartrunner_maps` program + on-chain SaveMap | 🟡 Code complete · deploy pending |
+| **0.9.4** | `chartrunner_maps` program + on-chain SaveMap | ✅ Deployed devnet · `Dbz…3UvH` |
 | **0.9.5** | P2P Marketplace, 6 categories | ✅ Shipped |
-| **0.9.6** | `chartrunner_registry` — multi-entity + marketplace | 🟡 Code complete · deploy pending |
-| **0.9.7** | Async multiplayer leaderboard | 🟡 Code complete · deploy pending |
+| **0.9.6** | `chartrunner_registry` — multi-entity + marketplace | ✅ Deployed devnet · `ER8…rdcn` |
+| **0.9.7** | Async multiplayer leaderboard + wallet-first login | ✅ LIVE · real RunRecord PDAs minting from inside the game |
 | **0.9.9–0.9.12** | quant.pdf Tier 1 — scoring spine + 10 detectors + Workbench Quick Builder + real-data Terminal widgets | ✅ Shipped |
 | **0.9.13–0.9.14** | Play-app subcategories (Regular/Campaign/Minigame/PVP) + sleeker mode cards + Fib Extension tool | ✅ Shipped |
 | **0.9.15–0.9.16** | 8-chapter Campaign coach + tool-aware laser beam + per-primitive setup guide + commit confetti | ✅ Shipped |
 | **0.9.17–0.9.21** | Run Controls → in-game lite profile · hotkey 3 = green primitives laser · campaign chapters direct-launch | ✅ Shipped |
 | **0.9.22** | Primitives laser expanded — 18 entries · 11 tier-1-4 SDK primitives surfaced as click placements (limit/stopLoss/takeProfit/trailingTp/scaleOut/magnet/perpFlip/borrowShort/liqGuard/twap/iceberg) | ✅ Shipped |
 | **1** | SDK pull-over · drop runtime onto Dexscreener / TradingView | 🟡 Architecture done · in `sdk/` next |
-| **2** | Anchor programs deployed to devnet → mainnet | 🟢 Programs ready · pending Solana Playground deploy |
+| **2** | Anchor programs deployed to devnet → mainnet | 🟡 Devnet live · mainnet pending |
 
 ## Why this matters
 
@@ -280,9 +291,12 @@ chartrunner/
 │   ├── PROBLEM.md · MVP.md · COMPETITIVE.md · TRACTION.md
 │   ├── PITCH-DELIVERY.md · VIDEO-SCRIPT.md · X-LAUNCH.md
 │   ├── REPO-STRUCTURE.md · EXECUTION-CHECKLIST.md
-├── ChartRunner_Phase0_Plan.md          # Phase 0 evaluation
-├── ChartRunner_Phase1_SDK_Architecture.md
-├── ChartRunner_Phase2_*.md             # 3 Phase 2 architecture docs
+├── docs/
+│   ├── architecture/                   # Phase 0/1/2 plans, SDK arch, model parity
+│   ├── legacy/                         # v0.6/0.7/0.8 backlogs, kept for history
+│   ├── CHANGELOG-v0.9.x.md             # Per-version changelog
+│   ├── MVP.md · COMPETITIVE.md · TRACTION.md  # Pitch supplements
+│   └── SDK-REFERENCE-v0.9.21.md        # Latest SDK API reference
 ├── ChartRunner_v0.{6,7,8}_Backlog.md   # version backlogs
 ├── PITCH-DECK.pptx + .pdf              # 12-slide submission deck
 ├── build_deck.py                       # Python script to regenerate the deck
@@ -328,7 +342,7 @@ CI parse-checks the HTML on every PR. The full Pages deploy runs on `main` push 
 - **Email:** jsg@julianroy.com
 - **GitHub:** [@ssjjul3](https://github.com/ssjjul3) · [chartrunner](https://github.com/ssjjul3/chartrunner)
 - **X:** [@chartrunner_xyz](https://x.com/chartrunner_xyz)
-- **Demo:** https://ssjjul3.github.io/chartrunner/
+- **Demo:** https://chartrunner.xyz/
 
 ## License
 
