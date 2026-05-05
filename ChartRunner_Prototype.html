@@ -7911,9 +7911,27 @@ window.crRegistry = (function(){
     }
     var asset      = String(opts.asset || 'BTCUSDT').toUpperCase().slice(0, 16);
     var timeframe  = String(opts.timeframe || '15m').slice(0, 8);
-    var score      = String(BigInt(Math.max(0, opts.score|0)));
-    var sharpeX100 = (opts.sharpeX100|0);
-    var durSecs    = (opts.durationSecs|0);
+    // v0.9.7 security patch — clamp values to the on-chain caps BEFORE sending
+    // the tx, so honest players whose runs accidentally exceed the bounds
+    // never trigger ScoreTooHigh / SharpeOutOfRange / DurationTooLong from the
+    // registry program. The caps mirror the constants in
+    // anchor/programs/chartrunner-registry/src/lib.rs:
+    //   MAX_RUN_SCORE     = 1_000_000
+    //   MAX_SHARPE_X100   = 10_000      (clamp absolute value)
+    //   MAX_DURATION_SEC  = 86_400      (24h)
+    var MAX_RUN_SCORE     = 1_000_000;
+    var MAX_SHARPE_X100   = 10_000;
+    var MAX_DURATION_SEC  = 86_400;
+    var rawScore   = Math.max(0, opts.score|0);
+    var clampedScore = Math.min(rawScore, MAX_RUN_SCORE);
+    var score      = String(BigInt(clampedScore));
+    var sharpeX100 = Math.max(-MAX_SHARPE_X100, Math.min(MAX_SHARPE_X100, opts.sharpeX100|0));
+    var durSecs    = Math.max(0, Math.min(MAX_DURATION_SEC, opts.durationSecs|0));
+    // Surface clamping in the console so debugging is obvious if a value gets
+    // capped — silent clamping would be confusing for testers.
+    if (rawScore > MAX_RUN_SCORE){
+      try { console.warn('[crRegistry.recordRun] score', rawScore, '> cap', MAX_RUN_SCORE, '— clamped to', MAX_RUN_SCORE); } catch(_){}
+    }
     var mapHashHex = opts.mapHashHex;
     if (!mapHashHex){
       // If caller didn't supply one, hash the empty object (placeholder for
