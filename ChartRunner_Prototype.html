@@ -1029,6 +1029,17 @@
   .cr-boot .crLoginNote{font:11px/1.45 var(--cr-mono);color:#3a3a36;
     text-align:center;padding:6px 4px 2px;letter-spacing:.1px}
   .cr-boot .crLoginActions{justify-content:space-between;gap:8px}
+  /* v0.9.7-stealth — divider line "or" between password sign-in and wallet */
+  .cr-boot .crLoginDivider{display:flex;align-items:center;gap:10px;
+    margin:8px 0 4px;color:#3a3a36;font:10px var(--cr-mono);
+    text-transform:uppercase;letter-spacing:.4px;opacity:.6}
+  .cr-boot .crLoginDivider::before,
+  .cr-boot .crLoginDivider::after{content:"";flex:1;height:1px;background:#3a3a36;opacity:.5}
+  .cr-boot .crLoginDivider span{padding:0 4px}
+  /* v0.9.7-stealth — inline error pane */
+  .cr-boot .crLoginErr{margin-top:8px;padding:6px 10px;
+    background:rgba(200,50,50,0.10);border:1px solid #c83232;
+    color:#9a1a1a;font:11px var(--cr-mono);text-align:center;border-radius:0}
   .cr-boot .crLoginRow{display:flex;align-items:center;gap:10px;font-size:12px}
   .cr-boot .crLoginRow label{flex:0 0 72px;text-align:right;color:#1a1a18;
     font-weight:600;letter-spacing:.2px}
@@ -4400,20 +4411,35 @@
     <line x1="14" y1="55" x2="28" y2="55" stroke="#1a1a18" stroke-width="0.8"/>
   </svg>
   <div class="title">Welcome to ChartRunnerOS</div>
-  <div class="ver">v0.9.7 · Platinum Edition</div>
-  <!-- v0.9.7 — wallet-first login. Name/password retired; player auths
-       through the same /solana-connect/ flow as in-game crBarConnect.
-       Guest mode preserved for tire-kickers (anon_runner namespace). -->
+  <div class="ver">v0.9.7 · Stealth Edition · invite only</div>
+  <!-- v0.9.7-stealth — closed access. Two paths:
+       1. Username + password (shared invite credential, SHA-256 gated)
+       2. Whitelisted Solana wallet (allowlist of pubkeys)
+       No guest mode. No Esc skip. The previous wallet-first / Continue-as-Guest
+       UI is retired for stealth alpha. To extend access, either change the
+       STEALTH_AUTH_HASH or add to STEALTH_WALLET_WHITELIST in the JS below. -->
   <form class="crBootLogin" id="crBootLogin" autocomplete="off" novalidate>
-    <div class="crLoginNote">
-      Sign in with a Solana wallet to record runs on-chain, save maps to your namespace, and appear on the live multiplayer leaderboard.
+    <div class="crLoginRow">
+      <label for="crBootName">Name</label>
+      <input type="text" id="crBootName" name="username" maxlength="20"
+             placeholder="username" spellcheck="false" autocapitalize="off"
+             autocomplete="off" required/>
+    </div>
+    <div class="crLoginRow">
+      <label for="crBootPass">Password</label>
+      <input type="password" id="crBootPass" name="password" maxlength="64"
+             placeholder="••••••••" autocomplete="off" required/>
     </div>
     <div class="crLoginActions">
-      <button type="button" id="crBootGuest"   class="crLoginBtn">Continue as Guest</button>
-      <button type="submit" id="crBootConnect" class="crLoginBtn primary">🪙 Connect Wallet</button>
+      <button type="submit" id="crBootSignIn" class="crLoginBtn primary">Sign In</button>
     </div>
+    <div class="crLoginDivider"><span>or</span></div>
+    <div class="crLoginActions" style="justify-content:center">
+      <button type="button" id="crBootConnect" class="crLoginBtn">🪙 Connect Whitelisted Wallet</button>
+    </div>
+    <div class="crLoginErr" id="crBootErr" style="display:none"></div>
   </form>
-  <div class="hint">press Esc to skip · runs as Guest</div>
+  <div class="hint">stealth · invite only · no guest access</div>
 </div>
 <div id="stage">
   <canvas id="cv"></canvas>
@@ -19747,16 +19773,15 @@ function pickMode(mode){
     }catch(_){}
   });
   if(start) start.addEventListener('click', () => {
-    // v0.9.7 — Wallet gate. Fresh visitors who never saw the boot login (or
-    // had it auto-dismissed) get bounced to it on first Start Run. Players
-    // who explicitly chose "Continue as Guest" (cr_guest_mode_v1) skip the
-    // gate and play unauthenticated. Connecting a wallet at any point also
-    // skips it. The login's Connect Wallet button kicks off /solana-connect/
-    // and the player returns to a connected session.
+    // v0.9.7-stealth — closed-access gate. Player must have either:
+    //   (a) authenticated via the boot login (cr_stealth_auth_v1 = '1'), OR
+    //   (b) connected a wallet on the STEALTH_WALLET_WHITELIST (the boot
+    //       overlay validates and sets cr_stealth_auth_v1 on success).
+    // No guest mode in stealth; the previous cr_guest_mode_v1 path is
+    // ignored. If neither condition holds, re-show the boot login.
     try {
-      const guestMode = localStorage.getItem('cr_guest_mode_v1') === '1';
-      if(typeof crWallet !== 'undefined' && !crWallet.isConnected() && !guestMode &&
-         typeof window.crShowBootLogin === 'function'){
+      const stealthAuth = localStorage.getItem('cr_stealth_auth_v1') === '1';
+      if(!stealthAuth && typeof window.crShowBootLogin === 'function'){
         window.crShowBootLogin();
         return;
       }
@@ -29335,88 +29360,173 @@ function log(msg){
  * =======================================================================*/
 (function ChartRunnerOSExt(){
   // ---- Boot overlay ----------------------------------------------------
-  // v0.9.7 — Wallet-first login. The old Name+Password gate has been retired;
-  // players authenticate by connecting a Solana wallet through the same
-  // /solana-connect/ flow as crBarConnect. Guests can press "Continue as
-  // Guest" or Esc — they play with the anon_runner namespace and lose access
-  // to on-chain saves / leaderboards.
+  // v0.9.7-stealth — closed-access login. Two paths to in:
+  //   1. Username + Password (any non-empty username; password gated by
+  //      SHA-256 against STEALTH_AUTH_HASH — change the hash to rotate the
+  //      shared invite credential).
+  //   2. Whitelisted Solana wallet (allowlist at STEALTH_WALLET_WHITELIST).
+  //      User clicks Connect → bounces through /solana-connect/ → returns
+  //      with wallet hydrated. If pubkey is on the whitelist → in. If not
+  //      → wallet is disconnected and an error is shown.
   //
-  // crBoot is kept in the DOM after the first dismiss (just hidden via the
-  // .out class) so the Play→login gate at crCfgStart can re-show it without
-  // re-scaffolding markup.
+  // No guest mode. No Esc skip. The previous wallet-first / guest UI is
+  // retired for stealth alpha.
+  //
+  // ▼ EDIT THESE TO ROTATE STEALTH ACCESS ▼
+  // Default password: 'frontier2026' — change the hash below to rotate.
+  // Any UTF-8 password works; recipe to compute a new hash is in the
+  // surrounding code comment.
+  const STEALTH_AUTH_HASH = '90b61e3df3f933b3a7427252b0030a3901fe0a15be863793c48fb31473ab2f1c';
+  const STEALTH_WALLET_WHITELIST = [
+    'PDi6BNFCbGE9H72zxCMNWpDfWo5Rp3gvdhCyfpfcAWM',  // Julian (deployer / owner)
+    // Add invited tester pubkeys here, one per line.
+  ];
+  // To rotate the password, run in any terminal:
+  //   echo -n "your-new-password" | sha256sum
+  // and replace STEALTH_AUTH_HASH above with the resulting 64-char hex.
+
   const boot = document.getElementById('crBoot');
   if(boot){
     function dismissBoot(){
       boot.classList.add('out');
-      // Stop blocking pointer events so the desktop is interactive.
       boot.style.pointerEvents = 'none';
     }
     function showBoot(){
       boot.classList.remove('out');
       boot.style.pointerEvents = '';
     }
-    // Expose for the Play-button gate (crCfgStart) to re-trigger.
+    // Expose for the Start-Run gate (crCfgStart) to re-trigger.
     window.crShowBootLogin = showBoot;
 
-    // If the player already has a connected wallet (returning visitor or
-    // bounce-back from /solana-connect/?wallet=...), skip the gate entirely.
-    let alreadyConnected = false;
+    // Local SHA-256 helper — keeps the boot login self-contained (the
+    // crRegistry IIFE has its own copy; this one is independent so the
+    // boot doesn't depend on the registry having loaded yet).
+    async function _sha256Hex(str){
+      const buf = new TextEncoder().encode(str);
+      const d = await crypto.subtle.digest('SHA-256', buf);
+      return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+
+    function _showErr(msg){
+      const errEl = document.getElementById('crBootErr');
+      if(errEl){ errEl.textContent = msg; errEl.style.display = 'block'; }
+    }
+    function _clearErr(){
+      const errEl = document.getElementById('crBootErr');
+      if(errEl){ errEl.textContent = ''; errEl.style.display = 'none'; }
+    }
+
+    // Returning-visitor short-circuits — fire BEFORE wiring the form so an
+    // already-authed user never sees the gate.
+    let alreadyAuthed = false;
     try {
-      if(typeof crWallet !== 'undefined' && crWallet.isConnected()){
+      // Path 1: prior password sign-in stored in localStorage.
+      if(localStorage.getItem('cr_stealth_auth_v1') === '1'){
         dismissBoot();
-        alreadyConnected = true;
+        alreadyAuthed = true;
+      }
+      // Path 2: bounce-back from /solana-connect/ — wallet just hydrated.
+      // Validate against whitelist; admit if on, disconnect if not.
+      if(!alreadyAuthed && typeof crWallet !== 'undefined' && crWallet.isConnected()){
+        const pk = crWallet.get();
+        if(STEALTH_WALLET_WHITELIST.includes(pk)){
+          localStorage.setItem('cr_stealth_auth_v1', '1');
+          dismissBoot();
+          alreadyAuthed = true;
+        } else {
+          // Wallet connected but not on the whitelist — surface the error
+          // (we'll show it below the form) and clear the wallet so the user
+          // is back to a clean gate.
+          try { crWallet.disconnect(); } catch(_){}
+          // Show error inline once the form renders.
+          setTimeout(() => _showErr('Wallet ' + (pk||'').slice(0,4) + '…' + (pk||'').slice(-4) +
+                                    ' is not on the stealth whitelist. Sign in with credentials, or contact the team to be added.'), 60);
+        }
       }
     } catch(_){}
 
-    if(!alreadyConnected){
-    const form        = document.getElementById('crBootLogin');
-    const connectBtn  = document.getElementById('crBootConnect');
-    const guestBtn    = document.getElementById('crBootGuest');
+    if(!alreadyAuthed){
+      const form        = document.getElementById('crBootLogin');
+      const nameEl      = document.getElementById('crBootName');
+      const passEl      = document.getElementById('crBootPass');
+      const signInBtn   = document.getElementById('crBootSignIn');
+      const connectBtn  = document.getElementById('crBootConnect');
 
-    function doConnect(){
-      // Bounce through the React+wallet-adapter app. On return, crWallet
-      // hydrates from the URL and the next-paint check above auto-dismisses.
+      // Pre-fill name from saved profile if present.
       try {
-        if(typeof crWallet !== 'undefined' && crWallet.connect){
-          crWallet.connect();
-        } else {
-          // Fallback: hand-built redirect if crWallet hasn't loaded yet.
-          window.location.href = '../solana-connect/?next=play&return=' + encodeURIComponent('/play/');
-        }
+        const saved = localStorage.getItem('cr_profile_name_v1');
+        if(saved && nameEl) nameEl.value = saved;
       } catch(_){}
-    }
-    function doGuest(){
-      // Persist a default profile name so downstream profile/UI reads work.
-      // Also flag explicit guest mode so the Start Run gate doesn't bounce
-      // the player back to login on every run start. Connecting a wallet
-      // later clears the flag (handled in crWallet's connect path).
-      try {
-        const existing = localStorage.getItem('cr_profile_name_v1');
-        if(!existing) localStorage.setItem('cr_profile_name_v1', 'anon_runner');
-        localStorage.setItem('cr_guest_mode_v1', '1');
-        const profileNameEl = document.getElementById('profileName');
-        if(profileNameEl && !profileNameEl.value) profileNameEl.value = 'anon_runner';
-      } catch(_){}
-      dismissBoot();
-      // v0.9.56 — First-boot auto-tutorial gated on localStorage so the
-      // walkthrough only fires once (across both wallet + guest entries).
-      try {
-        const FIRST_BOOT_KEY = 'cr_first_boot_v1';
-        if(!localStorage.getItem(FIRST_BOOT_KEY)){
-          localStorage.setItem(FIRST_BOOT_KEY, String(Date.now()));
-          setTimeout(() => {
-            try { if(typeof window.crCoachTutorial === 'function') window.crCoachTutorial(true, 'os'); } catch(_){}
-          }, 700);
-        }
-      } catch(_){}
-    }
+      setTimeout(() => { try { (nameEl && !nameEl.value ? nameEl : passEl).focus(); } catch(_){} }, 60);
 
-    if(form)       form.addEventListener('submit', e => { e.preventDefault(); doConnect(); });
-    if(connectBtn) connectBtn.addEventListener('click', e => { e.preventDefault(); doConnect(); });
-    if(guestBtn)   guestBtn.addEventListener('click',   e => { e.preventDefault(); doGuest();   });
-    // Esc → guest (preserves the v0.9.51 "skip" semantics).
-    window.addEventListener('keydown', e => { if(e.key === 'Escape') doGuest(); }, { once:true });
-    } // end if(!alreadyConnected)
+      function _flashRed(el){
+        if(!el) return;
+        el.style.transition = 'box-shadow .15s ease';
+        el.style.boxShadow  = 'inset 0 0 0 2px #c83232';
+        el.focus();
+        setTimeout(() => { el.style.boxShadow = ''; }, 380);
+      }
+
+      async function trySignIn(){
+        _clearErr();
+        const name = (nameEl && nameEl.value || '').trim();
+        const pass = (passEl && passEl.value || '');
+        if(!name){ _flashRed(nameEl); return; }
+        if(!pass){ _flashRed(passEl); return; }
+        try {
+          const hash = await _sha256Hex(pass);
+          if(hash !== STEALTH_AUTH_HASH){
+            _flashRed(passEl);
+            _showErr('Invalid credentials. Stealth access is invite only.');
+            return;
+          }
+        } catch(err){
+          _showErr('Crypto subsystem unavailable in this browser.');
+          return;
+        }
+        // Success: persist name + auth flag, dismiss.
+        try {
+          localStorage.setItem('cr_profile_name_v1', name);
+          localStorage.setItem('cr_stealth_auth_v1', '1');
+          const profileNameEl = document.getElementById('profileName');
+          if(profileNameEl) profileNameEl.value = name;
+        } catch(_){}
+        dismissBoot();
+        // First-boot auto-tutorial.
+        try {
+          const FIRST_BOOT_KEY = 'cr_first_boot_v1';
+          if(!localStorage.getItem(FIRST_BOOT_KEY)){
+            localStorage.setItem(FIRST_BOOT_KEY, String(Date.now()));
+            setTimeout(() => {
+              try { if(typeof window.crCoachTutorial === 'function') window.crCoachTutorial(true, 'os'); } catch(_){}
+            }, 700);
+          }
+        } catch(_){}
+      }
+
+      function tryWalletConnect(){
+        _clearErr();
+        try {
+          if(typeof crWallet !== 'undefined' && crWallet.connect){
+            crWallet.connect();
+          } else {
+            window.location.href = '../solana-connect/?next=play&return=' + encodeURIComponent('/play/');
+          }
+        } catch(_){}
+      }
+
+      if(form)       form.addEventListener('submit', e => { e.preventDefault(); trySignIn(); });
+      if(signInBtn)  signInBtn.addEventListener('click', e => { e.preventDefault(); trySignIn(); });
+      if(connectBtn) connectBtn.addEventListener('click', e => { e.preventDefault(); tryWalletConnect(); });
+      // Enter on either input also submits.
+      [nameEl, passEl].forEach(el => {
+        if(!el) return;
+        el.addEventListener('keydown', e => {
+          if(e.key === 'Enter'){ e.preventDefault(); trySignIn(); }
+        });
+      });
+      // No Esc handler — stealth mode has no skip.
+    }
   }
 
   // ---- Apple menubar clock --------------------------------------------
