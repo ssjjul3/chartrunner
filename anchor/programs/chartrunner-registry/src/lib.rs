@@ -51,7 +51,19 @@ declare_id!("ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn");
 
 pub const MAX_NAME_LEN: usize = 64;
 pub const MAX_ROYALTY_BPS: u16 = 5000;       // 50% cap to prevent abuse
-pub const PROTOCOL_FEE_BPS: u16 = 500;       // 5% to protocol (treasury)
+// v0.9.7 — fee zeroed for the hackathon devnet demo. The previous
+// `protocol_treasury() == crate::ID` returned the program account, which is
+// owned by the BPF loader (NOT the System program), so every system_program
+// ::transfer to it would have failed at runtime with InvalidAccountOwner.
+// Zero-fee bypasses the buggy branch entirely. Restore to 500 (5%) only AFTER
+// swapping `protocol_treasury()` for a real System-owned wallet pubkey.
+pub const PROTOCOL_FEE_BPS: u16 = 0;
+// Score / sharpe sanity caps for record_run. Without these any wallet can
+// submit u64::MAX score and pollute the leaderboard. Caps chosen as plausible
+// game maxima — far above any honest run, far below int max.
+pub const MAX_RUN_SCORE:    u64 = 1_000_000;       // 1 M score cap
+pub const MAX_SHARPE_X100:  i32 = 10_000;          // sharpe ≤ 100.00
+pub const MAX_DURATION_SEC: u32 = 24 * 60 * 60;    // 24 h cap
 pub const ENTITY_TYPE_COUNT: u8 = 9;
 
 // Hardcoded protocol treasury for the marketplace cut. In prod this would be
@@ -232,6 +244,12 @@ pub mod chartrunner_registry {
         duration_secs: u32,
         map_hash: [u8; 32],
     ) -> Result<()> {
+        // v0.9.7 — sanity caps. Without these any wallet can mint a RunRecord
+        // with u64::MAX score and pollute every player's leaderboard.
+        require!(score <= MAX_RUN_SCORE,                     CrError::ScoreTooHigh);
+        require!(sharpe_x100.abs() <= MAX_SHARPE_X100,       CrError::SharpeOutOfRange);
+        require!(duration_secs <= MAX_DURATION_SEC,          CrError::DurationTooLong);
+
         let r = &mut ctx.accounts.run;
         r.player        = ctx.accounts.player.key();
         r.nonce         = nonce;
@@ -474,4 +492,7 @@ pub enum CrError {
     #[msg("Listing price must be > 0")]               PriceMustBePositive,
     #[msg("Math overflow in fee calculation")]        MathOverflow,
     #[msg("Listing does not match entity PDA")]       ListingMismatch,
+    #[msg("Run score exceeds 1,000,000 cap")]         ScoreTooHigh,
+    #[msg("Run sharpe out of plausible range (±100)")] SharpeOutOfRange,
+    #[msg("Run duration exceeds 24h cap")]            DurationTooLong,
 }
