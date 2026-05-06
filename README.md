@@ -54,6 +54,7 @@ The hard architectural rule: **abilities never touch the canvas, the SDK is the 
 | **0.9.15–0.9.16** | 8-chapter Campaign coach + tool-aware laser beam + per-primitive setup guide + commit confetti | ✅ Shipped |
 | **0.9.17–0.9.21** | Run Controls → in-game lite profile · hotkey 3 = green primitives laser · campaign chapters direct-launch | ✅ Shipped |
 | **0.9.22** | Primitives laser expanded — 18 entries · 11 tier-1-4 SDK primitives surfaced as click placements (limit/stopLoss/takeProfit/trailingTp/scaleOut/magnet/perpFlip/borrowShort/liqGuard/twap/iceberg) | ✅ Shipped |
+| **0.9.8** | **Phoenix Rise broker adapter + Flight builder integration** — every in-game primitive (bracket/OCO/limit/market/stop) routes to live Phoenix perpetual orders via `@ellipsis-labs/rise`. Flight wrap means ChartRunner accrues `fee_bps` (currently 25 bps = 0.25%) on every routed order — fees withdrawable from the Phoenix frontend. Scaffold landed at [`solana-connect/src/lib/phoenix-rise.ts`](solana-connect/src/lib/phoenix-rise.ts). | 🟡 Adapter scaffolded · pending `npm install @ellipsis-labs/rise` + Flight builder slot from Phoenix |
 | **1** | SDK pull-over · drop runtime onto Dexscreener / TradingView | 🟡 Architecture done · in `sdk/` next |
 | **2** | Anchor programs deployed to devnet → mainnet | 🟡 Devnet live · mainnet pending |
 
@@ -62,6 +63,8 @@ The hard architectural rule: **abilities never touch the canvas, the SDK is the 
 74% of new retail traders quit within 90 days. Bloomberg looks like a hospital monitor, paper-trading feels like homework, and YouTube doesn't transfer to real screens. ChartRunner replaces that on-ramp with a game where **the act of trading is the lesson** — and every primitive learned in the game is the same SDK call that lives in production.
 
 Hyperliquid + Phantom flipped the wallet UX. Memecoin season trained 8M+ wallets to swap on-chain. The infra is here. The skill on-ramp is missing. We're the on-ramp.
+
+**The mainnet partner thesis: Phoenix.** Phoenix Rise is the live-trading partner that maps 1:1 to ChartRunner's primitive vocabulary — bracket, OCO, stop-loss, limit, market — every in-game gesture has a corresponding Rise instruction builder. Better, Phoenix's **Flight** builder layer means ChartRunner-routed orders auto-accrue `fee_bps` to a registered builder authority. **No marketplace UI is required for revenue** — Flight is the business model. See `docs.phoenix.trade` and the integration scaffold at [`solana-connect/src/lib/phoenix-rise.ts`](solana-connect/src/lib/phoenix-rise.ts).
 
 ## What's in v0.9.22
 
