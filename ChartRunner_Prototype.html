@@ -3894,6 +3894,17 @@
   #modeCampaign14    /* v0.9.18 HL Funding Shorts — Strategies archived */
     { display: none !important; }
 
+  /* v0.9.22 — Star badge on completed chapter cards. JS adds .crChStar
+     to the modecard when localStorage cr_campaign_stars_v1 has the
+     chapter id. Renders a glowing gold star in the top-right corner. */
+  .modecard.crChStar{position:relative}
+  .modecard.crChStar::after{
+    content:'★';position:absolute;top:6px;right:8px;
+    font:700 14px ui-monospace,Menlo,monospace;
+    color:#ffd166;text-shadow:0 0 8px rgba(255,209,102,.65);
+    pointer-events:none;
+  }
+
   /* v0.9.21 — Archived chrome chrome controls. Game launcher = Campaign
      card grid (the menubar Game item duplicates that surface). Restart
      mid-run becomes the Home/CRT transition once Tier 2 lands; for now
@@ -3902,6 +3913,79 @@
   #crMenuFile,       /* v0.9.21 menubar 'Game' — campaign grid is the entry */
   #crBarRestart      /* v0.9.21 in-game Restart — replaced by Home transition */
     { display: none !important; }
+
+  /* ── v0.9.22 — Terminal-style notification panel ────────────────────
+     Bottom-right stack. Green monospace, no surrounding window — just
+     stacked lines like terminal output. New messages animate in from
+     the right; after 60 s they start fading one-by-one (FIFO). Replaces
+     scattered toast() / canvas-drawn HUD banners during execution
+     contexts (laser aim, fib anchor placement, bot fires, etc.). */
+  .crNotify{
+    position:fixed;bottom:18px;right:18px;z-index:9700;
+    display:flex;flex-direction:column;gap:3px;
+    pointer-events:none;max-width:360px;
+    font:600 11px ui-monospace,Menlo,Consolas,monospace;
+    letter-spacing:.3px;
+  }
+  .crNotifyMsg{
+    background:rgba(8,14,22,.55);
+    border-left:2px solid #3ddc97;
+    padding:4px 10px 4px 8px;
+    color:#3ddc97;
+    text-shadow:0 0 4px rgba(61,220,151,.30);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    backdrop-filter:blur(2px);
+    animation:crNotifyIn .25s ease-out;
+  }
+  .crNotifyMsg.warn{
+    border-left-color:#ffd166;color:#ffd166;
+    text-shadow:0 0 4px rgba(255,209,102,.30);
+  }
+  .crNotifyMsg.err{
+    border-left-color:#ff5b7f;color:#ff5b7f;
+    text-shadow:0 0 4px rgba(255,91,127,.30);
+  }
+  .crNotifyMsg.fade{
+    animation:crNotifyOut .8s ease-out forwards;
+  }
+  @keyframes crNotifyIn{
+    from{opacity:0;transform:translateX(12px)}
+    to{opacity:1;transform:translateX(0)}
+  }
+  @keyframes crNotifyOut{
+    to{opacity:0;transform:translateX(8px);max-height:0;padding-top:0;padding-bottom:0;margin-top:0;border-width:0}
+  }
+  /* Hide on splash like other in-game chrome */
+  body.crSplashUp .crNotify{display:none !important}
+
+  /* ── v0.9.22 — CRT screen-off transition ────────────────────────────
+     When triggered, the entire viewport collapses to a horizontal line
+     then a center dot then black. Used by chapter endcard → Home and
+     run-end → Home. ~600 ms total. Body class crCrtOff drives it. */
+  .crCrtFade{
+    position:fixed;inset:0;z-index:99000;
+    background:#000;pointer-events:none;
+    opacity:0;transition:opacity .12s linear;
+  }
+  body.crCrtOff .crCrtFade{
+    opacity:1;
+    transition:opacity .12s linear .48s;  /* black after the squeeze */
+  }
+  body.crCrtOff #stage,
+  body.crCrtOff .os-desktop,
+  body.crCrtOff #crTopBar,
+  body.crCrtOff .crChrome,
+  body.crCrtOff #end{
+    transform-origin:center center;
+    transition:transform .35s cubic-bezier(.55,.06,.68,.19),opacity .12s ease-out .35s;
+    transform:scaleY(.002) scaleX(1);  /* horizontal line */
+  }
+  body.crCrtOff::before{
+    content:'';position:fixed;inset:0;z-index:98000;pointer-events:none;
+    background:radial-gradient(circle at center, rgba(255,255,255,.6) 0, rgba(255,255,255,0) 8px);
+    opacity:0;transition:opacity .1s ease-out .35s;
+  }
+  body.crCrtOff::before{opacity:1}
 
   /* ── v0.9.18 — Run-end P&L card ─────────────────────────────────────
      Portrait, share-friendly. Big colored %, asset ticker, equity
@@ -11801,6 +11885,7 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
   // handler which got the same exit treatment.
   const _exitLaserAfterCommit = () => {
     game.laserAiming = false;
+    game._lastLaserPhaseKey = null;  // v0.9.22 reset terminal-notify guard
     game.laserPhase = 'idle';
     game.laserTool = null;
     game.laserAnchor1 = null;
@@ -12387,7 +12472,7 @@ const ABILITIES = [
     const dirX = (player.facing === -1) ? -1 : 1;
     game.laserDot.sx = sX(player.wx) + dirX * 280;
     game.laserDot.sy = priceToY(player.py);
-    toast('Laser aim — move mouse · press 2 or Esc to exit');
+    crNotify('Laser aim · move mouse · press 2 or Esc to exit');
   }},
   // v0.9.19 — Slot 3 = GREEN LASER · Primitives palette. Same aim flow as the
   // regular laser (slot 2) but tinted green and pre-filtered to trading
@@ -12772,6 +12857,14 @@ function openPrimitivesMenu(){
       row.onmouseenter = () => { row.style.background = 'rgba(155,140,255,0.08)'; };
       row.onmouseleave = () => { row.style.background = 'transparent'; };
       row.onclick = () => {
+        // v0.9.22 — Track probe usage for the chapter-star criterion
+        // (goal hit + all probes used + no skip). The Set is reset
+        // on every _launchCampaignChapter() call.
+        try {
+          if(it && it.id && game && game.campaignProbesUsed && game.campaignProbesUsed.add) {
+            game.campaignProbesUsed.add(it.id);
+          }
+        } catch(_){}
         try { it.fire(); } catch(err){ try { toast('Failed: ' + err.message); } catch(_){} }
         _closePrimitivesMenu();
       };
@@ -19152,19 +19245,17 @@ function drawLaserAnchorsAndPreview(){
     priceDate: 'DATE+PRICE',
   };
   const label = hintMap[tool] || (tool ? tool.toUpperCase() : 'TOOL');
-  const step = phase === 'anchor1' ? '① Click first anchor' : '② Click second anchor';
-  ctx.font = 'bold 12px ui-monospace,monospace';
-  const text = label + ' · ' + step + ' · Esc cancels';
-  const tw = ctx.measureText(text).width;
-  const bx = (W - tw - 24) / 2, by = 52, bw = tw + 24, bh = 26;
-  ctx.fillStyle = 'rgba(12,16,26,0.88)';
-  ctx.strokeStyle = 'rgba(255,91,127,0.9)';
-  ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.rect(bx, by, bw, bh); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#e9efff';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, bx + 12, by + bh/2);
-  ctx.textBaseline = 'alphabetic';
+  // v0.9.22 — Canvas-drawn red HUD banner removed. Replaced by a one-shot
+  // crNotify() emitted from the phase-change tracker below. We still
+  // need `label` for the anchor dot label render further down.
+  // Phase tracking: stash the last (tool, phase) pair on game and
+  // emit the terminal notification only on transition (not every frame).
+  const _phaseKey = tool + ':' + phase;
+  if(game._lastLaserPhaseKey !== _phaseKey){
+    game._lastLaserPhaseKey = _phaseKey;
+    const step = phase === 'anchor1' ? '① click first anchor' : '② click second anchor';
+    try { crNotify(label + ' · ' + step + ' · Esc cancels'); } catch(_){}
+  }
   // Anchor1 dot (persistent once placed).
   const a1 = game.laserAnchor1;
   if(a1){
@@ -19916,7 +20007,13 @@ function pickMode(mode){
           '<button class="crCoachBtn primary" id="crCoachNext">Next →</button>' +
         '</div>';
       document.body.appendChild(el);
-      el.querySelector('#crCoachSkip').addEventListener('click', () => dismiss());
+      el.querySelector('#crCoachSkip').addEventListener('click', () => {
+        // v0.9.22 — Mark as skipped so the star-criteria check disqualifies
+        // this chapter run. Star = goal hit + all probes used + no skip.
+        try { game.campaignSkipped = true; } catch(_){}
+        try { crNotify('Chapter skipped — no star awarded', 'warn'); } catch(_){}
+        dismiss();
+      });
       el.querySelector('#crCoachNext').addEventListener('click', () => advance());
       // v0.9.53d — Drag the coach card by its header. Persists position to
       // 'cr_coach_pos_v1' so it stays where the player left it across
@@ -20089,15 +20186,34 @@ function pickMode(mode){
             try { spawnFloat(window.innerWidth/2, 130, '+' + REWARD + ' $RUN', '#ffd166'); } catch(_){}
           }
         } catch(_){}
-        try { showBanner('🎓 Chapter ' + chapter + ' complete!', '+' + REWARD + ' $RUN reward · paper-trade'); } catch(_){}
         try { confettiBurst(); } catch(_){}
+        // v0.9.22 — Star criteria: goal hit (we're here) + all probes used
+        // + no skip-chapter pressed. Check probes list against tracked
+        // probes-used set. If chapter has no probes configured, only the
+        // skip flag matters.
+        const ch = (typeof CAMPAIGN_CHAPTERS !== 'undefined') ? CAMPAIGN_CHAPTERS[chapter] : null;
+        const requiredProbes = (ch && Array.isArray(ch.probes)) ? ch.probes : [];
+        const used = (game.campaignProbesUsed instanceof Set) ? game.campaignProbesUsed : new Set();
+        const allProbesUsed = requiredProbes.every(p => used.has(p));
+        const noSkip = !game.campaignSkipped;
+        const earned = noSkip && allProbesUsed;
+        // Persist star status (idempotent — first earn wins).
+        try {
+          const starsKey = 'cr_campaign_stars_v1';
+          const stars = JSON.parse(localStorage.getItem(starsKey) || '{}') || {};
+          if(earned && !stars[chapter]){
+            stars[chapter] = { earned: true, ts: Date.now() };
+            localStorage.setItem(starsKey, JSON.stringify(stars));
+          }
+        } catch(_){}
+        // Hide the Coach card; show the chapter endcard instead.
         dismiss();
-        // Auto-finish: end the run + return to splash.
-        setTimeout(() => {
-          // v0.9.55 — Also reset coinsDisabled so the next regular run spawns coins.
-          try { if(typeof game !== 'undefined'){ game.running = false; game.campaignChapter = null; game.campaignProbeSet = null; game.papertrade = false; game.coinsDisabled = false; } } catch(_){}
-          try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
-        }, 1400);
+        try {
+          _crShowChapterEndcard(chapter, {
+            earned, requiredProbes, usedProbes: Array.from(used),
+            skipped: !noSkip, reward: REWARD,
+          });
+        } catch(e){ console.error('chapter endcard', e); }
         return;
       }
       try { spawnFloat(window.innerWidth/2, 90, '✓ STEP DONE', '#7ee787'); } catch(_){}
@@ -20303,7 +20419,12 @@ function pickMode(mode){
       if(typeof toast === 'function') toast('Chapter ' + num + ' is archived — skip ahead.');
       return;
     }
-    try { game.campaignChapter = num; } catch(_){}
+    // v0.9.22 — Reset star-criteria trackers on every fresh chapter launch.
+    try {
+      game.campaignChapter = num;
+      game.campaignSkipped = false;
+      game.campaignProbesUsed = new Set();
+    } catch(_){}
     try { game.mode = 'timeismoney'; game.pendingMode = 'timeismoney'; } catch(_){}
     // v0.9.48 — Campaign mode is paper-trade, BTC 15m, no coins, no clutter.
     // The lesson item is the only thing the player should engage with.
@@ -20429,6 +20550,23 @@ function pickMode(mode){
     const id = 'modeCampaign' + i;
     bind(id, () => _launchCampaignChapter(i));
   }
+  // v0.9.22 — Paint the gold star on chapters that have been earned.
+  // Reads localStorage every time the splash is shown so progress
+  // updates without a reload.
+  function _crPaintCampaignStars(){
+    try {
+      const stars = JSON.parse(localStorage.getItem('cr_campaign_stars_v1') || '{}') || {};
+      for(let i = 1; i <= 32; i++){
+        const card = document.getElementById('modeCampaign' + i);
+        if(!card) continue;
+        if(stars[i] && stars[i].earned) card.classList.add('crChStar');
+        else card.classList.remove('crChStar');
+      }
+    } catch(_){}
+  }
+  _crPaintCampaignStars();
+  // Re-paint on splash show (covers the post-chapter return path).
+  try { window._crPaintCampaignStars = _crPaintCampaignStars; } catch(_){}
   try { window.crLaunchCampaignChapter = _launchCampaignChapter; } catch(_){}
   // v0.9.13 — Subcategory tab strip. Filters .modecard visibility by data-cat.
   // v0.9.50 — Selector extended to .modeSection so the new Campaign-tab
@@ -28095,7 +28233,20 @@ function osRecordRunEnd(){
   if(dist>osStats.bestDist) osStats.bestDist = dist;
 }
 document.getElementById('retry').onclick = ()=>{ restart(); };
-document.getElementById('backMenu').onclick = ()=>{ hideEnd(); showSplash(); };
+// v0.9.22 — Back-to-home with CRT fade transition. Was: instant
+// `hideEnd(); showSplash()`. Now wraps the swap in the screen-off
+// animation so the run feels concluded, not abandoned.
+document.getElementById('backMenu').onclick = ()=>{
+  if(typeof crCrtFadeOut === 'function'){
+    crCrtFadeOut(() => {
+      hideEnd();
+      showSplash();
+      setTimeout(() => { try { crCrtFadeIn(); } catch(_){} }, 260);
+    });
+  } else {
+    hideEnd(); showSplash();
+  }
+};
 // v0.9.7 — Record-on-chain handler. Reads (asset, tf, final score, sharpe,
 // duration) off the live game state, hashes the loaded map (or empty obj for
 // freestyle runs), then crRegistry.recordRun bounces through /solana-connect/
@@ -30682,6 +30833,135 @@ document.getElementById('persboxMenu').addEventListener('click', e=>{
 
 const toastEl=document.getElementById('toast'); let toastT=null;
 function toast(msg){ toastEl.textContent=msg; toastEl.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('on'),1800); }
+
+/* ─── v0.9.22 — Terminal-style notification stack ───────────────────────
+   Bottom-right stack of green monospace lines. New messages animate in;
+   after 60 s the oldest line fades out, then the next, etc. Used for
+   execution-context comments (laser arm, fib anchor placement, bot
+   fires) — replaces the scattered toast() / canvas HUD banner mix. */
+const _crNotifyState = { panel: null, queue: [] };
+function _crNotifyEnsurePanel(){
+  if(_crNotifyState.panel && document.body.contains(_crNotifyState.panel)) return _crNotifyState.panel;
+  const el = document.createElement('div');
+  el.className = 'crNotify';
+  el.id = 'crNotify';
+  document.body.appendChild(el);
+  _crNotifyState.panel = el;
+  return el;
+}
+function crNotify(msg, kind){
+  if(!msg) return;
+  const panel = _crNotifyEnsurePanel();
+  // De-duplicate identical messages emitted within 200 ms (helps with
+  // toasts that fire from multiple paths).
+  const last = panel.lastElementChild;
+  if(last && last.textContent === '> ' + msg && (Date.now() - (last._t || 0)) < 200) return;
+  const line = document.createElement('div');
+  line.className = 'crNotifyMsg' + (kind ? ' ' + kind : '');
+  line.textContent = '> ' + msg;
+  line._t = Date.now();
+  panel.appendChild(line);
+  // Cap at 12 visible lines.
+  while(panel.children.length > 12) panel.firstChild.remove();
+  // Schedule fade after 60 s.
+  setTimeout(() => {
+    line.classList.add('fade');
+    setTimeout(() => { if(line.parentNode) line.remove(); }, 800);
+  }, 60000);
+}
+window.crNotify = crNotify;
+
+/* ─── v0.9.22 — CRT screen-off transition ───────────────────────────────
+   Drops a black overlay + collapses the viewport to a horizontal line
+   then a center dot. Calls back when the fade completes (~600 ms total)
+   so the caller can route home / restart / load next chapter. */
+function _crEnsureCrtFade(){
+  let el = document.getElementById('crCrtFade');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'crCrtFade';
+    el.className = 'crCrtFade';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+/* ─── v0.9.22 — Chapter endcard ────────────────────────────────────────
+   Shown after Coach `advance()` ticks past the last script step. Reads
+   the criteria (goal hit, all probes used, no skip). Awards a star if
+   all three pass; otherwise lists what's missing. Buttons:
+     · Try again — re-launch the current chapter
+     · Home — CRT fade to splash desktop                              */
+function _crShowChapterEndcard(chapter, info){
+  // Idempotent: kill any prior endcard.
+  const prior = document.getElementById('crChapterEnd');
+  if(prior && prior.parentNode) prior.parentNode.removeChild(prior);
+
+  const ch = (typeof CAMPAIGN_CHAPTERS !== 'undefined') ? CAMPAIGN_CHAPTERS[chapter] : null;
+  const title = 'Chapter ' + chapter + (ch && ch.goal ? '' : ' complete');
+  const goal = (ch && ch.goal) || 'Chapter complete.';
+
+  const ov = document.createElement('div');
+  ov.id = 'crChapterEnd';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9800;background:rgba(2,4,8,.78);display:flex;align-items:center;justify-content:center;font-family:ui-monospace,Menlo,monospace';
+  const card = document.createElement('div');
+  card.style.cssText = 'width:min(420px,calc(100% - 60px));background:linear-gradient(180deg,rgba(20,30,55,.98),rgba(8,12,22,.99));border:1px solid rgba(126,231,135,.35);border-radius:14px;padding:20px 22px;color:#e8e8e8;box-shadow:0 18px 60px rgba(0,0,0,.6),0 0 0 1px rgba(126,231,135,.10) inset;text-align:center';
+
+  const star = info.earned ? '★' : '☆';
+  const starColor = info.earned ? '#ffd166' : '#5b6470';
+  const headline = info.earned ? 'STAR EARNED' : 'GOAL HIT';
+  const sub = info.earned
+    ? 'Goal hit · all probes used · no skip-chapter — perfect run.'
+    : (info.skipped
+        ? 'Skip-chapter pressed — no star this time.'
+        : 'Probes missing: ' + info.requiredProbes.filter(p => !info.usedProbes.includes(p)).join(', '));
+
+  card.innerHTML =
+    '<div style="font-size:10px;letter-spacing:1.2px;color:' + starColor + ';font-weight:700">' + headline + '</div>' +
+    '<div style="font-size:60px;line-height:1;margin:6px 0 4px;color:' + starColor + ';text-shadow:0 0 24px ' + starColor + '55">' + star + '</div>' +
+    '<div style="font-size:14px;font-weight:700;color:#e8e8e8;margin-bottom:4px">' + title + '</div>' +
+    '<div style="font-size:11px;color:#bff7df;margin-bottom:8px;font-weight:500">' + goal + '</div>' +
+    '<div style="font-size:10px;color:#9ba3b0;margin-bottom:14px">' + sub + '</div>' +
+    '<div style="display:flex;gap:8px;justify-content:center">' +
+      '<button id="crChEndRetry" type="button" style="background:rgba(126,231,135,.18);border:1px solid rgba(126,231,135,.50);color:#bff7df;padding:8px 16px;border-radius:6px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">Try again</button>' +
+      '<button id="crChEndHome" type="button" style="background:transparent;border:1px solid var(--line);color:#cfd2db;padding:8px 16px;border-radius:6px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">Home</button>' +
+    '</div>' +
+    '<div style="font-size:9px;color:#5b6470;margin-top:10px;letter-spacing:.4px">+' + info.reward + ' $RUN reward · ' + (info.earned ? 'star saved on chain in M1' : 'try again for the star') + '</div>';
+
+  ov.appendChild(card);
+  document.body.appendChild(ov);
+
+  card.querySelector('#crChEndRetry').addEventListener('click', () => {
+    ov.remove();
+    try { if(typeof window.crLaunchCampaignChapter === 'function') window.crLaunchCampaignChapter(chapter); } catch(_){}
+  });
+  card.querySelector('#crChEndHome').addEventListener('click', () => {
+    ov.remove();
+    crCrtFadeOut(() => {
+      try { if(typeof game !== 'undefined'){ game.running = false; game.campaignChapter = null; game.campaignProbeSet = null; game.papertrade = false; game.coinsDisabled = false; } } catch(_){}
+      try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
+      // Hold black for ~250 ms then unfade.
+      setTimeout(() => crCrtFadeIn(), 260);
+    });
+  });
+}
+window._crShowChapterEndcard = _crShowChapterEndcard;
+function crCrtFadeOut(after){
+  _crEnsureCrtFade();
+  document.body.classList.add('crCrtOff');
+  setTimeout(() => {
+    try { if(typeof after === 'function') after(); } catch(e){ console.error('crt cb', e); }
+    // Hold on black for a beat, then reveal — caller controls the
+    // post-fade content (e.g. desktop replaces #end). Final unfade is
+    // up to the caller to schedule with crCrtFadeIn() or by removing
+    // the body class.
+  }, 620);
+}
+function crCrtFadeIn(){
+  document.body.classList.remove('crCrtOff');
+}
+window.crCrtFadeOut = crCrtFadeOut;
+window.crCrtFadeIn  = crCrtFadeIn;
 const logEl=document.getElementById('log');
 function log(msg){
   const line=document.createElement('div');
