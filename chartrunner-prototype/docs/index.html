@@ -106,6 +106,7 @@ pre code{background:transparent;padding:0}
     <a href="#phoenix">Phoenix Rise</a>
     <a href="#magicblock">MagicBlock ER</a>
     <a href="#honeycomb">Honeycomb Protocol</a>
+    <a href="#honeycomb-gamification">Honeycomb gamification</a>
     <a href="#pyth">Pyth Core</a>
 
     <div class="group">Reference</div>
@@ -390,6 +391,44 @@ open ChartRunner_Prototype.html
   Adapter at <code>solana-connect/src/lib/honeycomb-economy.ts</code>. Endpoints: <code>https://edge.test.honeycombprotocol.com</code> (Edge), <code>https://rpc.test.honeycombprotocol.com</code> (Honeynet RPC).
 </p>
 
+<h2 id="honeycomb-gamification">Honeycomb gamification — eight concepts <span class="tag gray">design</span></h2>
+<p>
+  The adapter above is plumbing. <strong>This section is the design.</strong> Honeycomb is the gamification axis of the four-partner stack — Phoenix is for trades, MagicBlock is for matches, Pyth is for truth, <strong>Honeycomb is for player progression</strong>. Eight concepts, ordered by demoability, each tied to a Honeycomb primitive. Full version lives at <a href="https://github.com/ssjjul3/chartrunner/blob/main/docs/HONEYCOMB-CONCEPT.md"><code>docs/HONEYCOMB-CONCEPT.md</code></a>.
+</p>
+
+<table>
+<tr><th>#</th><th>Concept</th><th>Honeycomb primitive</th><th>Replaces in ChartRunner</th><th>Lands in</th></tr>
+<tr><td>1</td><td><strong>Trader Identity</strong> — Profile + Character with traits (rank, primitives, ghostFactor)</td><td><code>createNewProfile</code> + <code>createCharacter</code></td><td><code>cr_player_loadout_v1</code> localStorage</td><td>M1</td></tr>
+<tr><td>2</td><td><strong>Run = NectarMission</strong> — clicking Launch <em>is</em> <code>participateMission</code>; game-over <em>is</em> <code>recallMission</code></td><td>NectarMissions</td><td>Inline <code>record_run</code> call</td><td>M1</td></tr>
+<tr><td>3</td><td><strong>$CRDS &amp; $RUN as Resources</strong> — state-compressed mints (~$0.0001 each)</td><td>Resource mint/burn + delegated authority</td><td><code>cr_crds_balance</code> localStorage</td><td>M1</td></tr>
+<tr><td>4</td><td><strong>Crafting Bots via Recipes</strong> — <code>Strategy + Indicator + 100 $CRDS → Bot</code> Character</td><td>NectarRecipes</td><td>Workbench bot-builder local state</td><td>M3</td></tr>
+<tr><td>5</td><td><strong>Streaks &amp; Badges</strong> — <code>streak_hot_7</code>, <code>bracket_master_100</code>, <code>chapter_8_graduate</code> as non-transferable traits</td><td><code>AssignCharacterTraits</code></td><td>Inline <code>game.streak</code> + Campaign localStorage</td><td>M3</td></tr>
+<tr><td>6</td><td><strong>Tournaments via NectarStaking</strong> — stake Character into pool, top finishers extract rewards</td><td>NectarStaking pool</td><td>(new — token-launch tournament infra)</td><td>M8</td></tr>
+<tr><td>7</td><td><strong>Cross-game portability</strong> — <code>gameInteract</code> grants peer Honeycomb games read-access to traits; ChartRunner becomes the on-ramp</td><td><code>gameInteract</code> permission grant</td><td>(new — network effect)</td><td>M8</td></tr>
+<tr><td>8</td><td><strong>Anti-cheat as a public trait</strong> — bot-velocity flags assigned to Characters; portable reputation</td><td><code>AssignCharacterTraits</code> (negative)</td><td>v0.9.7 <code>MAX_RUN_SCORE</code> caps (stays as defense in depth)</td><td>M5–M8</td></tr>
+</table>
+
+<h3>The under-told story — cross-game portability</h3>
+<p>
+  A Honeycomb Character earned in ChartRunner is the <em>same Character</em> in any other Honeycomb-integrated Solana game. A Bronze trader in ChartRunner starts elevated in the next game on the network. We get that network effect for free by adopting Honeycomb's primitives instead of inventing our own. ChartRunner positions as <strong>the credentials engine for Solana-native trading skill</strong> — Honeycomb gets a flagship game with real trader pedigree on its Character schema; we get our Character to have utility outside our own product.
+</p>
+
+<h3>Compression makes the cost story honest</h3>
+<table>
+<tr><th>Honeycomb action</th><th>Without compression</th><th>With compression</th><th>Reduction</th></tr>
+<tr><td>Create profile</td><td>0.0052100 SOL</td><td>0.0000041 SOL</td><td><strong>99.92 %</strong></td></tr>
+<tr><td>Create character</td><td>0.0024200 SOL</td><td>0.0000041 SOL</td><td><strong>99.83 %</strong></td></tr>
+<tr><td>Mint resources</td><td>0.0021450 SOL</td><td>0.0000100 SOL</td><td><strong>99.53 %</strong></td></tr>
+<tr><td>Mission start</td><td>0.0024250 SOL</td><td>0.0000100 SOL</td><td><strong>99.59 %</strong></td></tr>
+</table>
+<p>
+  At those numbers, every run a player completes can mint events on-chain without bankrupting the player or the protocol. Per-pickup mints (a tick collected on the chart canvas → a real <code>mintResource</code> on-chain) become economically viable.
+</p>
+
+<div class="callout">
+  <strong>What ships before Frontier.</strong> None of the eight concepts are wired live for the May-11 demo. The README and the <code>HONEYCOMB-CONCEPT.md</code> doc describe the design; the scaffolded adapter shows the call shapes; the Honeycomb Cost Comparison numbers prove the economics. Concrete on-chain flips begin at <strong>M1</strong> (tokenomics paper). The Frontier pitch leads with <em>gamification + education + on-chain</em>, not "we already minted 10,000 NFTs."
+</div>
+
 <h2 id="pyth">Pyth Core <span class="tag amber">scaffold</span></h2>
 <p>
   Pyth fills the one slot the other three partners assume: the price the score was computed against is <em>provably real</em>. Today, ChartRunner pulls candles from Binance REST and the client signs over the resulting score — fine for replay, not honest at scale. Pyth Core closes that loop. <code>chartrunner_oracle</code> accepts a fresh Pyth update via the receiver SDK's pull pattern, enforces a 30-second freshness gate, and writes a <code>PriceCertificate</code> PDA the registry and match programs cite on-chain. A forged score now requires forging Pyth's signed VAA — i.e. forging Wormhole guardian signatures, which is the same security model as Pyth itself.
@@ -490,6 +529,7 @@ open ChartRunner_Prototype.html
   <a href="#phoenix">Phoenix Rise</a>
   <a href="#magicblock">MagicBlock ER</a>
   <a href="#honeycomb">Honeycomb</a>
+  <a href="#honeycomb-gamification">Honeycomb gamification</a>
   <a href="#pyth">Pyth Core</a>
   <a href="#program-ids">Program IDs</a>
   <a href="#endpoints">Endpoints</a>
