@@ -37,7 +37,7 @@ use pyth_solana_receiver_sdk::price_update::{
     get_feed_id_from_hex, PriceUpdateV2,
 };
 
-declare_id!("OraclePLACEHOLDER111111111111111111111111111");
+declare_id!("7FJjBq98caT4vUc6nMHQHm6ojsURBq9zDVXbrT6VB1BL");
 
 // ─── Configuration ─────────────────────────────────────────────────────────
 

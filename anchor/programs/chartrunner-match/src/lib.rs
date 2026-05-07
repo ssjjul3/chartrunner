@@ -42,7 +42,7 @@ use ephemeral_rollups_sdk::anchor::{commit, delegate, ephemeral};
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 use ephemeral_rollups_sdk::ephem::MagicIntentBundleBuilder;
 
-declare_id!("MatchPLACEHOLDER1111111111111111111111111111");
+declare_id!("3mzEAWZVtTV7sjqkRrPAbB3tT7bA3vVx5wyYQZvfp5zu");
 
 pub const MATCH_SEED:    &[u8] = b"match";
 pub const MAX_PLAYERS:   usize = 8;
