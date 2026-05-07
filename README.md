@@ -31,9 +31,11 @@ IDLs committed at [`anchor/target/idl/*.json`](anchor/target/idl/). Source at [`
 
 ## What it is
 
-A **gamified trading SDK** that works with any chart. Players run on real candle data (Binance, Coinbase, Bitfinex, Hyperliquid — any OHLCV source), drop into the upside-down on volatility, and every ability — bracket, ladder, OCO, hedge, radar, rescue — is a real trading primitive that routes through `ChartRunnerSDK`. The same SDK plugs into a real Solana adapter in Phase 2 — and the on-chain marketplace + leaderboard primitives are live on devnet today.
+A **gamified trading SDK** built on three pillars — **gamification**, **education**, and **on-chain (industry-standard)**. Players run on real candle data (Binance, Coinbase, Bitfinex, Hyperliquid — any OHLCV source), drop into the upside-down on volatility, and every ability — bracket, ladder, OCO, hedge, radar, rescue — is a real trading primitive that routes through `ChartRunnerSDK`. The same SDK plugs into a real Solana adapter in Phase 2 — and the on-chain marketplace + leaderboard primitives are live on devnet today.
 
 The hard architectural rule: **abilities never touch the canvas, the SDK is the only thing that issues orders.** That's what made Phase 2 a swap, not a rewrite.
+
+For the Frontier hackathon submission, the social and on-chain gaming layer is intentionally prioritized over monetization — tokenomics, marketplace P2P, and bot-terminal commerce sit on the post-hackathon roadmap (see below). What ships in the demo is the on-ramp, not the cash register.
 
 ## Status
 
@@ -60,6 +62,21 @@ The hard architectural rule: **abilities never touch the canvas, the SDK is the 
 | **0.9.11** | **Pyth Core integration — verifiable price feeds** — new Anchor program [`chartrunner_oracle`](anchor/programs/chartrunner-oracle/src/lib.rs) wraps Pyth's pull-oracle pattern: client posts a Hermes VAA to a `PriceUpdateV2` account, then `verify_price` reads it via `pyth-solana-receiver-sdk` v0.6.1, enforces a 30-second freshness gate, and writes a `PriceCertificate` PDA seeded by (trader, feed_id). `chartrunner_registry::record_run` and `chartrunner_match::tick_player` cite the certificate on-chain — a forged score now requires forging Pyth's signed VAA, which is impossible. Client adapter at [`solana-connect/src/lib/pyth-feeds.ts`](solana-connect/src/lib/pyth-feeds.ts) covers Hermes REST snapshots, WebSocket streaming (~400 ms cadence), the post-update + verify atomic transaction, and certificate readback. Three feeds wired by default — BTC/USD, ETH/USD, SOL/USD. Fourth ecosystem partner: **Phoenix for trades, MagicBlock for matches, Honeycomb for economy, Pyth for truth.** | 🟡 Both scaffolds shipped · pending `npm install @pythnetwork/hermes-client @pythnetwork/pyth-solana-receiver` + Anchor 0.32.1 workspace upgrade + first deploy via Solana Playground |
 | **1** | SDK pull-over · drop runtime onto Dexscreener / TradingView | 🟡 Architecture done · in `sdk/` next |
 | **2** | Anchor programs deployed to devnet → mainnet | 🟡 Devnet live · mainnet pending |
+
+## Post-Frontier roadmap
+
+The May-11 demo build is intentionally tight — gamification, education, and on-chain primitives only. Everything below is the post-hackathon arc, in roughly the order it will land:
+
+| Milestone | Theme | What lands |
+|---|---|---|
+| **M1** | Tokenomics paper | $CRDS / $RUN supply curves, sinks, vesting, swap math. Restores the token UI surfaces (Profile balances, Marketplace, Missions) hidden behind v0.9.12 feature flags. |
+| **M2** | Coach · AI Q&A v2 | Hardcoded FAQ ships in v0.9.12 (Frontier demo). M2 routes Coach to a real model endpoint with chart + position context. |
+| **M3** | Build apps | Bot Terminal back online, Workbench Strategies / Indicators / Terminal / Backtest / App Builder / Theme tabs restored. App Builder template gallery rewritten — the v0.9.11 P&L Tracker + Trade Notes templates are deprecated. |
+| **M4** | Intel · P2P commerce | Marketplace restored as a real on-chain P2P surface for bots, maps, strategies, indicators, themes. Backed by `chartrunner_registry`. |
+| **M5** | Hyperliquid integration | Second live-trading partner alongside Phoenix Rise. *Action item: check whether Hyperliquid runs hackathons we should align with.* |
+| **M6** | AI · Telegram bot integration | The Bot Terminal becomes a real bridge to Claude / Telegram bots / Lobster / OpenClaw. Telegram's newest mini-app + AI features get pulled into the in-game Terminal. |
+| **M7** | Streaming widget | A draggable in-game widget connects to streaming sites (YouTube / Twitch / Kick / X Live) — a video tile a creator can pin while running ChartRunner. Sets up M8. |
+| **M8** | Token launch tournaments | Natural extension of streaming. 1v1 / 2v2 / Nv N players each launch a token, control supply, fight on the chart, win opponent supply as reward. The ChartRunner social + on-chain gaming endgame. |
 
 ## Why this matters
 
