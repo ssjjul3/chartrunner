@@ -55,6 +55,11 @@
      Buttons stay in DOM (hidden) so existing click handlers keep working;
      the new Profile buttons forward via .click(). */
   #crBarRestart, #crBarSave, #crBarCoins, #crBarConnect{display:none !important}
+  /* v0.9.23 — Re-show Save + new Home button as the 3-way exit triad:
+       · Save  — write current run to chartrunner_maps (create or update)
+       · Home  — CRT-fade out, nothing saved
+       · (Restart stays archived — see v0.9.21 archive block) */
+  .cr-bar-btn.cr-bar-show{display:inline-flex !important}
   #crBarConnect{cursor:pointer;padding:3px 10px;border-radius:6px;font-size:11px;
     letter-spacing:.3px;background:rgba(155,140,255,0.10);color:#cfd2dd;
     border:1px solid rgba(155,140,255,0.22);transition:background .12s,color .12s,border-color .12s}
@@ -4199,9 +4204,17 @@
   <!-- v0.8k#24ci — Save button: snapshots the current run (asset, timeframe,
        strategy, indicators, all overlays + destruction state) into Maps with
        a user-supplied name. Persists via crMaps. Different from the legacy
-       Restart→Save morph, which only fires when a map is already loaded. -->
-  <button class="menu cr-bar-btn" id="crBarSave" type="button" title="Save current run to Maps (give it a name)">
-    <span class="ic">💾</span><span class="lbl">Save</span>
+       Restart→Save morph, which only fires when a map is already loaded.
+       v0.9.23 — Save morphs label to 'Update' when a map is already
+       loaded (game.loadedMapId set), to distinguish create vs update. -->
+  <button class="menu cr-bar-btn cr-bar-show" id="crBarSave" type="button" title="Save current run to Maps (creates a new map, or updates the loaded one)">
+    <span class="ic">💾</span><span class="lbl" id="crBarSaveLbl">Save</span>
+  </button>
+  <!-- v0.9.23 — Home button: triggers the CRT fade transition out of
+       the run and back to the splash desktop. Nothing is saved. The
+       Save button is the only way to persist mid-run progress. -->
+  <button class="menu cr-bar-btn cr-bar-show" id="crBarHome" type="button" title="Exit run · nothing saved · CRT fade home">
+    <span class="ic">⌂</span><span class="lbl">Home</span>
   </button>
   <button class="menu cr-bar-btn" id="crBarCoins"   type="button" title="Toggle coin pickups">
     <span class="ic">🪙</span><span class="lbl">Coins</span>
@@ -19836,12 +19849,23 @@ function pickMode(mode){
     //   step.complete(baseline) — optional. Auto-advances when truthy.
     //   step.target — optional CSS selector to halo with the spotlight ring.
     const SCRIPTS = {
+      // v0.9.23 — Chapter 1 expanded to the full arc:
+      //   intro (what)  → explain (why)  → choose (where) → execute × N (how)
+      // Other chapters keep their existing 3-step pattern; this is the
+      // demo's first-impression chapter so we polish it hardest. The
+      // build-instruction yellow box that used to float above the chart
+      // is now FOLDED into Coach steps 4–6 as `execute` sub-steps.
       1: [
-        { kind:'explain', text:'A Bracket pairs your entry with a stop-loss and take-profit in one click. Pros use it because risk is locked in BEFORE the candle moves.' },
+        { kind:'explain', text:'A Bracket = entry + stop-loss + take-profit, all locked in before the candle moves. One click defines what you risk and what you make.' },
+        { kind:'explain', text:'Stop = your "I was wrong" line. Target = your "I was right" line. Risk:Reward ≥ 1:2 keeps you breakeven on a 33% win rate.' },
         { kind:'choose',  text:'Press hotkey 3 to open the Primitives laser, then pick 🎯 Bracket.',
           complete:()=> { try { return game && game.laserTool === 'bracket'; } catch(_){ return false; } } },
-        { kind:'execute', text:'Click anywhere on the chart to drop the bracket.',
+        { kind:'execute', text:'Click your entry candle — the price you want to fill at.',
+          complete:(b)=> { try { return !!(game && game.laserAnchor1); } catch(_){ return false; } } },
+        { kind:'execute', text:'Click your stop level. Below entry for long, above for short. Smaller stop = bigger position size on the same risk.',
           complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'bracket').length > (b.brackets||0); } catch(_){ return false; } } },
+        { kind:'execute', text:'To EDIT before fill — hover the stop or target line and drag. Practice it: nudge one line by 5%.',
+          complete:(b)=> { try { return ((b.bracketEditCount|0) > 0) || ((sdk.openOrders||[]).filter(o => o.type === 'bracket' && o.edited).length > 0); } catch(_){ return false; } } },
       ],
       2: [
         { kind:'explain', text:'Reference Levels mark the prices pros watch every day: yesterday\'s OHLC, today\'s open, and the prior-day Volume Profile (VAH / POC / VAL). Price treats them as magnets.' },
@@ -28485,6 +28509,52 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
       }
     });
   }
+  /* v0.9.23 — 3-way exit: wire the Home button + the Save label morph.
+     Save  — already handled by saveBtn above; if game.currentMapId is
+             set, the existing path overwrites it (idempotent).
+     Update — same button, different label; reflects whether you're
+              creating a fresh map or updating the loaded one.
+     Home   — CRT fade out → showSplash. Nothing saved. */
+  const homeBtn = document.getElementById('crBarHome');
+  if(homeBtn){
+    homeBtn.addEventListener('click', () => {
+      // Confirm if the run has unsaved progress (orders placed but no
+      // currentMapId) so players don't fat-finger their session away.
+      const hasOpenOrders = (typeof sdk !== 'undefined' && sdk.openOrders && sdk.openOrders.length > 0);
+      const hasMapId      = !!(typeof game !== 'undefined' && game.currentMapId);
+      if(hasOpenOrders && !hasMapId){
+        const ok = window.confirm('Exit without saving?\n\nYou have ' + sdk.openOrders.length + ' open orders. Press Save first if you want to keep this run.');
+        if(!ok) return;
+      }
+      try { crNotify('Exit · CRT fade home', 'warn'); } catch(_){}
+      if(typeof crCrtFadeOut === 'function'){
+        crCrtFadeOut(() => {
+          try { if(typeof game !== 'undefined'){ game.running = false; } } catch(_){}
+          try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
+          setTimeout(() => { try { crCrtFadeIn(); } catch(_){} }, 260);
+        });
+      } else {
+        if(typeof showSplash === 'function') showSplash();
+      }
+    });
+  }
+  // v0.9.23 — Morph Save label between 'Save' (new map) and 'Update'
+  // (currentMapId set). Re-checks every 1 s while the run is active.
+  const saveLbl = document.getElementById('crBarSaveLbl');
+  function _crBarRefreshSaveLbl(){
+    if(!saveLbl) return;
+    try {
+      const updating = !!(typeof game !== 'undefined' && game.currentMapId);
+      saveLbl.textContent = updating ? 'Update' : 'Save';
+      const btn = document.getElementById('crBarSave');
+      if(btn) btn.title = updating
+        ? 'Update the loaded map with current run state · same chartrunner_maps PDA'
+        : 'Save current run as a new chartrunner_maps entry';
+    } catch(_){}
+  }
+  setInterval(_crBarRefreshSaveLbl, 1000);
+  _crBarRefreshSaveLbl();
+
   // v0.8k#24cc / v0.8k#24cf — Floating-overlay toggle. Profile (#win-wallet)
   // and Terminal (#win-terminal) live inside #splash, which is set to
   // display:none during a run — and CSS `display:none` on a parent hides
