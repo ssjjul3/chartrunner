@@ -3963,6 +3963,71 @@
   /* Hide on splash like other in-game chrome */
   body.crSplashUp .crNotify{display:none !important}
 
+  /* ── v0.9.27 — RUN-tube + File Display (demo/streaming rig) ─────────
+     Two draggable picture-in-picture widgets. RUN-tube hosts a video
+     stream (webcam during recording, future YouTube/Twitch connectors
+     in M7-proper). File Display hosts a PDF iframe or image. Both
+     follow the same drag/resize pattern; their position persists to
+     localStorage so the demo recording rig comes back identical
+     between sessions. */
+  .cr-pip{
+    position:fixed;z-index:9600;
+    background:linear-gradient(180deg,rgba(20,30,55,.96),rgba(8,12,22,.99));
+    border:1px solid rgba(126,231,135,.35);border-radius:8px;
+    box-shadow:0 12px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(126,231,135,.08) inset;
+    display:none;flex-direction:column;overflow:hidden;
+    color:#e8e8e8;font:11px ui-monospace,Menlo,monospace;
+    min-width:180px;min-height:120px;
+    pointer-events:auto;
+  }
+  .cr-pip.on{display:flex}
+  .cr-pip-hd{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:5px 8px;cursor:grab;user-select:none;
+    background:rgba(126,231,135,.08);
+    border-bottom:1px solid rgba(126,231,135,.18);
+    font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.6px;
+    color:#7ee787;text-transform:uppercase;
+  }
+  .cr-pip-hd .ttl{flex:1}
+  .cr-pip.dragging .cr-pip-hd{cursor:grabbing}
+  .cr-pip-actions{display:flex;align-items:center;gap:4px}
+  .cr-pip-act{
+    background:transparent;border:1px solid rgba(126,231,135,.30);
+    color:#bff7df;padding:2px 8px;border-radius:3px;cursor:pointer;
+    font:600 9px ui-monospace,Menlo,monospace;
+  }
+  .cr-pip-act:hover{background:rgba(126,231,135,.12)}
+  .cr-pip-close{
+    background:transparent;border:1px solid rgba(255,91,127,.35);
+    color:#ff5b7f;padding:2px 7px;border-radius:3px;cursor:pointer;
+    font:700 11px ui-monospace,Menlo,monospace;line-height:.8;
+  }
+  .cr-pip-close:hover{background:rgba(255,91,127,.18)}
+  .cr-pip-body{flex:1;display:flex;align-items:center;justify-content:center;background:#000;position:relative;overflow:hidden}
+  .cr-pip-body video, .cr-pip-body iframe, .cr-pip-body img{
+    width:100%;height:100%;display:block;border:none;background:#000;
+  }
+  .cr-pip-body img{object-fit:contain}
+  .cr-pip-placeholder{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:8px;
+    color:#5b6470;font:11px ui-monospace,Menlo,monospace;
+    text-align:center;padding:12px;
+    background:repeating-linear-gradient(45deg,rgba(255,255,255,.02) 0 6px,transparent 6px 12px);
+  }
+  .cr-pip-placeholder .big{font-size:32px;opacity:.6}
+  .cr-pip-resize{
+    position:absolute;right:0;bottom:0;width:14px;height:14px;
+    cursor:nwse-resize;
+    background:linear-gradient(135deg,transparent 0 50%, rgba(126,231,135,.4) 50% 100%);
+  }
+  /* RUN-tube defaults — bottom-right, 16:9-ish, small */
+  #crRunTube{right:18px;bottom:80px;width:240px;height:160px}
+  /* File Display defaults — top-right, larger */
+  #crFileDisplay{right:18px;top:80px;width:480px;height:600px}
+  body.crSplashUp .cr-pip{display:none !important}
+
   /* ── v0.9.22 — CRT screen-off transition ────────────────────────────
      When triggered, the entire viewport collapses to a horizontal line
      then a center dot then black. Used by chapter endcard → Home and
@@ -4245,8 +4310,65 @@
   <div class="dockSep"></div>
   <button class="dockBtn" data-prog="journal"     title="Journal">📒</button>
   <button class="dockBtn" data-prog="tokenterm"   title="Token Terminal">🔎</button>
+  <!-- v0.9.27 — Demo / streaming rig. RUN-tube = draggable picture-in-
+       picture video widget (webcam during recording, future M7 = stream
+       to YouTube/Twitch). Display = inline file viewer for pitch decks
+       and chart screenshots, draggable + resizable. -->
+  <button class="dockBtn" data-prog="runtube"     title="RUN-tube · streaming + PIP video">📹</button>
+  <button class="dockBtn" data-prog="display"     title="Display · file viewer (PDF / image)">📄</button>
   <div class="dockSep"></div>
   <button class="dockBtn" id="crDockReturn"       title="Return to Desktop">⌂</button>
+</div>
+
+<!-- v0.9.27 — RUN-tube · draggable picture-in-picture webcam widget.
+     Created hidden; toggle on by clicking the 📹 dock button.
+     Header doubles as drag handle. Resize via the corner gripper.
+     Stream source: navigator.mediaDevices.getUserMedia({video:true,audio:false}).
+     If permission is denied or unsupported, shows the placeholder. -->
+<div id="crRunTube" class="cr-pip" data-pip="runtube" hidden>
+  <div class="cr-pip-hd" data-drag-handle>
+    <span class="ttl">📹 RUN-tube · LIVE</span>
+    <div class="cr-pip-actions">
+      <button class="cr-pip-act" data-act="rt-mute"   title="Mute camera">🔴</button>
+      <button class="cr-pip-act" data-act="rt-mirror" title="Mirror video">⇋</button>
+      <button class="cr-pip-close" data-act="pip-close" title="Hide widget">×</button>
+    </div>
+  </div>
+  <div class="cr-pip-body">
+    <video id="crRunTubeVideo" autoplay playsinline muted></video>
+    <div class="cr-pip-placeholder" id="crRunTubePh">
+      <div class="big">📹</div>
+      <div>RUN-tube</div>
+      <div style="font-size:9px;opacity:.5;margin-top:6px;max-width:180px;text-align:center">Click ▶ to enable webcam.<br/>Browser will ask for camera permission.</div>
+      <button class="cr-pip-act" id="crRunTubeStart" style="margin-top:10px;padding:6px 14px">▶ Start camera</button>
+    </div>
+  </div>
+  <div class="cr-pip-resize" data-resize-handle></div>
+</div>
+
+<!-- v0.9.27 — File Display · draggable inline document viewer.
+     PDF rendered through <iframe>, image via <img>. File loaded via the
+     hidden <input type="file"> in the header. Local-only (URL.createObjectURL),
+     never uploaded anywhere. -->
+<div id="crFileDisplay" class="cr-pip" data-pip="display" hidden>
+  <div class="cr-pip-hd" data-drag-handle>
+    <span class="ttl" id="crFdTtl">📄 Display</span>
+    <div class="cr-pip-actions">
+      <button class="cr-pip-act" data-act="fd-open"  title="Open file (PDF / image)">📁</button>
+      <button class="cr-pip-act" data-act="fd-clear" title="Clear file">⌫</button>
+      <button class="cr-pip-close" data-act="pip-close" title="Hide widget">×</button>
+    </div>
+  </div>
+  <div class="cr-pip-body" id="crFdBody">
+    <div class="cr-pip-placeholder" id="crFdPh">
+      <div class="big">📄</div>
+      <div>Display</div>
+      <div style="font-size:9px;opacity:.5;margin-top:6px;max-width:220px;text-align:center">Open a PDF or image to display inline.<br/>Useful for pitch decks during demo recording.</div>
+      <button class="cr-pip-act" id="crFdOpenBtn" style="margin-top:10px;padding:6px 14px">📁 Open file…</button>
+    </div>
+  </div>
+  <input type="file" id="crFdFile" accept="application/pdf,image/*" style="display:none">
+  <div class="cr-pip-resize" data-resize-handle></div>
 </div>
 
 <!-- v0.8L#3/#4 — TradingView-style top toolbar with TF pills (added v0.8L#4).
@@ -31033,6 +31155,248 @@ function crCrtFadeIn(){
 }
 window.crCrtFadeOut = crCrtFadeOut;
 window.crCrtFadeIn  = crCrtFadeIn;
+
+/* ─── v0.9.27 — RUN-tube + Display PIP widgets ─────────────────────────
+   Two draggable, resizable, picture-in-picture floating widgets that sit
+   above any view (desktop OR in-game). Used for demo + pitch recording:
+     · RUN-tube  → webcam feed (creator face) via getUserMedia
+     · Display    → inline file viewer (PDF iframe / image tag)
+   State persists to localStorage (cr_pip_<id>_v1 → {x,y,w,h,on}). Drag
+   handle = .cr-pip-hd; resize handle = .cr-pip-resize bottom-right. */
+(function crPipBoot(){
+  const PIPS = ['runtube','display'];
+  const ID_OF = { runtube:'crRunTube', display:'crFileDisplay' };
+  const KEY_OF = id => 'cr_pip_' + id + '_v1';
+
+  function loadState(id){
+    try { return JSON.parse(localStorage.getItem(KEY_OF(id))) || {}; }
+    catch(_) { return {}; }
+  }
+  function saveState(id, patch){
+    const cur = loadState(id);
+    const next = Object.assign(cur, patch);
+    try { localStorage.setItem(KEY_OF(id), JSON.stringify(next)); } catch(_){}
+  }
+
+  function applyState(el, st){
+    if(typeof st.x === 'number') el.style.left = st.x + 'px';
+    if(typeof st.y === 'number') el.style.top  = st.y + 'px';
+    if(typeof st.x === 'number' || typeof st.y === 'number'){
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+    }
+    if(typeof st.w === 'number') el.style.width  = st.w + 'px';
+    if(typeof st.h === 'number') el.style.height = st.h + 'px';
+  }
+
+  function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+
+  function wireDrag(el, handle, id){
+    let dragging = false, ox = 0, oy = 0;
+    handle.addEventListener('mousedown', (e) => {
+      if(e.target.closest('.cr-pip-actions')) return; // buttons
+      dragging = true;
+      el.classList.add('dragging');
+      const r = el.getBoundingClientRect();
+      ox = e.clientX - r.left;
+      oy = e.clientY - r.top;
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', (e) => {
+      if(!dragging) return;
+      const w = el.offsetWidth, h = el.offsetHeight;
+      const x = clamp(e.clientX - ox, 0, window.innerWidth  - w);
+      const y = clamp(e.clientY - oy, 0, window.innerHeight - h);
+      el.style.left = x + 'px';
+      el.style.top  = y + 'px';
+    });
+    window.addEventListener('mouseup', () => {
+      if(!dragging) return;
+      dragging = false;
+      el.classList.remove('dragging');
+      const r = el.getBoundingClientRect();
+      saveState(id, { x: r.left, y: r.top });
+    });
+  }
+
+  function wireResize(el, grip, id){
+    let resizing = false, sx = 0, sy = 0, sw = 0, sh = 0;
+    grip.addEventListener('mousedown', (e) => {
+      resizing = true;
+      sx = e.clientX; sy = e.clientY;
+      sw = el.offsetWidth; sh = el.offsetHeight;
+      e.preventDefault(); e.stopPropagation();
+    });
+    window.addEventListener('mousemove', (e) => {
+      if(!resizing) return;
+      const w = clamp(sw + (e.clientX - sx), 160, window.innerWidth  - 40);
+      const h = clamp(sh + (e.clientY - sy), 120, window.innerHeight - 40);
+      el.style.width  = w + 'px';
+      el.style.height = h + 'px';
+    });
+    window.addEventListener('mouseup', () => {
+      if(!resizing) return;
+      resizing = false;
+      saveState(id, { w: el.offsetWidth, h: el.offsetHeight });
+    });
+  }
+
+  function showPip(id){
+    const el = document.getElementById(ID_OF[id]);
+    if(!el) return;
+    el.hidden = false;
+    el.classList.add('on');
+    saveState(id, { on:true });
+    try { if(typeof crNotify === 'function') crNotify((id==='runtube'?'RUN-tube':'Display')+' · widget on'); } catch(_){}
+  }
+  function hidePip(id){
+    const el = document.getElementById(ID_OF[id]);
+    if(!el) return;
+    el.classList.remove('on');
+    el.hidden = true;
+    saveState(id, { on:false });
+    if(id === 'runtube') stopRunTubeCamera();
+  }
+  function togglePip(id){
+    const el = document.getElementById(ID_OF[id]);
+    if(!el) return;
+    if(el.classList.contains('on')) hidePip(id); else showPip(id);
+  }
+  window.crPipShow = showPip;
+  window.crPipHide = hidePip;
+  window.crPipToggle = togglePip;
+
+  /* — RUN-tube webcam — */
+  let _rtStream = null;
+  async function startRunTubeCamera(){
+    const v  = document.getElementById('crRunTubeVideo');
+    const ph = document.getElementById('crRunTubePh');
+    if(!v) return;
+    try {
+      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+        throw new Error('getUserMedia unsupported');
+      }
+      _rtStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
+      v.srcObject = _rtStream;
+      v.style.display = 'block';
+      if(ph) ph.style.display = 'none';
+      try { if(typeof crNotify === 'function') crNotify('RUN-tube · camera live'); } catch(_){}
+    } catch(err){
+      try { if(typeof crNotify === 'function') crNotify('RUN-tube · camera blocked', 'warn'); } catch(_){}
+      console.warn('[RUN-tube] camera error', err);
+      if(ph) ph.style.display = 'flex';
+      v.style.display = 'none';
+    }
+  }
+  function stopRunTubeCamera(){
+    if(_rtStream){
+      try { _rtStream.getTracks().forEach(t => t.stop()); } catch(_){}
+      _rtStream = null;
+    }
+    const v = document.getElementById('crRunTubeVideo');
+    if(v){ v.srcObject = null; v.style.display = 'none'; }
+    const ph = document.getElementById('crRunTubePh');
+    if(ph) ph.style.display = 'flex';
+  }
+
+  /* — File Display — */
+  function openFile(file){
+    if(!file) return;
+    const body = document.getElementById('crFdBody');
+    const ph = document.getElementById('crFdPh');
+    const ttl = document.getElementById('crFdTtl');
+    if(!body) return;
+    // Clear previous preview.
+    body.querySelectorAll('iframe, img').forEach(n => n.remove());
+    if(ph) ph.style.display = 'none';
+    const url = URL.createObjectURL(file);
+    if(file.type === 'application/pdf'){
+      const f = document.createElement('iframe');
+      f.src = url;
+      f.title = file.name;
+      f.style.cssText = 'border:0;width:100%;height:100%';
+      body.appendChild(f);
+    } else if(file.type.startsWith('image/')){
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = file.name;
+      body.appendChild(img);
+    } else {
+      try { if(typeof crNotify === 'function') crNotify('Display · unsupported file type', 'warn'); } catch(_){}
+      if(ph) ph.style.display = 'flex';
+      return;
+    }
+    if(ttl) ttl.textContent = '📄 ' + file.name;
+    try { if(typeof crNotify === 'function') crNotify('Display · ' + file.name); } catch(_){}
+  }
+  function clearFile(){
+    const body = document.getElementById('crFdBody');
+    const ph = document.getElementById('crFdPh');
+    const ttl = document.getElementById('crFdTtl');
+    if(!body) return;
+    body.querySelectorAll('iframe, img').forEach(n => n.remove());
+    if(ph) ph.style.display = 'flex';
+    if(ttl) ttl.textContent = '📄 Display';
+  }
+
+  /* — Bind both widgets on DOM ready — */
+  function init(){
+    PIPS.forEach(id => {
+      const el = document.getElementById(ID_OF[id]);
+      if(!el) return;
+      const hd = el.querySelector('[data-drag-handle]');
+      const rz = el.querySelector('[data-resize-handle]');
+      if(hd) wireDrag(el, hd, id);
+      if(rz) wireResize(el, rz, id);
+      // Restore saved geometry (but DON'T auto-show on boot).
+      const st = loadState(id);
+      applyState(el, st);
+    });
+
+    // Close buttons (×) — common to both.
+    document.querySelectorAll('.cr-pip [data-act="pip-close"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const wrap = btn.closest('.cr-pip');
+        if(!wrap) return;
+        hidePip(wrap.dataset.pip);
+      });
+    });
+
+    // RUN-tube wiring.
+    const startBtn = document.getElementById('crRunTubeStart');
+    if(startBtn) startBtn.addEventListener('click', startRunTubeCamera);
+    const muteBtn = document.querySelector('[data-act="rt-mute"]');
+    if(muteBtn) muteBtn.addEventListener('click', () => {
+      if(_rtStream){ stopRunTubeCamera(); muteBtn.textContent = '⚪'; }
+      else         { startRunTubeCamera();  muteBtn.textContent = '🔴'; }
+    });
+    const mirrorBtn = document.querySelector('[data-act="rt-mirror"]');
+    if(mirrorBtn) mirrorBtn.addEventListener('click', () => {
+      const v = document.getElementById('crRunTubeVideo');
+      if(!v) return;
+      v.style.transform = (v.style.transform === 'scaleX(-1)') ? '' : 'scaleX(-1)';
+    });
+
+    // Display wiring.
+    const fileInput = document.getElementById('crFdFile');
+    const openBtnHd = document.querySelector('[data-act="fd-open"]');
+    const openBtnPh = document.getElementById('crFdOpenBtn');
+    const clearBtn  = document.querySelector('[data-act="fd-clear"]');
+    const trigger = () => { if(fileInput) fileInput.click(); };
+    if(openBtnHd) openBtnHd.addEventListener('click', trigger);
+    if(openBtnPh) openBtnPh.addEventListener('click', trigger);
+    if(clearBtn)  clearBtn.addEventListener('click',  clearFile);
+    if(fileInput) fileInput.addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if(f) openFile(f);
+    });
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
 const logEl=document.getElementById('log');
 function log(msg){
   const line=document.createElement('div');
@@ -33043,9 +33407,15 @@ plot(diff, color=color.aqua)`,
   }
 
   // Body-level dock — open the corresponding splash window AND surface splash.
+  // v0.9.27 — runtube / display are PIP widgets that float above ANY view
+  // (desktop OR in-game), so they bypass the splash + window flow entirely.
   document.querySelectorAll('#crOSDockFixed .dockBtn[data-prog]').forEach(btn => {
     btn.addEventListener('click', () => {
       const prog = btn.dataset.prog;
+      if(prog === 'runtube' || prog === 'display'){
+        try { if(typeof window.crPipToggle === 'function') window.crPipToggle(prog); } catch(_){}
+        return;
+      }
       try{ showSplash(); }catch{}
       try{ if(typeof osOpenWindowMulti === 'function') osOpenWindowMulti(prog); }catch{}
     });
