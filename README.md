@@ -15,7 +15,7 @@
 |---|---|---|
 | 🎮 **Landing** | https://chartrunner.xyz/ | Project page · pitch · animated hero |
 | 🕹 **Game** | https://chartrunner.xyz/play/ | The playable prototype · wallet-first boot login |
-| 🪙 **Wallet bridge** | https://chartrunner.xyz/solana-connect/ | Phantom / Backpack / Solflare → devnet handshake |
+| 🪙 **Wallet bridge** | https://chartrunner.xyz/solana-connect/ | Phantom Connect (Frontier-recommended embedded wallet) + Backpack + Solflare → devnet handshake |
 | 📖 **Pitch deck** | [PITCH-DECK.pdf](PITCH-DECK.pdf) · [.pptx](PITCH-DECK.pptx) | Full pitch · 22 slides incl. v0.9.7 update |
 
 ## On-chain — Phase 2 LIVE on Solana devnet
@@ -69,14 +69,18 @@ The May-11 demo build is intentionally tight — gamification, education, and on
 
 | Milestone | Theme | What lands |
 |---|---|---|
-| **M1** | Tokenomics paper | $CRDS / $RUN supply curves, sinks, vesting, swap math. Restores the token UI surfaces (Profile balances, Marketplace, Missions) hidden behind v0.9.12 feature flags. |
+| **M0.5** | Security hardening | Wrap `chartrunner_maps` + `chartrunner_registry` upgrade authorities in a **Squads multisig** (used by Helius / Jito / Kamino / Jupiter). Independent Anchor program audit. Resolves the upstream `solana-pubkey` v2/v3 conflict in `ephemeral-rollups-sdk` so the two scaffold-complete programs (`chartrunner_match`, `chartrunner_oracle`) ship live. |
+| **M1** | Tokenomics paper + fiat onramp | $CRDS / $RUN supply curves, sinks, vesting, swap math. Restores the token UI surfaces (Profile balances, Marketplace, Missions) hidden behind v0.9.12 feature flags. **MoonPay** or **Coinbase Onramp** for fiat → $RUN distribution. |
 | **M2** | Coach · AI Q&A v2 | Hardcoded FAQ ships in v0.9.12 (Frontier demo). M2 routes Coach to a real model endpoint with chart + position context. |
-| **M3** | Build apps | Bot Terminal back online, Workbench Strategies / Indicators / Terminal / Backtest / App Builder / Theme tabs restored. App Builder template gallery rewritten — the v0.9.11 P&L Tracker + Trade Notes templates are deprecated. |
+| **M2.5** | SDK extraction (Phase 1 unblock) | M1.4 / M1.5 — extract `ChartRunnerSDK` from the inline IIFE into the publishable `@chartrunner/core` npm package via the inline-bundler pattern (see `sdk-m1-scaffold/DEFUNCT.md`). Unlocks Dexscreener / TradingView host overlays. |
+| **M3** | Build apps | Bot Terminal back online, Workbench Strategies / Indicators / Terminal / Backtest / App Builder / Theme tabs restored. App Builder template gallery rewritten — the v0.9.11 P&L Tracker + Trade Notes templates are deprecated. **Metaplex Agent Kit** registers Workbench bots as on-chain agents (014 registry); **Coinbase x402** for paid API access on premium bots / advanced indicators. |
 | **M4** | Intel · P2P commerce | Marketplace restored as a real on-chain P2P surface for bots, maps, strategies, indicators, themes. Backed by `chartrunner_registry`. |
-| **M5** | Hyperliquid integration | Second live-trading partner alongside Phoenix Rise. *Action item: check whether Hyperliquid runs hackathons we should align with.* |
+| **M5** | Hyperliquid integration + production RPC | Second live-trading partner alongside Phoenix Rise. **Helius** RPC replaces public devnet endpoint for production-grade reads. *Action item: check whether Hyperliquid runs hackathons we should align with.* |
 | **M6** | AI · Telegram bot integration | The Bot Terminal becomes a real bridge to Claude / Telegram bots / Lobster / OpenClaw. Telegram's newest mini-app + AI features get pulled into the in-game Terminal. |
-| **M7** | Streaming widget | A draggable in-game widget connects to streaming sites (YouTube / Twitch / Kick / X Live) — a video tile a creator can pin while running ChartRunner. Sets up M8. |
-| **M8** | Token launch tournaments | Natural extension of streaming. 1v1 / 2v2 / Nv N players each launch a token, control supply, fight on the chart, win opponent supply as reward. The ChartRunner social + on-chain gaming endgame. |
+| **M7** | RUN-tube · Streaming + display layer | Two-part: (a) **RUN-tube** — a draggable video widget for in-game picture-in-picture (creator face on chart while running) + an inline file-display app for documents (pitch decks, strategy PDFs, chart snapshots). Ships partially in v0.9.27 as the **demo + pitch video recording rig**. (b) Full streaming-site connectors (YouTube / Twitch / Kick / X Live) ship at the milestone proper. |
+| **M8** | Token launch tournaments | Natural extension of streaming. 1v1 / 2v2 / NvN players each launch a token, control supply, fight on the chart, win opponent supply as reward. Tournament entry fees + payouts in **CASH** (Phantom-backed stablecoin, Frontier-recommended payout asset). **World ID** proof-of-human gate against bot farms. The ChartRunner social + on-chain gaming endgame. |
+| **M9** | Solana Mobile / React Native | iOS + Android build via the Phantom React Native template + Solana Mobile / Saga integration. Touch-native chart interactions. |
+| **M10** | Mainnet deploy | Audit-clean Anchor programs deployed to Solana mainnet-beta. Phoenix Rise + MagicBlock + Honeycomb + Pyth integrations move from devnet to live. CASH and $RUN become spendable, not just demo currencies. |
 
 ## Why this matters
 
