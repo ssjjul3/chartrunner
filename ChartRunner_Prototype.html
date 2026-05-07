@@ -4210,12 +4210,10 @@
   <button class="menu cr-bar-btn cr-bar-show" id="crBarSave" type="button" title="Save current run to Maps (creates a new map, or updates the loaded one)">
     <span class="ic">💾</span><span class="lbl" id="crBarSaveLbl">Save</span>
   </button>
-  <!-- v0.9.23 — Home button: triggers the CRT fade transition out of
-       the run and back to the splash desktop. Nothing is saved. The
-       Save button is the only way to persist mid-run progress. -->
-  <button class="menu cr-bar-btn cr-bar-show" id="crBarHome" type="button" title="Exit run · nothing saved · CRT fade home">
-    <span class="ic">⌂</span><span class="lbl">Home</span>
-  </button>
+  <!-- v0.9.24 — #crBarHome (the duplicate ⌂ Home button I added in v0.9.23)
+       removed. The original Home at #crBarFile (top-left, line 4187) is
+       the canonical positioning; v0.9.24 rewires it to use the CRT fade
+       transition + open-orders confirm that #crBarHome had. -->
   <button class="menu cr-bar-btn" id="crBarCoins"   type="button" title="Toggle coin pickups">
     <span class="ic">🪙</span><span class="lbl">Coins</span>
   </button>
@@ -28509,35 +28507,10 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
       }
     });
   }
-  /* v0.9.23 — 3-way exit: wire the Home button + the Save label morph.
-     Save  — already handled by saveBtn above; if game.currentMapId is
-             set, the existing path overwrites it (idempotent).
-     Update — same button, different label; reflects whether you're
-              creating a fresh map or updating the loaded one.
-     Home   — CRT fade out → showSplash. Nothing saved. */
-  const homeBtn = document.getElementById('crBarHome');
-  if(homeBtn){
-    homeBtn.addEventListener('click', () => {
-      // Confirm if the run has unsaved progress (orders placed but no
-      // currentMapId) so players don't fat-finger their session away.
-      const hasOpenOrders = (typeof sdk !== 'undefined' && sdk.openOrders && sdk.openOrders.length > 0);
-      const hasMapId      = !!(typeof game !== 'undefined' && game.currentMapId);
-      if(hasOpenOrders && !hasMapId){
-        const ok = window.confirm('Exit without saving?\n\nYou have ' + sdk.openOrders.length + ' open orders. Press Save first if you want to keep this run.');
-        if(!ok) return;
-      }
-      try { crNotify('Exit · CRT fade home', 'warn'); } catch(_){}
-      if(typeof crCrtFadeOut === 'function'){
-        crCrtFadeOut(() => {
-          try { if(typeof game !== 'undefined'){ game.running = false; } } catch(_){}
-          try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
-          setTimeout(() => { try { crCrtFadeIn(); } catch(_){} }, 260);
-        });
-      } else {
-        if(typeof showSplash === 'function') showSplash();
-      }
-    });
-  }
+  /* v0.9.23 — 3-way exit. The Home half is now the canonical
+     #crBarFile (top-left), wired with the CRT fade + open-orders
+     confirm in the bind('crBarFile', …) block (search 'v0.9.24').
+     This block keeps the Save morph (Save ⇄ Update) only. */
   // v0.9.23 — Morph Save label between 'Save' (new map) and 'Update'
   // (currentMapId set). Re-checks every 1 s while the run is active.
   const saveLbl = document.getElementById('crBarSaveLbl');
@@ -32957,10 +32930,31 @@ plot(diff, color=color.aqua)`,
     if(el) el.addEventListener('click', fn);
   }
   bind('crBarApple',  () => typeof toast === 'function' && toast('ChartRunnerOS v0.9.7'));
-  // v0.8k#24cg — Body-level Home button just shows the splash desktop,
-  // exactly as before. The splash menubar's "Game" item is the one that
-  // resumes the last-played chart.
-  bind('crBarFile',   () => { try{ showSplash(); }catch{} });
+  // v0.9.24 — Body-level Home button. Was: instant `showSplash()`.
+  // Now: confirm if open orders + no map loaded, then crCrtFadeOut →
+  // showSplash → fade in. Same behavior the v0.9.23 #crBarHome
+  // duplicate had; that button has been removed in v0.9.24 so there's
+  // only one Home control in the chrome (this one, top-left).
+  bind('crBarFile', () => {
+    try {
+      const hasOpenOrders = (typeof sdk !== 'undefined' && sdk.openOrders && sdk.openOrders.length > 0);
+      const hasMapId      = !!(typeof game !== 'undefined' && game.currentMapId);
+      if(hasOpenOrders && !hasMapId){
+        const ok = window.confirm('Exit without saving?\n\nYou have ' + sdk.openOrders.length + ' open orders. Press Save first if you want to keep this run.');
+        if(!ok) return;
+      }
+      try { if(typeof crNotify === 'function') crNotify('Exit · CRT fade home', 'warn'); } catch(_){}
+      if(typeof crCrtFadeOut === 'function'){
+        crCrtFadeOut(() => {
+          try { if(typeof game !== 'undefined'){ game.running = false; } } catch(_){}
+          try { showSplash(); } catch(_){}
+          setTimeout(() => { try { crCrtFadeIn(); } catch(_){} }, 260);
+        });
+      } else {
+        showSplash();
+      }
+    } catch(_){}
+  });
   // v0.8k#24cd — Tutorial button on the body-level bar runs the same
   // crCoachTutorial walkthrough.
   bind('crBarTutorial', () => {
