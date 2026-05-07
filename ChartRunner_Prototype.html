@@ -23863,14 +23863,18 @@ function _tokSnapshot(id){
     }
   } catch(_){}
   // Synth values seeded so the same token always shows the same profile.
-  // v0.9.13 — For Binance-tracked tokens (hasBin), DO NOT fabricate a price
-  // from the seeded RNG. The synth was producing ~$0.50 for BTC, ~$170 for
-  // ETH, etc. — i.e. the "wrong prices" report. Instead, return px=null
-  // while the live fetch is in flight; _tokFmtPx(null) → '—'. Tokens
-  // without a Binance pair (HYPE/PUMP/MOG/FART) still get the synth
-  // fallback because we have no other source for them.
+  // v0.9.14 — Price preference order:
+  //   1. Pyth Hermes snapshot (verifiable, ~400ms cadence)  ← NEW
+  //   2. Binance /ticker/24hr lastPrice
+  //   3. In-game asset price (#lastPx) if id matches the active asset
+  //   4. Synth seeded RNG, but only for tokens with no Binance pair
+  //      (Binance-tracked tokens return null while loading; renderer
+  //       shows '—' via _tokFmtPx instead of a fake $0.48 for BTC)
   const _hasBin  = !!TOK_BINANCE_PAIR[id];
-  const px       = (live && !isNaN(live.px)) ? live.px
+  const _hasPyth = !!TOK_PYTH_FEED[id];
+  const _pythPx  = _hasPyth ? _tokPythPx(id) : null;
+  const px       = (_pythPx != null) ? _pythPx
+                 : (live && !isNaN(live.px)) ? live.px
                  : (livePx != null ? livePx
                  : (_hasBin ? null : (rng() * 1000 + 0.001)));
   const ch24     = (live && !isNaN(live.ch24)) ? live.ch24 : ((rng() - 0.4) * 60);
@@ -23910,7 +23914,12 @@ function _tokSnapshot(id){
     // v0.9.43 — pass through live klines + flag so renderers can spark.
     live: !!live, closes: (live && live.closes) ? live.closes : null,
     tf: _tokTF(id),
-    hasBinance: !!TOK_BINANCE_PAIR[id] };
+    hasBinance: !!TOK_BINANCE_PAIR[id],
+    // v0.9.14 — Pyth attribution flag. True when this snapshot's `px`
+    // came from the Hermes verified feed. Renderers show a "Pyth ✓"
+    // badge so the demo can point at the verified source.
+    hasPyth:    !!TOK_PYTH_FEED[id],
+    pythPx:     (_pythPx != null) ? true : false };
 }
 // Categorize for tabs.
 function _tokCategorize(snaps, tab){
@@ -23962,6 +23971,82 @@ const TOK_BINANCE_PAIR = {
   wif:'WIFUSDT',
   // hype / pump / mog / fart: no Binance pair (yet) — synth fallback.
 };
+
+// ─── v0.9.14 ─ Pyth Hermes feeds for the verified headline price ───────────
+// Hermes gives a signed VAA per feed, ~400 ms cadence. We use it as the
+// LIVE price source (replaces Binance's /ticker/24hr lastPrice). Binance
+// still provides the 60-bar klines for the sparkline because Pyth doesn't
+// expose cheap historical OHLC. Net effect: the headline $ figure is now
+// verifiable on-chain via chartrunner_oracle, while the chart history
+// stays free + fast. This is the "Pyth for truth" thesis line landing in
+// the actual UX, not just the docs page.
+//
+// Feed IDs sourced from pyth.network/developers/price-feed-ids. Add more
+// here as TOK_LIST grows — Pyth covers most major Solana tokens.
+const TOK_PYTH_FEED = {
+  btc:  '0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43',
+  eth:  '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace',
+  sol:  '0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d',
+  bnb:  '0x2f95862b045670cd22bee3114c39763a4a08beeb663b145d283c31d7d1101c4f',
+  xrp:  '0xec5d399846a9209f3fe5881d70aae9268c94339ff9817e8d18ff19fa05eea1c8',
+  doge: '0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c',
+  link: '0x83be4ed61dd8a3518d198098ce37240c494710a7b9d85e35d9fceac21df08994',
+  arb:  '0x3fa4252848f9f0a1480be62745a4629d9eb1322aebab8a791e344b3b9c1adcf5',
+  op:   '0x385f64d993f7b77d8182ed5003d97c60aa3361f3cecfe711544d2d59165e9bdf',
+  jup:  '0x0a0408d619e9380abad35060f9192039ed5042fa6f82301d0e48bb52be830996',
+  jto:  '0xb43660a5f790c69354b0729a5ef9d50d68f1df92107540210b9cccba1f947cc2',
+  tia:  '0x09f7c1d7dfbb7df2b8fe3d3d87ee94a2259d212da4f30c1f0540d066dfa44723',
+  pepe: '0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4',
+  bonk: '0x72b021217ca3fe68922a19aaf990109cb9d84e9ad004b4d2025ad6f529314419',
+  wif:  '0x4ca4beeca86f0d164160323817a4e42b10010a724c2217c6ee41b54cd4cc61fc',
+  pyth: '0x0bbf28e9a841a1cc788f6a361b17ca072d0ea3098a1e5df1c3922d06719579ff',
+};
+const HERMES_LATEST_URL = 'https://hermes.pyth.network/v2/updates/price/latest';
+const _tokPythCache = {};      // { id: { px, conf, expo, publishTime, t } }
+const _tokPythInflight = false;
+const _TOK_PYTH_TTL_MS = 5000; // Hermes price update cadence is ~400ms; 5s is plenty
+function _tokFetchPyth(ids){
+  const need = ids
+    .map(id => id.toLowerCase())
+    .filter(id => TOK_PYTH_FEED[id])
+    .filter(id => {
+      const c = _tokPythCache[id];
+      return !c || (Date.now() - c.t) > _TOK_PYTH_TTL_MS;
+    });
+  if(!need.length || _tokPythInflight) return;
+  _tokPythInflight = true;
+  const params = need.map(id => 'ids[]=' + TOK_PYTH_FEED[id]).join('&');
+  fetch(HERMES_LATEST_URL + '?' + params + '&parsed=true')
+    .then(r => r.json())
+    .then(j => {
+      _tokPythInflight = false;
+      const parsed = (j && j.parsed) || [];
+      // Map feed_id back to token id for write-through.
+      const feedToId = {};
+      need.forEach(id => { feedToId[TOK_PYTH_FEED[id].replace(/^0x/, '')] = id; });
+      parsed.forEach(p => {
+        const fid = (p.id || '').replace(/^0x/, '');
+        const id  = feedToId[fid];
+        if(!id || !p.price) return;
+        const px   = parseFloat(p.price.price) * Math.pow(10, p.price.expo);
+        const conf = parseFloat(p.price.conf)  * Math.pow(10, p.price.expo);
+        if(!isFinite(px)) return;
+        _tokPythCache[id] = {
+          px, conf, expo: p.price.expo,
+          publishTime: p.price.publish_time,
+          t: Date.now(),
+        };
+      });
+      // Trigger a re-render so the new Pyth price lands on screen.
+      try { _tokScheduleRerender(); } catch(_){}
+    })
+    .catch(() => { _tokPythInflight = false; });
+}
+function _tokPythPx(id){
+  const c = _tokPythCache[(id || '').toLowerCase()];
+  return (c && isFinite(c.px)) ? c.px : null;
+}
+
 const _TOK_LIVE_TTL_MS = 30000;
 const _tokLiveCache = {};   // { 'btc|1h': { t, px, ch24, vol24, closes:[…], klines:[{o,h,l,c,t}] } }
 const _tokLiveInflight = {}; // dedup concurrent fetches
@@ -24033,13 +24118,22 @@ function _tokLiveOrNull(id, tf){
   return _tokLiveCache[key] || null;
 }
 // Draw a mini sparkline from a closes[] array into a canvas.
+// v0.9.14 — Fix the zero-height race: when CSS `aspect-ratio` hasn't
+// computed yet, `canvas.clientHeight` reads 0 on first paint, which
+// previously cascaded to `canvas.height = 0 * dpr` and rendered nothing
+// visible. Now we floor to the CSS min-height (36 px) and bail out if
+// the canvas truly has no dimensions yet — the next 1 s tick of
+// _crPaintTokSparks will re-fire once layout has resolved.
 function _tokDrawSparkline(canvas, closes, color){
   if(!canvas || !Array.isArray(closes) || closes.length < 2) return;
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  const cssW = canvas.clientWidth || canvas.width;
-  const cssH = canvas.clientHeight || canvas.height;
-  if(canvas.width !== cssW * dpr) canvas.width = cssW * dpr;
+  const rawW = canvas.clientWidth;
+  const rawH = canvas.clientHeight;
+  const cssW = rawW || canvas.width  || 200;
+  const cssH = rawH || canvas.height || 36;   // honor min-height:36px from CSS
+  if(cssW < 8 || cssH < 8) return;            // bail; next tick paints
+  if(canvas.width  !== cssW * dpr) canvas.width  = cssW * dpr;
   if(canvas.height !== cssH * dpr) canvas.height = cssH * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
@@ -25366,6 +25460,9 @@ function _wBodyHTML(w){
     const s = (typeof _tokSnapshot === 'function') ? _tokSnapshot(w.sourceId) : null;
     if(!s) return '<div class="dim">token unavailable</div>';
     if(s.hasBinance){ try { _tokFetchLive(s.def.id, s.tf); } catch(_){} }
+    // v0.9.14 — Kick the Pyth Hermes fetch alongside Binance. Pyth gives the
+    // verified headline price; Binance still feeds the sparkline klines.
+    if(s.hasPyth){ try { _tokFetchPyth([s.def.id]); } catch(_){} }
     const sigC = _tokSignalColor(s.signal);
     const sparkId = 'wTokSpark_' + w.id;
     // Chart type lives on the widget itself so each pinned widget can pick
@@ -25393,12 +25490,17 @@ function _wBodyHTML(w){
     const cached = (typeof _tokLiveCache !== 'undefined' && s.hasBinance) ? _tokLiveCache[s.def.id + '|' + s.tf] : null;
     const fresh = cached && (Date.now() - cached.t) < _TOK_LIVE_TTL_MS;
     const dotColor = s.live ? (fresh ? '#3ddc97' : '#ffd166') : '#5a5a72';
+    // v0.9.14 — Pyth ✓ badge when the live price came from a verified
+    // Hermes update. Sits inline with the price, dim purple, tiny.
+    const pythBadge = s.pythPx
+      ? '<span title="Verified by Pyth Hermes" style="display:inline-block;font:600 7px ui-monospace,Menlo,monospace;color:#9b8cff;border:1px solid rgba(155,140,255,.4);background:rgba(155,140,255,.08);padding:1px 4px;border-radius:3px;letter-spacing:.4px;margin-right:4px;vertical-align:middle">PYTH ✓</span>'
+      : '';
     return '' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
         '<div><div style="font-weight:700;font-size:14px">' + s.def.tag + ' <span style="font-size:8px;color:' + dotColor + '">●</span></div>' +
         '<div class="dim" style="font-size:9px">' + s.def.chain + ' · ' + s.tf + '</div></div>' +
         '<div style="text-align:right">' +
-          '<div style="font-weight:700;font-variant-numeric:tabular-nums">' + _tokFmtPx(s.px) + '</div>' +
+          '<div style="font-weight:700;font-variant-numeric:tabular-nums">' + pythBadge + _tokFmtPx(s.px) + '</div>' +
           '<div style="font-weight:700;font-variant-numeric:tabular-nums;font-size:10px;color:' + (s.ch24 >= 0 ? '#3ddc97' : '#ff5b7f') + '">' + (s.ch24 >= 0 ? '+' : '') + s.ch24.toFixed(1) + '%</div>' +
         '</div>' +
       '</div>' +
@@ -25690,9 +25792,13 @@ function _tokDrawCandles(canvas, klines){
   if(!canvas || !Array.isArray(klines) || klines.length < 1) return;
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  const cssW = canvas.clientWidth || canvas.width;
-  const cssH = canvas.clientHeight || canvas.height;
-  if(canvas.width !== cssW * dpr) canvas.width = cssW * dpr;
+  // v0.9.14 — Same zero-height-race fix as _tokDrawSparkline.
+  const rawW = canvas.clientWidth;
+  const rawH = canvas.clientHeight;
+  const cssW = rawW || canvas.width  || 200;
+  const cssH = rawH || canvas.height || 36;
+  if(cssW < 8 || cssH < 8) return;
+  if(canvas.width  !== cssW * dpr) canvas.width  = cssW * dpr;
   if(canvas.height !== cssH * dpr) canvas.height = cssH * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
