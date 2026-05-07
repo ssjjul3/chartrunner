@@ -637,6 +637,13 @@
   .banner.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
   .banner .sb{display:block;font-size:12px;color:var(--dim);letter-spacing:.4px;font-weight:500;text-transform:none;margin-top:6px;text-shadow:none}
 
+  /* v0.9.28 — Defensive hide for the legacy in-game banner DOM elements.
+     toast()/showBanner()/updateFlyPill() now route to the bottom-right
+     terminal stack via crNotify(). Any stray code path that still adds
+     .on to these elements is silently neutralized so the chart stays
+     uncovered during demo recording. */
+  #flypill, #toast, #banner{display:none !important}
+
   /* Damage screen flash */
   .hitflash{position:absolute;inset:0;z-index:4;pointer-events:none;background:radial-gradient(circle at center,rgba(255,91,127,0) 40%,rgba(255,91,127,.55) 100%);opacity:0;transition:opacity .15s}
   /* v0.8k#24ch — Light Profile panel for in-game. Compact card that
@@ -4317,7 +4324,7 @@
        to YouTube/Twitch). Display = inline file viewer for pitch decks
        and chart screenshots, draggable + resizable. -->
   <button class="dockBtn" data-prog="runtube"     title="RUN-tube · streaming + PIP video">📹</button>
-  <button class="dockBtn" data-prog="display"     title="Display · file viewer (PDF / image)">📄</button>
+  <button class="dockBtn" data-prog="display"     title="Pitch · pitch deck / file viewer (PDF / image)">📄</button>
   <div class="dockSep"></div>
   <button class="dockBtn" id="crDockReturn"       title="Return to Desktop">⌂</button>
 </div>
@@ -4348,13 +4355,14 @@
   <div class="cr-pip-resize" data-resize-handle></div>
 </div>
 
-<!-- v0.9.27 — File Display · draggable inline document viewer.
-     PDF rendered through <iframe>, image via <img>. File loaded via the
-     hidden <input type="file"> in the header. Local-only (URL.createObjectURL),
-     never uploaded anywhere. -->
+<!-- v0.9.27 — Pitch (formerly "File Display") · draggable inline document
+     viewer. PDF rendered through <iframe>, image via <img>. File loaded
+     via the hidden <input type="file"> in the header. Local-only
+     (URL.createObjectURL), never uploaded anywhere. Element ID
+     "crFileDisplay" + data-pip "display" preserved for backward compat. -->
 <div id="crFileDisplay" class="cr-pip" data-pip="display" hidden>
   <div class="cr-pip-hd" data-drag-handle>
-    <span class="ttl" id="crFdTtl">📄 Display</span>
+    <span class="ttl" id="crFdTtl">📄 Pitch</span>
     <div class="cr-pip-actions">
       <button class="cr-pip-act" data-act="fd-open"  title="Open file (PDF / image)">📁</button>
       <button class="cr-pip-act" data-act="fd-clear" title="Clear file">⌫</button>
@@ -4364,7 +4372,7 @@
   <div class="cr-pip-body" id="crFdBody">
     <div class="cr-pip-placeholder" id="crFdPh">
       <div class="big">📄</div>
-      <div>Display</div>
+      <div>Pitch</div>
       <div style="font-size:9px;opacity:.5;margin-top:6px;max-width:220px;text-align:center">Open a PDF or image to display inline.<br/>Useful for pitch decks during demo recording.</div>
       <button class="cr-pip-act" id="crFdOpenBtn" style="margin-top:10px;padding:6px 14px">📁 Open file…</button>
     </div>
@@ -5628,9 +5636,11 @@
           <div class="lbl">RUN-tube</div>
           <div class="kbd">Stream · PIP</div>
         </button>
-        <!-- v0.9.27 — Display: inline file viewer (PDF / image) for pitch
-             decks and chart snapshots during recording. Local-only. -->
-        <button class="os-icon" data-prog="display" title="Display — draggable inline file viewer (PDF / image) for pitch + demo">
+        <!-- v0.9.27 — Pitch (formerly "Display"): inline file viewer (PDF /
+             image) for pitch decks and chart snapshots during recording.
+             Local-only. data-prog still "display" for backward compat with
+             localStorage keys + the crPipToggle dispatch table. -->
+        <button class="os-icon" data-prog="display" title="Pitch — draggable inline pitch deck / file viewer (PDF / image) for recording">
           <div class="ico"><svg class="cr-svg-ico" style="--accent:#7be3f3;--accent2:#bff7df" viewBox="0 0 32 32" aria-hidden="true">
             <!-- document with folded corner + lines -->
             <path class="a" d="M7 4 h13 l5 5 v19 H7 z" opacity=".22"/>
@@ -5640,7 +5650,7 @@
             <line x1="11" y1="19" x2="22" y2="19" stroke="var(--accent2)" stroke-width="1.3"/>
             <line x1="11" y1="23" x2="18" y2="23" stroke="var(--accent2)" stroke-width="1.3"/>
           </svg></div>
-          <div class="lbl">Display</div>
+          <div class="lbl">Pitch</div>
           <div class="kbd">PDF · Image</div>
         </button>
         <!-- v0.8k#24y — Configs icon retired from the desktop. Configs now opens
@@ -13982,7 +13992,21 @@ function screenFlash(){
   el.classList.add('on'); setTimeout(()=>el.classList.remove('on'), 140);
 }
 function showBanner(text, sub){
+  // v0.9.28 — Re-routed to the bottom-right terminal stack. The legacy
+  // centered banner used to grab the eye for one-shot story beats; now
+  // those land in the same notification column as everything else,
+  // keeping the chart unobscured during demo recording.
+  if(!text && !sub) return;
+  try {
+    if(typeof crNotify === 'function'){
+      const composed = sub ? (text + ' — ' + sub) : text;
+      crNotify(composed);
+      return;
+    }
+  } catch(_){}
+  // Legacy fallback.
   const el = document.getElementById('banner');
+  if(!el) return;
   el.innerHTML = text + (sub?`<span class="sb">${sub}</span>`:'');
   el.classList.add('on');
   setTimeout(()=>el.classList.remove('on'), 1400);
@@ -14858,6 +14882,7 @@ function restart(){
   game.equitySampleAt = 0;
   game._closedBracketCount = 0;
   game._lastLaserPhaseKey = null;  // terminal-notify guard reset
+  game._lastFlyPillKey    = null;  // v0.9.28 fly/upside/monster state-key reset
   // v0.9.25 — Coach-on-regular bug: if this is NOT a campaign run, force
   // the campaign Coach overlay closed in case it lingered from a prior
   // chapter (Skip, browser back, error path, etc.). Idempotent — no-op
@@ -15405,37 +15430,41 @@ function _samplePolylineAt(pts, wx){
 }
 
 function updateFlyPill(){
+  // v0.9.28 — The legacy #flypill DOM element is now permanently empty.
+  // What used to be a top oval pill that hovered over the chart is now a
+  // STATE-CHANGE notification fired once per transition into the bottom-
+  // right terminal stack. Same content, drier surface, no chart cover.
   const el = document.getElementById('flypill');
-  // v0.8e #B — monsterMode / upside-down / flight render in priority order.
-  // Monster tag appears as a suffix on any non-default state; shooting is always
-  // keyed to Monster Mode now, not the world.
+  if(el){ el.innerHTML = ''; el.classList.remove('on'); }
+
+  // Build a small key that captures the current state so we only fire
+  // once per transition (not every frame). Mirrors the laser-phase chokepoint.
   const mm = game.monsterMode ? ' · ⚔ Monster' : '';
-  const shootTip = game.monsterMode ? ' · <kbd>Space</kbd> shoot' : '';
-  // v0.8k — Vehicle ride takes visual priority over flight/upside-down (mount
-  // exits those states, so this is definitional, not override). Dismount via
-  // V key or ↑↑/↓↓ while grinding switches grind line.
+  const shootTip = game.monsterMode ? ' · Space shoot' : '';
+  let key = 'idle';
+  let msg = '';
   if(game.vehicle && game.vehicle !== 'none' && !game.monsterMode){
     const veh = vehicleById(game.vehicle);
-    el.innerHTML = veh.ic+' RIDE · '+veh.nm+' — ←/→ glide · <kbd>V</kbd> dismount · ↑↑ lift off · ↓↓ next line';
-    el.classList.add('on'); el.style.background='rgba(20,241,149,.18)'; el.style.borderColor='rgba(20,241,149,.55)'; el.style.color='#bff7df';
-    return;
-  }
-  if(player.upsideDown && player.flying){
-    el.innerHTML = '👁 UPSIDE‑DOWN · FLIGHT' + shootTip + ' · <kbd>F</kbd>/↑↑ to surface' + mm;
-    el.classList.add('on'); el.style.background='rgba(255,91,127,.22)'; el.style.borderColor='rgba(255,91,127,.55)'; el.style.color='#ffc0d0';
+    key = 'ride:' + game.vehicle;
+    msg = veh.ic + ' RIDE · ' + veh.nm + ' — ←/→ glide · V dismount · ↑↑ lift off · ↓↓ next line';
+  } else if(player.upsideDown && player.flying){
+    key = 'ud-flight' + mm;
+    msg = '👁 UPSIDE-DOWN · FLIGHT' + shootTip + ' · F/↑↑ to surface' + mm;
   } else if(player.upsideDown){
-    el.innerHTML = '👁 UPSIDE‑DOWN — flipped gravity · jump with ↑ · ↑↑ fly · <kbd>F</kbd>/↓↓ surface' + shootTip + mm;
-    el.classList.add('on'); el.style.background='rgba(255,91,127,.2)'; el.style.borderColor='rgba(255,91,127,.5)'; el.style.color='#ffc0d0';
+    key = 'ud' + mm;
+    msg = '👁 UPSIDE-DOWN — flipped gravity · jump with ↑ · ↑↑ fly · F/↓↓ surface' + shootTip + mm;
   } else if(player.flying){
-    el.innerHTML = '✈ FLIGHT MODE — arrows to fly · <kbd>F</kbd> or double‑↓ to land' + shootTip + mm;
-    el.classList.add('on'); el.style.background='rgba(153,69,255,.22)'; el.style.borderColor='rgba(153,69,255,.55)'; el.style.color='#d9c6ff';
+    key = 'flight' + mm;
+    msg = '✈ FLIGHT MODE — arrows to fly · F or double-↓ to land' + shootTip + mm;
   } else if(game.monsterMode){
-    el.innerHTML = '⚔ MONSTER MODE — <kbd>Space</kbd> shoot · <kbd>V</kbd> disengage';
-    el.classList.add('on'); el.style.background='rgba(255,160,60,.2)'; el.style.borderColor='rgba(255,160,60,.5)'; el.style.color='#ffd9a8';
-  } else {
-    // v0.8e #B — clear innerHTML on default or a stale prior-state message lingers.
-    el.innerHTML = '';
-    el.classList.remove('on');
+    key = 'monster';
+    msg = '⚔ MONSTER MODE — Space shoot · V disengage';
+  }
+  if(key !== game._lastFlyPillKey){
+    game._lastFlyPillKey = key;
+    if(msg){
+      try { if(typeof crNotify === 'function') crNotify(msg); } catch(_){}
+    }
   }
 }
 
@@ -31065,7 +31094,22 @@ document.getElementById('persboxMenu').addEventListener('click', e=>{
 // background theme system.
 
 const toastEl=document.getElementById('toast'); let toastT=null;
-function toast(msg){ toastEl.textContent=msg; toastEl.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('on'),1800); }
+function toast(msg){
+  // v0.9.28 — Re-routed to the bottom-right terminal stack so all in-game
+  // notifications surface in one place. Strip leading status icon (⚠/ⓘ/⚡)
+  // and pass through; crNotify handles the prefix '> '.
+  if(!msg) return;
+  try {
+    if(typeof crNotify === 'function'){
+      const m = String(msg).replace(/^[\s⚠ⓘ⚡✅✓!?·]+/,'');
+      const isWarn = /[⚠!]/.test(String(msg).slice(0,2));
+      crNotify(m, isWarn ? 'warn' : null);
+      return;
+    }
+  } catch(_){}
+  // Legacy fallback (kept in case crNotify is somehow unavailable).
+  if(toastEl){ toastEl.textContent=msg; toastEl.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('on'),1800); }
+}
 
 /* ─── v0.9.22 — Terminal-style notification stack ───────────────────────
    Bottom-right stack of green monospace lines. New messages animate in;
@@ -31287,7 +31331,7 @@ window.crCrtFadeIn  = crCrtFadeIn;
     el.hidden = false;
     el.classList.add('on');
     saveState(id, { on:true });
-    try { if(typeof crNotify === 'function') crNotify((id==='runtube'?'RUN-tube':'Display')+' · widget on'); } catch(_){}
+    try { if(typeof crNotify === 'function') crNotify((id==='runtube'?'RUN-tube':'Pitch')+' · widget on'); } catch(_){}
   }
   function hidePip(id){
     const el = document.getElementById(ID_OF[id]);
@@ -31362,12 +31406,12 @@ window.crCrtFadeIn  = crCrtFadeIn;
       img.alt = file.name;
       body.appendChild(img);
     } else {
-      try { if(typeof crNotify === 'function') crNotify('Display · unsupported file type', 'warn'); } catch(_){}
+      try { if(typeof crNotify === 'function') crNotify('Pitch · unsupported file type', 'warn'); } catch(_){}
       if(ph) ph.style.display = 'flex';
       return;
     }
     if(ttl) ttl.textContent = '📄 ' + file.name;
-    try { if(typeof crNotify === 'function') crNotify('Display · ' + file.name); } catch(_){}
+    try { if(typeof crNotify === 'function') crNotify('Pitch · ' + file.name); } catch(_){}
   }
   function clearFile(){
     const body = document.getElementById('crFdBody');
@@ -31376,7 +31420,7 @@ window.crCrtFadeIn  = crCrtFadeIn;
     if(!body) return;
     body.querySelectorAll('iframe, img').forEach(n => n.remove());
     if(ph) ph.style.display = 'flex';
-    if(ttl) ttl.textContent = '📄 Display';
+    if(ttl) ttl.textContent = '📄 Pitch';
   }
 
   /* — Bind both widgets on DOM ready — */
