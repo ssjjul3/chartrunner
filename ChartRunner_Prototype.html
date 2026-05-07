@@ -3968,7 +3968,7 @@
     // pre-demo additions (will flip true as features land)
     coachQA:          true,    // crCoach.reply() already covers help/ladder/oco/bracket/wallet/scared/win/hello — keyword + state matching, B1 from yesterday's plan
     coachTopBar:      true,    // top-bar Coach affordance — button + popover wired in v0.9.13
-    terminalConfigGear: false, // + tab → ⚙ config (widget config + watchlists)
+    terminalConfigGear: true,  // + tab → ⚙ config (widget config + wallet/coin watchlists)
     inGameBalance:    true,    // CRDS/RUN visible in-game (menu drawer + in-run shop), hidden on desktop
   });
 </script>
@@ -6187,10 +6187,14 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
             <button class="crTerm-tab" data-termview="solana" type="button">SOLANATRACKER</button>
             <button class="crTerm-tab" data-termview="cex" type="button">CEXTRACKER</button>
             <button class="crTerm-tab" data-termview="strats" type="button">STRATEGIES</button>
-            <!-- v0.8k#24cb — "+" tab opens a chooser to spawn a new Terminal
-                 widget on the chart background (in-game) or desktop (splash).
-                 Sources: every built-in pane + every Workbench-built term widget. -->
-            <button class="crTerm-tab" id="crTermNewBtn" type="button" title="New Terminal widget — pick from built-ins or Workbench builds" style="font-size:14px;padding:6px 12px">+</button>
+            <!-- v0.9.13 — Gear icon replaces the bare "+" tab. Opens a config
+                 modal that bundles: (a) the legacy spawn-from-builtins picker,
+                 (b) per-widget visibility/config for live widgets, (c) two new
+                 widget types — wallet watchlist + coin watchlist — that surface
+                 paste-and-track lists without the Workbench detour. -->
+            <button class="crTerm-tab" id="crTermNewBtn" type="button" title="Configure Terminal widgets" style="padding:6px 10px;display:inline-flex;align-items:center;justify-content:center" aria-label="Configure widgets">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M1 8h2M13 8h2M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4"/></svg>
+            </button>
           </div>
           <!-- DARKFLOW VIEW -->
           <div class="crTerm-view" id="crTermViewDarkflow">
@@ -23584,6 +23588,183 @@ function _termSpawnPickerClose(){
   document.removeEventListener('keydown', _termSpawnPickerEscOnce);
 }
 function _termSpawnPickerEscOnce(e){ if(e.key === 'Escape') _termSpawnPickerClose(); }
+
+/* ─────────────────────────────────────────────────────────────────────
+ * v0.9.13 — Terminal config modal (replaces the bare "+" picker).
+ * Sections:
+ *   1. Active widgets — list of widgets currently spawned, with × to remove
+ *   2. Coin watchlist — comma-separated tickers (BTC,ETH,SOL,…) → spawns
+ *      a single 'coinwatch' widget with one row per id
+ *   3. Wallet watchlist — Solana addresses (one per line) → spawns a
+ *      single 'wallwatch' widget that polls Solana RPC getBalance
+ *   4. Spawn from library — link to the legacy _termSpawnPickerOpen
+ *      (built-in panes + Workbench builds)
+ * Closing returns to Terminal. Esc / click-outside both close.
+ * ─────────────────────────────────────────────────────────────────── */
+function _crTermConfigOpen(){
+  // Close any prior instance.
+  const prior = document.getElementById('crTermConfig');
+  if(prior && prior.parentNode) prior.parentNode.removeChild(prior);
+
+  const splashEl = document.getElementById('splash');
+  const inGame = !!(splashEl && splashEl.style.display === 'none');
+
+  const ov = document.createElement('div');
+  ov.id = 'crTermConfig';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:99500;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center';
+
+  const card = document.createElement('div');
+  card.style.cssText = 'background:linear-gradient(180deg,rgba(18,26,48,.98),rgba(10,15,28,.99));border:1px solid var(--line);border-radius:10px;box-shadow:0 24px 60px rgba(0,0,0,.7);width:min(640px,calc(100% - 60px));max-height:80vh;display:flex;flex-direction:column;color:var(--fg);font-family:inherit';
+
+  // Headline + close
+  let html = '' +
+    '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">' +
+      '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:.85"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M1 8h2M13 8h2M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4"/></svg>' +
+      '<div style="font-size:14px;font-weight:700">Configure Terminal Widgets</div>' +
+      '<div style="font-size:10px;color:var(--dim)">spawns on ' + (inGame ? 'chart background' : 'desktop') + '</div>' +
+      '<div style="flex:1"></div>' +
+      '<button id="crTermCfgX" type="button" style="background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:4px 10px;cursor:pointer;font:11px ui-monospace,Menlo,monospace">close</button>' +
+    '</div>' +
+    '<div style="flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:18px;font-size:12px">' +
+      // 1) Active widgets
+      '<section>' +
+        '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Active widgets</div>' +
+        '<div id="crTermCfgList" style="display:flex;flex-direction:column;gap:4px"></div>' +
+      '</section>' +
+      // 2) Coin watchlist
+      '<section>' +
+        '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Coin watchlist</div>' +
+        '<p style="margin:0 0 6px;font-size:11px;color:var(--dim)">Comma-separated token ids. Live price + 24h % from Binance.</p>' +
+        '<input id="crTermCfgCoinInput" type="text" placeholder="btc, eth, sol, hype, pump" style="width:100%;padding:6px 8px;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:5px;color:var(--fg);font:11px ui-monospace,Menlo,monospace;outline:none">' +
+        '<div style="display:flex;gap:6px;margin-top:6px">' +
+          '<button id="crTermCfgCoinSpawn" type="button" style="background:rgba(20,241,149,.18);border:1px solid rgba(20,241,149,.50);color:#bff7df;padding:5px 12px;border-radius:5px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">Save &amp; spawn</button>' +
+          '<span class="dim" style="font-size:10px;align-self:center">valid ids: ' + (typeof TOK_LIST !== 'undefined' ? TOK_LIST.slice(0, 8).map(t => t.id).join(', ') + ', …' : '—') + '</span>' +
+        '</div>' +
+      '</section>' +
+      // 3) Wallet watchlist
+      '<section>' +
+        '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Wallet watchlist</div>' +
+        '<p style="margin:0 0 6px;font-size:11px;color:var(--dim)">Solana addresses, one per line. SOL balance via mainnet RPC, 60-second cache.</p>' +
+        '<textarea id="crTermCfgWalInput" rows="3" placeholder="So11111111111111111111111111111111111111112&#10;PDi6BNFCbGE9H72zxCMNWpDfWo5Rp3gvdhCyfpfcAWM" style="width:100%;padding:6px 8px;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:5px;color:var(--fg);font:11px ui-monospace,Menlo,monospace;outline:none;resize:vertical"></textarea>' +
+        '<div style="display:flex;gap:6px;margin-top:6px">' +
+          '<button id="crTermCfgWalSpawn" type="button" style="background:rgba(255,209,102,.16);border:1px solid rgba(255,209,102,.50);color:#ffd166;padding:5px 12px;border-radius:5px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">Save &amp; spawn</button>' +
+        '</div>' +
+      '</section>' +
+      // 4) Library link
+      '<section>' +
+        '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Add from library</div>' +
+        '<button id="crTermCfgLibrary" type="button" style="background:transparent;border:1px solid var(--line);color:var(--fg);padding:6px 12px;border-radius:5px;cursor:pointer;font:11px ui-monospace,Menlo,monospace">Browse built-in panes &amp; Workbench builds →</button>' +
+      '</section>' +
+    '</div>';
+  card.innerHTML = html;
+  ov.appendChild(card);
+  document.body.appendChild(ov);
+
+  // Returns the active registry — desktop widgets vs. in-game chartWidgets.
+  function activeReg(){
+    return inGame && typeof chartWidgets !== 'undefined' ? chartWidgets : (typeof widgets !== 'undefined' ? widgets : null);
+  }
+  function activeSave(){
+    if(inGame && typeof _cwSave === 'function') _cwSave();
+    else if(typeof _wSave === 'function') _wSave();
+  }
+  function activeRender(){
+    if(inGame && typeof renderChartWidgets === 'function') renderChartWidgets();
+    else if(typeof renderWidgets === 'function') renderWidgets();
+  }
+  function activeSpawn(type, sourceId){
+    if(inGame && typeof _cwAdd === 'function'){
+      _cwAdd(type, sourceId, window.innerWidth / 2, window.innerHeight / 2);
+    } else if(typeof _wAdd === 'function'){
+      _wAdd(type, sourceId, window.innerWidth / 2, window.innerHeight / 2);
+    }
+  }
+
+  // Repaints the active-widget list. Called once + after any add/remove.
+  function repaintList(){
+    const host = card.querySelector('#crTermCfgList');
+    if(!host) return;
+    const reg = activeReg();
+    if(!reg || !reg.items.length){
+      host.innerHTML = '<div class="dim" style="font-style:italic;font-size:11px;padding:6px">No active widgets — add one below.</div>';
+      return;
+    }
+    host.innerHTML = '';
+    reg.items.forEach(w => {
+      const t = (typeof _wTitleFor === 'function') ? _wTitleFor(w) : { ic:'◇', name:w.type };
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 8px;border:1px solid var(--line);border-radius:5px;background:rgba(10,15,28,.45)';
+      row.innerHTML =
+        '<span style="font-size:14px;width:18px;text-align:center">' + t.ic + '</span>' +
+        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + t.name + '</span>' +
+        '<span class="dim" style="font-size:9px">' + w.type + '</span>' +
+        '<button type="button" data-w-id="' + w.id + '" style="background:transparent;border:1px solid rgba(255,91,127,.4);color:#ff5b7f;border-radius:4px;padding:2px 8px;cursor:pointer;font:10px ui-monospace,Menlo,monospace">×</button>';
+      row.querySelector('button').addEventListener('click', () => {
+        const r = activeReg();
+        if(!r) return;
+        r.items = r.items.filter(x => x.id !== w.id);
+        activeSave(); activeRender(); repaintList();
+      });
+      host.appendChild(row);
+    });
+  }
+  repaintList();
+
+  // Pre-fill the inputs with current sourceId of the existing watchlist
+  // widgets, so editing is "open modal → tweak list → Save & spawn".
+  const coinInp = card.querySelector('#crTermCfgCoinInput');
+  const walInp  = card.querySelector('#crTermCfgWalInput');
+  try {
+    const reg = activeReg();
+    if(reg){
+      const coinW = reg.items.find(w => w.type === 'coinwatch');
+      if(coinW && coinInp) coinInp.value = coinW.sourceId || '';
+      const walW  = reg.items.find(w => w.type === 'wallwatch');
+      if(walW && walInp)   walInp.value = (walW.sourceId || '').split(',').map(s => s.trim()).filter(Boolean).join('\n');
+    }
+  } catch(_){}
+
+  // Coin watchlist save → replace existing coinwatch widget.
+  card.querySelector('#crTermCfgCoinSpawn').addEventListener('click', () => {
+    const raw  = (coinInp.value || '').toLowerCase();
+    const ids  = raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+    if(!ids.length){ if(typeof toast === 'function') toast('Add at least one ticker'); return; }
+    const sourceId = ids.join(',');
+    const reg = activeReg();
+    if(reg) reg.items = reg.items.filter(w => w.type !== 'coinwatch');
+    activeSpawn('coinwatch', sourceId);
+    repaintList();
+  });
+
+  // Wallet watchlist save → replace existing wallwatch widget.
+  card.querySelector('#crTermCfgWalSpawn').addEventListener('click', () => {
+    const raw  = (walInp.value || '');
+    const adds = raw.split(/[\s,]+/).map(s => s.trim()).filter(s => s && s.length >= 32 && s.length <= 64);
+    if(!adds.length){ if(typeof toast === 'function') toast('Paste at least one valid Solana address'); return; }
+    const sourceId = adds.join(',');
+    const reg = activeReg();
+    if(reg) reg.items = reg.items.filter(w => w.type !== 'wallwatch');
+    activeSpawn('wallwatch', sourceId);
+    repaintList();
+  });
+
+  // Library button → open legacy picker.
+  card.querySelector('#crTermCfgLibrary').addEventListener('click', () => {
+    _crTermConfigClose();
+    if(typeof _termSpawnPickerOpen === 'function') _termSpawnPickerOpen();
+  });
+
+  // Close handlers.
+  card.querySelector('#crTermCfgX').addEventListener('click', _crTermConfigClose);
+  ov.addEventListener('click', (e) => { if(e.target === ov) _crTermConfigClose(); });
+  document.addEventListener('keydown', _crTermConfigEscOnce);
+}
+function _crTermConfigClose(){
+  const ov = document.getElementById('crTermConfig');
+  if(ov && ov.parentNode) ov.parentNode.removeChild(ov);
+  document.removeEventListener('keydown', _crTermConfigEscOnce);
+}
+function _crTermConfigEscOnce(e){ if(e.key === 'Escape') _crTermConfigClose(); }
 // Route a built-in pane spawn to the right surface (chart in-game, desktop on splash).
 function _termSpawnPane(paneId){
   const splashEl = document.getElementById('splash');
@@ -25021,6 +25202,18 @@ function _wTitleFor(w){
     const s = (typeof _tokSnapshot === 'function') ? _tokSnapshot(w.sourceId) : null;
     return { ic:'🪙', name: s ? (s.def.tag + ' · ' + s.def.nm) : (w.sourceId || 'Token') };
   }
+  // v0.9.13 — Wallet watchlist. sourceId is a comma-separated list of
+  // Solana addresses. Title shows the count.
+  if(w.type === 'wallwatch'){
+    const ids = (w.sourceId || '').split(',').map(s => s.trim()).filter(Boolean);
+    return { ic:'👛', name: 'Wallet Watch · ' + ids.length };
+  }
+  // v0.9.13 — Coin watchlist. sourceId is a comma-separated list of token
+  // ids (matching TOK_LIST entries) — same id space as the token widget.
+  if(w.type === 'coinwatch'){
+    const ids = (w.sourceId || '').split(',').map(s => s.trim()).filter(Boolean);
+    return { ic:'📋', name: 'Coin Watch · ' + ids.length };
+  }
   return { ic:'◇', name: 'Widget' };
 }
 function _wBodyHTML(w){
@@ -25227,6 +25420,51 @@ function _wBodyHTML(w){
         '<div><span class="dim">Holders</span> <b>' + _tokFmtN(s.holders) + '</b></div>' +
         '<div><span class="dim">Social</span> <b style="color:' + (s.sentScore >= 60 ? '#3ddc97' : 'var(--fg)') + '">' + s.sentScore + '</b></div>' +
       '</div>';
+  }
+  // v0.9.13 — Coin watchlist. sourceId is comma-separated token ids
+  // ('btc,eth,sol,...'); body renders one row per id with the live price
+  // (or '—' while loading), %24h, and a tiny color dot. Reuses the same
+  // _tokSnapshot + _tokFetchLive plumbing as the token widget so caching,
+  // staleness, and synth fallback rules are identical. _crPaintWatchlists
+  // (1s tick, defined alongside _crPaintTokSparks) refreshes the values
+  // in place — no DOM swap, so no flicker.
+  if(w.type === 'coinwatch'){
+    const ids = (w.sourceId || '').split(',').map(s => s.trim()).filter(Boolean);
+    if(!ids.length){
+      return '<div class="dim" style="font-style:italic;font-size:10px;padding:6px">Empty list. Open the gear ⚙ above to add tickers.</div>';
+    }
+    const rows = ids.map(id => {
+      const s = (typeof _tokSnapshot === 'function') ? _tokSnapshot(id) : null;
+      if(s && s.hasBinance){ try { _tokFetchLive(id, s.tf); } catch(_){} }
+      const tag = s ? s.def.tag : id.toUpperCase();
+      const pxTxt = s ? _tokFmtPx(s.px) : '—';
+      const ch    = s && s.ch24 != null ? s.ch24 : null;
+      const chCol = (ch == null) ? 'var(--dim)' : (ch >= 0 ? '#3ddc97' : '#ff5b7f');
+      const chTxt = (ch == null) ? '—' : ((ch >= 0 ? '+' : '') + ch.toFixed(1) + '%');
+      return '<div data-w-coinwatch-row="' + id + '" style="display:grid;grid-template-columns:64px 1fr 56px;gap:6px;align-items:center;padding:3px 6px;border-bottom:1px solid rgba(255,255,255,.04);font-size:10px">' +
+        '<span style="font-weight:700">' + tag + '</span>' +
+        '<span data-bind="px"  style="text-align:right;font-variant-numeric:tabular-nums">' + pxTxt + '</span>' +
+        '<span data-bind="ch"  style="text-align:right;color:' + chCol + ';font-variant-numeric:tabular-nums">' + chTxt + '</span>' +
+      '</div>';
+    }).join('');
+    return '<div data-w-coinwatch="' + w.id + '" data-ids="' + ids.join(',') + '">' + rows + '</div>';
+  }
+  // v0.9.13 — Wallet watchlist. sourceId is comma-separated Solana addresses.
+  // Body renders SOL balance per address (truncated address + balance).
+  // _crPaintWatchlists polls Solana RPC every 60 s and refreshes in place.
+  if(w.type === 'wallwatch'){
+    const addrs = (w.sourceId || '').split(',').map(s => s.trim()).filter(Boolean);
+    if(!addrs.length){
+      return '<div class="dim" style="font-style:italic;font-size:10px;padding:6px">Empty list. Open the gear ⚙ above to add wallet addresses.</div>';
+    }
+    const rows = addrs.map(addr => {
+      const short = addr.length > 12 ? (addr.slice(0,4) + '…' + addr.slice(-4)) : addr;
+      return '<div data-w-wallwatch-row="' + addr + '" style="display:grid;grid-template-columns:1fr 70px;gap:6px;align-items:center;padding:3px 6px;border-bottom:1px solid rgba(255,255,255,.04);font-size:10px">' +
+        '<span title="' + addr + '" style="font-family:ui-monospace,Menlo,monospace">' + short + '</span>' +
+        '<span data-bind="bal" style="text-align:right;font-variant-numeric:tabular-nums;color:#ffd166">— SOL</span>' +
+      '</div>';
+    }).join('');
+    return '<div data-w-wallwatch="' + w.id + '" data-addrs="' + addrs.join(',') + '">' + rows + '</div>';
   }
   return '';
 }
@@ -25519,6 +25757,102 @@ function _crPaintTokSparks(){
 // canvases that exist. Also runs once on mount via setTimeout(0).
 setInterval(_crPaintTokSparks, 1000);
 setTimeout(_crPaintTokSparks, 0);
+
+/* ─────────────────────────────────────────────────────────────────────
+ * v0.9.13 — Watchlist painters
+ * Coin watchlist: reuses _tokSnapshot + _tokFetchLive plumbing. Fast
+ * 2s tick to keep prices fresh after the 200ms debounced render lands.
+ * Wallet watchlist: hits the public Solana mainnet RPC for getBalance,
+ * caches per-address with a 60s TTL. Each tick paints whatever cached
+ * values exist + kicks off a fetch for any uncached/expired address.
+ * Both painters update spans IN PLACE — no DOM swap, no canvas reset,
+ * no flicker.
+ * ─────────────────────────────────────────────────────────────────── */
+
+// Coin watchlist painter — reads sourceId list from the wrapper's
+// data-ids attr and updates each row's px + ch24 cells.
+function _crPaintCoinWatchlists(){
+  document.querySelectorAll('[data-w-coinwatch]').forEach(host => {
+    try {
+      const ids = (host.getAttribute('data-ids') || '').split(',').map(s => s.trim()).filter(Boolean);
+      ids.forEach(id => {
+        const row = host.querySelector('[data-w-coinwatch-row="' + id + '"]');
+        if(!row) return;
+        const s = (typeof _tokSnapshot === 'function') ? _tokSnapshot(id) : null;
+        if(!s) return;
+        // Trigger the fetch if it's a Binance-tracked id and not cached.
+        if(s.hasBinance){ try { _tokFetchLive(id, s.tf); } catch(_){} }
+        const pxEl = row.querySelector('[data-bind="px"]');
+        const chEl = row.querySelector('[data-bind="ch"]');
+        if(pxEl) pxEl.textContent = (typeof _tokFmtPx === 'function') ? _tokFmtPx(s.px) : (s.px == null ? '—' : String(s.px));
+        if(chEl){
+          const ch = (s.ch24 != null && !isNaN(s.ch24)) ? s.ch24 : null;
+          chEl.textContent = (ch == null) ? '—' : ((ch >= 0 ? '+' : '') + ch.toFixed(1) + '%');
+          chEl.style.color = (ch == null) ? 'var(--dim)' : (ch >= 0 ? '#3ddc97' : '#ff5b7f');
+        }
+      });
+    } catch(_){}
+  });
+}
+setInterval(_crPaintCoinWatchlists, 2000);
+setTimeout(_crPaintCoinWatchlists, 0);
+
+// Wallet watchlist — Solana RPC getBalance with a 60s TTL cache.
+const _crWalBalCache = {}; // { address: { lamports, t } }
+const _crWalBalInflight = {};
+const _CR_WAL_TTL_MS = 60000;
+const _CR_WAL_RPC = 'https://api.mainnet-beta.solana.com';
+function _crFetchSolBalance(addr){
+  const now = Date.now();
+  const cached = _crWalBalCache[addr];
+  if(cached && (now - cached.t) < _CR_WAL_TTL_MS) return Promise.resolve(cached);
+  if(_crWalBalInflight[addr]) return Promise.resolve(cached || null);
+  _crWalBalInflight[addr] = true;
+  return fetch(_CR_WAL_RPC, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'getBalance', params:[addr] }),
+  })
+  .then(r => r.json())
+  .then(j => {
+    delete _crWalBalInflight[addr];
+    if(j && j.result && typeof j.result.value === 'number'){
+      _crWalBalCache[addr] = { lamports: j.result.value, t: Date.now() };
+      return _crWalBalCache[addr];
+    }
+    return null;
+  })
+  .catch(() => { delete _crWalBalInflight[addr]; return null; });
+}
+function _crFmtSol(lamports){
+  if(lamports == null || isNaN(lamports)) return '—';
+  const sol = lamports / 1e9;
+  if(sol >= 1000) return sol.toFixed(0) + ' SOL';
+  if(sol >= 1)    return sol.toFixed(2) + ' SOL';
+  if(sol >= 0.001) return sol.toFixed(4) + ' SOL';
+  return sol.toFixed(6) + ' SOL';
+}
+function _crPaintWalletWatchlists(){
+  document.querySelectorAll('[data-w-wallwatch]').forEach(host => {
+    try {
+      const addrs = (host.getAttribute('data-addrs') || '').split(',').map(s => s.trim()).filter(Boolean);
+      addrs.forEach(addr => {
+        const row = host.querySelector('[data-w-wallwatch-row="' + addr + '"]');
+        if(!row) return;
+        const balEl = row.querySelector('[data-bind="bal"]');
+        const cached = _crWalBalCache[addr];
+        if(cached && balEl) balEl.textContent = _crFmtSol(cached.lamports);
+        // Kick off (or refresh) the fetch — promise resolves into cache,
+        // next tick paints the result.
+        _crFetchSolBalance(addr).then(c => {
+          if(c && balEl) balEl.textContent = _crFmtSol(c.lamports);
+        });
+      });
+    } catch(_){}
+  });
+}
+setInterval(_crPaintWalletWatchlists, 5000); // first paint fast, then 5s idle
+setTimeout(_crPaintWalletWatchlists, 0);
 
 // v0.8k#24as — Live mini-chart for map widgets that don't have a saved
 // thumbnail. Draws the last N candles for the map's asset (or the current
@@ -31021,8 +31355,15 @@ function log(msg){
     const newBtn = document.getElementById('crTermNewBtn');
     if(newBtn && !newBtn._wired){
       newBtn._wired = true;
+      // v0.9.13 — Gear opens the new config modal (which bundles the legacy
+      // spawn-picker, per-widget visibility, and the new wallet + coin
+      // watchlists). Falls back to the bare picker if the config modal
+      // wasn't built (defensive — shouldn't happen, but cheap to guard).
       newBtn.addEventListener('click', () => {
-        try { if(typeof _termSpawnPickerOpen === 'function') _termSpawnPickerOpen(); } catch(_){}
+        try {
+          if(typeof _crTermConfigOpen === 'function') _crTermConfigOpen();
+          else if(typeof _termSpawnPickerOpen === 'function') _termSpawnPickerOpen();
+        } catch(_){}
       });
     }
     document.querySelectorAll('.crTerm-tab[data-termview]').forEach(btn => {
