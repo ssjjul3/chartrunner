@@ -3875,6 +3875,71 @@
 
   /* — Splash / desktop stat-bar Run + CRDS counters (mirrored hide) — */
   .pill[title*="CRDS"], .pill[title*="RUN"] { display: none !important; }
+
+  /* ── v0.9.13 — Coach top-bar affordance ────────────────────────────── */
+  .crTvCoachWrap{position:relative;display:inline-flex;align-items:center}
+  #crTvCoachBtn{position:relative}
+  #crTvCoachBtn.has-unread{color:#7ee787}
+  .crTvCoachDot{
+    position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;
+    background:#7ee787;box-shadow:0 0 4px rgba(126,231,135,.7);display:none;
+    pointer-events:none;
+  }
+  #crTvCoachBtn.has-unread .crTvCoachDot{display:block}
+  .crTvCoachPop{
+    position:absolute;top:calc(100% + 6px);right:0;z-index:9998;
+    width:340px;max-height:380px;display:none;flex-direction:column;
+    background:linear-gradient(180deg,rgba(20,30,55,.97),rgba(12,18,35,.97));
+    border:1px solid rgba(126,231,135,.45);border-radius:8px;
+    box-shadow:0 12px 36px rgba(0,0,0,.55), 0 0 0 1px rgba(126,231,135,.10) inset;
+    color:var(--fg);font:11px/1.45 ui-monospace,Menlo,monospace;
+    overflow:hidden;
+  }
+  .crTvCoachPop.on{display:flex}
+  .crTvCoachHd{
+    display:flex;flex-direction:column;gap:1px;padding:8px 12px 6px;
+    border-bottom:1px solid rgba(126,231,135,.18);
+    background:rgba(126,231,135,.04);
+  }
+  .crTvCoachTitle{font:700 10px ui-monospace,Menlo,monospace;letter-spacing:1px;color:#7ee787}
+  .crTvCoachSub{font:10px ui-monospace,Menlo,monospace;color:#5b6a52;letter-spacing:.3px}
+  .crTvCoachLog{
+    flex:1;min-height:120px;max-height:240px;overflow-y:auto;
+    padding:8px 10px;display:flex;flex-direction:column;gap:5px;
+    background:rgba(8,12,22,.5);
+  }
+  .crTvCoachLog::-webkit-scrollbar{width:6px}
+  .crTvCoachLog::-webkit-scrollbar-track{background:transparent}
+  .crTvCoachLog::-webkit-scrollbar-thumb{background:rgba(126,231,135,.25);border-radius:3px}
+  .crTvCoachMsg{
+    padding:5px 8px;border-radius:5px;font-size:10.5px;line-height:1.4;
+    word-break:break-word;
+  }
+  .crTvCoachMsg.you{background:rgba(20,241,149,.10);color:#bff7df;align-self:flex-end;max-width:85%}
+  .crTvCoachMsg.coach{background:rgba(155,140,255,.08);color:#cfd2db;align-self:flex-start;max-width:85%}
+  .crTvCoachMsg .who{display:block;font:700 8px ui-monospace,Menlo,monospace;letter-spacing:.6px;opacity:.65;margin-bottom:1px}
+  .crTvCoachLog .empty{color:#5b6a52;font-style:italic;font-size:10px;text-align:center;padding:8px}
+  .crTvCoachIn{
+    display:flex;gap:4px;padding:6px;border-top:1px solid rgba(126,231,135,.18);
+    background:rgba(8,12,22,.6);
+  }
+  .crTvCoachIn input{
+    flex:1;padding:5px 8px;background:rgba(10,15,28,.7);
+    border:1px solid rgba(126,231,135,.20);border-radius:4px;
+    color:var(--fg);font:10.5px ui-monospace,Menlo,monospace;
+    outline:none;transition:border-color .15s ease;
+  }
+  .crTvCoachIn input:focus{border-color:rgba(126,231,135,.55)}
+  .crTvCoachIn button{
+    padding:5px 12px;background:rgba(126,231,135,.18);
+    border:1px solid rgba(126,231,135,.50);border-radius:4px;
+    color:#bff7df;font:700 10px ui-monospace,Menlo,monospace;
+    letter-spacing:.6px;cursor:pointer;transition:background .12s ease;
+  }
+  .crTvCoachIn button:hover{background:rgba(126,231,135,.30)}
+  .crTvCoachIn button:active{transform:translateY(1px)}
+  /* Coach pop hides on splash, like the bottom overlay does */
+  body.crSplashUp .crTvCoachPop{display:none !important}
 </style>
 
 <!-- ─────────────────────────────────────────────────────────────────────────
@@ -3901,8 +3966,8 @@
     pnlTrackerSpawn:  false,
     tradeNotesSpawn:  false,
     // pre-demo additions (will flip true as features land)
-    coachQA:          false,   // hardcoded FAQ — wires up tomorrow
-    coachTopBar:      false,   // top-bar Coach affordance
+    coachQA:          true,    // crCoach.reply() already covers help/ladder/oco/bracket/wallet/scared/win/hello — keyword + state matching, B1 from yesterday's plan
+    coachTopBar:      true,    // top-bar Coach affordance — button + popover wired in v0.9.13
     terminalConfigGear: false, // + tab → ⚙ config (widget config + watchlists)
     inGameBalance:    true,    // CRDS/RUN visible in-game (menu drawer + in-run shop), hidden on desktop
   });
@@ -4054,6 +4119,33 @@
   <button class="tvIcon" id="crTvFullscreen" title="Fullscreen">
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 6 2 2 6 2"/><polyline points="10 2 14 2 14 6"/><polyline points="14 10 14 14 10 14"/><polyline points="6 14 2 14 2 10"/></svg>
   </button>
+  <div class="tvSep"></div>
+  <!-- v0.9.13 — Coach top-bar affordance. Click toggles a popover with the
+       crCoach chat log + an input. Reuses the same crCoach module that powers
+       the right-sidebar Coach tab and any Coach widget — single source of
+       truth for chat history. The unread dot lights when Coach speaks while
+       the popover is closed. -->
+  <div class="crTvCoachWrap">
+    <button class="tvIcon" id="crTvCoachBtn" title="Coach — ask a question (C)" type="button">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 4.5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7l-3 2.5v-2.5h0a2 2 0 0 1-2-2z"/>
+        <line x1="5" y1="6.5" x2="11" y2="6.5"/>
+        <line x1="5" y1="8.5" x2="9" y2="8.5"/>
+      </svg>
+      <span class="crTvCoachDot" id="crTvCoachDot" aria-hidden="true"></span>
+    </button>
+    <div class="crTvCoachPop" id="crTvCoachPop" role="dialog" aria-label="Coach chat">
+      <div class="crTvCoachHd">
+        <span class="crTvCoachTitle">COACH · L3</span>
+        <span class="crTvCoachSub">profit-first · always online</span>
+      </div>
+      <div class="crTvCoachLog" id="crTvCoachLog"></div>
+      <div class="crTvCoachIn">
+        <input id="crTvCoachInp" type="text" placeholder="Ask Coach…" autocomplete="off">
+        <button id="crTvCoachSnd" type="button">Send</button>
+      </div>
+    </div>
+  </div>
   <div class="tvSpacer"></div>
   <!-- v0.8k#24l — cleanup pass: removed #crTvLaunch stub. -->
 </div>
@@ -32001,6 +32093,112 @@ const crCoach = (function(){
     return history.filter(m => m.role === 'coach' && m.t > (since|0)).length;
   }
   return { send, userSays, subscribe, getHistory, unread, personality };
+})();
+
+/* =========================================================================
+ * v0.9.13 — Coach top-bar affordance: button + popover wiring
+ * Reads from crCoach.getHistory(), writes via crCoach.userSays(). The
+ * popover's lifecycle is independent of the right-sidebar Coach tab — this
+ * is a quick-access panel anchored to the in-game top bar so judges /
+ * players can ask Coach a question without navigating into a sidebar.
+ * Tracks "last seen" timestamp to drive the unread dot.
+ * ===================================================================== */
+(function(){
+  const btn  = document.getElementById('crTvCoachBtn');
+  const pop  = document.getElementById('crTvCoachPop');
+  const log  = document.getElementById('crTvCoachLog');
+  const inp  = document.getElementById('crTvCoachInp');
+  const snd  = document.getElementById('crTvCoachSnd');
+  if(!btn || !pop || !log || !inp || !snd || typeof crCoach === 'undefined') return;
+
+  let lastSeen = Date.now();
+  let isOpen = false;
+
+  function escapeHtml(s){
+    return String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function render(){
+    const msgs = crCoach.getHistory();
+    if(!msgs.length){
+      log.innerHTML = '<div class="empty">Press <kbd style="background:rgba(126,231,135,.12);padding:1px 4px;border-radius:3px">C</kbd> any time. Try: "how do I bracket?"</div>';
+    } else {
+      log.innerHTML = msgs.slice(-50).map(m => {
+        const cls = (m.role === 'user') ? 'you' : 'coach';
+        const who = (m.role === 'user') ? 'YOU' : 'COACH';
+        return '<div class="crTvCoachMsg ' + cls + '">' +
+                 '<span class="who">' + who + '</span>' +
+                 escapeHtml(m.text) +
+               '</div>';
+      }).join('');
+    }
+    log.scrollTop = log.scrollHeight;
+    refreshUnread();
+  }
+
+  function refreshUnread(){
+    if(isOpen){
+      btn.classList.remove('has-unread');
+      lastSeen = Date.now();
+      return;
+    }
+    const n = crCoach.unread(lastSeen);
+    btn.classList.toggle('has-unread', n > 0);
+    btn.title = n > 0
+      ? 'Coach — ' + n + ' new message' + (n === 1 ? '' : 's') + ' (C)'
+      : 'Coach — ask a question (C)';
+  }
+
+  function open(){
+    isOpen = true;
+    pop.classList.add('on');
+    lastSeen = Date.now();
+    btn.classList.remove('has-unread');
+    render();
+    setTimeout(() => inp.focus(), 50);
+  }
+  function close(){
+    isOpen = false;
+    pop.classList.remove('on');
+    refreshUnread();
+  }
+  function toggle(){
+    if(isOpen) close(); else open();
+  }
+
+  btn.addEventListener('click', e => { e.stopPropagation(); toggle(); });
+  pop.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', () => { if(isOpen) close(); });
+
+  function submit(){
+    const text = (inp.value || '').trim();
+    if(!text) return;
+    crCoach.userSays(text);
+    inp.value = '';
+  }
+  snd.addEventListener('click', submit);
+  inp.addEventListener('keydown', e => {
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); submit(); }
+    else if(e.key === 'Escape'){ close(); }
+  });
+
+  // Keep popover in sync with chat history (works whether opened or closed
+  // — closed state just refreshes the unread dot).
+  crCoach.subscribe(() => { if(isOpen) render(); else refreshUnread(); });
+
+  // Hotkey C — toggle, but ignore when typing in a real input/textarea.
+  document.addEventListener('keydown', e => {
+    if(e.key !== 'c' && e.key !== 'C') return;
+    if(e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = (e.target && e.target.tagName) || '';
+    const isText = (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable));
+    if(isText) return;
+    e.preventDefault();
+    toggle();
+  });
+
+  // Initial sweep — paint history if any + unread state.
+  render();
 })();
 
 /* =========================================================================
