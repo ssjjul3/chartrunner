@@ -23682,8 +23682,16 @@ function _tokSnapshot(id){
     }
   } catch(_){}
   // Synth values seeded so the same token always shows the same profile.
+  // v0.9.13 — For Binance-tracked tokens (hasBin), DO NOT fabricate a price
+  // from the seeded RNG. The synth was producing ~$0.50 for BTC, ~$170 for
+  // ETH, etc. — i.e. the "wrong prices" report. Instead, return px=null
+  // while the live fetch is in flight; _tokFmtPx(null) → '—'. Tokens
+  // without a Binance pair (HYPE/PUMP/MOG/FART) still get the synth
+  // fallback because we have no other source for them.
+  const _hasBin  = !!TOK_BINANCE_PAIR[id];
   const px       = (live && !isNaN(live.px)) ? live.px
-                 : (livePx != null ? livePx : (rng() * 1000 + 0.001));
+                 : (livePx != null ? livePx
+                 : (_hasBin ? null : (rng() * 1000 + 0.001)));
   const ch24     = (live && !isNaN(live.ch24)) ? live.ch24 : ((rng() - 0.4) * 60);
   const ch7d     = (rng() - 0.45) * 140;
   const vol24    = (live && !isNaN(live.vol24) && live.vol24 > 0) ? live.vol24
@@ -23776,6 +23784,23 @@ const TOK_BINANCE_PAIR = {
 const _TOK_LIVE_TTL_MS = 30000;
 const _tokLiveCache = {};   // { 'btc|1h': { t, px, ch24, vol24, closes:[…], klines:[{o,h,l,c,t}] } }
 const _tokLiveInflight = {}; // dedup concurrent fetches
+
+// v0.9.13 — Debounced re-render trigger. Coalesces rapid fetch resolutions
+// into a single render pass so pinned token widgets stop flickering when
+// multiple Binance fetches (or a TF change + N pinned widgets) all land
+// within a short window.
+let _tokRerenderTimer = null;
+function _tokScheduleRerender(){
+  if(_tokRerenderTimer) return;
+  _tokRerenderTimer = setTimeout(() => {
+    _tokRerenderTimer = null;
+    try { _tokRenderList(); } catch(_){}
+    try { _tokRenderProfile(); } catch(_){}
+    try { if(typeof renderWidgets      === 'function') renderWidgets();      } catch(_){}
+    try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+  }, 200);
+}
+
 // v0.9.54 — Once we've seen live data for an id, keep using the most recent
 // snapshot indefinitely as a fallback. This stops the "price on/off" flicker
 // where a stale-cache miss would drop the widget back to synth-seeded values.
@@ -23807,11 +23832,14 @@ function _tokFetchLive(id, tf){
       vol24: parseFloat(t24.quoteVolume),
       closes, klines,
     };
-    // Re-render visible surfaces so the new data lands on screen.
-    try { _tokRenderList(); } catch(_){}
-    try { _tokRenderProfile(); } catch(_){}
-    try { if(typeof renderWidgets === 'function') renderWidgets(); } catch(_){}
-    try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+    // v0.9.13 — Debounce the re-render fan-out. Previously, every fetch
+    // resolution called renderWidgets() (which does layer.innerHTML='' and
+    // recreates all widget DOM). With multiple pinned token widgets +
+    // periodic TF fetches, that meant rapid full-clear cycles and the
+    // sparkline canvases visibly flickered. Now we coalesce into a single
+    // pass after a 200 ms quiet window — N fetches landing back-to-back
+    // produce one redraw, not N.
+    _tokScheduleRerender();
   }).catch(() => { delete _tokLiveInflight[key]; });
   return cached || null;
 }
