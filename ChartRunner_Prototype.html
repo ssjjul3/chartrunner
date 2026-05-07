@@ -3876,6 +3876,15 @@
   /* — Splash / desktop stat-bar Run + CRDS counters (mirrored hide) — */
   .pill[title*="CRDS"], .pill[title*="RUN"] { display: none !important; }
 
+  /* v0.9.15 — Trade Notes + P&L Tracker desktop icons retired. Their
+     content folded into the Journal app as Notes + P&L tabs. CSS hide
+     here means the _wbInstallApp seed still runs (so existing user
+     installs don't error), but the icons + windows are visually gone. */
+  .os-icon[data-prog="app_inGame_pnl"],
+  .os-icon[data-prog="app_inGame_notes"],
+  #win-app_inGame_pnl,
+  #win-app_inGame_notes { display: none !important; }
+
   /* ── v0.9.13 — Coach top-bar affordance ────────────────────────────── */
   .crTvCoachWrap{position:relative;display:inline-flex;align-items:center}
   #crTvCoachBtn{position:relative}
@@ -3963,8 +3972,8 @@
     workbenchTheme:   false,
     crdsRun:          false,
     profileMissions:  false,
-    pnlTrackerSpawn:  false,
-    tradeNotesSpawn:  false,
+    pnlTrackerSpawn:  false,    // v0.9.15: P&L now a Journal tab
+    tradeNotesSpawn:  false,    // v0.9.15: Notes now a Journal tab
     // pre-demo additions (will flip true as features land)
     coachQA:          true,    // crCoach.reply() already covers help/ladder/oco/bracket/wallet/scared/win/hello — keyword + state matching, B1 from yesterday's plan
     coachTopBar:      true,    // top-bar Coach affordance — button + popover wired in v0.9.13
@@ -7529,6 +7538,8 @@ plot(out, color=color.orange, linewidth=2)</textarea>
             <button class="crTerm-tab active" data-jrntab="manual" type="button">MANUAL</button>
             <button class="crTerm-tab" data-jrntab="paper" type="button">PAPER</button>
             <button class="crTerm-tab" data-jrntab="bot" type="button">BOT</button>
+            <button class="crTerm-tab" data-jrntab="notes" type="button">NOTES</button>
+            <button class="crTerm-tab" data-jrntab="pnl" type="button">P&amp;L</button>
             <button class="crTerm-tab" data-jrntab="stats" type="button">STATS</button>
           </div>
 
@@ -7671,6 +7682,39 @@ plot(out, color=color.orange, linewidth=2)</textarea>
           <div class="crTerm-view hidden" id="crJournalViewStats">
             <p style="margin:10px 0 8px;font-size:11px;color:var(--dim)">Aggregate stats across both manual and bot trades. R:R × Win Rate matrix mirrors the Igor expectancy table.</p>
             <div id="crJrnStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px"></div>
+          </div>
+
+          <!-- ── NOTES TAB ─────────────────────────────────────────────── -->
+          <!-- v0.9.15 — Trade Notes folded into Journal as a tab (was the
+               standalone "Trade Notes" desktop app, retired). Free-form
+               markdown-ish notes per session, persisted to localStorage
+               under cr_journal_notes_v1. -->
+          <div class="crTerm-view hidden" id="crJournalViewNotes">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px">
+              <p style="margin:0;font-size:11px;color:var(--dim)">Free-form trade notes — what worked, what didn't, what to try next. Auto-saves to your browser. Copy/paste freely.</p>
+              <span id="crJrnNotesStatus" style="font-size:10px;color:var(--dim)">saved</span>
+            </div>
+            <textarea id="crJrnNotes" placeholder="Today's plan…&#10;&#10;Setups I'm watching:&#10;&#10;Mistakes to avoid:&#10;" style="width:100%;min-height:340px;padding:10px 12px;background:rgba(10,15,28,.55);border:1px solid var(--line);border-radius:6px;color:var(--fg);font:12px ui-monospace,Menlo,monospace;line-height:1.55;resize:vertical;outline:none"></textarea>
+            <div style="display:flex;gap:6px;margin-top:8px">
+              <button class="cr-go" id="crJrnNotesExport" type="button" style="font-size:10px;padding:5px 11px;background:transparent;border:1px solid var(--line);color:var(--dim)">⬇ Export .md</button>
+              <button class="cr-go" id="crJrnNotesClear"  type="button" style="font-size:10px;padding:5px 11px;background:transparent;border:1px solid rgba(255,91,127,.4);color:#ff5b7f">Clear</button>
+            </div>
+          </div>
+
+          <!-- ── P&L TAB ───────────────────────────────────────────────── -->
+          <!-- v0.9.15 — P&L Tracker folded into Journal as a tab (was the
+               standalone "P&L Tracker" desktop app, retired). Aggregates
+               realized + unrealized across all journal entries with
+               session breakdown. Pure derived view — reads game state +
+               journal history, no separate persistence. -->
+          <div class="crTerm-view hidden" id="crJournalViewPnl">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px">
+              <p style="margin:0;font-size:11px;color:var(--dim)">Realized + unrealized P&amp;L across this session and historical journal entries. Updates every second while a run is active.</p>
+              <button class="cr-go" id="crJrnPnlExport" type="button" style="font-size:10px;padding:5px 11px;background:transparent;border:1px solid var(--line);color:var(--dim)">⬇ Export CSV</button>
+            </div>
+            <div id="crJrnPnlSummary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px"></div>
+            <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Recent fills</div>
+            <div id="crJrnPnlList" style="border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.4);max-height:280px;overflow:auto"></div>
           </div>
         </div>
       </div>
@@ -20411,6 +20455,95 @@ function _crJrnRenderStats(){
   }
   host.innerHTML = html;
 }
+/* ─── v0.9.15 ─── Notes tab: free-form textarea, persists to localStorage.
+   Replaces the standalone "Trade Notes" desktop app.
+   Storage key: cr_journal_notes_v1 */
+const _CR_JRN_NOTES_KEY = 'cr_journal_notes_v1';
+let _crJrnNotesSaveTimer = null;
+function _crJrnRenderNotes(){
+  const ta = document.getElementById('crJrnNotes');
+  if(!ta) return;
+  if(!ta._wired){
+    ta._wired = true;
+    try { ta.value = localStorage.getItem(_CR_JRN_NOTES_KEY) || ''; } catch(_){}
+    const status = document.getElementById('crJrnNotesStatus');
+    ta.addEventListener('input', () => {
+      if(status){ status.textContent = 'saving…'; status.style.color = '#ffd166'; }
+      clearTimeout(_crJrnNotesSaveTimer);
+      _crJrnNotesSaveTimer = setTimeout(() => {
+        try { localStorage.setItem(_CR_JRN_NOTES_KEY, ta.value); } catch(_){}
+        if(status){ status.textContent = 'saved'; status.style.color = ''; }
+      }, 350);
+    });
+    const exp = document.getElementById('crJrnNotesExport');
+    if(exp) exp.addEventListener('click', () => {
+      const blob = new Blob([ta.value || ''], { type: 'text/markdown' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = 'chartrunner-notes-' + new Date().toISOString().slice(0,10) + '.md';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+    });
+    const clr = document.getElementById('crJrnNotesClear');
+    if(clr) clr.addEventListener('click', () => {
+      if(!confirm('Clear all notes? This cannot be undone.')) return;
+      ta.value = '';
+      try { localStorage.setItem(_CR_JRN_NOTES_KEY, ''); } catch(_){}
+      if(status){ status.textContent = 'cleared'; status.style.color = ''; }
+    });
+  }
+}
+
+/* ─── v0.9.15 ─── P&L tab: derived view across journal entries + live game.
+   Replaces the standalone "P&L Tracker" desktop app. */
+function _crJrnRenderPnl(){
+  const sumHost  = document.getElementById('crJrnPnlSummary');
+  const listHost = document.getElementById('crJrnPnlList');
+  if(!sumHost || !listHost) return;
+  const d = (typeof _crJrnLoad === 'function') ? _crJrnLoad() : { manual:[], paper:[], bot:[] };
+  const all = ((d.manual || []).concat(d.paper || []).concat(d.bot || [])).sort((a,b) => (b.ts||0) - (a.ts||0));
+  const realized   = all.filter(t => t.result === 'win' || t.result === 'loss');
+  const realizedPnl = realized.reduce((s,t) => s + (Number(t.pnl)||0), 0);
+  const wins = realized.filter(t => t.result === 'win');
+  const winPnl  = wins.reduce((s,t) => s + (Number(t.pnl)||0), 0);
+  const lossPnl = realized.filter(t => t.result === 'loss').reduce((s,t) => s + (Number(t.pnl)||0), 0);
+  const wr = realized.length ? (wins.length / realized.length * 100).toFixed(1) + '%' : '—';
+  const livePnl = (typeof game !== 'undefined' && Number.isFinite(game.pnl)) ? game.pnl : 0;
+  const totalPnl = realizedPnl + livePnl;
+  const fmt$ = v => (v >= 0 ? '+' : '') + '$' + (Number(v)||0).toFixed(2);
+  const cards = [
+    { k:'Session P&L (live)', v: fmt$(livePnl), sub:'unrealized + open positions' },
+    { k:'Realized total',     v: fmt$(realizedPnl), sub: realized.length + ' closed trades' },
+    { k:'Win rate',           v: wr,          sub: wins.length + 'W · ' + (realized.length - wins.length) + 'L' },
+    { k:'Combined',           v: fmt$(totalPnl), sub:'live + realized history' },
+  ];
+  sumHost.innerHTML = cards.map(c =>
+    '<div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:rgba(10,15,28,.4)">' +
+      '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px">' + c.k + '</div>' +
+      '<div style="font-size:18px;font-weight:700;margin-top:4px;color:' + ((c.v.startsWith('+') ? '#3ddc97' : (c.v.startsWith('-') ? '#ff5b7f' : 'var(--fg)'))) + '">' + c.v + '</div>' +
+      '<div style="font-size:10px;color:var(--dim);margin-top:2px">' + c.sub + '</div>' +
+    '</div>'
+  ).join('');
+  if(!all.length){
+    listHost.innerHTML = '<div class="dim" style="font-style:italic;font-size:11px;padding:10px">No fills yet — place a trade in-run and it auto-logs here.</div>';
+    return;
+  }
+  listHost.innerHTML = all.slice(0, 30).map(t => {
+    const pnl = Number(t.pnl) || 0;
+    const col = (t.result === 'win') ? '#3ddc97' : (t.result === 'loss' ? '#ff5b7f' : 'var(--dim)');
+    const date = t.dateStr || (t.ts ? new Date(t.ts).toLocaleString() : '—');
+    return '<div style="display:grid;grid-template-columns:130px 60px 80px 60px 1fr 70px;gap:8px;padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:10.5px;font-variant-numeric:tabular-nums">' +
+      '<span class="dim">' + date + '</span>' +
+      '<span style="font-weight:700">' + (t.asset || '—') + '</span>' +
+      '<span>' + (t.side || '—') + '</span>' +
+      '<span>' + (t.tf || '—') + '</span>' +
+      '<span class="dim" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (t.setup || (t.auto ? 'auto' : 'manual')) + '</span>' +
+      '<span style="text-align:right;color:' + col + ';font-weight:700">' + ((pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2)) + '</span>' +
+    '</div>';
+  }).join('');
+}
+
 function _crJrnExportCSV(rows, headers, filename){
   const escape = s => '"'+String(s==null?'':s).replace(/"/g,'""')+'"';
   const lines = [headers.map(escape).join(',')];
@@ -20428,7 +20561,9 @@ setTimeout(() => {
   tabs.forEach(b => b.addEventListener('click', () => {
     const cat = b.getAttribute('data-jrntab');
     tabs.forEach(x => x.classList.toggle('active', x === b));
-    [['manual','crJournalViewManual'],['paper','crJournalViewPaper'],['bot','crJournalViewBot'],['stats','crJournalViewStats']].forEach(([k,id]) => {
+    // v0.9.15 — Tab map extended with Notes + P&L (folded in from the
+    // standalone Trade Notes / P&L Tracker apps).
+    [['manual','crJournalViewManual'],['paper','crJournalViewPaper'],['bot','crJournalViewBot'],['stats','crJournalViewStats'],['notes','crJournalViewNotes'],['pnl','crJournalViewPnl']].forEach(([k,id]) => {
       const el = document.getElementById(id);
       if(el) el.classList.toggle('hidden', cat !== k);
     });
@@ -20436,6 +20571,8 @@ setTimeout(() => {
     if(cat === 'paper')  _crJrnRenderPaper();
     if(cat === 'bot')    _crJrnRenderBot();
     if(cat === 'stats')  _crJrnRenderStats();
+    if(cat === 'notes')  _crJrnRenderNotes();
+    if(cat === 'pnl')    _crJrnRenderPnl();
   }));
   const addBtn = document.getElementById('crJrnAdd');
   if(addBtn) addBtn.addEventListener('click', () => {
