@@ -55,6 +55,13 @@
      Buttons stay in DOM (hidden) so existing click handlers keep working;
      the new Profile buttons forward via .click(). */
   #crBarRestart, #crBarSave, #crBarCoins, #crBarConnect{display:none !important}
+  /* v0.9.46 — Menu drawer + M hotkey archived. Every control that lived
+     in the drawer (Coins, Support, Perspective, Restart, Home) now lives
+     on the in-game Profile Run Controls. Skins picker + Tokenomics text
+     stay in the DOM under #menuDrawer for restore by removing the
+     display:none rule. The M-key handler short-circuits in the keydown
+     dispatcher (search v0.9.46 in keydown). */
+  #menuDrawer, #menuBtn{display:none !important}
   /* v0.9.23 — Re-show Save + new Home button as the 3-way exit triad:
        · Save  — write current run to chartrunner_maps (create or update)
        · Home  — CRT-fade out, nothing saved
@@ -5391,6 +5398,11 @@
              drawer wiring (now retired). Forced OFF in campaign chapters
              regardless of state. -->
         <button class="lp-runbtn" id="crLiteSupport" type="button" title="Toggle the Setup Guide overlay during tool placement"><span class="ic">📘</span><span class="lbl">Support</span></button>
+        <!-- v0.9.46 — Perspective cycle button. Migrated here from the
+             menu drawer (now archived). Click cycles auto → log → lin
+             via setPerspective(). Label below the icon shows the
+             current mode. -->
+        <button class="lp-runbtn" id="crLitePerspective" type="button" title="Cycle price scale perspective: Auto-zoom → Logarithmic → Linear"><span class="ic">📐</span><span class="lbl" id="crLitePerspectiveLbl">Auto</span></button>
         <button class="lp-runbtn" id="crLiteConnect" type="button" title="Connect a Solana wallet"><span class="ic">🔗</span><span class="lbl">Connect</span></button>
       </div>
     </div>
@@ -11343,7 +11355,11 @@ window.addEventListener('keydown', e=>{
   // Both behaviors remain reachable via the double-tap-arrow state-chain
   // (↑↑ surfaces from upside-down → enters flight) so no functionality lost.
   // if(k==='f'){ if(player.upsideDown) exitUpsideDown(); else toggleFly(); return; }
-  if(k==='m'){ toggleMenu(); return; }
+  // v0.9.46 — Menu drawer archived. M-hotkey disabled. The drawer
+  // contents migrated to the in-game Profile Run Controls (Coins,
+  // Support, Perspective) and the desktop dock (everything else).
+  // Restore: replace this comment with the original toggleMenu() call.
+  // if(k==='m'){ toggleMenu(); return; }
   // v0.8k#18 — `T` hotkey retired. Trails live on slot 1 (see key-1 tap/hold
   // above). Leave this block empty so future bindings don't conflict.
   // v0.8e #S — V-key toggle removed entirely. Monster Mode is selected at the
@@ -29035,6 +29051,45 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
     };
     supBtn.addEventListener('click', flipSupport);
     syncSupportUI();
+  }
+}
+// v0.9.46 — Perspective cycle button wiring. Migrated from the menu
+// drawer (#persboxMenu, archived) to the in-game Profile Run Controls
+// (#crLitePerspective). Click cycles auto → log → lin → auto. Label
+// below the icon updates to show the active mode in 3-letter shorthand
+// (Auto / Log / Lin) so the button stays compact in the 3x2 grid.
+{
+  const persBtn = document.getElementById('crLitePerspective');
+  const persLbl = document.getElementById('crLitePerspectiveLbl');
+  if(persBtn && persLbl){
+    const SHORT = { auto:'Auto', log:'Log', lin:'Lin' };
+    const syncPerspectiveUI = () => {
+      try {
+        const cur = (typeof perspective !== 'undefined') ? perspective : 'auto';
+        persLbl.textContent = SHORT[cur] || 'Auto';
+        const idx = (typeof PERS_CYCLE !== 'undefined') ? PERS_CYCLE.indexOf(cur) : -1;
+        const nxt = (typeof PERS_CYCLE !== 'undefined' && idx >= 0)
+          ? PERS_CYCLE[(idx + 1) % PERS_CYCLE.length]
+          : 'log';
+        persBtn.title = 'Perspective: ' + (SHORT[cur] || 'Auto') + ' · click for ' + (SHORT[nxt] || 'Log');
+      } catch(_){}
+    };
+    persBtn.addEventListener('click', () => {
+      try {
+        const cur = (typeof perspective !== 'undefined') ? perspective : 'auto';
+        const idx = (typeof PERS_CYCLE !== 'undefined') ? PERS_CYCLE.indexOf(cur) : -1;
+        const nxt = (typeof PERS_CYCLE !== 'undefined' && idx >= 0)
+          ? PERS_CYCLE[(idx + 1) % PERS_CYCLE.length]
+          : 'log';
+        if(typeof setPerspective === 'function') setPerspective(nxt);
+        syncPerspectiveUI();
+      } catch(_){}
+    });
+    syncPerspectiveUI();
+    // Sync the button label periodically in case perspective is set
+    // through other paths (configure-run, persboxMenu legacy if still
+    // wired, keyboard shortcut). Cheap 1 s tick.
+    setInterval(syncPerspectiveUI, 1000);
   }
 }
 // v0.8k#24bz — In-game topbar button wiring.
