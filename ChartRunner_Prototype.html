@@ -25062,14 +25062,13 @@ function _crTermConfigOpen(){
         '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Active widgets</div>' +
         '<div id="crTermCfgList" style="display:flex;flex-direction:column;gap:4px"></div>' +
       '</section>' +
-      // 2) Coin watchlist
+      // 2) Coin watchlist · v0.9.47 — sourced from Token Terminal watchlist
       '<section>' +
-        '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Coin watchlist</div>' +
-        '<p style="margin:0 0 6px;font-size:11px;color:var(--dim)">Comma-separated token ids. Live price + 24h % from Binance.</p>' +
-        '<input id="crTermCfgCoinInput" type="text" placeholder="btc, eth, sol, hype, pump" style="width:100%;padding:6px 8px;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:5px;color:var(--fg);font:11px ui-monospace,Menlo,monospace;outline:none">' +
+        '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Coin watchlist · pane</div>' +
+        '<p style="margin:0 0 6px;font-size:11px;color:var(--dim)">Spawns a Coin Watchlist pane that syncs with the Token Terminal watchlist. Edit the list by clicking ☆ on any row in the Token Terminal — the pane updates instantly.</p>' +
         '<div style="display:flex;gap:6px;margin-top:6px">' +
-          '<button id="crTermCfgCoinSpawn" type="button" style="background:rgba(20,241,149,.18);border:1px solid rgba(20,241,149,.50);color:#bff7df;padding:5px 12px;border-radius:5px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">Save &amp; spawn</button>' +
-          '<span class="dim" style="font-size:10px;align-self:center">valid ids: ' + (typeof TOK_LIST !== 'undefined' ? TOK_LIST.slice(0, 8).map(t => t.id).join(', ') + ', …' : '—') + '</span>' +
+          '<button id="crTermCfgCoinSpawn" type="button" style="background:rgba(20,241,149,.18);border:1px solid rgba(20,241,149,.50);color:#bff7df;padding:5px 12px;border-radius:5px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">Spawn pane</button>' +
+          '<span class="dim" style="font-size:10px;align-self:center">live price + 24 h % from Binance</span>' +
         '</div>' +
       '</section>' +
       // 3) Wallet watchlist
@@ -25141,42 +25140,50 @@ function _crTermConfigOpen(){
   }
   repaintList();
 
-  // Pre-fill the inputs with current sourceId of the existing watchlist
-  // widgets, so editing is "open modal → tweak list → Save & spawn".
-  const coinInp = card.querySelector('#crTermCfgCoinInput');
+  // Pre-fill the wallet textarea with whatever's persisted to localStorage
+  // OR the active wallwatch widget's sourceId. The coin watchlist no
+  // longer has a manual input — it always reads from the Token Terminal
+  // watchlist.
   const walInp  = card.querySelector('#crTermCfgWalInput');
   try {
+    let walSeed = '';
+    try { walSeed = localStorage.getItem('cr_wallet_watchlist_v1') || ''; } catch(_){}
     const reg = activeReg();
-    if(reg){
-      const coinW = reg.items.find(w => w.type === 'coinwatch');
-      if(coinW && coinInp) coinInp.value = coinW.sourceId || '';
-      const walW  = reg.items.find(w => w.type === 'wallwatch');
-      if(walW && walInp)   walInp.value = (walW.sourceId || '').split(',').map(s => s.trim()).filter(Boolean).join('\n');
+    if(reg && !walSeed){
+      const walW = reg.items.find(w => w.type === 'wallwatch');
+      if(walW) walSeed = walW.sourceId || '';
+    }
+    if(walSeed && walInp){
+      walInp.value = walSeed.split(/[\s,]+/).map(s => s.trim()).filter(Boolean).join('\n');
     }
   } catch(_){}
 
-  // Coin watchlist save → replace existing coinwatch widget.
+  // v0.9.47 — Coin watchlist spawn → drops a sentinel coinwatch pane.
+  // Sentinel sourceId '__token_terminal__' tells the body renderer to
+  // pull the live token list from cr_tok_watchlist_v1 instead of a
+  // frozen comma-separated string.
   card.querySelector('#crTermCfgCoinSpawn').addEventListener('click', () => {
-    const raw  = (coinInp.value || '').toLowerCase();
-    const ids  = raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
-    if(!ids.length){ if(typeof toast === 'function') toast('Add at least one ticker'); return; }
-    const sourceId = ids.join(',');
     const reg = activeReg();
     if(reg) reg.items = reg.items.filter(w => w.type !== 'coinwatch');
-    activeSpawn('coinwatch', sourceId);
+    activeSpawn('coinwatch', '__token_terminal__');
     repaintList();
+    try { if(typeof crNotify === 'function') crNotify('Coin Watchlist · spawned (synced with Token Terminal)'); } catch(_){}
   });
 
-  // Wallet watchlist save → replace existing wallwatch widget.
+  // Wallet watchlist save → replace existing wallwatch widget AND persist
+  // the address list to cr_wallet_watchlist_v1 so re-opening the dialog
+  // pre-fills the textarea even if the widget was deleted.
   card.querySelector('#crTermCfgWalSpawn').addEventListener('click', () => {
     const raw  = (walInp.value || '');
     const adds = raw.split(/[\s,]+/).map(s => s.trim()).filter(s => s && s.length >= 32 && s.length <= 64);
     if(!adds.length){ if(typeof toast === 'function') toast('Paste at least one valid Solana address'); return; }
     const sourceId = adds.join(',');
+    try { localStorage.setItem('cr_wallet_watchlist_v1', sourceId); } catch(_){}
     const reg = activeReg();
     if(reg) reg.items = reg.items.filter(w => w.type !== 'wallwatch');
     activeSpawn('wallwatch', sourceId);
     repaintList();
+    try { if(typeof crNotify === 'function') crNotify('Wallet Watchlist · ' + adds.length + ' wallet' + (adds.length === 1 ? '' : 's')); } catch(_){}
   });
 
   // Library button → open legacy picker.
@@ -25377,6 +25384,12 @@ function _tokToggleWatch(id){
   else                            _tokState.watchlist.add(id);
   _tokSaveWatchlist();
   try { _tokRenderList(); } catch(_){}
+  // v0.9.47 — Token Terminal watchlist is the source of truth for the
+  // Terminal-engine coinwatch panes too. Trigger a re-render of the
+  // desktop + chart-background widget layers so the row list updates
+  // immediately instead of waiting for the 2s _crPaintCoinWatchlists tick.
+  try { if(typeof renderWidgets === 'function') renderWidgets(); } catch(_){}
+  try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
 }
 window._tokToggleWatch = _tokToggleWatch;
 
@@ -27018,9 +27031,27 @@ function _wBodyHTML(w){
   // (1s tick, defined alongside _crPaintTokSparks) refreshes the values
   // in place — no DOM swap, so no flicker.
   if(w.type === 'coinwatch'){
-    const ids = (w.sourceId || '').split(',').map(s => s.trim()).filter(Boolean);
+    // v0.9.47 — Coin watchlist now reads from the Token Terminal watchlist
+    // (cr_tok_watchlist_v1) when sourceId is empty OR equals the sentinel
+    // '__token_terminal__'. Pin / unpin tokens with the ☆ button on each
+    // row in the Token Terminal — the change paints here within 2 s.
+    // Legacy widgets with explicit ticker lists still work as before.
+    let ids;
+    const useTokenTerminal = !w.sourceId || w.sourceId === '__token_terminal__';
+    if(useTokenTerminal){
+      try {
+        if(typeof _tokState !== 'undefined' && _tokState.watchlist){
+          ids = Array.from(_tokState.watchlist);
+        } else {
+          const raw = localStorage.getItem('cr_tok_watchlist_v1');
+          ids = raw ? (JSON.parse(raw) || []) : ['btc','eth','sol'];
+        }
+      } catch(_){ ids = ['btc','eth','sol']; }
+    } else {
+      ids = (w.sourceId || '').split(',').map(s => s.trim()).filter(Boolean);
+    }
     if(!ids.length){
-      return '<div class="dim" style="font-style:italic;font-size:10px;padding:6px">Empty list. Open the gear ⚙ above to add tickers.</div>';
+      return '<div class="dim" style="font-style:italic;font-size:10px;padding:6px">Watchlist empty. Star tokens in the Token Terminal to add them.</div>';
     }
     const rows = ids.map(id => {
       const s = (typeof _tokSnapshot === 'function') ? _tokSnapshot(id) : null;
