@@ -5216,6 +5216,20 @@
         </div>
         <div class="md-switch on" id="coinsSwitch" role="switch" aria-checked="true" tabindex="0" title="Click to toggle coin pickups on/off"></div>
       </div>
+      <!-- v0.9.42 — Support toggle. When ON, the top-center Setup Guide
+           panel (TRENDLINE / STEP 2 OF 2 / TWO ANCHOR / Click anchor 2 …)
+           paints during laser placement in regular runs. When OFF, only
+           the inline laser cursor shows — pros who know the flow don't
+           need the panel. Forced OFF in campaign chapters because the
+           Coach card already covers the same instruction.
+           Persists via localStorage key `cr_support_enabled`. -->
+      <div class="md-toggle-row">
+        <div>
+          <span class="lbl">Support</span>
+          <span class="sub">Setup Guide während Tool-Platzierung</span>
+        </div>
+        <div class="md-switch on" id="supportSwitch" role="switch" aria-checked="true" tabindex="0" title="Click to toggle the Setup Guide overlay on/off"></div>
+      </div>
     </div>
     <div class="md-section">
       <h4>World</h4>
@@ -13784,6 +13798,13 @@ const game = {
   // Restock (charge refill) + loot (boss reward) are always active regardless of this flag.
   // Persisted to localStorage key `cr_coins_enabled` on change.
   coinsEnabled: true,
+  // v0.9.42 — Support overlay toggle. When true (default), drawSetupGuide()
+  // paints the top-center "TRENDLINE · STEP 2 OF 2 · TWO ANCHOR" panel
+  // during laser placement. When false, only the inline laser cursor
+  // shows — pros who know the flow don't need the panel.
+  // Persisted to localStorage key `cr_support_enabled` on change.
+  // Forced OFF in campaign chapters regardless (Coach replaces it).
+  supportEnabled: true,
   // v0.8k#17 — Background theme. 'default' = starry gradient (original).
   // 'bubbles' = dark gradient + soap bubbles.
   // 'ascii' = dark bg + scrolling monospace ASCII art grid.
@@ -18920,6 +18941,17 @@ function drawLaserSight(){
  * ============================================================ */
 function drawSetupGuide(){
   if(!game.laserAiming) return;
+  // v0.9.42 — Suppress the Setup Guide overlay when the player has it
+  // covered elsewhere:
+  //   1. Inside a campaign chapter: the Coach card teaches the same
+  //      flow with completion predicates — duplicate panels eat the
+  //      chart. Always hidden.
+  //   2. In regular runs: gated on game.supportEnabled — a toggle in
+  //      the menu drawer (next to Coins). Default ON for first-timers,
+  //      experienced players flip it OFF. localStorage key
+  //      cr_support_enabled persists the preference across runs.
+  if(game.campaignChapter) return;
+  if(game.supportEnabled === false) return;
   const tool = game.laserTool;
   if(!tool) return;
   const guide = TOOL_SETUP_GUIDES[tool];
@@ -28865,6 +28897,40 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
       // Initial paint
       syncGtbCoins();
     }
+  }
+}
+// v0.9.42 — Support toggle wiring (mirrors the Coins toggle pattern).
+// Flips game.supportEnabled, persists to localStorage `cr_support_enabled`,
+// drawSetupGuide() gates on the value so toggling takes effect instantly.
+// Default ON; campaign chapters force it OFF inside drawSetupGuide regardless.
+{
+  const supSw = document.getElementById('supportSwitch');
+  if(supSw){
+    let saved = null;
+    try { saved = localStorage.getItem('cr_support_enabled'); } catch(_){ saved = null; }
+    if(saved === '0' || saved === 'false'){
+      game.supportEnabled = false;
+    } else {
+      game.supportEnabled = true;
+    }
+    const syncSupportUI = ()=>{
+      supSw.classList.toggle('on', !!game.supportEnabled);
+      supSw.setAttribute('aria-checked', game.supportEnabled ? 'true' : 'false');
+    };
+    const flipSupport = ()=>{
+      game.supportEnabled = !game.supportEnabled;
+      try { localStorage.setItem('cr_support_enabled', game.supportEnabled ? '1' : '0'); } catch(_){}
+      syncSupportUI();
+      try { toast(game.supportEnabled ? 'Support ON' : 'Support OFF'); } catch(_){}
+    };
+    supSw.addEventListener('click', flipSupport);
+    supSw.addEventListener('keydown', e=>{
+      if(e.key === ' ' || e.key === 'Enter'){
+        e.preventDefault();
+        flipSupport();
+      }
+    });
+    syncSupportUI();
   }
 }
 // v0.8k#24bz — In-game topbar button wiring.
