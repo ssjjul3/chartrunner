@@ -17272,16 +17272,11 @@ let CCV_WATCHER_STATE = (function(){
   } catch(_){}
   return Object.assign(saved, { _lastCheck:0, _lastFire:0, _lastBanner:'' });
 })();
-function _saveCcvWatcherState(){
-  try {
-    localStorage.setItem('cr_ccv_watcher_v1', JSON.stringify({
-      enabled:     CCV_WATCHER_STATE.enabled,
-      bannerOnly:  CCV_WATCHER_STATE.bannerOnly,
-      autoBracket: CCV_WATCHER_STATE.autoBracket,
-      cooldownMs:  CCV_WATCHER_STATE.cooldownMs,
-    }));
-  } catch(_){}
-}
+// v0.9.56 — _saveCcvWatcherState() deleted (audit: orphan, never called).
+//   The CCV watcher writes to localStorage on demand from the gear-toggle
+//   handler; no separate save helper needed. Restore by uncommenting below:
+//   function _saveCcvWatcherState(){ try { localStorage.setItem(
+//   'cr_ccv_watcher_v1', JSON.stringify(CCV_WATCHER_STATE)); } catch(_){} }
 function ccvWatcherTick(){
   if(!CCV_WATCHER_STATE.enabled) return;
   const now = performance.now();
@@ -17958,126 +17953,12 @@ function _drawRefLevels(startIdx, endIdx, meta){
   ctx.restore();
 }
 
-// ─── Legacy indicator overlays (kept as dead code in case strategies grow
-// visualization needs; not called in v0.7d). TODO: delete in v0.8 if unused. ─
-function _drawIndicatorLegacy(){
-  const ind = 'none';
-  if(ind === 'none' || !candles.length) return;
-  const leftWx = wXFromS(0), rightWx = wXFromS(W);
-  const startIdx = Math.max(0, Math.floor(leftWx/STEP) - 5);
-  const endIdx   = Math.min(candles.length-1, Math.ceil(rightWx/STEP) + 5);
-  if(endIdx <= startIdx) return;
-
-  if(ind === 'bollinger'){
-    // SMA(20) ± 2·stdev, drawn as a tinted band with center line
-    const N = 20;
-    const top = [], mid = [], bot = [];
-    for(let i=startIdx;i<=endIdx;i++){
-      const s = Math.max(0, i-N+1);
-      let sum=0, cnt=0;
-      for(let j=s;j<=i;j++){ sum += candles[j].c; cnt++; }
-      const m = sum/cnt;
-      let v=0; for(let j=s;j<=i;j++){ const d=candles[j].c-m; v+=d*d; }
-      const sd = Math.sqrt(v/cnt);
-      top.push({x:sX(i*STEP+STEP/2), y:priceToY(m+2*sd)});
-      mid.push({x:sX(i*STEP+STEP/2), y:priceToY(m)});
-      bot.push({x:sX(i*STEP+STEP/2), y:priceToY(m-2*sd)});
-    }
-    // Filled band
-    ctx.fillStyle='rgba(122,170,255,0.10)';
-    ctx.beginPath();
-    ctx.moveTo(top[0].x, top[0].y);
-    for(let i=1;i<top.length;i++) ctx.lineTo(top[i].x, top[i].y);
-    for(let i=bot.length-1;i>=0;i--) ctx.lineTo(bot[i].x, bot[i].y);
-    ctx.closePath(); ctx.fill();
-    // Lines
-    ctx.strokeStyle='rgba(122,170,255,0.55)'; ctx.lineWidth=1.2;
-    for(const line of [top,bot]){
-      ctx.beginPath();
-      ctx.moveTo(line[0].x, line[0].y);
-      for(let i=1;i<line.length;i++) ctx.lineTo(line[i].x, line[i].y);
-      ctx.stroke();
-    }
-    ctx.strokeStyle='rgba(170,195,255,0.85)'; ctx.setLineDash([4,3]);
-    ctx.beginPath(); ctx.moveTo(mid[0].x, mid[0].y);
-    for(let i=1;i<mid.length;i++) ctx.lineTo(mid[i].x, mid[i].y);
-    ctx.stroke(); ctx.setLineDash([]);
-  } else if(ind === 'ema'){
-    // EMA ribbon: 8, 13, 21, 34, 55 (Fibonacci-ish)
-    const periods = [8,13,21,34,55];
-    const colors  = ['rgba(20,241,149,0.9)','rgba(136,241,200,0.85)','rgba(136,186,241,0.8)','rgba(186,136,241,0.75)','rgba(241,136,186,0.7)'];
-    periods.forEach((P,pi)=>{
-      const k = 2/(P+1);
-      // Seed EMA from the first visible candle (good enough for visualization)
-      let ema = candles[startIdx].c;
-      const pts = [];
-      for(let i=startIdx;i<=endIdx;i++){
-        ema = candles[i].c * k + ema * (1-k);
-        pts.push({x:sX(i*STEP+STEP/2), y:priceToY(ema)});
-      }
-      ctx.strokeStyle = colors[pi]; ctx.lineWidth = 1.2 + (periods.length-1-pi)*0.2;
-      ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
-      for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.stroke();
-    });
-  } else if(ind === 'rsi'){
-    // Momentum-coloured column tint. Approx RSI via close-over-close gains/losses over 14 bars.
-    const N = 14;
-    for(let i=startIdx;i<=endIdx;i++){
-      const s = Math.max(1, i-N+1);
-      let g=0, l=0, cnt=0;
-      for(let j=s;j<=i;j++){ const d = candles[j].c - candles[j-1].c; if(d>=0) g+=d; else l-=d; cnt++; }
-      const avgG = g/Math.max(1,cnt), avgL = l/Math.max(1,cnt);
-      const rs = avgL===0 ? 100 : avgG/avgL;
-      const rsi = 100 - 100/(1+rs);
-      let color = null;
-      if(rsi > 70) color = `rgba(255,91,127,${Math.min(0.35, (rsi-70)/30*0.35)})`;
-      else if(rsi < 30) color = `rgba(61,220,151,${Math.min(0.35, (30-rsi)/30*0.35)})`;
-      if(!color) continue;
-      const x = sX(i*STEP);
-      const w = STEP * camera.zoomX;
-      ctx.fillStyle = color;
-      ctx.fillRect(x, 0, w, H);
-    }
-  } else if(ind === 'volume'){
-    // Volume histogram at the bottom 18% of the chart, colour-coded by candle direction
-    const maxVol = Math.max(...candles.slice(startIdx, endIdx+1).map(c=>c.v||(c.h-c.l)||1));
-    const baseY = H - 20;
-    const maxH = H * 0.18;
-    for(let i=startIdx;i<=endIdx;i++){
-      const c = candles[i];
-      const v = c.v || (c.h-c.l) || 0;
-      if(!v) continue;
-      const h = (v/maxVol) * maxH;
-      const x = sX(i*STEP);
-      const w = Math.max(1, (CANDLE_W) * camera.zoomX);
-      ctx.fillStyle = c.c>=c.o ? 'rgba(61,220,151,0.35)' : 'rgba(255,91,127,0.35)';
-      ctx.fillRect(x, baseY - h, w, h);
-    }
-    ctx.strokeStyle='rgba(180,200,230,0.2)';
-    ctx.beginPath(); ctx.moveTo(0, baseY); ctx.lineTo(W, baseY); ctx.stroke();
-  } else if(ind === 'vwap'){
-    // Anchored VWAP from leftmost visible candle — emits a thick lava-style line
-    let pvSum = 0, vSum = 0;
-    const pts = [];
-    for(let i=startIdx;i<=endIdx;i++){
-      const c = candles[i];
-      const typ = (c.h + c.l + c.c)/3;
-      const vol = c.v || (c.h-c.l) || 1;
-      pvSum += typ*vol; vSum += vol;
-      pts.push({x:sX(i*STEP+STEP/2), y:priceToY(pvSum/vSum)});
-    }
-    // Glow
-    ctx.strokeStyle='rgba(255,140,40,0.25)'; ctx.lineWidth=6;
-    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
-    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.stroke();
-    ctx.strokeStyle='rgba(255,180,80,0.95)'; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
-    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.stroke();
-  }
-}
+// v0.9.56 — _drawIndicatorLegacy() deleted (audit: orphan, never called).
+//   Was a v0.7d-era catch-all renderer for bollinger / ema-ribbon / rsi /
+//   volume / vwap. Each of those now has its own real implementation in
+//   the live INDICATORS pipeline (drawIndicators / drawVolume / Anchored
+//   VWAP tool). The dead branch was 118 lines of bit-rot. Restore from
+//   git history if ever needed (commit pre-v0.9.56 has the full body).
 function drawRadar(){
   if(performance.now()/1000 > game.radarUntil) return;
   const startIdx = Math.floor(player.wx/STEP);
@@ -25232,211 +25113,13 @@ function _termSpawnPickerClose(){
 }
 function _termSpawnPickerEscOnce(e){ if(e.key === 'Escape') _termSpawnPickerClose(); }
 
-/* ─────────────────────────────────────────────────────────────────────
- * v0.9.13 — Terminal config modal (replaces the bare "+" picker).
- * Sections:
- *   1. Active widgets — list of widgets currently spawned, with × to remove
- *   2. Coin watchlist — comma-separated tickers (BTC,ETH,SOL,…) → spawns
- *      a single 'coinwatch' widget with one row per id
- *   3. Wallet watchlist — Solana addresses (one per line) → spawns a
- *      single 'wallwatch' widget that polls Solana RPC getBalance
- *   4. Spawn from library — link to the legacy _termSpawnPickerOpen
- *      (built-in panes + Workbench builds)
- * Closing returns to Terminal. Esc / click-outside both close.
- *
- * v0.9.51 — ARCHIVED. Watchlists migrated to live DOM panes inside the
- * Engine view (paint from shared localStorage), so the Coin/Wallet
- * Watchlist sections have no purpose. The active-widgets list +
- * quick-config popup live in the library picker now (via per-row
- * gear → _crTermPaneQuickConfig). The + button in the Terminal opens
- * _termSpawnPickerOpen() directly. This function is orphaned but
- * preserved for restore: just point the + click handler back at it.
- * ─────────────────────────────────────────────────────────────────── */
-function _crTermConfigOpen(){
-  // Close any prior instance.
-  const prior = document.getElementById('crTermConfig');
-  if(prior && prior.parentNode) prior.parentNode.removeChild(prior);
-
-  const splashEl = document.getElementById('splash');
-  const inGame = !!(splashEl && splashEl.style.display === 'none');
-
-  const ov = document.createElement('div');
-  ov.id = 'crTermConfig';
-  ov.style.cssText = 'position:fixed;inset:0;z-index:99500;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center';
-
-  const card = document.createElement('div');
-  card.style.cssText = 'background:linear-gradient(180deg,rgba(18,26,48,.98),rgba(10,15,28,.99));border:1px solid var(--line);border-radius:10px;box-shadow:0 24px 60px rgba(0,0,0,.7);width:min(640px,calc(100% - 60px));max-height:80vh;display:flex;flex-direction:column;color:var(--fg);font-family:inherit';
-
-  // Headline + close
-  let html = '' +
-    '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">' +
-      '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:.85"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M1 8h2M13 8h2M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4"/></svg>' +
-      '<div style="font-size:14px;font-weight:700">Configure Terminal Widgets</div>' +
-      '<div style="font-size:10px;color:var(--dim)">spawns on ' + (inGame ? 'chart background' : 'desktop') + '</div>' +
-      '<div style="flex:1"></div>' +
-      '<button id="crTermCfgX" type="button" style="background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:4px 10px;cursor:pointer;font:11px ui-monospace,Menlo,monospace">close</button>' +
-    '</div>' +
-    '<div style="flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:18px;font-size:12px">' +
-      // 1) Active widgets
-      '<section>' +
-        '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Active widgets</div>' +
-        '<div id="crTermCfgList" style="display:flex;flex-direction:column;gap:4px"></div>' +
-      '</section>' +
-      // 2) Coin watchlist · v0.9.47 — sourced from Token Terminal watchlist
-      '<section>' +
-        '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Coin watchlist · pane</div>' +
-        '<p style="margin:0 0 6px;font-size:11px;color:var(--dim)">Spawns a Coin Watchlist pane that syncs with the Token Terminal watchlist. Edit the list by clicking ☆ on any row in the Token Terminal — the pane updates instantly.</p>' +
-        '<div style="display:flex;gap:6px;margin-top:6px">' +
-          '<button id="crTermCfgCoinSpawn" type="button" style="background:rgba(20,241,149,.18);border:1px solid rgba(20,241,149,.50);color:#bff7df;padding:5px 12px;border-radius:5px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">Spawn pane</button>' +
-          '<span class="dim" style="font-size:10px;align-self:center">live price + 24 h % from Binance</span>' +
-        '</div>' +
-      '</section>' +
-      // 3) Wallet watchlist
-      '<section>' +
-        '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Wallet watchlist</div>' +
-        '<p style="margin:0 0 6px;font-size:11px;color:var(--dim)">Solana addresses, one per line. SOL balance via mainnet RPC, 60-second cache.</p>' +
-        '<textarea id="crTermCfgWalInput" rows="3" placeholder="So11111111111111111111111111111111111111112&#10;PDi6BNFCbGE9H72zxCMNWpDfWo5Rp3gvdhCyfpfcAWM" style="width:100%;padding:6px 8px;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:5px;color:var(--fg);font:11px ui-monospace,Menlo,monospace;outline:none;resize:vertical"></textarea>' +
-        '<div style="display:flex;gap:6px;margin-top:6px">' +
-          '<button id="crTermCfgWalSpawn" type="button" style="background:rgba(255,209,102,.16);border:1px solid rgba(255,209,102,.50);color:#ffd166;padding:5px 12px;border-radius:5px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">Save &amp; spawn</button>' +
-        '</div>' +
-      '</section>' +
-      // 4) Library link
-      '<section>' +
-        '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Add from library</div>' +
-        '<button id="crTermCfgLibrary" type="button" style="background:transparent;border:1px solid var(--line);color:var(--fg);padding:6px 12px;border-radius:5px;cursor:pointer;font:11px ui-monospace,Menlo,monospace">Browse built-in panes &amp; Workbench builds →</button>' +
-      '</section>' +
-    '</div>';
-  card.innerHTML = html;
-  ov.appendChild(card);
-  document.body.appendChild(ov);
-
-  // Returns the active registry — desktop widgets vs. in-game chartWidgets.
-  function activeReg(){
-    return inGame && typeof chartWidgets !== 'undefined' ? chartWidgets : (typeof widgets !== 'undefined' ? widgets : null);
-  }
-  function activeSave(){
-    if(inGame && typeof _cwSave === 'function') _cwSave();
-    else if(typeof _wSave === 'function') _wSave();
-  }
-  function activeRender(){
-    if(inGame && typeof renderChartWidgets === 'function') renderChartWidgets();
-    else if(typeof renderWidgets === 'function') renderWidgets();
-  }
-  function activeSpawn(type, sourceId){
-    if(inGame && typeof _cwAdd === 'function'){
-      _cwAdd(type, sourceId, window.innerWidth / 2, window.innerHeight / 2);
-    } else if(typeof _wAdd === 'function'){
-      _wAdd(type, sourceId, window.innerWidth / 2, window.innerHeight / 2);
-    }
-  }
-
-  // Repaints the active-widget list. Called once + after any add/remove.
-  function repaintList(){
-    const host = card.querySelector('#crTermCfgList');
-    if(!host) return;
-    const reg = activeReg();
-    if(!reg || !reg.items.length){
-      host.innerHTML = '<div class="dim" style="font-style:italic;font-size:11px;padding:6px">No active widgets — add one below.</div>';
-      return;
-    }
-    host.innerHTML = '';
-    reg.items.forEach(w => {
-      const t = (typeof _wTitleFor === 'function') ? _wTitleFor(w) : { ic:'◇', name:w.type };
-      const row = document.createElement('div');
-      // v0.9.48 — Whole row is clickable now → opens the quick-configure
-      // popup. The × delete button stops propagation so deletes don't
-      // also fire a configure. Hover halo cues clickability.
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 8px;border:1px solid var(--line);border-radius:5px;background:rgba(10,15,28,.45);cursor:pointer;transition:background .12s,border-color .12s';
-      row.title = 'Click to configure · ' + w.type;
-      row.innerHTML =
-        '<span style="font-size:14px;width:18px;text-align:center">' + t.ic + '</span>' +
-        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + t.name + '</span>' +
-        '<span class="dim" style="font-size:9px">' + w.type + '</span>' +
-        '<button type="button" class="cfg-btn" data-w-id="' + w.id + '" title="Configure" style="background:transparent;border:1px solid rgba(126,231,135,.4);color:#7ee787;border-radius:4px;padding:2px 8px;cursor:pointer;font:10px ui-monospace,Menlo,monospace">⚙</button>' +
-        '<button type="button" class="del-btn" data-w-id="' + w.id + '" title="Remove" style="background:transparent;border:1px solid rgba(255,91,127,.4);color:#ff5b7f;border-radius:4px;padding:2px 8px;cursor:pointer;font:10px ui-monospace,Menlo,monospace">×</button>';
-      row.addEventListener('mouseenter', () => { row.style.background = 'rgba(126,231,135,.06)'; row.style.borderColor = 'rgba(126,231,135,.30)'; });
-      row.addEventListener('mouseleave', () => { row.style.background = 'rgba(10,15,28,.45)'; row.style.borderColor = 'var(--line)'; });
-      const openCfg = (e) => {
-        e.stopPropagation();
-        _crTermPaneQuickConfig(w, () => { activeSave(); activeRender(); repaintList(); });
-      };
-      row.addEventListener('click', openCfg);
-      row.querySelector('.cfg-btn').addEventListener('click', openCfg);
-      row.querySelector('.del-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        const r = activeReg();
-        if(!r) return;
-        r.items = r.items.filter(x => x.id !== w.id);
-        activeSave(); activeRender(); repaintList();
-      });
-      host.appendChild(row);
-    });
-  }
-  repaintList();
-
-  // Pre-fill the wallet textarea with whatever's persisted to localStorage
-  // OR the active wallwatch widget's sourceId. The coin watchlist no
-  // longer has a manual input — it always reads from the Token Terminal
-  // watchlist.
-  const walInp  = card.querySelector('#crTermCfgWalInput');
-  try {
-    let walSeed = '';
-    try { walSeed = localStorage.getItem('cr_wallet_watchlist_v1') || ''; } catch(_){}
-    const reg = activeReg();
-    if(reg && !walSeed){
-      const walW = reg.items.find(w => w.type === 'wallwatch');
-      if(walW) walSeed = walW.sourceId || '';
-    }
-    if(walSeed && walInp){
-      walInp.value = walSeed.split(/[\s,]+/).map(s => s.trim()).filter(Boolean).join('\n');
-    }
-  } catch(_){}
-
-  // v0.9.47 — Coin watchlist spawn → drops a sentinel coinwatch pane.
-  // Sentinel sourceId '__token_terminal__' tells the body renderer to
-  // pull the live token list from cr_tok_watchlist_v1 instead of a
-  // frozen comma-separated string.
-  card.querySelector('#crTermCfgCoinSpawn').addEventListener('click', () => {
-    const reg = activeReg();
-    if(reg) reg.items = reg.items.filter(w => w.type !== 'coinwatch');
-    activeSpawn('coinwatch', '__token_terminal__');
-    repaintList();
-    try { if(typeof crNotify === 'function') crNotify('Coin Watchlist · spawned (synced with Token Terminal)'); } catch(_){}
-  });
-
-  // Wallet watchlist save → replace existing wallwatch widget AND persist
-  // the address list to cr_wallet_watchlist_v1 so re-opening the dialog
-  // pre-fills the textarea even if the widget was deleted.
-  card.querySelector('#crTermCfgWalSpawn').addEventListener('click', () => {
-    const raw  = (walInp.value || '');
-    const adds = raw.split(/[\s,]+/).map(s => s.trim()).filter(s => s && s.length >= 32 && s.length <= 64);
-    if(!adds.length){ if(typeof toast === 'function') toast('Paste at least one valid Solana address'); return; }
-    const sourceId = adds.join(',');
-    try { localStorage.setItem('cr_wallet_watchlist_v1', sourceId); } catch(_){}
-    const reg = activeReg();
-    if(reg) reg.items = reg.items.filter(w => w.type !== 'wallwatch');
-    activeSpawn('wallwatch', sourceId);
-    repaintList();
-    try { if(typeof crNotify === 'function') crNotify('Wallet Watchlist · ' + adds.length + ' wallet' + (adds.length === 1 ? '' : 's')); } catch(_){}
-  });
-
-  // Library button → open legacy picker.
-  card.querySelector('#crTermCfgLibrary').addEventListener('click', () => {
-    _crTermConfigClose();
-    if(typeof _termSpawnPickerOpen === 'function') _termSpawnPickerOpen();
-  });
-
-  // Close handlers.
-  card.querySelector('#crTermCfgX').addEventListener('click', _crTermConfigClose);
-  ov.addEventListener('click', (e) => { if(e.target === ov) _crTermConfigClose(); });
-  document.addEventListener('keydown', _crTermConfigEscOnce);
-}
-function _crTermConfigClose(){
-  const ov = document.getElementById('crTermConfig');
-  if(ov && ov.parentNode) ov.parentNode.removeChild(ov);
-  document.removeEventListener('keydown', _crTermConfigEscOnce);
-}
-function _crTermConfigEscOnce(e){ if(e.key === 'Escape') _crTermConfigClose(); }
+// v0.9.56 — _crTermConfigOpen / _crTermConfigClose / _crTermConfigEscOnce
+//   deleted (audit: orphaned). They were the legacy Configure Terminal
+//   Widgets modal that bundled (a) active widgets list, (b) Coin Watchlist
+//   spawn input, (c) Wallet Watchlist spawn input, (d) library link.
+//   Replaced in v0.9.51 by `+` opening the library picker directly + the
+//   v0.9.52 schema-driven quick-config popup as the picker's right column.
+//   No call sites remain. ~205 lines removed.
 
 /* ─── v0.9.48 — Pane Quick-Configure popup ───────────────────────────────
    Schema-driven config dialog. Each pane type declares a schema of
