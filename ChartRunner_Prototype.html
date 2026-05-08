@@ -8366,14 +8366,16 @@ plot(out, color=color.orange, linewidth=2)</textarea>
         </div>
         <div class="os-wbody">
           <p style="margin:0 0 8px;font-size:11px;color:var(--dim)">Categorize and research tokens. Drag any row to the desktop or chart background to pin its profile as a live widget.</p>
+          <!-- v0.9.44 — Tabs simplified to All / Winners / Losers / Watchlist.
+               Volume / Social / Signals / New retired (low-signal categories
+               that the rest of the terminal didn't really differentiate on).
+               Watchlist tab pulls from localStorage cr_tok_watchlist_v1 —
+               click ☆ on any row in another tab to pin / unpin. -->
           <div class="crTerm-tabs" id="crTokTabs">
-            <button class="crTerm-tab active" data-toktab="winners" type="button">★ WINNERS</button>
-            <button class="crTerm-tab" data-toktab="losers"  type="button">LOSERS</button>
-            <button class="crTerm-tab" data-toktab="volume"  type="button">VOLUME SPIKE</button>
-            <button class="crTerm-tab" data-toktab="social"  type="button">SOCIAL BUZZ</button>
-            <button class="crTerm-tab" data-toktab="signals" type="button">SIGNALS</button>
-            <button class="crTerm-tab" data-toktab="new"     type="button">NEW</button>
-            <button class="crTerm-tab" data-toktab="all"     type="button">ALL</button>
+            <button class="crTerm-tab active" data-toktab="all"       type="button">ALL</button>
+            <button class="crTerm-tab"        data-toktab="winners"   type="button">★ WINNERS</button>
+            <button class="crTerm-tab"        data-toktab="losers"    type="button">LOSERS</button>
+            <button class="crTerm-tab"        data-toktab="watchlist" type="button">⭐ WATCHLIST</button>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
             <!-- LEFT: token list -->
@@ -25334,15 +25336,44 @@ function _tokSnapshot(id){
     pythPx:     (_pythPx != null) ? true : false };
 }
 // Categorize for tabs.
+// v0.9.44 — Watchlist persistence. Tokens the player has pinned via the
+// ☆ button on their row. Stored as a Set of token ids in localStorage
+// under cr_tok_watchlist_v1. Defaults to BTC/ETH/SOL on first load so the
+// tab doesn't read empty.
+const _TOK_WATCHLIST_KEY = 'cr_tok_watchlist_v1';
+function _tokLoadWatchlist(){
+  try {
+    const raw = localStorage.getItem(_TOK_WATCHLIST_KEY);
+    if(raw){
+      const arr = JSON.parse(raw);
+      if(Array.isArray(arr)) return new Set(arr);
+    }
+  } catch(_){}
+  return new Set(['btc','eth','sol']);
+}
+function _tokSaveWatchlist(){
+  try { localStorage.setItem(_TOK_WATCHLIST_KEY, JSON.stringify(Array.from(_tokState.watchlist || []))); } catch(_){}
+}
+function _tokToggleWatch(id){
+  if(!_tokState.watchlist) _tokState.watchlist = new Set();
+  if(_tokState.watchlist.has(id)) _tokState.watchlist.delete(id);
+  else                            _tokState.watchlist.add(id);
+  _tokSaveWatchlist();
+  try { _tokRenderList(); } catch(_){}
+}
+window._tokToggleWatch = _tokToggleWatch;
+
 function _tokCategorize(snaps, tab){
   const sorted = snaps.slice();
-  if(tab === 'winners')   sorted.sort((a, b) => b.ch24 - a.ch24);
-  else if(tab === 'losers')  sorted.sort((a, b) => a.ch24 - b.ch24);
-  else if(tab === 'volume')  sorted.sort((a, b) => parseFloat(b.volSpike) - parseFloat(a.volSpike));
-  else if(tab === 'social')  sorted.sort((a, b) => b.social - a.social);
-  else if(tab === 'signals') sorted.sort((a, b) => b.signalS - a.signalS);
-  else if(tab === 'new')     return sorted.filter(s => s.isNew).sort((a, b) => a.ageDays - b.ageDays);
-  else                       sorted.sort((a, b) => a.def.tag.localeCompare(b.def.tag));
+  // v0.9.44 — Tabs trimmed to All / Winners / Losers / Watchlist.
+  if(tab === 'winners')        sorted.sort((a, b) => b.ch24 - a.ch24);
+  else if(tab === 'losers')    sorted.sort((a, b) => a.ch24 - b.ch24);
+  else if(tab === 'watchlist'){
+    const wl = _tokState.watchlist || new Set();
+    return sorted.filter(s => wl.has(s.def.id))
+                 .sort((a, b) => a.def.tag.localeCompare(b.def.tag));
+  }
+  else                         sorted.sort((a, b) => a.def.tag.localeCompare(b.def.tag));
   return sorted;
 }
 // State. v0.9.43 — added per-coin timeframe + live cache.
@@ -25356,10 +25387,14 @@ function _tokSaveTFs(){
   try { localStorage.setItem(_TOK_TF_KEY, JSON.stringify(_tokState.tfBySymbol || {})); } catch(_){}
 }
 const _tokState = {
-  activeTab:'winners',
+  // v0.9.44 — Default tab now ALL (was WINNERS). All shows the full
+  // catalog alphabetized; the player toggles to Winners / Losers /
+  // Watchlist as needed.
+  activeTab:'all',
   selectedId:'btc',
   filter:'',
-  tfBySymbol: _tokLoadTFs(),     // { btc:'1h', eth:'15m', ... }
+  tfBySymbol: _tokLoadTFs(),         // { btc:'1h', eth:'15m', ... }
+  watchlist: _tokLoadWatchlist(),    // Set<string> of pinned token ids
 };
 function _tokTF(id){ return (_tokState.tfBySymbol && _tokState.tfBySymbol[id]) || _TOK_DEFAULT_TF; }
 function _tokSetTF(id, tf){
@@ -25625,9 +25660,11 @@ function _tokRenderList(){
     const row = document.createElement('div');
     row.setAttribute('draggable', 'true');
     row.dataset.tokId = def.id;
+    // v0.9.44 — Added a star column for the watchlist toggle. The grid
+    // now has 6 columns: rank · star · header · price · change · signal.
     row.style.cssText = [
       'display:grid',
-      'grid-template-columns:auto 1fr auto auto auto',
+      'grid-template-columns:auto auto 1fr auto auto auto',
       'gap:8px',
       'align-items:center',
       'padding:6px 8px',
@@ -25641,6 +25678,27 @@ function _tokRenderList(){
     const rank = document.createElement('span');
     rank.style.cssText = 'color:var(--dim);font-size:9px;font-variant-numeric:tabular-nums;width:18px;text-align:right';
     rank.textContent = (i + 1);
+    // v0.9.44 — Watchlist star button. Filled gold when pinned, hollow grey
+    // when not. Click toggles. stopPropagation so the row click (selectedId)
+    // doesn't fire alongside it.
+    const wlOn = !!(_tokState.watchlist && _tokState.watchlist.has(def.id));
+    const star = document.createElement('button');
+    star.type = 'button';
+    star.title = wlOn ? 'Remove from Watchlist' : 'Add to Watchlist';
+    star.textContent = wlOn ? '★' : '☆';
+    star.style.cssText = [
+      'appearance:none;background:transparent;border:0;padding:2px;cursor:pointer',
+      'font-size:14px;line-height:1',
+      'color:' + (wlOn ? '#ffd166' : '#5b6470'),
+      'text-shadow:' + (wlOn ? '0 0 8px rgba(255,209,102,.7)' : 'none'),
+      'transition:color .15s, transform .15s'
+    ].join(';');
+    star.addEventListener('mouseenter', () => { star.style.transform = 'scale(1.18)'; });
+    star.addEventListener('mouseleave', () => { star.style.transform = 'scale(1)'; });
+    star.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _tokToggleWatch(def.id);
+    });
     const head = document.createElement('div');
     head.style.cssText = 'display:flex;flex-direction:column;min-width:0';
     head.innerHTML =
@@ -25655,7 +25713,7 @@ function _tokRenderList(){
     const sig = document.createElement('span');
     sig.style.cssText = 'font-size:9px;padding:2px 6px;border-radius:3px;letter-spacing:.4px;background:rgba(255,255,255,.04);color:' + _tokSignalColor(s.signal);
     sig.textContent = s.signal;
-    row.appendChild(rank); row.appendChild(head); row.appendChild(px); row.appendChild(ch); row.appendChild(sig);
+    row.appendChild(rank); row.appendChild(star); row.appendChild(head); row.appendChild(px); row.appendChild(ch); row.appendChild(sig);
     row.addEventListener('mouseenter', () => { row.style.background = isSel ? 'rgba(20,241,149,0.16)' : 'rgba(155,140,255,0.10)'; });
     row.addEventListener('mouseleave', () => { row.style.background = isSel ? 'rgba(20,241,149,0.10)' : 'rgba(10,15,28,0.55)'; });
     row.addEventListener('click', () => {
