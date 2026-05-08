@@ -20455,7 +20455,11 @@ function pickMode(mode){
           }
         } catch(_){}
         // Hide the Coach card; show the chapter endcard instead.
-        dismiss();
+        // v0.9.34 — Pass keepChart so dismiss() does its cleanup but
+        // skips showSplash(). This way the endcard renders over the
+        // still-visible chart, not the desktop. Home button on the
+        // endcard handles the CRT fade → splash transition.
+        dismiss({ keepChart: true });
         try {
           _crShowChapterEndcard(chapter, {
             earned, requiredProbes, usedProbes: Array.from(used),
@@ -20467,7 +20471,13 @@ function pickMode(mode){
       try { spawnFloat(window.innerWidth/2, 90, '✓ STEP DONE', '#7ee787'); } catch(_){}
       render();
     }
-    function dismiss(){
+    function dismiss(opts){
+      // v0.9.34 — Optional `keepChart` skips the showSplash() bounce at
+      // the end so the chapter endcard can render over the still-visible
+      // chart instead of the desktop. Endcard's Home button does the
+      // CRT fade → splash itself, so the splash transition is just
+      // deferred, not skipped.
+      const keepChart = !!(opts && opts.keepChart);
       stop();
       const el = document.getElementById('crCoachOverlay');
       if(el) el.classList.remove('on');
@@ -20478,8 +20488,12 @@ function pickMode(mode){
       try {
         if(typeof game !== 'undefined'){
           game.running = false;
-          game.campaignChapter = null;
-          game.campaignProbeSet = null;
+          // Keep campaignChapter set when an endcard is showing — the
+          // endcard's Try-again button reads it. Cleared on Home.
+          if(!keepChart){
+            game.campaignChapter = null;
+            game.campaignProbeSet = null;
+          }
           game.papertrade = false;
           game.coinsDisabled = false;
         }
@@ -20511,7 +20525,10 @@ function pickMode(mode){
           window._crCampaignSavedClutter = null;
         }
       } catch(_){}
-      try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
+      // v0.9.34 — Skip showSplash when the endcard owns the next view.
+      if(!keepChart){
+        try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
+      }
     }
     function stop(){
       active = false;
