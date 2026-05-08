@@ -20414,28 +20414,45 @@ function pickMode(mode){
         { kind:'execute', text:'Click last rung (bottom). 5 limits get parked between them.',
           complete:(b)=> { try { return (game.visualLadders||[]).length > (b.ladders||0); } catch(_){ return false; } } },
       ],
+      // v0.9.39 — Stop-Loss-At, Take-Profit-At, Trailing TP all REQUIRE
+      // an open position to make sense. Lesson now starts by placing a
+      // bracket to open a position, THEN drops the modifier primitive.
+      // Loadout for these chapters includes 'bracket' alongside the
+      // lesson primitive (see CAMPAIGN_CHAPTERS).
       27: [
-        { kind:'explain', text:'Stop-Loss-At is a Tier-1 SDK primitive: one click defines a hard stop at the price you click. No entry, no target — just the "I was wrong" line.' },
-        { kind:'explain', text:'Use when you have a manual position open and want to add a stop without re-bracketing the whole thing. Pairs with Take-Profit-At for instant manual brackets.' },
-        { kind:'choose',  text:'Press hotkey 3 → Stop-Loss-At.',
+        { kind:'explain', text:'Stop-Loss-At is a Tier-1 SDK primitive: one click defines a hard stop at the price you click. It modifies an existing position\'s risk profile.' },
+        { kind:'explain', text:'You need a position FIRST before a standalone stop makes sense. The lesson shows the canonical flow: open bracket → tighten the stop with SL-At at a better level.' },
+        { kind:'choose',  text:'Step 1 of 2 — Press hotkey 3 → Bracket. We need a position before we can attach a custom stop.',
+          complete:()=> { try { return game && game.laserTool === 'bracket'; } catch(_){ return false; } } },
+        { kind:'execute', text:'Click entry, click stop, click target. A bracket opens.',
+          complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'bracket').length > (b.brackets||0); } catch(_){ return false; } } },
+        { kind:'choose',  text:'Step 2 of 2 — Press hotkey 3 → Stop-Loss-At. Now drop a tighter (or alternate) stop.',
           complete:()=> { try { return game && game.laserTool === 'stopLossAt'; } catch(_){ return false; } } },
-        { kind:'execute', text:'Click the level you want the stop to live at.',
+        { kind:'execute', text:'Click the price you want the new stop to sit at. The bracket now has TWO stops — first touch wins.',
           complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'stop').length > (b.stops||0); } catch(_){ return false; } } },
       ],
       28: [
-        { kind:'explain', text:'Take-Profit-At is the mirror of Stop-Loss-At — one click defines a hard TP at the price you click. Single-purpose, no entry, no stop.' },
-        { kind:'explain', text:'Pair with #27 Stop-Loss-At and you have a manually-paired bracket without going through the 3-click bracket wizard. Useful for exiting a position you entered at market.' },
-        { kind:'choose',  text:'Press hotkey 3 → Take-Profit-At.',
+        { kind:'explain', text:'Take-Profit-At is the mirror of Stop-Loss-At — one click defines a hard TP. Like SL-At, it modifies an open position; no position = nothing to take profit on.' },
+        { kind:'explain', text:'Same lesson flow as Ch.27: open a bracket first → drop a TP-At at a more aggressive (or staggered) target. Pair with SL-At for full manual control of an open position.' },
+        { kind:'choose',  text:'Step 1 of 2 — Press hotkey 3 → Bracket.',
+          complete:()=> { try { return game && game.laserTool === 'bracket'; } catch(_){ return false; } } },
+        { kind:'execute', text:'Click entry, click stop, click target. A bracket opens.',
+          complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'bracket').length > (b.brackets||0); } catch(_){ return false; } } },
+        { kind:'choose',  text:'Step 2 of 2 — Press hotkey 3 → Take-Profit-At.',
           complete:()=> { try { return game && game.laserTool === 'takeProfitAt'; } catch(_){ return false; } } },
-        { kind:'execute', text:'Click the level you want the TP to live at.',
+        { kind:'execute', text:'Click the price you want the additional TP to sit at. The bracket now has TWO TPs.',
           complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'tp').length > (b.tps||0); } catch(_){ return false; } } },
       ],
       29: [
-        { kind:'explain', text:'A Trailing Take-Profit follows price up (long) or down (short) by a fixed offset. As price moves favorably, the TP ratchets — letting winners run further.' },
-        { kind:'explain', text:'Set the trail offset wider than typical noise so a normal pullback doesn\'t close the trade. Tighter offset = more frequent exits but smaller average win.' },
-        { kind:'choose',  text:'Press hotkey 3 → Trailing TP.',
+        { kind:'explain', text:'A Trailing Take-Profit follows price by a fixed offset. As price moves favorably the TP ratchets up (long) or down (short), letting winners run further.' },
+        { kind:'explain', text:'Trailing TP is most useful AFTER you\'re in a position — open a bracket, then attach a trailing TP that lets your winner extend if the move keeps going.' },
+        { kind:'choose',  text:'Step 1 of 2 — Press hotkey 3 → Bracket. Open a position to trail.',
+          complete:()=> { try { return game && game.laserTool === 'bracket'; } catch(_){ return false; } } },
+        { kind:'execute', text:'Click entry, click stop, click target. A bracket opens.',
+          complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'bracket').length > (b.brackets||0); } catch(_){ return false; } } },
+        { kind:'choose',  text:'Step 2 of 2 — Press hotkey 3 → Trailing TP.',
           complete:()=> { try { return game && game.laserTool === 'trailingTpAt'; } catch(_){ return false; } } },
-        { kind:'execute', text:'Click the level. The TP price re-anchors on every new high/low.',
+        { kind:'execute', text:'Click the level. The TP price re-anchors on every new high/low — winners extend, pullbacks bank.',
           complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'trailingTp').length > (b.trails||0); } catch(_){ return false; } } },
       ],
       // Indicators — Tier 3 additions.
@@ -20935,15 +20952,20 @@ function pickMode(mode){
     26: { goal:'Place a Ladder on SOL 15m. Five rungs, scale into the move.',
           tip:'Hotkey 3 → Ladder → click first rung, click last rung. Spreads 5 limit orders evenly. Use when you can call direction but not the exact entry.',
           asset:'sol', tf:'15m', indicators:[], loadout:['ladder'], probes:[] },
-    27: { goal:'Drop a Stop-Loss-At order on BTC 15m. Single click defines the price.',
-          tip:'Hotkey 3 → Stop-Loss-At → click the level you want the stop to live. Tier-1 SDK primitive: one click, one stop. Pairs with Take-Profit-At for instant brackets.',
-          asset:'btc', tf:'15m', indicators:[], loadout:['stopLossAt'], probes:[] },
-    28: { goal:'Drop a Take-Profit-At order on BTC 15m. Pair with a stop for an instant bracket.',
-          tip:'Hotkey 3 → Take-Profit-At → click the level. Combined with #27 Stop-Loss-At, you get a manually-paired bracket without the 3-click wizard.',
-          asset:'btc', tf:'15m', indicators:[], loadout:['takeProfitAt'], probes:[] },
-    29: { goal:'Drop a Trailing Take-Profit on ETH 1h. Watch it ratchet up as price moves favorably.',
-          tip:'Hotkey 3 → Trailing TP → click level + drag the trail offset. The TP price re-anchors on every new high (long) / low (short).',
-          asset:'eth', tf:'1h', indicators:['reflevels'], loadout:['trailingTpAt'], probes:[] },
+    // v0.9.39 — These three primitives modify an EXISTING position, so
+    // their lessons start by placing a bracket. Loadout includes both
+    // 'bracket' AND the lesson primitive so the laser palette surfaces
+    // both during the chapter (still strict — only the bracket + the
+    // lesson item, no other primitives leak through).
+    27: { goal:'Open a bracket, then drop a Stop-Loss-At to add a tighter stop.',
+          tip:'Hotkey 3 → Bracket → place entry / stop / target. Then Hotkey 3 → Stop-Loss-At → click your new stop level. The bracket now has two stops; first touch wins.',
+          asset:'btc', tf:'15m', indicators:[], loadout:['bracket','stopLossAt'], probes:[] },
+    28: { goal:'Open a bracket, then drop a Take-Profit-At to add a staggered exit.',
+          tip:'Hotkey 3 → Bracket → place entry / stop / target. Then Hotkey 3 → Take-Profit-At → click your new TP level. Useful for partial scaling out.',
+          asset:'btc', tf:'15m', indicators:[], loadout:['bracket','takeProfitAt'], probes:[] },
+    29: { goal:'Open a bracket, then attach a Trailing TP that ratchets up.',
+          tip:'Hotkey 3 → Bracket → place entry / stop / target. Then Hotkey 3 → Trailing TP → click level + drag trail offset. Winners extend, pullbacks bank.',
+          asset:'eth', tf:'1h', indicators:['reflevels'], loadout:['bracket','trailingTpAt'], probes:[] },
     // Indicators.
     30: { goal:'Toggle the EMA(20) on the BTC 1h chart. Read trend direction off the slope.',
           tip:'Top-bar → Indicators dropdown → EMA. Default period 20. Slope up = bias long; slope down = bias short. Cross-over with SMA(50) is the classic regime-change signal.',
