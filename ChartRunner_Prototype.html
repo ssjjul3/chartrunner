@@ -693,11 +693,17 @@
      loadout-chip language: pill buttons, dark base, mint hover. */
   #crLightProfile .lp-runctrl{padding:4px 12px 12px;border-top:1px solid rgba(255,255,255,0.06)}
   #crLightProfile .lp-runctrl-hd{font-size:9px;color:rgba(180,200,230,0.5);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin:8px 0 6px}
-  #crLightProfile .lp-runctrl-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+  /* v0.9.45 — Run Controls grid bumped from 2×2 to 3×2 to fit the
+     Support button. Column count change only — buttons keep their
+     existing styles. */
+  #crLightProfile .lp-runctrl-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px}
   #crLightProfile .lp-runbtn{appearance:none;cursor:pointer;background:rgba(10,15,28,0.55);border:1px solid rgba(180,200,230,0.10);border-radius:8px;padding:7px 10px;color:var(--fg);font:600 11px ui-monospace,Menlo,monospace;display:flex;align-items:center;justify-content:center;gap:6px;letter-spacing:.2px;transition:background .12s ease, border-color .12s ease, color .12s ease}
   #crLightProfile .lp-runbtn:hover{background:rgba(20,241,149,0.10);border-color:rgba(20,241,149,0.45);color:#bff7df}
   #crLightProfile .lp-runbtn .ic{font-size:13px;line-height:1}
   #crLightProfile .lp-runbtn.cr-wallet-on{background:rgba(20,241,149,0.12);border-color:rgba(20,241,149,0.55);color:#bff7df}
+  /* v0.9.45 — ON-state for the Support toggle. Mint-green tint mirrors
+     the Coins active style so the two read as a pair. */
+  #crLightProfile .lp-runbtn.cr-support-on{background:rgba(126,231,135,0.12);border-color:rgba(126,231,135,0.55);color:#bff7df}
   body[data-os-theme="ascii"] #crLightProfile{
     background:#000!important;border-color:#33ff66!important;
     font-family:Monaco,monospace!important;color:#33ff66!important}
@@ -5216,20 +5222,10 @@
         </div>
         <div class="md-switch on" id="coinsSwitch" role="switch" aria-checked="true" tabindex="0" title="Click to toggle coin pickups on/off"></div>
       </div>
-      <!-- v0.9.42 — Support toggle. When ON, the top-center Setup Guide
-           panel (TRENDLINE / STEP 2 OF 2 / TWO ANCHOR / Click anchor 2 …)
-           paints during laser placement in regular runs. When OFF, only
-           the inline laser cursor shows — pros who know the flow don't
-           need the panel. Forced OFF in campaign chapters because the
-           Coach card already covers the same instruction.
-           Persists via localStorage key `cr_support_enabled`. -->
-      <div class="md-toggle-row">
-        <div>
-          <span class="lbl">Support</span>
-          <span class="sub">Setup Guide während Tool-Platzierung</span>
-        </div>
-        <div class="md-switch on" id="supportSwitch" role="switch" aria-checked="true" tabindex="0" title="Click to toggle the Setup Guide overlay on/off"></div>
-      </div>
+      <!-- v0.9.42 → v0.9.45 — Support toggle moved to in-game Profile →
+           Run Controls (search id="crLiteSupport"). Lives next to the
+           Coins button so the Setup Guide overlay can be flipped with
+           one click during a run, not three through the M menu. -->
     </div>
     <div class="md-section">
       <h4>World</h4>
@@ -5390,6 +5386,11 @@
         <button class="lp-runbtn" id="crLiteRestart" type="button" title="Restart run · clears every drawing"><span class="ic">↻</span><span class="lbl">Reset</span></button>
         <button class="lp-runbtn" id="crLiteSave" type="button" title="Save current run to Maps"><span class="ic">💾</span><span class="lbl">Save</span></button>
         <button class="lp-runbtn" id="crLiteCoins" type="button" title="Toggle coin pickups"><span class="ic">🪙</span><span class="lbl">Coins</span></button>
+        <!-- v0.9.45 — Support toggle. Flips the Setup Guide overlay on/off
+             during laser placements. Mirrors flipSupport() from the menu
+             drawer wiring (now retired). Forced OFF in campaign chapters
+             regardless of state. -->
+        <button class="lp-runbtn" id="crLiteSupport" type="button" title="Toggle the Setup Guide overlay during tool placement"><span class="ic">📘</span><span class="lbl">Support</span></button>
         <button class="lp-runbtn" id="crLiteConnect" type="button" title="Connect a Solana wallet"><span class="ic">🔗</span><span class="lbl">Connect</span></button>
       </div>
     </div>
@@ -29002,37 +29003,37 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
     }
   }
 }
-// v0.9.42 — Support toggle wiring (mirrors the Coins toggle pattern).
-// Flips game.supportEnabled, persists to localStorage `cr_support_enabled`,
-// drawSetupGuide() gates on the value so toggling takes effect instantly.
-// Default ON; campaign chapters force it OFF inside drawSetupGuide regardless.
+// v0.9.42 → v0.9.45 — Support toggle wiring. Now drives the in-game
+// Profile Run Controls button (#crLiteSupport) instead of the menu-
+// drawer switch (which was retired). Flips game.supportEnabled,
+// persists to localStorage `cr_support_enabled`, drawSetupGuide() gates
+// on the value so toggling takes effect instantly. Default ON; campaign
+// chapters force it OFF inside drawSetupGuide regardless.
 {
-  const supSw = document.getElementById('supportSwitch');
-  if(supSw){
-    let saved = null;
-    try { saved = localStorage.getItem('cr_support_enabled'); } catch(_){ saved = null; }
-    if(saved === '0' || saved === 'false'){
-      game.supportEnabled = false;
-    } else {
-      game.supportEnabled = true;
-    }
+  // Always load + apply the persisted state, regardless of whether the
+  // button exists yet (the in-game profile may render later).
+  let saved = null;
+  try { saved = localStorage.getItem('cr_support_enabled'); } catch(_){ saved = null; }
+  if(saved === '0' || saved === 'false'){
+    game.supportEnabled = false;
+  } else {
+    game.supportEnabled = true;
+  }
+  const supBtn = document.getElementById('crLiteSupport');
+  if(supBtn){
     const syncSupportUI = ()=>{
-      supSw.classList.toggle('on', !!game.supportEnabled);
-      supSw.setAttribute('aria-checked', game.supportEnabled ? 'true' : 'false');
+      supBtn.classList.toggle('cr-support-on', !!game.supportEnabled);
+      supBtn.title = game.supportEnabled
+        ? 'Support overlay ON — Setup Guide paints during tool placement. Click to turn OFF.'
+        : 'Support overlay OFF — pro mode, no Setup Guide. Click to turn ON.';
     };
     const flipSupport = ()=>{
       game.supportEnabled = !game.supportEnabled;
       try { localStorage.setItem('cr_support_enabled', game.supportEnabled ? '1' : '0'); } catch(_){}
       syncSupportUI();
-      try { toast(game.supportEnabled ? 'Support ON' : 'Support OFF'); } catch(_){}
+      try { if(typeof crNotify === 'function') crNotify(game.supportEnabled ? 'Support ON' : 'Support OFF'); } catch(_){}
     };
-    supSw.addEventListener('click', flipSupport);
-    supSw.addEventListener('keydown', e=>{
-      if(e.key === ' ' || e.key === 'Enter'){
-        e.preventDefault();
-        flipSupport();
-      }
-    });
+    supBtn.addEventListener('click', flipSupport);
     syncSupportUI();
   }
 }
