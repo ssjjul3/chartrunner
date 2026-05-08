@@ -4052,28 +4052,63 @@
   }
   .cr-pip-placeholder .big{font-size:32px;opacity:.6}
 
-  /* v0.9.57 — Pitch folder browser. Folder view shows a grid of files;
-     each tile is clickable. Selected tile flips to fullscreen file view
-     where the iframe / img fills the whole body. */
+  /* v0.9.60 — Pitch folder browser. Folder view shows a Finder-style grid
+     of file tiles, each rendered as a white document with folded corner
+     (CSS-only) plus a type badge and filename caption. Click flips to
+     fullscreen file view where the iframe / img fills the whole body. */
   .cr-pip-folder{
-    display:flex;flex-direction:column;gap:6px;padding:10px;height:100%;
-    overflow-y:auto;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));
+    gap:14px 10px;padding:14px 12px 18px;height:100%;
+    align-content:start;overflow-y:auto;
   }
   .cr-pip-folder-empty{
-    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:10px;color:#7ee787;opacity:.65;font-size:11px;text-align:center;padding:20px;
   }
   .cr-pip-folder-empty .big{font-size:48px;opacity:.6}
   .cr-pip-file{
-    display:flex;align-items:center;gap:10px;padding:8px 10px;
-    background:rgba(126,231,135,.06);border:1px solid rgba(126,231,135,.18);
-    border-radius:6px;cursor:pointer;transition:background .15s,border-color .15s;
-    color:#bff7df;font-size:11px;
+    display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px 4px;
+    background:transparent;border:1px solid transparent;border-radius:6px;cursor:pointer;
+    transition:background .15s,border-color .15s;color:#bff7df;
   }
-  .cr-pip-file:hover{background:rgba(126,231,135,.14);border-color:rgba(126,231,135,.45)}
-  .cr-pip-file .ic{font-size:20px;line-height:1;width:24px;text-align:center}
-  .cr-pip-file .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-  .cr-pip-file .meta{font-size:9px;opacity:.55;letter-spacing:.3px;text-transform:uppercase}
+  .cr-pip-file:hover{background:rgba(126,231,135,.10);border-color:rgba(126,231,135,.30)}
+  .cr-pip-file .doc{
+    position:relative;width:56px;height:72px;background:#f4f6fa;
+    border:1px solid rgba(20,30,40,.55);border-radius:3px;
+    box-shadow:0 1px 0 rgba(0,0,0,.35), 0 4px 10px rgba(0,0,0,.45);
+    overflow:hidden;flex:none;
+  }
+  /* folded corner — top-right triangle, lighter shade */
+  .cr-pip-file .doc::before{
+    content:"";position:absolute;top:0;right:0;width:14px;height:14px;
+    background:linear-gradient(225deg,#cdd3dc 0 50%,#e6e9ef 50% 100%);
+    border-left:1px solid rgba(20,30,40,.45);
+    border-bottom:1px solid rgba(20,30,40,.45);
+  }
+  /* page lines — fake content preview */
+  .cr-pip-file .doc::after{
+    content:"";position:absolute;left:7px;right:7px;top:18px;height:30px;
+    background:
+      linear-gradient(#9aa3b0 1px, transparent 1px) 0 0/100% 5px,
+      linear-gradient(#9aa3b0 1px, transparent 1px) 0 2px/70% 5px,
+      linear-gradient(#9aa3b0 1px, transparent 1px) 0 4px/85% 5px;
+    background-repeat:repeat-y, repeat-y, repeat-y;
+    opacity:.55;
+  }
+  .cr-pip-file .badge{
+    position:absolute;left:4px;bottom:4px;padding:2px 5px;border-radius:2px;
+    background:#d5443f;color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.5px;
+    line-height:1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    box-shadow:0 1px 0 rgba(0,0,0,.25);
+  }
+  .cr-pip-file .badge.img{background:#3a86ff}
+  .cr-pip-file .badge.placeholder{background:#5a6472}
+  .cr-pip-file .nm{
+    max-width:100%;font-size:10.5px;font-weight:600;text-align:center;
+    overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    line-height:1.25;word-break:break-word;
+  }
+  .cr-pip-file .meta{display:none}
   .cr-pip-fullscreen{position:relative;background:#000}
   .cr-pip-fullscreen iframe,
   .cr-pip-fullscreen img{
@@ -32309,13 +32344,27 @@ window.crCrtFadeIn  = crCrtFadeIn;
       _pitchFolder.files.forEach((f, i) => {
         const tile = document.createElement('div');
         tile.className = 'cr-pip-file';
-        const ic = (f.type === 'placeholder') ? '📄' :
-                   (f.type === 'application/pdf') ? '📕' :
-                   (f.type && f.type.startsWith('image/')) ? '🖼' : '📄';
+        // Type → badge label + class
+        let badgeText, badgeClass = '';
+        if(f.type === 'placeholder'){
+          badgeText = 'NEW'; badgeClass = ' placeholder';
+        } else if(f.type === 'application/pdf'){
+          badgeText = 'PDF';
+        } else if(f.type && f.type.startsWith('image/')){
+          // image/png → PNG, image/jpeg → JPG
+          let sub = f.type.split('/')[1] || 'IMG';
+          if(sub === 'jpeg') sub = 'JPG';
+          badgeText = sub.toUpperCase().slice(0, 4);
+          badgeClass = ' img';
+        } else {
+          badgeText = 'FILE';
+        }
+        // Escape filename to avoid HTML injection if a user-chosen name has < or &
+        const safeName = String(f.name || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         tile.innerHTML =
-          '<span class="ic">' + ic + '</span>' +
-          '<span class="nm">' + f.name + '</span>' +
-          '<span class="meta">' + (f.type === 'placeholder' ? 'placeholder · click to open' : (f.type || '').toUpperCase().replace('APPLICATION/','')) + '</span>';
+          '<div class="doc"><span class="badge' + badgeClass + '">' + badgeText + '</span></div>' +
+          '<span class="nm">' + safeName + '</span>';
+        tile.title = f.name + (f.type === 'placeholder' ? ' · click to open file picker' : '');
         tile.addEventListener('click', () => _pitchOpenIdx(i));
         host.appendChild(tile);
       });
