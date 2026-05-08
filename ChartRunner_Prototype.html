@@ -4041,6 +4041,82 @@
     background:repeating-linear-gradient(45deg,rgba(255,255,255,.02) 0 6px,transparent 6px 12px);
   }
   .cr-pip-placeholder .big{font-size:32px;opacity:.6}
+
+  /* v0.9.40 — RUN-tube placeholder play-button.
+     Big circular play affordance centered in the placeholder. Hover
+     pulses the ring; click fires the warm-up animation (see below).
+     The triangle is offset 2 px right because optical-center of a
+     play triangle sits left of the geometric center. */
+  .cr-pip-playbtn{
+    position:relative;width:56px;height:56px;border-radius:50%;
+    appearance:none;background:transparent;border:0;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    color:#bff7df;outline:none;padding:0;
+  }
+  .cr-pip-playring{
+    position:absolute;inset:0;border-radius:50%;
+    border:2px solid rgba(126,231,135,.55);
+    background:radial-gradient(circle,rgba(126,231,135,.10),rgba(126,231,135,.02));
+    box-shadow:0 0 0 1px rgba(126,231,135,.18) inset, 0 4px 18px rgba(0,0,0,.45);
+    transition:transform .25s ease, border-color .25s ease, box-shadow .25s ease;
+  }
+  .cr-pip-playbtn:hover .cr-pip-playring{
+    transform:scale(1.08);border-color:rgba(126,231,135,.85);
+    box-shadow:0 0 0 1px rgba(126,231,135,.30) inset, 0 6px 22px rgba(0,0,0,.55);
+  }
+  .cr-pip-playtri{
+    position:relative;font-size:22px;line-height:1;color:#7ee787;
+    transform:translateX(2px);text-shadow:0 0 12px rgba(126,231,135,.55);
+    pointer-events:none;
+  }
+
+  /* v0.9.40 — Static-noise warm-up overlay. The 3-second TV-static
+     animation that runs between play-button click and live camera.
+     CSS-only: fine pixel grain via repeating gradient + a faint
+     scanline. The body is set to .on (display:flex) by JS for ~3 s,
+     then removed. SVG-noise filter would be smoother but we keep
+     it CSS-only to stay within the no-deps rule. */
+  .cr-pip-static{
+    position:absolute;inset:0;display:none;pointer-events:none;
+    z-index:2;background:#000;overflow:hidden;
+  }
+  .cr-pip-static.on{display:block}
+  .cr-pip-static::before{
+    content:'';position:absolute;inset:-50%;
+    background:
+      repeating-linear-gradient(0deg,
+        rgba(255,255,255,.08) 0 1px, transparent 1px 2px,
+        rgba(255,255,255,.04) 2px 3px, transparent 3px 4px),
+      repeating-linear-gradient(90deg,
+        rgba(255,255,255,.05) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at 30% 40%, rgba(255,255,255,.10), transparent 60%),
+      radial-gradient(ellipse at 70% 60%, rgba(255,255,255,.08), transparent 60%);
+    animation:crPipStatic .12s steps(4) infinite;
+    filter:contrast(1.5) brightness(1.1);
+    opacity:.85;
+  }
+  .cr-pip-static::after{
+    content:'';position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(180deg,
+      transparent 0%, transparent 48%,
+      rgba(255,255,255,.18) 50%, transparent 52%, transparent 100%);
+    animation:crPipStaticBand 1.6s linear infinite;
+    mix-blend-mode:screen;
+  }
+  @keyframes crPipStatic{
+    0%   { transform:translate( 0%,  0%); }
+    25%  { transform:translate(-12%,  6%); }
+    50%  { transform:translate(  8%, -6%); }
+    75%  { transform:translate( -4%, 10%); }
+    100% { transform:translate(  6%, -2%); }
+  }
+  @keyframes crPipStaticBand{
+    0%   { transform:translateY(-100%); opacity:0; }
+    20%  { opacity:1; }
+    80%  { opacity:.8; }
+    100% { transform:translateY(120%); opacity:0; }
+  }
+
   .cr-pip-resize{
     position:absolute;right:0;bottom:0;width:14px;height:14px;
     cursor:nwse-resize;
@@ -4340,7 +4416,7 @@
        picture video widget (webcam during recording, future M7 = stream
        to YouTube/Twitch). Display = inline file viewer for pitch decks
        and chart screenshots, draggable + resizable. -->
-  <button class="dockBtn" data-prog="runtube"     title="RUN-tube · streaming + PIP video">📹</button>
+  <button class="dockBtn" data-prog="runtube"     title="RUN-tube · streaming + PIP video">▶</button>
   <button class="dockBtn" data-prog="display"     title="Pitch · pitch deck / file viewer (PDF / image)">📄</button>
   <div class="dockSep"></div>
   <button class="dockBtn" id="crDockReturn"       title="Return to Desktop">⌂</button>
@@ -4353,7 +4429,7 @@
      If permission is denied or unsupported, shows the placeholder. -->
 <div id="crRunTube" class="cr-pip" data-pip="runtube" hidden>
   <div class="cr-pip-hd" data-drag-handle>
-    <span class="ttl">📹 RUN-tube · LIVE</span>
+    <span class="ttl">▶ RUN-tube · LIVE</span>
     <div class="cr-pip-actions">
       <button class="cr-pip-act" data-act="rt-mute"   title="Mute camera">🔴</button>
       <button class="cr-pip-act" data-act="rt-mirror" title="Mirror video">⇋</button>
@@ -4362,11 +4438,21 @@
   </div>
   <div class="cr-pip-body">
     <video id="crRunTubeVideo" autoplay playsinline muted></video>
+    <!-- v0.9.40 — Static-noise overlay used for the 3 s warm-up
+         transition between play-button click and live camera. CRT-style
+         analog snow with a faint vertical scan band. Only visible when
+         the .on class is added by JS during the warm-up window. -->
+    <div class="cr-pip-static" id="crRunTubeStatic" aria-hidden="true"></div>
     <div class="cr-pip-placeholder" id="crRunTubePh">
-      <div class="big">📹</div>
-      <div>RUN-tube</div>
-      <div style="font-size:9px;opacity:.5;margin-top:6px;max-width:180px;text-align:center">Click ▶ to enable webcam.<br/>Browser will ask for camera permission.</div>
-      <button class="cr-pip-act" id="crRunTubeStart" style="margin-top:10px;padding:6px 14px">▶ Start camera</button>
+      <!-- v0.9.40 — Big centered play-button. Whole .ph-play element is
+           a click target so the player can hit anywhere on the placeholder
+           (not just the small button) to start the warm-up + camera. -->
+      <button class="cr-pip-playbtn" id="crRunTubeStart" type="button" aria-label="Start camera">
+        <span class="cr-pip-playring"></span>
+        <span class="cr-pip-playtri">▶</span>
+      </button>
+      <div style="font-size:10px;opacity:.55;margin-top:14px;letter-spacing:.4px">RUN-tube</div>
+      <div style="font-size:9px;opacity:.4;margin-top:4px;max-width:200px;text-align:center;line-height:1.4">Click ▶ to start camera.<br/>3 s warm-up, then live.</div>
     </div>
   </div>
   <div class="cr-pip-resize" data-resize-handle></div>
@@ -5639,16 +5725,17 @@
           <div class="kbd">Research · Profile</div>
         </button>
         <!-- v0.9.27 — RUN-tube: draggable PIP webcam widget for demo/pitch
-             recording. Toggles the floating widget; bypasses osOpenWindow. -->
+             recording. Toggles the floating widget; bypasses osOpenWindow.
+             v0.9.40 — Icon swapped from camera to play-button. The play
+             button matches the in-widget play affordance: the player
+             clicks it on the desktop OR inside the widget to start the
+             camera (with a 3 s static-noise warm-up). -->
         <button class="os-icon" data-prog="runtube" title="RUN-tube — draggable webcam picture-in-picture for demo recording">
           <div class="ico"><svg class="cr-svg-ico" style="--accent:#ff5b7f;--accent2:#ffd166" viewBox="0 0 32 32" aria-hidden="true">
-            <!-- video camera body + lens + REC dot -->
-            <rect class="a" x="3" y="9" width="18" height="14" rx="2" opacity=".22"/>
-            <rect x="3" y="9" width="18" height="14" rx="2" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
-            <path class="b" d="M21 13 l7-3 v12 l-7-3z"/>
-            <circle cx="12" cy="16" r="3.4" fill="none" stroke="var(--accent2)" stroke-width="1.4"/>
-            <circle cx="12" cy="16" r="1.4" fill="var(--accent2)"/>
-            <circle cx="6.5" cy="12" r="1.1" fill="var(--accent)"/>
+            <!-- play button: triangle inside a soft rounded square -->
+            <rect class="a" x="3" y="3" width="26" height="26" rx="6" opacity=".22"/>
+            <rect x="3" y="3" width="26" height="26" rx="6" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+            <path class="b" d="M12 9 L12 23 L24 16 z"/>
           </svg></div>
           <div class="lbl">RUN-tube</div>
           <div class="kbd">Stream · PIP</div>
@@ -31686,24 +31773,48 @@ window.crCrtFadeIn  = crCrtFadeIn;
   window.crPipHide = hidePip;
   window.crPipToggle = togglePip;
 
-  /* — RUN-tube webcam — */
+  /* — RUN-tube webcam —
+     v0.9.40 — Two-phase start:
+       1. Hide placeholder + show static-noise overlay for 3 000 ms
+       2. Kick off getUserMedia in parallel; when the stream arrives,
+          drop the static and reveal the live video.
+     If camera permission is denied, restore the placeholder so the
+     player can try again. The static plays even on permission denial
+     because the user expects feedback after clicking play. */
   let _rtStream = null;
+  const RUNTUBE_WARMUP_MS = 3000;
   async function startRunTubeCamera(){
-    const v  = document.getElementById('crRunTubeVideo');
-    const ph = document.getElementById('crRunTubePh');
+    const v       = document.getElementById('crRunTubeVideo');
+    const ph      = document.getElementById('crRunTubePh');
+    const stat    = document.getElementById('crRunTubeStatic');
     if(!v) return;
-    try {
+    // Phase 1: warm-up — placeholder out, static in, video kept hidden.
+    if(ph)   ph.style.display = 'none';
+    if(stat) stat.classList.add('on');
+    v.style.display = 'none';
+    try { if(typeof crNotify === 'function') crNotify('RUN-tube · warming up…'); } catch(_){}
+    // Phase 2: kick off getUserMedia in parallel with the warm-up timer.
+    const camPromise = (async () => {
       if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
         throw new Error('getUserMedia unsupported');
       }
-      _rtStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
+      return navigator.mediaDevices.getUserMedia({ video:true, audio:false });
+    })().catch(err => err);
+    // Whichever finishes LAST (cam or warm-up timer) drives the reveal,
+    // so the static always plays for at least RUNTUBE_WARMUP_MS even if
+    // the camera resolves instantly.
+    const timer = new Promise(res => setTimeout(res, RUNTUBE_WARMUP_MS));
+    const [stream] = await Promise.all([camPromise, timer]);
+    if(stat) stat.classList.remove('on');
+    if(stream && typeof stream.getTracks === 'function'){
+      _rtStream = stream;
       v.srcObject = _rtStream;
       v.style.display = 'block';
-      if(ph) ph.style.display = 'none';
       try { if(typeof crNotify === 'function') crNotify('RUN-tube · camera live'); } catch(_){}
-    } catch(err){
+    } else {
+      // Permission denied / unsupported / error.
       try { if(typeof crNotify === 'function') crNotify('RUN-tube · camera blocked', 'warn'); } catch(_){}
-      console.warn('[RUN-tube] camera error', err);
+      console.warn('[RUN-tube] camera error', stream);
       if(ph) ph.style.display = 'flex';
       v.style.display = 'none';
     }
@@ -31715,6 +31826,9 @@ window.crCrtFadeIn  = crCrtFadeIn;
     }
     const v = document.getElementById('crRunTubeVideo');
     if(v){ v.srcObject = null; v.style.display = 'none'; }
+    // v0.9.40 — Also clear the static overlay if it was running.
+    const stat = document.getElementById('crRunTubeStatic');
+    if(stat) stat.classList.remove('on');
     const ph = document.getElementById('crRunTubePh');
     if(ph) ph.style.display = 'flex';
   }
