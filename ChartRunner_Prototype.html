@@ -6952,6 +6952,25 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                   <div class="crTerm-tblHd"><span>Asset</span><span>Last</span><span class="r">24h</span><span class="r">Vol</span></div>
                 </div>
               </div>
+              <!-- v0.9.50 — Coin Watchlist pane (Engine view). Reads from
+                   localStorage.cr_tok_watchlist_v1 (the same Set the Token
+                   Terminal Watchlist tab uses). ☆ a token in Token Terminal
+                   to add it here. _crTermPaintEngineWatchlists paints rows. -->
+              <div class="crTerm-pane" data-pane-id="coinWatchlist">
+                <div class="crTerm-paneHd"><span>🪙 COIN WATCHLIST</span><span class="hd-tag" id="crTermCoinWlTag">— · synced</span></div>
+                <div class="crTerm-paneBd small" id="crTermCoinWl">
+                  <div class="dim" style="font-style:italic;font-size:10px;padding:6px">Star tokens in the Token Terminal to populate.</div>
+                </div>
+              </div>
+              <!-- v0.9.50 — Wallet Watchlist pane (Engine view). Reads from
+                   localStorage.cr_wallet_watchlist_v1. Click the gear in
+                   Configure Terminal Widgets → Wallet Watchlist row to edit. -->
+              <div class="crTerm-pane" data-pane-id="walletWatchlist">
+                <div class="crTerm-paneHd"><span>💼 WALLET WATCHLIST</span><span class="hd-tag" id="crTermWalWlTag">— wallets · cached 60s</span></div>
+                <div class="crTerm-paneBd small" id="crTermWalWl">
+                  <div class="dim" style="font-style:italic;font-size:10px;padding:6px">Add Solana addresses via Configure Terminal Widgets ⚙ → Wallet Watchlist.</div>
+                </div>
+              </div>
               <div class="crTerm-pane">
                 <div class="crTerm-paneHd"><span>◇ stderr.watch()</span><span class="hd-tag" id="crTermStderrCnt">0</span></div>
                 <div class="crTerm-paneBd log" id="crTermStderr"></div>
@@ -24907,27 +24926,11 @@ function _wbRenderTerms(){
  * =======================================================================*/
 function _termCollectBuiltinPanes(){
   // Walk the live Terminal views and grab each pane's data-pane-id + label.
+  // v0.9.50 — Coin Watchlist + Wallet Watchlist are now REAL DOM panes
+  // inside the Engine view (data-pane-id="coinWatchlist" / "walletWatchlist"),
+  // so they're picked up by the walk below automatically. The synthetic
+  // virtual entries from v0.9.49 are retired.
   const out = [];
-  // v0.9.49 — Surface the two watchlist panes (Coin + Wallet) as
-  // first-class built-in entries in the picker. They aren't real DOM
-  // panes — they're spawned as standalone widget types (coinwatch /
-  // wallwatch) — so we synthesize their library rows here. Marker
-  // `kind:'widgetType'` tells the picker to call _cwAdd directly with
-  // the type + sourceId instead of routing through _termSpawnPane.
-  out.push({
-    viewLabel: 'Watchlists',
-    kind: 'widgetType', widgetType: 'coinwatch', sourceId: '__token_terminal__',
-    label: '🪙  Coin Watchlist · syncs with Token Terminal',
-  });
-  out.push({
-    viewLabel: 'Watchlists',
-    kind: 'widgetType', widgetType: 'wallwatch',
-    sourceId: (() => {
-      try { return localStorage.getItem('cr_wallet_watchlist_v1') || ''; }
-      catch(_) { return ''; }
-    })(),
-    label: '💼  Wallet Watchlist · Solana balances',
-  });
   const viewLabel = { crTermViewDarkflow:'Engine', crTermViewHyper:'HyperTracker', crTermViewSolana:'SolanaTracker', crTermViewCex:'CEXTracker', crTermViewStrats:'Strategies' };
   Object.keys(viewLabel).forEach(viewId => {
     const view = document.getElementById(viewId);
@@ -24998,30 +25001,10 @@ function _termSpawnPickerOpen(){
       row.addEventListener('mouseenter', () => row.style.background = 'rgba(20,241,149,.08)');
       row.addEventListener('mouseleave', () => row.style.background = 'rgba(10,15,28,.5)');
       row.addEventListener('click', () => {
-        // v0.9.49 — Watchlist entries use a different spawn path
-        // (coinwatch / wallwatch widget types, not the generic 'pane'
-        // wrapper). Detect the marker and route accordingly.
-        if(b.kind === 'widgetType' && b.widgetType){
-          try {
-            const splashEl = document.getElementById('splash');
-            const inGameLocal = !!(splashEl && splashEl.style.display === 'none');
-            // Replace any existing pane of the same type so the player
-            // doesn't accidentally end up with two coin watchlists.
-            const reg = inGameLocal && typeof chartWidgets !== 'undefined'
-              ? chartWidgets : (typeof widgets !== 'undefined' ? widgets : null);
-            if(reg && Array.isArray(reg.items)){
-              reg.items = reg.items.filter(w => w.type !== b.widgetType);
-            }
-            if(inGameLocal && typeof _cwAdd === 'function'){
-              _cwAdd(b.widgetType, b.sourceId || '', window.innerWidth/2, window.innerHeight/2);
-            } else if(typeof _wAdd === 'function'){
-              _wAdd(b.widgetType, b.sourceId || '', window.innerWidth/2, window.innerHeight/2);
-            }
-            try { if(typeof crNotify === 'function') crNotify(b.label.replace(/^\W+\s*/, '') + ' · spawned'); } catch(_){}
-          } catch(_){}
-        } else {
-          _termSpawnPane(b.paneId);
-        }
+        // v0.9.50 — Watchlist panes are now real DOM panes in the Engine
+        // view, picked up by the standard paneId-based path below. The
+        // widgetType branch added in v0.9.49 is retired.
+        _termSpawnPane(b.paneId);
         _termSpawnPickerClose();
       });
       bHost.appendChild(row);
@@ -25692,6 +25675,9 @@ function _tokToggleWatch(id){
   // immediately instead of waiting for the 2s _crPaintCoinWatchlists tick.
   try { if(typeof renderWidgets === 'function') renderWidgets(); } catch(_){}
   try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+  // v0.9.50 — Also re-paint the Engine-view Coin Watchlist pane so a
+  // star toggle in the Token Terminal lights up there immediately.
+  try { if(typeof window._crRepaintEngineWatchlists === 'function') window._crRepaintEngineWatchlists(); } catch(_){}
 }
 window._tokToggleWatch = _tokToggleWatch;
 
@@ -27722,6 +27708,86 @@ function _crPaintCoinWatchlists(){
 }
 setInterval(_crPaintCoinWatchlists, 2000);
 setTimeout(_crPaintCoinWatchlists, 0);
+
+// v0.9.50 — Engine-view watchlist panes (Coin + Wallet). These are
+// real DOM panes inside #crTermViewDarkflow, not floating widgets.
+// Paint loop reads from the same shared state as the floating widgets
+// (cr_tok_watchlist_v1 + cr_wallet_watchlist_v1) so all four surfaces
+// (Token Terminal Watchlist tab · Engine Coin Pane · floating coin
+// widget · Engine Wallet Pane) stay in sync.
+function _crPaintEngineWatchlists(){
+  // ── Coin Watchlist pane.
+  const coinHost = document.getElementById('crTermCoinWl');
+  const coinTag  = document.getElementById('crTermCoinWlTag');
+  if(coinHost){
+    let ids = [];
+    try {
+      if(typeof _tokState !== 'undefined' && _tokState.watchlist){
+        ids = Array.from(_tokState.watchlist);
+      } else {
+        const raw = localStorage.getItem('cr_tok_watchlist_v1');
+        ids = raw ? (JSON.parse(raw) || []) : [];
+      }
+    } catch(_){}
+    if(coinTag) coinTag.textContent = ids.length + ' · synced';
+    if(!ids.length){
+      coinHost.innerHTML = '<div class="dim" style="font-style:italic;font-size:10px;padding:6px">Star tokens in the Token Terminal to populate.</div>';
+    } else {
+      const rows = ids.map(id => {
+        const s = (typeof _tokSnapshot === 'function') ? _tokSnapshot(id) : null;
+        if(s && s.hasBinance){ try { _tokFetchLive(id, s.tf); } catch(_){} }
+        const tag = s ? s.def.tag : id.toUpperCase();
+        const pxTxt = s ? _tokFmtPx(s.px) : '—';
+        const ch    = s && s.ch24 != null ? s.ch24 : null;
+        const chCol = (ch == null) ? 'var(--dim)' : (ch >= 0 ? '#3ddc97' : '#ff5b7f');
+        const chTxt = (ch == null) ? '—' : ((ch >= 0 ? '+' : '') + ch.toFixed(1) + '%');
+        return '<div style="display:grid;grid-template-columns:60px 1fr 56px;gap:6px;align-items:center;padding:3px 6px;border-bottom:1px solid rgba(106,203,58,.08);font-size:10.5px">' +
+          '<span style="font-weight:700;color:#6acb3a">' + tag + '</span>' +
+          '<span style="text-align:right;font-variant-numeric:tabular-nums;color:#6acb3a">' + pxTxt + '</span>' +
+          '<span style="text-align:right;color:' + chCol + ';font-variant-numeric:tabular-nums">' + chTxt + '</span>' +
+        '</div>';
+      }).join('');
+      coinHost.innerHTML = rows;
+    }
+  }
+
+  // ── Wallet Watchlist pane.
+  const walHost = document.getElementById('crTermWalWl');
+  const walTag  = document.getElementById('crTermWalWlTag');
+  if(walHost){
+    let addrs = [];
+    try {
+      const raw = localStorage.getItem('cr_wallet_watchlist_v1') || '';
+      addrs = raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+    } catch(_){}
+    if(walTag) walTag.textContent = addrs.length + ' wallets · cached 60s';
+    if(!addrs.length){
+      walHost.innerHTML = '<div class="dim" style="font-style:italic;font-size:10px;padding:6px">Add Solana addresses via Configure Terminal Widgets ⚙ → Wallet Watchlist.</div>';
+    } else {
+      const rows = addrs.map(addr => {
+        // Reuse the cache populated by _crPaintWalletWatchlists / floating widgets.
+        const cached = _crWalBalCache && _crWalBalCache[addr];
+        let bal = '—';
+        if(cached && typeof cached.lamports === 'number'){
+          bal = (cached.lamports / 1e9).toFixed(3) + ' SOL';
+        } else {
+          // Trigger a fetch (will populate the cache for the next paint).
+          try { if(typeof _crFetchSolBalance === 'function') _crFetchSolBalance(addr); } catch(_){}
+        }
+        const short = addr.slice(0, 4) + '…' + addr.slice(-4);
+        return '<div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;padding:3px 6px;border-bottom:1px solid rgba(106,203,58,.08);font-size:10.5px">' +
+          '<span style="color:#6acb3a;font-family:ui-monospace,Menlo,monospace">' + short + '</span>' +
+          '<span style="color:#9bcb6a;font-variant-numeric:tabular-nums">' + bal + '</span>' +
+        '</div>';
+      }).join('');
+      walHost.innerHTML = rows;
+    }
+  }
+}
+setInterval(_crPaintEngineWatchlists, 2000);
+setTimeout(_crPaintEngineWatchlists, 0);
+// Re-paint immediately when the Token Terminal watchlist toggles.
+window._crRepaintEngineWatchlists = _crPaintEngineWatchlists;
 
 // Wallet watchlist — Solana RPC getBalance with a 60s TTL cache.
 const _crWalBalCache = {}; // { address: { lamports, t } }
