@@ -426,3 +426,83 @@ These primitives don't have a meaningful "click here" semantics so they stayed i
 - **Campaign mode loadout lock** — chapters should only equip tools/primitives explained in that chapter (v0.9.x backlog item).
 - **Tier 2 (Phase 1 ChartHost adapter)** — CVD divergence, footprint breakout, TPO/Market Profile. Need live trade-tape feed.
 - **Tier 3 (Phase 2 / research library)** — regime detector (Lévy-driven OU), LOB feature predictors, HFT Copula Pairs Trading, order flow imbalance signals.
+
+---
+
+## v0.9.22 → v0.9.55 — Frontier demo polish burst (May 2026)
+
+A 33-version sweep that tightened the prototype into a demo + recording-ready surface for the Colosseum Frontier hackathon submission (deadline May 11, 2026). Grouped by theme rather than per-version since the burst was rapid and many versions touched related surfaces.
+
+### Campaign UX revolution (v0.9.21 – v0.9.23)
+
+- **Terminal-style notification stack** at the bottom-right (green mono, `>` prefix). 30-second FIFO fade, 12-line cap. Replaces the canvas-drawn HUD banner. `crNotify(msg, kind)` global helper with `default` / `warn` / `err` kinds.
+- **CRT screen-off transition** between chart and desktop. `crCrtFadeOut(callback)` collapses the viewport to a horizontal line + center dot in ~600 ms; `crCrtFadeIn()` unfades.
+- **Chapter star system** with three criteria — goal hit + all probes used + no skip-chapter pressed. Persists to `localStorage.cr_campaign_stars_v1`.
+- **Multi-step Coach** — chapter 1 expanded to a full intro → explain × 2 → choose → execute × 3 arc. The "build instructions" yellow box that floated above the chart was folded into Coach steps 4–6.
+- **3-way exit** in the in-game chrome: Save (chartrunner_maps create) · Update (when a map is loaded) · Home (CRT fade home).
+
+### Run state hygiene + bug fixes (v0.9.24 – v0.9.25)
+
+- **Two-Home consolidation** — the temporary v0.9.23 `#crBarHome` button removed; existing `#crBarFile` got the new CRT-fade behavior.
+- **Run state bleed fix** — `game.visualBrackets`, `game.visualLadders`, `game.visualOCO`, `game.equityHistory`, `game.equitySampleAt`, `game._closedBracketCount`, `game._lastLaserPhaseKey` all reset between runs in `startRun()`.
+- **Coach-on-regular bug** — defensive gate added so the campaign Coach overlay doesn't surface during a regular run if the player exited a chapter abnormally.
+
+### Demo recording rig (v0.9.27, v0.9.40, v0.9.43)
+
+- **RUN-tube** — draggable picture-in-picture webcam widget (toggle from a dock + desktop icon). `getUserMedia({video:true,audio:false})` for capture, mirror toggle, mute toggle, drag handle on the header, resize gripper bottom-right. Position + size persist to `localStorage.cr_pip_runtube_v1`.
+- **Pitch (formerly "Display")** — draggable inline file viewer for PDFs (iframe) and images. Drag in a pitch deck or chart snapshot, reposition over the chart while recording.
+- **Play-button icon** swap on dock + desktop + widget header. Big circular play button in the placeholder; click → 2-second TV-static warm-up overlay → camera goes live. Static plays even on permission-denial so the player gets feedback.
+
+### In-game UX polish (v0.9.28 – v0.9.30)
+
+- **Banner reroute** — `toast()`, `showBanner()`, and the persistent `updateFlyPill()` overlay all push to the bottom-right terminal stack instead of covering the chart. The legacy `#flypill / #toast / #banner` DOM is hidden via CSS as a defense.
+- **Vehicles always face right-side up** — fix for upside-down world rendering where the player sprite flipped vertically (correct) but the mounted vehicle flipped with it (looked like a render bug).
+- **Notification fade timer 60 s → 30 s** for recording-friendly cadence.
+
+### Vehicle ride mechanic (v0.9.31)
+
+Vehicles ride upper-world only; `enterUpsideDown()` silently dismounts a mounted vehicle before flipping gravity. 2× ↑ / 2× ↓ hops between trendlines, moving averages, indicator polylines, HLines, VWAP curves via the existing `hopVehicleGrind()` helper. Triple-tap ↑ launches into flight (silent dismount + `enterFly()`).
+
+### Desktop icon scale-up (v0.9.32 – v0.9.33)
+
+App icon frames doubled twice for demo legibility — container 62 → 248 px, glyph 36 → 144 px, label 11 → 18 px (bolded), border-radius 14 → 48 px. Grid 6 → 4 columns to keep things from overflowing.
+
+### Chapter endcard chart-anchored (v0.9.34)
+
+Endcard renders over the still-visible chart (78% black overlay) instead of over the desktop. The Coach `dismiss({ keepChart: true })` path skips the `showSplash()` bounce; the endcard's Home button does the CRT fade → splash itself.
+
+### Strict campaign loadouts (v0.9.35)
+
+`PRIMITIVE_FORCE` backstop suppressed during campaign chapters so only the lesson tool surfaces in the laser palette. A bracket chapter doesn't leak Fibonacci entries the player hasn't been taught.
+
+### Campaign restructure → sequential renumbering (v0.9.36 – v0.9.41)
+
+Iterative collapse (5 macro chapters → 3 macro + library → 21 levels in 4 sections) culminating in a full **sequential 1-32 renumbering** with 11 new chapters added. Final structure:
+
+| Section | Chapters | Items |
+|---|---|---|
+| **Tools** | Ch.1–9 | Trendline · Horizontal Line · Anchored VWAP · Fib Retracement · Fib Extension · FRVP · **Ray** · **Channel** · **Rectangle** |
+| **Primitives** | Ch.10–19 | Bracket · OCO · Limit · Ladder · Stop-Loss-At · Take-Profit-At · Trailing TP · **Market Order** · **Scale-Out** · **TWAP** |
+| **Indicators** | Ch.20–27 | REF Levels · RSI · EMA(20) · Volume · Ichimoku Cloud · **MACD** · **Bollinger Bands** · **ATR** |
+| **Foundation** | Ch.28–32 | Confluence Score · CCV Setup · Patterns · **Risk Management** · **Multi-Timeframe Analysis** |
+
+Bold = new in v0.9.41. Star system archived (CSS hide on `.crChStar::after`) since renumbering invalidates old star records. `_crCampaignSavedConfig` tracks asset / timeframe / indicators / perspective + restores them on chapter exit so configs don't bleed into the next regular run.
+
+### Setup Guide + Support toggle (v0.9.42, v0.9.45)
+
+`drawSetupGuide()` early-returns when `game.campaignChapter` is set (Coach already covers the same instructions) OR when `game.supportEnabled === false`. The Support toggle is a button in the in-game Profile Run Controls grid.
+
+### Token Terminal restructure (v0.9.44, v0.9.47 – v0.9.52)
+
+- **Tabs** trimmed from 7 → 4: ALL · WINNERS · LOSERS · WATCHLIST. Each row gets a star toggle (☆/★). Watchlist tab filters to pinned tokens. State persists to `localStorage.cr_tok_watchlist_v1`.
+- **Coin Watchlist + Wallet Watchlist** promoted to live DOM panes inside the Engine view (`data-pane-id="coinWatchlist"` / `walletWatchlist`). Coin pane reads from the Token Terminal watchlist (single source of truth); Wallet pane reads from `localStorage.cr_wallet_watchlist_v1`. `_crPaintEngineWatchlists()` paints both every 2 s.
+- **Configure Terminal Widgets dialog archived.** The `+` button in the Terminal opens the library picker directly. The picker's right column is now a **schema-driven quick-configuration form** — text / textarea / number / checkbox / slider / button / note fields — with a Save button that persists per-pane defaults to `localStorage.cr_pane_defaults_v1`. Click a row name → form populates; click `+` → spawn (reads saved defaults).
+
+### Profile + chrome cleanup (v0.9.46, v0.9.53 – v0.9.55)
+
+- **Menu drawer + M-hotkey archived.** Coins / Support / Perspective all migrated to the Profile Run Controls grid (3×2: Reset · Save · Coins · Support · Perspective · Connect).
+- **Profile Stats + Missions tabs archived.** Stats live on the run-end P&L card; Missions surface through Coach + chapter endcards.
+- **Lite profile lingering after run-end** fixed via `showSplash()` cleanup of `#crLightProfile` + `_lpTimer`.
+- **Token profile cleanup** — Significant backtest results section removed (synthetic numbers were misleading), drag hint footer removed.
+- **App icon click radius** tightened to content-only — no halo around. `.os-icon` button sizes to `width:fit-content` instead of stretching to fill the grid cell.
+

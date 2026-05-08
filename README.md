@@ -4,7 +4,7 @@
 
 [![Live](https://img.shields.io/badge/live-chartrunner.xyz-14F195)](https://chartrunner.xyz/)
 [![Solana](https://img.shields.io/badge/solana-devnet%20chain%20LIVE-9945FF)](https://chartrunner.xyz/solana-connect/)
-[![Phase](https://img.shields.io/badge/phase-0.9.7%20multiplayer%20on--chain-success)](#status)
+[![Phase](https://img.shields.io/badge/phase-0.9.55%20Frontier%20demo--ready-success)](#status)
 [![Anchor](https://img.shields.io/badge/anchor-2%20programs%20deployed-brightgreen)](anchor/)
 [![Stack](https://img.shields.io/badge/stack-vanilla%20JS%20%2B%20Vite%20%2B%20Rust-blue)](#stack)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
@@ -96,9 +96,31 @@ Hyperliquid + Phantom flipped the wallet UX. Memecoin season trained 8M+ wallets
 
 **The price-truth thesis: Pyth.** The other three partners assume the price the score was computed against is real. Today, ChartRunner pulls candles from Binance REST and the client signs over the resulting score — solid for replay and training, but not provably honest. Pyth Core closes the loop: a new Anchor program [`chartrunner_oracle`](anchor/programs/chartrunner-oracle/src/lib.rs) accepts a fresh Pyth update via the receiver SDK's pull pattern (Hermes VAA → `PriceUpdateV2` account → `verify_price` instruction → `PriceCertificate` PDA, with a 30-second freshness gate), and `chartrunner_registry::record_run` cites that certificate on-chain. A forged score now requires forging Pyth's signed VAA — which means forging Wormhole guardian signatures, which is the same security model as Pyth itself. Same on-chain truth feeds the live tape: Hermes WebSocket gives ~400 ms ticks for BTC/ETH/SOL into the game's HUD. Four thesis-mapping primitives, four ecosystem partners — **Phoenix for trades, MagicBlock for matches, Honeycomb for the economy, Pyth for the truth.** See `docs.pyth.network` and the integration scaffold at [`solana-connect/src/lib/pyth-feeds.ts`](solana-connect/src/lib/pyth-feeds.ts).
 
+## What's new in v0.9.23 → v0.9.55 (Frontier demo polish burst)
+
+A 33-version sweep that tightened the prototype into a demo-ready, recording-ready surface. Highlights:
+
+| Theme | Versions | What landed |
+|---|---|---|
+| **Campaign UX revolution** | v0.9.21–v0.9.23 | Terminal-style notification stack (bottom-right green mono, 30 s FIFO fade), CRT screen-off transition between chart and desktop, chapter star system with goal + probes-used + no-skip criteria, multi-step Coach (Ch.1 polished arc), 3-way exit (Save / Update / Home). |
+| **Run state hygiene** | v0.9.24–v0.9.25 | Single-Home consolidation, run state bleed fix (visualBrackets / Ladders / OCO / equityHistory reset between runs), Coach-on-regular bug squashed. |
+| **Phantom Connect + tokenomics roadmap** | v0.9.26 | M0–M10 milestones in the README, Phantom Connect named as the Frontier-recommended wallet, CASH (Phantom-backed stablecoin) as M8 payout asset. |
+| **Demo recording rig** | v0.9.27, v0.9.40, v0.9.43 | RUN-tube draggable webcam PIP widget (getUserMedia, mirror, mute) + Pitch inline file viewer (PDF iframe / image). Play-button icon swap. 2-second TV-static warm-up between play click and live camera. |
+| **In-game UX polish** | v0.9.28–v0.9.30 | Banner reroute — toast / showBanner / updateFlyPill all push to the terminal stack instead of covering the chart; vehicles always face right-side up; notification fade timer 60 s → 30 s. |
+| **Vehicle ride mechanic** | v0.9.31 | Vehicles ride upper-world only (auto-dismount on upside-down flip); 2× ↑ / 2× ↓ hops between trendlines / MA / indicator polylines / HLines / VWAP curves; 3× ↑ launches into flight. |
+| **Desktop icon scale-up** | v0.9.32–v0.9.33 | App icon frames doubled twice for demo legibility — 62 → 248 px containers, glyphs 36 → 144 px. Grid 6 → 4 columns. |
+| **Chapter endcard chart-anchored** | v0.9.34 | Endcard renders over the still-visible chart instead of the desktop. Home button does the CRT fade itself. |
+| **Strict campaign loadouts** | v0.9.35 | PRIMITIVE_FORCE backstop suppressed during chapters — only the lesson tool surfaces in the laser palette. |
+| **Campaign restructure → renumber** | v0.9.36–v0.9.38, v0.9.41 | Iterative collapse into category sections, then full sequential 1-32 renumbering: **Tools (Ch.1–9)** · **Primitives (Ch.10–19)** · **Indicators (Ch.20–27)** · **Foundation (Ch.28–32)**. 11 new chapters added: Ray, Channel, Rectangle, Market, Scale-Out, TWAP, MACD, Bollinger Bands, ATR, Risk Management, Multi-Timeframe Analysis. Star system archived for the renumber. |
+| **Setup Guide + Support toggle** | v0.9.42, v0.9.45 | Setup Guide overlay hidden in campaign chapters (Coach already covers); Support toggle in the in-game Profile Run Controls (replaces menu-drawer placement). |
+| **Token Terminal restructure** | v0.9.44, v0.9.47–v0.9.52 | Tabs trimmed to ALL / WINNERS / LOSERS / WATCHLIST with per-row star toggle. Coin Watchlist + Wallet Watchlist promoted to live DOM panes inside the Engine view (synced with Token Terminal stars + persisted addresses). Configure Terminal Widgets dialog archived; the `+` button now opens the library picker directly. Picker right column is a schema-driven quick-configuration form (text / textarea / number / checkbox / slider / button / note) with a Save button that persists per-pane defaults. |
+| **Profile + chrome cleanup** | v0.9.46, v0.9.53–v0.9.55 | Menu drawer + M-hotkey archived (Coins / Support / Perspective all migrated to Profile Run Controls — 3×2 grid: Reset · Save · Coins · Support · Perspective · Connect). Profile Stats + Missions tabs archived. Lite profile lingering after run-end fixed. Token profile cleanup: Significant backtest results section removed, drag hint footer removed. App icon click radius tightened to content-only (no halo around). |
+
+The two-Anchor-program devnet leaderboard from v0.9.7 still works the same way; this burst was UX, lesson architecture, and demo recording infrastructure.
+
 ## What's in v0.9.22
 
-> **v0.9.22 (latest deploy)** expanded the green primitives laser (hotkey 3) from 7 → **18 entries** across 3 categories. New **Orders category** surfaces 11 tier-1-to-4 SDK primitives as one-click chart placements: limit, stopLoss-at, takeProfit-at, trailingTP-at, scaleOut-at, magnet-at, perpFlip-at, borrowShort-at, liqGuard-at, plus 2 two-anchor primitives (TWAP, Iceberg). Each gets per-tool color, glow, setup guide card, and commit confetti.
+> **v0.9.22** expanded the green primitives laser (hotkey 3) from 7 → **18 entries** across 3 categories. New **Orders category** surfaces 11 tier-1-to-4 SDK primitives as one-click chart placements: limit, stopLoss-at, takeProfit-at, trailingTP-at, scaleOut-at, magnet-at, perpFlip-at, borrowShort-at, liqGuard-at, plus 2 two-anchor primitives (TWAP, Iceberg). Each gets per-tool color, glow, setup guide card, and commit confetti.
 
 ## What's in v0.9.21 (still current)
 
