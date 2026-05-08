@@ -12127,11 +12127,18 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
     'limit','stopLossAt','takeProfitAt','trailingTpAt','scaleOutAt','magnetAt',
     'perpFlipAt','borrowShortAt','liqGuardAt','twap','iceberg',
   ]);
+  // v0.9.35 — During a campaign chapter, ONLY tools in the chapter's
+  // declared loadout appear in the laser palette. The PRIMITIVE_FORCE
+  // backstop (which keeps Bracket / OCO / Fib / Orders always visible
+  // in regular runs) is suppressed so a chapter teaching Bracket doesn't
+  // surface unrelated Fibonacci entries the player hasn't been taught.
+  // Final-exam chapter (loadout: '*') is fully open via _crCampaignSavedLoadout.
+  const _inCampaignChapter = !!(typeof game !== 'undefined' && game.campaignChapter);
   const byCat = {};
   WB_TOOL_CATEGORIES.forEach(c => byCat[c.id] = []);
   WB_LASER_TOOLS.forEach(t => {
     const inEquipped = equippedSet.has(t.id);
-    const inPrimForce = palette === 'primitives' && PRIMITIVE_FORCE.has(t.id);
+    const inPrimForce = !_inCampaignChapter && palette === 'primitives' && PRIMITIVE_FORCE.has(t.id);
     if(!inEquipped && !inPrimForce) return;
     // Primitives palette: only fib/forecast/orders.
     if(palette === 'primitives' && !PRIMITIVE_CATS.has(t.cat)) return;
@@ -20569,8 +20576,9 @@ function pickMode(mode){
     1: { goal:'Place a bracket, then drag the stop or target to edit it before fill.',  tip:'Hotkey 3 → Bracket → click entry, click stop, click target. To edit: hover an existing line and drag.', asset:'btc', tf:'15m', indicators:[],
          loadout:['bracket'], probes:[] },
     // v0.9.18 — Routes at the new REF chip in the top-bar (added v0.9.17).
+    // v0.9.35 — REF chip lesson is indicator-only; no laser tools needed.
     2: { goal:'Toggle the REF chip in the top-bar indicators strip. Touch any pdH / pdL / dOpen line as price moves.',  tip:'Top-bar → Indicators dropdown → REF. Then watch price interact with the levels.', asset:'btc', tf:'1h', indicators:['reflevels'],
-         loadout:['bracket'], probes:[] },
+         loadout:[], probes:[] },
     // v0.9.18 — ARCHIVED. Confluence badge teaches an abstract score, not a
     // concrete tool. Restore by removing `archived: true`.
     3: { archived: true, goal:'Get the Confluence badge to ≥6 (TRADEABLE).',                         tip:'Top-right badge. Click to expand. Stack components.',          asset:'btc', tf:'1h', indicators:['reflevels','rsi'],
@@ -20590,8 +20598,9 @@ function pickMode(mode){
     // v0.9.18 — Demoted to Terminal-only (the bot half moves to chapters
     // 18–23 in v0.9.19). Spawn a real-data Terminal widget; that's the
     // whole lesson.
+    // v0.9.35 — Terminal lesson is app-only; no laser tools surfaced.
     7: { goal:'Open the Terminal, click the ⚙ gear, paste BTC,ETH,SOL into the Coin Watchlist, save.',  tip:'Terminal → ⚙ gear → Coin watchlist → Save & spawn.',  asset:'btc', tf:'1h', indicators:['reflevels','rsi'],
-         loadout:['bracket','oco','limit','fibLadder','fibRetrace','fibExt','stopLossAt','takeProfitAt','trailingTpAt','scaleOutAt'], probes:['ccvCheck','sfpCheck','faCheck','barrCheck','hsCheck','divCheck','oiCheck'] },
+         loadout:[], probes:[] },
     8: { goal:'Hit ≥3 closed-positive brackets in one run. No assistance.',          tip:'Final exam — everything you have learned.',                    asset:'btc', tf:'1h', indicators:['reflevels','rsi','vrvp'],
          loadout:'*' /* unlock everything */, probes:'*' },
     // v0.9.48 — One chapter per category. Each teaches a single item (one
@@ -20642,28 +20651,33 @@ function pickMode(mode){
     // grouped under existing Tools / Primitives / Indicators section
     // headers, so the visual order stays clean even though chapter IDs
     // are non-sequential within their categories.
+    // v0.9.35 — Loadouts trimmed to ONLY the tool/primitive being taught.
+    // Earlier mix of "lesson tool + bracket + tp" was leaking unrelated
+    // primitives into the laser palette. Each chapter is now a single
+    // clean teach. Final exam (8) and bot chapters (16-22) keep their
+    // multi-tool loadouts because they require trading alongside the bot.
     23: { goal:'Place a Fib Retracement on BTC 4h. Watch price hit the 0.618 Champion zone.',
           tip:'Hotkey 2 → Fib Retracement → click swing low, click swing high. The 0.55–0.66 band ("Champion zone") fires the Champions Channel detector — best mean-reversion entries.',
-          asset:'btc', tf:'4h', indicators:['reflevels'], loadout:['fibRetrace','bracket'], probes:[] },
+          asset:'btc', tf:'4h', indicators:['reflevels'], loadout:['fibRetrace'], probes:[] },
     24: { goal:'Place a Fib Extension on BTC 4h. Drop a 1.618 take-profit on the next leg.',
           tip:'Hotkey 2 → Fib Extension → 3 anchor points (start, retracement low, end). The 1.618 Golden Extension is the highest-probability take-profit target.',
-          asset:'btc', tf:'4h', indicators:['reflevels'], loadout:['fibExt','bracket','takeProfitAt'], probes:[] },
+          asset:'btc', tf:'4h', indicators:['reflevels'], loadout:['fibExt'], probes:[] },
     25: { goal:'Drop an FRVP (Fixed-Range Volume Profile) on BTC 1h. Read the POC and value area.',
           tip:'Hotkey 2 → FRVP → click range start, click range end. POC (highest-volume node) is your magnet. Value area boundaries (VAH/VAL) are mean-reversion fences.',
-          asset:'btc', tf:'1h', indicators:['reflevels','vrvp'], loadout:['frvp','bracket'], probes:[] },
+          asset:'btc', tf:'1h', indicators:['reflevels','vrvp'], loadout:['frvp'], probes:[] },
     // Primitives.
     26: { goal:'Place a Ladder on SOL 15m. Five rungs, scale into the move.',
           tip:'Hotkey 3 → Ladder → click first rung, click last rung. Spreads 5 limit orders evenly. Use when you can call direction but not the exact entry.',
-          asset:'sol', tf:'15m', indicators:[], loadout:['ladder','bracket'], probes:[] },
+          asset:'sol', tf:'15m', indicators:[], loadout:['ladder'], probes:[] },
     27: { goal:'Drop a Stop-Loss-At order on BTC 15m. Single click defines the price.',
           tip:'Hotkey 3 → Stop-Loss-At → click the level you want the stop to live. Tier-1 SDK primitive: one click, one stop. Pairs with Take-Profit-At for instant brackets.',
           asset:'btc', tf:'15m', indicators:[], loadout:['stopLossAt'], probes:[] },
     28: { goal:'Drop a Take-Profit-At order on BTC 15m. Pair with a stop for an instant bracket.',
           tip:'Hotkey 3 → Take-Profit-At → click the level. Combined with #27 Stop-Loss-At, you get a manually-paired bracket without the 3-click wizard.',
-          asset:'btc', tf:'15m', indicators:[], loadout:['takeProfitAt','stopLossAt'], probes:[] },
+          asset:'btc', tf:'15m', indicators:[], loadout:['takeProfitAt'], probes:[] },
     29: { goal:'Drop a Trailing Take-Profit on ETH 1h. Watch it ratchet up as price moves favorably.',
           tip:'Hotkey 3 → Trailing TP → click level + drag the trail offset. The TP price re-anchors on every new high (long) / low (short).',
-          asset:'eth', tf:'1h', indicators:['reflevels'], loadout:['trailingTpAt','bracket'], probes:[] },
+          asset:'eth', tf:'1h', indicators:['reflevels'], loadout:['trailingTpAt'], probes:[] },
     // Indicators.
     30: { goal:'Toggle the EMA(20) on the BTC 1h chart. Read trend direction off the slope.',
           tip:'Top-bar → Indicators dropdown → EMA. Default period 20. Slope up = bias long; slope down = bias short. Cross-over with SMA(50) is the classic regime-change signal.',
