@@ -4443,7 +4443,7 @@
         <span class="cr-pip-playtri">▶</span>
       </button>
       <div style="font-size:10px;opacity:.55;margin-top:14px;letter-spacing:.4px">RUN-tube</div>
-      <div style="font-size:9px;opacity:.4;margin-top:4px;max-width:200px;text-align:center;line-height:1.4">Click ▶ to start camera.<br/>3 s warm-up, then live.</div>
+      <div style="font-size:9px;opacity:.4;margin-top:4px;max-width:200px;text-align:center;line-height:1.4">Click ▶ to start camera.<br/>2 s warm-up, then live.</div>
     </div>
   </div>
   <div class="cr-pip-resize" data-resize-handle></div>
@@ -20736,6 +20736,12 @@ function pickMode(mode){
       if(!step){ dismiss(); return; }
       // v0.9.53 — explain steps have no auto-advance; player taps Next.
       if(typeof step.complete !== 'function') return;
+      // v0.9.43 — The LAST step never auto-advances. Otherwise its
+      // complete-predicate firing (which is often "place a thing" on
+      // chapters that end with execute) would skip the player straight
+      // to the endcard before they could read the final instruction
+      // line. Always require explicit Finish click on the last step.
+      if(stepIdx >= script.length - 1) return;
       try {
         const baseline = crCampaignCoach._baseline || {};
         if(step.complete.call(baseline, baseline)) advance();
@@ -20852,6 +20858,29 @@ function pickMode(mode){
           window._crCampaignSavedClutter = null;
         }
       } catch(_){}
+      // v0.9.43 — Restore pre-chapter chart configuration (asset, TF,
+      // indicators, perspective) so the next regular run doesn't inherit
+      // the chapter's preset. Counterpart to the save in _launchCampaignChapter.
+      // Only fire when keepChart is false — when an endcard is showing
+      // we keep the chapter's config in place so Try-again can re-launch
+      // the same chart instantly. The endcard's Home button performs the
+      // restore itself before splash (see crCampaignRestoreSavedConfig).
+      if(!keepChart){
+        try {
+          const cfg = window._crCampaignSavedConfig;
+          if(cfg){
+            if(cfg.asset       != null && typeof currentAsset !== 'undefined') currentAsset = cfg.asset;
+            if(cfg.timeframe   != null && typeof timeframe    !== 'undefined') timeframe    = cfg.timeframe;
+            if(cfg.perspective != null && typeof perspective  !== 'undefined') perspective  = cfg.perspective;
+            if(typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active && Array.isArray(cfg.indicators)){
+              INDICATOR_STATE.active.clear();
+              for(const id of cfg.indicators) INDICATOR_STATE.active.add(id);
+              try { if(typeof _saveIndicators === 'function') _saveIndicators(); } catch(_){}
+            }
+            window._crCampaignSavedConfig = null;
+          }
+        } catch(_){}
+      }
       // v0.9.34 — Skip showSplash when the endcard owns the next view.
       if(!keepChart){
         try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
@@ -20966,6 +20995,22 @@ function pickMode(mode){
     try {
       if(!window._crCampaignSavedLoadout && typeof wb !== 'undefined' && Array.isArray(wb.equippedTools)){
         window._crCampaignSavedLoadout = wb.equippedTools.slice();
+      }
+    } catch(_){}
+    // v0.9.43 — Also stash the player's pre-chapter chart configuration
+    // (asset, timeframe, indicators, perspective) so closing a chapter
+    // restores the chart instead of leaking the chapter's settings into
+    // the next regular run. Saved once per campaign-entry; cleared on
+    // dismiss() restore.
+    try {
+      if(!window._crCampaignSavedConfig){
+        window._crCampaignSavedConfig = {
+          asset:       (typeof currentAsset !== 'undefined') ? currentAsset : null,
+          timeframe:   (typeof timeframe    !== 'undefined') ? timeframe    : null,
+          perspective: (typeof perspective  !== 'undefined') ? perspective  : null,
+          indicators:  (typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active)
+                         ? Array.from(INDICATOR_STATE.active) : [],
+        };
       }
     } catch(_){}
     // v0.9.29 — Apply chapter loadout lock. '*' = no lock (chapter 8 final).
@@ -31513,13 +31558,19 @@ function _crShowChapterEndcard(chapter, info){
   const card = document.createElement('div');
   card.style.cssText = 'width:min(420px,calc(100% - 60px));background:linear-gradient(180deg,rgba(20,30,55,.98),rgba(8,12,22,.99));border:1px solid rgba(126,231,135,.35);border-radius:14px;padding:20px 22px;color:#e8e8e8;box-shadow:0 18px 60px rgba(0,0,0,.6),0 0 0 1px rgba(126,231,135,.10) inset;text-align:center';
 
+  // v0.9.43 — Endcard copy update.
+  //   - "STAR EARNED" / "GOAL HIT" → "CONGRATULATIONS" (warmer, no
+  //     achievement-system framing while stars are archived).
+  //   - Reward + on-chain footer line removed (it referenced a Phase-2
+  //     mechanic that isn't live yet and read as future-vapor on the
+  //     completion screen).
   const star = info.earned ? '★' : '☆';
   const starColor = info.earned ? '#ffd166' : '#5b6470';
-  const headline = info.earned ? 'STAR EARNED' : 'GOAL HIT';
+  const headline = 'CONGRATULATIONS';
   const sub = info.earned
     ? 'Goal hit · all probes used · no skip-chapter — perfect run.'
     : (info.skipped
-        ? 'Skip-chapter pressed — no star this time.'
+        ? 'Skip-chapter pressed — chapter closed.'
         : 'Probes missing: ' + info.requiredProbes.filter(p => !info.usedProbes.includes(p)).join(', '));
 
   card.innerHTML =
@@ -31531,8 +31582,7 @@ function _crShowChapterEndcard(chapter, info){
     '<div style="display:flex;gap:8px;justify-content:center">' +
       '<button id="crChEndRetry" type="button" style="background:rgba(126,231,135,.18);border:1px solid rgba(126,231,135,.50);color:#bff7df;padding:8px 16px;border-radius:6px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">Try again</button>' +
       '<button id="crChEndHome" type="button" style="background:transparent;border:1px solid var(--line);color:#cfd2db;padding:8px 16px;border-radius:6px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">Home</button>' +
-    '</div>' +
-    '<div style="font-size:9px;color:#5b6470;margin-top:10px;letter-spacing:.4px">+' + info.reward + ' $RUN reward · ' + (info.earned ? 'star saved on chain in M1' : 'try again for the star') + '</div>';
+    '</div>';
 
   ov.appendChild(card);
   document.body.appendChild(ov);
@@ -31545,6 +31595,27 @@ function _crShowChapterEndcard(chapter, info){
     ov.remove();
     crCrtFadeOut(() => {
       try { if(typeof game !== 'undefined'){ game.running = false; game.campaignChapter = null; game.campaignProbeSet = null; game.papertrade = false; game.coinsDisabled = false; } } catch(_){}
+      // v0.9.43 — Restore the player's pre-chapter chart configuration
+      // (asset / timeframe / indicators / perspective) before showing
+      // splash. Without this, the next regular run inherits the
+      // chapter's preset (e.g. BTC 15m with reflevels even though the
+      // player came in on ETH 1h with no indicators). Counterpart to
+      // the save in _launchCampaignChapter and to dismiss()'s restore
+      // path which only fires when !keepChart.
+      try {
+        const cfg = window._crCampaignSavedConfig;
+        if(cfg){
+          if(cfg.asset       != null && typeof currentAsset !== 'undefined') currentAsset = cfg.asset;
+          if(cfg.timeframe   != null && typeof timeframe    !== 'undefined') timeframe    = cfg.timeframe;
+          if(cfg.perspective != null && typeof perspective  !== 'undefined') perspective  = cfg.perspective;
+          if(typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active && Array.isArray(cfg.indicators)){
+            INDICATOR_STATE.active.clear();
+            for(const id of cfg.indicators) INDICATOR_STATE.active.add(id);
+            try { if(typeof _saveIndicators === 'function') _saveIndicators(); } catch(_){}
+          }
+          window._crCampaignSavedConfig = null;
+        }
+      } catch(_){}
       try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
       // Hold black for ~250 ms then unfade.
       setTimeout(() => crCrtFadeIn(), 260);
@@ -31688,7 +31759,9 @@ window.crCrtFadeIn  = crCrtFadeIn;
      player can try again. The static plays even on permission denial
      because the user expects feedback after clicking play. */
   let _rtStream = null;
-  const RUNTUBE_WARMUP_MS = 3000;
+  // v0.9.43 — Warm-up dropped from 3000 to 2000 ms — 3 s felt too long
+  // once the camera permission dialog already cost a beat.
+  const RUNTUBE_WARMUP_MS = 2000;
   async function startRunTubeCamera(){
     const v       = document.getElementById('crRunTubeVideo');
     const ph      = document.getElementById('crRunTubePh');
@@ -33776,13 +33849,45 @@ plot(diff, color=color.aqua)`,
         if(!ok) return;
       }
       try { if(typeof crNotify === 'function') crNotify('Exit · CRT fade home', 'warn'); } catch(_){}
+      // v0.9.43 — When exiting from a campaign chapter via the chrome
+      // Home button, restore the player's pre-chapter chart configuration
+      // and clear campaign state so the next regular run starts clean.
+      const _restoreCampaignConfig = () => {
+        try {
+          if(typeof game !== 'undefined' && game.campaignChapter){
+            game.campaignChapter = null;
+            game.campaignProbeSet = null;
+            game.papertrade = false;
+            game.coinsDisabled = false;
+          }
+          const cfg = window._crCampaignSavedConfig;
+          if(cfg){
+            if(cfg.asset       != null && typeof currentAsset !== 'undefined') currentAsset = cfg.asset;
+            if(cfg.timeframe   != null && typeof timeframe    !== 'undefined') timeframe    = cfg.timeframe;
+            if(cfg.perspective != null && typeof perspective  !== 'undefined') perspective  = cfg.perspective;
+            if(typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active && Array.isArray(cfg.indicators)){
+              INDICATOR_STATE.active.clear();
+              for(const id of cfg.indicators) INDICATOR_STATE.active.add(id);
+              try { if(typeof _saveIndicators === 'function') _saveIndicators(); } catch(_){}
+            }
+            window._crCampaignSavedConfig = null;
+          }
+          if(window._crCampaignSavedLoadout && typeof wb !== 'undefined'){
+            wb.equippedTools = window._crCampaignSavedLoadout.slice();
+            window._crCampaignSavedLoadout = null;
+            try { if(typeof _wbSave === 'function') _wbSave(); } catch(_){}
+          }
+        } catch(_){}
+      };
       if(typeof crCrtFadeOut === 'function'){
         crCrtFadeOut(() => {
           try { if(typeof game !== 'undefined'){ game.running = false; } } catch(_){}
+          _restoreCampaignConfig();
           try { showSplash(); } catch(_){}
           setTimeout(() => { try { crCrtFadeIn(); } catch(_){} }, 260);
         });
       } else {
+        _restoreCampaignConfig();
         showSplash();
       }
     } catch(_){}
