@@ -24908,6 +24908,26 @@ function _wbRenderTerms(){
 function _termCollectBuiltinPanes(){
   // Walk the live Terminal views and grab each pane's data-pane-id + label.
   const out = [];
+  // v0.9.49 — Surface the two watchlist panes (Coin + Wallet) as
+  // first-class built-in entries in the picker. They aren't real DOM
+  // panes — they're spawned as standalone widget types (coinwatch /
+  // wallwatch) — so we synthesize their library rows here. Marker
+  // `kind:'widgetType'` tells the picker to call _cwAdd directly with
+  // the type + sourceId instead of routing through _termSpawnPane.
+  out.push({
+    viewLabel: 'Watchlists',
+    kind: 'widgetType', widgetType: 'coinwatch', sourceId: '__token_terminal__',
+    label: '🪙  Coin Watchlist · syncs with Token Terminal',
+  });
+  out.push({
+    viewLabel: 'Watchlists',
+    kind: 'widgetType', widgetType: 'wallwatch',
+    sourceId: (() => {
+      try { return localStorage.getItem('cr_wallet_watchlist_v1') || ''; }
+      catch(_) { return ''; }
+    })(),
+    label: '💼  Wallet Watchlist · Solana balances',
+  });
   const viewLabel = { crTermViewDarkflow:'Engine', crTermViewHyper:'HyperTracker', crTermViewSolana:'SolanaTracker', crTermViewCex:'CEXTracker', crTermViewStrats:'Strategies' };
   Object.keys(viewLabel).forEach(viewId => {
     const view = document.getElementById(viewId);
@@ -24978,7 +24998,30 @@ function _termSpawnPickerOpen(){
       row.addEventListener('mouseenter', () => row.style.background = 'rgba(20,241,149,.08)');
       row.addEventListener('mouseleave', () => row.style.background = 'rgba(10,15,28,.5)');
       row.addEventListener('click', () => {
-        _termSpawnPane(b.paneId);
+        // v0.9.49 — Watchlist entries use a different spawn path
+        // (coinwatch / wallwatch widget types, not the generic 'pane'
+        // wrapper). Detect the marker and route accordingly.
+        if(b.kind === 'widgetType' && b.widgetType){
+          try {
+            const splashEl = document.getElementById('splash');
+            const inGameLocal = !!(splashEl && splashEl.style.display === 'none');
+            // Replace any existing pane of the same type so the player
+            // doesn't accidentally end up with two coin watchlists.
+            const reg = inGameLocal && typeof chartWidgets !== 'undefined'
+              ? chartWidgets : (typeof widgets !== 'undefined' ? widgets : null);
+            if(reg && Array.isArray(reg.items)){
+              reg.items = reg.items.filter(w => w.type !== b.widgetType);
+            }
+            if(inGameLocal && typeof _cwAdd === 'function'){
+              _cwAdd(b.widgetType, b.sourceId || '', window.innerWidth/2, window.innerHeight/2);
+            } else if(typeof _wAdd === 'function'){
+              _wAdd(b.widgetType, b.sourceId || '', window.innerWidth/2, window.innerHeight/2);
+            }
+            try { if(typeof crNotify === 'function') crNotify(b.label.replace(/^\W+\s*/, '') + ' · spawned'); } catch(_){}
+          } catch(_){}
+        } else {
+          _termSpawnPane(b.paneId);
+        }
         _termSpawnPickerClose();
       });
       bHost.appendChild(row);
