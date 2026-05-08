@@ -11268,10 +11268,17 @@ window.addEventListener('keydown', e=>{
     // Single tap is a no-op — vehicle physics own vertical placement.
     // Rationale: player wanted line-hopping in BOTH directions, with flight
     // on a distinct triple-tap. See hopVehicleGrind(+1) for candidates.
-    // v0.8M#23 — In vehicle mode ↑↑ now does the SAME state-chain as on-foot
-    // (UpsideFlying → UpsideRunning → Running → Flying) so the chart is
-    // accessible from above. Triple-tap still launches flight. Grind-line
-    // hopping retired — fell into "feature nobody asked for" territory.
+    // v0.9.31 — Vehicles ride ONLY on the upper world (no upside-down
+    // riding). Plane-hopping via 2x ↑/↓ is restored — vehicles can hop
+    // between trendlines, moving averages, indicator polylines, HLines
+    // and VWAP curves. Triple-tap ↑↑↑ still launches into flight.
+    //
+    //   1x ↑  = no-op (vehicle physics own vertical placement)
+    //   2x ↑  = hop to next grindable plane ABOVE  (hopVehicleGrind(+1))
+    //   3x ↑  = dismount + enter flight (keep momentum)
+    //
+    // The state-chain Running → UpsideRunning that the on-foot avatar
+    // uses is intentionally absent here: vehicles never go upside-down.
     if(game.vehicle && game.vehicle !== 'none' && !game.monsterMode){
       const d1 = now - lastUpDown;
       const d2 = now - prevUpDown;
@@ -11284,15 +11291,8 @@ window.addEventListener('keydown', e=>{
         return;
       }
       if(d1 < 320){
-        // Double tap: state-chain step UP (matches on-foot ↑↑ behavior).
-        if(player.upsideDown){
-          // UpsideRunning → Running (surface to upper world)
-          exitUpsideDown();
-        } else if(!player.flying){
-          // Running → Flying — dismount the vehicle silently
-          dismountVehicle({ silent:true });
-          enterFly();
-        }
+        // Double tap: hop to the next grind line ABOVE.
+        try { if(typeof hopVehicleGrind === 'function') hopVehicleGrind(+1); } catch(_){}
       }
       prevUpDown = lastUpDown;
       lastUpDown = now;
@@ -11333,18 +11333,20 @@ window.addEventListener('keydown', e=>{
     const now = performance.now();
     // Bracket editor: shift entry down when 2 held
     if(bracketEditor.open && bracketEditor.phase==='adjust' && keys['2']){ shiftBracketEntry(-1); return; }
-    // v0.8M#23 — In vehicle mode ↓↓ does the state-chain step DOWN
-    // (Flying → Running → UpsideRunning) so the chart bottom is accessible.
-    // ALSO: in upside-down vehicle mode, single-press Arrow Down jumps
-    // (matches the on-foot upside-down jump-on-Down rule from this same #23).
+    // v0.9.31 — Vehicles ride ONLY on the upper world. ↓↓ now hops to
+    // the next grindable plane BELOW (no entry to the upside-down world).
+    //
+    //   1x ↓  = no-op
+    //   2x ↓  = hop to next grindable plane BELOW (hopVehicleGrind(-1))
+    //
+    // If the player is currently flying (mounted-into-flight via 3x ↑),
+    // ↓↓ exits flight to land on the upper-world chart instead.
     if(game.vehicle && game.vehicle !== 'none' && !game.monsterMode){
       if(now - lastDownDown < 320){
-        // Double tap: state-chain step DOWN
         if(player.flying){
           exitFly();
-        } else if(!player.upsideDown){
-          // Running → UpsideRunning (stays mounted in upside-down)
-          enterUpsideDown();
+        } else {
+          try { if(typeof hopVehicleGrind === 'function') hopVehicleGrind(-1); } catch(_){}
         }
       }
       lastDownDown = now;
@@ -15161,6 +15163,13 @@ let firstUpsideDown = true;
 function enterUpsideDown(opts){
   if(player.upsideDown) return;
   const silent = opts && opts.silent;
+  // v0.9.31 — Vehicles do not enter the upside-down world. If the player
+  // is mounted when something tries to flip gravity (story trigger,
+  // bottom-out fall, debug, etc.), dismount silently first so the
+  // upside-down state lands on the on-foot avatar — never on a vehicle.
+  if(game.vehicle && game.vehicle !== 'none'){
+    try { if(typeof dismountVehicle === 'function') dismountVehicle({ silent:true }); } catch(_){}
+  }
   player.upsideDown=true; player.vy=0;
   // v0.8e #A — position player BELOW the current candle's low, so the newly-flipped
   // gravity immediately pulls them up onto c.l (candle bottom). Without this snap,
@@ -15255,7 +15264,7 @@ function mountVehicle(id){
   game.vehicle = v.id;
   game.vehicleVel = 0;
   game.vehicleGrind = null;
-  toast(v.ic+' '+v.nm+' — glide with ← →, ↑↑ next line');
+  toast(v.ic+' '+v.nm+' — glide ←/→ · ↑↑/↓↓ hop plane · ↑↑↑ launch');
   log('mount '+v.nm);
   try { spawnFloat?.(player.wx, player.py+24, v.ic+' '+v.nm, '#14f195'); } catch(_){}
   updateFlyPill?.();
@@ -15446,7 +15455,7 @@ function updateFlyPill(){
   if(game.vehicle && game.vehicle !== 'none' && !game.monsterMode){
     const veh = vehicleById(game.vehicle);
     key = 'ride:' + game.vehicle;
-    msg = veh.ic + ' RIDE · ' + veh.nm + ' — ←/→ glide · V dismount · ↑↑ lift off · ↓↓ next line';
+    msg = veh.ic + ' RIDE · ' + veh.nm + ' — ←/→ glide · V dismount · ↑↑/↓↓ hop plane · ↑↑↑ launch';
   } else if(player.upsideDown && player.flying){
     key = 'ud-flight' + mm;
     msg = '👁 UPSIDE-DOWN · FLIGHT' + shootTip + ' · F/↑↑ to surface' + mm;
@@ -15710,17 +15719,13 @@ function update(dt){
       player.onGround = true;
       game.vehicleGrind = game.vehicleGrind || { kind:'line' };
     } else {
-      // v0.8M#23 — Land on candle TOP in upper world, candle BOTTOM in
-      // upside-down so the vehicle hangs from the chart bottom (matches
-      // on-foot upside-down behavior).
+      // v0.9.31 — Vehicles ride ONLY on the upper world. Always land on
+      // candle TOPS — no upside-down vehicle riding. The auto-dismount
+      // in enterUpsideDown() prevents player.upsideDown from being true
+      // here, but the explicit `top-only` rule documents the intent.
       const here = candleAtWX(player.wx).c;
-      if(player.upsideDown){
-        const ppd = Math.max(0.001, pxPerDollarAt(here.l));
-        player.py = here.l - 4/ppd;
-      } else {
-        const ppd = Math.max(0.001, pxPerDollarAt(here.h));
-        player.py = here.h + 4/ppd;
-      }
+      const ppd = Math.max(0.001, pxPerDollarAt(here.h));
+      player.py = here.h + 4/ppd;
       player.vy = 0;
       player.onGround = true;
       game.vehicleGrind = null;
