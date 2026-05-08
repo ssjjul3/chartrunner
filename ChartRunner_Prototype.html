@@ -24959,6 +24959,12 @@ function _termSpawnPickerOpen(){
 
   const card = document.createElement('div');
   card.style.cssText = 'background:linear-gradient(180deg,rgba(18,26,48,.98),rgba(10,15,28,.99));border:1px solid var(--line);border-radius:10px;box-shadow:0 24px 60px rgba(0,0,0,.7);width:min(720px,calc(100% - 60px));max-height:78vh;display:flex;flex-direction:column;color:var(--fg);font-family:inherit';
+  // v0.9.52 — Picker layout: left column = pane list (Built-in panes +
+  // Workbench builds combined), right column = quick configuration
+  // surface for the clicked pane. Each row has a + button to spawn
+  // and a name area that, on click, populates the right column with
+  // the pane's quick-config form. Save persists per-pane defaults to
+  // localStorage cr_pane_defaults_v1; + spawns with those defaults.
   card.innerHTML =
     '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">' +
       '<div style="font-size:14px;font-weight:700">+ New Terminal Widget</div>' +
@@ -24968,25 +24974,188 @@ function _termSpawnPickerOpen(){
     '</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;flex:1;min-height:0">' +
       '<div style="border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0">' +
-        '<div style="padding:10px 16px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Built-in panes</div>' +
+        '<div style="padding:10px 16px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Library</div>' +
         '<div id="crTermPickerBuiltins" style="flex:1;overflow:auto;padding:0 10px 10px"></div>' +
       '</div>' +
       '<div style="display:flex;flex-direction:column;min-height:0">' +
-        '<div style="padding:10px 16px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Workbench builds</div>' +
-        '<div id="crTermPickerWb" style="flex:1;overflow:auto;padding:0 10px 10px"></div>' +
+        '<div style="padding:10px 16px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Quick configuration</div>' +
+        '<div id="crTermPickerCfg" style="flex:1;overflow:auto;padding:0 16px 14px;display:flex;flex-direction:column;gap:12px"></div>' +
       '</div>' +
     '</div>';
   ov.appendChild(card);
   document.body.appendChild(ov);
 
-  // Built-in list
+  // Per-pane defaults persistence (saved by the Save button below).
+  const _DEFAULTS_KEY = 'cr_pane_defaults_v1';
+  function _loadDefaults(){
+    try { return JSON.parse(localStorage.getItem(_DEFAULTS_KEY) || '{}') || {}; } catch(_){ return {}; }
+  }
+  function _saveDefaultsFor(typeKey, cfg){
+    const all = _loadDefaults();
+    all[typeKey] = Object.assign({}, all[typeKey] || {}, cfg);
+    try { localStorage.setItem(_DEFAULTS_KEY, JSON.stringify(all)); } catch(_){}
+  }
+  // Resolve the schema lookup key for a row. Built-in DOM panes use
+  // their paneId; widget-type rows (Workbench builds, future watchlists)
+  // use the widget type.
+  function _schemaKeyFor(b){ return b.widgetType ? b.widgetType : ('pane:' + b.paneId); }
+
+  // Quick-configuration host setup.
+  const cfgHost = card.querySelector('#crTermPickerCfg');
+  function _renderCfgPlaceholder(){
+    cfgHost.innerHTML =
+      '<div style="font-style:italic;color:var(--dim);padding:14px;font-size:11px;border:1px dashed var(--line);border-radius:6px;text-align:center">Click a pane on the left to configure.<br><span style="font-size:10px">Use the <b>+</b> button on each row to spawn it on the desktop.</span></div>';
+  }
+  _renderCfgPlaceholder();
+
+  // Render the schema-driven form for the clicked pane into the right
+  // column. Includes a Save button that writes config to defaults.
+  function _renderCfg(b){
+    const typeKey = _schemaKeyFor(b);
+    const schema = _CR_PANE_SCHEMAS[typeKey] || _CR_PANE_SCHEMAS[b.widgetType] || {
+      icon: '🧩', title: b.label || typeKey,
+      sub: 'No quick-config schema for this pane type yet.',
+      fields: [{ type:'note', text:'This pane has no configurable options. Click + to spawn it on ' + (inGame ? 'the chart background' : 'the desktop') + '.' }],
+    };
+    const defaults = (_loadDefaults()[typeKey]) || {};
+
+    cfgHost.innerHTML = '';
+    // Header.
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;gap:10px;padding-top:8px';
+    head.innerHTML =
+      '<span style="font-size:18px">' + (schema.icon || '🧩') + '</span>' +
+      '<div style="flex:1;display:flex;flex-direction:column;gap:1px">' +
+        '<div style="font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.4px;color:#7ee787">' + (schema.title || b.label) + '</div>' +
+        '<div style="font-size:10px;color:var(--dim)">' + (schema.sub || '') + '</div>' +
+      '</div>';
+    cfgHost.appendChild(head);
+
+    // Fields.
+    const inputs = [];
+    schema.fields.forEach(field => {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+      if(field.label && field.type !== 'checkbox'){
+        const lbl = document.createElement('label');
+        lbl.style.cssText = 'font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.4px;color:#bff7df;text-transform:uppercase';
+        lbl.textContent = field.label;
+        wrap.appendChild(lbl);
+      }
+      const cur = (field.key && defaults[field.key] != null) ? defaults[field.key]
+                : (field.default != null ? field.default : '');
+      let getValue = null;
+      if(field.type === 'note'){
+        const p = document.createElement('p');
+        p.style.cssText = 'margin:0;padding:8px 10px;background:rgba(126,231,135,.06);border-left:2px solid rgba(126,231,135,.35);border-radius:4px;font-size:11px;line-height:1.5;color:#bff7df';
+        p.textContent = field.text || '';
+        wrap.appendChild(p);
+      } else if(field.type === 'text' || field.type === 'number'){
+        const inp = document.createElement('input');
+        inp.type = field.type;
+        inp.value = (cur != null) ? cur : '';
+        if(field.placeholder) inp.placeholder = field.placeholder;
+        if(field.min  != null) inp.min  = field.min;
+        if(field.max  != null) inp.max  = field.max;
+        if(field.step != null) inp.step = field.step;
+        inp.style.cssText = 'width:100%;padding:6px 8px;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:5px;color:var(--fg);font:11px ui-monospace,Menlo,monospace;outline:none';
+        wrap.appendChild(inp);
+        getValue = () => field.type === 'number' ? Number(inp.value) : inp.value;
+      } else if(field.type === 'textarea'){
+        const ta = document.createElement('textarea');
+        ta.rows = 4;
+        ta.value = String(cur || '').split(/[\s,]+/).map(s => s.trim()).filter(Boolean).join('\n');
+        if(field.placeholder) ta.placeholder = field.placeholder;
+        ta.style.cssText = 'width:100%;padding:6px 8px;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:5px;color:var(--fg);font:11px ui-monospace,Menlo,monospace;outline:none;resize:vertical';
+        wrap.appendChild(ta);
+        getValue = () => ta.value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean).join(',');
+      } else if(field.type === 'checkbox'){
+        const lab = document.createElement('label');
+        lab.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;color:var(--fg);padding:4px 0';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!cur;
+        cb.style.cssText = 'width:14px;height:14px;cursor:pointer;accent-color:#7ee787';
+        const txt = document.createElement('span');
+        txt.textContent = field.label || '';
+        lab.appendChild(cb); lab.appendChild(txt);
+        wrap.appendChild(lab);
+        getValue = () => cb.checked;
+      } else if(field.type === 'slider'){
+        const min = field.min != null ? field.min : 0;
+        const max = field.max != null ? field.max : 100;
+        const step = field.step != null ? field.step : 1;
+        const sliderRow = document.createElement('div');
+        sliderRow.style.cssText = 'display:flex;align-items:center;gap:10px';
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = min; slider.max = max; slider.step = step;
+        slider.value = (cur != null && !isNaN(Number(cur))) ? Number(cur) : (field.default || min);
+        slider.style.cssText = 'flex:1;accent-color:#7ee787;cursor:pointer';
+        const valTxt = document.createElement('span');
+        valTxt.style.cssText = 'min-width:50px;text-align:right;font:600 11px ui-monospace,Menlo,monospace;color:#7ee787;font-variant-numeric:tabular-nums';
+        const fmtVal = v => v + (field.unit ? ' ' + field.unit : '');
+        valTxt.textContent = fmtVal(slider.value);
+        slider.addEventListener('input', () => valTxt.textContent = fmtVal(slider.value));
+        sliderRow.appendChild(slider); sliderRow.appendChild(valTxt);
+        wrap.appendChild(sliderRow);
+        getValue = () => Number(slider.value);
+      } else if(field.type === 'button'){
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = field.label || 'Action';
+        btn.style.cssText = 'background:rgba(126,231,135,.18);border:1px solid rgba(126,231,135,.50);color:#bff7df;padding:6px 14px;border-radius:5px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace;align-self:flex-start';
+        btn.addEventListener('click', () => { try { if(typeof field.onClick === 'function') field.onClick(b); } catch(_){} });
+        wrap.appendChild(btn);
+      }
+      if(field.hint){
+        const h = document.createElement('div');
+        h.style.cssText = 'font-size:10px;color:var(--dim);line-height:1.4;font-style:italic';
+        h.textContent = field.hint;
+        wrap.appendChild(h);
+      }
+      cfgHost.appendChild(wrap);
+      if(getValue && field.key) inputs.push({ field, getValue });
+    });
+
+    // Save + Spawn footer.
+    const foot = document.createElement('div');
+    foot.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;padding-top:10px;border-top:1px solid var(--line);margin-top:6px';
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.textContent = 'Save';
+    saveBtn.style.cssText = 'background:rgba(126,231,135,.20);border:1px solid rgba(126,231,135,.55);color:#bff7df;padding:6px 16px;border-radius:5px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace';
+    saveBtn.addEventListener('click', () => {
+      const cfg = {};
+      inputs.forEach(({ field, getValue }) => { cfg[field.key] = getValue(); });
+      _saveDefaultsFor(typeKey, cfg);
+      try { if(typeof crNotify === 'function') crNotify((schema.title || b.label) + ' · defaults saved'); } catch(_){}
+    });
+    foot.appendChild(saveBtn);
+    cfgHost.appendChild(foot);
+  }
+
+  // Build the unified library list (left column).
   const bHost = card.querySelector('#crTermPickerBuiltins');
   const builtins = _termCollectBuiltinPanes();
-  if(!builtins.length){
-    bHost.innerHTML = '<div class="dim" style="padding:10px;font-style:italic">No panes available — open the Terminal once so the views are in the DOM.</div>';
+  // Workbench builds rendered as "Workbench" group at the bottom.
+  const wbItems = (typeof wb !== 'undefined' && Array.isArray(wb.terms)) ? wb.terms : [];
+  const allRows = builtins.slice();
+  if(wbItems.length){
+    wbItems.forEach(t => {
+      allRows.push({
+        viewLabel: 'Workbench',
+        widgetType: 'wbterm',
+        wbId: t.id,
+        label: (t.icon || '⚙') + '  ' + t.name,
+      });
+    });
+  }
+  if(!allRows.length){
+    bHost.innerHTML = '<div class="dim" style="padding:10px;font-style:italic">No panes available.</div>';
   } else {
     let lastView = '';
-    builtins.forEach(b => {
+    allRows.forEach(b => {
       if(b.viewLabel !== lastView){
         const hdr = document.createElement('div');
         hdr.style.cssText = 'font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;padding:8px 6px 4px';
@@ -24994,43 +25163,49 @@ function _termSpawnPickerOpen(){
         bHost.appendChild(hdr);
         lastView = b.viewLabel;
       }
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);color:var(--fg);cursor:pointer;font:11px ui-monospace,Menlo,monospace;text-align:left;width:100%;margin-bottom:4px';
-      row.innerHTML = '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + b.label + '</span><span class="dim" style="font-size:9px">+</span>';
-      row.addEventListener('mouseenter', () => row.style.background = 'rgba(20,241,149,.08)');
-      row.addEventListener('mouseleave', () => row.style.background = 'rgba(10,15,28,.5)');
-      row.addEventListener('click', () => {
-        // v0.9.50 — Watchlist panes are now real DOM panes in the Engine
-        // view, picked up by the standard paneId-based path below. The
-        // widgetType branch added in v0.9.49 is retired.
-        _termSpawnPane(b.paneId);
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);font:11px ui-monospace,Menlo,monospace;margin-bottom:4px;cursor:pointer;transition:background .12s,border-color .12s';
+      const nameSpan = document.createElement('span');
+      nameSpan.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)';
+      nameSpan.textContent = b.label;
+      const plusBtn = document.createElement('button');
+      plusBtn.type = 'button';
+      plusBtn.title = 'Spawn on ' + (inGame ? 'chart background' : 'desktop');
+      plusBtn.textContent = '+';
+      plusBtn.style.cssText = 'background:rgba(126,231,135,.20);border:1px solid rgba(126,231,135,.55);color:#bff7df;padding:2px 10px;border-radius:4px;cursor:pointer;font:700 11px ui-monospace,Menlo,monospace';
+      row.appendChild(nameSpan);
+      row.appendChild(plusBtn);
+      row.addEventListener('mouseenter', () => { row.style.background = 'rgba(126,231,135,.08)'; row.style.borderColor = 'rgba(126,231,135,.30)'; });
+      row.addEventListener('mouseleave', () => { row.style.background = 'rgba(10,15,28,.5)'; row.style.borderColor = 'var(--line)'; });
+      // Clicking the row name area opens the quick-config form.
+      row.addEventListener('click', (e) => {
+        if(e.target === plusBtn) return;
+        _renderCfg(b);
+      });
+      // + spawns. Reads saved defaults for the type so the spawn carries
+      // the player's last Save.
+      plusBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const typeKey = _schemaKeyFor(b);
+        const defaults = (_loadDefaults()[typeKey]) || {};
+        if(b.widgetType === 'wbterm' && b.wbId){
+          _termSpawnWbTerm(b.wbId);
+        } else if(b.widgetType){
+          // Watchlist-type spawn (kept here for back-compat / future types).
+          const reg = inGame && typeof chartWidgets !== 'undefined' ? chartWidgets
+                   : (typeof widgets !== 'undefined' ? widgets : null);
+          if(reg && Array.isArray(reg.items)) reg.items = reg.items.filter(w => w.type !== b.widgetType);
+          const sourceId = (b.widgetType === 'coinwatch') ? '__token_terminal__'
+                          : (defaults.addresses || b.sourceId || '');
+          if(inGame && typeof _cwAdd === 'function') _cwAdd(b.widgetType, sourceId, window.innerWidth/2, window.innerHeight/2);
+          else if(typeof _wAdd === 'function') _wAdd(b.widgetType, sourceId, window.innerWidth/2, window.innerHeight/2);
+        } else {
+          _termSpawnPane(b.paneId);
+        }
+        try { if(typeof crNotify === 'function') crNotify(b.label.replace(/^\W+\s*/, '') + ' · spawned'); } catch(_){}
         _termSpawnPickerClose();
       });
       bHost.appendChild(row);
-    });
-  }
-
-  // Workbench builds list
-  const wHost = card.querySelector('#crTermPickerWb');
-  if(!wb.terms.length){
-    wHost.innerHTML = '<div class="dim" style="padding:10px;font-style:italic">No custom widgets yet. Open Workbench → Terminal tab to build one.</div>';
-  } else {
-    wb.terms.forEach(t => {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);color:var(--fg);cursor:pointer;font:11px ui-monospace,Menlo,monospace;text-align:left;width:100%;margin-bottom:6px';
-      row.innerHTML =
-        '<span style="font-size:14px;width:20px;text-align:center">' + t.icon + '</span>' +
-        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + t.name + '</span>' +
-        '<span class="dim" style="font-size:9px">' + t.kind + ' +</span>';
-      row.addEventListener('mouseenter', () => row.style.background = 'rgba(20,241,149,.08)');
-      row.addEventListener('mouseleave', () => row.style.background = 'rgba(10,15,28,.5)');
-      row.addEventListener('click', () => {
-        _termSpawnWbTerm(t.id);
-        _termSpawnPickerClose();
-      });
-      wHost.appendChild(row);
     });
   }
 
