@@ -4052,6 +4052,35 @@
   }
   .cr-pip-placeholder .big{font-size:32px;opacity:.6}
 
+  /* v0.9.57 — Pitch folder browser. Folder view shows a grid of files;
+     each tile is clickable. Selected tile flips to fullscreen file view
+     where the iframe / img fills the whole body. */
+  .cr-pip-folder{
+    display:flex;flex-direction:column;gap:6px;padding:10px;height:100%;
+    overflow-y:auto;
+  }
+  .cr-pip-folder-empty{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:10px;color:#7ee787;opacity:.65;font-size:11px;text-align:center;padding:20px;
+  }
+  .cr-pip-folder-empty .big{font-size:48px;opacity:.6}
+  .cr-pip-file{
+    display:flex;align-items:center;gap:10px;padding:8px 10px;
+    background:rgba(126,231,135,.06);border:1px solid rgba(126,231,135,.18);
+    border-radius:6px;cursor:pointer;transition:background .15s,border-color .15s;
+    color:#bff7df;font-size:11px;
+  }
+  .cr-pip-file:hover{background:rgba(126,231,135,.14);border-color:rgba(126,231,135,.45)}
+  .cr-pip-file .ic{font-size:20px;line-height:1;width:24px;text-align:center}
+  .cr-pip-file .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+  .cr-pip-file .meta{font-size:9px;opacity:.55;letter-spacing:.3px;text-transform:uppercase}
+  .cr-pip-fullscreen{position:relative;background:#000}
+  .cr-pip-fullscreen iframe,
+  .cr-pip-fullscreen img{
+    width:100%;height:100%;display:block;border:0;
+  }
+  .cr-pip-fullscreen img{object-fit:contain}
+
   /* v0.9.40 — RUN-tube placeholder play-button.
      Big circular play affordance centered in the placeholder. Hover
      pulses the ring; click fires the warm-up animation (see below).
@@ -4427,7 +4456,7 @@
        to YouTube/Twitch). Display = inline file viewer for pitch decks
        and chart screenshots, draggable + resizable. -->
   <button class="dockBtn" data-prog="runtube"     title="RUN-tube · streaming + PIP video">▶</button>
-  <button class="dockBtn" data-prog="display"     title="Pitch · pitch deck / file viewer (PDF / image)">📄</button>
+  <button class="dockBtn" data-prog="display"     title="Pitch · folder of decks / files (PDF / image)">📁</button>
   <div class="dockSep"></div>
   <button class="dockBtn" id="crDockReturn"       title="Return to Desktop">⌂</button>
 </div>
@@ -4468,27 +4497,33 @@
   <div class="cr-pip-resize" data-resize-handle></div>
 </div>
 
-<!-- v0.9.27 — Pitch (formerly "File Display") · draggable inline document
-     viewer. PDF rendered through <iframe>, image via <img>. File loaded
-     via the hidden <input type="file"> in the header. Local-only
-     (URL.createObjectURL), never uploaded anywhere. Element ID
-     "crFileDisplay" + data-pip "display" preserved for backward compat. -->
+<!-- v0.9.57 — Pitch · folder browser. Two view modes:
+       1. Folder view (default) — list of files in the current folder.
+          Click a file to enter fullscreen view. Click 📁 in header to
+          open the OS file picker and add a file to the folder.
+       2. Fullscreen file view — the file fills the widget body with
+          no toolbar. Header keeps drag/close. ← / → arrow keys
+          navigate between files in the folder. Click ⌫ in header to
+          go back to the folder view.
+     Initial folder name "Frontier Hackathon" placeholder; eventually
+     will point at a real folder on disk (TBD). Multi-file in-memory
+     state via URL.createObjectURL; local-only, no uploads. -->
 <div id="crFileDisplay" class="cr-pip" data-pip="display" hidden>
   <div class="cr-pip-hd" data-drag-handle>
-    <span class="ttl" id="crFdTtl">📄 Pitch</span>
+    <span class="ttl" id="crFdTtl">📁 Pitch · Frontier Hackathon</span>
     <div class="cr-pip-actions">
-      <button class="cr-pip-act" data-act="fd-open"  title="Open file (PDF / image)">📁</button>
-      <button class="cr-pip-act" data-act="fd-clear" title="Clear file">⌫</button>
+      <button class="cr-pip-act" data-act="fd-prev"  title="Previous file (←)" style="display:none">◀</button>
+      <button class="cr-pip-act" data-act="fd-next"  title="Next file (→)" style="display:none">▶</button>
+      <button class="cr-pip-act" data-act="fd-back"  title="Back to folder" style="display:none">⌫</button>
+      <button class="cr-pip-act" data-act="fd-open"  title="Add file to folder (PDF / image)">📁</button>
       <button class="cr-pip-close" data-act="pip-close" title="Hide widget">×</button>
     </div>
   </div>
   <div class="cr-pip-body" id="crFdBody">
-    <div class="cr-pip-placeholder" id="crFdPh">
-      <div class="big">📄</div>
-      <div>Pitch</div>
-      <div style="font-size:9px;opacity:.5;margin-top:6px;max-width:220px;text-align:center">Open a PDF or image to display inline.<br/>Useful for pitch decks during demo recording.</div>
-      <button class="cr-pip-act" id="crFdOpenBtn" style="margin-top:10px;padding:6px 14px">📁 Open file…</button>
-    </div>
+    <!-- Folder view (default). Populated by JS. -->
+    <div class="cr-pip-folder" id="crFdFolder"></div>
+    <!-- Fullscreen file view (display:none until a file is opened). -->
+    <div class="cr-pip-fullscreen" id="crFdFullscreen" style="display:none;width:100%;height:100%"></div>
   </div>
   <input type="file" id="crFdFile" accept="application/pdf,image/*" style="display:none">
   <div class="cr-pip-resize" data-resize-handle></div>
@@ -5768,18 +5803,18 @@
              image) for pitch decks and chart snapshots during recording.
              Local-only. data-prog still "display" for backward compat with
              localStorage keys + the crPipToggle dispatch table. -->
-        <button class="os-icon" data-prog="display" title="Pitch — draggable inline pitch deck / file viewer (PDF / image) for recording">
-          <div class="ico"><svg class="cr-svg-ico" style="--accent:#7be3f3;--accent2:#bff7df" viewBox="0 0 32 32" aria-hidden="true">
-            <!-- document with folded corner + lines -->
-            <path class="a" d="M7 4 h13 l5 5 v19 H7 z" opacity=".22"/>
-            <path d="M7 4 h13 l5 5 v19 H7 z" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/>
-            <path d="M20 4 v5 h5" fill="none" stroke="var(--accent)" stroke-width="1.4"/>
-            <line x1="11" y1="15" x2="22" y2="15" stroke="var(--accent2)" stroke-width="1.3"/>
-            <line x1="11" y1="19" x2="22" y2="19" stroke="var(--accent2)" stroke-width="1.3"/>
-            <line x1="11" y1="23" x2="18" y2="23" stroke="var(--accent2)" stroke-width="1.3"/>
+        <!-- v0.9.57 — Pitch icon swapped from document → folder. Opens
+             a folder browser with arrow-key navigation between files;
+             selected file fills the widget fullscreen with no toolbar. -->
+        <button class="os-icon" data-prog="display" title="Pitch — folder of decks / files (PDF / image) for recording">
+          <div class="ico"><svg class="cr-svg-ico" style="--accent:#7be3f3;--accent2:#ffd166" viewBox="0 0 32 32" aria-hidden="true">
+            <!-- folder: tab on top, body below -->
+            <path class="a" d="M3 8 q0-2 2-2 h7 l3 3 h12 q2 0 2 2 v15 q0 2-2 2 H5 q-2 0-2-2 z" opacity=".22"/>
+            <path d="M3 8 q0-2 2-2 h7 l3 3 h12 q2 0 2 2 v15 q0 2-2 2 H5 q-2 0-2-2 z" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/>
+            <line x1="3" y1="13" x2="29" y2="13" stroke="var(--accent2)" stroke-width="1.4" opacity=".55"/>
           </svg></div>
           <div class="lbl">Pitch</div>
-          <div class="kbd">PDF · Image</div>
+          <div class="kbd">Folder</div>
         </button>
         <!-- v0.8k#24y — Configs icon retired from the desktop. Configs now opens
              after picking a mode in Run (Mode Pick → Configure → Start Run). -->
@@ -32206,45 +32241,157 @@ window.crCrtFadeIn  = crCrtFadeIn;
     if(ph) ph.style.display = 'flex';
   }
 
-  /* — File Display — */
-  function openFile(file){
-    if(!file) return;
-    const body = document.getElementById('crFdBody');
-    const ph = document.getElementById('crFdPh');
+  /* — Pitch · folder browser (v0.9.57) —
+     State:
+       _pitchFolder.name  — folder name shown in the header
+       _pitchFolder.files — array of { name, type, url }; url created via URL.createObjectURL
+       _pitchFolder.idx   — null = folder view; number = fullscreen file index
+     Initial state: one placeholder file 'Frontier Hackathon' that prompts
+     the user to load a real file (the OS file picker fills it in).
+     Click a file in the folder view → fullscreen. ← / → arrow keys
+     navigate between files. The ⌫ header button returns to folder view. */
+  const _pitchFolder = {
+    name: 'Frontier Hackathon',
+    files: [
+      { name: 'Frontier Hackathon', type: 'placeholder', url: null },
+    ],
+    idx: null,
+  };
+
+  function _pitchSetTitle(){
     const ttl = document.getElementById('crFdTtl');
-    if(!body) return;
-    // Clear previous preview.
-    body.querySelectorAll('iframe, img').forEach(n => n.remove());
-    if(ph) ph.style.display = 'none';
-    const url = URL.createObjectURL(file);
-    if(file.type === 'application/pdf'){
-      const f = document.createElement('iframe');
-      f.src = url;
-      f.title = file.name;
-      f.style.cssText = 'border:0;width:100%;height:100%';
-      body.appendChild(f);
-    } else if(file.type.startsWith('image/')){
-      const img = document.createElement('img');
-      img.src = url;
-      img.alt = file.name;
-      body.appendChild(img);
+    if(!ttl) return;
+    if(_pitchFolder.idx == null){
+      ttl.textContent = '📁 Pitch · ' + _pitchFolder.name;
     } else {
-      try { if(typeof crNotify === 'function') crNotify('Pitch · unsupported file type', 'warn'); } catch(_){}
-      if(ph) ph.style.display = 'flex';
+      const f = _pitchFolder.files[_pitchFolder.idx];
+      ttl.textContent = '📄 ' + (f && f.name ? f.name : 'File') +
+        '   (' + (_pitchFolder.idx + 1) + '/' + _pitchFolder.files.length + ')';
+    }
+  }
+  function _pitchSetHeaderButtons(){
+    const inFile = _pitchFolder.idx != null;
+    const prev = document.querySelector('[data-act="fd-prev"]');
+    const next = document.querySelector('[data-act="fd-next"]');
+    const back = document.querySelector('[data-act="fd-back"]');
+    const open = document.querySelector('[data-act="fd-open"]');
+    if(prev) prev.style.display = inFile ? '' : 'none';
+    if(next) next.style.display = inFile ? '' : 'none';
+    if(back) back.style.display = inFile ? '' : 'none';
+    if(open) open.style.display = inFile ? 'none' : '';
+  }
+  function _pitchRenderFolder(){
+    const host = document.getElementById('crFdFolder');
+    const fs   = document.getElementById('crFdFullscreen');
+    if(!host || !fs) return;
+    fs.style.display = 'none';
+    fs.innerHTML = '';
+    host.style.display = 'flex';
+    host.innerHTML = '';
+    if(!_pitchFolder.files.length){
+      host.innerHTML = '<div class="cr-pip-folder-empty"><div class="big">📁</div><div>Empty folder</div><button class="cr-pip-act" id="crFdEmptyOpen" style="margin-top:8px;padding:6px 14px">📁 Add file…</button></div>';
+      const eb = host.querySelector('#crFdEmptyOpen');
+      if(eb) eb.addEventListener('click', () => {
+        const inp = document.getElementById('crFdFile');
+        if(inp) inp.click();
+      });
+    } else {
+      _pitchFolder.files.forEach((f, i) => {
+        const tile = document.createElement('div');
+        tile.className = 'cr-pip-file';
+        const ic = (f.type === 'placeholder') ? '📄' :
+                   (f.type === 'application/pdf') ? '📕' :
+                   (f.type && f.type.startsWith('image/')) ? '🖼' : '📄';
+        tile.innerHTML =
+          '<span class="ic">' + ic + '</span>' +
+          '<span class="nm">' + f.name + '</span>' +
+          '<span class="meta">' + (f.type === 'placeholder' ? 'placeholder · click to open' : (f.type || '').toUpperCase().replace('APPLICATION/','')) + '</span>';
+        tile.addEventListener('click', () => _pitchOpenIdx(i));
+        host.appendChild(tile);
+      });
+    }
+    _pitchFolder.idx = null;
+    _pitchSetTitle();
+    _pitchSetHeaderButtons();
+  }
+  function _pitchOpenIdx(i){
+    if(i < 0 || i >= _pitchFolder.files.length) return;
+    const f = _pitchFolder.files[i];
+    if(!f) return;
+    // Placeholder → trigger the file picker; on choose, this slot is replaced.
+    if(f.type === 'placeholder' || !f.url){
+      _pitchFolder._fillSlot = i;  // fileInput.change handler reads this
+      const inp = document.getElementById('crFdFile');
+      if(inp) inp.click();
       return;
     }
-    if(ttl) ttl.textContent = '📄 ' + file.name;
-    try { if(typeof crNotify === 'function') crNotify('Pitch · ' + file.name); } catch(_){}
+    const host = document.getElementById('crFdFolder');
+    const fs   = document.getElementById('crFdFullscreen');
+    if(!host || !fs) return;
+    host.style.display = 'none';
+    fs.innerHTML = '';
+    if(f.type === 'application/pdf'){
+      const ifr = document.createElement('iframe');
+      ifr.src = f.url; ifr.title = f.name;
+      fs.appendChild(ifr);
+    } else if(f.type && f.type.startsWith('image/')){
+      const img = document.createElement('img');
+      img.src = f.url; img.alt = f.name;
+      fs.appendChild(img);
+    } else {
+      try { if(typeof crNotify === 'function') crNotify('Pitch · unsupported file type', 'warn'); } catch(_){}
+      _pitchRenderFolder();
+      return;
+    }
+    fs.style.display = 'flex';
+    _pitchFolder.idx = i;
+    _pitchSetTitle();
+    _pitchSetHeaderButtons();
   }
-  function clearFile(){
-    const body = document.getElementById('crFdBody');
-    const ph = document.getElementById('crFdPh');
-    const ttl = document.getElementById('crFdTtl');
-    if(!body) return;
-    body.querySelectorAll('iframe, img').forEach(n => n.remove());
-    if(ph) ph.style.display = 'flex';
-    if(ttl) ttl.textContent = '📄 Pitch';
+  function _pitchNavStep(delta){
+    if(_pitchFolder.idx == null) return;
+    const n = _pitchFolder.files.length;
+    if(!n) return;
+    let i = _pitchFolder.idx + delta;
+    // Skip placeholder slots when navigating; wrap around.
+    for(let guard = 0; guard < n; guard++){
+      if(i < 0) i = n - 1;
+      if(i >= n) i = 0;
+      const f = _pitchFolder.files[i];
+      if(f && f.type !== 'placeholder' && f.url) break;
+      i += delta || 1;
+    }
+    _pitchOpenIdx(i);
   }
+  function _pitchAddFile(file){
+    if(!file) return;
+    const url = URL.createObjectURL(file);
+    const entry = { name: file.name, type: file.type || 'application/octet-stream', url };
+    if(_pitchFolder._fillSlot != null && _pitchFolder.files[_pitchFolder._fillSlot]){
+      // Replacing the placeholder slot — keep the visible position.
+      _pitchFolder.files[_pitchFolder._fillSlot] = entry;
+      const slot = _pitchFolder._fillSlot;
+      _pitchFolder._fillSlot = null;
+      _pitchOpenIdx(slot);
+    } else {
+      _pitchFolder.files.push(entry);
+      _pitchRenderFolder();
+    }
+    try { if(typeof crNotify === 'function') crNotify('Pitch · added ' + file.name); } catch(_){}
+  }
+  // Arrow-key navigation when in fullscreen file view AND widget is on.
+  function _pitchKeyHandler(e){
+    const wrap = document.getElementById('crFileDisplay');
+    if(!wrap || wrap.hidden || !wrap.classList.contains('on')) return;
+    if(_pitchFolder.idx == null) return;
+    // Don't fight typing inputs.
+    const tag = (e.target && e.target.tagName) || '';
+    if(tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+    if(e.key === 'ArrowLeft'){ e.preventDefault(); _pitchNavStep(-1); }
+    else if(e.key === 'ArrowRight'){ e.preventDefault(); _pitchNavStep(+1); }
+    else if(e.key === 'Escape'){ e.preventDefault(); _pitchRenderFolder(); }
+  }
+  document.addEventListener('keydown', _pitchKeyHandler, true);
 
   /* — Bind both widgets on DOM ready — */
   function init(){
@@ -32284,19 +32431,24 @@ window.crCrtFadeIn  = crCrtFadeIn;
       v.style.transform = (v.style.transform === 'scaleX(-1)') ? '' : 'scaleX(-1)';
     });
 
-    // Display wiring.
+    // v0.9.57 — Pitch folder browser wiring (replaces single-file flow).
     const fileInput = document.getElementById('crFdFile');
     const openBtnHd = document.querySelector('[data-act="fd-open"]');
-    const openBtnPh = document.getElementById('crFdOpenBtn');
-    const clearBtn  = document.querySelector('[data-act="fd-clear"]');
-    const trigger = () => { if(fileInput) fileInput.click(); };
-    if(openBtnHd) openBtnHd.addEventListener('click', trigger);
-    if(openBtnPh) openBtnPh.addEventListener('click', trigger);
-    if(clearBtn)  clearBtn.addEventListener('click',  clearFile);
+    const prevBtn   = document.querySelector('[data-act="fd-prev"]');
+    const nextBtn   = document.querySelector('[data-act="fd-next"]');
+    const backBtn   = document.querySelector('[data-act="fd-back"]');
+    if(openBtnHd) openBtnHd.addEventListener('click', () => { if(fileInput) fileInput.click(); });
+    if(prevBtn)   prevBtn.addEventListener('click', () => _pitchNavStep(-1));
+    if(nextBtn)   nextBtn.addEventListener('click', () => _pitchNavStep(+1));
+    if(backBtn)   backBtn.addEventListener('click', () => _pitchRenderFolder());
     if(fileInput) fileInput.addEventListener('change', (e) => {
       const f = e.target.files && e.target.files[0];
-      if(f) openFile(f);
+      if(f) _pitchAddFile(f);
+      // Reset so picking the same file twice still fires.
+      try { e.target.value = ''; } catch(_){}
     });
+    // Initial paint of the folder view.
+    _pitchRenderFolder();
   }
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', init);
