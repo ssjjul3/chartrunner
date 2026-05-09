@@ -36987,8 +36987,37 @@ const crL3 = (function(){
           });
           card.querySelector('.del').addEventListener('click', e => {
             e.stopPropagation();
-            crMaps.del(m.id); renderMaps();
-            if(typeof toast === 'function') toast('Map deleted');
+            // v0.9.64 — If the map is anchored on-chain, delete the
+            // PDA too. Without this, deleting locally leaves a zombie
+            // entry on devnet that can't be re-saved under the same
+            // name (PDA seeds collide). One confirm covers both ops
+            // so the flow is: anchored map → delete + unanchor; plain
+            // local map → delete + toast (existing behavior).
+            let _isAnchored = false;
+            try {
+              if(window.crRegistry && typeof crRegistry.findOnChain === 'function'){
+                const e1 = crRegistry.findOnChain('map', m.name);
+                _isAnchored = !!(e1 && e1.onChain);
+              } else if(window.crChainSave && typeof crChainSave.findByName === 'function'){
+                _isAnchored = !!crChainSave.findByName(m.name);
+              }
+            } catch(_){}
+            if(_isAnchored){
+              const ok = window.confirm(
+                'Delete "' + m.name + '" + unanchor from Solana devnet?\n\n' +
+                'OK = remove local copy AND close the on-chain PDA (refunds ~0.0011 SOL rent).\n' +
+                'Cancel = keep everything.\n\n' +
+                'Note: leaving an unused on-chain entry blocks re-saving under the same name later.'
+              );
+              if(!ok) return;
+              crMaps.del(m.id); renderMaps();
+              try { crRegistry.deleteFromChain('map', m.name); } catch(err){
+                if(typeof toast === 'function') toast('On-chain unanchor failed · local copy removed');
+              }
+            } else {
+              crMaps.del(m.id); renderMaps();
+              if(typeof toast === 'function') toast('Map deleted');
+            }
           });
           // v0.9.63 — Share button. Builds a portable URL whose fragment
           // carries the map JSON (gzipped + base64). Recipient pastes it
@@ -37040,7 +37069,28 @@ const crL3 = (function(){
           });
           row.querySelector('.del').addEventListener('click', e => {
             e.stopPropagation();
-            crMaps.del(m.id); renderMaps();
+            // v0.9.64 — Phone delete also unanchors on-chain. Same
+            // rationale as the desktop card delete above.
+            let _isAnchored = false;
+            try {
+              if(window.crRegistry && typeof crRegistry.findOnChain === 'function'){
+                const e1 = crRegistry.findOnChain('map', m.name);
+                _isAnchored = !!(e1 && e1.onChain);
+              } else if(window.crChainSave && typeof crChainSave.findByName === 'function'){
+                _isAnchored = !!crChainSave.findByName(m.name);
+              }
+            } catch(_){}
+            if(_isAnchored){
+              const ok = window.confirm(
+                'Delete "' + m.name + '" + unanchor from devnet?\n\n' +
+                'OK = local + on-chain. Cancel = keep both.'
+              );
+              if(!ok) return;
+              crMaps.del(m.id); renderMaps();
+              try { crRegistry.deleteFromChain('map', m.name); } catch(_){}
+            } else {
+              crMaps.del(m.id); renderMaps();
+            }
           });
           phList.appendChild(row);
         }
