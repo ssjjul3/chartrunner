@@ -33356,8 +33356,83 @@ function log(msg){
         } catch(_){}
       }
 
-      function tryWalletConnect(){
+      // v0.9.73 — Direct Phantom path. If Phantom is installed in the
+      // browser we call provider.connect() inline — a popup, no page
+      // navigation. The whitelist check runs against the returned pubkey
+      // and we hydrate the same localStorage keys (`cr_wallet`,
+      // `cr_wallet_adapter`) the /solana-connect/ bounce-back would have
+      // set, so every downstream consumer (crWallet.isConnected, profile
+      // UI, save_entity flow) sees identical state.
+      //
+      // Falls back to the existing redirect-through-/solana-connect/
+      // path for non-Phantom Wallet Standard wallets (Backpack, Solflare)
+      // or when Phantom isn't installed. Phantom dominates Solana retail
+      // (~85% market share) so this fast-path covers most users.
+      async function tryWalletConnect(){
         _clearErr();
+        const provider = (window.phantom && window.phantom.solana) || window.solana;
+        const phantomReady = !!(provider && provider.isPhantom && typeof provider.connect === 'function');
+
+        if(phantomReady){
+          try {
+            const resp = await provider.connect();           // popup prompt
+            const pk   = resp && resp.publicKey ? resp.publicKey.toString() : null;
+            if(!pk) throw new Error('Phantom returned no publicKey');
+
+            // Hydrate the localStorage keys the bounce-back path would set.
+            try {
+              localStorage.setItem('cr_wallet', pk);
+              localStorage.setItem('cr_wallet_adapter', 'Phantom');
+              localStorage.removeItem('cr_guest_mode_v1');
+            } catch(_){}
+
+            // Whitelist gate.
+            if(STEALTH_WALLET_WHITELIST.includes(pk)){
+              try { localStorage.setItem('cr_stealth_auth_v1', '1'); } catch(_){}
+              dismissBoot();
+              // First-boot OS tutorial gate (mirrors trySignIn path).
+              try {
+                const FIRST_BOOT_KEY = 'cr_first_boot_v1';
+                if(!localStorage.getItem(FIRST_BOOT_KEY)){
+                  localStorage.setItem(FIRST_BOOT_KEY, String(Date.now()));
+                  setTimeout(() => {
+                    try { if(typeof window.crCoachTutorial === 'function')
+                            window.crCoachTutorial(true, 'os'); } catch(_){}
+                  }, 700);
+                }
+              } catch(_){}
+              return;
+            }
+
+            // Connected but not whitelisted → disconnect + show error,
+            // wipe the localStorage we just wrote so the player isn't
+            // half-authed.
+            try { provider.disconnect(); } catch(_){}
+            try {
+              localStorage.removeItem('cr_wallet');
+              localStorage.removeItem('cr_wallet_adapter');
+            } catch(_){}
+            _showErr('Wallet ' + pk.slice(0, 4) + '…' + pk.slice(-4) +
+                     ' is not on the stealth whitelist. Sign in with credentials, or contact the team to be added.');
+            return;
+          } catch(err){
+            // 4001 (Phantom) / 'User rejected' / 'cancelled' → user
+            // closed the popup. Show a soft message; don't fall through
+            // to the redirect because that would be a surprising page
+            // nav after the user just clicked "no" in their wallet.
+            const msg = String(err && err.message || err || '');
+            if(err && err.code === 4001 || /reject|cancel|denied/i.test(msg)){
+              _showErr('Connection cancelled. Click the button again to retry, or sign in with credentials.');
+            } else {
+              _showErr('Phantom connection failed: ' + msg);
+            }
+            return;
+          }
+        }
+
+        // Phantom not installed → fall back to the Wallet Standard
+        // bounce-through path so Backpack / Solflare users still have
+        // a way in.
         try {
           if(typeof crWallet !== 'undefined' && crWallet.connect){
             crWallet.connect();
