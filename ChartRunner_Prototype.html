@@ -14952,7 +14952,11 @@ function updateWeapons(dt){
           if(!game.destroyedIndLines) game.destroyedIndLines = new Set();
           game.destroyedIndLines.add(ip.id);
           // Resolve color via parent indicator (strip 'ichi-tenkan' → 'ichi')
-          const parentId = ip.id.split('-')[0];
+          let parentId = ip.id.split('-')[0];
+          // v0.9.68 — 'ref-pdHigh', 'ref-pdLow', etc. are sub-lines of the
+          // 'reflevels' indicator. Map the prefix back so color lookup +
+          // auto-disable target the right pill.
+          if(parentId === 'ref') parentId = 'reflevels';
           const c2 = (typeof INDICATOR_BY_ID !== 'undefined' && INDICATOR_BY_ID[parentId])
             ? INDICATOR_BY_ID[parentId].color : '#ffd166';
           consume((ip.id || '?').toUpperCase(), c2);
@@ -18301,10 +18305,23 @@ function _drawRefLevels(startIdx, endIdx, meta){
   // Stash positions so the score ring can mark which level is "in zone".
   game._refLevelGeom = {};
   const order = ['pdHigh','pdVAH','pdPOC','pdClose','dOpen','IBH','IBL','pdVAL','pdLow'];
+  // v0.9.68 — Each REF line is individually shootable, like SMA/EMA/Ichi.
+  // The line id is 'ref-' + key (e.g. 'ref-pdHigh') and it gets registered
+  // as an indicator poly so bullet collision picks it up. Destroyed lines
+  // are skipped from the draw AND from the poly push (the push helper
+  // also early-returns on destroyed). Range covers the visible candle
+  // window so the line is hittable across the whole chart, not just a
+  // single x. v0.8k#24n destruction state is restored by Maps save/load
+  // (game.destroyedIndLines is already serialized in crMaps.snapshot).
+  const refLeftWx  = (startIdx | 0) * STEP;
+  const refRightWx = ((endIdx | 0) + 1) * STEP;
   for(const k of order){
     if(!params[k]) continue;
     const px = lev[k];
     if(typeof px !== 'number' || !isFinite(px)) continue;
+    const lineId = 'ref-' + k;
+    // Skip destroyed lines — bullet hit removed them this run.
+    if(game.destroyedIndLines && game.destroyedIndLines.has(lineId)) continue;
     const style = REF_LEVEL_STYLE[k];
     const y = priceToY(px);
     if(!isFinite(y) || y < 0 || y > H) continue;
@@ -18323,6 +18340,12 @@ function _drawRefLevels(startIdx, endIdx, meta){
       ctx.fillText(tag, W - 60 - tw + 4, y + 3);
     }
     game._refLevelGeom[k] = { y, price: px };
+    // Register as a hittable indicator poly. Two points at the same
+    // price = horizontal segment; bullet collision iterates these.
+    _pushIndicatorPoly(lineId, [
+      { wx: refLeftWx,  py: px },
+      { wx: refRightWx, py: px },
+    ]);
   }
   ctx.restore();
 }
@@ -30715,6 +30738,29 @@ function _isIndicatorFullyDestroyed(id){
       if(!game.destroyedVRVPBuckets.has(k)) return false;
     }
     return game._vrvpGeom.BUCKETS > 0;
+  }
+  if(id === 'reflevels'){
+    // v0.9.68 — Auto-disable when every REF sub-line currently visible has
+    // been destroyed. We only consider lines the user has enabled in
+    // params (some may be off via the indicator-config dialog) AND lines
+    // computeReferenceLevels() actually produced (e.g. IBH/IBL only exist
+    // intraday). If neither set has any entries, the indicator can't be
+    // "fully destroyed".
+    const d = game.destroyedIndLines;
+    if(!d) return false;
+    const params = (typeof _getIndParams === 'function') ? _getIndParams('reflevels') : {};
+    const lev    = (typeof computeReferenceLevels === 'function') ? computeReferenceLevels() : null;
+    if(!lev) return false;
+    const order  = ['pdHigh','pdVAH','pdPOC','pdClose','dOpen','IBH','IBL','pdVAL','pdLow'];
+    let any = false, allDead = true;
+    for(const k of order){
+      if(!params[k]) continue;
+      const px = lev[k];
+      if(typeof px !== 'number' || !isFinite(px)) continue;
+      any = true;
+      if(!d.has('ref-' + k)){ allDead = false; break; }
+    }
+    return any && allDead;
   }
   // Single-line indicators: presence in the set = done.
   return !!(game.destroyedIndLines && game.destroyedIndLines.has(id));
