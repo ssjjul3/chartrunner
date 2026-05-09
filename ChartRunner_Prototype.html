@@ -4069,9 +4069,14 @@
   .cr-pip-file{
     display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px 4px;
     background:transparent;border:1px solid transparent;border-radius:6px;cursor:pointer;
-    transition:background .15s,border-color .15s;color:#bff7df;
+    transition:background .15s,border-color .15s,opacity .15s,transform .15s;color:#bff7df;
+    user-select:none;
   }
   .cr-pip-file:hover{background:rgba(126,231,135,.10);border-color:rgba(126,231,135,.30)}
+  /* v0.9.62 — drag-to-reorder visuals */
+  .cr-pip-file.dragging{opacity:.35;transform:scale(.95)}
+  .cr-pip-file.drop-before{box-shadow:-3px 0 0 0 #7ee787}
+  .cr-pip-file.drop-after{box-shadow:3px 0 0 0 #7ee787}
   .cr-pip-file .doc{
     position:relative;width:56px;height:72px;background:#f4f6fa;
     border:1px solid rgba(20,30,40,.55);border-radius:3px;
@@ -4198,8 +4203,11 @@
   }
   /* RUN-tube defaults — bottom-right, 16:9-ish, small */
   #crRunTube{right:18px;bottom:80px;width:240px;height:160px}
-  /* File Display defaults — top-right, larger */
-  #crFileDisplay{right:18px;top:80px;width:480px;height:600px}
+  /* v0.9.61 — Pitch defaults — top-right, compact 320×360. Earlier
+     480×600 default left the single Frontier-Hackathon placeholder
+     stranded at the top of a huge empty window. localStorage key
+     bumped to v2 so the new default picks up for everyone. */
+  #crFileDisplay{right:18px;top:80px;width:320px;height:360px}
   /* v0.9.27 — PIP widgets float over BOTH desktop and in-game by design;
      no splash-hide rule. (Earlier draft hid them during splash, which is
      wrong — the desktop is exactly where you launch them from.) */
@@ -32124,7 +32132,8 @@ window.crCrtFadeIn  = crCrtFadeIn;
 (function crPipBoot(){
   const PIPS = ['runtube','display'];
   const ID_OF = { runtube:'crRunTube', display:'crFileDisplay' };
-  const KEY_OF = id => 'cr_pip_' + id + '_v1';
+  // v0.9.61 — display key bumped to v2 to drop oversized v1 saves.
+  const KEY_OF = id => id === 'display' ? 'cr_pip_display_v2' : ('cr_pip_' + id + '_v1');
 
   function loadState(id){
     try { return JSON.parse(localStorage.getItem(KEY_OF(id))) || {}; }
@@ -32344,6 +32353,8 @@ window.crCrtFadeIn  = crCrtFadeIn;
       _pitchFolder.files.forEach((f, i) => {
         const tile = document.createElement('div');
         tile.className = 'cr-pip-file';
+        tile.dataset.idx = String(i);
+        tile.draggable = true;  // v0.9.62 — drag-to-reorder
         // Type → badge label + class
         let badgeText, badgeClass = '';
         if(f.type === 'placeholder'){
@@ -32365,7 +32376,56 @@ window.crCrtFadeIn  = crCrtFadeIn;
           '<div class="doc"><span class="badge' + badgeClass + '">' + badgeText + '</span></div>' +
           '<span class="nm">' + safeName + '</span>';
         tile.title = f.name + (f.type === 'placeholder' ? ' · click to open file picker' : '');
-        tile.addEventListener('click', () => _pitchOpenIdx(i));
+        tile.addEventListener('click', (e) => {
+          // Suppress click that follows a drag (some browsers fire both).
+          if(tile._suppressClick){ tile._suppressClick = false; return; }
+          _pitchOpenIdx(i);
+        });
+        // v0.9.62 — drag-to-reorder. dataTransfer carries the source index;
+        // dragover sets a left/right insertion hint based on the cursor x
+        // relative to the target tile's midline; drop reorders the array
+        // and re-renders. Click is suppressed for the drag-source on the
+        // post-drop synthetic mouseup.
+        tile.addEventListener('dragstart', (e) => {
+          tile.classList.add('dragging');
+          try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); } catch(_){}
+        });
+        tile.addEventListener('dragend', () => {
+          tile.classList.remove('dragging');
+          host.querySelectorAll('.cr-pip-file.drop-before, .cr-pip-file.drop-after')
+              .forEach(el => el.classList.remove('drop-before','drop-after'));
+          tile._suppressClick = true;
+          // Clear the suppress flag if no click follows within a tick.
+          setTimeout(() => { tile._suppressClick = false; }, 50);
+        });
+        tile.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          try { e.dataTransfer.dropEffect = 'move'; } catch(_){}
+          const r = tile.getBoundingClientRect();
+          const before = (e.clientX - r.left) < r.width / 2;
+          tile.classList.toggle('drop-before',  before);
+          tile.classList.toggle('drop-after',  !before);
+        });
+        tile.addEventListener('dragleave', () => {
+          tile.classList.remove('drop-before','drop-after');
+        });
+        tile.addEventListener('drop', (e) => {
+          e.preventDefault();
+          tile.classList.remove('drop-before','drop-after');
+          let from = -1;
+          try { from = parseInt(e.dataTransfer.getData('text/plain'), 10); } catch(_){}
+          if(!isFinite(from) || from < 0 || from >= _pitchFolder.files.length) return;
+          if(from === i) return;
+          const r = tile.getBoundingClientRect();
+          const before = (e.clientX - r.left) < r.width / 2;
+          let to = before ? i : i + 1;
+          // Splice-aware adjustment: removing `from` first shifts later indices left by 1.
+          if(from < to) to -= 1;
+          if(to === from) return;
+          const moved = _pitchFolder.files.splice(from, 1)[0];
+          _pitchFolder.files.splice(to, 0, moved);
+          _pitchRenderFolder();
+        });
         host.appendChild(tile);
       });
     }
