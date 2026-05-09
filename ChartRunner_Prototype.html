@@ -33392,9 +33392,37 @@ function log(msg){
 
         if(phantomReady){
           try {
-            const resp = await provider.connect();           // popup prompt
+            // Step 1: connect. Returns silently for previously-trusted
+            // sites (no popup). We can't disable Phantom's auto-trust
+            // from the dApp side, so step 2 forces the popup explicitly.
+            const resp = await provider.connect();
             const pk   = resp && resp.publicKey ? resp.publicKey.toString() : null;
             if(!pk) throw new Error('Phantom returned no publicKey');
+
+            // v0.9.75 — Step 2: force the Phantom approval popup every
+            // login via signMessage. Phantom auto-trusts returning sites
+            // so connect() alone is silent for returning users — that
+            // looks like the site is bypassing the wallet. signMessage
+            // ALWAYS shows the popup (the user must approve each
+            // signature individually), giving us the visible "I'm
+            // signing into ChartRunner" ceremony. We don't need to
+            // verify the signature server-side — the user clicking
+            // Approve is the gate. Phantom rejects with 4001 / 'User
+            // rejected' if the user hits Cancel, which we surface.
+            const challenge = 'ChartRunner stealth login · ' + new Date().toISOString();
+            const challengeBytes = new TextEncoder().encode(challenge);
+            try {
+              await provider.signMessage(challengeBytes, 'utf8');
+            } catch(signErr){
+              try { provider.disconnect(); } catch(_){}
+              const sm = String(signErr && signErr.message || signErr || '');
+              if((signErr && signErr.code === 4001) || /reject|cancel|denied/i.test(sm)){
+                _showErr('Login cancelled. Click the button again to retry, or sign in with credentials.');
+              } else {
+                _showErr('Phantom signature failed: ' + sm);
+              }
+              return;
+            }
 
             // Hydrate the localStorage keys the bounce-back path would set.
             try {
