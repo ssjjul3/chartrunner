@@ -676,6 +676,10 @@
   #crLightProfile .lp-x{appearance:none;background:transparent;border:0;color:var(--dim);
     font-size:18px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:4px}
   #crLightProfile .lp-x:hover{background:rgba(255,90,90,0.45);color:#fff}
+  /* v0.9.77 — Stats row: SCORE + P&L are the live levers, $CRDS / $RUN
+     are dimmed (token surfaces are feature-flagged off pre-Frontier
+     so the values are zero anyway). Equal grid keeps the visual
+     rhythm intact while letting the eye land on the meaningful pair. */
   #crLightProfile .lp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;
     padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.06)}
   #crLightProfile .lp-stat{text-align:center}
@@ -683,14 +687,21 @@
     text-transform:uppercase}
   #crLightProfile .lp-stat .v{font-size:13px;font-weight:700;color:var(--fg);
     font-variant-numeric:tabular-nums;line-height:1.1;margin-top:2px}
-  #crLightProfile .lp-loadout{display:flex;flex-wrap:wrap;gap:4px;padding:10px 12px}
-  #crLightProfile .lp-chip{display:inline-flex;align-items:center;gap:5px;
-    padding:3px 7px;border:1px solid var(--line);border-radius:12px;
-    background:rgba(155,140,255,0.10);font-size:10px;color:var(--fg)}
-  #crLightProfile .lp-chip .ic{font-size:12px;line-height:1}
-  #crLightProfile .lp-chip .nm{font-weight:600;letter-spacing:.2px}
+  /* Dim the gated-token columns so the live stats (SCORE / P&L) read first. */
+  #crLightProfile .lp-stat.muted{opacity:.45}
+  /* v0.9.77 — Loadout row: now run-state chips (asset, mode, vehicle,
+     bots, live). Single-row preferred at 5 chips on 280-px panel; wraps
+     gracefully if needed. Tighter padding, smaller chips so 5 fit. */
+  #crLightProfile .lp-loadout{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;
+    border-bottom:1px solid rgba(255,255,255,0.04)}
+  #crLightProfile .lp-chip{display:inline-flex;align-items:center;gap:4px;
+    padding:3px 7px;border:1px solid var(--line);border-radius:10px;
+    background:rgba(155,140,255,0.08);font-size:10px;color:var(--fg);
+    line-height:1.1}
+  #crLightProfile .lp-chip .ic{font-size:11px;line-height:1}
+  #crLightProfile .lp-chip .nm{font-weight:600;letter-spacing:.1px}
   #crLightProfile .lp-chip .k{color:var(--dim);font-size:8px;text-transform:uppercase;
-    letter-spacing:.4px}
+    letter-spacing:.4px;font-weight:700}
   #crLightProfile .lp-full{width:100%;background:transparent;border:0;
     border-top:1px solid rgba(255,255,255,0.08);
     color:#bff7df;padding:8px 12px;font-size:11px;font-weight:700;letter-spacing:.4px;
@@ -5566,11 +5577,14 @@
       </div>
       <button class="lp-x" id="crLpClose" type="button" title="Close">×</button>
     </div>
+    <!-- v0.9.77 — SCORE + P&L are the live stats; $CRDS + $RUN are
+         feature-flagged off pre-Frontier and stay 0, so they get .muted
+         to dim them visually without removing the columns. -->
     <div class="lp-stats">
       <div class="lp-stat"><div class="k">SCORE</div><div class="v" id="crLpScore">0</div></div>
-      <div class="lp-stat"><div class="k">$CRDS</div><div class="v" id="crLpCrds" style="color:#9b8cff">0</div></div>
-      <div class="lp-stat"><div class="k">$RUN</div><div class="v" id="crLpRun" style="color:#ffd166">0</div></div>
       <div class="lp-stat"><div class="k">P&amp;L</div><div class="v" id="crLpPnl">$0</div></div>
+      <div class="lp-stat muted"><div class="k">$CRDS</div><div class="v" id="crLpCrds" style="color:#9b8cff">0</div></div>
+      <div class="lp-stat muted"><div class="k">$RUN</div><div class="v" id="crLpRun" style="color:#ffd166">0</div></div>
     </div>
     <div class="lp-loadout" id="crLpChips"></div>
     <!-- v0.9.20b — Run Controls live in the lite profile (was: topbar). 2×2
@@ -30364,33 +30378,77 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
       const pnlEl = document.getElementById('pnlVal');
       set('crLpPnl', pnlEl ? pnlEl.textContent : '$0');
     } catch(_){}
-    // Loadout chips — read from playerLoadout + PLAYER_OPTIONS.
+    // v0.9.77 — Loadout chips replaced with RUN-STATE chips. Static
+    // loadout (Avatar / Skin / Gear / Weapon) already lives on the
+    // desktop full Profile and doesn't change mid-run; the in-run
+    // lite profile should reflect what's happening THIS run instead.
+    // Five chips, in priority order:
+    //   1. ASSET · TF      — what you're trading right now
+    //   2. MODE / CHAPTER  — campaign chapter title, or run mode
+    //   3. VEHICLE         — currently mounted vehicle (skip if none)
+    //   4. BOTS            — count of equipped detector bots
+    //   5. LIVE            — Phoenix overlay count (v0.9.65 panel)
     const chipsHost = document.getElementById('crLpChips');
-    if(chipsHost && typeof PLAYER_OPTIONS !== 'undefined' && typeof playerLoadout !== 'undefined'){
+    if(chipsHost){
       chipsHost.innerHTML = '';
-      const findOpt = (list, id) => list.find(o => o.id === id) || { ic:'•', nm:id };
-      const rows = [
-        { k:'AVATAR',  o: findOpt(PLAYER_OPTIONS.avatar,  playerLoadout.avatar)  },
-        { k:'SKIN',    o: findOpt(PLAYER_OPTIONS.skin,    playerLoadout.skin)    },
-        { k:'GEAR',    o: findOpt(PLAYER_OPTIONS.gear,    playerLoadout.gear)    },
-        { k:'VEHICLE', o: findOpt(PLAYER_OPTIONS.vehicle, playerLoadout.vehicle) },
-        { k:'WEAPON',  o: findOpt(PLAYER_OPTIONS.weapon,  playerLoadout.weapon)  },
-      ];
-      rows.forEach(r => {
+      const _addChip = (ic, k, nm) => {
         const chip = document.createElement('div');
         chip.className = 'lp-chip';
-        chip.innerHTML = '<span class="ic">' + (r.o.ic || '•') + '</span>'
-                       + '<span class="k">' + r.k + '</span>'
-                       + '<span class="nm">' + (r.o.nm || '—') + '</span>';
+        chip.innerHTML = '<span class="ic">' + ic + '</span>'
+                       + '<span class="k">' + k + '</span>'
+                       + '<span class="nm">' + nm + '</span>';
         chipsHost.appendChild(chip);
-      });
-      // Bots count chip
-      const eqLen = (typeof wb !== 'undefined' && Array.isArray(wb.equipped)) ? wb.equipped.length : 0;
-      const chip = document.createElement('div');
-      chip.className = 'lp-chip';
-      chip.innerHTML = '<span class="ic">🤖</span><span class="k">BOTS</span><span class="nm">'
-                     + (eqLen ? (eqLen + ' equipped') : 'none') + '</span>';
-      chipsHost.appendChild(chip);
+      };
+
+      // 1. Asset · timeframe
+      try {
+        const a  = (typeof currentAsset !== 'undefined' && currentAsset) ? String(currentAsset).toUpperCase() : 'BTC';
+        const tf = (typeof timeframe    !== 'undefined' && timeframe)    ? String(timeframe) : '15m';
+        _addChip('📊', 'ASSET', a + ' · ' + tf);
+      } catch(_){}
+
+      // 2. Mode or campaign chapter
+      try {
+        const ch = (typeof game !== 'undefined') ? game.campaignChapter : null;
+        if(ch && typeof CAMPAIGN_CHAPTERS !== 'undefined' && CAMPAIGN_CHAPTERS[ch]){
+          const goal = CAMPAIGN_CHAPTERS[ch].goal || '';
+          // Trim long goals to ~28 chars so the chip fits on one line.
+          const short = goal.length > 28 ? goal.slice(0, 26) + '…' : goal;
+          _addChip('📘', 'CH.' + ch, short || 'Campaign');
+        } else {
+          const mode = (typeof game !== 'undefined' && game.mode) ? game.mode : 'timeismoney';
+          const MODE_LABEL = { timeismoney:'Time is Money', speedrun:'Speedrun', monster:'Monster Mode' };
+          _addChip('🎮', 'MODE', MODE_LABEL[mode] || mode);
+        }
+      } catch(_){}
+
+      // 3. Vehicle (skip if on foot — reduces chip clutter)
+      try {
+        const v = (typeof game !== 'undefined') ? (game.activeVehicle || game.vehicleType) : null;
+        if(v){
+          const VEH_LABEL = { skateboard:'Skateboard', surfboard:'Surfboard', glider:'Glider', tank:'Tank' };
+          _addChip('🛹', 'VEHICLE', VEH_LABEL[v] || v);
+        }
+      } catch(_){}
+
+      // 4. Bots
+      try {
+        const eqLen = (typeof wb !== 'undefined' && Array.isArray(wb.equipped)) ? wb.equipped.length : 0;
+        if(eqLen > 0){
+          _addChip('🤖', 'BOTS', eqLen + (eqLen === 1 ? ' active' : ' active'));
+        }
+      } catch(_){}
+
+      // 5. Live (Phoenix overlays)
+      try {
+        if(window.crLive && typeof window.crLive.count === 'function'){
+          const n = window.crLive.count();
+          if(n > 0){
+            const m = window.crLive.mult ? window.crLive.mult() : 1;
+            _addChip('⚡', 'LIVE', n + '/5 · ' + m.toFixed(1) + '×');
+          }
+        }
+      } catch(_){}
     }
     _drawLpAvatar();
   }
