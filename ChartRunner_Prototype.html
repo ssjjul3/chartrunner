@@ -16633,6 +16633,27 @@ function update(dt){
     camera.panX += (0 - camera.panX) * k;
     camera.panY += (0 - camera.panY) * k;
   }
+
+  // v0.9.76 — Edge-follow safety net. Runs ALWAYS, regardless of
+  // manual/auto mode. If the player avatar's screen X is within
+  // EDGE_BUFFER pixels of either edge, nudge camera.wx so the player
+  // stays visible. In auto mode the player sits at W*0.35 (~well
+  // inside the buffer) so this is a no-op; in manual mode (user has
+  // dragged/zoomed) this is a soft leash that prevents walking off-
+  // screen. Lerp factor (dt*4) is faster than the auto-follow's
+  // dt*1.5 so the leash catches the player before they exit. Var
+  // name prefixed with _edge to avoid shadowing other playerSx locals
+  // that already live in this scope.
+  const _edgeBuf = 80;
+  const _edgePsx = sX(player.wx);
+  if(_edgePsx < _edgeBuf){
+    const _targetCamWx = player.wx - (_edgeBuf - camera.panX) / Math.max(0.0001, camera.zoomX);
+    camera.wx += (_targetCamWx - camera.wx) * Math.min(1, dt * 4);
+  } else if(_edgePsx > W - _edgeBuf){
+    const _targetCamWx = player.wx - (W - _edgeBuf - camera.panX) / Math.max(0.0001, camera.zoomX);
+    camera.wx += (_targetCamWx - camera.wx) * Math.min(1, dt * 4);
+  }
+
   camera.shake *= 0.9;
 
   // v0.8c #7 — Run trail. Sample the runner's world position into a fading
