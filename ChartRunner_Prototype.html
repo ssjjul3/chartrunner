@@ -17340,6 +17340,8 @@ function render(){
   // zoom with the chart plane instead of floating as a fixed overlay.
   if(typeof _chartAnchorTick === 'function') _chartAnchorTick();
   drawLaserSight();
+  // v1.0.5 — Blue laser sight (mirrors drawLaserSight chrome, blue palette).
+  try { if(typeof drawBlueLaserSight === 'function') drawBlueLaserSight(); } catch(_){}
   drawSetupGuide();   // v0.9.16 — Per-tool setup instruction card
   drawLaserAnchorsAndPreview();
   drawPickups();
@@ -39948,8 +39950,9 @@ const crL3 = (function(){
     const css = document.createElement('style');
     css.id = 'crBlueLaserCss';
     css.textContent = [
-      '/* Blue laser cursor over canvas while active */',
-      'body.cr-blue-laser-on canvas{cursor:crosshair !important;}',
+      '/* Blue laser owns the cursor — hide OS arrow so the painted ',
+      '   beam + crosshair are the only marks (same trick as hotkeys 2/3) */',
+      'body.cr-blue-laser-on canvas{cursor:none !important;}',
       '/* Topbar dot pulse when active */',
       '#crBlueLaserDot{position:fixed;right:18px;top:14px;z-index:99300;display:none;align-items:center;gap:8px;',
       '  padding:6px 12px;background:rgba(58,134,255,.18);border:1px solid rgba(58,134,255,.55);',
@@ -40146,6 +40149,104 @@ const crL3 = (function(){
     const ov = document.getElementById('crBlOverlay');
     if(ov) ov.classList.remove('on');
   }
+
+  // ── Beam animation (mirrors drawLaserSight, blue palette) ───────────
+  // While STATE.active, paint the same 3-stack glow + sparks + pulsing
+  // crosshair + price readout that hotkeys 2/3 use — but in blue.
+  // Mouse position read from game.mouse (already updated by the global
+  // mousemove handler at line ~32611). Sparks live in their own array
+  // so they don't fight _laserSparks of the spawn-laser.
+  const _blSparks = [];
+  function _spawnBlSpark(sx, sy, ex, ey, color){
+    const t = Math.random();
+    _blSparks.push({
+      x: sx + (ex - sx) * t,
+      y: sy + (ey - sy) * t,
+      vx: (ex - sx) * 0.012 + (Math.random() - 0.5) * 0.6,
+      vy: (ey - sy) * 0.012 + (Math.random() - 0.5) * 0.6,
+      life: 1.0,
+      color,
+    });
+  }
+  // Blue palette — matches the topbar pill + halo color.
+  const BL_COLOR = '#3a86ff';
+  const BL_GLOW  = 'rgba(58,134,255,0.45)';
+  window.drawBlueLaserSight = function(){
+    if(!STATE.active) return;
+    if(typeof game === 'undefined' || !game.running) return;
+    if(typeof ctx === 'undefined' || typeof sX !== 'function' || typeof priceToY !== 'function') return;
+    if(typeof player === 'undefined') return;
+    // Source = avatar; target = mouse position (clamped inside canvas).
+    const m = (game.mouse && typeof game.mouse.sx === 'number') ? game.mouse : null;
+    if(!m) return;
+    const ex = Math.max(0, Math.min((typeof W !== 'undefined' ? W : 800), m.sx));
+    const ey = Math.max(0, Math.min((typeof H !== 'undefined' ? H : 600), m.sy));
+    const sx = sX(player.wx), sy = priceToY(player.py);
+    const dist = Math.hypot(ex - sx, ey - sy);
+
+    ctx.save();
+    // ─── Beam: 3 stacked strokes (glow → color → white core) ───────────
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = BL_GLOW;
+    ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.strokeStyle = BL_COLOR;
+    ctx.lineWidth = 2.4;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 0.9;
+    ctx.globalAlpha = 0.95;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // ─── Sparks streaming along the beam ───────────────────────────────
+    if(dist > 30){
+      _spawnBlSpark(sx, sy, ex, ey, BL_COLOR);
+      if(Math.random() < 0.35) _spawnBlSpark(sx, sy, ex, ey, BL_COLOR);
+    }
+    for(let i = _blSparks.length - 1; i >= 0; i--){
+      const s = _blSparks[i];
+      s.x += s.vx; s.y += s.vy; s.life -= 0.04;
+      if(s.life <= 0){ _blSparks.splice(i, 1); continue; }
+      ctx.globalAlpha = Math.max(0, s.life);
+      ctx.fillStyle = s.color;
+      ctx.beginPath(); ctx.arc(s.x, s.y, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // ─── Pulsing crosshair at the dot ──────────────────────────────────
+    const pulse = 1 + 0.18 * Math.sin(performance.now() * 0.008);
+    ctx.strokeStyle = BL_COLOR;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(ex, ey, 9 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(ex - 12, ey); ctx.lineTo(ex - 4, ey);
+    ctx.moveTo(ex + 4,  ey); ctx.lineTo(ex + 12, ey);
+    ctx.moveTo(ex, ey - 12); ctx.lineTo(ex, ey - 4);
+    ctx.moveTo(ex, ey + 4);  ctx.lineTo(ex, ey + 12);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(ex, ey, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = BL_COLOR;
+    ctx.beginPath(); ctx.arc(ex, ey, 1.4, 0, Math.PI * 2); ctx.fill();
+
+    // ─── Price readout at the dot ──────────────────────────────────────
+    try {
+      const priceAtDot = (typeof yToPrice === 'function') ? yToPrice(ey) : null;
+      if(priceAtDot != null && isFinite(priceAtDot)){
+        ctx.fillStyle = '#0c0c14';
+        ctx.fillRect(ex + 10, ey - 22, 80, 16);
+        ctx.fillStyle = BL_COLOR;
+        ctx.font = 'bold 11px ui-monospace,monospace';
+        if(typeof fmtPrice === 'function') ctx.fillText(fmtPrice(priceAtDot), ex + 14, ey - 10);
+      }
+    } catch(_){}
+    ctx.restore();
+  };
 
   // ── Render lightning halos around every armed overlay ───────────────
   // Called from the main render() loop AFTER drawVisualOverlays.
