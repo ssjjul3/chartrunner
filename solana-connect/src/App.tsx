@@ -276,13 +276,17 @@ export default function App() {
       const ix = buildMemoInstruction(trimmed, publicKey);
       const tx = new Transaction().add(ix);
 
-      // wallet-adapter handles: blockhash injection, fee payer, signing,
-      // submitting via the connection, and returning the signature.
+      // v0.9.72 — Pin blockhash + fee payer BEFORE sendTransaction so the
+      // wallet-adapter signs against this specific pair. Then confirm
+      // against the SAME pair. The earlier shape (fetch fresh blockhash
+      // post-send and confirm against that) opens a future validity
+      // window that the tx — signed against an older window — can never
+      // land in, producing the "block height exceeded" error.
+      const latest = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash    = latest.blockhash;
+      tx.feePayer           = publicKey;
       const sig = await sendTransaction(tx, connection);
 
-      // Confirm with a FRESH blockhash (the signed tx's blockhash may have
-      // expired before confirmation completes; use the latest).
-      const latest = await connection.getLatestBlockhash('confirmed');
       const result = await connection.confirmTransaction(
         {
           signature: sig,
@@ -340,9 +344,13 @@ export default function App() {
       });
       const tx = new Transaction().add(ix);
 
+      // v0.9.72 — see memo flow above for the rationale; same fix applied
+      // to save_map: pin blockhash before send, confirm against same pair.
+      const latest = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash    = latest.blockhash;
+      tx.feePayer           = publicKey;
       const sig = await sendTransaction(tx, connection);
 
-      const latest = await connection.getLatestBlockhash('confirmed');
       const result = await connection.confirmTransaction(
         {
           signature: sig,
@@ -474,9 +482,14 @@ export default function App() {
       }
 
       const tx = new Transaction().add(ix);
+
+      // v0.9.72 — see memo flow for the rationale; same fix applied to
+      // registry actions: pin blockhash before send, confirm same pair.
+      const latest = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash    = latest.blockhash;
+      tx.feePayer           = publicKey;
       const sig = await sendTransaction(tx, connection);
 
-      const latest = await connection.getLatestBlockhash('confirmed');
       const result = await connection.confirmTransaction(
         {
           signature: sig,
