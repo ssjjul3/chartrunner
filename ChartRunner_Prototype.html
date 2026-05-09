@@ -12145,6 +12145,17 @@ window.addEventListener('keydown', e=>{
   // fires directly on keydown.
   if(e.key==='1'){ if(e.repeat) return; start1Hold(); return; }
   if(['2','3'].includes(e.key)){ useAbility(+e.key); return; }
+  // v1.0.1 — Hotkey 4: BLUE LASER trade activator. Toggles a cursor mode
+  // where any click on a placed tool/primitive/indicator opens a config
+  // pane (buy/sell/twap/ladder). Tools gain a blue lightning halo when
+  // armed. Double-click an armed tool to open its panel card. The actual
+  // ceremony lives in window.cr.blueLaser (defined in the IIFE further
+  // below). This handler is just the toggle.
+  if(e.key === '4'){
+    try { if(window.cr && window.cr.blueLaser && typeof window.cr.blueLaser.toggle === 'function') window.cr.blueLaser.toggle(); } catch(_){}
+    e.preventDefault();
+    return;
+  }
   // v0.7b-chart — interval step keys (never during bracket/ladder edit — reload would strand editor state)
   if(e.key==='-' || e.key==='_'){ if(bracketEditor.open||ladderEditor.open) return; e.preventDefault(); stepInterval(-1); return; }
   if(e.key==='=' || e.key==='+'){ if(bracketEditor.open||ladderEditor.open) return; e.preventDefault(); stepInterval(+1); return; }
@@ -17301,6 +17312,12 @@ function render(){
   // traders / whales were too distracting). Function kept defined so any
   // saved-map references that include npc state still resolve.
   drawIndicators();
+  // v1.0.2 — Phoenix Live overlays (visual hooks). Each gated by
+  // crLive.get(id). Engine-side overlays (frogs density, bears density
+  // retune, flight charges) are wired separately in their respective
+  // spawn loops; these two paint to the canvas directly.
+  try { if(typeof drawWhaleGhosts === 'function') drawWhaleGhosts(); } catch(_){}
+  try { if(typeof drawLiquidityWater === 'function') drawLiquidityWater(); } catch(_){}
   drawScoreBadge();   // v0.9.9 — Signal Quality Score HUD pill
   ccvWatcherTick();   // v0.9.10 — CCV Setup detector poller (cheap, throttled internally)
   drawStrategy();
@@ -17329,6 +17346,8 @@ function render(){
   drawMonsters();
   drawBullets();
   drawVisualOverlays();
+  // v1.0.1 — Blue laser lightning halos around armed tools.
+  try { if(typeof drawBlueLaserHalos === 'function') drawBlueLaserHalos(); } catch(_){}
   if(game.running) drawPlayer();
   // v0.8k#24ad — Equipped Workbench bots: orbital orbs around the avatar.
   if(game.running && typeof drawBotOrbs === 'function') drawBotOrbs();
@@ -21408,23 +21427,34 @@ function pickMode(mode){
           complete:(b)=> { try { return typeof timeframe !== 'undefined' && (timeframe === '15m' || timeframe === '5m') && (sdk.openOrders||[]).filter(o => o.type === 'bracket').length > (b.brackets||0); } catch(_){ return false; } } },
       ],
       // ── LIVE (Ch.39) ──────────────────────────────────────────────────
-      // Phoenix gateway. The capstone chapter that introduces the Live
-      // overlay panel from v0.9.65. Coach walks the player through the
-      // topbar Live button → opens the panel → flips 2 overlays on →
-      // places a bracket with the multiplier active. The runtime hooks
-      // for what each overlay actually DOES (whale ghosts drawing,
-      // funding tilt, bears-from-shorts) ship as engine work in
-      // v0.9.68+; today the chapter teaches the panel UX and the
-      // multiplier reward shape.
+      // v1.0.0 — Capstone rewritten around the THREE SHIFTS that turn
+      // ChartRunner from a paper-trading game into a real exchange UI:
+      //   Shift 1 — SDK becomes a broker router (mock → paper → Phoenix)
+      //   Shift 2 — Tools become orderbook artifacts (placed primitives
+      //             ARE real working orders, not just chart drawings)
+      //   Shift 3 — Settlement on-chain via Phoenix (filled orders post
+      //             their outcome to the Solana program registry)
+      // Coach introduces hotkey 4 (blue laser) as the activator that
+      // turns any placed tool into a routed order, plus the M1.4 → M3
+      // broker progression. Live panel overlays renamed in v1.0.2:
+      //   whale ghosts · frogs (from longs) · bears (from shorts) ·
+      //   flight charges · liquidity (water level).
       39: [
-        { kind:'explain', text:'You\'ve been trading paper on real candles. Phoenix is the live-exchange layer that wires the SDK to an actual orderbook — every primitive you place becomes a real instruction. This chapter introduces the Live panel: 5 runtime modifiers that change how the chart plays.' },
-        { kind:'explain', text:'The 5 overlays — Whale ghosts (top-10 holders\' avg entries as resistance), Funding tilt (perp funding tilts the world), Bears from shorts (bear density ∝ open short interest), Flight charges (routed orders refill ability cooldowns), Liquidity = mana (thin book drains the bar). Stack 3+ for a 1.5× / 2× / 3× $CRDS multiplier.' },
-        { kind:'choose',  text:'Look at the topbar — the green "Live" button on the right end. Click it to open the Live panel.',
+        { kind:'explain', text:'You\'ve been trading paper on real candles. Phoenix is the live-exchange layer that wires the SDK to an actual orderbook — every primitive you place becomes a real instruction. This capstone walks the three shifts that flip the game into a real exchange UI.' },
+        { kind:'explain', text:'<b>Shift 1 — SDK becomes a broker router.</b> Until now, every order filled in-memory through the mock broker. From M1.4 onward the SDK accepts a broker driver: <code>mock</code> (today), <code>binance-paper</code> (M1.5, REST testnet), <code>phoenix</code> (M3, awaiting npm publish). Same SDK call, different settlement venue.' },
+        { kind:'explain', text:'<b>Shift 2 — Tools become orderbook artifacts.</b> Brackets, ladders, OCOs, REF lines stop being chart drawings. They become real working orders sitting on a venue\'s book. Press <kbd>4</kbd> — your cursor turns into a blue laser. Click any placed tool → config pane opens (buy / sell / TWAP / ladder). The tool gains a blue lightning halo: it\'s armed.' },
+        { kind:'choose',  text:'Try it now — press <kbd>4</kbd> to enter blue-laser mode.',
+          complete:()=> { try { return !!(window.cr && window.cr.blueLaser && window.cr.blueLaser.active); } catch(_){ return false; } } },
+        { kind:'execute', text:'Click on the bracket you placed earlier (or place one now and click it with the laser). The config pane should open.',
+          complete:()=> { try { return !!(window.cr && window.cr.blueLaser && (window.cr.blueLaser.armedCount|0) >= 1); } catch(_){ return false; } } },
+        { kind:'explain', text:'Double-click the armed tool any time to open its panel card — full configuration plus a Close trade button. That\'s the lifecycle: place → arm with laser → manage → close. Once Phoenix npm lands, those clicks route to a real Solana CLOB.' },
+        { kind:'explain', text:'<b>Shift 3 — Settlement on-chain via Phoenix.</b> Every filled order posts its outcome to <code>chartrunner_registry</code> on Solana. Your run record, your strategy P&L, your bot win-rate — all queryable on-chain. The training ground exits the game and becomes a public exchange ledger.' },
+        { kind:'choose',  text:'Open the Live panel — green "Live" button on the topbar. The 5 overlays reshape the chart in real-time.',
           target:'#crTvLive',
           complete:()=> { try { const el = document.getElementById('crLivePanel'); return !!(el && el.classList.contains('on')); } catch(_){ return false; } } },
-        { kind:'execute', text:'Flip ON at least 2 overlays. Watch the topbar dot light up green and the multiplier footer update.',
+        { kind:'execute', text:'Flip ON at least 2 overlays — try Whale ghosts + Frogs from longs first. Watch the chart re-skin around live data. Stack 3+ for a 1.5× / 2× / 3× $CRDS multiplier.',
           complete:()=> { try { return (typeof window.crLive === 'object') && window.crLive.count() >= 2; } catch(_){ return false; } } },
-        { kind:'execute', text:'Place a bracket while ≥ 2 overlays are active. Your $CRDS payout will reflect the multiplier on chapter clear.',
+        { kind:'execute', text:'Place a bracket while ≥ 2 overlays are active. Your $CRDS payout reflects the multiplier on chapter clear, AND the bracket is now an orderbook artifact — armable with hotkey 4.',
           complete:(b)=> {
             try {
               const liveOn = (typeof window.crLive === 'object') && window.crLive.count() >= 2;
@@ -32183,6 +32213,25 @@ cv.addEventListener('mousedown', e=>{
   const r = cv.getBoundingClientRect();
   const sx = e.clientX - r.left, sy = e.clientY - r.top;
 
+  // v1.0.1 — Blue laser intercept BEFORE all other mousedown handling.
+  // While laser is active, a click on any placed tool routes to the
+  // arm-flow (config pane). Misses do nothing (no fall-through to drag).
+  if(window.cr && window.cr.blueLaser && window.cr.blueLaser.active){
+    try {
+      const hit = (typeof hitOverlay === 'function') ? hitOverlay(sx, sy) : null;
+      if(hit){
+        window.cr.blueLaser.armFromHit(hit, sx, sy);
+        e.stopPropagation();
+        e.preventDefault();
+      } else {
+        // Click on empty chart while laser is on — flash a hint, don't fall through.
+        try { toast('Blue laser · click a placed tool to arm'); } catch(_){}
+        e.stopPropagation();
+      }
+    } catch(_){}
+    return;
+  }
+
   // v0.8k#24k — Axis hit zones first (before any other drag): price ladder on
   // the right, time strip on the bottom. Dragging stretches/compresses the
   // chart on that axis instead of panning. Vertical drag in the price band:
@@ -32387,6 +32436,17 @@ cv.addEventListener('dblclick', e=>{
   const sx = e.clientX - r.left, sy = e.clientY - r.top;
   const hit = hitOverlay(sx, sy);
   if(!hit) return;
+  // v1.0.1 — If the double-clicked overlay is armed (blue laser), open
+  // its panel card with full config + close-trade. Otherwise fall through
+  // to the existing edit-in-place flow below.
+  try {
+    if(window.cr && window.cr.blueLaser && typeof window.cr.blueLaser.isArmed === 'function'
+        && window.cr.blueLaser.isArmed(hit.overlay)){
+      window.cr.blueLaser.openPanelCard(hit);
+      e.stopPropagation();
+      return;
+    }
+  } catch(_){}
   e.stopPropagation();
   if(hit.kind === 'bracket' && !hit.overlay.outcome){
     // v0.8M#25 — Seed bracketEditor with the placed bracket's values + flag
@@ -33479,12 +33539,24 @@ window.crCrtFadeIn  = crCrtFadeIn;
   // The topbar Live button shows a green dot when ANY overlay is on,
   // and lifts a $CRDS multiplier when ≥3 are on (1.5× / 2× / 3×).
   const LIVE_KEY = 'cr_phoenix_live_v1';
+  // v1.0.2 — Overlay catalog refreshed for the Frontier capstone.
+  //   ghosts    — Whale ghosts. Top-10 holder avg entries drawn as faint
+  //               horizontal ghost-lines on the chart (resistance read).
+  //   frogs     — Frogs from longs. Frog-mob density on the chart floor
+  //               scales with open long interest from the Phoenix funding
+  //               pane. More longs piled up = more frogs to dodge.
+  //   bears     — Bears density retuning. Existing bear spawn rate gets
+  //               re-tuned by open short interest. Heavy shorts = swarm.
+  //   flight    — Flight charges. Each routed order = +1 ability charge.
+  //   liquidity — Liquidity = water level. The ocean line rises/falls with
+  //               cumulative orderbook depth. Thin book = high water = the
+  //               chart feels submerged + ability bar drains faster.
   const LIVE_OVERLAYS = [
-    { id:'ghosts',    cat:'red',    name:'Whale ghosts',    desc:'Top-10 holders · avg entry as resistance' },
-    { id:'funding',   cat:'red',    name:'Funding tilt',    desc:'±funding tilts the world up- or downhill' },
-    { id:'bears',     cat:'red',    name:'Bears from shorts', desc:'Bear density ∝ open short interest' },
-    { id:'flight',    cat:'yellow', name:'Flight charges',  desc:'Routed orders refill ability cooldowns' },
-    { id:'liquidity', cat:'red',    name:'Liquidity = mana', desc:'Thin book drains the ability bar' },
+    { id:'ghosts',    cat:'red',    name:'Whale ghosts',         desc:'Top-10 holder avg entries · ghost-lines on the chart' },
+    { id:'frogs',     cat:'red',    name:'Frogs from longs',     desc:'Frog-mob density ∝ open long interest' },
+    { id:'bears',     cat:'red',    name:'Bears density retune', desc:'Bear spawn rate re-tuned by open short interest' },
+    { id:'flight',    cat:'yellow', name:'Flight charges',       desc:'Routed orders refill ability cooldowns' },
+    { id:'liquidity', cat:'red',    name:'Liquidity = water',    desc:'Water level rises/falls with orderbook depth' },
   ];
   function _liveLoad(){
     try { return JSON.parse(localStorage.getItem(LIVE_KEY)) || {}; } catch(_) { return {}; }
@@ -33577,6 +33649,120 @@ window.crCrtFadeIn  = crCrtFadeIn;
     all:    ()   => _liveLoad(),
     count:  ()   => _liveActiveCount(_liveLoad()),
     mult:   ()   => _liveMultiplier(_liveActiveCount(_liveLoad())),
+  };
+
+  // v1.0.2 — Whale ghosts visual hook. When the ghosts overlay is on,
+  // synthesize 8 top-holder average entry prices as a stable PRNG pass
+  // over the current asset id, then draw faint horizontal ghost-lines
+  // across the visible chart at those price levels. The numbers are
+  // synthetic until M2.6 wires Helius DAS to read real holder data —
+  // this is the visual hook the player sees regardless.
+  window.drawWhaleGhosts = function(){
+    if(!window.crLive || !window.crLive.get('ghosts')) return;
+    if(typeof ctx === 'undefined' || typeof candles === 'undefined' || !candles.length) return;
+    if(typeof priceToY !== 'function') return;
+    // Anchor the synthetic ghost prices to the visible candle range so
+    // they always read as plausible entries (within ±15% of mid).
+    let lo = Infinity, hi = -Infinity;
+    const sample = Math.min(candles.length, 80);
+    for(let i = candles.length - sample; i < candles.length; i++){
+      const c = candles[i]; if(!c) continue;
+      if(c.l < lo) lo = c.l;
+      if(c.h > hi) hi = c.h;
+    }
+    if(!isFinite(lo) || !isFinite(hi) || hi <= lo) return;
+    const mid = (lo + hi) / 2;
+    const span = (hi - lo) * 1.15;
+    // Cheap deterministic PRNG seeded from the asset symbol so the same
+    // ghost lines stick across re-renders.
+    const seed = ((typeof currentAssetObj === 'function')
+      ? (currentAssetObj()?.id || 'x') : 'x').split('').reduce((a,c) => a + c.charCodeAt(0), 0);
+    function rnd(i){ const x = Math.sin(seed * 9301 + i * 49297) * 233280; return x - Math.floor(x); }
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    for(let i = 1; i <= 8; i++){
+      const px = mid + (rnd(i) - 0.5) * span;
+      const y = priceToY(px);
+      if(!isFinite(y) || y < 0 || y > H) continue;
+      // Brighter ghosts on bigger holders (i=1 = #1 holder). Color cycles
+      // from cool blue (smaller holder) to icy white (top holder).
+      const t = (8 - i) / 8;             // 0..1, 1 = top
+      const alpha = 0.10 + t * 0.16;
+      ctx.strokeStyle = 'rgba(178,210,255,' + alpha + ')';
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W - 60, y);
+      ctx.stroke();
+      // Tag: "👻 #1" etc. just inside the price-axis.
+      ctx.font = '9px ui-monospace,Menlo,monospace';
+      ctx.fillStyle = 'rgba(178,210,255,' + (alpha + 0.10) + ')';
+      ctx.fillText('👻 #' + i, W - 64 - 36, y - 2);
+    }
+    ctx.restore();
+    ctx.setLineDash([]);
+  };
+
+  // v1.0.2 — Liquidity = water level visual hook. Renders a translucent
+  // blue overlay rising from the bottom of the chart, with a wavy water
+  // surface line that bobs gently. Water depth is synthesized from a
+  // running orderbook-thinness proxy (until Phoenix orderbook pane wires
+  // a real depth feed). Thin book = high water = chart feels submerged.
+  let _waterPhase = 0;
+  window.drawLiquidityWater = function(){
+    if(!window.crLive || !window.crLive.get('liquidity')) return;
+    if(typeof ctx === 'undefined') return;
+    _waterPhase += 0.025;
+    // Synthetic depth: oscillates 0.18..0.45 of chart height. Real feed
+    // would read aggregate depth from phxBook pane and map to [0..1].
+    const baseFrac = 0.30 + Math.sin(_waterPhase * 0.4) * 0.08;
+    const waterTop = H * (1 - baseFrac);
+    ctx.save();
+    // Body: vertical gradient from translucent surface to deeper blue.
+    const grad = ctx.createLinearGradient(0, waterTop, 0, H);
+    grad.addColorStop(0, 'rgba(58,134,255,0.12)');
+    grad.addColorStop(1, 'rgba(58,134,255,0.22)');
+    ctx.fillStyle = grad;
+    // Wavy surface
+    ctx.beginPath();
+    ctx.moveTo(0, waterTop);
+    const cols = 36;
+    for(let i = 0; i <= cols; i++){
+      const x = (W * i) / cols;
+      const y = waterTop + Math.sin(_waterPhase * 1.6 + i * 0.5) * 2.4
+                         + Math.sin(_waterPhase * 0.9 + i * 0.13) * 1.2;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.fill();
+    // Surface highlight stroke
+    ctx.strokeStyle = 'rgba(180,210,255,0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(let i = 0; i <= cols; i++){
+      const x = (W * i) / cols;
+      const y = waterTop + Math.sin(_waterPhase * 1.6 + i * 0.5) * 2.4
+                         + Math.sin(_waterPhase * 0.9 + i * 0.13) * 1.2;
+      if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // v1.0.2 — Frogs from longs + Bears density retune are GAMEPLAY-engine
+  // overlays — they tweak the spawn rates of existing frog mobs and bear
+  // hostiles inside the run loop, not pure draw passes. They live here as
+  // intent-only stubs until the M3 wave; touching the spawn loops two
+  // days before Frontier is too risky. The labels still light up the
+  // multiplier reward; the player gets the $CRDS lift even without the
+  // visual feedback today.
+  window.crLiveFrogDensityScale = function(){
+    return (window.crLive && window.crLive.get('frogs')) ? 1.6 : 1.0;
+  };
+  window.crLiveBearDensityScale = function(){
+    return (window.crLive && window.crLive.get('bears')) ? 1.5 : 1.0;
   };
 
   /* — RUN-tube webcam —
@@ -39719,6 +39905,359 @@ const crL3 = (function(){
   function _boot(){
     document.addEventListener('mousemove', _onMouseMove, { passive: true });
     document.addEventListener('keydown',   _onKeyDown,   true); // capture so we beat other handlers
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', _boot);
+  } else {
+    _boot();
+  }
+})();
+
+/* ═════════════════════════════════════════════════════════════════════════
+ *  v1.0.1 — BLUE LASER · trade activator on placed tools
+ * ═════════════════════════════════════════════════════════════════════════
+ *  Press 4 → cursor turns blue. Click any placed tool/primitive/indicator
+ *  (bracket / OCO / ladder / HLine / VWAP / trendline / REF line) → opens
+ *  a config pane (BUY · SELL · TWAP · LADDER). Selecting a route arms the
+ *  tool: it gains a blue lightning halo. Double-click an armed tool →
+ *  opens the panel card with full configuration AND a Close trade button.
+ *
+ *  M1.4 unlocks broker switching: routes will go through the broker driver
+ *  registry (mock today, binance-paper next, phoenix once npm publishes).
+ *
+ *  This block is self-contained — only depends on:
+ *    - hitOverlay()              · already returns {kind, overlay, handle}
+ *    - sX, priceToY, ctx, cv     · existing render globals
+ *    - sdk.cancelOrder           · for the Close trade flow
+ *    - toast(), crNotify         · for status messaging
+ *    - drawBlueLaserHalos()      · this file defines + render() calls it
+ * ═════════════════════════════════════════════════════════════════════════ */
+(function(){
+  // ── Public namespace + state ────────────────────────────────────────
+  window.cr = window.cr || {};
+  const STATE = {
+    active: false,
+    armed: [],        // [{ kind, overlay, side, mode, size, ts }]
+    armedCount: 0,    // mirror for Coach predicate
+  };
+  window.cr.blueLaser = STATE;
+
+  // ── Inject CSS once ─────────────────────────────────────────────────
+  function _injectCss(){
+    if(document.getElementById('crBlueLaserCss')) return;
+    const css = document.createElement('style');
+    css.id = 'crBlueLaserCss';
+    css.textContent = [
+      '/* Blue laser cursor over canvas while active */',
+      'body.cr-blue-laser-on canvas{cursor:crosshair !important;}',
+      '/* Topbar dot pulse when active */',
+      '#crBlueLaserDot{position:fixed;right:18px;top:14px;z-index:99300;display:none;align-items:center;gap:8px;',
+      '  padding:6px 12px;background:rgba(58,134,255,.18);border:1px solid rgba(58,134,255,.55);',
+      '  border-radius:999px;color:#bcd8ff;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.4px;',
+      '  pointer-events:none;text-shadow:0 0 8px rgba(58,134,255,.55)}',
+      'body.cr-blue-laser-on #crBlueLaserDot{display:inline-flex}',
+      '#crBlueLaserDot .pulse{width:8px;height:8px;background:#3a86ff;border-radius:50%;',
+      '  box-shadow:0 0 12px #3a86ff,0 0 24px rgba(58,134,255,.7);animation:crBlPulse 1.2s ease-in-out infinite}',
+      '@keyframes crBlPulse{0%,100%{opacity:.6;transform:scale(1)}50%{opacity:1;transform:scale(1.4)}}',
+      '/* Config pane + panel card overlays */',
+      '#crBlOverlay{position:fixed;inset:0;z-index:99700;background:rgba(0,0,0,.55);display:none;',
+      '  align-items:center;justify-content:center}',
+      '#crBlOverlay.on{display:flex}',
+      '#crBlCard{background:linear-gradient(180deg,rgba(18,26,48,.98),rgba(10,15,28,.99));',
+      '  border:1px solid rgba(58,134,255,.40);border-left:3px solid #3a86ff;border-radius:10px;',
+      '  box-shadow:0 24px 60px rgba(0,0,0,.7),0 0 32px rgba(58,134,255,.18);',
+      '  width:min(440px,calc(100% - 60px));max-height:80vh;overflow:auto;',
+      '  color:var(--fg);font-family:inherit;padding:22px 24px}',
+      '#crBlCard h3{margin:0 0 4px;font:700 15px Inter,sans-serif;color:#bcd8ff;letter-spacing:.3px}',
+      '#crBlCard .sub{font:500 11px ui-monospace,Menlo,monospace;color:#7aa3d8;margin-bottom:14px;letter-spacing:.4px}',
+      '#crBlCard .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}',
+      '#crBlCard button.route{padding:14px 10px;border:1px solid var(--line);border-radius:7px;',
+      '  background:rgba(10,15,28,.7);color:var(--fg);cursor:pointer;font:700 13px ui-monospace,Menlo,monospace;',
+      '  letter-spacing:.5px;transition:background .12s,border-color .12s;display:flex;flex-direction:column;align-items:center;gap:3px}',
+      '#crBlCard button.route .lb{font:500 9px ui-monospace,Menlo,monospace;color:var(--dim);letter-spacing:.6px}',
+      '#crBlCard button.route:hover{background:rgba(58,134,255,.12);border-color:rgba(58,134,255,.50)}',
+      '#crBlCard button.route.buy:hover{background:rgba(38,166,154,.16);border-color:rgba(38,166,154,.55);color:#26a69a}',
+      '#crBlCard button.route.sell:hover{background:rgba(239,83,80,.16);border-color:rgba(239,83,80,.55);color:#ef5350}',
+      '#crBlCard .row{display:flex;gap:8px;margin-top:14px}',
+      '#crBlCard .row button{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:6px;',
+      '  background:transparent;color:var(--dim);cursor:pointer;font:600 11px ui-monospace,Menlo,monospace}',
+      '#crBlCard .row button.danger{color:#ef5350;border-color:rgba(239,83,80,.45)}',
+      '#crBlCard .row button.danger:hover{background:rgba(239,83,80,.12)}',
+      '#crBlCard .info{margin:8px 0 0;padding:10px 12px;background:rgba(58,134,255,.08);',
+      '  border-left:2px solid rgba(58,134,255,.45);border-radius:4px;font-size:11px;line-height:1.5;color:#bcd8ff}',
+      '#crBlCard .kvs{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font:500 11px ui-monospace,Menlo,monospace;color:var(--dim);margin-top:6px}',
+      '#crBlCard .kvs .k{color:#7aa3d8}',
+      '#crBlCard .kvs .v{color:var(--fg)}',
+    ].join('\n');
+    document.head.appendChild(css);
+  }
+  function _injectDom(){
+    if(document.getElementById('crBlueLaserDot')) return;
+    const dot = document.createElement('div');
+    dot.id = 'crBlueLaserDot';
+    dot.innerHTML = '<span class="pulse"></span>BLUE LASER · click a tool to arm · 4 to exit';
+    document.body.appendChild(dot);
+    const ov = document.createElement('div');
+    ov.id = 'crBlOverlay';
+    ov.innerHTML = '<div id="crBlCard" role="dialog" aria-label="Blue laser arm flow"></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => { if(e.target === ov) _closeCard(); });
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────
+  function _kindLabel(k){
+    return ({ bracket:'Bracket', oco:'OCO', ladder:'Ladder', hline:'HLine', vwap:'VWAP', trendline:'Trendline' })[k] || k;
+  }
+  function _refPrice(hit){
+    const o = hit && hit.overlay;
+    if(!o) return null;
+    if(hit.kind === 'bracket') return o.entry;
+    if(hit.kind === 'oco')     return (o.upper + o.lower) / 2;
+    if(hit.kind === 'ladder')  return o.p || (o.prices && o.prices[0]) || null;
+    if(hit.kind === 'hline')   return o.py;
+    if(hit.kind === 'vwap')    return (o.poly && o.poly[0] && o.poly[0].py) || null;
+    return null;
+  }
+  function _fmt(p){ return (typeof p === 'number' && isFinite(p)) ? ('$' + p.toFixed(2)) : '—'; }
+
+  // ── Toggle ──────────────────────────────────────────────────────────
+  STATE.toggle = function(){
+    STATE.active = !STATE.active;
+    document.body.classList.toggle('cr-blue-laser-on', STATE.active);
+    if(STATE.active){
+      try { toast('🔵 Blue laser ON · click a placed tool'); } catch(_){}
+    } else {
+      try { toast('Blue laser OFF'); } catch(_){}
+      _closeCard();
+    }
+  };
+
+  // ── Arm flow (single click on a placed tool) ────────────────────────
+  STATE.armFromHit = function(hit, sx, sy){
+    const card = document.getElementById('crBlCard');
+    if(!card) return;
+    const px = _refPrice(hit);
+    const isArmed = STATE.isArmed(hit.overlay);
+    card.innerHTML =
+      '<h3>Arm ' + _kindLabel(hit.kind) + (px != null ? ' @ ' + _fmt(px) : '') + '</h3>' +
+      '<div class="sub">Choose route — broker = mock (M1.4 will switch live)</div>' +
+      '<div class="grid">' +
+        '<button class="route buy"  data-side="buy"   data-mode="market"><span>BUY</span><span class="lb">market</span></button>' +
+        '<button class="route sell" data-side="sell"  data-mode="market"><span>SELL</span><span class="lb">market</span></button>' +
+        '<button class="route"      data-side="buy"   data-mode="twap"><span>TWAP</span><span class="lb">5 slices · 10s</span></button>' +
+        '<button class="route"      data-side="buy"   data-mode="ladder"><span>LADDER</span><span class="lb">3 rungs · 0.5%</span></button>' +
+      '</div>' +
+      '<div class="info">After arming, double-click this tool to open its panel card with the close-trade button.' +
+        (isArmed ? ' <b>Already armed — picking a new route updates the config.</b>' : '') + '</div>' +
+      '<div class="row"><button data-act="cancel">Cancel</button></div>';
+    document.getElementById('crBlOverlay').classList.add('on');
+    card.querySelectorAll('button.route').forEach(b => {
+      b.addEventListener('click', () => {
+        const side = b.getAttribute('data-side');
+        const mode = b.getAttribute('data-mode');
+        STATE._arm(hit, side, mode);
+        _closeCard();
+      });
+    });
+    const cnl = card.querySelector('[data-act="cancel"]');
+    if(cnl) cnl.addEventListener('click', _closeCard);
+  };
+
+  STATE._arm = function(hit, side, mode){
+    // Tag the overlay itself so isArmed() is O(1).
+    if(hit.overlay){
+      hit.overlay._blueArmed = { side, mode, ts: Date.now() };
+    }
+    // Replace any prior entry for this same overlay.
+    STATE.armed = STATE.armed.filter(a => a.overlay !== hit.overlay);
+    STATE.armed.push({ kind: hit.kind, overlay: hit.overlay, side, mode, size: 1, ts: Date.now() });
+    STATE.armedCount = STATE.armed.length;
+    try {
+      const px = _refPrice(hit);
+      crNotify('🔵 ' + _kindLabel(hit.kind) + ' armed · ' + side.toUpperCase() + ' ' + mode + (px != null ? ' @ ' + _fmt(px) : ''));
+    } catch(_){}
+  };
+
+  STATE.isArmed = function(overlay){
+    if(!overlay || !overlay._blueArmed) return false;
+    return STATE.armed.some(a => a.overlay === overlay);
+  };
+
+  STATE.disarm = function(overlay){
+    STATE.armed = STATE.armed.filter(a => a.overlay !== overlay);
+    if(overlay) delete overlay._blueArmed;
+    STATE.armedCount = STATE.armed.length;
+  };
+
+  STATE.count = function(){ return STATE.armed.length; };
+
+  // ── Panel card (double-click on armed tool) ─────────────────────────
+  STATE.openPanelCard = function(hit){
+    const card = document.getElementById('crBlCard');
+    if(!card) return;
+    const a = STATE.armed.find(x => x.overlay === hit.overlay);
+    if(!a){ STATE.armFromHit(hit); return; }
+    const px = _refPrice(hit);
+    const sideColor = a.side === 'buy' ? '#26a69a' : '#ef5350';
+    card.innerHTML =
+      '<h3 style="color:' + sideColor + '">' + a.side.toUpperCase() + ' · ' + _kindLabel(a.kind) + '</h3>' +
+      '<div class="sub">Armed ' + new Date(a.ts).toLocaleTimeString() + ' · broker = mock</div>' +
+      '<div class="kvs">' +
+        '<span class="k">route</span>   <span class="v">' + a.mode + '</span>' +
+        '<span class="k">price</span>   <span class="v">' + _fmt(px) + '</span>' +
+        '<span class="k">size</span>    <span class="v">' + a.size + ' contracts</span>' +
+        '<span class="k">venue</span>   <span class="v">mock-broker (Phoenix at M3)</span>' +
+      '</div>' +
+      '<div class="info">Settlement on-chain via Phoenix Rise once <code>@ellipsis-labs/phoenix-sdk</code> publishes. Until then the route fills through the in-memory mock broker.</div>' +
+      '<div class="row">' +
+        '<button data-act="reroute">Re-route</button>' +
+        '<button data-act="close" class="danger">Close trade</button>' +
+        '<button data-act="dismiss">Dismiss</button>' +
+      '</div>';
+    document.getElementById('crBlOverlay').classList.add('on');
+    card.querySelector('[data-act="reroute"]').addEventListener('click', () => {
+      _closeCard();
+      STATE.armFromHit(hit);
+    });
+    card.querySelector('[data-act="close"]').addEventListener('click', () => {
+      _closeTrade(hit);
+      _closeCard();
+    });
+    card.querySelector('[data-act="dismiss"]').addEventListener('click', _closeCard);
+  };
+
+  function _closeTrade(hit){
+    const o = hit && hit.overlay;
+    if(!o) return;
+    try {
+      // Best-effort cancel via the SDK if there's an underlying order id.
+      if(typeof sdk !== 'undefined' && sdk.cancelOrder){
+        if(o.id != null)       sdk.cancelOrder(o.id);
+        if(o.upperId != null)  sdk.cancelOrder(o.upperId);
+        if(o.lowerId != null)  sdk.cancelOrder(o.lowerId);
+        if(Array.isArray(o.orderIds)) o.orderIds.forEach(id => sdk.cancelOrder(id));
+      }
+    } catch(_){}
+    STATE.disarm(o);
+    try { crNotify('Trade closed · ' + _kindLabel(hit.kind), 'warn'); } catch(_){}
+  }
+
+  function _closeCard(){
+    const ov = document.getElementById('crBlOverlay');
+    if(ov) ov.classList.remove('on');
+  }
+
+  // ── Render lightning halos around every armed overlay ───────────────
+  // Called from the main render() loop AFTER drawVisualOverlays.
+  // Each frame: walk armed[], compute the overlay's screen-space bounds,
+  // stroke a slightly-jittered blue rounded-rect with alpha pulse.
+  window.drawBlueLaserHalos = function(){
+    if(!STATE.armed.length) return;
+    if(typeof ctx === 'undefined') return;
+    const tNow = performance.now() / 1000;
+    ctx.save();
+    for(const a of STATE.armed){
+      const bounds = _overlayBounds(a);
+      if(!bounds) continue;
+      // Pulse: cycle alpha 0.35 → 0.85 over 1.4s
+      const ph = (Math.sin(tNow * 4.5 + (a.ts % 1000) * 0.001) + 1) * 0.5;
+      const alpha = 0.40 + ph * 0.45;
+      const sideHue = a.side === 'sell' ? 350 : 215; // sell tinted red, buy + others blue
+      ctx.shadowColor = 'hsla(' + sideHue + ',95%,60%,' + alpha + ')';
+      ctx.shadowBlur = 14;
+      ctx.strokeStyle = 'hsla(' + sideHue + ',95%,68%,' + alpha + ')';
+      ctx.lineWidth = 1.6;
+      // Tiny lightning-like jitter so it reads as energy, not a static box
+      const jx = (Math.sin(tNow * 18 + a.ts) * 1.2) | 0;
+      const jy = (Math.cos(tNow * 22 + a.ts) * 1.2) | 0;
+      const x = bounds.x + jx, y = bounds.y + jy, w = bounds.w, h = bounds.h;
+      ctx.beginPath();
+      _roundRect(ctx, x - 4, y - 4, w + 8, h + 8, 6);
+      ctx.stroke();
+      // Inner faint stroke for depth
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'hsla(' + sideHue + ',95%,80%,' + (alpha * 0.55) + ')';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      _roundRect(ctx, x - 2, y - 2, w + 4, h + 4, 4);
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+
+  function _roundRect(c, x, y, w, h, r){
+    if(w < 2) w = 2; if(h < 2) h = 2;
+    const rr = Math.min(r, w/2, h/2);
+    c.moveTo(x + rr, y);
+    c.arcTo(x + w, y,     x + w, y + h, rr);
+    c.arcTo(x + w, y + h, x,     y + h, rr);
+    c.arcTo(x,     y + h, x,     y,     rr);
+    c.arcTo(x,     y,     x + w, y,     rr);
+    c.closePath();
+  }
+
+  // Resolve the current screen-space bounds {x, y, w, h} of the overlay
+  // that this armed entry refers to. Returns null if the overlay is
+  // off-screen or the kind isn't drawable.
+  function _overlayBounds(a){
+    if(!a || !a.overlay) return null;
+    if(typeof sX !== 'function' || typeof priceToY !== 'function') return null;
+    const o = a.overlay;
+    if(a.kind === 'bracket'){
+      const bx = sX(o.wx);
+      const yE = priceToY(o.entry), yT = priceToY(o.tp), yS = priceToY(o.sl);
+      const top = Math.min(yE, yT, yS), bot = Math.max(yE, yT, yS);
+      return { x: bx - 12, y: top - 4, w: (typeof OVERLAY_W !== 'undefined' ? OVERLAY_W : 60) + 12, h: bot - top + 8 };
+    }
+    if(a.kind === 'oco'){
+      const ox = sX(o.wx);
+      const yU = priceToY(o.upper), yL = priceToY(o.lower);
+      const top = Math.min(yU, yL), bot = Math.max(yU, yL);
+      return { x: ox - 4, y: top - 4, w: 200 + 8, h: bot - top + 8 };
+    }
+    if(a.kind === 'ladder'){
+      const lx = sX(o.wx);
+      let top = Infinity, bot = -Infinity;
+      if(o.prices && o.prices.length){
+        for(const p of o.prices){ const y = priceToY(p); if(y < top) top = y; if(y > bot) bot = y; }
+      } else {
+        const dir = (o.side === 'sell') ? 1 : -1;
+        for(let k = 0; k <= o.rungs; k++){
+          const y = priceToY(o.p + dir * o.spacing * k);
+          if(y < top) top = y; if(y > bot) bot = y;
+        }
+      }
+      if(!isFinite(top) || !isFinite(bot)) return null;
+      return { x: lx - 24, y: top - 4, w: 140, h: bot - top + 8 };
+    }
+    if(a.kind === 'hline'){
+      const y = priceToY(o.py);
+      return { x: 4, y: y - 6, w: (typeof W !== 'undefined' ? W : 800) - 70, h: 12 };
+    }
+    if(a.kind === 'vwap'){
+      if(!o.poly || !o.poly.length) return null;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for(const p of o.poly){
+        const x = sX(p.wx), y = priceToY(p.py);
+        if(x < minX) minX = x; if(x > maxX) maxX = x;
+        if(y < minY) minY = y; if(y > maxY) maxY = y;
+      }
+      return { x: minX - 4, y: minY - 4, w: maxX - minX + 8, h: maxY - minY + 8 };
+    }
+    return null;
+  }
+
+  // ── Boot: inject + register Esc handler so 4 isn't the only exit ────
+  function _boot(){
+    _injectCss();
+    _injectDom();
+    document.addEventListener('keydown', e => {
+      if(STATE.active && e.key === 'Escape'){
+        const ov = document.getElementById('crBlOverlay');
+        if(ov && ov.classList.contains('on')){ _closeCard(); return; }
+        STATE.toggle();
+      }
+    }, true);
   }
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', _boot);

@@ -1,0 +1,464 @@
+<!doctype html>
+<!--
+  ============================================================================
+  CHARTRUNNER ROADMAP — chartrunner.xyz/roadmap/
+  ============================================================================
+  Snake-path / Mario-Bros-style world map of the post-Frontier roadmap.
+  Each milestone (M0.5 → M10) is a level node on a winding path. Hover/tap
+  any node → callout shows theme + what lands. Designed for pitch + demo
+  recording — looks like an SNES world map.
+
+  Save target: chartrunner-prototype/roadmap.html
+  Pages stages this at: chartrunner.xyz/roadmap/ (or /roadmap.html)
+  Source of truth for milestone data: README.md "Post-Frontier roadmap"
+  ============================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>ChartRunner — Roadmap</title>
+<meta name="description" content="The ChartRunner world map. M0.5 Security → M10 Mainnet. Click any level to see what lands." />
+<meta name="theme-color" content="#0a0a0e" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0a0e'/%3E%3Cpath d='M6 22h2v3H6zM10 16h2v9h-2zM14 19h2v6h-2zM18 12h2v13h-2zM22 18h2v7h-2zM26 14h2v11h-2z' fill='%2314F195'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg:#0a0a0e; --bg-elevated:#14141c; --bg-card:#1a1a24;
+    --line:rgba(255,255,255,0.10); --line-strong:rgba(255,255,255,0.20);
+    --fg:#e6e6ee; --dim:#9aa0a6; --dim-2:#6a6f7a;
+    --green:#14F195; --green-soft:rgba(20,241,149,0.14); --green-line:rgba(20,241,149,0.45);
+    --purple:#9945FF; --purple-soft:rgba(153,69,255,0.18);
+    --red:#FF4D6D;
+    --blue:#3a86ff;
+    --yellow:#FFD166;
+    --path:#3a3a48;
+    --path-glow:rgba(20,241,149,0.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:Inter,-apple-system,system-ui,Segoe UI,Roboto,sans-serif;overflow-x:hidden}
+  /* —— Top bar —— */
+  .topbar{
+    position:sticky;top:0;z-index:50;
+    display:flex;align-items:center;gap:14px;padding:14px 24px;
+    background:rgba(10,10,14,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--fg)}
+  .brand .logo{width:28px;height:28px}
+  .brand .nm{font:700 15px ui-monospace,Menlo,monospace;letter-spacing:.5px;color:var(--green)}
+  .brand .slash{color:var(--dim-2);font:500 13px ui-monospace,Menlo,monospace;margin-left:4px}
+  .brand .pg{color:var(--fg);font:500 13px ui-monospace,Menlo,monospace}
+  .nav{margin-left:auto;display:flex;gap:18px;align-items:center}
+  .nav a{color:var(--dim);text-decoration:none;font:500 12px ui-monospace,Menlo,monospace;letter-spacing:.4px;text-transform:uppercase}
+  .nav a:hover{color:var(--green)}
+  .cta{padding:8px 16px;background:var(--green);color:#001a10;border-radius:6px;font:700 12px ui-monospace,Menlo,monospace;letter-spacing:.5px}
+  .cta:hover{background:#0fffa6;color:#001a10}
+
+  /* —— Hero —— */
+  .hero{padding:48px 24px 12px;text-align:center;max-width:920px;margin:0 auto}
+  .hero .eyebrow{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:2px;color:var(--green);text-transform:uppercase}
+  .hero h1{font-family:Inter,sans-serif;font-weight:800;font-size:clamp(34px,5vw,54px);line-height:1.05;letter-spacing:-1px;margin:14px 0 10px}
+  .hero .sub{color:var(--dim);font-size:15px;line-height:1.55;max-width:640px;margin:0 auto;font-weight:400}
+  .hero .pin{display:inline-block;margin-top:18px;padding:6px 14px;background:var(--green-soft);border:1px solid var(--green-line);color:var(--green);border-radius:999px;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.5px}
+
+  /* —— World map —— */
+  .map-wrap{position:relative;max-width:1280px;margin:32px auto 64px;padding:0 24px}
+  .map-svg{display:block;width:100%;height:auto;overflow:visible}
+  /* Path stroke */
+  .path-bg{stroke:var(--path);stroke-width:14;stroke-linecap:round;stroke-linejoin:round;fill:none}
+  .path-fg{stroke:var(--green);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;fill:none;
+    stroke-dasharray:8 12;animation:dash 18s linear infinite;filter:drop-shadow(0 0 6px var(--path-glow))}
+  @keyframes dash{ to { stroke-dashoffset:-200 } }
+
+  /* Node card */
+  .node{cursor:pointer;transition:transform .15s ease}
+  .node:hover{transform:scale(1.06)}
+  .node circle.outer{stroke-width:3;fill:var(--bg-elevated);transition:fill .15s,stroke .15s}
+  .node:hover circle.outer{fill:#202030}
+  .node text.lvl{font:800 13px ui-monospace,Menlo,monospace;text-anchor:middle;dominant-baseline:central;fill:var(--fg);pointer-events:none}
+  .node .lbl{font:600 11px Inter,sans-serif;text-anchor:middle;fill:var(--dim);pointer-events:none}
+  .node[data-status="shipped"] circle.outer{fill:var(--green);stroke:#0bd886}
+  .node[data-status="shipped"] text.lvl{fill:#001a10}
+  .node[data-status="shipped"] .lbl{fill:var(--green);font-weight:700}
+  .node[data-status="active"] circle.outer{stroke:var(--yellow);fill:#2a2310}
+  .node[data-status="active"] text.lvl{fill:var(--yellow)}
+  .node[data-status="active"] .lbl{fill:var(--yellow)}
+  .node[data-status="next"] circle.outer{stroke:var(--blue)}
+  .node[data-status="next"] .lbl{fill:var(--blue)}
+  .node[data-status="future"] circle.outer{stroke:var(--purple)}
+  .node[data-status="future"] .lbl{fill:#c79bff}
+  .node[data-status="endgame"] circle.outer{stroke:var(--red);stroke-dasharray:4 3}
+  .node[data-status="endgame"] .lbl{fill:var(--red)}
+
+  /* Pulse on shipped + active */
+  .node[data-status="shipped"] circle.pulse,
+  .node[data-status="active"]  circle.pulse{
+    fill:none;stroke:currentColor;stroke-width:2;opacity:0;transform-origin:center;
+    animation:pulse 2.4s ease-out infinite;
+  }
+  .node[data-status="shipped"] circle.pulse{stroke:#0bd886;animation-delay:.2s}
+  .node[data-status="active"]  circle.pulse{stroke:var(--yellow);animation-delay:1s}
+  @keyframes pulse{
+    0%   {opacity:.7;transform:scale(.6)}
+    100% {opacity:0;transform:scale(2.2)}
+  }
+
+  /* Callout panel */
+  .callout{
+    position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.95);
+    width:min(560px,calc(100% - 40px));max-height:80vh;overflow:auto;
+    background:linear-gradient(180deg,var(--bg-card) 0%,var(--bg-elevated) 100%);
+    border:1px solid var(--line-strong);border-radius:12px;
+    box-shadow:0 32px 80px rgba(0,0,0,.7);
+    padding:28px 30px;z-index:100;opacity:0;pointer-events:none;
+    transition:opacity .18s,transform .18s;
+  }
+  .callout.on{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+  .callout .x{position:absolute;top:14px;right:14px;background:transparent;border:1px solid var(--line);color:var(--dim);
+    width:30px;height:30px;border-radius:6px;cursor:pointer;font:600 14px ui-monospace,Menlo,monospace}
+  .callout .x:hover{background:rgba(255,255,255,.05);color:var(--fg)}
+  .callout .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.5px;text-transform:uppercase}
+  .callout .lvl-tag{font:800 22px ui-monospace,Menlo,monospace;color:var(--green);letter-spacing:1px}
+  .callout h3{font-family:Inter,sans-serif;font-weight:700;font-size:22px;margin:6px 0 8px;line-height:1.2}
+  .callout .theme{color:var(--dim);font-size:13px;margin-bottom:18px;text-transform:uppercase;letter-spacing:1px;font-weight:600}
+  .callout .lands{color:var(--fg);font-size:14px;line-height:1.6}
+  .callout .lands b{color:var(--green)}
+  .callout .lands code{background:rgba(20,241,149,.10);color:var(--green);padding:1px 6px;border-radius:3px;font:500 12px ui-monospace,Menlo,monospace}
+
+  .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);z-index:99;opacity:0;pointer-events:none;transition:opacity .18s}
+  .backdrop.on{opacity:1;pointer-events:auto}
+
+  /* Status legend */
+  .legend{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;padding:14px;font:500 11px ui-monospace,Menlo,monospace;letter-spacing:.4px}
+  .legend .item{display:inline-flex;align-items:center;gap:6px;color:var(--dim)}
+  .legend .dot{width:10px;height:10px;border-radius:50%}
+  .legend .dot.s{background:var(--green)}
+  .legend .dot.a{background:transparent;border:2px solid var(--yellow)}
+  .legend .dot.n{background:transparent;border:2px solid var(--blue)}
+  .legend .dot.f{background:transparent;border:2px solid var(--purple)}
+  .legend .dot.e{background:transparent;border:2px dashed var(--red)}
+
+  /* Footer */
+  .ftr{padding:36px 24px 60px;text-align:center;color:var(--dim-2);font:500 11px ui-monospace,Menlo,monospace;letter-spacing:.5px}
+  .ftr a{color:var(--green);text-decoration:none}
+
+  /* Mobile tweaks */
+  @media (max-width:680px){
+    .hero{padding:32px 18px 4px}
+    .map-wrap{padding:0 12px;margin:18px auto 40px}
+    .nav{display:none}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/" aria-label="ChartRunner home">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" fill="#0a0a0e"/>
+      <path d="M6 22h2v3H6zM10 16h2v9h-2zM14 19h2v6h-2zM18 12h2v13h-2zM22 18h2v7h-2zM26 14h2v11h-2z" fill="#14F195"/>
+      <rect x="12" y="4" width="8" height="6" fill="#14F195"/>
+    </svg>
+    <span class="nm">CHARTRUNNER</span>
+    <span class="slash">/</span>
+    <span class="pg">ROADMAP</span>
+  </a>
+  <nav class="nav">
+    <a href="/">Home</a>
+    <a href="/docs/">Docs</a>
+    <a href="/play/" class="cta">Play</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="eyebrow">World map · post-Frontier</div>
+  <h1>Pick a world. Beat the level.</h1>
+  <p class="sub">Twelve milestones from the May-11 Frontier demo to mainnet token launch tournaments. Click any level to see what lands.</p>
+  <div class="pin">⭐ HEAD · v0.9.99 · Frontier-eve build</div>
+</section>
+
+<div class="map-wrap" aria-label="Roadmap world map">
+  <!--
+    SVG viewBox 0 0 1280 880. Twelve nodes laid out on a snake path that
+    weaves left→right, right→left, etc. Path = catmull-rom-style cubic
+    Beziers between node centers. Each node has data-id matching the
+    MILESTONES catalog below; click → opens callout.
+    Node positions tuned so the path doesn't cross itself.
+  -->
+  <svg class="map-svg" viewBox="0 0 1280 880" preserveAspectRatio="xMidYMid meet" role="img">
+    <!-- Decorative dot grid -->
+    <defs>
+      <pattern id="dotgrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+        <circle cx="1.5" cy="1.5" r="1.5" fill="rgba(255,255,255,0.04)"/>
+      </pattern>
+    </defs>
+    <rect x="0" y="0" width="1280" height="880" fill="url(#dotgrid)"/>
+
+    <!-- Background path stripe -->
+    <path class="path-bg"
+      d="M 100,140
+         C 320,140  500,140  700,140
+         C 1040,140 1180,260 1180,360
+         C 1180,460 1040,520 800,520
+         C 480,520  280,520  120,520
+         C 60,520   60,640   140,680
+         C 320,720  600,720  900,700
+         C 1100,690 1180,760 1180,800
+      "/>
+    <!-- Animated dashed overlay -->
+    <path class="path-fg"
+      d="M 100,140
+         C 320,140  500,140  700,140
+         C 1040,140 1180,260 1180,360
+         C 1180,460 1040,520 800,520
+         C 480,520  280,520  120,520
+         C 60,520   60,640   140,680
+         C 320,720  600,720  900,700
+         C 1100,690 1180,760 1180,800
+      "/>
+
+    <!-- ═══ NODES ═══ Position-tuned along the path -->
+    <!-- Row 1 (top) -->
+    <g class="node" data-id="frontier"  data-status="shipped" transform="translate(100,140)">
+      <circle class="pulse" r="34"/>
+      <circle class="outer" r="34"/>
+      <text class="lvl" y="0">⭐</text>
+      <text class="lbl" y="56">Frontier · v0.9.99</text>
+    </g>
+    <g class="node" data-id="m05" data-status="next" transform="translate(330,140)">
+      <circle class="outer" r="30"/>
+      <text class="lvl" y="0">M0.5</text>
+      <text class="lbl" y="52">Security</text>
+    </g>
+    <g class="node" data-id="m1" data-status="active" transform="translate(560,140)">
+      <circle class="pulse" r="30"/>
+      <circle class="outer" r="30"/>
+      <text class="lvl" y="0">M1</text>
+      <text class="lbl" y="52">Tokenomics</text>
+    </g>
+    <g class="node" data-id="m2" data-status="active" transform="translate(790,140)">
+      <circle class="pulse" r="30"/>
+      <circle class="outer" r="30"/>
+      <text class="lvl" y="0">M2</text>
+      <text class="lbl" y="52">Coach AI</text>
+    </g>
+
+    <!-- Curve down (right side) -->
+    <g class="node" data-id="m26" data-status="next" transform="translate(1180,360)">
+      <circle class="outer" r="30"/>
+      <text class="lvl" y="0">M2.6</text>
+      <text class="lbl" y="52">NFT Identity</text>
+    </g>
+
+    <!-- Row 2 (middle) right→left -->
+    <g class="node" data-id="m25" data-status="next" transform="translate(1000,520)">
+      <circle class="outer" r="30"/>
+      <text class="lvl" y="0">M2.5</text>
+      <text class="lbl" y="52">SDK Extract</text>
+    </g>
+    <g class="node" data-id="m3" data-status="future" transform="translate(720,520)">
+      <circle class="outer" r="30"/>
+      <text class="lvl" y="0">M3</text>
+      <text class="lbl" y="52">Build Apps</text>
+    </g>
+    <g class="node" data-id="m4" data-status="future" transform="translate(440,520)">
+      <circle class="outer" r="30"/>
+      <text class="lvl" y="0">M4</text>
+      <text class="lbl" y="52">Marketplace</text>
+    </g>
+    <g class="node" data-id="m5" data-status="future" transform="translate(160,520)">
+      <circle class="outer" r="30"/>
+      <text class="lvl" y="0">M5</text>
+      <text class="lbl" y="52">Hyperliquid</text>
+    </g>
+
+    <!-- Row 3 (bottom) left→right -->
+    <g class="node" data-id="m6" data-status="future" transform="translate(280,720)">
+      <circle class="outer" r="30"/>
+      <text class="lvl" y="0">M6</text>
+      <text class="lbl" y="52">AI · TG Bots</text>
+    </g>
+    <g class="node" data-id="m7" data-status="future" transform="translate(580,718)">
+      <circle class="outer" r="30"/>
+      <text class="lvl" y="0">M7</text>
+      <text class="lbl" y="52">Streaming</text>
+    </g>
+    <g class="node" data-id="m8" data-status="endgame" transform="translate(880,705)">
+      <circle class="outer" r="32"/>
+      <text class="lvl" y="0">M8</text>
+      <text class="lbl" y="54">Tournaments</text>
+    </g>
+    <g class="node" data-id="m9" data-status="endgame" transform="translate(1080,760)">
+      <circle class="outer" r="30"/>
+      <text class="lvl" y="0">M9</text>
+      <text class="lbl" y="52">Mobile</text>
+    </g>
+    <g class="node" data-id="m10" data-status="endgame" transform="translate(1180,800)">
+      <circle class="outer" r="36"/>
+      <text class="lvl" y="0">M10</text>
+      <text class="lbl" y="58">🏁 Mainnet</text>
+    </g>
+  </svg>
+</div>
+
+<div class="legend" aria-label="Legend">
+  <span class="item"><span class="dot s"></span>Shipped</span>
+  <span class="item"><span class="dot a"></span>Active</span>
+  <span class="item"><span class="dot n"></span>Next up</span>
+  <span class="item"><span class="dot f"></span>Future</span>
+  <span class="item"><span class="dot e"></span>Endgame</span>
+</div>
+
+<!-- Callout overlay -->
+<div class="backdrop" id="bd"></div>
+<aside class="callout" id="co" role="dialog" aria-labelledby="co-h">
+  <button class="x" id="cox" aria-label="Close">×</button>
+  <div class="lvl-tag" id="co-lvl"></div>
+  <h3 id="co-h"></h3>
+  <div class="theme" id="co-theme"></div>
+  <div class="lands" id="co-lands"></div>
+</aside>
+
+<footer class="ftr">
+  Built solo for Colosseum Frontier · 2026 · <a href="/">chartrunner.xyz</a>
+</footer>
+
+<script>
+/*
+ * Milestone catalog — single source of truth for the callout content.
+ * Mirrors README.md "Post-Frontier roadmap" table. Update both in lockstep.
+ */
+const MILESTONES = {
+  frontier: {
+    lvl: '⭐ HEAD',
+    title: 'Frontier · v0.9.99',
+    theme: 'Demo build · May 11, 2026',
+    lands: '<b>Shipped:</b> 39-chapter campaign · live Binance candles · 2 Anchor programs on devnet (<code>chartrunner_maps</code>, <code>chartrunner_registry</code>) · NFT avatar picker · Phoenix Live overlay panel · Coach-style modals · RUN-tube + Docs PIP widgets (now shootable) · Quick-config terminal widgets · Solana wallet via direct Phantom + signMessage ceremony.',
+  },
+  m05: {
+    lvl: 'M0.5',
+    title: 'Security hardening',
+    theme: 'Squads multisig + audit',
+    lands: 'Wrap <code>chartrunner_maps</code> + <code>chartrunner_registry</code> upgrade authorities in a <b>Squads multisig</b> (used by Helius / Jito / Kamino / Jupiter). Independent Anchor program audit. Resolves the upstream <code>solana-pubkey</code> v2/v3 conflict in <code>ephemeral-rollups-sdk</code> so the two scaffold-complete programs (<code>chartrunner_match</code>, <code>chartrunner_oracle</code>) ship live.',
+  },
+  m1: {
+    lvl: 'M1',
+    title: 'Tokenomics paper + fiat onramp',
+    theme: '$CRDS · $RUN supply curves',
+    lands: '$CRDS / $RUN supply curves, sinks, vesting, swap math. Restores the token UI surfaces (Profile balances, Marketplace, Missions) currently hidden behind v0.9.12 feature flags. <b>MoonPay</b> or <b>Coinbase Onramp</b> for fiat → $RUN distribution.',
+  },
+  m2: {
+    lvl: 'M2',
+    title: 'Coach · AI Q&A v2',
+    theme: 'Real model endpoint',
+    lands: 'Hardcoded FAQ ships in v0.9.12 (Frontier demo). M2 routes Coach to a real model endpoint with chart + position context. Players ask "what just happened?" and get an answer grounded in the candles they\'re looking at, not generic.',
+  },
+  m25: {
+    lvl: 'M2.5',
+    title: 'SDK extraction (Phase 1 unblock)',
+    theme: '@chartrunner/core npm',
+    lands: 'M1.4 / M1.5 — extract <code>ChartRunnerSDK</code> from the inline IIFE into the publishable <code>@chartrunner/core</code> npm package via the inline-bundler pattern. Unlocks Dexscreener / TradingView host overlays (third-party charts wear the ChartRunner UI).',
+  },
+  m26: {
+    lvl: 'M2.6',
+    title: 'Wallet identity · NFT avatars',
+    theme: 'Helius DAS + sprite swap',
+    lands: 'v0.9.95 ships the offline picker (top 20 Solana collections, curated SVG samples) so the demo never blocks on RPC. M2.6 wires <b>Helius DAS API</b> to read the connected wallet\'s actual NFT holdings and filter the picker to what the player owns. Extends <code>drawPlayer</code> with an image-source branch so the chosen NFT becomes the in-game avatar sprite, not just the Profile portrait.',
+  },
+  m3: {
+    lvl: 'M3',
+    title: 'Build apps',
+    theme: 'Bot Terminal · Workbench',
+    lands: 'Bot Terminal back online, Workbench Strategies / Indicators / Terminal / Backtest / App Builder / Theme tabs restored. App Builder template gallery rewritten — the v0.9.11 P&L Tracker + Trade Notes templates are deprecated. <b>Metaplex Agent Kit</b> registers Workbench bots as on-chain agents. <b>Coinbase x402</b> for paid API access on premium bots / advanced indicators.',
+  },
+  m4: {
+    lvl: 'M4',
+    title: 'Intel · P2P commerce',
+    theme: 'Marketplace on registry',
+    lands: 'Marketplace restored as a real on-chain P2P surface for bots, maps, strategies, indicators, themes. Backed by <code>chartrunner_registry</code>. Sellers list, buyers buy, royalties enforced on-chain via the existing <code>list_entity</code> / <code>buy_entity</code> instructions.',
+  },
+  m5: {
+    lvl: 'M5',
+    title: 'Hyperliquid + production RPC',
+    theme: 'Second live-trade partner',
+    lands: 'Second live-trading partner alongside Phoenix Rise. <b>Helius</b> RPC replaces public devnet endpoint for production-grade reads. <i>Action item: check whether Hyperliquid runs hackathons we should align with.</i>',
+  },
+  m6: {
+    lvl: 'M6',
+    title: 'AI · Telegram bot integration',
+    theme: 'Bridge to Claude / TG bots',
+    lands: 'The Bot Terminal becomes a real bridge to Claude / Telegram bots / Lobster / OpenClaw. Telegram\'s newest mini-app + AI features get pulled into the in-game Terminal. Players issue trades by chatting with their bot in Telegram; ChartRunner renders the result on the chart.',
+  },
+  m7: {
+    lvl: 'M7',
+    title: 'RUN-tube · Streaming',
+    theme: 'Picture-in-picture + decks',
+    lands: 'Two-part: (a) <b>RUN-tube</b> — a draggable video widget for in-game picture-in-picture (creator face on chart while running) + an inline file-display app for documents (pitch decks, strategy PDFs, chart snapshots). Ships partially in v0.9.27 as the demo + pitch video recording rig. (b) Full streaming-site connectors (YouTube / Twitch / Kick / X Live) ship at the milestone proper.',
+  },
+  m8: {
+    lvl: 'M8',
+    title: 'Token launch tournaments',
+    theme: 'NvN combat for token supply',
+    lands: 'Natural extension of streaming. 1v1 / 2v2 / NvN players each launch a token, control supply, fight on the chart, win opponent supply as reward. Tournament entry fees + payouts in <b>CASH</b> (Phantom-backed stablecoin, Frontier-recommended payout asset). <b>World ID</b> proof-of-human gate against bot farms. The ChartRunner social + on-chain gaming endgame.',
+  },
+  m9: {
+    lvl: 'M9',
+    title: 'Solana Mobile / React Native',
+    theme: 'iOS · Android · Saga',
+    lands: 'iOS + Android build via the Phantom React Native template + Solana Mobile / Saga integration. Touch-native chart interactions. The 8M+ wallets that learned to swap on memecoins now have a mobile training ground.',
+  },
+  m10: {
+    lvl: 'M10 🏁',
+    title: 'Mainnet deploy',
+    theme: 'The finish line',
+    lands: 'Audit-clean Anchor programs deployed to Solana mainnet-beta. Phoenix Rise + MagicBlock + Honeycomb + Pyth integrations move from devnet to live. CASH and $RUN become spendable, not just demo currencies. The training ground graduates into a real exchange. Roll credits.',
+  },
+};
+
+(function(){
+  const co = document.getElementById('co');
+  const bd = document.getElementById('bd');
+  const cox = document.getElementById('cox');
+  const elLvl = document.getElementById('co-lvl');
+  const elH = document.getElementById('co-h');
+  const elTheme = document.getElementById('co-theme');
+  const elLands = document.getElementById('co-lands');
+
+  function open(id){
+    const m = MILESTONES[id];
+    if(!m) return;
+    elLvl.textContent = m.lvl;
+    elH.textContent = m.title;
+    elTheme.textContent = m.theme;
+    elLands.innerHTML = m.lands;
+    co.classList.add('on');
+    bd.classList.add('on');
+    document.body.style.overflow = 'hidden';
+  }
+  function close(){
+    co.classList.remove('on');
+    bd.classList.remove('on');
+    document.body.style.overflow = '';
+  }
+
+  document.querySelectorAll('.node').forEach(n => {
+    const id = n.getAttribute('data-id');
+    n.addEventListener('click', () => open(id));
+    n.style.cursor = 'pointer';
+  });
+  cox.addEventListener('click', close);
+  bd.addEventListener('click', close);
+  document.addEventListener('keydown', e => { if(e.key === 'Escape') close(); });
+
+  // Auto-open the Frontier node once on first paint so visitors immediately
+  // see what a callout looks like. Skip if URL hash specifies a different
+  // milestone (deep-link support: roadmap.html#m3 opens M3 instead).
+  setTimeout(() => {
+    const h = (location.hash || '').replace('#','');
+    if(h && MILESTONES[h]) open(h);
+  }, 100);
+})();
+</script>
+
+</body>
+</html>
