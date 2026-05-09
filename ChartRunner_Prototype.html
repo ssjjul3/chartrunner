@@ -528,6 +528,25 @@
   #crCoachOverlay .crCoachBtn.primary{border-color:rgba(20,241,149,.55);color:#bff7df;background:rgba(20,241,149,.10)}
   #crCoachOverlay .crCoachBtn.primary:hover{background:rgba(20,241,149,.20)}
   #crCoachOverlay .crCoachOk{display:inline-block;color:#7ee787;font-weight:700;margin-right:6px}
+  /* v0.9.83 — Coach-styled confirm modal. Replaces window.confirm() for
+     in-game prompts (disconnect wallet, etc.) so the popup matches the
+     game aesthetic instead of the host browser's native chrome. Backdrop
+     dims the desktop, card centers, button row mirrors the Coach
+     overlay's primary/danger language. */
+  #crConfirmBackdrop{position:fixed;inset:0;z-index:99500;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center}
+  #crConfirmBackdrop.on{display:flex;animation:crConfirmIn .18s ease-out}
+  @keyframes crConfirmIn{from{opacity:0}to{opacity:1}}
+  #crConfirmBackdrop .crConfirmCard{background:linear-gradient(180deg,rgba(20,30,55,.97),rgba(12,18,35,.98));border:1px solid rgba(20,241,149,.45);border-radius:12px;padding:18px 22px 16px;color:var(--fg);font:13px/1.5 ui-monospace,Menlo,monospace;min-width:340px;max-width:480px;box-shadow:0 16px 48px rgba(0,0,0,.7), 0 0 0 1px rgba(20,241,149,.10) inset}
+  #crConfirmBackdrop .crConfirmTitle{font-weight:700;font-size:11px;color:#7ee787;letter-spacing:.6px;text-transform:uppercase;margin-bottom:10px}
+  #crConfirmBackdrop .crConfirmBody{color:var(--fg);font-size:13px;line-height:1.5;margin-bottom:16px;white-space:pre-line}
+  #crConfirmBackdrop .crConfirmActions{display:flex;gap:8px;justify-content:flex-end}
+  #crConfirmBackdrop .crConfirmBtn{appearance:none;border:1px solid var(--line);background:transparent;color:var(--dim);font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.4px;text-transform:uppercase;padding:7px 14px;border-radius:6px;cursor:pointer;transition:all .12s ease}
+  #crConfirmBackdrop .crConfirmBtn:hover{color:var(--fg);border-color:rgba(20,241,149,.45)}
+  #crConfirmBackdrop .crConfirmBtn.primary{border-color:rgba(20,241,149,.55);color:#bff7df;background:rgba(20,241,149,.10)}
+  #crConfirmBackdrop .crConfirmBtn.primary:hover{background:rgba(20,241,149,.20)}
+  #crConfirmBackdrop .crConfirmBtn.danger{border-color:rgba(255,91,127,.55);color:#ff8aa6;background:rgba(255,91,127,.08)}
+  #crConfirmBackdrop .crConfirmBtn.danger:hover{background:rgba(255,91,127,.18);color:#ffbcc9}
+
   /* Spotlight ring on a target element. Uses outline so it doesn't shift layout. */
   .crCoachSpotlit{outline:2px solid #ffd166 !important;outline-offset:3px;border-radius:6px;animation:crCoachPulse 1.4s ease-in-out infinite;z-index:10}
   @keyframes crCoachPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,209,102,0.55), 0 0 12px 0 rgba(255,209,102,.35)}50%{box-shadow:0 0 0 8px rgba(255,209,102,0), 0 0 18px 2px rgba(255,209,102,.55)}}
@@ -5593,6 +5612,22 @@
        preview + trader name + run stats + equipped loadout chips). Opens
        via the in-game OS bar's Profile button. Use the desktop Profile
        window for the full loadout altar / Balances / Stats / Missions. -->
+  <!-- v0.9.83 — Coach-styled in-game confirm modal. Backdrop dims the
+       desktop; card mirrors the Coach overlay's dark+green language.
+       Driven by window.crConfirm({title, body, ok, cancel, danger})
+       which returns a Promise<boolean>. Replaces window.confirm() for
+       in-game prompts so the popup matches the game aesthetic. -->
+  <div id="crConfirmBackdrop">
+    <div class="crConfirmCard">
+      <div class="crConfirmTitle" id="crConfirmTitle">Confirm</div>
+      <div class="crConfirmBody"  id="crConfirmBody">Are you sure?</div>
+      <div class="crConfirmActions">
+        <button class="crConfirmBtn"         id="crConfirmCancel" type="button">Cancel</button>
+        <button class="crConfirmBtn primary" id="crConfirmOk"     type="button">OK</button>
+      </div>
+    </div>
+  </div>
+
   <div id="crLightProfile" style="display:none">
     <div class="lp-head">
       <div class="lp-portrait">
@@ -22891,7 +22926,19 @@ setTimeout(() => {
     try {
       if (typeof crWallet === 'undefined') return;
       if (crWallet.isConnected && crWallet.isConnected()) {
-        if (window.confirm('Disconnect wallet?')) crWallet.disconnect();
+        // v0.9.83 — Coach-styled confirm in place of native window.confirm.
+        // Falls back to window.confirm if the modal helper isn't loaded yet.
+        if (typeof window.crConfirm === 'function') {
+          window.crConfirm({
+            title:  'Disconnect wallet?',
+            body:   'Your Profile, Maps, and Workbench data will be hidden until you reconnect. Saved data is preserved per wallet.',
+            ok:     'Disconnect',
+            cancel: 'Cancel',
+            danger: true,
+          }).then(ok => { if(ok) crWallet.disconnect(); });
+        } else {
+          if (window.confirm('Disconnect wallet?')) crWallet.disconnect();
+        }
       } else if (crWallet.connect) {
         crWallet.connect();
       }
@@ -35478,11 +35525,72 @@ plot(diff, color=color.aqua)`,
       el.classList.toggle('cr-wallet-on', connected);
     });
   }
+  // v0.9.83 — Coach-styled confirm modal. Promise-based so it slots into
+  // any window.confirm() call site. Backdrop = click outside cancels;
+  // Esc cancels; Enter confirms; OK auto-focuses on open. Falls back to
+  // window.confirm() if the modal DOM isn't present (defensive).
+  if(typeof window.crConfirm !== 'function'){
+    window.crConfirm = function(opts){
+      opts = opts || {};
+      return new Promise(resolve => {
+        const back = document.getElementById('crConfirmBackdrop');
+        const ttl  = document.getElementById('crConfirmTitle');
+        const body = document.getElementById('crConfirmBody');
+        const okB  = document.getElementById('crConfirmOk');
+        const cnl  = document.getElementById('crConfirmCancel');
+        if(!back || !ttl || !body || !okB || !cnl){
+          // Defensive fallback if the modal markup is missing.
+          resolve(window.confirm((opts.title ? opts.title + '\n\n' : '') + (opts.body || 'Are you sure?')));
+          return;
+        }
+        ttl.textContent  = opts.title  || 'Confirm';
+        body.textContent = opts.body   || '';
+        okB.textContent  = opts.ok     || 'OK';
+        cnl.textContent  = opts.cancel || 'Cancel';
+        okB.classList.toggle('danger', !!opts.danger);
+        okB.classList.toggle('primary', !opts.danger);
+        const close = (val) => {
+          back.classList.remove('on');
+          okB.removeEventListener('click', onOk);
+          cnl.removeEventListener('click', onCnl);
+          back.removeEventListener('click', onBack);
+          document.removeEventListener('keydown', onKey, true);
+          resolve(val);
+        };
+        const onOk   = () => close(true);
+        const onCnl  = () => close(false);
+        const onBack = (e) => { if(e.target === back) close(false); };
+        const onKey  = (e) => {
+          if(e.key === 'Escape'){ e.preventDefault(); close(false); }
+          else if(e.key === 'Enter'){ e.preventDefault(); close(true); }
+        };
+        okB.addEventListener('click', onOk);
+        cnl.addEventListener('click', onCnl);
+        back.addEventListener('click', onBack);
+        document.addEventListener('keydown', onKey, true);
+        back.classList.add('on');
+        setTimeout(() => { try { okB.focus(); } catch(_){} }, 30);
+      });
+    };
+  }
+
   function _onWalletPillClick(){
     if(typeof crWallet === 'undefined') return;
     if(crWallet.isConnected()){
-      const ok = window.confirm('Disconnect wallet?\n\nYour Profile, Maps, and Workbench data will be hidden until you reconnect. Saved data is preserved per wallet.');
-      if(ok){ crWallet.disconnect(); _refreshWalletPills(); try{ toast && toast('Wallet disconnected'); }catch(_){} }
+      // v0.9.83 — Coach-styled confirm replaces native window.confirm.
+      window.crConfirm({
+        title:  'Disconnect wallet?',
+        body:   'Your Profile, Maps, and Workbench data will be hidden until you reconnect. Saved data is preserved per wallet.',
+        ok:     'Disconnect',
+        cancel: 'Cancel',
+        danger: true,
+      }).then(ok => {
+        if(ok){
+          crWallet.disconnect();
+          _refreshWalletPills();
+          try { toast && toast('Wallet disconnected'); } catch(_){}
+        }
+      });
     } else {
       crWallet.connect();
     }
