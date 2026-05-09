@@ -548,6 +548,15 @@
   #crConfirmBackdrop .crConfirmBtn.primary:hover{background:rgba(20,241,149,.20)}
   #crConfirmBackdrop .crConfirmBtn.danger{border-color:rgba(255,91,127,.55);color:#ff8aa6;background:rgba(255,91,127,.08)}
   #crConfirmBackdrop .crConfirmBtn.danger:hover{background:rgba(255,91,127,.18);color:#ffbcc9}
+  /* v0.9.94 — Coach-style prompt input. Same modal chrome as crConfirm
+     but with a single-line text field above the button row. Used by
+     window.crPrompt() as the in-game replacement for window.prompt(). */
+  #crConfirmBackdrop .crConfirmInput{
+    width:100%;background:rgba(10,15,28,.7);border:1px solid rgba(20,241,149,.35);
+    border-radius:6px;color:var(--fg);font:600 13px ui-monospace,Menlo,monospace;
+    padding:9px 11px;margin-bottom:14px;outline:none;
+  }
+  #crConfirmBackdrop .crConfirmInput:focus{border-color:rgba(20,241,149,.65);background:rgba(10,15,28,.85)}
 
   /* Spotlight ring on a target element. Uses outline so it doesn't shift layout. */
   .crCoachSpotlit{outline:2px solid #ffd166 !important;outline-offset:3px;border-radius:6px;animation:crCoachPulse 1.4s ease-in-out infinite;z-index:10}
@@ -24763,8 +24772,17 @@ function _wbAddChainActions(row, entityType, entity){
       + (live.listingPrice ? ' (was ' + (live.listingPrice / 1e9).toFixed(3) + ' SOL)' : '');
     listBtn.addEventListener('click', e => {
       e.stopPropagation();
-      if (window.confirm('Cancel marketplace listing for "' + entity.name + '"?')) {
-        crRegistry.cancelListing(entityType, entity.name);
+      // v0.9.94 — Coach-styled confirm.
+      const _doCancel = () => crRegistry.cancelListing(entityType, entity.name);
+      if(typeof window.crConfirm === 'function'){
+        window.crConfirm({
+          title: 'Cancel listing?',
+          body:  'Stop listing "' + entity.name + '" on the P2P Marketplace?',
+          ok:    'Cancel listing',
+          danger: true,
+        }).then(ok => { if(ok) _doCancel(); });
+      } else if (window.confirm('Cancel marketplace listing for "' + entity.name + '"?')) {
+        _doCancel();
       }
     });
   } else {
@@ -24772,14 +24790,26 @@ function _wbAddChainActions(row, entityType, entity){
     listBtn.title = 'List this ' + crRegistry.ENTITY_LABELS[entityType] + ' on the P2P Marketplace';
     listBtn.addEventListener('click', e => {
       e.stopPropagation();
-      const priceStr = window.prompt('List price in SOL (e.g. 0.1):', '0.1');
-      if (priceStr == null) return;
-      const price = parseFloat(priceStr);
-      if (!Number.isFinite(price) || price <= 0) {
-        try { toast && toast('Invalid price'); } catch(_){}
-        return;
+      // v0.9.94 — Coach-styled prompt.
+      const _doList = (priceStr) => {
+        if (priceStr == null) return;
+        const price = parseFloat(priceStr);
+        if (!Number.isFinite(price) || price <= 0) {
+          try { toast && toast('Invalid price'); } catch(_){}
+          return;
+        }
+        crRegistry.listOnMarket(entityType, entity.name, price);
+      };
+      if(typeof window.crPrompt === 'function'){
+        window.crPrompt({
+          title:   'List on Marketplace',
+          body:    'Price in SOL · "' + entity.name + '"',
+          default: '0.1',
+          ok:      'List',
+        }).then(_doList);
+      } else {
+        _doList(window.prompt('List price in SOL (e.g. 0.1):', '0.1'));
       }
-      crRegistry.listOnMarket(entityType, entity.name, price);
     });
   }
 
@@ -24797,10 +24827,19 @@ function _wbAddChainActions(row, entityType, entity){
     unanchorBtn.textContent = '🪙×';
     unanchorBtn.addEventListener('click', e => {
       e.stopPropagation();
-      if (window.confirm('Unanchor "' + entity.name + '" from Solana devnet?\n\n'
+      // v0.9.94 — Coach-styled confirm.
+      const _doUnanchor = () => crRegistry.deleteFromChain(entityType, entity.name);
+      if(typeof window.crConfirm === 'function'){
+        window.crConfirm({
+          title:  'Unanchor from Solana devnet?',
+          body:   'Close the on-chain PDA for "' + entity.name + '" and refund ~0.0011 SOL rent.\n\nYour local copy stays intact — you can re-anchor later.',
+          ok:     'Unanchor',
+          danger: true,
+        }).then(ok => { if(ok) _doUnanchor(); });
+      } else if (window.confirm('Unanchor "' + entity.name + '" from Solana devnet?\n\n'
         + 'The on-chain PDA will be closed and ~0.0011 SOL rent refunded.\n'
         + 'Your local copy stays intact — you can re-anchor later.')) {
-        crRegistry.deleteFromChain(entityType, entity.name);
+        _doUnanchor();
       }
     });
   }
@@ -28352,13 +28391,25 @@ function _wEnsureLayer(){
       const id = holdRow.getAttribute('data-w-tok-hold');
       if(!id || typeof _tokSetHolding !== 'function') return;
       const cur = (typeof _tokGetHolding === 'function') ? _tokGetHolding(id) : 0;
-      const v = window.prompt('Holdings (' + id.toUpperCase() + ') — qty owned:', String(cur || 0));
-      if(v == null) return;
-      const n = parseFloat(v);
-      if(isNaN(n) || n < 0){ try { toast('Invalid amount'); } catch(_){} return; }
-      _tokSetHolding(id, n);
-      try { renderWidgets(); } catch(_){}
-      try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+      // v0.9.94 — Coach-styled prompt.
+      const _doSet = (v) => {
+        if(v == null) return;
+        const n = parseFloat(v);
+        if(isNaN(n) || n < 0){ try { toast('Invalid amount'); } catch(_){} return; }
+        _tokSetHolding(id, n);
+        try { renderWidgets(); } catch(_){}
+        try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+      };
+      if(typeof window.crPrompt === 'function'){
+        window.crPrompt({
+          title:   'Holdings · ' + id.toUpperCase(),
+          body:    'Quantity owned',
+          default: String(cur || 0),
+          ok:      'Set',
+        }).then(_doSet);
+      } else {
+        _doSet(window.prompt('Holdings (' + id.toUpperCase() + ') — qty owned:', String(cur || 0)));
+      }
       return;
     }
   });
@@ -30368,37 +30419,46 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
           return pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
         })();
         const suggested = asset + ' · ' + tf + ' · ' + stamp;
-        const name = window.prompt('Name this map:', suggested);
-        if(name == null) return;                       // user cancelled
-        const trimmed = (name || '').trim() || suggested;
-        const m = crMaps.save(trimmed);
-        // Mark the run as bound to this map so Restart morphs to Save (overwrite).
-        try { if(typeof game !== 'undefined') game.currentMapId = m.id; } catch(_){}
-        try { _refreshRestartLabel(); } catch(_){}
-        if(typeof toast === 'function') toast('Saved · ' + trimmed);
-
-        // v0.9.4 — On-chain anchor follow-up. Only offered when a wallet is
-        // connected; otherwise the local save is the entire flow. The redirect
-        // takes the player to /solana-connect/?action=save-map; on success
-        // they bounce back to /play/?savedMap=...&sig=... and crChainSave's
-        // boot-time URL handler decorates the matching local entry with
-        // { onChain: true, sig, onChainAt }. Hash is computed canonically
-        // (sorted keys, thumb stripped) so re-saves of the same strategy
-        // produce the same hash.
-        try {
-          if (typeof crWallet !== 'undefined' && crWallet.isConnected() &&
-              typeof crChainSave !== 'undefined') {
-            const wantChain = window.confirm(
-              'Anchor "' + trimmed + '" on Solana devnet?\n\n' +
-              'Writes the SHA-256 of this map under your wallet. ~0.0009 SOL rent.\n' +
-              'Map JSON stays in your browser; only the hash + name + timestamp go on-chain.'
-            );
-            if (wantChain) {
-              // Fire-and-forget; the redirect happens inside anchorByName.
-              crChainSave.anchorByName(trimmed);
+        // v0.9.94 — Coach-styled prompt + confirm replace native dialogs.
+        const _afterSave = (name) => {
+          if(name == null) return;
+          const trimmed = (name || '').trim() || suggested;
+          const m = crMaps.save(trimmed);
+          try { if(typeof game !== 'undefined') game.currentMapId = m.id; } catch(_){}
+          try { _refreshRestartLabel(); } catch(_){}
+          if(typeof toast === 'function') toast('Saved · ' + trimmed);
+          try {
+            if (typeof crWallet !== 'undefined' && crWallet.isConnected() &&
+                typeof crChainSave !== 'undefined' &&
+                typeof window.crConfirm === 'function'){
+              window.crConfirm({
+                title: 'Anchor on Solana devnet?',
+                body:  'Anchor "' + trimmed + '"?\n\n' +
+                       'Writes the SHA-256 of this map under your wallet. ~0.0009 SOL rent.\n' +
+                       'Map JSON stays in your browser; only the hash + name + timestamp go on-chain.',
+                ok:    'Anchor',
+              }).then(ok => { if(ok) crChainSave.anchorByName(trimmed); });
+            } else if (typeof crWallet !== 'undefined' && crWallet.isConnected() &&
+                       typeof crChainSave !== 'undefined'){
+              const wantChain = window.confirm(
+                'Anchor "' + trimmed + '" on Solana devnet?\n\n' +
+                'Writes the SHA-256 of this map under your wallet. ~0.0009 SOL rent.\n' +
+                'Map JSON stays in your browser; only the hash + name + timestamp go on-chain.'
+              );
+              if (wantChain) crChainSave.anchorByName(trimmed);
             }
-          }
-        } catch(_){}
+          } catch(_){}
+        };
+        if(typeof window.crPrompt === 'function'){
+          window.crPrompt({
+            title:   'Save map',
+            body:    'Name this run so you can recall it later.',
+            default: suggested,
+            ok:      'Save',
+          }).then(_afterSave);
+        } else {
+          _afterSave(window.prompt('Name this map:', suggested));
+        }
       } catch(err){
         if(typeof toast === 'function') toast('Save failed');
       }
@@ -32182,6 +32242,45 @@ cv.addEventListener('dblclick', e=>{
       const baseLbl = TRADE_LABEL[a.tradeKind] || a.tradeKind;
       const lbl = baseLbl + (a.tradeAnchor ? '·'+a.tradeAnchor : '');
       const cur = (typeof fmtPrice === 'function') ? fmtPrice(a.py) : a.py;
+      // v0.9.94 — Coach-style prompt instead of native window.prompt.
+      // .then() chain so the surrounding click handler stays sync.
+      const _applyPx = (newPx) => {
+        if(newPx === null || newPx === undefined || newPx === '') return;
+        const px = parseFloat(newPx);
+        if(!isFinite(px) || px <= 0){ try { toast('Invalid price'); } catch(_){} return; }
+        a.py = px;
+        try {
+          const linkedOrder = sdk.openOrders.find(o => o.id === a.tradeOrderId);
+          if(linkedOrder){
+            if(a.tradeKind === 'limit') linkedOrder.price = px;
+            else if(a.tradeKind === 'stopLossAt') linkedOrder.sl = px;
+            else if(a.tradeKind === 'takeProfitAt') linkedOrder.tp = px;
+            else if(a.tradeKind === 'trailingTpAt') linkedOrder.trail = px;
+            else if(a.tradeKind === 'scaleOutAt') linkedOrder.scaleAt = px;
+            else if(a.tradeKind === 'magnetAt') linkedOrder.magnet = px;
+            else if(a.tradeKind === 'perpFlipAt') linkedOrder.flipAt = px;
+            else if(a.tradeKind === 'borrowShortAt') linkedOrder.borrowAt = px;
+            else if(a.tradeKind === 'liqGuardAt') linkedOrder.liqGuard = px;
+            else if(a.tradeKind === 'twap'){
+              if(a.tradeAnchor === 'a1') linkedOrder.priceA1 = px;
+              else if(a.tradeAnchor === 'a2') linkedOrder.priceA2 = px;
+            } else if(a.tradeKind === 'iceberg'){
+              if(a.tradeAnchor === 'hi') linkedOrder.priceHi = px;
+              else if(a.tradeAnchor === 'lo') linkedOrder.priceLo = px;
+            }
+          }
+        } catch(_){}
+        try { toast(lbl + ' · ' + (typeof fmtPrice === 'function' ? fmtPrice(px) : px)); } catch(_){}
+      };
+      if(typeof window.crPrompt === 'function'){
+        window.crPrompt({
+          title: lbl + ' price',
+          body:  'Current: ' + cur,
+          default: a.py.toFixed(2),
+        }).then(_applyPx);
+        return;
+      }
+      // Fallback to native prompt if the modal helper isn't available.
       const newPx = (typeof prompt === 'function') ? prompt(lbl + ' price (current ' + cur + '):', String(a.py.toFixed(2))) : null;
       if(newPx === null) return;
       const px = parseFloat(newPx);
@@ -35887,11 +35986,9 @@ plot(diff, color=color.aqua)`,
     try {
       const hasOpenOrders = (typeof sdk !== 'undefined' && sdk.openOrders && sdk.openOrders.length > 0);
       const hasMapId      = !!(typeof game !== 'undefined' && game.currentMapId);
-      if(hasOpenOrders && !hasMapId){
-        const ok = window.confirm('Exit without saving?\n\nYou have ' + sdk.openOrders.length + ' open orders. Press Save first if you want to keep this run.');
-        if(!ok) return;
-      }
-      try { if(typeof crNotify === 'function') crNotify('Exit · CRT fade home', 'warn'); } catch(_){}
+      // v0.9.94 — Coach-styled confirm. _doExit encapsulates the entire
+      // exit flow (notify + restore campaign config + CRT fade). Called
+      // from either modal-OK or no-confirm-needed branch.
       // v0.9.43 — When exiting from a campaign chapter via the chrome
       // Home button, restore the player's pre-chapter chart configuration
       // and clear campaign state so the next regular run starts clean.
@@ -35922,17 +36019,34 @@ plot(diff, color=color.aqua)`,
           }
         } catch(_){}
       };
-      if(typeof crCrtFadeOut === 'function'){
-        crCrtFadeOut(() => {
-          try { if(typeof game !== 'undefined'){ game.running = false; } } catch(_){}
+      const _doExit = () => {
+        try { if(typeof crNotify === 'function') crNotify('Exit · CRT fade home', 'warn'); } catch(_){}
+        if(typeof crCrtFadeOut === 'function'){
+          crCrtFadeOut(() => {
+            try { if(typeof game !== 'undefined'){ game.running = false; } } catch(_){}
+            _restoreCampaignConfig();
+            try { showSplash(); } catch(_){}
+            setTimeout(() => { try { crCrtFadeIn(); } catch(_){} }, 260);
+          });
+        } else {
           _restoreCampaignConfig();
-          try { showSplash(); } catch(_){}
-          setTimeout(() => { try { crCrtFadeIn(); } catch(_){} }, 260);
-        });
-      } else {
-        _restoreCampaignConfig();
-        showSplash();
+          showSplash();
+        }
+      };
+      if(hasOpenOrders && !hasMapId){
+        if(typeof window.crConfirm === 'function'){
+          window.crConfirm({
+            title:  'Exit without saving?',
+            body:   'You have ' + sdk.openOrders.length + ' open orders. Press Save first if you want to keep this run.',
+            ok:     'Exit anyway',
+            danger: true,
+          }).then(ok => { if(ok) _doExit(); });
+          return;
+        }
+        const ok = window.confirm('Exit without saving?\n\nYou have ' + sdk.openOrders.length + ' open orders. Press Save first if you want to keep this run.');
+        if(!ok) return;
       }
+      _doExit();
     } catch(_){}
   });
   // v0.8k#24cd — Tutorial button on the body-level bar runs the same
@@ -35964,6 +36078,110 @@ plot(diff, color=color.aqua)`,
       el.classList.toggle('cr-wallet-on', connected);
     });
   }
+  // v0.9.94 — Coach-styled prompt + alert modals. Companion helpers to
+  // crConfirm. crPrompt resolves to a string (the entered value) or null
+  // on cancel/Esc/backdrop-click. crAlert resolves to true once the user
+  // dismisses the single-OK modal. All three share the same backdrop
+  // markup, just different inner row composition.
+  if(typeof window.crPrompt !== 'function'){
+    window.crPrompt = function(opts){
+      opts = opts || {};
+      return new Promise(resolve => {
+        const back = document.getElementById('crConfirmBackdrop');
+        const ttl  = document.getElementById('crConfirmTitle');
+        const body = document.getElementById('crConfirmBody');
+        const okB  = document.getElementById('crConfirmOk');
+        const cnl  = document.getElementById('crConfirmCancel');
+        if(!back || !ttl || !body || !okB || !cnl){
+          resolve(window.prompt((opts.title ? opts.title + '\n\n' : '') + (opts.body || ''), opts.default || ''));
+          return;
+        }
+        ttl.textContent  = opts.title  || 'Enter value';
+        body.textContent = opts.body   || '';
+        okB.textContent  = opts.ok     || 'OK';
+        cnl.textContent  = opts.cancel || 'Cancel';
+        okB.classList.toggle('danger', !!opts.danger);
+        okB.classList.toggle('primary', !opts.danger);
+        // Inject (or reuse) the input field between body and actions.
+        let inp = back.querySelector('.crConfirmInput');
+        if(!inp){
+          inp = document.createElement('input');
+          inp.type = 'text';
+          inp.className = 'crConfirmInput';
+          body.parentNode.insertBefore(inp, body.nextSibling);
+        }
+        inp.style.display = '';
+        inp.value = (opts.default != null) ? String(opts.default) : '';
+        inp.placeholder = opts.placeholder || '';
+        const close = (val) => {
+          back.classList.remove('on');
+          if(inp) inp.style.display = 'none';
+          okB.removeEventListener('click', onOk);
+          cnl.removeEventListener('click', onCnl);
+          back.removeEventListener('click', onBack);
+          document.removeEventListener('keydown', onKey, true);
+          resolve(val);
+        };
+        const onOk   = () => close(inp.value);
+        const onCnl  = () => close(null);
+        const onBack = (e) => { if(e.target === back) close(null); };
+        const onKey  = (e) => {
+          if(e.key === 'Escape'){ e.preventDefault(); close(null); }
+          else if(e.key === 'Enter' && e.target === inp){ e.preventDefault(); close(inp.value); }
+        };
+        okB.addEventListener('click', onOk);
+        cnl.addEventListener('click', onCnl);
+        back.addEventListener('click', onBack);
+        document.addEventListener('keydown', onKey, true);
+        back.classList.add('on');
+        setTimeout(() => { try { inp.focus(); inp.select(); } catch(_){} }, 30);
+      });
+    };
+  }
+  if(typeof window.crAlert !== 'function'){
+    window.crAlert = function(opts){
+      opts = opts || {};
+      return new Promise(resolve => {
+        const back = document.getElementById('crConfirmBackdrop');
+        const ttl  = document.getElementById('crConfirmTitle');
+        const body = document.getElementById('crConfirmBody');
+        const okB  = document.getElementById('crConfirmOk');
+        const cnl  = document.getElementById('crConfirmCancel');
+        if(!back || !ttl || !body || !okB || !cnl){
+          window.alert((opts.title ? opts.title + '\n\n' : '') + (opts.body || ''));
+          resolve(true);
+          return;
+        }
+        ttl.textContent  = opts.title || 'Notice';
+        body.textContent = opts.body  || '';
+        okB.textContent  = opts.ok    || 'OK';
+        okB.classList.remove('danger'); okB.classList.add('primary');
+        cnl.style.display = 'none';
+        // Hide any leftover prompt input so the layout reads clean.
+        const inp = back.querySelector('.crConfirmInput');
+        if(inp) inp.style.display = 'none';
+        const close = () => {
+          back.classList.remove('on');
+          cnl.style.display = '';
+          okB.removeEventListener('click', onOk);
+          back.removeEventListener('click', onBack);
+          document.removeEventListener('keydown', onKey, true);
+          resolve(true);
+        };
+        const onOk   = () => close();
+        const onBack = (e) => { if(e.target === back) close(); };
+        const onKey  = (e) => {
+          if(e.key === 'Escape' || e.key === 'Enter'){ e.preventDefault(); close(); }
+        };
+        okB.addEventListener('click', onOk);
+        back.addEventListener('click', onBack);
+        document.addEventListener('keydown', onKey, true);
+        back.classList.add('on');
+        setTimeout(() => { try { okB.focus(); } catch(_){} }, 30);
+      });
+    };
+  }
+
   // v0.9.83 — Coach-styled confirm modal. Promise-based so it slots into
   // any window.confirm() call site. Backdrop = click outside cancels;
   // Esc cancels; Enter confirms; OK auto-focuses on open. Falls back to
@@ -35988,6 +36206,11 @@ plot(diff, color=color.aqua)`,
         cnl.textContent  = opts.cancel || 'Cancel';
         okB.classList.toggle('danger', !!opts.danger);
         okB.classList.toggle('primary', !opts.danger);
+        // v0.9.94 — Reset state from a prior crPrompt or crAlert: ensure
+        // cancel button is visible and any leftover input field is hidden.
+        cnl.style.display = '';
+        const _leftoverInp = back.querySelector('.crConfirmInput');
+        if(_leftoverInp) _leftoverInp.style.display = 'none';
         const close = (val) => {
           back.classList.remove('on');
           okB.removeEventListener('click', onOk);
