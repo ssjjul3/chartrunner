@@ -33043,8 +33043,14 @@ window.crCrtFadeIn  = crCrtFadeIn;
       ttl.textContent = '📁 Pitch · ' + _pitchFolder.name;
     } else {
       const f = _pitchFolder.files[_pitchFolder.idx];
+      // v0.9.82 — PDFs show "name · slide N" so the player can see which
+      // slide they're on when ◀/▶ steps through pages.
+      let suffix = '';
+      if(f && f.type === 'application/pdf'){
+        suffix = ' · slide ' + (_pitchFolder.pdfPage || 1);
+      }
       ttl.textContent = '📄 ' + (f && f.name ? f.name : 'File') +
-        '   (' + (_pitchFolder.idx + 1) + '/' + _pitchFolder.files.length + ')';
+        '   (' + (_pitchFolder.idx + 1) + '/' + _pitchFolder.files.length + ')' + suffix;
     }
   }
   function _pitchSetHeaderButtons(){
@@ -33174,8 +33180,15 @@ window.crCrtFadeIn  = crCrtFadeIn;
     host.style.display = 'none';
     fs.innerHTML = '';
     if(f.type === 'application/pdf'){
+      // v0.9.82 — Single-slide fullscreen mode. Hash params hide the
+      // browser PDF chrome (toolbar, navpanes/sidebar, scrollbar) and
+      // pin to one fitted page. Page state lives on _pitchFolder.pdfPage
+      // so ←/→ via _pitchPdfPageStep can advance/retreat.
+      _pitchFolder.pdfPage = 1;
       const ifr = document.createElement('iframe');
-      ifr.src = f.url; ifr.title = f.name;
+      ifr.id    = 'crFdPdfFrame';
+      ifr.src   = f.url + '#toolbar=0&navpanes=0&scrollbar=0&view=Fit&page=1';
+      ifr.title = f.name;
       fs.appendChild(ifr);
     } else if(f.type && f.type.startsWith('image/')){
       const img = document.createElement('img');
@@ -33191,8 +33204,33 @@ window.crCrtFadeIn  = crCrtFadeIn;
     _pitchSetTitle();
     _pitchSetHeaderButtons();
   }
+  // v0.9.82 — When viewing a PDF, ◀/▶ navigates SLIDES (pages) within
+  // the current PDF. Otherwise (image / other), it navigates FILES in
+  // the folder. Page navigation reloads the iframe with a new #page=N
+  // hash; the browser PDF viewer clamps to last page if N exceeds total.
+  function _pitchPdfPageStep(delta){
+    if(_pitchFolder.idx == null) return;
+    const f = _pitchFolder.files[_pitchFolder.idx];
+    if(!f || f.type !== 'application/pdf' || !f.url) return;
+    const cur  = _pitchFolder.pdfPage || 1;
+    const next = Math.max(1, cur + delta);
+    if(next === cur) return;
+    _pitchFolder.pdfPage = next;
+    const ifr = document.getElementById('crFdPdfFrame');
+    if(ifr){
+      ifr.src = f.url + '#toolbar=0&navpanes=0&scrollbar=0&view=Fit&page=' + next;
+    }
+    _pitchSetTitle();
+  }
   function _pitchNavStep(delta){
     if(_pitchFolder.idx == null) return;
+    const f = _pitchFolder.files[_pitchFolder.idx];
+    // PDF view → ◀/▶ navigates slides within the file (v0.9.82).
+    if(f && f.type === 'application/pdf' && f.url){
+      _pitchPdfPageStep(delta);
+      return;
+    }
+    // Otherwise → navigate FILES in the folder (image-to-image, etc.).
     const n = _pitchFolder.files.length;
     if(!n) return;
     let i = _pitchFolder.idx + delta;
@@ -33200,8 +33238,8 @@ window.crCrtFadeIn  = crCrtFadeIn;
     for(let guard = 0; guard < n; guard++){
       if(i < 0) i = n - 1;
       if(i >= n) i = 0;
-      const f = _pitchFolder.files[i];
-      if(f && f.type !== 'placeholder' && f.url) break;
+      const ff = _pitchFolder.files[i];
+      if(ff && ff.type !== 'placeholder' && ff.url) break;
       i += delta || 1;
     }
     _pitchOpenIdx(i);
