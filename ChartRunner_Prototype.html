@@ -3105,9 +3105,15 @@
   .cr-mapCard .row{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;
     border-top:1px solid var(--line);background:rgba(0,0,0,.2)}
   .cr-mapCard .row .ago{font-size:10px;color:var(--dim)}
-  .cr-mapCard .row .del{appearance:none;border:0;background:transparent;color:#ff5b7f;
-    font-size:14px;cursor:pointer;padding:0 4px;line-height:1;border-radius:3px}
+  .cr-mapCard .row .acts{display:flex;align-items:center;gap:2px}
+  .cr-mapCard .row .del,
+  .cr-mapCard .row .share{appearance:none;border:0;background:transparent;
+    font-size:13px;cursor:pointer;padding:2px 5px;line-height:1;border-radius:3px}
+  .cr-mapCard .row .del{color:#ff5b7f}
   .cr-mapCard .row .del:hover{background:rgba(255,91,127,.15)}
+  /* v0.9.63 — Share button mirrors .del style but uses the green accent */
+  .cr-mapCard .row .share{color:#3ddc97}
+  .cr-mapCard .row .share:hover{background:rgba(61,220,151,.15)}
   /* Phone variant — single column list */
   #crPhone .ph-app-content #crPhMapList{display:flex;flex-direction:column;gap:6px}
   #crPhone .ph-mapCard{display:flex;gap:8px;padding:6px;background:rgba(255,255,255,.06);
@@ -9529,6 +9535,113 @@ window.crChainSave = (function(){
       window.history.replaceState({}, '', u.toString());
     }
   } catch(_){}
+
+  // ── v0.9.63 — Share-link import handler ─────────────────────────────
+  // URL shape: <origin>/play/?sharedMap=1#m=<gzip+b64 of map JSON>&h=<hex>
+  // The map JSON lives in the FRAGMENT (#) so it never hits the server,
+  // never appears in referrer headers, and isn't constrained by query-
+  // string length budgets. The query param `?sharedMap=1` is just the
+  // bootstrap signal so this handler runs.
+  async function _ungzipB64(b64){
+    var bin = atob(b64);
+    var arr = Uint8Array.from(bin, function(c){ return c.charCodeAt(0); });
+    var stream = new Blob([arr]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return await new Response(stream).text();
+  }
+  try {
+    var u2 = new URL(window.location.href);
+    if (u2.searchParams.get('sharedMap') === '1' && u2.hash){
+      // Parse the fragment ourselves — it's k=v&k=v after the #.
+      var frag = u2.hash.slice(1);
+      var parts = {};
+      frag.split('&').forEach(function(kv){
+        var i = kv.indexOf('=');
+        if (i > 0) parts[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
+      });
+      if (parts.m){
+        // Defer to after boot so crMaps + toast are reachable.
+        setTimeout(async function(){
+          try {
+            var json = await _ungzipB64(parts.m);
+            var map  = JSON.parse(json);
+            // Re-id locally so the recipient owns this copy.
+            map.id = 'm_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+            map.t  = Date.now();
+            map.importedFrom = parts.h || null;
+            // Prepend to cr_maps_v1.
+            var raw  = localStorage.getItem(MAPS_KEY);
+            var list = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(list)) list = [];
+            list.unshift(map);
+            while (list.length > 30) list.pop();
+            localStorage.setItem(MAPS_KEY, JSON.stringify(list));
+            // Refresh maps UI if it's mounted.
+            try { if (typeof renderMaps === 'function') renderMaps(); } catch(_){}
+            try {
+              if (typeof crNotify === 'function') crNotify('📥 Imported ' + map.name + ' · ready in Maps');
+              else toast && toast('📥 Imported ' + map.name);
+            } catch(_){}
+          } catch(err){
+            try { if (typeof toast === 'function') toast('Share-link decode failed'); } catch(_){}
+          }
+          // Clean URL so a refresh doesn't re-import.
+          try {
+            var u3 = new URL(window.location.href);
+            u3.searchParams.delete('sharedMap');
+            u3.hash = '';
+            window.history.replaceState({}, '', u3.toString());
+          } catch(_){}
+        }, 1200);
+      }
+    }
+  } catch(_){}
+
+  // Build the share URL for a given map. Strips the thumbnail (it's a
+  // base64 jpeg that bloats the URL by ~10 KB) — recipient regenerates
+  // a thumb on first open. Copies to clipboard + toasts.
+  async function _gzipB64(s){
+    var enc = new TextEncoder().encode(s);
+    var stream = new Blob([enc]).stream().pipeThrough(new CompressionStream('gzip'));
+    var buf = await new Response(stream).arrayBuffer();
+    var bin = ''; var view = new Uint8Array(buf);
+    for (var i = 0; i < view.length; i++) bin += String.fromCharCode(view[i]);
+    return btoa(bin);
+  }
+  window.crMapsShare = async function(map){
+    if (!map) throw new Error('no map');
+    // Slim the payload — drop the thumbnail before serializing.
+    var slim = Object.assign({}, map);
+    delete slim.thumb;
+    delete slim.id;
+    delete slim.importedFrom;
+    var json = JSON.stringify(slim);
+    var b64  = await _gzipB64(json);
+    // Optional sidecar: hash from the on-chain anchor record, so the
+    // recipient can later verify the imported map matches the owner's
+    // anchored hash. Without an anchor entry, hash is omitted.
+    var hash = '';
+    try {
+      var anchored = findByName(map.name);
+      if (anchored && anchored.contentHash) hash = anchored.contentHash;
+    } catch(_){}
+    var origin = window.location.origin + window.location.pathname;
+    var url    = origin + '?sharedMap=1#m=' + encodeURIComponent(b64) +
+                 (hash ? ('&h=' + encodeURIComponent(hash)) : '');
+    // Copy to clipboard if available.
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(url);
+        if (typeof crNotify === 'function') crNotify('🔗 Share link copied · ' + (url.length/1024).toFixed(1) + ' KB');
+        else if (typeof toast === 'function') toast('🔗 Share link copied');
+      } else {
+        // Clipboard unavailable — surface the URL for manual copy.
+        try { window.prompt('Share link (copy):', url); } catch(_){}
+      }
+    } catch(err){
+      try { window.prompt('Share link (copy):', url); } catch(_){}
+    }
+    return url;
+  };
 
   return {
     canonicalJson:  canonicalJson,
@@ -36849,10 +36962,15 @@ const crL3 = (function(){
             </div>
             <div class="row">
               <span class="ago">${fmtAgo(m.t)}</span>
-              <button class="del" data-id="${m.id}" title="Delete">×</button>
+              <span class="acts">
+                <button class="share" data-id="${m.id}" title="Copy share link">↗</button>
+                <button class="del"   data-id="${m.id}" title="Delete">×</button>
+              </span>
             </div>`;
           card.addEventListener('click', e => {
-            if(e.target.closest('.del')) return;
+            // v0.9.63 — Both .del and .share are action buttons; clicks on
+            // either should not bubble up to the card's open-the-map handler.
+            if(e.target.closest('.del') || e.target.closest('.share')) return;
             crMaps.load(m.id);
             renderMaps();
             // v0.8k#24n — Loading a map from the OS Desktop should drop the
@@ -36871,6 +36989,20 @@ const crL3 = (function(){
             e.stopPropagation();
             crMaps.del(m.id); renderMaps();
             if(typeof toast === 'function') toast('Map deleted');
+          });
+          // v0.9.63 — Share button. Builds a portable URL whose fragment
+          // carries the map JSON (gzipped + base64). Recipient pastes it
+          // into a browser, the URL handler decodes + imports into their
+          // own cr_maps_v1 with a fresh local id. Hash sidecar lets the
+          // recipient verify the map matches what was anchored on chain.
+          card.querySelector('.share').addEventListener('click', async e => {
+            e.stopPropagation();
+            try {
+              if(typeof crMapsShare === 'function') await crMapsShare(m);
+              else if(typeof toast === 'function') toast('Share unavailable');
+            } catch(err){
+              try { if(typeof toast === 'function') toast('Share failed: ' + (err && err.message || err)); } catch(_){}
+            }
           });
           // v0.8k#24ae — Make the card draggable: drop on the desktop
           // background to pin a live widget for this map.
