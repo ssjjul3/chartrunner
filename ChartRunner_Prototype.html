@@ -33251,18 +33251,27 @@ function log(msg){
       if(errEl){ errEl.textContent = ''; errEl.style.display = 'none'; }
     }
 
-    // Returning-visitor short-circuits — fire BEFORE wiring the form so an
-    // already-authed user never sees the gate.
+    // v0.9.70 — Always re-prompt on load/reload unless an active wallet
+    // connection is present. The previous localStorage shortcut (where
+    // cr_stealth_auth_v1 = '1' would auto-dismiss the gate forever) is
+    // gone — credential auth no longer survives a reload. Only paths
+    // to bypass the gate now:
+    //   1. Wallet currently connected + on the stealth whitelist (the
+    //      crWallet check below validates fresh on every load).
+    //   2. Successful credential sign-in THIS page-load session — the
+    //      form submit handler sets cr_stealth_auth_v1 = '1' so the
+    //      Start-Run gate (line ~21741) admits the player without
+    //      re-prompting mid-session. The flag is wiped on next load.
+    // The clear-on-load is the contract.
+    try { localStorage.removeItem('cr_stealth_auth_v1'); } catch(_){}
+
+    // Returning-visitor short-circuit (wallet only) — fire BEFORE wiring
+    // the form so an already-connected user never sees the gate.
     let alreadyAuthed = false;
     try {
-      // Path 1: prior password sign-in stored in localStorage.
-      if(localStorage.getItem('cr_stealth_auth_v1') === '1'){
-        dismissBoot();
-        alreadyAuthed = true;
-      }
-      // Path 2: bounce-back from /solana-connect/ — wallet just hydrated.
+      // Bounce-back from /solana-connect/ — wallet just hydrated.
       // Validate against whitelist; admit if on, disconnect if not.
-      if(!alreadyAuthed && typeof crWallet !== 'undefined' && crWallet.isConnected()){
+      if(typeof crWallet !== 'undefined' && crWallet.isConnected()){
         const pk = crWallet.get();
         if(STEALTH_WALLET_WHITELIST.includes(pk)){
           localStorage.setItem('cr_stealth_auth_v1', '1');
