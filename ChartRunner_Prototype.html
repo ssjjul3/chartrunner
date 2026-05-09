@@ -8946,7 +8946,10 @@ window.crWallet = (function(){
   var listeners = [];
   function _read(k){ try { return localStorage.getItem(k); } catch(_){ return null; } }
   // Hydrate from URL once on first run, then strip the params so screenshots
-  // don't leak wallet addresses.
+  // don't leak wallet addresses. v0.9.87 — capture the hydrated pubkey so
+  // we can fire listeners AFTER the IIFE returns (consumers register against
+  // window.crWallet, which doesn't exist yet during this IIFE body).
+  var _hydratedPk = null;
   try {
     var u = new URL(window.location.href);
     var w = u.searchParams.get('wallet');
@@ -8960,6 +8963,7 @@ window.crWallet = (function(){
       u.searchParams.delete('wallet');
       u.searchParams.delete('adapter');
       window.history.replaceState({}, '', u.toString());
+      _hydratedPk = w;
     }
   } catch(_){}
   function get(){ return _read(KEY); }
@@ -8969,10 +8973,13 @@ window.crWallet = (function(){
     var a = _read(KEY);
     return a ? (a.slice(0, 4) + '…' + a.slice(-4)) : '';
   }
+  function _fire(addr){
+    listeners.forEach(function(fn){ try { fn(addr); } catch(_){} });
+  }
   function disconnect(){
     try { localStorage.removeItem(KEY); } catch(_){}
     try { localStorage.removeItem(ADAPTER_KEY); } catch(_){}
-    listeners.forEach(function(fn){ try { fn(null); } catch(_){} });
+    _fire(null);
   }
   function connect(){
     // Bounce through the React+wallet-adapter app. It handshakes with the
@@ -8980,8 +8987,24 @@ window.crWallet = (function(){
     var ret = encodeURIComponent('/play/');
     window.location.href = '../solana-connect/?next=play&return=' + ret;
   }
+  // v0.9.87 — Programmatic wallet-set for in-page connect paths
+  // (direct-Phantom from boot login + menubar pill click). Writes
+  // localStorage AND fires listeners synchronously so the menubar pill
+  // refreshes immediately — no page reload required.
+  function setConnected(addr, adapterName){
+    if(!addr) return;
+    try { localStorage.setItem(KEY, addr); } catch(_){}
+    if(adapterName){
+      try { localStorage.setItem(ADAPTER_KEY, adapterName); } catch(_){}
+    }
+    try { localStorage.removeItem('cr_guest_mode_v1'); } catch(_){}
+    _fire(addr);
+  }
   function on(fn){
     listeners.push(fn);
+    // v0.9.87 — Fire immediately with current state so subscribers
+    // get the correct render even when registering AFTER hydration.
+    try { fn(_read(KEY)); } catch(_){}
     return function(){ listeners = listeners.filter(function(x){ return x !== fn; }); };
   }
   // Per-wallet namespacing shim. Wraps localStorage so every cr_*_v1 read or
@@ -9003,7 +9026,7 @@ window.crWallet = (function(){
     Storage.prototype.removeItem = function(k){ return origRemove.call(this, _ns(k)); };
   } catch(_){}
   return { get: get, adapter: adapter, isConnected: isConnected, truncated: truncated,
-           connect: connect, disconnect: disconnect, on: on };
+           connect: connect, disconnect: disconnect, setConnected: setConnected, on: on };
 })();
 
 /* =========================================================================
@@ -22837,12 +22860,55 @@ function _crWalletAllSymbols(){
     .filter(s => s && CR_WALLET_DEFAULTS.indexOf(s) < 0);
   return CR_WALLET_DEFAULTS.concat(extras);
 }
+// v0.9.89 — Real SOL balance fetched from devnet RPC, cached 30 s.
+// Hits api.devnet.solana.com getBalance with the connected pubkey.
+// CRDS / RUN remain game-internal (no on-chain mint yet).
+const _CR_DEVNET_RPC  = 'https://api.devnet.solana.com';
+const _CR_BAL_TTL_MS  = 30000;
+let _crWalletBalances = { SOL: null, fetchedAt: 0, fetching: false };
+async function _crWalletFetchSol(){
+  try {
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()) return;
+    const pk = crWallet.get();
+    if (!pk) return;
+    const now = Date.now();
+    if (_crWalletBalances.SOL !== null
+        && (now - _crWalletBalances.fetchedAt) < _CR_BAL_TTL_MS) return;
+    if (_crWalletBalances.fetching) return;
+    _crWalletBalances.fetching = true;
+    const resp = await fetch(_CR_DEVNET_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'getBalance',
+        params: [pk, { commitment: 'confirmed' }],
+      }),
+    });
+    const data = await resp.json();
+    const lamports = data && data.result && typeof data.result.value === 'number'
+                     ? data.result.value : null;
+    if (lamports !== null){
+      _crWalletBalances.SOL = lamports / 1e9;
+      _crWalletBalances.fetchedAt = now;
+      try { if (typeof _crWalletRender === 'function') _crWalletRender(); } catch(_){}
+    }
+  } catch(_){
+    // Network blip; keep stale value if any, retry on next render
+  } finally {
+    _crWalletBalances.fetching = false;
+  }
+}
 function _crWalletBalanceFor(sym){
-  // No live RPC — return 0 unless a known mock source has the value. RUN
-  // mirrors game.run if available so the player sees something familiar.
+  // RUN mirrors game.run so the player sees in-game P&L. SOL pulls from
+  // the live devnet RPC cache (populated by _crWalletFetchSol). USDC and
+  // CRDS stay 0 until an on-chain mint exists.
   try {
     if (sym === 'RUN' && typeof game !== 'undefined' && typeof game.run === 'number') return game.run;
   } catch(_){}
+  if (sym === 'SOL' && typeof _crWalletBalances === 'object'
+      && _crWalletBalances.SOL !== null){
+    return _crWalletBalances.SOL;
+  }
   return 0;
 }
 function _crWalletRender(){
@@ -22870,21 +22936,40 @@ function _crWalletRender(){
   if (connBtn) {
     connBtn.textContent = connected ? 'Disconnect' : 'Connect';
   }
+  // v0.9.89 — Kick off (or refresh) the SOL balance fetch when connected.
+  // Async, non-blocking; the function re-renders this view when the
+  // value lands.
+  if (connected) {
+    try { _crWalletFetchSol(); } catch(_){}
+  } else {
+    // Wipe cached balance on disconnect so a fresh connect re-fetches.
+    try { _crWalletBalances = { SOL: null, fetchedAt: 0, fetching: false }; } catch(_){}
+  }
   if (!list) return;
   const symbols = _crWalletAllSymbols();
   list.innerHTML = '';
   symbols.forEach(sym => {
     const isDefault = CR_WALLET_DEFAULTS.indexOf(sym) >= 0;
     const bal = _crWalletBalanceFor(sym);
+    // v0.9.89 — SOL is a real on-chain balance; show 4 decimals so a
+    // 0.0042 SOL airdrop is visible. Other tokens stay integer-formatted.
+    let balText;
+    if (sym === 'SOL'){
+      if (!connected) balText = '—';
+      else if (_crWalletBalances && _crWalletBalances.SOL === null && _crWalletBalances.fetching) balText = '…';
+      else balText = bal.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+    } else {
+      balText = bal === 0 ? '0' : bal.toLocaleString('en-US');
+    }
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4);font-size:12px';
     row.innerHTML =
       '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,rgba(20,241,149,.18),rgba(153,69,255,.18));border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font:bold 10px ui-monospace,Menlo,monospace;color:var(--fg)">' + sym.slice(0,3) + '</div>' +
       '<div style="flex:1;min-width:0">' +
-        '<div style="font-weight:700;color:var(--fg)">$' + sym + (isDefault ? '' : ' <span style="font-size:9px;color:var(--dim);font-weight:400;text-transform:uppercase;letter-spacing:.4px">custom</span>') + '</div>' +
-        '<div style="font-size:10px;color:var(--dim)">' + (sym === 'RUN' ? 'Run-token · in-game P&L' : (sym === 'SOL' ? 'Solana · gas + native' : (sym === 'USDC' ? 'USD-C stable · default quote' : 'SPL token · custom'))) + '</div>' +
+        '<div style="font-weight:700;color:var(--fg)">$' + sym + (isDefault ? '' : ' <span style="font-size:9px;color:var(--dim);font-weight:400;text-transform:uppercase;letter-spacing:.4px">custom</span>') + (sym === 'SOL' && connected ? ' <span style="font-size:9px;color:#3ddc97;font-weight:600;text-transform:uppercase;letter-spacing:.4px">devnet</span>' : '') + '</div>' +
+        '<div style="font-size:10px;color:var(--dim)">' + (sym === 'RUN' ? 'Run-token · in-game P&L' : (sym === 'SOL' ? 'Solana · gas + native (live RPC)' : (sym === 'USDC' ? 'USD-C stable · default quote' : 'SPL token · custom'))) + '</div>' +
       '</div>' +
-      '<div style="font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--fg);min-width:80px;text-align:right">' + (bal === 0 ? '0' : bal.toLocaleString('en-US')) + '</div>' +
+      '<div style="font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--fg);min-width:80px;text-align:right">' + balText + '</div>' +
       (isDefault ? '' : '<button class="cr-go" data-wallet-rm="' + sym + '" type="button" style="font-size:10px;padding:3px 7px;background:transparent;border:1px solid var(--line);color:#ff5b7f">×</button>');
     list.appendChild(row);
   });
@@ -33695,8 +33780,17 @@ function log(msg){
       // path for non-Phantom Wallet Standard wallets (Backpack, Solflare)
       // or when Phantom isn't installed. Phantom dominates Solana retail
       // (~85% market share) so this fast-path covers most users.
+      // v0.9.88 — Also exposed at window.crConnectPhantom so the in-game
+      // menubar reconnect path uses the same Phantom popup instead of
+      // bouncing through /solana-connect/.
       async function tryWalletConnect(){
-        _clearErr();
+        return _tryWalletConnectShared(_clearErr, _showErr, dismissBoot);
+      }
+      // Shared body: takes injectable error/clear/dismiss handlers so
+      // both the boot form (uses inline error pane) and the menubar
+      // pill (uses crNotify toast) can call it.
+      async function _tryWalletConnectShared(clearErr, showErr, onSuccess){
+        clearErr();
         const provider = (window.phantom && window.phantom.solana) || window.solana;
         const phantomReady = !!(provider && provider.isPhantom && typeof provider.connect === 'function');
 
@@ -33727,24 +33821,30 @@ function log(msg){
               try { provider.disconnect(); } catch(_){}
               const sm = String(signErr && signErr.message || signErr || '');
               if((signErr && signErr.code === 4001) || /reject|cancel|denied/i.test(sm)){
-                _showErr('Login cancelled. Click the button again to retry, or sign in with credentials.');
+                showErr('Login cancelled. Click the button again to retry, or sign in with credentials.');
               } else {
-                _showErr('Phantom signature failed: ' + sm);
+                showErr('Phantom signature failed: ' + sm);
               }
               return;
             }
 
-            // Hydrate the localStorage keys the bounce-back path would set.
+            // v0.9.87 — Hydrate via crWallet.setConnected so listeners
+            // fire (the menubar Connect pill auto-renders to "🪙 PUBKEY"
+            // immediately, no page refresh required).
             try {
-              localStorage.setItem('cr_wallet', pk);
-              localStorage.setItem('cr_wallet_adapter', 'Phantom');
-              localStorage.removeItem('cr_guest_mode_v1');
+              if(typeof crWallet !== 'undefined' && typeof crWallet.setConnected === 'function'){
+                crWallet.setConnected(pk, 'Phantom');
+              } else {
+                localStorage.setItem('cr_wallet', pk);
+                localStorage.setItem('cr_wallet_adapter', 'Phantom');
+                localStorage.removeItem('cr_guest_mode_v1');
+              }
             } catch(_){}
 
             // Whitelist gate.
             if(STEALTH_WALLET_WHITELIST.includes(pk)){
               try { localStorage.setItem('cr_stealth_auth_v1', '1'); } catch(_){}
-              dismissBoot();
+              try { onSuccess(pk); } catch(_){}
               // First-boot OS tutorial gate (mirrors trySignIn path).
               try {
                 const FIRST_BOOT_KEY = 'cr_first_boot_v1';
@@ -33764,10 +33864,14 @@ function log(msg){
             // half-authed.
             try { provider.disconnect(); } catch(_){}
             try {
-              localStorage.removeItem('cr_wallet');
-              localStorage.removeItem('cr_wallet_adapter');
+              if(typeof crWallet !== 'undefined' && typeof crWallet.disconnect === 'function'){
+                crWallet.disconnect();
+              } else {
+                localStorage.removeItem('cr_wallet');
+                localStorage.removeItem('cr_wallet_adapter');
+              }
             } catch(_){}
-            _showErr('Wallet ' + pk.slice(0, 4) + '…' + pk.slice(-4) +
+            showErr('Wallet ' + pk.slice(0, 4) + '…' + pk.slice(-4) +
                      ' is not on the stealth whitelist. Sign in with credentials, or contact the team to be added.');
             return;
           } catch(err){
@@ -33783,14 +33887,18 @@ function log(msg){
             // could hold a half-authed provider session.
             try { provider.disconnect(); } catch(_){}
             try {
-              localStorage.removeItem('cr_wallet');
-              localStorage.removeItem('cr_wallet_adapter');
+              if(typeof crWallet !== 'undefined' && typeof crWallet.disconnect === 'function'){
+                crWallet.disconnect();
+              } else {
+                localStorage.removeItem('cr_wallet');
+                localStorage.removeItem('cr_wallet_adapter');
+              }
             } catch(_){}
             const msg = String(err && err.message || err || '');
             if(err && err.code === 4001 || /reject|cancel|denied/i.test(msg)){
-              _showErr('Connection cancelled. Click the button again to retry, or sign in with credentials.');
+              showErr('Connection cancelled. Click the button again to retry, or sign in with credentials.');
             } else {
-              _showErr('Phantom connection failed: ' + msg);
+              showErr('Phantom connection failed: ' + msg);
             }
             return;
           }
@@ -33806,6 +33914,26 @@ function log(msg){
             window.location.href = '../solana-connect/?next=play&return=' + encodeURIComponent('/play/');
           }
         } catch(_){}
+      }
+      // v0.9.88 — Expose the direct-Phantom flow at window.crConnectPhantom
+      // so the in-game menubar reconnect path uses it instead of bouncing
+      // through /solana-connect/. Toast feedback for in-game errors;
+      // dismissBoot is a no-op when the boot overlay is already hidden.
+      if(typeof window.crConnectPhantom !== 'function'){
+        window.crConnectPhantom = function(opts){
+          opts = opts || {};
+          const _toast = function(msg){
+            try {
+              if(typeof crNotify === 'function') crNotify(msg, 'warn');
+              else if(typeof toast === 'function') toast(msg);
+            } catch(_){}
+          };
+          return _tryWalletConnectShared(
+            opts.clearErr  || function(){},
+            opts.showErr   || _toast,
+            opts.onSuccess || function(){}
+          );
+        };
       }
 
       if(form)       form.addEventListener('submit', e => { e.preventDefault(); trySignIn(); });
@@ -35712,17 +35840,44 @@ plot(diff, color=color.aqua)`,
       }).then(ok => {
         if(ok){
           crWallet.disconnect();
-          _refreshWalletPills();
+          // _refreshWalletPills auto-fires via crWallet.on listener (v0.9.87)
           try { toast && toast('Wallet disconnected'); } catch(_){}
         }
       });
     } else {
-      crWallet.connect();
+      // v0.9.88 — Direct Phantom popup (no /solana-connect/ bounce) when
+      // Phantom is installed. Falls back to the redirect path automatically
+      // for non-Phantom Wallet Standard wallets. Same helper the boot
+      // login uses, so the UX matches first-time vs. reconnect.
+      if(typeof window.crConnectPhantom === 'function'){
+        window.crConnectPhantom({
+          onSuccess: function(){
+            try { toast && toast('🪙 Wallet connected'); } catch(_){}
+          },
+        });
+      } else {
+        crWallet.connect();
+      }
     }
   }
   bind('crBarConnect', _onWalletPillClick);
   bind('crMenuConnect', _onWalletPillClick);
-  _refreshWalletPills();
+  // v0.9.87 — Subscribe to crWallet state changes so the menubar pill
+  // re-renders automatically on URL hydrate, programmatic setConnected
+  // (direct-Phantom path), and disconnect — no page refresh required.
+  // crWallet.on() fires immediately with current state so the initial
+  // render is correct without a separate _refreshWalletPills() call.
+  try {
+    if(typeof crWallet !== 'undefined' && typeof crWallet.on === 'function'){
+      crWallet.on(_refreshWalletPills);
+    } else {
+      _refreshWalletPills();
+    }
+  } catch(_){ _refreshWalletPills(); }
+  // v0.9.87 — Defensive: also schedule a microtask refresh so any
+  // wallet state mutated during the same script tick (e.g. boot
+  // overlay's whitelist write) is reflected in the pill.
+  setTimeout(function(){ try { _refreshWalletPills(); } catch(_){} }, 0);
   // v0.8k#24cd — SDK + Help menus retired from the in-game OS bar per spec.
 
   // OS bar clock
