@@ -33466,6 +33466,31 @@ window.crCrtFadeIn  = crCrtFadeIn;
     });
     // Initial paint of the folder view.
     _pitchRenderFolder();
+
+    // v0.9.86 — Re-render the PDF when the Pitch window resizes.
+    // ResizeObserver fires on any size change of #crFdFullscreen
+    // (panel drag-resize, browser window resize, splash transitions,
+    // etc.). Debounced 80 ms so dragging the resize handle doesn't
+    // spam the canvas. Only re-renders when a PDF is the active view;
+    // images already scale via CSS max-width / max-height.
+    try {
+      if(typeof ResizeObserver === 'function'){
+        const fsEl = document.getElementById('crFdFullscreen');
+        if(fsEl){
+          let _pitchResizeTimer = null;
+          const ro = new ResizeObserver(() => {
+            if(_pitchFolder.idx == null) return;
+            const f = _pitchFolder.files[_pitchFolder.idx];
+            if(!f || f.type !== 'application/pdf' || !f.url) return;
+            if(_pitchResizeTimer) clearTimeout(_pitchResizeTimer);
+            _pitchResizeTimer = setTimeout(() => {
+              try { _pitchPdfRender(); } catch(_){}
+            }, 80);
+          });
+          ro.observe(fsEl);
+        }
+      }
+    } catch(_){}
   }
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', init);
