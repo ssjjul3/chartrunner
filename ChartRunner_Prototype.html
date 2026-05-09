@@ -33090,11 +33090,14 @@ window.crCrtFadeIn  = crCrtFadeIn;
       ttl.textContent = '📁 Pitch · ' + _pitchFolder.name;
     } else {
       const f = _pitchFolder.files[_pitchFolder.idx];
-      // v0.9.82 — PDFs show "name · slide N" so the player can see which
-      // slide they're on when ◀/▶ steps through pages.
+      // v0.9.84 — PDFs show "name · slide N / total" once PDF.js has
+      // parsed the doc and populated _pitchFolder.pdfNumPages. Before
+      // that (during initial async load) just shows current page.
       let suffix = '';
       if(f && f.type === 'application/pdf'){
-        suffix = ' · slide ' + (_pitchFolder.pdfPage || 1);
+        const cur = _pitchFolder.pdfPage || 1;
+        const tot = _pitchFolder.pdfNumPages;
+        suffix = ' · slide ' + cur + (tot ? ' / ' + tot : '');
       }
       ttl.textContent = '📄 ' + (f && f.name ? f.name : 'File') +
         '   (' + (_pitchFolder.idx + 1) + '/' + _pitchFolder.files.length + ')' + suffix;
@@ -33227,16 +33230,23 @@ window.crCrtFadeIn  = crCrtFadeIn;
     host.style.display = 'none';
     fs.innerHTML = '';
     if(f.type === 'application/pdf'){
-      // v0.9.82 — Single-slide fullscreen mode. Hash params hide the
-      // browser PDF chrome (toolbar, navpanes/sidebar, scrollbar) and
-      // pin to one fitted page. Page state lives on _pitchFolder.pdfPage
-      // so ←/→ via _pitchPdfPageStep can advance/retreat.
+      // v0.9.84 — Single-page render via PDF.js to a canvas. Hash-param
+      // approach (v0.9.82) only hid chrome — the underlying iframe
+      // still rendered every page in continuous-scroll mode. PDF.js
+      // gives us exact control: render ONE page, fit-to-viewport, no
+      // scroll, ←/→ swaps the rendered page. Library + parsed doc
+      // cached by URL so subsequent page-flips are instant.
       _pitchFolder.pdfPage = 1;
-      const ifr = document.createElement('iframe');
-      ifr.id    = 'crFdPdfFrame';
-      ifr.src   = f.url + '#toolbar=0&navpanes=0&scrollbar=0&view=Fit&page=1';
-      ifr.title = f.name;
-      fs.appendChild(ifr);
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000;overflow:hidden';
+      const cv = document.createElement('canvas');
+      cv.id = 'crFdPdfCanvas';
+      cv.style.cssText = 'display:block;max-width:100%;max-height:100%';
+      wrap.appendChild(cv);
+      fs.appendChild(wrap);
+      // Async render; fires _pitchSetTitle when done so the slide
+      // counter updates with real numPages.
+      try { _pitchPdfRender(); } catch(_){}
     } else if(f.type && f.type.startsWith('image/')){
       const img = document.createElement('img');
       img.src = f.url; img.alt = f.name;
@@ -33251,23 +33261,91 @@ window.crCrtFadeIn  = crCrtFadeIn;
     _pitchSetTitle();
     _pitchSetHeaderButtons();
   }
-  // v0.9.82 — When viewing a PDF, ◀/▶ navigates SLIDES (pages) within
-  // the current PDF. Otherwise (image / other), it navigates FILES in
-  // the folder. Page navigation reloads the iframe with a new #page=N
-  // hash; the browser PDF viewer clamps to last page if N exceeds total.
+  // v0.9.84 — PDF.js single-page renderer. Library is lazy-loaded from
+  // cdnjs on first PDF open; doc objects cached by URL so page flips are
+  // instant after the initial fetch. Canvas is sized to fit the
+  // fullscreen container at the page's native aspect ratio, scaled by
+  // devicePixelRatio so it stays crisp on HiDPI screens.
+  const _PDFJS_VER = '3.11.174';
+  let   _pdfJsPromise = null;
+  const _pdfDocCache  = new Map();   // url -> pdfjsLib document
+  function _loadPdfJs(){
+    if(typeof window !== 'undefined' && window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if(_pdfJsPromise) return _pdfJsPromise;
+    _pdfJsPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + _PDFJS_VER + '/pdf.min.js';
+      s.onload  = () => {
+        try {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + _PDFJS_VER + '/pdf.worker.min.js';
+          resolve(window.pdfjsLib);
+        } catch(err){ reject(err); }
+      };
+      s.onerror = () => { _pdfJsPromise = null; reject(new Error('PDF.js load failed')); };
+      document.head.appendChild(s);
+    });
+    return _pdfJsPromise;
+  }
+  async function _pitchPdfRender(){
+    if(_pitchFolder.idx == null) return;
+    const f = _pitchFolder.files[_pitchFolder.idx];
+    if(!f || f.type !== 'application/pdf' || !f.url) return;
+    const fs = document.getElementById('crFdFullscreen');
+    const cv = document.getElementById('crFdPdfCanvas');
+    if(!fs || !cv) return;
+    let lib;
+    try { lib = await _loadPdfJs(); }
+    catch(err){
+      try { if(typeof crNotify === 'function') crNotify('Pitch · PDF.js failed to load','warn'); } catch(_){}
+      return;
+    }
+    let doc = _pdfDocCache.get(f.url);
+    if(!doc){
+      try {
+        doc = await lib.getDocument(f.url).promise;
+        _pdfDocCache.set(f.url, doc);
+      } catch(err){
+        try { if(typeof crNotify === 'function') crNotify('Pitch · PDF parse failed','warn'); } catch(_){}
+        return;
+      }
+    }
+    // Clamp page to actual range now that we know numPages.
+    const np = (doc.numPages | 0) || 1;
+    let pn = _pitchFolder.pdfPage || 1;
+    if(pn < 1)  pn = 1;
+    if(pn > np) pn = np;
+    _pitchFolder.pdfPage     = pn;
+    _pitchFolder.pdfNumPages = np;   // for the title slide counter
+    const page = await doc.getPage(pn);
+    const cw = fs.clientWidth  || 320;
+    const ch = fs.clientHeight || 240;
+    const dpr = window.devicePixelRatio || 1;
+    const vp1   = page.getViewport({scale:1});
+    const fit   = Math.min(cw / vp1.width, ch / vp1.height);
+    const vpHi  = page.getViewport({scale: fit * dpr});
+    cv.width        = Math.floor(vpHi.width);
+    cv.height       = Math.floor(vpHi.height);
+    cv.style.width  = (vpHi.width  / dpr) + 'px';
+    cv.style.height = (vpHi.height / dpr) + 'px';
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    try { await page.render({ canvasContext: ctx, viewport: vpHi }).promise; } catch(_){}
+    _pitchSetTitle();
+  }
+  // v0.9.84 — When viewing a PDF, ◀/▶ navigates SLIDES (pages) within
+  // the current PDF via PDF.js re-render. Otherwise (image / other),
+  // it navigates FILES in the folder.
   function _pitchPdfPageStep(delta){
     if(_pitchFolder.idx == null) return;
     const f = _pitchFolder.files[_pitchFolder.idx];
     if(!f || f.type !== 'application/pdf' || !f.url) return;
     const cur  = _pitchFolder.pdfPage || 1;
-    const next = Math.max(1, cur + delta);
+    const np   = _pitchFolder.pdfNumPages || Infinity;
+    const next = Math.max(1, Math.min(np, cur + delta));
     if(next === cur) return;
     _pitchFolder.pdfPage = next;
-    const ifr = document.getElementById('crFdPdfFrame');
-    if(ifr){
-      ifr.src = f.url + '#toolbar=0&navpanes=0&scrollbar=0&view=Fit&page=' + next;
-    }
-    _pitchSetTitle();
+    try { _pitchPdfRender(); } catch(_){}
   }
   function _pitchNavStep(delta){
     if(_pitchFolder.idx == null) return;
