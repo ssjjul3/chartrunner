@@ -39923,15 +39923,33 @@ const crL3 = (function(){
   // dispatched so both native AND library (React, etc.) handlers fire.
   function _onKeyDown(e){
     // ── ENTER branch first (no cooldown, no fire bolt) ────────────────
+    // v1.0.16 — Avatar-ONLY click. Previously a focused button would
+    // also fire when Enter was pressed (double action). We now intercept
+    // Enter at capture phase, blur the focused element so it can't take
+    // the keypress, and dispatch the synthetic click ONLY on whatever
+    // sits under the cursor. INPUT/TEXTAREA/contenteditable still bypass
+    // (so typing in form fields keeps working).
     if(e.key === 'Enter' || e.code === 'Enter'){
       if(!_splashOn()) return;
       if(!_avatarActive()) return;
       const tagE = (document.activeElement && document.activeElement.tagName) || '';
-      if(tagE === 'INPUT' || tagE === 'TEXTAREA' || tagE === 'BUTTON' ||
+      if(tagE === 'INPUT' || tagE === 'TEXTAREA' ||
          (document.activeElement && document.activeElement.isContentEditable)) return;
       const elE = document.elementFromPoint(_cursor.x, _cursor.y);
       if(!elE) return;
-      e.preventDefault(); e.stopPropagation();
+      // Hard-suppress: kill default + bubble + sibling listeners so a
+      // focused button can't double-fire on the same Enter keypress.
+      e.preventDefault();
+      e.stopPropagation();
+      if(typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+      // Blur the focus owner so the browser's Enter-activates-focus
+      // shortcut is denied a target on the next tick too.
+      try {
+        if(document.activeElement && document.activeElement !== document.body
+           && typeof document.activeElement.blur === 'function'){
+          document.activeElement.blur();
+        }
+      } catch(_){}
       try {
         const opts = { bubbles:true, cancelable:true, view:window,
                        clientX:_cursor.x, clientY:_cursor.y, button:0 };
