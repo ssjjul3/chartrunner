@@ -9221,6 +9221,7 @@ window.crWallet = (function(){
     'cr_workbench_v1': 1,
     'cr_equipped_bots_v1': 1,
     'cr_widgets_v1': 1,
+    'cr_chart_widgets_v1': 1,        // v1.0.28 — in-game chart widgets per-wallet
     'cr_indicators_v1': 1,
     'cr_last_played_v1': 1,
     'cr_racing_best': 1,
@@ -29988,6 +29989,29 @@ function _cwSave(){
   catch(e){ console.warn('chart widgets: save failed', e); }
 }
 _cwLoad();
+
+// v1.0.28 — Reload widgets when wallet state changes so per-wallet
+// persistence works. Both _wLoad() and _cwLoad() run at script-load
+// time, BEFORE crWallet hydrates from the URL or boot login. Without
+// this listener, in-memory widgets.items / chartWidgets.items stay at
+// whatever was loaded under the __guest__ namespace, and the next
+// save overwrites the wallet's actual saved set with empty/stale data.
+//
+// Fix: listen for wallet state changes (URL hydrate · setConnected ·
+// disconnect). Each transition re-loads from the now-current namespace
+// (cr_widgets_v1::<pubkey> or ::__guest__) and re-renders both the
+// desktop widget layer and the in-game chart widget layer.
+try {
+  if(typeof crWallet !== 'undefined' && typeof crWallet.on === 'function'){
+    crWallet.on(function(/*addr*/){
+      try { _wLoad();  } catch(_){}
+      try { _cwLoad(); } catch(_){}
+      try { if(typeof renderWidgets      === 'function') renderWidgets();      } catch(_){}
+      try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+    });
+  }
+} catch(_){}
+
 function _cwAdd(type, sourceId, clientX, clientY){
   const layer = document.getElementById('crChartWidgetLayer');
   if(!layer) return;
