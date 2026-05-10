@@ -39745,9 +39745,35 @@ const crL3 = (function(){
     for(let depth = 0; depth < 8 && cur; depth++, cur = cur.parentElement){
       if(cur.classList && cur.classList.contains('cr-widget')) return { kind: 'widget', el: cur };
       if(cur.classList && cur.classList.contains('os-window')) return { kind: 'window', el: cur };
+      // v1.0.11 — PIP widgets (RUN-tube + Docs) shootable on desktop too.
+      if(cur.classList && cur.classList.contains('cr-pip'))    return { kind: 'pip',    el: cur };
       if(cur.classList && cur.classList.contains('os-icon'))   return { kind: 'app',    el: cur };
     }
     return null;
+  }
+  // v1.0.11 — Dismiss a PIP widget (RUN-tube / Docs) using the existing
+  // hidePip path so any side-effects (camera teardown, save-state) fire.
+  function _destroyPip(el){
+    const pipId = el && el.dataset && el.dataset.pip;
+    el.style.transition = 'transform .3s ease, opacity .3s ease, filter .3s ease';
+    el.style.filter = 'brightness(2.0) saturate(0.5) hue-rotate(-15deg)';
+    el.style.transform = (el.style.transform || '') + ' scale(.85) rotate(' + (Math.random()*16-8).toFixed(1) + 'deg)';
+    el.style.opacity = '0';
+    setTimeout(() => {
+      try {
+        if(pipId && typeof window.crPipHide === 'function'){
+          window.crPipHide(pipId);
+        } else {
+          el.classList.remove('on');
+          el.hidden = true;
+        }
+      } catch(_){}
+      // Reset transient styling so the widget re-opens cleanly later.
+      el.style.transition = '';
+      el.style.filter = '';
+      el.style.transform = '';
+      el.style.opacity = '';
+    }, 320);
   }
   // Remove a widget from the right backing store + DOM with a destroy fx.
   function _destroyWidget(el){
@@ -39861,8 +39887,9 @@ const crL3 = (function(){
       bolt.style.opacity = '0';
       setTimeout(() => { try { if(bolt.parentNode) bolt.parentNode.removeChild(bolt); } catch(_){} }, 140);
       // Resolve and destroy the actual target.
-      if(target.kind === 'widget') _destroyWidget(target.el);
+      if(target.kind === 'widget')      _destroyWidget(target.el);
       else if(target.kind === 'window') _destroyWindow(target.el);
+      else if(target.kind === 'pip')    _destroyPip(target.el);
     }, 260);
   }
   // Track cursor position so SPACE knows where to aim.
