@@ -23518,28 +23518,13 @@ function _drawLoadoutAvatar(ctx, scale, opts){
   // sprite on the desktop and in-game; gear is now signalled by the badge +
   // future per-gear effects, not a passive halo. Kept GEAR_GLOW table intact
   // in case a later version brings back a toggleable version.
-  // v1.0.23 — NFT PFP override. If the player picked an NFT and its image
-  // is loaded (cached on window._crNftAvatarImg by _nftPreloadImage), draw
-  // the image as a rounded square at the same footprint as drawInvader.
-  // Falls through to procedural sprite if no NFT or image not yet loaded.
-  // The image branch skips skin tint + weapon badge — the NFT IS the avatar.
-  const nftImg = window._crNftAvatarImg;
-  if(nftImg && nftImg.complete && nftImg.naturalWidth > 0){
-    const sz = 8 * scale;        // matches drawInvader's ~8px-half footprint
-    const r  = Math.max(2, sz * 0.18);
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(-sz + r, -sz);
-    ctx.arcTo(sz, -sz, sz, sz, r);
-    ctx.arcTo(sz, sz, -sz, sz, r);
-    ctx.arcTo(-sz, sz, -sz, -sz, r);
-    ctx.arcTo(-sz, -sz, sz, -sz, r);
-    ctx.closePath();
-    ctx.clip();
-    ctx.drawImage(nftImg, -sz, -sz, sz * 2, sz * 2);
-    ctx.restore();
-    return;  // skip procedural sprite + weapon badge below
-  }
+  // v1.0.26 — In-game avatar is ALWAYS the equipped sprite from the
+  // PLAYER tab (Invader/Snake + skin tint), never the NFT. v1.0.23 had
+  // an NFT-image override here that swapped the chart sprite for the
+  // picked NFT — that's reverted. NFT picker still works and saves to
+  // localStorage; the picked image is reserved for future M2.6 (proper
+  // in-game NFT sprite swap with sizing + animation that matches the
+  // procedural sprite). For now: equipped sprite wins, every render.
   // Sprite. Snake honors its growing-length state when caller passes snakeLen.
   if (lo.avatar === 'snake' && typeof drawSnake === 'function') {
     drawSnake(ctx, scale, tint, Math.max(4, opts.snakeLen || 4));
@@ -36601,19 +36586,14 @@ plot(diff, color=color.aqua)`,
     return items;
   }
 
-  // Pre-load the selected NFT image so _drawLoadoutAvatar can render it
-  // synchronously each frame. Cached on window._crNftAvatarImg.
-  function _nftPreloadImage(url){
-    if(!url){ window._crNftAvatarImg = null; return; }
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      window._crNftAvatarImg = img;
-      try { if(typeof osRefreshProfile === 'function') osRefreshProfile(); } catch(_){}
-      try { if(typeof _refreshLightProfile === 'function') _refreshLightProfile(); } catch(_){}
-    };
-    img.onerror = () => { window._crNftAvatarImg = null; };
-    img.src = url;
+  // v1.0.26 — Stub. v1.0.23 cached the picked NFT image into
+  // window._crNftAvatarImg for in-game canvas render; v1.0.26 reverted
+  // that path so the equipped sprite always wins on the chart. We keep
+  // _nftPreloadImage as a no-op so callers don't break — and we ensure
+  // window._crNftAvatarImg never leaks into _drawLoadoutAvatar via
+  // stale state.
+  function _nftPreloadImage(_url){
+    window._crNftAvatarImg = null;
   }
 
   // Apply the saved NFT avatar to every visible surface.
