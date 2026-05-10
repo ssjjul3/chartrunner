@@ -34494,30 +34494,23 @@ function log(msg){
             const pk   = resp && resp.publicKey ? resp.publicKey.toString() : null;
             if(!pk) throw new Error('Phantom returned no publicKey');
 
-            // v0.9.75 — Step 2: force the Phantom approval popup every
-            // login via signMessage. Phantom auto-trusts returning sites
-            // so connect() alone is silent for returning users — that
-            // looks like the site is bypassing the wallet. signMessage
-            // ALWAYS shows the popup (the user must approve each
-            // signature individually), giving us the visible "I'm
-            // signing into ChartRunner" ceremony. We don't need to
-            // verify the signature server-side — the user clicking
-            // Approve is the gate. Phantom rejects with 4001 / 'User
-            // rejected' if the user hits Cancel, which we surface.
-            const challenge = 'ChartRunner stealth login · ' + new Date().toISOString();
-            const challengeBytes = new TextEncoder().encode(challenge);
-            try {
-              await provider.signMessage(challengeBytes, 'utf8');
-            } catch(signErr){
-              try { provider.disconnect(); } catch(_){}
-              const sm = String(signErr && signErr.message || signErr || '');
-              if((signErr && signErr.code === 4001) || /reject|cancel|denied/i.test(sm)){
-                showErr('Login cancelled. Click the button again to retry, or sign in with credentials.');
-              } else {
-                showErr('Phantom signature failed: ' + sm);
-              }
-              return;
-            }
+            // v1.0.18 — signMessage step DROPPED from the boot login.
+            // Reason: on Arc browser the Phantom extension opens its
+            // signMessage UI as a FULL-PAGE TAB rather than a small
+            // popup (the URL bar shows chrome-extension://...). That
+            // looked like a heavy ceremony for what is just a gate.
+            // connect() above ALREADY required the user to click
+            // "Approve" on first visit (no pubkey is returned without
+            // explicit user approval); for returning visits Phantom
+            // resolves silently — same UX as every other dApp.
+            //
+            // The whitelist check below remains the actual gate. If we
+            // ever need a stronger ceremony (e.g. for paid features or
+            // mainnet), re-enable signMessage at the call site that
+            // needs it — not at boot.
+            //
+            // Keep the local-storage hydration that was happening
+            // post-signMessage. The pubkey is the source of truth.
 
             // v0.9.87 — Hydrate via crWallet.setConnected so listeners
             // fire (the menubar Connect pill auto-renders to "🪙 PUBKEY"
