@@ -39873,7 +39873,33 @@ const crL3 = (function(){
   // toward the cursor. If a widget/window is under the cursor, destroy it
   // on impact. App icons under the cursor get the immune floater. Empty
   // space just shoots a vanity bolt off-screen.
+  // ENTER (v1.0.10) → "click/open" — synthesize a real mouse-click event
+  // on whatever is under the cursor. This opens app icons, presses
+  // buttons inside widgets, follows links, etc. — same as a real click,
+  // dispatched so both native AND library (React, etc.) handlers fire.
   function _onKeyDown(e){
+    // ── ENTER branch first (no cooldown, no fire bolt) ────────────────
+    if(e.key === 'Enter' || e.code === 'Enter'){
+      if(!_splashOn()) return;
+      if(!_avatarActive()) return;
+      const tagE = (document.activeElement && document.activeElement.tagName) || '';
+      if(tagE === 'INPUT' || tagE === 'TEXTAREA' || tagE === 'BUTTON' ||
+         (document.activeElement && document.activeElement.isContentEditable)) return;
+      const elE = document.elementFromPoint(_cursor.x, _cursor.y);
+      if(!elE) return;
+      e.preventDefault(); e.stopPropagation();
+      try {
+        const opts = { bubbles:true, cancelable:true, view:window,
+                       clientX:_cursor.x, clientY:_cursor.y, button:0 };
+        elE.dispatchEvent(new MouseEvent('mousedown', opts));
+        elE.dispatchEvent(new MouseEvent('mouseup',   opts));
+        elE.dispatchEvent(new MouseEvent('click',     opts));
+      } catch(_){
+        try { elE.click(); } catch(__){}
+      }
+      return;
+    }
+    // ── SPACE branch — existing fire-bolt behavior ─────────────────────
     if(e.key !== ' ' && e.code !== 'Space') return;
     if(!_splashOn()) return;
     if(!_avatarActive()) return;
