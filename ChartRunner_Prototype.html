@@ -40248,104 +40248,153 @@ const crL3 = (function(){
     ctx.restore();
   };
 
-  // ── Render lightning halos around every armed overlay ───────────────
-  // Called from the main render() loop AFTER drawVisualOverlays.
-  // Each frame: walk armed[], compute the overlay's screen-space bounds,
-  // stroke a slightly-jittered blue rounded-rect with alpha pulse.
+  // ── Electrify armed tools (v1.0.8) ───────────────────────────────────
+  // Called from the main render() loop AFTER drawVisualOverlays. For each
+  // armed entry we re-paint the tool's actual geometry with a 3-stack
+  // shimmer (wide soft glow → bright stroke → high-frequency lightning
+  // jitter overlay) so the tool itself looks electrified — NOT a static
+  // box around it. Sides:  sell  = red-pink hue (350°),  buy/other = blue
+  // hue (215°). Alpha pulses on a slow sine; the lightning jitter is
+  // perpendicular noise driven by a fast sine so it crackles.
   window.drawBlueLaserHalos = function(){
     if(!STATE.armed.length) return;
     if(typeof ctx === 'undefined') return;
+    if(typeof sX !== 'function' || typeof priceToY !== 'function') return;
     const tNow = performance.now() / 1000;
     ctx.save();
     for(const a of STATE.armed){
-      const bounds = _overlayBounds(a);
-      if(!bounds) continue;
-      // Pulse: cycle alpha 0.35 → 0.85 over 1.4s
-      const ph = (Math.sin(tNow * 4.5 + (a.ts % 1000) * 0.001) + 1) * 0.5;
-      const alpha = 0.40 + ph * 0.45;
-      const sideHue = a.side === 'sell' ? 350 : 215; // sell tinted red, buy + others blue
-      ctx.shadowColor = 'hsla(' + sideHue + ',95%,60%,' + alpha + ')';
-      ctx.shadowBlur = 14;
-      ctx.strokeStyle = 'hsla(' + sideHue + ',95%,68%,' + alpha + ')';
-      ctx.lineWidth = 1.6;
-      // Tiny lightning-like jitter so it reads as energy, not a static box
-      const jx = (Math.sin(tNow * 18 + a.ts) * 1.2) | 0;
-      const jy = (Math.cos(tNow * 22 + a.ts) * 1.2) | 0;
-      const x = bounds.x + jx, y = bounds.y + jy, w = bounds.w, h = bounds.h;
-      ctx.beginPath();
-      _roundRect(ctx, x - 4, y - 4, w + 8, h + 8, 6);
-      ctx.stroke();
-      // Inner faint stroke for depth
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = 'hsla(' + sideHue + ',95%,80%,' + (alpha * 0.55) + ')';
-      ctx.lineWidth = 0.8;
-      ctx.beginPath();
-      _roundRect(ctx, x - 2, y - 2, w + 4, h + 4, 4);
-      ctx.stroke();
+      const o = a.overlay; if(!o) continue;
+      const seed = (a.ts || 0) * 0.001;
+      const sideHue = a.side === 'sell' ? 350 : 215;
+      // Slow alpha pulse 0.55..0.95 (per-tool offset so they don't sync)
+      const ph = (Math.sin(tNow * 4.5 + seed) + 1) * 0.5;
+      const alpha = 0.55 + ph * 0.40;
+      const cGlow   = 'hsla(' + sideHue + ',95%,60%,' + (alpha * 0.55) + ')';
+      const cStrong = 'hsla(' + sideHue + ',95%,68%,' + alpha + ')';
+      const cWhite  = 'hsla(' + sideHue + ',95%,90%,' + (alpha * 0.85) + ')';
+
+      if(a.kind === 'bracket'){
+        const bx  = sX(o.wx);
+        const W_LINE = (typeof OVERLAY_W !== 'undefined' ? OVERLAY_W : 60) + 8;
+        _shimmerHLine(bx - 6, priceToY(o.entry), bx + W_LINE, cGlow, cStrong, cWhite, tNow + seed);
+        _shimmerHLine(bx - 6, priceToY(o.tp),    bx + W_LINE, cGlow, cStrong, cWhite, tNow + seed + 0.3);
+        _shimmerHLine(bx - 6, priceToY(o.sl),    bx + W_LINE, cGlow, cStrong, cWhite, tNow + seed + 0.6);
+      } else if(a.kind === 'oco'){
+        const ox = sX(o.wx);
+        _shimmerHLine(ox - 4, priceToY(o.upper), ox + 200, cGlow, cStrong, cWhite, tNow + seed);
+        _shimmerHLine(ox - 4, priceToY(o.lower), ox + 200, cGlow, cStrong, cWhite, tNow + seed + 0.4);
+      } else if(a.kind === 'ladder'){
+        const lx = sX(o.wx);
+        const x2 = lx + 120;
+        if(o.prices && o.prices.length){
+          for(let k = 0; k < o.prices.length; k++){
+            _shimmerHLine(lx - 18, priceToY(o.prices[k]), x2,
+                          cGlow, cStrong, cWhite, tNow + seed + k * 0.18);
+          }
+        } else {
+          const dir = (o.side === 'sell') ? 1 : -1;
+          for(let k = 0; k <= o.rungs; k++){
+            _shimmerHLine(lx - 18, priceToY(o.p + dir * o.spacing * k), x2,
+                          cGlow, cStrong, cWhite, tNow + seed + k * 0.18);
+          }
+        }
+      } else if(a.kind === 'hline'){
+        const xMax = (typeof W !== 'undefined' ? W : 800) - 60;
+        _shimmerHLine(0, priceToY(o.py), xMax, cGlow, cStrong, cWhite, tNow + seed);
+      } else if(a.kind === 'vwap'){
+        if(o.poly && o.poly.length > 1){
+          const pts = o.poly.map(p => ({ x: sX(p.wx), y: priceToY(p.py) }));
+          _shimmerCurve(pts, cGlow, cStrong, cWhite, tNow + seed);
+        }
+      } else if(a.kind === 'trendline'){
+        if(o.points && o.points.length >= 2){
+          const pts = o.points.map(p => ({ x: sX(p.wx), y: priceToY(p.py) }));
+          _shimmerCurve(pts, cGlow, cStrong, cWhite, tNow + seed);
+        }
+      }
     }
     ctx.restore();
   };
 
-  function _roundRect(c, x, y, w, h, r){
-    if(w < 2) w = 2; if(h < 2) h = 2;
-    const rr = Math.min(r, w/2, h/2);
-    c.moveTo(x + rr, y);
-    c.arcTo(x + w, y,     x + w, y + h, rr);
-    c.arcTo(x + w, y + h, x,     y + h, rr);
-    c.arcTo(x,     y + h, x,     y,     rr);
-    c.arcTo(x,     y,     x + w, y,     rr);
-    c.closePath();
+  // ── Per-geometry shimmer helpers ─────────────────────────────────────
+  // 3-stack render of a horizontal line with crackling lightning overlay.
+  // Layer 1: wide soft glow (drop-shadow-like)
+  // Layer 2: bright bold stroke (bright hue)
+  // Layer 3: thin white-hot jittered polyline (lightning crackle)
+  function _shimmerHLine(x1, y, x2, cGlow, cStrong, cWhite, t){
+    if(!isFinite(y) || y < -10 || y > (typeof H !== 'undefined' ? H + 10 : 9999)) return;
+    if(x2 <= x1) return;
+    ctx.lineCap = 'round';
+    // Layer 1 — wide glow with shadow blur
+    ctx.shadowColor = cGlow;
+    ctx.shadowBlur  = 14;
+    ctx.strokeStyle = cGlow;
+    ctx.lineWidth   = 8;
+    ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+    // Layer 2 — bright stroke
+    ctx.shadowBlur  = 0;
+    ctx.strokeStyle = cStrong;
+    ctx.lineWidth   = 2.4;
+    ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+    // Layer 3 — lightning crackle (jittered polyline, fast sine perpendicular)
+    const segs = Math.max(8, Math.floor((x2 - x1) / 18));
+    ctx.strokeStyle = cWhite;
+    ctx.lineWidth   = 1.0;
+    ctx.beginPath();
+    for(let i = 0; i <= segs; i++){
+      const xi = x1 + (x2 - x1) * (i / segs);
+      // Two sines at different frequencies so it's chaotic, not periodic
+      const yj = Math.sin(t * 30 + i * 0.9) * 1.6
+               + Math.sin(t * 11 + i * 2.3) * 0.8;
+      const yi = y + yj;
+      if(i === 0) ctx.moveTo(xi, yi); else ctx.lineTo(xi, yi);
+    }
+    ctx.stroke();
   }
-
-  // Resolve the current screen-space bounds {x, y, w, h} of the overlay
-  // that this armed entry refers to. Returns null if the overlay is
-  // off-screen or the kind isn't drawable.
-  function _overlayBounds(a){
-    if(!a || !a.overlay) return null;
-    if(typeof sX !== 'function' || typeof priceToY !== 'function') return null;
-    const o = a.overlay;
-    if(a.kind === 'bracket'){
-      const bx = sX(o.wx);
-      const yE = priceToY(o.entry), yT = priceToY(o.tp), yS = priceToY(o.sl);
-      const top = Math.min(yE, yT, yS), bot = Math.max(yE, yT, yS);
-      return { x: bx - 12, y: top - 4, w: (typeof OVERLAY_W !== 'undefined' ? OVERLAY_W : 60) + 12, h: bot - top + 8 };
-    }
-    if(a.kind === 'oco'){
-      const ox = sX(o.wx);
-      const yU = priceToY(o.upper), yL = priceToY(o.lower);
-      const top = Math.min(yU, yL), bot = Math.max(yU, yL);
-      return { x: ox - 4, y: top - 4, w: 200 + 8, h: bot - top + 8 };
-    }
-    if(a.kind === 'ladder'){
-      const lx = sX(o.wx);
-      let top = Infinity, bot = -Infinity;
-      if(o.prices && o.prices.length){
-        for(const p of o.prices){ const y = priceToY(p); if(y < top) top = y; if(y > bot) bot = y; }
-      } else {
-        const dir = (o.side === 'sell') ? 1 : -1;
-        for(let k = 0; k <= o.rungs; k++){
-          const y = priceToY(o.p + dir * o.spacing * k);
-          if(y < top) top = y; if(y > bot) bot = y;
-        }
+  // 3-stack render of an arbitrary curve given as [{x,y}, ...].
+  // Same layer model as _shimmerHLine but the lightning jitter is
+  // perpendicular to each segment, not strictly vertical.
+  function _shimmerCurve(pts, cGlow, cStrong, cWhite, t){
+    if(!pts || pts.length < 2) return;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // Layer 1 — glow
+    ctx.shadowColor = cGlow;
+    ctx.shadowBlur  = 14;
+    ctx.strokeStyle = cGlow;
+    ctx.lineWidth   = 7;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    // Layer 2 — bright
+    ctx.shadowBlur  = 0;
+    ctx.strokeStyle = cStrong;
+    ctx.lineWidth   = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    // Layer 3 — perpendicular jitter crackle
+    ctx.strokeStyle = cWhite;
+    ctx.lineWidth   = 1.0;
+    ctx.beginPath();
+    for(let i = 0; i < pts.length - 1; i++){
+      const a = pts[i], b = pts[i + 1];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      // Perpendicular unit vector
+      const px = -dy / len, py = dx / len;
+      const subs = Math.max(2, Math.floor(len / 14));
+      for(let s = 0; s <= subs; s++){
+        const u = s / subs;
+        const x0 = a.x + dx * u, y0 = a.y + dy * u;
+        const j = Math.sin(t * 30 + i * 1.3 + s * 0.7) * 1.6
+                + Math.sin(t * 11 + i * 0.4 + s * 2.1) * 0.8;
+        const xj = x0 + px * j, yj = y0 + py * j;
+        if(i === 0 && s === 0) ctx.moveTo(xj, yj); else ctx.lineTo(xj, yj);
       }
-      if(!isFinite(top) || !isFinite(bot)) return null;
-      return { x: lx - 24, y: top - 4, w: 140, h: bot - top + 8 };
     }
-    if(a.kind === 'hline'){
-      const y = priceToY(o.py);
-      return { x: 4, y: y - 6, w: (typeof W !== 'undefined' ? W : 800) - 70, h: 12 };
-    }
-    if(a.kind === 'vwap'){
-      if(!o.poly || !o.poly.length) return null;
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for(const p of o.poly){
-        const x = sX(p.wx), y = priceToY(p.py);
-        if(x < minX) minX = x; if(x > maxX) maxX = x;
-        if(y < minY) minY = y; if(y > maxY) maxY = y;
-      }
-      return { x: minX - 4, y: minY - 4, w: maxX - minX + 8, h: maxY - minY + 8 };
-    }
-    return null;
+    ctx.stroke();
   }
 
   // ── Boot: inject + register Esc handler so 4 isn't the only exit ────
