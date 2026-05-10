@@ -23517,6 +23517,28 @@ function _drawLoadoutAvatar(ctx, scale, opts){
   // sprite on the desktop and in-game; gear is now signalled by the badge +
   // future per-gear effects, not a passive halo. Kept GEAR_GLOW table intact
   // in case a later version brings back a toggleable version.
+  // v1.0.23 — NFT PFP override. If the player picked an NFT and its image
+  // is loaded (cached on window._crNftAvatarImg by _nftPreloadImage), draw
+  // the image as a rounded square at the same footprint as drawInvader.
+  // Falls through to procedural sprite if no NFT or image not yet loaded.
+  // The image branch skips skin tint + weapon badge — the NFT IS the avatar.
+  const nftImg = window._crNftAvatarImg;
+  if(nftImg && nftImg.complete && nftImg.naturalWidth > 0){
+    const sz = 8 * scale;        // matches drawInvader's ~8px-half footprint
+    const r  = Math.max(2, sz * 0.18);
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(-sz + r, -sz);
+    ctx.arcTo(sz, -sz, sz, sz, r);
+    ctx.arcTo(sz, sz, -sz, sz, r);
+    ctx.arcTo(-sz, sz, -sz, -sz, r);
+    ctx.arcTo(-sz, -sz, sz, -sz, r);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(nftImg, -sz, -sz, sz * 2, sz * 2);
+    ctx.restore();
+    return;  // skip procedural sprite + weapon badge below
+  }
   // Sprite. Snake honors its growing-length state when caller passes snakeLen.
   if (lo.avatar === 'snake' && typeof drawSnake === 'function') {
     drawSnake(ctx, scale, tint, Math.max(4, opts.snakeLen || 4));
@@ -36519,150 +36541,202 @@ plot(diff, color=color.aqua)`,
       el.classList.toggle('cr-wallet-on', connected);
     });
   }
-  // ── v0.9.95 — NFT avatar picker ────────────────────────────────────
-  // Curated top 20 Solana NFT collections. Each entry has a name, slug,
-  // signature palette, and 6 sample NFT entries (name + image URI). For
-  // offline-safe demo we use SVG data URIs generated at boot — when M2
-  // lands a Helius DAS adapter we swap `samples` for the wallet's actual
-  // NFTs filtered by collection mint.
-  const _NFT_COLLECTIONS = [
-    { slug:'madlads',     name:'Mad Lads',           pal:['#3D348B','#F7B538'] },
-    { slug:'smb',         name:'SMB Gen2',           pal:['#FFB700','#1B1B1B'] },
-    { slug:'okaybears',   name:'Okay Bears',         pal:['#0FAEA1','#FFE9C7'] },
-    { slug:'tensorians',  name:'Tensorians',         pal:['#1F8FFF','#0E1A2C'] },
-    { slug:'claynosaurz', name:'Claynosaurz',        pal:['#F46036','#FFCBA4'] },
-    { slug:'fff',         name:'Famous Fox Federation', pal:['#FF7E1A','#3A1E0A'] },
-    { slug:'aurory',      name:'Aurory',             pal:['#A66BFF','#1A0F2E'] },
-    { slug:'cets',        name:'Cets on Creck',      pal:['#FF4D6D','#0E1A2C'] },
-    { slug:'frens',       name:'Frens',              pal:['#00C2A8','#0E1A2C'] },
-    { slug:'drip',        name:'DRiP collections',   pal:['#FFD166','#0E1A2C'] },
-    { slug:'photofinish', name:'Photo Finish',       pal:['#A11800','#1B1B1B'] },
-    { slug:'ovols',       name:'Ovols',              pal:['#9B8CFF','#1A0F2E'] },
-    { slug:'pudgy',       name:'Pudgy Penguins',     pal:['#7CC1EB','#0A1A2C'] },
-    { slug:'bodoggos',    name:'Bodoggos',           pal:['#F4A261','#2A1B0E'] },
-    { slug:'retardio',    name:'Retardio Cousins',   pal:['#FF6B9D','#1A0F1A'] },
-    { slug:'sharx',       name:'Sharx',              pal:['#41D5C5','#0E1A2C'] },
-    { slug:'galaxy',      name:'Galaxy',             pal:['#9F2BFF','#0E0A18'] },
-    { slug:'starlatlas',  name:'Star Atlas',         pal:['#FFD166','#0E1A2C'] },
-    { slug:'heist',       name:'The Heist',          pal:['#E63946','#1B1B1B'] },
-    { slug:'abc',         name:'ABC',                pal:['#06D6A0','#1B1B1B'] },
-  ];
-  function _nftAvatarSvg(name, idx, pal){
-    const initials = name.replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase() || 'NF';
-    const [bg, fg] = pal;
-    const num = String(idx + 1).padStart(4, '0');
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'>` +
-      `<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>` +
-        `<stop offset='0%25' stop-color='${bg}'/><stop offset='100%25' stop-color='${fg}'/>` +
-      `</linearGradient></defs>` +
-      `<rect width='120' height='120' rx='16' fill='url(%23g)'/>` +
-      `<circle cx='60' cy='48' r='22' fill='${fg}' fill-opacity='.18'/>` +
-      `<text x='60' y='66' font-family='ui-monospace,Menlo,monospace' font-size='30' font-weight='800' ` +
-        `fill='${fg}' text-anchor='middle' opacity='.85'>${initials}</text>` +
-      `<text x='60' y='102' font-family='ui-monospace,Menlo,monospace' font-size='12' ` +
-        `fill='${fg}' text-anchor='middle' opacity='.55'>#${num}</text>` +
-      `</svg>`;
-    return 'data:image/svg+xml;utf8,' + svg.replace(/#/g,'%23').replace(/\s+/g,' ');
-  }
+  // ── v1.0.23 — REAL NFT avatar picker ────────────────────────────────
+  // Replaces the v0.9.95 SVG mockup grid. Now reads the connected
+  // wallet's actual NFT holdings via Magic Eden's public no-auth API
+  // (/v2/wallets/{owner}/tokens). Selected NFT image renders as PFP
+  // EVERYWHERE — small Profile tile, big centered preview canvas, AND
+  // the in-game player avatar (via _drawLoadoutAvatar's NFT branch).
+  // No mockups, no fake data. If the wallet has zero NFTs, the picker
+  // says so honestly.
 
   const _NFT_KEY = 'cr_player_nft_avatar_v1';
+  const _ME_API  = 'https://api-mainnet.magiceden.dev/v2/wallets/';
+
   function _nftLoadSelected(){
     try { return JSON.parse(localStorage.getItem(_NFT_KEY) || 'null'); } catch(_){ return null; }
   }
   function _nftSaveSelected(obj){
     try { localStorage.setItem(_NFT_KEY, JSON.stringify(obj)); } catch(_){}
   }
+  function _nftClearSelected(){
+    try { localStorage.removeItem(_NFT_KEY); } catch(_){}
+  }
 
-  // Apply the saved NFT avatar to all visible avatar surfaces (desktop
-  // profile + lite profile portrait). The canvas-drawn skin stays as
-  // fallback when no NFT is selected.
+  // Read the connected wallet pubkey from the unified namespace.
+  function _nftCurrentWallet(){
+    try {
+      if(window.crWallet && typeof window.crWallet.get === 'function'){
+        return window.crWallet.get() || null;
+      }
+      return localStorage.getItem('cr_wallet') || null;
+    } catch(_){ return null; }
+  }
+
+  // Fetch wallet NFTs via Magic Eden. Returns array of {mint, name, image}.
+  // Cached per-wallet for 5 min so the picker doesn't re-fetch on every
+  // open. ME's public endpoint is no-auth + rate-limited (a few req/s
+  // is fine for this use case).
+  const _nftCache = new Map();   // wallet → { ts, items }
+  const _NFT_TTL  = 5 * 60 * 1000;
+  async function _fetchWalletNfts(wallet){
+    if(!wallet) return [];
+    const hit = _nftCache.get(wallet);
+    if(hit && (Date.now() - hit.ts) < _NFT_TTL) return hit.items;
+    const url = _ME_API + encodeURIComponent(wallet) + '/tokens?offset=0&limit=100';
+    const r = await fetch(url, { method:'GET' });
+    if(!r.ok) throw new Error('Magic Eden HTTP ' + r.status);
+    const arr = await r.json();
+    if(!Array.isArray(arr)) return [];
+    const items = arr
+      .filter(x => x && x.image && x.mintAddress)
+      .map(x => ({
+        mint:  x.mintAddress,
+        name:  x.name || x.collectionName || x.mintAddress.slice(0, 6),
+        image: x.image,
+        collection: x.collection || x.collectionName || null,
+      }));
+    _nftCache.set(wallet, { ts: Date.now(), items });
+    return items;
+  }
+
+  // Pre-load the selected NFT image so _drawLoadoutAvatar can render it
+  // synchronously each frame. Cached on window._crNftAvatarImg.
+  function _nftPreloadImage(url){
+    if(!url){ window._crNftAvatarImg = null; return; }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      window._crNftAvatarImg = img;
+      try { if(typeof osRefreshProfile === 'function') osRefreshProfile(); } catch(_){}
+      try { if(typeof _refreshLightProfile === 'function') _refreshLightProfile(); } catch(_){}
+    };
+    img.onerror = () => { window._crNftAvatarImg = null; };
+    img.src = url;
+  }
+
+  // Apply the saved NFT avatar to every visible surface.
+  // - Small profile tile: overlay <img> on top of canvas.
+  // - Big centered preview: re-painted by osRefreshProfile (which
+  //   delegates to _drawLoadoutAvatar — sees window._crNftAvatarImg).
+  // - In-game player avatar: drawPlayer → _drawLoadoutAvatar same path.
   function _nftApplyAvatar(){
-    // v1.0.22 — The small profile tile (under "Trader" header) is now
-    // hard-pinned to the EQUIPPED avatar canvas (osRefreshProfile draws
-    // the Invader/Snake sprite + skin tint there). NFT overlay disabled
-    // on this tile — the picked NFT still saves to localStorage for the
-    // upcoming M2.6 in-game sprite swap, but it doesn't replace the
-    // portrait here. Force canvas opacity ON, NFT image OFF, every call.
+    const sel = _nftLoadSelected();
     const profileImg = document.getElementById('crProfileNftImg');
     const profileCv  = document.getElementById('profileAvatar');
-    if(profileImg) profileImg.style.display = 'none';
-    if(profileCv)  profileCv.style.opacity  = '1';
-  }
-
-  // Picker state machine: 'collections' (grid of 20) ↔ 'nfts' (grid of
-  // 6 samples for the selected collection).
-  let _nftPickerView = 'collections';
-  let _nftPickerCollection = null;
-  function _nftRenderPicker(){
-    const grid  = document.getElementById('crNftGrid');
-    const back  = document.getElementById('crNftBack');
-    const ttl   = document.getElementById('crNftTtl');
-    const note  = document.getElementById('crNftNote');
-    if(!grid || !ttl || !back || !note) return;
-    grid.innerHTML = '';
-    if(_nftPickerView === 'collections'){
-      ttl.textContent  = 'Pick your NFT avatar';
-      note.textContent = 'Top 20 Solana collections · click to browse';
-      back.style.display = 'none';
-      _NFT_COLLECTIONS.forEach((col, i) => {
-        const tile = document.createElement('button');
-        tile.type = 'button';
-        tile.className = 'npTile';
-        const img = document.createElement('img');
-        img.src = _nftAvatarSvg(col.name, i, col.pal);
-        img.alt = col.name;
-        const nm = document.createElement('div');
-        nm.className = 'nm';
-        nm.textContent = col.name;
-        tile.appendChild(img); tile.appendChild(nm);
-        tile.addEventListener('click', () => {
-          _nftPickerCollection = col;
-          _nftPickerView = 'nfts';
-          _nftRenderPicker();
-        });
-        grid.appendChild(tile);
-      });
-    } else {
-      const col = _nftPickerCollection;
-      if(!col){ _nftPickerView = 'collections'; return _nftRenderPicker(); }
-      ttl.textContent  = col.name;
-      note.textContent = '6 samples · click to set as your avatar';
-      back.style.display = '';
-      // Generate 6 sample NFTs deterministically from the collection slug.
-      for(let k = 0; k < 6; k++){
-        const tile = document.createElement('button');
-        tile.type = 'button';
-        tile.className = 'npTile';
-        const img = document.createElement('img');
-        const idx = k * 137 + (col.slug.length * 41);
-        img.src = _nftAvatarSvg(col.name + ' #' + (idx + 1), idx, col.pal);
-        img.alt = col.name + ' #' + (idx + 1);
-        const nm = document.createElement('div');
-        nm.className = 'nm';
-        nm.textContent = col.name + ' #' + (idx + 1);
-        tile.appendChild(img); tile.appendChild(nm);
-        tile.addEventListener('click', () => {
-          _nftSaveSelected({
-            collection: col.slug,
-            collectionName: col.name,
-            name: col.name + ' #' + (idx + 1),
-            image: img.src,
-            pickedAt: Date.now(),
-          });
-          _nftClosePicker();
-          _nftApplyAvatar();
-          try {
-            if(typeof crNotify === 'function')
-              crNotify('🪪 Avatar set · ' + col.name + ' #' + (idx + 1));
-          } catch(_){}
-        });
-        grid.appendChild(tile);
+    if(sel && sel.image){
+      // Re-enable the small-tile overlay (revert v1.0.22 selectively for
+      // real NFTs only — mockups are gone, so any selection here is real).
+      if(profileImg){
+        profileImg.src = sel.image;
+        profileImg.style.display = '';
       }
+      if(profileCv) profileCv.style.opacity = '0';
+      _nftPreloadImage(sel.image);
+    } else {
+      if(profileImg) profileImg.style.display = 'none';
+      if(profileCv)  profileCv.style.opacity  = '1';
+      window._crNftAvatarImg = null;
     }
   }
+  // Expose so other modules can refresh after wallet changes.
+  window._crNftApplyAvatar = _nftApplyAvatar;
+
+  function _nftRenderPicker(){
+    const grid = document.getElementById('crNftGrid');
+    const back = document.getElementById('crNftBack');
+    const ttl  = document.getElementById('crNftTtl');
+    const note = document.getElementById('crNftNote');
+    if(!grid || !ttl || !back || !note) return;
+    grid.innerHTML = '';
+    back.style.display = 'none';
+    ttl.textContent = 'Pick your NFT avatar';
+
+    const wallet = _nftCurrentWallet();
+    if(!wallet){
+      note.textContent = 'Connect a wallet first to discover your NFTs.';
+      const empty = document.createElement('div');
+      empty.style.cssText = 'grid-column:1/-1;padding:30px 20px;text-align:center;color:#9aa0a6;font-size:13px';
+      empty.innerHTML = 'No wallet connected.<br><br>Open Profile → Wallet tab to connect.';
+      grid.appendChild(empty);
+      return;
+    }
+
+    note.textContent = 'Loading NFTs from ' + wallet.slice(0,4) + '…' + wallet.slice(-4) + ' (Magic Eden)';
+
+    // Tile generator
+    function makeTile(item){
+      const tile = document.createElement('button');
+      tile.type = 'button';
+      tile.className = 'npTile';
+      const img = document.createElement('img');
+      img.src = item.image;
+      img.alt = item.name;
+      img.loading = 'lazy';
+      const nm = document.createElement('div');
+      nm.className = 'nm';
+      nm.textContent = item.name;
+      tile.appendChild(img); tile.appendChild(nm);
+      tile.addEventListener('click', () => {
+        _nftSaveSelected({
+          mint:  item.mint,
+          name:  item.name,
+          image: item.image,
+          collection: item.collection,
+          wallet,
+          pickedAt: Date.now(),
+        });
+        _nftClosePicker();
+        _nftApplyAvatar();
+        try { if(typeof crNotify === 'function') crNotify('🪪 Avatar set · ' + item.name); } catch(_){}
+      });
+      return tile;
+    }
+
+    // Optional "Clear avatar" tile so the player can revert to the
+    // procedural Invader/Snake without going to localStorage.
+    function makeClearTile(){
+      const t = document.createElement('button');
+      t.type = 'button';
+      t.className = 'npTile';
+      t.style.background = 'rgba(255,91,127,0.06)';
+      t.style.borderColor = 'rgba(255,91,127,0.30)';
+      t.innerHTML = '<div style="width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;color:#ff5b7f;font:700 24px ui-monospace,Menlo,monospace">∅</div>' +
+                    '<div class="nm" style="color:#ff5b7f">Clear avatar</div>';
+      t.addEventListener('click', () => {
+        _nftClearSelected();
+        _nftClosePicker();
+        _nftApplyAvatar();
+        try { if(typeof crNotify === 'function') crNotify('Avatar cleared · using equipped sprite', 'warn'); } catch(_){}
+      });
+      return t;
+    }
+
+    _fetchWalletNfts(wallet).then(items => {
+      grid.innerHTML = '';
+      if(!items.length){
+        note.textContent = 'No NFTs found in ' + wallet.slice(0,4) + '…' + wallet.slice(-4);
+        const empty = document.createElement('div');
+        empty.style.cssText = 'grid-column:1/-1;padding:30px 20px;text-align:center;color:#9aa0a6;font-size:13px';
+        empty.innerHTML = 'This wallet holds no NFTs.<br><br>Pick up a Solana NFT (Tensor / Magic Eden) and reload.';
+        grid.appendChild(empty);
+        if(_nftLoadSelected()) grid.appendChild(makeClearTile());
+        return;
+      }
+      note.textContent = items.length + ' NFTs in ' + wallet.slice(0,4) + '…' + wallet.slice(-4) + ' · click to set as your avatar';
+      if(_nftLoadSelected()) grid.appendChild(makeClearTile());
+      items.forEach(item => grid.appendChild(makeTile(item)));
+    }).catch(err => {
+      grid.innerHTML = '';
+      note.textContent = 'Couldn\'t reach Magic Eden';
+      const empty = document.createElement('div');
+      empty.style.cssText = 'grid-column:1/-1;padding:30px 20px;text-align:center;color:#ff5b7f;font-size:13px';
+      empty.innerHTML = 'NFT lookup failed:<br><span style="color:#9aa0a6">' + (err && err.message || err) + '</span><br><br>Try again in a moment.';
+      grid.appendChild(empty);
+    });
+  }
+
   function _nftOpenPicker(){
-    _nftPickerView = 'collections';
-    _nftPickerCollection = null;
     _nftRenderPicker();
     const ov = document.getElementById('crNftPicker');
     if(ov) ov.classList.add('on');
