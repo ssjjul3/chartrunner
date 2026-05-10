@@ -5406,7 +5406,7 @@
     <line x1="14" y1="55" x2="28" y2="55" stroke="#1a1a18" stroke-width="0.8"/>
   </svg>
   <div class="title">Welcome to ChartRunnerOS</div>
-  <div class="ver">v0.9.7 · Stealth Edition · invite only</div>
+  <div class="ver">v1.0.17</div>
   <!-- v0.9.7-stealth — closed access. Two paths:
        1. Username + password (shared invite credential, SHA-256 gated)
        2. Whitelisted Solana wallet (allowlist of pubkeys)
@@ -5430,11 +5430,10 @@
     </div>
     <div class="crLoginDivider"><span>or</span></div>
     <div class="crLoginActions" style="justify-content:center">
-      <button type="button" id="crBootConnect" class="crLoginBtn">🪙 Connect Whitelisted Wallet</button>
+      <button type="button" id="crBootConnect" class="crLoginBtn">🪙 Connect Wallet</button>
     </div>
     <div class="crLoginErr" id="crBootErr" style="display:none"></div>
   </form>
-  <div class="hint">stealth · invite only · no guest access</div>
 </div>
 <div id="stage">
   <canvas id="cv"></canvas>
@@ -34563,8 +34562,27 @@ function log(msg){
                 localStorage.removeItem('cr_wallet_adapter');
               }
             } catch(_){}
-            showErr('Wallet ' + pk.slice(0, 4) + '…' + pk.slice(-4) +
-                     ' is not on the stealth whitelist. Sign in with credentials, or contact the team to be added.');
+            // v1.0.17 — Soft-rejection: short message + clickable "form"
+            // link that opens a Name/Email/X/wallet modal. textContent in
+            // _showErr would strip the link, so we set innerHTML directly
+            // on the error element.
+            const _short = pk.slice(0, 4) + '…' + pk.slice(-4);
+            const errEl = document.getElementById('crBootErr');
+            if(errEl){
+              errEl.innerHTML = 'Wallet ' + _short + ' is not eligible. Fill out the ' +
+                '<a href="#" id="crWaitlistOpen" style="color:#9bd6ff;text-decoration:underline;cursor:pointer">form.</a>';
+              errEl.style.display = 'block';
+            }
+            try { window._crRejectedWallet = pk; } catch(_){}
+            setTimeout(() => {
+              const a = document.getElementById('crWaitlistOpen');
+              if(a){
+                a.addEventListener('click', e => {
+                  e.preventDefault();
+                  if(typeof window.crOpenWaitlist === 'function') window.crOpenWaitlist(pk);
+                });
+              }
+            }, 30);
             return;
           } catch(err){
             // 4001 (Phantom) / 'User rejected' / 'cancelled' → user
@@ -40522,6 +40540,170 @@ const crL3 = (function(){
   } else {
     _boot();
   }
+})();
+
+/* ═════════════════════════════════════════════════════════════════════════
+ *  v1.0.17 — WAITLIST FORM
+ * ═════════════════════════════════════════════════════════════════════════
+ *  When a connected wallet isn't on STEALTH_WALLET_WHITELIST the boot
+ *  rejection now reads "Wallet … is not eligible. Fill out the form."
+ *  Clicking "form" opens this modal: Name / Email / X handle / Wallet
+ *  (prefilled from the rejected pubkey). Submit logs to localStorage
+ *  AND opens a mailto: to jsg@julianroy.com so the team gets the
+ *  request. No backend required.
+ *
+ *  Submissions persist as a JSON array at  localStorage.cr_waitlist_v1
+ *  so each device keeps a local audit trail.
+ * ═════════════════════════════════════════════════════════════════════════ */
+(function(){
+  const STORE_KEY = 'cr_waitlist_v1';
+  const TEAM_EMAIL = 'jsg@julianroy.com';
+
+  function _injectCss(){
+    if(document.getElementById('crWaitlistCss')) return;
+    const css = document.createElement('style');
+    css.id = 'crWaitlistCss';
+    css.textContent = [
+      '#crWaitlistOv{position:fixed;inset:0;z-index:99800;display:none;',
+      '  align-items:center;justify-content:center;background:rgba(0,0,0,.55);',
+      '  backdrop-filter:blur(3px)}',
+      '#crWaitlistOv.on{display:flex}',
+      '#crWaitlistCard{width:min(440px,calc(100% - 60px));',
+      '  background:linear-gradient(180deg,rgba(20,30,55,.98),rgba(8,12,22,.99));',
+      '  border:1px solid rgba(126,231,135,.35);border-left:3px solid #14F195;',
+      '  border-radius:10px;padding:24px 26px;color:#e6e6ee;',
+      '  font-family:Inter,-apple-system,system-ui,sans-serif;',
+      '  box-shadow:0 24px 60px rgba(0,0,0,.7),0 0 32px rgba(20,241,149,.10)}',
+      '#crWaitlistCard h3{margin:0 0 4px;font:700 16px Inter,sans-serif;color:#bff7df;letter-spacing:.3px}',
+      '#crWaitlistCard .sub{font:500 11px ui-monospace,Menlo,monospace;color:#7aa3d8;',
+      '  margin-bottom:18px;letter-spacing:.4px}',
+      '#crWaitlistCard label{display:block;font:600 11px ui-monospace,Menlo,monospace;',
+      '  color:#bff7df;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;margin-top:12px}',
+      '#crWaitlistCard input{width:100%;padding:8px 10px;',
+      '  background:rgba(10,15,28,.7);border:1px solid rgba(255,255,255,.10);',
+      '  border-radius:5px;color:#e6e6ee;font:13px ui-monospace,Menlo,monospace;outline:none}',
+      '#crWaitlistCard input:focus{border-color:#14F195}',
+      '#crWaitlistCard input[readonly]{color:#9aa0a6;background:rgba(10,15,28,.4)}',
+      '#crWaitlistCard .row{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}',
+      '#crWaitlistCard button{padding:8px 16px;border:1px solid rgba(255,255,255,.10);',
+      '  border-radius:6px;background:transparent;color:#9aa0a6;cursor:pointer;',
+      '  font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.4px}',
+      '#crWaitlistCard button.primary{background:rgba(126,231,135,.20);',
+      '  border-color:rgba(126,231,135,.55);color:#bff7df}',
+      '#crWaitlistCard button.primary:hover{background:rgba(126,231,135,.30)}',
+      '#crWaitlistCard .ok{margin:8px 0 0;padding:10px 12px;background:rgba(20,241,149,.10);',
+      '  border-left:2px solid #14F195;border-radius:4px;font-size:12px;color:#bff7df}',
+    ].join('\n');
+    document.head.appendChild(css);
+  }
+
+  function _injectDom(){
+    if(document.getElementById('crWaitlistOv')) return;
+    _injectCss();
+    const ov = document.createElement('div');
+    ov.id = 'crWaitlistOv';
+    ov.innerHTML =
+      '<div id="crWaitlistCard" role="dialog" aria-label="Waitlist form">' +
+        '<h3>Request access</h3>' +
+        '<div class="sub">Stealth alpha · we add wallets in batches.</div>' +
+        '<form id="crWaitlistForm" autocomplete="off" novalidate>' +
+          '<label for="crWlName">Name</label>' +
+          '<input id="crWlName" name="name" type="text" required maxlength="60" placeholder="Satoshi N."/>' +
+          '<label for="crWlEmail">Email</label>' +
+          '<input id="crWlEmail" name="email" type="email" required maxlength="120" placeholder="you@domain.com"/>' +
+          '<label for="crWlX">X handle</label>' +
+          '<input id="crWlX" name="xhandle" type="text" maxlength="40" placeholder="@yourhandle"/>' +
+          '<label for="crWlWallet">Wallet address</label>' +
+          '<input id="crWlWallet" name="wallet" type="text" required maxlength="64" readonly/>' +
+          '<div class="ok" id="crWlOk" style="display:none">Request received. We\'ll email you when the whitelist opens.</div>' +
+          '<div class="row">' +
+            '<button type="button" id="crWlCancel">Cancel</button>' +
+            '<button type="submit" class="primary" id="crWlSubmit">Send request</button>' +
+          '</div>' +
+        '</form>' +
+      '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => { if(e.target === ov) _close(); });
+  }
+
+  function _open(walletPk){
+    _injectDom();
+    const ov = document.getElementById('crWaitlistOv');
+    const wal = document.getElementById('crWlWallet');
+    const ok = document.getElementById('crWlOk');
+    const form = document.getElementById('crWaitlistForm');
+    const sub = document.getElementById('crWlSubmit');
+    if(wal) wal.value = walletPk || (window._crRejectedWallet || '');
+    if(ok) ok.style.display = 'none';
+    if(form) form.reset(), wal.value = walletPk || (window._crRejectedWallet || '');
+    if(sub){ sub.disabled = false; sub.textContent = 'Send request'; }
+    ov.classList.add('on');
+    setTimeout(() => { try { document.getElementById('crWlName').focus(); } catch(_){} }, 50);
+  }
+  function _close(){
+    const ov = document.getElementById('crWaitlistOv');
+    if(ov) ov.classList.remove('on');
+  }
+  window.crOpenWaitlist = _open;
+  window.crCloseWaitlist = _close;
+
+  function _save(entry){
+    try {
+      const cur = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
+      cur.push(entry);
+      localStorage.setItem(STORE_KEY, JSON.stringify(cur));
+    } catch(_){}
+  }
+
+  // Wire form submit + cancel after first paint.
+  setTimeout(() => {
+    _injectDom();
+    const form = document.getElementById('crWaitlistForm');
+    const cancel = document.getElementById('crWlCancel');
+    if(cancel) cancel.addEventListener('click', _close);
+    document.addEventListener('keydown', e => {
+      const ov = document.getElementById('crWaitlistOv');
+      if(ov && ov.classList.contains('on') && e.key === 'Escape'){
+        e.preventDefault(); _close();
+      }
+    }, true);
+    if(form){
+      form.addEventListener('submit', e => {
+        e.preventDefault();
+        const name   = (document.getElementById('crWlName').value || '').trim();
+        const email  = (document.getElementById('crWlEmail').value || '').trim();
+        const xhdl   = (document.getElementById('crWlX').value || '').trim();
+        const wallet = (document.getElementById('crWlWallet').value || '').trim();
+        if(!name || !email || !wallet) return;
+        const entry = { name, email, xhandle: xhdl, wallet, ts: Date.now() };
+        _save(entry);
+        // Open mailto: with prefilled body so the request actually
+        // reaches the team without a backend.
+        try {
+          const subj = encodeURIComponent('ChartRunner waitlist · ' + (name || 'request'));
+          const body = encodeURIComponent(
+            'Name: ' + name + '\n' +
+            'Email: ' + email + '\n' +
+            'X handle: ' + (xhdl || '—') + '\n' +
+            'Wallet: ' + wallet + '\n' +
+            'Submitted: ' + new Date().toISOString() + '\n' +
+            '— sent via chartrunner.xyz/play/'
+          );
+          const a = document.createElement('a');
+          a.href = 'mailto:' + TEAM_EMAIL + '?subject=' + subj + '&body=' + body;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => { try { a.remove(); } catch(_){} }, 200);
+        } catch(_){}
+        const ok = document.getElementById('crWlOk');
+        const sub = document.getElementById('crWlSubmit');
+        if(ok){ ok.style.display = 'block'; }
+        if(sub){ sub.disabled = true; sub.textContent = '✓ Sent'; }
+        setTimeout(_close, 1800);
+      });
+    }
+  }, 200);
 })();
 </script>
 </body>
