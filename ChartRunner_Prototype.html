@@ -15155,6 +15155,8 @@ function updateWeapons(dt){
         }
         if(hit){
           b.hits.add(key);
+          // v1.0.12 — If armed via blue laser, cancel trade + disarm.
+          try { if(window.cr && window.cr.blueLaser && window.cr.blueLaser.onOverlayShot) window.cr.blueLaser.onOverlayShot(o); } catch(_){}
           game.visualBrackets.splice(i, 1);
           consume('Bracket');
         }
@@ -15174,6 +15176,8 @@ function updateWeapons(dt){
         }
         if(hit){
           b.hits.add(key);
+          // v1.0.12 — armed-tool cleanup
+          try { if(window.cr && window.cr.blueLaser && window.cr.blueLaser.onOverlayShot) window.cr.blueLaser.onOverlayShot(o); } catch(_){}
           game.visualOCO.splice(i, 1);
           consume('OCO');
         }
@@ -15201,6 +15205,8 @@ function updateWeapons(dt){
         }
         if(hit){
           b.hits.add(key);
+          // v1.0.12 — armed-tool cleanup
+          try { if(window.cr && window.cr.blueLaser && window.cr.blueLaser.onOverlayShot) window.cr.blueLaser.onOverlayShot(o); } catch(_){}
           game.visualLadders.splice(i, 1);
           consume('Ladder');
         }
@@ -15256,6 +15262,8 @@ function updateWeapons(dt){
               } catch(_){}
             }
           }
+          // v1.0.12 — armed-tool cleanup (in addition to tradeKind cancel above)
+          try { if(window.cr && window.cr.blueLaser && window.cr.blueLaser.onOverlayShot) window.cr.blueLaser.onOverlayShot(hl); } catch(_){}
           game.anchorLines.splice(i, 1);
           consume('HLine');
         }
@@ -15277,6 +15285,8 @@ function updateWeapons(dt){
         }
         if(hit){
           b.hits.add(key);
+          // v1.0.12 — armed-tool cleanup
+          try { if(window.cr && window.cr.blueLaser && window.cr.blueLaser.onOverlayShot) window.cr.blueLaser.onOverlayShot(tl); } catch(_){}
           game.visualTrendlines.splice(i, 1);
           consume('Trendline');
         }
@@ -15363,6 +15373,8 @@ function updateWeapons(dt){
         }
         if(hit){
           b.hits.add(key);
+          // v1.0.12 — armed-tool cleanup
+          try { if(window.cr && window.cr.blueLaser && window.cr.blueLaser.onOverlayShot) window.cr.blueLaser.onOverlayShot(v); } catch(_){}
           game.vwapAnchors.splice(i, 1);
           consume('VWAP');
         }
@@ -40146,6 +40158,26 @@ const crL3 = (function(){
   };
 
   STATE.count = function(){ return STATE.armed.length; };
+
+  // v1.0.12 — When an armed tool is shot by an in-game bullet (NOT a
+  // double-click), cancel the corresponding SDK order(s) and disarm.
+  // Called from updateWeapons' bullet-vs-overlay destruction sites.
+  // No-op if the overlay was never armed via the blue laser.
+  STATE.onOverlayShot = function(overlay){
+    if(!overlay || !STATE.isArmed(overlay)) return;
+    try {
+      if(typeof sdk !== 'undefined' && sdk.cancelOrder){
+        if(overlay.id != null)       sdk.cancelOrder(overlay.id);
+        if(overlay.upperId != null)  sdk.cancelOrder(overlay.upperId);
+        if(overlay.lowerId != null)  sdk.cancelOrder(overlay.lowerId);
+        if(Array.isArray(overlay.orderIds)){
+          overlay.orderIds.forEach(id => { try { sdk.cancelOrder(id); } catch(_){} });
+        }
+      }
+    } catch(_){}
+    STATE.disarm(overlay);
+    try { if(typeof crNotify === 'function') crNotify('🔵 Armed trade closed · tool destroyed', 'warn'); } catch(_){}
+  };
 
   // ── Panel card (double-click on armed tool) ─────────────────────────
   STATE.openPanelCard = function(hit){
