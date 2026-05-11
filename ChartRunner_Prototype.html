@@ -33693,26 +33693,33 @@ cv.addEventListener('wheel', e=>{
 function hideSplash(){
   splash.style.display='none';
   try{ osCloseAllWindows(); }catch{}
-  // v0.8k#24k — Leaving the OS Desktop into a game run cancels the Invader
-  // cursor (it's a Desktop-only mode). Belt-and-braces cleanup: call the
-  // exposed toggle if it ran; THEN unconditionally strip the body class +
-  // body cursor + remove any leftover Invader sprite canvas. The Invader
-  // canvas has no fixed id, so we identify it via z-index 99999 + width 36.
+  // v0.8k#24k / v1.0.50 — Leaving the OS Desktop into a game run cancels
+  // the desktop avatar (it's a Desktop-only entity).
+  // v1.0.50 — Two bugs in the original cleanup:
+  //   (1) Gate was `body.classList.contains('crInvaderCursor')`, but that
+  //       class is only set during DRAG (mousedown→mouseup), so a calmly-
+  //       sitting avatar never tripped the gate. Switched to the
+  //       `window.crOsInvaderActive` flag the IIFE owns.
+  //   (2) Fallback canvas sweep checked z-index '99999', but v1.0.46
+  //       bumped the avatar to '1000001'. Switched to data attribute
+  //       (`canvas[data-cr-os-invader]`) which is stable across z-index
+  //       bumps.
   try {
     if(typeof window.toggleOsInvaderCursor === 'function' &&
-       document.body.classList.contains('crInvaderCursor')){
-      window.toggleOsInvaderCursor();
+       window.crOsInvaderActive === true){
+      window.toggleOsInvaderCursor();   // turns the avatar OFF
     }
   } catch(_){}
   try { document.body.classList.remove('crInvaderCursor'); } catch(_){}
   try { document.body.style.cursor = ''; } catch(_){}
+  // Belt-and-braces sweep: nuke any avatar canvas the toggle didn't
+  // catch. Identified by data attribute, not z-index.
   try {
-    document.querySelectorAll('canvas').forEach(c => {
-      if(c.style && c.style.zIndex === '99999' && c.width === 36 && c.height === 24 && c.parentNode){
-        c.parentNode.removeChild(c);
-      }
+    document.querySelectorAll('canvas[data-cr-os-invader]').forEach(c => {
+      if(c.parentNode) c.parentNode.removeChild(c);
     });
   } catch(_){}
+  try { window.crOsInvaderActive = false; } catch(_){}
 }
 function showSplash(){
   splash.style.display='flex';
