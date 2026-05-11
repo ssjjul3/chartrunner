@@ -41288,10 +41288,27 @@ const crL3 = (function(){
     const splash = document.getElementById('splash');
     if(!splash) return;
     if(dataUrl){
-      splash.style.setProperty('--cr-desktop-bg', "url('" + dataUrl + "')");
+      // v1.0.43 — Bypass all CSS specificity wars: set the actual `background`
+      // property inline on the #splash element with !important via cssText.
+      // This trumps every per-theme `body[data-os-theme=...] .splash{...}`
+      // override regardless of whether !important is in play. Layered with
+      // a dim gradient on top so widgets/text remain readable.
+      const bg = 'linear-gradient(rgba(5,7,13,0.45),rgba(5,7,13,0.65)),'
+               + "url('" + dataUrl + "')";
+      splash.style.setProperty('background',          bg,        'important');
+      splash.style.setProperty('background-size',     'cover, cover', 'important');
+      splash.style.setProperty('background-position', 'center, center', 'important');
+      splash.style.setProperty('background-repeat',   'no-repeat, no-repeat', 'important');
+      splash.style.setProperty('backdrop-filter',     'none', 'important');
+      splash.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
       splash.setAttribute('data-cr-desktop-bg', '1');
     } else {
-      splash.style.removeProperty('--cr-desktop-bg');
+      splash.style.removeProperty('background');
+      splash.style.removeProperty('background-size');
+      splash.style.removeProperty('background-position');
+      splash.style.removeProperty('background-repeat');
+      splash.style.removeProperty('backdrop-filter');
+      splash.style.removeProperty('-webkit-backdrop-filter');
       splash.removeAttribute('data-cr-desktop-bg');
     }
     // Reflect in the picker's preview if it exists.
@@ -41304,6 +41321,14 @@ const crL3 = (function(){
         prev.style.backgroundImage = '';
         prev.textContent = 'No image';
       }
+    }
+    // Status line in the modal — visible feedback so user can SEE what's happening.
+    const statusEl = document.getElementById('crTwBgStatus');
+    if(statusEl){
+      statusEl.textContent = dataUrl
+        ? '✓ Applied · ' + Math.round(dataUrl.length / 1024) + ' KB cached'
+        : '· No background';
+      statusEl.style.color = dataUrl ? '#14f195' : 'rgba(180,200,230,0.7)';
     }
   }
 
@@ -41329,12 +41354,15 @@ const crL3 = (function(){
       +     '<div class="tw-bg-row">'
       +       '<div class="tw-bg-preview" id="crTwBgPreview">No image</div>'
       +       '<div class="tw-bg-actions">'
-      +         '<button class="tw-btn" id="crTwBgPick" type="button">Upload image / gif</button>'
-      +         '<input id="crTwBgFile" type="file" accept="image/*" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">'
+      +         '<input id="crTwBgFile" type="file" accept="image/*" '
+      +              'style="display:block;width:100%;font:600 11px ui-monospace,Menlo,monospace;color:#bff7df;'
+      +              'padding:8px;background:rgba(20,241,149,0.10);border:1px dashed rgba(20,241,149,0.45);'
+      +              'border-radius:8px;cursor:pointer">'
       +         '<button class="tw-btn tw-btn-danger" id="crTwBgReset" type="button">Reset to default</button>'
       +       '</div>'
       +     '</div>'
-      +     '<div class="tw-bg-hint">Click <b>Upload</b> or drag an image / gif onto the preview tile. Stored in your browser only (per-wallet). Files &gt; 4 MB rejected.</div>'
+      +     '<div class="tw-bg-hint">Pick an image / gif from disk, or drag one onto the preview tile. Stored in your browser only (per-wallet). Files &gt; 4 MB rejected.</div>'
+      +     '<div class="tw-bg-status" id="crTwBgStatus" style="margin-top:8px;font:600 10px ui-monospace,Menlo,monospace;color:rgba(180,200,230,0.7);min-height:14px"></div>'
       +   '</div>'
       + '</div>';
     document.body.appendChild(win);
@@ -41377,100 +41405,73 @@ const crL3 = (function(){
       grid.appendChild(card);
     });
 
-    // Background upload. v1.0.37 — Use a real button that programmatically
-    // clicks the (visually-hidden) file input.
-    // v1.0.38 — Tightened up after user reported uploads still didn't fire:
-    //   · stopPropagation on the pick click so the modal-backdrop close
-    //     handler can never see it
-    //   · file input is REPLACED with a freshly-cloned node before each
-    //     click (works around Chrome quirk where the change event won't
-    //     fire twice on the same input even if .value was reset)
-    //   · drag-and-drop onto the preview tile as a backup path
-    //   · console.* + toast at each checkpoint so failures are visible
+    // v1.0.43 — Background upload, third try.
+    // Previous tries (v1.0.36 label/for, v1.0.37 button+file.click(),
+    // v1.0.38 button+stopProp+nodeReplace) all relied on programmatic
+    // file.click() — which the user reported never opened the picker.
+    // This version uses a NATIVE VISIBLE file input that the user clicks
+    // directly. Browser opens the picker, change event fires, we read
+    // the file and apply. No programmatic click in the path. Drag-drop
+    // onto the preview tile remains as the backup path.
     let file = win.querySelector('#crTwBgFile');
-    const pick = win.querySelector('#crTwBgPick');
     const preview = win.querySelector('#crTwBgPreview');
+    const status = win.querySelector('#crTwBgStatus');
 
-    function _attachChange(node){
-      node.addEventListener('change', _onPicked);
+    function _setStatus(msg, color){
+      if(status){
+        status.textContent = msg;
+        if(color) status.style.color = color;
+      }
     }
-    function _onPicked(e){
-      const f = e.target.files && e.target.files[0];
-      console.log('[crThemeWin] file change fired:', f);
+
+    function _ingest(f){
       if(!f){
-        if(typeof toast === 'function') toast('No file picked');
+        _setStatus('· No file received', '#ff8888');
         return;
       }
-      _ingest(f);
-      // Reset by replacing the node — Chrome will re-fire change for
-      // the same filename on the next pick.
-      try {
-        const fresh = e.target.cloneNode(false);
-        fresh.value = '';
-        _attachChange(fresh);
-        e.target.parentNode.replaceChild(fresh, e.target);
-        file = fresh;
-      } catch(err){ console.warn('[crThemeWin] reset failed', err); }
-    }
-    function _ingest(f){
-      if(!f) return;
+      _setStatus('▶ Reading ' + f.name + ' (' + Math.round(f.size/1024) + ' KB)…', '#bff7df');
       if(!/^image\//.test(f.type) && !/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(f.name||'')){
-        if(typeof toast === 'function') toast('Not an image file');
+        _setStatus('✗ Not an image — got type: ' + (f.type || '(none)'), '#ff8888');
         return;
       }
       if(f.size > 4 * 1024 * 1024){
-        const msg = 'Image is ' + (f.size/1024/1024).toFixed(1) + ' MB — please pick something under 4 MB.';
-        if(typeof window.crConfirm === 'function'){
-          try { window.crConfirm({ title:'Background too large', body:msg, ok:'OK', cancel:null }); }
-          catch(_){ try { alert(msg); } catch(__){} }
-        } else { try { alert(msg); } catch(_){} }
+        _setStatus('✗ Too large (' + (f.size/1024/1024).toFixed(1) + ' MB > 4 MB cap)', '#ff8888');
         return;
       }
-      if(typeof toast === 'function') toast('Reading ' + f.name + '…');
       const reader = new FileReader();
       reader.onload = () => {
         const url = String(reader.result || '');
-        console.log('[crThemeWin] FileReader loaded, length:', url.length);
         if(!url){
-          if(typeof toast === 'function') toast('Empty file');
+          _setStatus('✗ FileReader returned empty result', '#ff8888');
           return;
         }
         try {
           _saveBg(url);
           _applyBg(url);
-          if(typeof toast === 'function') toast('Background updated');
+          // _applyBg writes its own success status, so we don't override here.
         } catch(err){
-          console.error('[crThemeWin] apply failed', err);
-          if(typeof toast === 'function') toast('Save failed: ' + (err.message || err));
+          _setStatus('✗ Save failed: ' + (err.message || err), '#ff8888');
         }
       };
       reader.onerror = () => {
-        console.error('[crThemeWin] FileReader error', reader.error);
-        if(typeof toast === 'function') toast('Read failed: ' + (reader.error && reader.error.message || 'unknown'));
+        _setStatus('✗ Read failed: ' + (reader.error && reader.error.message || 'unknown'), '#ff8888');
       };
       try { reader.readAsDataURL(f); }
       catch(err){
-        console.error('[crThemeWin] readAsDataURL threw', err);
-        if(typeof toast === 'function') toast('readAsDataURL threw: ' + err.message);
+        _setStatus('✗ readAsDataURL threw: ' + err.message, '#ff8888');
       }
     }
 
-    if(pick && file){
-      pick.addEventListener('click', e => {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log('[crThemeWin] pick clicked, calling file.click()');
-        try { file.click(); }
-        catch(err){
-          console.error('[crThemeWin] file.click() threw', err);
-          if(typeof toast === 'function') toast('Picker open failed: ' + err.message);
-        }
+    if(file){
+      file.addEventListener('change', e => {
+        const f = e.target.files && e.target.files[0];
+        _ingest(f);
+        // Reset .value so picking the same filename again still triggers change.
+        try { e.target.value = ''; } catch(_){}
       });
     }
-    _attachChange(file);
 
-    // Drag-and-drop onto the preview tile — backup path if the picker
-    // ever silently no-ops in a particular browser.
+    // Drag-and-drop onto the preview tile — second path.
     if(preview){
       preview.addEventListener('dragover', e => {
         e.preventDefault();
@@ -41487,7 +41488,6 @@ const crL3 = (function(){
         e.stopPropagation();
         preview.style.outline = '';
         const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-        console.log('[crThemeWin] drop:', f);
         _ingest(f);
       });
     }
