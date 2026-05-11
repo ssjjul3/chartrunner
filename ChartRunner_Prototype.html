@@ -31613,6 +31613,13 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
     try {
       if(window.crLpBillboard && typeof window.crLpBillboard.set === 'function'){
         const _bbName = (() => {
+          // v1.0.51 — Prefer the connected wallet's .sol primary domain
+          // (resolved by crSnsIdentity at connect time, cached on
+          // window._crSnsName). Falls back to the legacy profileName
+          // input, then to 'anon_runner'.
+          try {
+            if(window._crSnsName) return window._crSnsName;
+          } catch(_){}
           try {
             const n = document.getElementById('profileName');
             return (n && n.value) ? n.value : 'anon_runner';
@@ -42008,6 +42015,187 @@ window.crMapsTx = (function(){
   } else {
     setTimeout(_watchPanel, 0);
   }
+})();
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.0.51 — SNS Identity resolver (Frontier Sidetrack: SNS · $5k)
+   ──────────────────────────────────────────────────────────────────
+   Resolves the connected wallet's primary .sol domain via Bonfida's
+   public SNS API (no SDK / no extra bundle to ship). Single HTTP fetch
+   per pubkey, cached 10 min. The lookup hits MAINNET (SNS registry
+   lives there) even though the rest of ChartRunner is on devnet —
+   same pubkey, both networks, so the user's mainnet identity surfaces.
+
+   Wire-up:
+   · crWallet.on(addr) fires this on connect / disconnect — result is
+     stashed on window._crSnsName (or null) so the 500-ms
+     _refreshLightProfile tick can read it synchronously with zero HTTP.
+   · The billboard rotator (see _refreshLightProfile in the main IIFE)
+     prefers SNS over the legacy profileName input, falls back to
+     "anon_runner" when both are empty.
+
+   Also lays the groundwork for M2.6 — once we deploy a parent
+   .chartrunner.sol domain, the next pass swaps this read-only path for
+   a "Claim runner subdomain" flow via @bonfida/spl-name-service's
+   register subdomain ix.
+   ──────────────────────────────────────────────────────────────────*/
+window.crSnsIdentity = (function(){
+  'use strict';
+
+  var API     = 'https://sns-api.bonfida.com';
+  var TTL_MS  = 10 * 60 * 1000;       // 10 minute cache
+  var cache   = new Map();             // pubkey-string → { name, t }
+  var inflight= new Map();             // pubkey-string → Promise (dedupe)
+
+  function _normalize(domain){
+    if(!domain) return null;
+    var s = String(domain).trim();
+    if(!s) return null;
+    return s.endsWith('.sol') ? s : (s + '.sol');
+  }
+
+  // Bonfida's public SNS endpoints have shifted naming over time.
+  // We try the canonical patterns in order; first one to return a
+  // domain wins. Each is wrapped so a 404 from one doesn't abort the
+  // chain.
+  async function _tryEndpoint(url, extract){
+    try {
+      var r = await fetch(url);
+      if(!r.ok) return null;
+      var j = await r.json();
+      return _normalize(extract(j));
+    } catch(err){
+      try { console.warn('[crSnsIdentity] endpoint failed:', url, err.message); } catch(_){}
+      return null;
+    }
+  }
+
+  async function _fetchFav(pubkey){
+    // Try newest worker-proxy path first, then legacy /v2/ path, then
+    // the older /fav-domain/{pubkey} path.
+    var hit;
+    hit = await _tryEndpoint(
+      'https://sns-sdk-proxy.bonfida.workers.dev/favorite-domain/' + encodeURIComponent(pubkey),
+      function(j){ return j && (j.result || j.domain || j.reverse); }
+    );
+    if(hit) return hit;
+    hit = await _tryEndpoint(
+      API + '/v2/user/fav-domain?owner=' + encodeURIComponent(pubkey),
+      function(j){ return j && (j.domain || j.name); }
+    );
+    if(hit) return hit;
+    hit = await _tryEndpoint(
+      API + '/fav-domain/' + encodeURIComponent(pubkey),
+      function(j){ return j && (j.domain || j.name || j.reverse); }
+    );
+    return hit;
+  }
+
+  async function _fetchFirstOwned(pubkey){
+    // Same fallback chain for the owned-domains list.
+    var pick = function(list){
+      if(!Array.isArray(list)) return null;
+      for(var i = 0; i < list.length; i++){
+        var n = _normalize(list[i].domain || list[i].name || list[i]);
+        if(n) return n;
+      }
+      return null;
+    };
+    var hit;
+    hit = await _tryEndpoint(
+      'https://sns-sdk-proxy.bonfida.workers.dev/domains/' + encodeURIComponent(pubkey),
+      function(j){ return pick(j && (j.result || j)); }
+    );
+    if(hit) return hit;
+    hit = await _tryEndpoint(
+      API + '/v2/user/domains?owner=' + encodeURIComponent(pubkey),
+      function(j){ return pick(j); }
+    );
+    if(hit) return hit;
+    hit = await _tryEndpoint(
+      API + '/owners/' + encodeURIComponent(pubkey) + '/domains',
+      function(j){ return pick(j); }
+    );
+    return hit;
+  }
+
+  // Resolve a pubkey to its .sol primary domain (or first-owned as
+  // fallback). Returns Promise<string|null>. Heavily cached.
+  async function resolveName(pubkey){
+    if(!pubkey) return null;
+    var key = String(pubkey);
+    if(!key || key.length < 32) return null;          // not a Solana pubkey
+
+    var hit = cache.get(key);
+    if(hit && (Date.now() - hit.t) < TTL_MS) return hit.name;
+
+    if(inflight.has(key)) return inflight.get(key);
+
+    var promise = (async function(){
+      var name = await _fetchFav(key);
+      if(!name) name = await _fetchFirstOwned(key);
+      cache.set(key, { name: name, t: Date.now() });
+      inflight.delete(key);
+      return name;
+    })();
+    inflight.set(key, promise);
+    return promise;
+  }
+
+  function clear(){ cache.clear(); inflight.clear(); }
+
+  // Sync getter for _refreshLightProfile — returns the cached value
+  // if fresh, null otherwise. Never throws, never fetches.
+  function peek(pubkey){
+    if(!pubkey) return null;
+    var hit = cache.get(String(pubkey));
+    if(!hit) return null;
+    if((Date.now() - hit.t) > TTL_MS) return null;
+    return hit.name;
+  }
+
+  // On wallet connect/disconnect: kick off the lookup once, stash the
+  // result globally so the LED billboard tick reads it synchronously.
+  function _onWalletChange(addr){
+    if(!addr){
+      window._crSnsName = null;
+      return;
+    }
+    // Pre-populate from cache if available (instant for return visits).
+    var cached = peek(addr);
+    window._crSnsName = cached || null;
+    // Fire off the live fetch (will be a no-op if cache is hot).
+    resolveName(addr).then(function(name){
+      window._crSnsName = name || null;
+    }).catch(function(){
+      window._crSnsName = null;
+    });
+  }
+
+  // Hook into crWallet.on() once the wallet IIFE is ready. crWallet.on
+  // fires immediately with the current address (per v0.9.87) so we get
+  // the initial resolve for free.
+  function _wire(){
+    try {
+      if(window.crWallet && typeof window.crWallet.on === 'function'){
+        window.crWallet.on(_onWalletChange);
+        return;
+      }
+    } catch(_){}
+    // crWallet not ready yet — retry once after a tick.
+    setTimeout(_wire, 300);
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', _wire);
+  } else {
+    setTimeout(_wire, 0);
+  }
+
+  return {
+    resolveName: resolveName,
+    peek:        peek,
+    clear:       clear,
+  };
 })();
 </script>
 </body>
