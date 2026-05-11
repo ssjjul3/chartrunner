@@ -27714,7 +27714,14 @@ function _tokFetchLive(id, tf){
     ? fetch('https://api.binance.com/api/v3/klines?symbol=' + pair + '&interval=' + tf + '&limit=60').then(r => r.json()).catch(() => null)
     : Promise.resolve(null);
   const p3 = wantBird ? window.crBirdeye.fetchToken(id).catch(() => null) : Promise.resolve(null);
-  Promise.all([p1, p2, p3]).then(([t24, kl, bird]) => {
+  // v1.0.64 — Fire Birdeye OHLCV in parallel for sol-chain tokens.
+  // Used as the kline fallback when Binance returned nothing (Solana
+  // memecoins) AND as a "best of both" when Birdeye covers a CEX-listed
+  // token (we still prefer Binance klines for deeper history on majors).
+  const p4 = (wantBird && typeof window.crBirdeye.fetchOhlcv === 'function')
+    ? window.crBirdeye.fetchOhlcv(id, tf).catch(() => null)
+    : Promise.resolve(null);
+  Promise.all([p1, p2, p3, p4]).then(([t24, kl, bird, birdOhlcv]) => {
     delete _tokLiveInflight[key];
     // Birdeye result merges over the Binance snapshot. If Binance gave
     // us nothing AND Birdeye did, build the entry from Birdeye alone.
@@ -27733,16 +27740,29 @@ function _tokFetchLive(id, tf){
         closes, klines,
       };
     } else if(bird && bird.price != null){
-      // Birdeye-only path: no candle history (Birdeye's free tier
-      // doesn't expose it cheaply). Sparkline will fall back to synth.
+      // v1.0.64 — Birdeye-only path: now USES Birdeye OHLCV when /defi/
+      // ohlcv returned candles. Sparkline renders real cross-DEX OHLC
+      // for Solana memecoins instead of falling through to synth.
+      const ohClosely  = birdOhlcv && Array.isArray(birdOhlcv.closes) ? birdOhlcv.closes : [];
+      const ohKlines   = birdOhlcv && Array.isArray(birdOhlcv.klines) ? birdOhlcv.klines : [];
       entry = {
         t: Date.now(),
         px: bird.price,
         ch24: bird.ch24 != null ? bird.ch24 : 0,
         vol24: bird.vol24 != null ? bird.vol24 : 0,
-        closes: [],
-        klines: [],
+        closes: ohClosely,
+        klines: ohKlines,
       };
+    }
+    // v1.0.64 — If Binance gave us thin klines (< 7 candles) but
+    // Birdeye OHLCV came in fuller, use Birdeye OHLCV instead. This
+    // covers edge cases like a new Binance listing (USDC pair with
+    // sparse history) where Birdeye's multi-DEX aggregate is richer.
+    if(entry && birdOhlcv && Array.isArray(birdOhlcv.closes)
+       && (!entry.closes || entry.closes.length < 7)
+       && birdOhlcv.closes.length >= 7){
+      entry.closes = birdOhlcv.closes;
+      entry.klines = birdOhlcv.klines;
     }
     if(!entry) return;
     // Always overlay Birdeye-specific fields (holders / mc / liquidity)
@@ -27753,7 +27773,11 @@ function _tokFetchLive(id, tf){
       if(bird.liquidity != null) entry.liquidity = bird.liquidity;
       if(bird.supply    != null) entry.supply    = bird.supply;
       if(bird.logoURI)           entry.logoURI   = bird.logoURI;
-      entry.dataSource = pair ? 'binance+birdeye' : 'birdeye';
+      // v1.0.64 — dataSource tag now reflects whether klines came from
+      // Binance, Birdeye OHLCV, or both. Helps "● live" badges + the
+      // future M0.5 chartrunner_oracle attestation prove provenance.
+      const klSrc = (pair && kl && Array.isArray(kl)) ? 'binance' : (birdOhlcv ? 'birdeye-ohlcv' : 'none');
+      entry.dataSource = pair ? ('binance+birdeye/' + klSrc) : ('birdeye/' + klSrc);
     } else if(pair){
       entry.dataSource = 'binance';
     }
@@ -42714,8 +42738,81 @@ window.crBirdeye = (function(){
     if(typeof toast === 'function') toast(key ? 'Birdeye key saved' : 'Birdeye key cleared');
   }
 
+  // ── v1.0.64 — OHLCV kline fallback ──────────────────────────────────
+  // Phase 1 of the mixed-source candle plan. Binance covers CEX majors;
+  // Birdeye's /defi/ohlcv aggregates across every Solana DEX (Phoenix,
+  // Raydium, Orca, Meteora, Lifinity) so Solana memecoins that have no
+  // CEX listing get real OHLC candles instead of falling through to
+  // synth sparklines. Same { klines, closes } shape the rest of the
+  // codebase already expects on _tokLiveCache entries.
+  const TF_TO_BIRDEYE = { '15m':'15m', '1h':'1H', '4h':'4H', '1D':'1D', '1W':'1W' };
+  const TF_TO_MS = {
+    '15m':900000, '1h':3600000, '4h':14400000, '1D':86400000, '1W':604800000,
+  };
+
+  async function fetchOhlcv(tokenId, tf){
+    var mint = _mintFor(tokenId);
+    if(!mint) return null;
+    var birdTf = TF_TO_BIRDEYE[tf] || '15m';
+    var tfMs   = TF_TO_MS[tf]      || TF_TO_MS['15m'];
+    var limit  = 60;
+    var nowSec = Math.floor(Date.now() / 1000);
+    var from   = nowSec - Math.floor((limit * tfMs) / 1000);
+
+    // OHLCV gets its own cache namespace so price fetches don't evict it.
+    var cacheKey = mint + '|ohlcv|' + birdTf;
+    var hit = cache.get(cacheKey);
+    if(hit && (Date.now() - hit.t) < 60 * 1000) return hit.data;
+    if(inflight.has(cacheKey)) return inflight.get(cacheKey);
+
+    var p = (async function(){
+      try {
+        var url = BASE + '/defi/ohlcv'
+                + '?address='   + encodeURIComponent(mint)
+                + '&type='      + encodeURIComponent(birdTf)
+                + '&time_from=' + from
+                + '&time_to='   + nowSec;
+        var r = await fetch(url, { headers: _headers() });
+        if(!r.ok){
+          try { console.warn('[crBirdeye] ohlcv ' + r.status + ' for', tokenId, birdTf); } catch(_){}
+          inflight.delete(cacheKey);
+          return null;
+        }
+        var j = await r.json();
+        var items = j && j.data && j.data.items;
+        if(!Array.isArray(items) || !items.length){
+          inflight.delete(cacheKey);
+          return null;
+        }
+        // Convert to ChartRunner's kline shape.
+        var klines = items.map(function(it){
+          return {
+            t: (Number(it.unixTime) || 0) * 1000,
+            o: Number(it.o),
+            h: Number(it.h),
+            l: Number(it.l),
+            c: Number(it.c),
+            v: Number(it.v || 0),
+          };
+        }).filter(function(b){ return !isNaN(b.o) && !isNaN(b.c); });
+        var closes = klines.map(function(k){ return k.c; });
+        var data = { klines: klines, closes: closes };
+        cache.set(cacheKey, { data: data, t: Date.now() });
+        inflight.delete(cacheKey);
+        return data;
+      } catch(err){
+        try { console.warn('[crBirdeye] ohlcv threw:', err.message); } catch(_){}
+        inflight.delete(cacheKey);
+        return null;
+      }
+    })();
+    inflight.set(cacheKey, p);
+    return p;
+  }
+
   return {
     fetchToken: fetchToken,
+    fetchOhlcv: fetchOhlcv,
     peek:       peek,
     setApiKey:  setApiKey,
   };
