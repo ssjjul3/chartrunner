@@ -938,6 +938,18 @@
     font-variant-numeric:tabular-nums;margin-top:2px;line-height:1.1}
   #crLightProfile .lp-wcard .sub{font-size:9px;color:rgba(180,200,230,0.5);
     margin-top:3px;letter-spacing:.2px}
+  /* v1.0.58 — LI.FI Fund button on the $CRDS wallet card. Sits right
+     of the card key; opens the Jumper iframe modal below. */
+  #crLightProfile .lp-wcard-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
+  #crLightProfile .lp-fund{appearance:none;cursor:pointer;
+    background:rgba(20,241,149,0.10);border:1px solid rgba(20,241,149,0.45);
+    color:#bff7df;border-radius:6px;
+    font:700 9px ui-monospace,Menlo,Monaco,monospace;
+    padding:3px 7px;letter-spacing:.4px;text-transform:uppercase;
+    transition:background .12s ease,border-color .12s ease,color .12s ease}
+  #crLightProfile .lp-fund:hover{background:rgba(20,241,149,0.22);
+    border-color:rgba(20,241,149,0.85);color:#fff;
+    box-shadow:0 0 12px rgba(20,241,149,0.45)}
   #crLightProfile .lp-wpos{margin-top:6px;display:flex;flex-direction:column;gap:4px}
   #crLightProfile .lp-wposrow{display:flex;justify-content:space-between;
     align-items:center;font-size:11px;color:var(--fg)}
@@ -6144,11 +6156,21 @@
         </div>
       </div>
     </div>
-    <!-- Wallet tab — $CRDS · this run / $RUN · persisted / Open positions. -->
+    <!-- Wallet tab — $CRDS · this run / $RUN · persisted / Open positions.
+         v1.0.58 — "+ Fund" button on the $CRDS card opens the LI.FI
+         cross-chain funding widget (Jumper Exchange iframe). Lets the
+         player route ETH / BSC / Polygon → SOL or USDC straight to
+         their connected ChartRunner wallet. -->
     <div class="lp-tabpane" data-lp-pane="wallet" style="display:none">
       <div class="lp-walletcards">
         <div class="lp-wcard">
-          <div class="k">$CRDS · this run</div>
+          <div class="lp-wcard-head">
+            <span class="k">$CRDS · this run</span>
+            <button class="lp-fund" id="crLpFundBtn" type="button"
+                    title="Fund this wallet from any chain via LI.FI (Jumper Exchange)">
+              + Fund
+            </button>
+          </div>
           <div class="v" id="crLpWCrds" style="color:#9b8cff">0</div>
           <div class="sub">Earned this session</div>
         </div>
@@ -42416,6 +42438,158 @@ window.crBirdeye = (function(){
     peek:       peek,
     setApiKey:  setApiKey,
   };
+})();
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.0.58 — LI.FI cross-chain funding widget (Frontier · Superteam Germany)
+   ──────────────────────────────────────────────────────────────────
+   Embeds Jumper Exchange (LI.FI's own frontend, full LI.FI routing under
+   the hood) as a modal iframe. Pre-configured for ChartRunner:
+     · destination chain = Solana
+     · destination address = connected ChartRunner wallet (auto-filled)
+     · default destination token = USDC (matches our broker default;
+       USDT also pre-selectable per v1.0.55)
+
+   Why Jumper rather than rolling our own widget:
+     · Jumper IS LI.FI's hosted product; routing is identical
+     · Single iframe URL — no React dependency, no SDK bundle
+     · Maintained by LI.FI; chain support + routes update automatically
+     · Wallet handoff: opens Phantom directly when user clicks Connect
+       inside the iframe (Solana SOL/USDC destination flow)
+
+   Track scope (Build with LI.FI · Superteam Germany · $2.5k USDC):
+     "Integrate LI.FI to power cross-chain functionality in your Solana
+      app. Cross-chain swaps, deposits, multi-step txs, complex DeFi
+      flows, AI agents executing transactions, any novel use-case."
+
+   ChartRunner's "novel use-case": LI.FI is the trading-wallet funding
+   layer. Players topping up from ETH/BSC/Polygon land directly in the
+   wallet that powers the in-game broker chassis (Jupiter / Jito) — no
+   intermediate CEX hop.
+   ──────────────────────────────────────────────────────────────────*/
+window.crLifiFunding = (function(){
+  'use strict';
+
+  // Jumper Exchange URL parameters (LI.FI's own frontend).
+  // Solana chain id in LI.FI = '1151111081099710' (Solana mainnet).
+  // For the demo we default destination = USDC on Solana; user can
+  // override the destination token inside the iframe UI.
+  const SOLANA_CHAIN_ID = '1151111081099710';
+  const USDC_SOLANA     = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+  function _jumperUrl(toAddress){
+    var u = new URL('https://jumper.exchange/');
+    u.searchParams.set('toChain',  SOLANA_CHAIN_ID);
+    u.searchParams.set('toToken',  USDC_SOLANA);
+    if(toAddress) u.searchParams.set('toAddress', toAddress);
+    // Theme — jumper supports light/dark via this param.
+    u.searchParams.set('theme', 'dark');
+    return u.toString();
+  }
+
+  function _walletPubkey(){
+    try {
+      if(window.crWallet && typeof window.crWallet.get === 'function'){
+        return window.crWallet.get() || null;
+      }
+    } catch(_){}
+    return null;
+  }
+
+  let _built = false;
+  function _build(){
+    if(_built) return;
+    if(document.getElementById('crLifiModal')){ _built = true; return; }
+    const m = document.createElement('div');
+    m.id = 'crLifiModal';
+    m.style.cssText = [
+      'position:fixed','inset:0','z-index:99800','display:none',
+      'align-items:center','justify-content:center',
+      'background:rgba(0,0,0,0.65)','backdrop-filter:blur(4px)',
+      '-webkit-backdrop-filter:blur(4px)',
+    ].join(';');
+    m.innerHTML = ''
+      + '<div id="crLifiCard" style="'
+      +     'width:min(520px,94vw);height:min(720px,90vh);'
+      +     'background:#0a0f1c;border:1px solid rgba(20,241,149,0.45);'
+      +     'border-radius:12px;overflow:hidden;'
+      +     'box-shadow:0 24px 60px rgba(0,0,0,0.7),0 0 30px rgba(20,241,149,0.18);'
+      +     'display:flex;flex-direction:column">'
+      +   '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;'
+      +              'border-bottom:1px solid rgba(20,241,149,0.25);'
+      +              'background:rgba(8,12,22,0.7);color:#bff7df;'
+      +              'font:700 12px ui-monospace,Menlo,Monaco,monospace;letter-spacing:1px">'
+      +     '<span style="flex:1">⚡ FUND VIA LI.FI · ANY-CHAIN → SOLANA</span>'
+      +     '<button id="crLifiClose" type="button" title="Close"'
+      +            ' style="appearance:none;background:transparent;border:0;'
+      +                   'color:#bff7df;font-size:18px;cursor:pointer;'
+      +                   'padding:2px 8px;border-radius:4px">×</button>'
+      +   '</div>'
+      +   '<iframe id="crLifiFrame" style="flex:1;border:0;background:#0a0f1c" '
+      +          'allow="clipboard-read; clipboard-write; payment *" '
+      +          'sandbox="allow-scripts allow-forms allow-popups allow-same-origin allow-popups-to-escape-sandbox allow-storage-access-by-user-activation"></iframe>'
+      +   '<div style="padding:8px 12px;border-top:1px solid rgba(20,241,149,0.15);'
+      +              'background:rgba(8,12,22,0.7);color:rgba(180,200,230,0.55);'
+      +              'font:600 9px ui-monospace,Menlo,Monaco,monospace;'
+      +              'letter-spacing:.3px;line-height:1.3">'
+      +     'Cross-chain routing by LI.FI · Jumper Exchange. Destination defaults to '
+      +     'USDC on Solana, your ChartRunner wallet. Switch destination token inside '
+      +     'the iframe. Wallet popups open in a new tab.'
+      +   '</div>'
+      + '</div>';
+    document.body.appendChild(m);
+
+    m.querySelector('#crLifiClose').addEventListener('click', close);
+    m.addEventListener('click', function(e){ if(e.target === m) close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key === 'Escape' && m.style.display === 'flex') close();
+    });
+    _built = true;
+  }
+
+  function open(){
+    _build();
+    const m = document.getElementById('crLifiModal');
+    const f = document.getElementById('crLifiFrame');
+    if(!m || !f) return;
+    f.src = _jumperUrl(_walletPubkey());
+    m.style.display = 'flex';
+    if(typeof toast === 'function'){
+      const pk = _walletPubkey();
+      toast(pk ? 'Funding ' + (pk.slice(0,4) + '…' + pk.slice(-4)) + ' · powered by LI.FI'
+               : 'Connect a wallet first for auto-fill · widget still works');
+    }
+  }
+
+  function close(){
+    const m = document.getElementById('crLifiModal');
+    if(!m) return;
+    m.style.display = 'none';
+    // Clear the iframe src so we don't keep the LI.FI session alive
+    // while the modal is closed — better for privacy + perf.
+    const f = document.getElementById('crLifiFrame');
+    if(f) f.src = 'about:blank';
+  }
+
+  // Bind the "+ Fund" button when the lite profile DOM is ready.
+  function _wire(){
+    const btn = document.getElementById('crLpFundBtn');
+    if(!btn){ setTimeout(_wire, 500); return; }
+    if(btn._lifiWired) return;
+    btn._lifiWired = true;
+    btn.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      open();
+    });
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', _wire);
+  } else {
+    setTimeout(_wire, 0);
+  }
+
+  return { open: open, close: close };
 })();
 </script>
 </body>
