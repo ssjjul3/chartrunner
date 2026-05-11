@@ -25846,8 +25846,13 @@ function _wbInstallApp(app){
       '<div class="ico">' + app.icon + '</div>' +
       '<div class="lbl">' + app.name + '</div>' +
       '<div class="kbd">Custom</div>';
+    // v1.0.41 — Custom-app icons toggle on second click (matches RUN-tube
+    // + the rebound built-in icons in the OS-icon click loop below).
     btn.addEventListener('click', () => {
-      try { if(typeof osOpenWindowMulti === 'function') osOpenWindowMulti(app.id); } catch(_){}
+      try {
+        if(typeof osToggleWindowMulti === 'function') osToggleWindowMulti(app.id);
+        else if(typeof osOpenWindowMulti === 'function') osOpenWindowMulti(app.id);
+      } catch(_){}
     });
     grid.appendChild(btn);
   }
@@ -36141,6 +36146,26 @@ function log(msg){
     if(statusEl) statusEl.textContent = 'ready';
     syncDock();
   };
+  // v1.0.41 — Toggle helper. Like osOpenWindowMulti, but if the window
+  // is already open it CLOSES it instead. Used by the desktop icons +
+  // dock buttons so a second click on the same app closes it (matches
+  // the existing RUN-tube behavior). Programmatic opens (tutorial,
+  // post-action navigation) keep using osOpenWindowMulti directly so
+  // they don't accidentally close a window the caller wanted open.
+  window.osToggleWindowMulti = function(prog){
+    if(prog === 'chartrunner') prog = 'run';
+    const el = document.getElementById('win-' + prog);
+    if(!el) return;
+    if(el.classList.contains('on')){
+      el.classList.remove('on');
+      el.classList.remove('focus');
+      const statusEl = document.getElementById('osStatus');
+      if(statusEl) statusEl.textContent = 'ready';
+      syncDock();
+      return;
+    }
+    osOpenWindowMulti(prog);
+  };
   // Override the legacy single-window helper to use multi-mode by default.
   // Old call sites get the new behaviour transparently (additive open).
   try{
@@ -36766,18 +36791,26 @@ plot(diff, color=color.aqua)`,
       btn.classList.toggle('active', !!(win && win.classList.contains('on')));
     });
   }
+  // v1.0.41 — Dock buttons toggle (second click closes), matching RUN-tube.
   document.querySelectorAll('#crDock .dockBtn').forEach(btn => {
-    btn.addEventListener('click', () => osOpenWindowMulti(btn.dataset.prog));
+    btn.addEventListener('click', () => osToggleWindowMulti(btn.dataset.prog));
   });
 
   // Re-bind desktop icons in multi-mode (the v0.7b binding is single-mode
   // and now points at our overridden osOpenWindow — but new icons added
   // after the original wiring need their own listener).
+  // v1.0.41 — Replace the legacy click listener with a toggle so a second
+  // click on an open app's icon closes the window (matches RUN-tube).
   document.querySelectorAll('#osGrid .os-icon').forEach(btn => {
     if(btn._multiWired) return;
     btn._multiWired = true;
-    // The legacy listener still calls osOpenWindow which now routes to
-    // multi-open. We just need to make sure listener exists — it does.
+    // Re-wire click as toggle. We use the capture phase so we can short-
+    // circuit the legacy bubbling listener that was added in v0.7b.
+    btn.addEventListener('click', (e) => {
+      e.stopImmediatePropagation();
+      const prog = btn.dataset.prog;
+      if(prog) osToggleWindowMulti(prog);
+    }, true);
     // Add a hover preview hint by selecting on hover.
     btn.addEventListener('mouseenter', () => {
       document.querySelectorAll('#osGrid .os-icon.selected').forEach(b => b.classList.remove('selected'));
