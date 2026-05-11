@@ -40463,17 +40463,26 @@ const crL3 = (function(){
   // toward the cursor. If a widget/window is under the cursor, destroy it
   // on impact. App icons under the cursor get the immune floater. Empty
   // space just shoots a vanity bolt off-screen.
-  // ENTER (v1.0.10) → "click/open" — synthesize a real mouse-click event
-  // on whatever is under the cursor. This opens app icons, presses
-  // buttons inside widgets, follows links, etc. — same as a real click,
-  // dispatched so both native AND library (React, etc.) handlers fire.
+  // ENTER (v1.0.10 / v1.0.45) → "click/open" — synth-click whatever sits
+  // under the AVATAR (not the cursor). Opens app icons, presses buttons,
+  // follows links — same as a real click, dispatched so both native AND
+  // library (React, etc.) handlers fire.
+  // v1.0.45 — Click point is now the avatar's center, not the mouse
+  // cursor. The avatar IS the player on the desktop; Enter should act
+  // where the player stands, not wherever the mouse happens to rest.
+  function _avatarCenter(){
+    const av = document.querySelector('canvas[data-cr-os-invader]');
+    if(!av) return null;
+    const r = av.getBoundingClientRect();
+    return { x: r.left + r.width/2, y: r.top + r.height/2 };
+  }
   function _onKeyDown(e){
     // ── ENTER branch first (no cooldown, no fire bolt) ────────────────
     // v1.0.16 — Avatar-ONLY click. Previously a focused button would
     // also fire when Enter was pressed (double action). We now intercept
     // Enter at capture phase, blur the focused element so it can't take
     // the keypress, and dispatch the synthetic click ONLY on whatever
-    // sits under the cursor. INPUT/TEXTAREA/contenteditable still bypass
+    // sits under the AVATAR. INPUT/TEXTAREA/contenteditable still bypass
     // (so typing in form fields keeps working).
     if(e.key === 'Enter' || e.code === 'Enter'){
       if(!_splashOn()) return;
@@ -40481,7 +40490,15 @@ const crL3 = (function(){
       const tagE = (document.activeElement && document.activeElement.tagName) || '';
       if(tagE === 'INPUT' || tagE === 'TEXTAREA' ||
          (document.activeElement && document.activeElement.isContentEditable)) return;
-      const elE = document.elementFromPoint(_cursor.x, _cursor.y);
+      // v1.0.45 — Resolve the click point from the avatar, not the mouse.
+      const aim = _avatarCenter() || { x: _cursor.x, y: _cursor.y };
+      // Hide the avatar overlay momentarily so elementFromPoint sees the
+      // underlying target (otherwise it'd just hit the avatar canvas).
+      const av = document.querySelector('canvas[data-cr-os-invader]');
+      const prevDisp = av ? av.style.display : null;
+      if(av) av.style.display = 'none';
+      const elE = document.elementFromPoint(aim.x, aim.y);
+      if(av) av.style.display = (prevDisp || '');
       if(!elE) return;
       // Hard-suppress: kill default + bubble + sibling listeners so a
       // focused button can't double-fire on the same Enter keypress.
@@ -40498,7 +40515,7 @@ const crL3 = (function(){
       } catch(_){}
       try {
         const opts = { bubbles:true, cancelable:true, view:window,
-                       clientX:_cursor.x, clientY:_cursor.y, button:0 };
+                       clientX:aim.x, clientY:aim.y, button:0 };
         elE.dispatchEvent(new MouseEvent('mousedown', opts));
         elE.dispatchEvent(new MouseEvent('mouseup',   opts));
         elE.dispatchEvent(new MouseEvent('click',     opts));
