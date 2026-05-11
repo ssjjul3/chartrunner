@@ -32,9 +32,52 @@
  *    https://earn.superteam.fun/listings/build-with-jupiter/
  * ──────────────────────────────────────────────────────────────────────── */
 
-// Default token pair: SOL → USDC. Override via order.mintIn / order.mintOut.
-const MINT_SOL  = 'So11111111111111111111111111111111111111112';
-const MINT_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+// Default token pair: SOL → quote-asset (USDC or USDT).
+// v1.0.55 — Added MINT_USDT + setQuoteAsset() so the broker can settle
+// into either USDC (default) or USDT. Most Solana pairs have deep USDT
+// liquidity via Jupiter aggregation, and Tether is the dominant
+// stablecoin globally — making USDT a first-class option doubles the
+// onramp surface for international players.
+export const MINT_SOL  = 'So11111111111111111111111111111111111111112';
+export const MINT_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+export const MINT_USDT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+
+const QUOTE_ASSETS = {
+  usdc: { mint: MINT_USDC, decimals: 6, label: 'USDC' },
+  usdt: { mint: MINT_USDT, decimals: 6, label: 'USDT' },
+};
+
+let _quoteAsset = 'usdc';
+
+/** Switch the default quote asset for all subsequent submit/quote calls
+ *  that don't pass an explicit mintIn / mintOut. Persists to localStorage. */
+export function setQuoteAsset(key){
+  const k = String(key||'').toLowerCase();
+  if(!QUOTE_ASSETS[k]) throw new Error('Unknown quote asset: ' + key);
+  _quoteAsset = k;
+  try { if(typeof localStorage !== 'undefined') localStorage.setItem('cr_quote_asset_v1', k); } catch(_){}
+  return QUOTE_ASSETS[k];
+}
+export function getQuoteAsset(){ return QUOTE_ASSETS[_quoteAsset]; }
+export function listQuoteAssets(){
+  return Object.keys(QUOTE_ASSETS).map(k => ({ key: k, ...QUOTE_ASSETS[k] }));
+}
+// Restore persisted quote asset on first import.
+try {
+  if(typeof localStorage !== 'undefined'){
+    const k = localStorage.getItem('cr_quote_asset_v1');
+    if(k && QUOTE_ASSETS[k]) _quoteAsset = k;
+  }
+} catch(_){}
+
+/** Look up decimals for a mint we know about. SOL=9, USDC/USDT=6.
+ *  For arbitrary mints, callers pass `decimals` explicitly. */
+export function decimalsFor(mint){
+  if(mint === MINT_SOL)  return 9;
+  if(mint === MINT_USDC) return 6;
+  if(mint === MINT_USDT) return 6;
+  return 6; // sensible default for SPL tokens
+}
 
 let _seq = 1;
 let _endpoint = {
@@ -60,17 +103,18 @@ function _quoteUrl({ inputMint, outputMint, amount, slippageBps }){
 }
 
 /** Fetch a quote — exposed for game UI to preview the route before
- *  arming a Blue Laser trade. Returns the full Jupiter quoteResponse. */
+ *  arming a Blue Laser trade. Returns the full Jupiter quoteResponse.
+ *
+ *  v1.0.55: when mintIn / mintOut are omitted, the active quote asset
+ *  (USDC default, USDT switchable) is used as the non-SOL side. */
 export async function quote({ side='buy', size, mintIn, mintOut, slippageBps=50 } = {}){
-  // For 'buy' SOL with USDC: input = USDC, output = SOL.
-  // For 'sell' SOL into USDC: input = SOL, output = USDC.
   const isBuy      = side === 'buy';
-  const inputMint  = mintIn  || (isBuy ? MINT_USDC : MINT_SOL);
-  const outputMint = mintOut || (isBuy ? MINT_SOL  : MINT_USDC);
-  // Jupiter expects `amount` in raw token units (no decimal scaling).
-  // Caller passes `size` in whole-token units; we assume SOL=9 decimals,
-  // USDC=6 decimals. Real production: query the mint's decimals via RPC.
-  const inDecimals = (inputMint === MINT_SOL) ? 9 : 6;
+  const qa         = getQuoteAsset().mint;            // USDC or USDT
+  // For 'buy' SOL with stables: input = stable, output = SOL.
+  // For 'sell' SOL into stables: input = SOL, output = stable.
+  const inputMint  = mintIn  || (isBuy ? qa      : MINT_SOL);
+  const outputMint = mintOut || (isBuy ? MINT_SOL : qa);
+  const inDecimals = decimalsFor(inputMint);
   const rawAmount  = Math.round(size * Math.pow(10, inDecimals));
   const r = await fetch(_quoteUrl({ inputMint, outputMint, amount: rawAmount, slippageBps }));
   if(!r.ok) throw new Error('jupiter quote ' + r.status);
@@ -156,26 +200,31 @@ export const jupiterBroker = {
       try { console.warn('[jupiter] confirmTransaction soft-fail:', err.message); } catch(_){}
     }
 
-    // 5. Synthesize the fill shape.
-    const inDec  = ((order.mintIn  || (order.side==='buy' ? MINT_USDC : MINT_SOL)) === MINT_SOL) ? 9 : 6;
-    const outDec = ((order.mintOut || (order.side==='buy' ? MINT_SOL  : MINT_USDC)) === MINT_SOL) ? 9 : 6;
+    // 5. Synthesize the fill shape. v1.0.55 — decimal lookup via
+    //    decimalsFor() so USDT/USDC/SOL all resolve correctly.
+    const qa     = getQuoteAsset().mint;
+    const inMint = order.mintIn  || (order.side==='buy' ? qa      : MINT_SOL);
+    const outMint= order.mintOut || (order.side==='buy' ? MINT_SOL : qa);
+    const inDec  = decimalsFor(inMint);
+    const outDec = decimalsFor(outMint);
     const inAmt  = Number(q.inAmount)  / Math.pow(10, inDec);
     const outAmt = Number(q.outAmount) / Math.pow(10, outDec);
     const fillPrice = (order.side === 'buy')
-      ? (inAmt / outAmt)   // USDC in / SOL out = USDC per SOL
-      : (outAmt / inAmt);  // USDC out / SOL in = USDC per SOL
+      ? (inAmt / outAmt)   // stable in / SOL out = stable per SOL
+      : (outAmt / inAmt);  // stable out / SOL in = stable per SOL
 
     return {
-      id:        'jup-' + (_seq++),
-      side:      order.side,
-      size:      order.size,
-      price:     fillPrice,
-      ts:        Date.now(),
-      venue:     'jupiter',
-      txSig:     sig,
-      routePlan: q.routePlan,
-      inAmount:  inAmt,
-      outAmount: outAmt,
+      id:         'jup-' + (_seq++),
+      side:       order.side,
+      size:       order.size,
+      price:      fillPrice,
+      ts:         Date.now(),
+      venue:      'jupiter',
+      txSig:      sig,
+      routePlan:  q.routePlan,
+      inAmount:   inAmt,
+      outAmount:  outAmt,
+      quoteAsset: getQuoteAsset().label,  // 'USDC' or 'USDT'
     };
   },
 

@@ -32,7 +32,15 @@
  *    https://earn.superteam.fun/listings/build-on-top-of-jito-infrastructure/
  * ──────────────────────────────────────────────────────────────────────── */
 
-import { quote as jupiterQuote, buildSwapTx as jupiterBuildSwapTx } from './jupiter.js';
+import {
+  quote as jupiterQuote,
+  buildSwapTx as jupiterBuildSwapTx,
+  getQuoteAsset,
+  decimalsFor,
+  MINT_SOL,
+  MINT_USDC,
+  MINT_USDT,
+} from './jupiter.js';
 
 // Jito's 8 rotating tip accounts. Picked at random per submission so
 // all 8 receive traffic (Jito's docs recommend round-robin).
@@ -238,13 +246,13 @@ function _sigOf(tx, web3){
 }
 
 function _fillRecord({ order, q, swapSig, tipSig, tipLamports, bundleId }){
-  // Same fillPrice derivation as Jupiter.
-  const MINT_SOL  = 'So11111111111111111111111111111111111111112';
-  const MINT_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-  const inMint  = order.mintIn  || (order.side==='buy' ? MINT_USDC : MINT_SOL);
-  const outMint = order.mintOut || (order.side==='buy' ? MINT_SOL  : MINT_USDC);
-  const inDec   = (inMint  === MINT_SOL) ? 9 : 6;
-  const outDec  = (outMint === MINT_SOL) ? 9 : 6;
+  // v1.0.55 — Decimal + quote-asset resolution shared with jupiter.js
+  // so USDC ↔ USDT switch is transparent.
+  const qa      = getQuoteAsset().mint;
+  const inMint  = order.mintIn  || (order.side==='buy' ? qa      : MINT_SOL);
+  const outMint = order.mintOut || (order.side==='buy' ? MINT_SOL : qa);
+  const inDec   = decimalsFor(inMint);
+  const outDec  = decimalsFor(outMint);
   const inAmt   = Number(q.inAmount)  / Math.pow(10, inDec);
   const outAmt  = Number(q.outAmount) / Math.pow(10, outDec);
   const fillPrice = (order.side === 'buy') ? (inAmt / outAmt) : (outAmt / inAmt);
@@ -262,5 +270,6 @@ function _fillRecord({ order, q, swapSig, tipSig, tipLamports, bundleId }){
     routePlan:   q.routePlan,
     inAmount:    inAmt,
     outAmount:   outAmt,
+    quoteAsset:  getQuoteAsset().label,  // 'USDC' or 'USDT'
   };
 }

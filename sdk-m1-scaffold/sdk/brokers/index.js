@@ -68,4 +68,16 @@ export function restoreBroker(){
   return _current;
 }
 
-export { mockBroker, binancePaperBroker, phoenixBroker };
+// v1.0.55 — Re-export quote-asset helpers from jupiter.js. The Tether
+// Frontier Track ($10k) made USDT a first-class settle asset alongside
+// USDC; both jupiter + jito brokers consume the runtime selection.
+export {
+  setQuoteAsset,
+  getQuoteAsset,
+  listQuoteAssets,
+  MINT_SOL,
+  MINT_USDC,
+  MINT_USDT,
+} from './jupiter.js';
+
+export { mockBroker, binancePaperBroker, phoenixBroker, jupiterBroker, jitoBroker };
