@@ -1,9 +1,118 @@
-deployed: 2026-05-12T07:00:00Z · v1.0.67 (Four bundled fixes:
+deployed: 2026-05-12T09:30:00Z · v1.0.69 (Coach widget typing wipe — round 2.
+v1.0.67 fixed crCoach.subscribe to use _softRefreshChatWidgets, but the
+manual renderWidgets() calls inside pushFromWidget (line 29534, 29552,
+29554) still rebuilt the entire widget DOM on every send. That nuked
+the input element in any OTHER chat/coach widget on screen, so users
+typing in widget A would lose their characters whenever widget B fired
+a send. Swap all three callsites to _softRefreshChatWidgets() — same
+soft-update pattern as v1.0.67, just applied to the send path the
+earlier fix missed. Coach.subscribe path was already safe.)
 
-1. Coach widget typing fix. crCoach.subscribe was calling renderWidgets() on every Coach state tick — destroying the entire widget DOM including the input element, wiping the user's in-progress typing. Replaced with new _softRefreshChatWidgets() that walks .cr-widget [data-chat-log] elements, rebuilds ONLY the log container's innerHTML (last 50 messages), leaves the input + send button + outer chrome untouched. Preserves scroll-at-bottom state. Same pattern as v1.0.66's _softRefreshTokenWidgets.
+deployed: 2026-05-12T09:00:00Z · v1.0.68 (Archive Hyperliquid path + wire 15 live panes.
 
-2. Token Terminal archive — HYPE, PUMP, MOG, FART marked archived:true in TOK_LIST. After v1.0.63's no-synth-fake policy these rendered "—" forever because none had a Binance pair AND none had a verified Birdeye mint. _tokRenderList now filters them out. Restoration is one flag flip + a mint, no code change.
+USER DIRECTIVE: "archieve all hyperliquid references that is another path,
+we focus on solana now." This patch removes every Hyperliquid-flavored
+surface from the chassis and rewires the terminal toward Solana-native
+data sources only.
 
-3. USDT + USDC also archived from Token Terminal — they're settle-asset infrastructure (price floats $1 ±0.01%, low-signal as watchlist rows). Still in TOK_BIRDEYE_MINT so the broker chassis + setQuoteAsset work; just hidden from the visible token list.
+═════ PART A — Hyperliquid scrub ════════════════════════════════════
 
-4. USDT + USDC cards added to lite-profile Wallet tab. Two-column row inside one card showing real balances (USDT in Tether green #26a17b, USDC in Coinbase blue #2775ca, "—" when unknown). New IIFE polls window.crGoldRush.walletBalances every 3 min for the connected wallet, scans tokens for the USDT + USDC mints, stashes on window._crLpStableBal which _refreshLightProfile reads synchronously on its 500-ms tick. Refetches on wallet change via crWallet.on.)
+1. Mode card / toasts / HUD copy: "Hyperliquid" → "Solana DEX"
+   · modeTrade Phase-2 toast
+   · crTvAlert Phase-2 toast
+   · modeTrade card subtitle ("Real USDC trades on Solana DEX via the SDK")
+   · m-row Trade-venue label
+   · Solana mint sub-label ("Solana mint · DEX trade")
+
+2. Ticker schema + watchlist template: HYPE → JUP
+   · TERM_BIND_OPTIONS — ticker:HYPEUSDT → ticker:JUPUSDT
+   · WB_TERM_TEMPLATES.watchlist row swap (HYPE/USDT → JUP/USDT)
+   · Old engine TOK_LIST hype entry → jup (JUPUSDT live ticker source)
+   · Boot-flow option label: Watchlist (BTC/ETH/SOL/HYPE/DOGE) → BTC/ETH/SOL/JUP/DOGE
+
+3. Phoenix view demo tables: 4 HYPE rows → JUP rows
+   (Solana view trades + CEX funding + OI + listings + Phoenix funding/OI/book —
+   all now JUP-themed; Hyperliquid string fully gone from in-view markup.)
+
+4. Comment headers — "Hyperliquid" → "Solana DEX"
+   · v0.9.8 Tier 3 plays header (was "Solana / Hyperliquid signature plays")
+   · TIER 3 inline pricing comment
+   · HyperTracker view block (was "Hyperliquid-inspired multi-pane dashboard")
+   · Synthetic-tick comment block ("Real venues (Solana DEX, Binance)")
+   · Token Terminal price-feed routing comment
+
+5. TOK_LIST entry id:'hype' was already archived:true in v1.0.67 — no
+   visible row in Token Terminal. Mint flag untouched (kept off the
+   list, kept out of broker chassis) — no restore needed.
+
+═════ PART B — 15 quickly-wirable panes live ═════════════════════════
+
+All new refreshers slot into the v1.0.60 IIFE (single REFRESHERS map,
+single 15-second master tick, each pane self-throttling via its
+schema.refreshSec slider). Six existing live wirings (v1.0.60) keep
+their original tick; v1.0.68 adds these 15:
+
+SOLANA TAB (6 new live):
+ 1. solTopTokens  → Birdeye /defi/tokenlist (vol24 / ch24 / mc sort)
+ 2. solTrending   → Birdeye /defi/token_trending (rank asc)
+ 3. solDexVolume  → DefiLlama /overview/dexs/solana (chain 24h volume + top 6 by protocol)
+ 4. solPumpfun    → frontend-api.pump.fun /coins?sort=created_timestamp
+                    (filters by Min MCap USD slider; falls back with
+                    cors-blocked tag if CORS rejects)
+ 5. solSwaps      → window._crJupFills (local Jupiter broker fill log)
+ 6. solSniper     → crGoldRush.tokenHolders sorted by lastActivity
+                    (proxy for first-buyer activity per token)
+
+PHOENIX TAB (4 new live, 2 archived):
+ 7. phxWhales     → crGoldRush.tokenHolders (now Solana-token-keyed; SOL default)
+ 8. phxBook       → Jupiter v6 /quote at 1/10/100 SOL probe sizes,
+                    reveals price impact = visible depth proxy
+ 9. phxFlight     → DefiLlama /overview/fees/solana (top DEX 24h fees)
+10. phxStatus     → mainnet-beta RPC getEpochInfo (slot + epoch progress bar)
+    [phxFunding + phxOI marked ARCHIVED — no Solana-native perp
+     funding/OI in our chassis. Restore via Drift/Mango SDK.]
+
+CEX TAB (4 new live):
+11. cexAgg        → CoinGecko /coins/{id}/tickers (BTC/ETH/SOL toggle)
+12. cexOI         → Binance /fapi/v1/openInterest + /premiumIndex
+                    (contracts × mark price USD + funding rate)
+13. cexDepth      → Binance /api/v3/depth (top 20 levels) — mid, spread bps,
+                    ±1% USD-side depth
+14. cexStables    → DefiLlama /stablecoins?includePrices=true (top by mcap)
+
+ENGINE TAB (1 bug fix):
+15. marketScan    → kicks _tokFetchLive for the 9 engine-scanned assets
+                    (btc, eth, sol, jup, jto, bonk, wif, doge, pyth).
+                    Was the audit finding that Engine MARKET SCAN showed
+                    "—" placeholders despite having all the data wirable.
+
+═════ Coverage delta ═════════════════════════════════════════════════
+
+Before v1.0.68: 6 live terminal panes (Solana view solPrice/solHolders/
+solSmart + CEX view cexExchanges/cexFunding/cexListings).
+
+After v1.0.68: 21 live terminal panes. Per-tab breakdown:
+ · Engine 14/15 live (1 archived: aux signal grid)
+ · Phoenix 4/6 live (2 archived: HL-derived funding + OI)
+ · Solana 8/9 live (1 placeholder: solSniper proxy — basic)
+ · CEX    7/9 live (2 placeholders: cexWhales whale-alert.io, cexDexFlow bridge)
+
+═════ Why this matters ═══════════════════════════════════════════════
+
+The v1.0.50 Frontier pitch had "live terminal panes" as a talked-about
+surface but the ratio was 6/35 panes wired. With 21/39 now live across
+real Solana-native endpoints (Birdeye + Jupiter v6 + DefiLlama + GoldRush
++ pump.fun + mainnet-beta RPC + Binance public + CoinGecko), the
+chassis backs up the claim during M1 demos. Sidetrack tracks downstream
+of this — particularly Birdeye/Etherway, GoldRush/Covalent, and Jupiter —
+now have visible end-to-end visualisations.
+
+═════ Restore path for Hyperliquid (if ever) ═══════════════════════════
+
+The phxFunding + phxOI schemas remain in _CR_PANE_SCHEMAS (marked
+ARCHIVED in their title). To re-aim at Hyperliquid (or Drift/Mango):
+ 1. Add a hyperliquid|drift|mango refresher function next to the others
+ 2. Slot it into REFRESHERS map
+ 3. Re-title the schema entry without ARCHIVED prefix
+Restoration is one IIFE addition + one map key — no architectural
+change required.)
