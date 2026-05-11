@@ -950,6 +950,12 @@
   #crLightProfile .lp-fund:hover{background:rgba(20,241,149,0.22);
     border-color:rgba(20,241,149,0.85);color:#fff;
     box-shadow:0 0 12px rgba(20,241,149,0.45)}
+  /* v1.0.67 — Two-column row inside a wcard for USDT + USDC pair.
+     Same visual rhythm as the single-column cards but splits in half. */
+  #crLightProfile .lp-wcard-row{display:flex;gap:10px}
+  #crLightProfile .lp-wcard-half{flex:1;min-width:0}
+  #crLightProfile .lp-wcard-half .v{font-size:16px}
+  #crLightProfile .lp-wcard-half .sub{font-size:8px}
   #crLightProfile .lp-wpos{margin-top:6px;display:flex;flex-direction:column;gap:4px}
   #crLightProfile .lp-wposrow{display:flex;justify-content:space-between;
     align-items:center;font-size:11px;color:var(--fg)}
@@ -6178,6 +6184,25 @@
           <div class="k">$RUN · persisted</div>
           <div class="v" id="crLpWRun" style="color:#ffd166">0</div>
           <div class="sub">Hard token · Solana mint</div>
+        </div>
+        <!-- v1.0.67 — Stablecoin holdings. Fetched from GoldRush
+             walletBalances (v1.0.59) when an API key is configured.
+             Shows "—" until the connected wallet's tokens load. USDT +
+             USDC are the broker's two settle-asset options
+             (setQuoteAsset 'usdc' / 'usdt' from v1.0.55). -->
+        <div class="lp-wcard">
+          <div class="lp-wcard-row">
+            <div class="lp-wcard-half">
+              <div class="k">USDT</div>
+              <div class="v" id="crLpWUsdt" style="color:#26a17b">—</div>
+              <div class="sub">Tether · Solana mint</div>
+            </div>
+            <div class="lp-wcard-half">
+              <div class="k">USDC</div>
+              <div class="v" id="crLpWUsdc" style="color:#2775ca">—</div>
+              <div class="sub">USD Coin · Solana mint</div>
+            </div>
+          </div>
         </div>
         <div class="lp-wcard">
           <div class="k">Open positions</div>
@@ -27311,29 +27336,40 @@ const TOK_LIST = [
   { id:'btc',  nm:'Bitcoin',         tag:'BTC',   chain:'cex',     seed:11 },
   { id:'eth',  nm:'Ethereum',        tag:'ETH',   chain:'erc20',   seed:23 },
   { id:'sol',  nm:'Solana',          tag:'SOL',   chain:'sol',     seed:37 },
-  // v1.0.55 — Stablecoins as first-class watchlist rows. USDT + USDC
-  // ride the Birdeye fetch path; price floats near $1 with real volume
-  // / mc / holders. Useful as the "anchor" peg for the broker's
-  // settle-asset selector.
-  { id:'usdt', nm:'Tether USD',      tag:'USDT',  chain:'sol',     seed:1009 },
-  { id:'usdc', nm:'USD Coin',        tag:'USDC',  chain:'sol',     seed:1013 },
+  // v1.0.55 — Stablecoins added; v1.0.67 archived from the watchlist
+  // (they're settle-asset infrastructure, not trading candidates —
+  // price floats $1 ±0.01%, low-signal as watchlist rows). They're
+  // still in TOK_BIRDEYE_MINT so the broker chassis + setQuoteAsset
+  // continue to work. Surfaces them in the lite-profile Wallet tab
+  // alongside $CRDS / $RUN instead.
+  { id:'usdt', nm:'Tether USD',      tag:'USDT',  chain:'sol',     seed:1009, archived:true },
+  { id:'usdc', nm:'USD Coin',        tag:'USDC',  chain:'sol',     seed:1013, archived:true },
   { id:'bnb',  nm:'BNB',             tag:'BNB',   chain:'bep20',   seed:41 },
   { id:'xrp',  nm:'XRP',             tag:'XRP',   chain:'xrpl',    seed:47 },
   { id:'doge', nm:'Dogecoin',        tag:'DOGE',  chain:'cex',     seed:53 },
   { id:'link', nm:'Chainlink',       tag:'LINK',  chain:'erc20',   seed:59 },
-  { id:'hype', nm:'Hyperliquid',     tag:'HYPE',  chain:'hl',      seed:67 },
+  // v1.0.67 — HYPE archived. No Binance pair, no Birdeye mint in our
+  // map. Was rendering "—" forever after v1.0.63 dropped synth-fakes.
+  // Restore by removing archived:true once a real data source is wired.
+  { id:'hype', nm:'Hyperliquid',     tag:'HYPE',  chain:'hl',      seed:67,  archived:true },
   { id:'tron', nm:'TRON',            tag:'TRX',   chain:'tron',    seed:71 },
   { id:'wif',  nm:'dogwifhat',       tag:'WIF',   chain:'sol',     seed:97 },
   { id:'bonk', nm:'BONK',            tag:'BONK',  chain:'sol',     seed:103 },
-  { id:'pump', nm:'pump.fun',        tag:'PUMP',  chain:'sol',     seed:107 },
+  // v1.0.67 — PUMP archived. Mint placeholder pulled in v1.0.63; no
+  // verified mainnet mint yet. Restore once canonical mint confirmed.
+  { id:'pump', nm:'pump.fun',        tag:'PUMP',  chain:'sol',     seed:107, archived:true },
   { id:'jup',  nm:'Jupiter',         tag:'JUP',   chain:'sol',     seed:113 },
   { id:'jto',  nm:'Jito',            tag:'JTO',   chain:'sol',     seed:127 },
   { id:'tia',  nm:'Celestia',        tag:'TIA',   chain:'cosmos',  seed:131 },
   { id:'arb',  nm:'Arbitrum',        tag:'ARB',   chain:'erc20',   seed:139 },
   { id:'op',   nm:'Optimism',        tag:'OP',    chain:'erc20',   seed:149 },
   { id:'pepe', nm:'PEPE',            tag:'PEPE',  chain:'erc20',   seed:151 },
-  { id:'mog',  nm:'Mog Coin',        tag:'MOG',   chain:'erc20',   seed:163 },
-  { id:'fart', nm:'Fartcoin',        tag:'FART',  chain:'sol',     seed:167 },
+  // v1.0.67 — MOG + FART archived. Neither has a Binance pair nor a
+  // verified Birdeye mint, so both rendered "—" forever after v1.0.63's
+  // no-synth-fake policy. Restore by setting archived:false + populating
+  // the matching TOK_BIRDEYE_MINT entry once mints are confirmed.
+  { id:'mog',  nm:'Mog Coin',        tag:'MOG',   chain:'erc20',   seed:163, archived:true },
+  { id:'fart', nm:'Fartcoin',        tag:'FART',  chain:'sol',     seed:167, archived:true },
 ];
 // Deterministic mulberry32-style hash so each token's "data" is stable
 // across reloads but unique per token. Real prices for BTC/ETH/SOL come
@@ -27698,6 +27734,48 @@ function _tokScheduleRerender(){
   }, 800);
 }
 
+// v1.0.67 — Soft refresh for pinned Chat / Coach widgets. Walks every
+// [data-chat-log] inside a .cr-widget, fetches the latest message log
+// for its agent id (or crCoach.getHistory() when agentId === 'coach'),
+// rebuilds ONLY the log container's innerHTML. The input field, send
+// button, and outer chrome stay untouched — so the user's in-progress
+// typing isn't wiped by Coach idle thinks anymore.
+function _softRefreshChatWidgets(){
+  try {
+    document.querySelectorAll('.cr-widget [data-chat-log]').forEach(logEl => {
+      const agentId = logEl.getAttribute('data-chat-log');
+      if(!agentId) return;
+      let msgs = [];
+      if(agentId === 'coach'){
+        if(typeof crCoach !== 'undefined' && typeof crCoach.getHistory === 'function'){
+          msgs = crCoach.getHistory() || [];
+        }
+      } else {
+        if(typeof botChats !== 'undefined' && Array.isArray(botChats[agentId])){
+          msgs = botChats[agentId];
+        }
+      }
+      const renderedLog = msgs.slice(-50).map(m => {
+        const isMe = m.from === 'you';
+        const who  = isMe ? 'YOU' : (agentId === 'coach' ? 'COACH' : agentId.toUpperCase());
+        const txt  = String(m.text).replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' }[c]));
+        const style = isMe
+          ? 'background:rgba(20,241,149,0.12);color:#bff7df;text-align:right'
+          : 'background:rgba(155,140,255,0.10);color:#cfd2db';
+        return '<div style="margin:2px 0;padding:4px 6px;border-radius:4px;'+style+'"><b style="font-size:9px;letter-spacing:.4px;opacity:.7">'+who+'</b><br>'+txt+'</div>';
+      }).join('');
+      const newHtml = renderedLog || '<div class="dim" style="font-size:10px;font-style:italic;padding:4px">No messages yet · say something.</div>';
+      // Only update if content actually changed — avoids scroll-jump on
+      // every Coach tick.
+      if(logEl.innerHTML !== newHtml){
+        const wasAtBottom = (logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight) < 8;
+        logEl.innerHTML = newHtml;
+        if(wasAtBottom) logEl.scrollTop = logEl.scrollHeight;
+      }
+    });
+  } catch(_){}
+}
+
 // v1.0.66 — Soft refresh for pinned token widgets. Walks every canvas
 // with data-w-tok-spark="<id>" (the unique attribute the widget body
 // stamps on its sparkline canvas), climbs to the enclosing .cr-widget,
@@ -27943,7 +28021,11 @@ function _tokRenderList(){
   const cnt  = document.getElementById('crTokCount');
   if(!host) return;
   const filter = (_tokState.filter || '').toLowerCase().trim();
-  let snaps = TOK_LIST.map(t => _tokSnapshot(t.id)).filter(Boolean);
+  // v1.0.67 — Hide tokens marked archived in TOK_LIST. These were
+  // showing "—" forever because they have no Binance pair and no
+  // verified Birdeye mint (HYPE/PUMP/MOG/FART today). Restoration is
+  // one flag flip + a mint, no other code change needed.
+  let snaps = TOK_LIST.filter(t => !t.archived).map(t => _tokSnapshot(t.id)).filter(Boolean);
   if(filter){
     snaps = snaps.filter(s => s.def.tag.toLowerCase().includes(filter) || s.def.nm.toLowerCase().includes(filter));
   }
@@ -29437,14 +29519,16 @@ function _wEnsureLayer(){
     pushFromWidget(agentId, txt);
     e.preventDefault();
   });
-  // v0.8k#24by — Subscribe to crCoach so Coach widgets repaint whenever
-  // crCoach pushes a reply (after a userSays, Coach answers async). Wired
-  // once at boot. crCoach is declared later in source, so attempt the
-  // subscribe in a deferred timer.
+  // v0.8k#24by / v1.0.67 — Subscribe to crCoach so Coach widgets repaint
+  // when Coach pushes a reply. Originally called renderWidgets() which
+  // destroyed the entire widget DOM — that nuked the input element on
+  // every Coach tick, so the user lost characters as they typed. v1.0.67
+  // swaps to _softRefreshChatWidgets which only updates the log content
+  // inside each chat/coach widget, leaving the input + send button alone.
   setTimeout(() => {
     try {
       if(typeof crCoach !== 'undefined' && typeof crCoach.subscribe === 'function'){
-        crCoach.subscribe(() => { try { renderWidgets(); } catch(_){} });
+        crCoach.subscribe(() => { try { _softRefreshChatWidgets(); } catch(_){} });
       }
     } catch(_){}
   }, 50);
@@ -32112,6 +32196,10 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
     // v1.0.36 — Wallet-tab mirrors. The hidden legacy #crLpCrds / #crLpRun
     // were already filled above; mirror them into the visible Wallet tab
     // cards plus the position counts pulled from the wallet sidepanel.
+    // v1.0.67 — Also populate USDT + USDC cards from cached GoldRush
+    // walletBalances (cheap synchronous read — the fetch fires every
+    // ~3 min on a separate cadence so we don't hammer the API on every
+    // 500ms tick).
     try {
       const cardsCrds = document.getElementById('crLpWCrds');
       const cardsRun  = document.getElementById('crLpWRun');
@@ -32126,6 +32214,17 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
       if(tb && sb) tb.textContent = sb.textContent;
       if(tl && sl) tl.textContent = sl.textContent;
       if(to && so) to.textContent = so.textContent;
+      // v1.0.67 — USDT + USDC balances. window._crLpStableBal is the
+      // cache populated by the periodic GoldRush poll (IIFE below).
+      const cardsUsdt = document.getElementById('crLpWUsdt');
+      const cardsUsdc = document.getElementById('crLpWUsdc');
+      const stables = window._crLpStableBal || null;
+      if(cardsUsdt) cardsUsdt.textContent = (stables && stables.usdt != null)
+        ? stables.usdt.toLocaleString('en-US', { maximumFractionDigits: 2 })
+        : '—';
+      if(cardsUsdc) cardsUsdc.textContent = (stables && stables.usdc != null)
+        ? stables.usdc.toLocaleString('en-US', { maximumFractionDigits: 2 })
+        : '—';
     } catch(_){}
 
     _drawLpAvatar();
@@ -43882,6 +43981,71 @@ window.crGoldRush = (function(){
   // Capture-phase listener so we beat any inner dblclick handlers that
   // would otherwise swallow the event (e.g. textareas inside pane bodies).
   document.addEventListener('dblclick', _onDblClick, true);
+})();
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.0.67 — Lite-profile Wallet tab · USDT + USDC balance poller
+   ──────────────────────────────────────────────────────────────────
+   Polls GoldRush walletBalances every 3 min for the connected wallet,
+   scans for USDT + USDC token entries, stashes on window._crLpStableBal
+   so _refreshLightProfile reads it synchronously on its 500-ms tick.
+   No GoldRush API key configured → stays at null → cards show "—".
+   ──────────────────────────────────────────────────────────────────*/
+(function(){
+  'use strict';
+  const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+  const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+  const POLL_MS = 3 * 60 * 1000;
+  let _last = 0;
+  let _inflight = false;
+
+  function _wallet(){
+    try {
+      if(window.crWallet && typeof window.crWallet.get === 'function'){
+        return window.crWallet.get() || null;
+      }
+    } catch(_){}
+    return null;
+  }
+
+  async function _refresh(){
+    if(_inflight) return;
+    const w = _wallet();
+    if(!w){ window._crLpStableBal = null; return; }
+    if(!window.crGoldRush || typeof window.crGoldRush.walletBalances !== 'function') return;
+    if(Date.now() - _last < POLL_MS) return;
+    _last = Date.now();
+    _inflight = true;
+    try {
+      const p = await window.crGoldRush.walletBalances(w, { chain: 'solana-mainnet' });
+      if(!p || !Array.isArray(p.tokens)){ _inflight = false; return; }
+      let usdt = null, usdc = null;
+      for(const t of p.tokens){
+        if(!t || !t.mint) continue;
+        if(t.mint === USDT_MINT) usdt = Number(t.amount) || 0;
+        if(t.mint === USDC_MINT) usdc = Number(t.amount) || 0;
+      }
+      window._crLpStableBal = { usdt: usdt, usdc: usdc, t: Date.now(), wallet: w };
+    } catch(err){
+      try { console.warn('[crLpStableBal] fetch failed:', err.message); } catch(_){}
+    }
+    _inflight = false;
+  }
+
+  // First fetch ~3s after boot (let crWallet hydrate first). Then every POLL_MS.
+  setTimeout(_refresh, 3000);
+  setInterval(_refresh, POLL_MS);
+
+  // Also refetch when wallet changes (connect/disconnect).
+  try {
+    if(window.crWallet && typeof window.crWallet.on === 'function'){
+      window.crWallet.on(function(){
+        _last = 0;            // force the next call to actually fire
+        window._crLpStableBal = null;
+        setTimeout(_refresh, 800);
+      });
+    }
+  } catch(_){}
 })();
 </script>
 </body>
