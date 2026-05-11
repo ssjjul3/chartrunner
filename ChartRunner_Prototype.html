@@ -27389,14 +27389,33 @@ function _tokSnapshot(id){
                  : (livePx != null ? livePx
                  : (_hasBin ? null : (rng() * 1000 + 0.001)));
   const ch24     = (live && !isNaN(live.ch24)) ? live.ch24 : ((rng() - 0.4) * 60);
-  const ch7d     = (rng() - 0.45) * 140;
+  // v1.0.61 — 7d change from extended klines when Binance returned them.
+  // Klines are stored at index 0 (oldest) → end (newest); we use the
+  // first vs last close of the cached window. Fallback to synth when
+  // klines aren't populated (Birdeye-only path or no live data).
+  const _liveClosesN = (live && live.closes && live.closes.length) ? live.closes.length : 0;
+  const _ch7dFromLive = _liveClosesN >= 7
+    ? ((live.closes[_liveClosesN - 1] - live.closes[0]) / live.closes[0]) * 100
+    : null;
+  const ch7d     = (_ch7dFromLive != null) ? _ch7dFromLive : ((rng() - 0.45) * 140);
   const vol24    = (live && !isNaN(live.vol24) && live.vol24 > 0) ? live.vol24
                  : Math.floor(rng() * 800e6 + 1e6);
-  const liq      = Math.floor(rng() * 250e6 + 5e5);
-  const mc       = Math.floor(rng() * 80e9 + 1e6);
-  const fdv      = mc * (1 + rng() * 0.4);
-  const holders  = Math.floor(rng() * 500e3 + 800);
-  const top10pct = (rng() * 35 + 4).toFixed(1);
+  // v1.0.61 — Birdeye (v1.0.52) populates live.mc / live.liquidity / live.holders
+  // / live.supply via _tokFetchLive merge. Prefer the real values over synth
+  // when present. Track which came from live so the renderer can flag them.
+  const _liveMc      = (live && typeof live.mc === 'number') ? live.mc : null;
+  const _liveLiq     = (live && typeof live.liquidity === 'number') ? live.liquidity : null;
+  const _liveHolders = (live && typeof live.holders === 'number') ? live.holders : null;
+  const _liveSupply  = (live && typeof live.supply === 'number') ? live.supply : null;
+  const _liveTop10   = (live && typeof live.top10pct === 'number') ? live.top10pct : null;
+  const liq      = (_liveLiq != null) ? _liveLiq : Math.floor(rng() * 250e6 + 5e5);
+  const mc       = (_liveMc  != null) ? _liveMc  : Math.floor(rng() * 80e9 + 1e6);
+  // FDV: if Birdeye gave us mc + supply, derive FDV exactly. Otherwise synth.
+  const fdv      = (_liveMc != null && _liveSupply != null && _liveSupply > 0 && px > 0)
+                   ? _liveSupply * px
+                   : mc * (1 + rng() * 0.4);
+  const holders  = (_liveHolders != null) ? _liveHolders : Math.floor(rng() * 500e3 + 800);
+  const top10pct = (_liveTop10 != null) ? _liveTop10.toFixed(1) : (rng() * 35 + 4).toFixed(1);
   const ageDays  = Math.floor(rng() * 1500) + 1;
   const buyN     = Math.floor(rng() * 8000) + 100;
   const sellN    = Math.floor(buyN * (0.6 + rng() * 0.6));
@@ -27430,7 +27449,18 @@ function _tokSnapshot(id){
     // came from the Hermes verified feed. Renderers show a "Pyth ✓"
     // badge so the demo can point at the verified source.
     hasPyth:    !!TOK_PYTH_FEED[id],
-    pythPx:     (_pythPx != null) ? true : false };
+    pythPx:     (_pythPx != null) ? true : false,
+    // v1.0.61 — Source-attribution flags so the profile renderer can
+    // show a green "● live" indicator next to each field that came
+    // from a real source (Birdeye / GoldRush) rather than the synth
+    // seeded RNG fallback.
+    mcLive:       (_liveMc      != null),
+    liqLive:      (_liveLiq     != null),
+    holdersLive:  (_liveHolders != null),
+    fdvLive:      (_liveMc != null && _liveSupply != null && _liveSupply > 0 && px > 0),
+    top10Live:    (_liveTop10   != null),
+    ch7dLive:     (_ch7dFromLive != null),
+    dataSource:   (live && live.dataSource) ? live.dataSource : (live ? 'binance' : 'synth') };
 }
 // Categorize for tabs.
 // v0.9.44 — Watchlist persistence. Tokens the player has pinned via the
@@ -27824,6 +27854,17 @@ function _tokRenderList(){
   if(filter){
     snaps = snaps.filter(s => s.def.tag.toLowerCase().includes(filter) || s.def.nm.toLowerCase().includes(filter));
   }
+  // v1.0.61 — "Hide synth-only tokens" filter (Token Terminal settings).
+  // A token is synth-only when it has neither a Binance pair nor a
+  // Birdeye mint — those rows fall back to seeded RNG values for
+  // everything except age, which is not useful as a watchlist signal.
+  try {
+    const settings = JSON.parse(localStorage.getItem('cr_tokterm_settings_v1') || '{}') || {};
+    if(settings.hideSynth){
+      const hasBird = (typeof TOK_BIRDEYE_MINT !== 'undefined') ? TOK_BIRDEYE_MINT : {};
+      snaps = snaps.filter(s => !!TOK_BINANCE_PAIR[s.def.id] || !!hasBird[s.def.id]);
+    }
+  } catch(_){}
   snaps = _tokCategorize(snaps, _tokState.activeTab);
   if(cnt) cnt.textContent = snaps.length + ' tokens';
   host.innerHTML = '';
@@ -27952,15 +27993,21 @@ function _tokRenderProfile(){
       '<div style="font-weight:700;color:' + sigC + ';letter-spacing:.6px">' + s.signal + '</div>' +
       '<div class="dim" style="font-size:10px">composite score · <b style="color:' + sigC + '">' + s.signalS.toFixed(0) + '/100</b></div>' +
     '</div>' +
-    // Onchain grid
-    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">' +
-      '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">Market cap</div><div style="font-weight:700">' + _tokFmtBig(s.mc) + '</div></div>' +
-      '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">FDV</div><div>' + _tokFmtBig(s.fdv) + '</div></div>' +
-      '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">24h volume</div><div style="font-weight:700">' + _tokFmtBig(s.vol24) + '</div></div>' +
-      '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">Liquidity</div><div>' + _tokFmtBig(s.liq) + '</div></div>' +
-      '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">Holders</div><div style="font-weight:700">' + s.holders.toLocaleString('en-US') + '</div></div>' +
-      '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">Top 10 own</div><div>' + s.top10pct + '%</div></div>' +
-    '</div>' +
+    // Onchain grid — v1.0.61 adds per-field "● live" badge when the
+    // value came from Birdeye / GoldRush rather than the synth fallback.
+    (function(){
+      const _lb = on => on
+        ? '<span style="color:#3ddc97;font-size:8px;margin-left:4px;letter-spacing:.3px">● live</span>'
+        : '';
+      return '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">' +
+        '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">Market cap' + _lb(s.mcLive) + '</div><div style="font-weight:700">' + _tokFmtBig(s.mc) + '</div></div>' +
+        '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">FDV' + _lb(s.fdvLive) + '</div><div>' + _tokFmtBig(s.fdv) + '</div></div>' +
+        '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">24h volume' + _lb(s.live && s.hasBinance) + '</div><div style="font-weight:700">' + _tokFmtBig(s.vol24) + '</div></div>' +
+        '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">Liquidity' + _lb(s.liqLive) + '</div><div>' + _tokFmtBig(s.liq) + '</div></div>' +
+        '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">Holders' + _lb(s.holdersLive) + '</div><div style="font-weight:700">' + s.holders.toLocaleString('en-US') + '</div></div>' +
+        '<div><div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px">Top 10 own' + _lb(s.top10Live) + '</div><div>' + s.top10pct + '%</div></div>' +
+      '</div>';
+    })() +
     // Buy/sell pressure bar
     '<div style="margin-bottom:10px">' +
       '<div class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Buy/sell pressure (24h)</div>' +
@@ -43310,6 +43357,214 @@ window.crGoldRush = (function(){
     document.addEventListener('DOMContentLoaded', _boot);
   } else {
     setTimeout(_boot, 0);
+  }
+})();
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.0.61 — Token Terminal: GoldRush Top-10 enricher + Settings panel
+   ──────────────────────────────────────────────────────────────────
+   PART A — GoldRush Top-10 enricher
+   Polls the active token's tokenHolders(mint, pageSize:10) every 90s,
+   computes sum of top-10 share, stashes on the matching _tokLiveCache
+   entry as live.top10pct so _tokSnapshot reads it as real data.
+   Falls back silently when GoldRush has no key configured.
+
+   PART B — Settings panel (⚙)
+   New ⚙ button slides into the Token Terminal window header. Click
+   opens a panel with: default timeframe, refresh interval, Birdeye
+   API key, GoldRush API key, "show synth tokens" toggle. All saved
+   to cr_tokterm_settings_v1 localStorage.
+   ──────────────────────────────────────────────────────────────────*/
+(function(){
+  'use strict';
+
+  // ── PART A — GoldRush Top-10 enricher ────────────────────────────
+  async function _refreshTop10(){
+    if(!window.crGoldRush || typeof window.crGoldRush.tokenHolders !== 'function') return;
+    if(typeof TOK_BIRDEYE_MINT === 'undefined') return;
+    if(typeof _tokLiveCache === 'undefined') return;
+    if(typeof _tokState === 'undefined' || !_tokState.selectedId) return;
+    const tokenId = _tokState.selectedId;
+    const mint = TOK_BIRDEYE_MINT[tokenId];
+    if(!mint) return;     // only Solana tokens are GoldRush-readable
+    try {
+      const holders = await window.crGoldRush.tokenHolders(mint, { pageSize: 10 });
+      if(!Array.isArray(holders) || !holders.length) return;
+      const top10sum = holders.reduce((s, h) => s + (typeof h.share === 'number' ? h.share : 0), 0);
+      const top10pct = +(top10sum * 100).toFixed(1);
+      // Merge into every TF-keyed _tokLiveCache entry for this token
+      // so the snapshot reads it regardless of which TF the player
+      // has selected.
+      Object.keys(_tokLiveCache).forEach(k => {
+        if(k.startsWith(tokenId + '|')){
+          _tokLiveCache[k].top10pct = top10pct;
+        }
+      });
+      // Trigger a re-render so the new field paints immediately.
+      try { if(typeof _tokRenderProfile === 'function') _tokRenderProfile(); } catch(_){}
+    } catch(_){}
+  }
+  // Run on tokenterm focus changes + every 90s while the window is open.
+  function _wireTop10(){
+    setInterval(() => {
+      const win = document.getElementById('win-tokenterm');
+      if(!win || !win.classList.contains('on')) return;
+      _refreshTop10();
+    }, 90 * 1000);
+    // Also kick off on every selection change. We hook the existing
+    // _tokState by polling — cheap, no patching of existing code paths.
+    let lastSel = null;
+    setInterval(() => {
+      if(typeof _tokState === 'undefined') return;
+      if(_tokState.selectedId && _tokState.selectedId !== lastSel){
+        lastSel = _tokState.selectedId;
+        _refreshTop10();
+      }
+    }, 2000);
+  }
+
+  // ── PART B — Settings panel ─────────────────────────────────────
+  const SETTINGS_KEY = 'cr_tokterm_settings_v1';
+
+  function _loadSettings(){
+    try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; }
+    catch(_){ return {}; }
+  }
+  function _saveSettings(patch){
+    const cur = _loadSettings();
+    const next = Object.assign({}, cur, patch);
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch(_){}
+    return next;
+  }
+  function _applySettings(s){
+    if(s.birdeyeKey  !== undefined && window.crBirdeye)  { try { window.crBirdeye.setApiKey(s.birdeyeKey  || ''); } catch(_){} }
+    if(s.goldrushKey !== undefined && window.crGoldRush){ try { window.crGoldRush.setApiKey(s.goldrushKey || ''); } catch(_){} }
+    // Default timeframe applies on next token selection via _tokTF lookup.
+  }
+
+  function _buildPanel(){
+    if(document.getElementById('crTokTermSettings')) return;
+    const panel = document.createElement('div');
+    panel.id = 'crTokTermSettings';
+    panel.style.cssText = [
+      'position:absolute','top:38px','right:8px','width:300px','z-index:5',
+      'background:linear-gradient(180deg,rgba(20,30,55,.98),rgba(10,15,28,.99))',
+      'border:1px solid rgba(126,231,135,.35)','border-radius:8px',
+      'box-shadow:0 16px 40px rgba(0,0,0,.6),0 0 0 1px rgba(126,231,135,.10) inset',
+      'padding:14px','display:none','color:var(--fg)',
+      'font:11px ui-monospace,Menlo,Monaco,monospace',
+    ].join(';');
+    const s = _loadSettings();
+    panel.innerHTML = ''
+      + '<div style="font:700 11px ui-monospace,Menlo,Monaco,monospace;color:#7ee787;letter-spacing:.6px;margin-bottom:10px">⚙ TOKEN TERMINAL · SETTINGS</div>'
+      + '<div style="display:flex;flex-direction:column;gap:10px">'
+      +   '<label style="display:flex;flex-direction:column;gap:3px">'
+      +     '<span style="font-size:9px;color:#bff7df;text-transform:uppercase;letter-spacing:.4px">Default Timeframe</span>'
+      +     '<select id="crTtsTf" style="padding:5px 7px;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:4px;color:var(--fg);font:11px ui-monospace,Menlo,monospace">'
+      +       ['15m','1h','4h','1D','1W'].map(tf =>
+                '<option value="' + tf + '"' + ((s.defaultTf||'15m') === tf ? ' selected' : '') + '>' + tf + '</option>'
+              ).join('')
+      +     '</select>'
+      +   '</label>'
+      +   '<label style="display:flex;flex-direction:column;gap:3px">'
+      +     '<span style="font-size:9px;color:#bff7df;text-transform:uppercase;letter-spacing:.4px">Profile Refresh (sec)</span>'
+      +     '<input id="crTtsRefresh" type="range" min="15" max="300" step="5" value="' + (s.refreshSec || 30) + '" style="accent-color:#7ee787">'
+      +     '<span id="crTtsRefreshVal" style="font-size:9px;color:#7ee787;text-align:right">' + (s.refreshSec || 30) + 's</span>'
+      +   '</label>'
+      +   '<label style="display:flex;flex-direction:column;gap:3px">'
+      +     '<span style="font-size:9px;color:#bff7df;text-transform:uppercase;letter-spacing:.4px">Birdeye API Key</span>'
+      +     '<input id="crTtsBirdeye" type="password" placeholder="bdy_..." value="' + (s.birdeyeKey || '') + '" style="padding:5px 7px;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:4px;color:var(--fg);font:11px ui-monospace,Menlo,monospace">'
+      +     '<span style="font-size:9px;color:var(--dim);font-style:italic">Powers token_overview for live mc / holders / 24h vol.</span>'
+      +   '</label>'
+      +   '<label style="display:flex;flex-direction:column;gap:3px">'
+      +     '<span style="font-size:9px;color:#bff7df;text-transform:uppercase;letter-spacing:.4px">GoldRush (Covalent) API Key</span>'
+      +     '<input id="crTtsGoldrush" type="password" placeholder="cqt_..." value="' + (s.goldrushKey || '') + '" style="padding:5px 7px;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:4px;color:var(--fg);font:11px ui-monospace,Menlo,monospace">'
+      +     '<span style="font-size:9px;color:var(--dim);font-style:italic">Powers Top-10 holder concentration + wallet txs.</span>'
+      +   '</label>'
+      +   '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">'
+      +     '<input id="crTtsHideSynth" type="checkbox"' + (s.hideSynth ? ' checked' : '') + ' style="accent-color:#7ee787">'
+      +     '<span style="font-size:11px">Hide synth-only tokens (no Binance + no Birdeye)</span>'
+      +   '</label>'
+      + '</div>'
+      + '<div style="display:flex;gap:6px;margin-top:14px;justify-content:flex-end">'
+      +   '<button id="crTtsClose" type="button" style="padding:5px 12px;background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:5px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">close</button>'
+      +   '<button id="crTtsSave"  type="button" style="padding:5px 12px;background:rgba(126,231,135,.18);border:1px solid rgba(126,231,135,.50);color:#bff7df;border-radius:5px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">save</button>'
+      + '</div>';
+    const wbody = document.querySelector('#win-tokenterm .os-wbody');
+    if(wbody){
+      wbody.style.position = wbody.style.position || 'relative';
+      wbody.appendChild(panel);
+    } else {
+      document.body.appendChild(panel);
+    }
+
+    // Wire interactions.
+    panel.querySelector('#crTtsRefresh').addEventListener('input', e => {
+      panel.querySelector('#crTtsRefreshVal').textContent = e.target.value + 's';
+    });
+    panel.querySelector('#crTtsClose').addEventListener('click', () => {
+      panel.style.display = 'none';
+    });
+    panel.querySelector('#crTtsSave').addEventListener('click', () => {
+      const patch = {
+        defaultTf:   panel.querySelector('#crTtsTf').value,
+        refreshSec:  Number(panel.querySelector('#crTtsRefresh').value),
+        birdeyeKey:  panel.querySelector('#crTtsBirdeye').value.trim(),
+        goldrushKey: panel.querySelector('#crTtsGoldrush').value.trim(),
+        hideSynth:   panel.querySelector('#crTtsHideSynth').checked,
+      };
+      const next = _saveSettings(patch);
+      _applySettings(next);
+      if(typeof toast === 'function') toast('Token Terminal settings saved');
+      panel.style.display = 'none';
+      // Re-render so new keys + filter take effect immediately.
+      try { if(typeof _tokRenderList === 'function') _tokRenderList(); } catch(_){}
+      try { if(typeof _tokRenderProfile === 'function') _tokRenderProfile(); } catch(_){}
+    });
+  }
+
+  function _toggleSettings(){
+    _buildPanel();
+    const p = document.getElementById('crTokTermSettings');
+    if(!p) return;
+    p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
+  }
+
+  function _addGear(){
+    const win = document.getElementById('win-tokenterm');
+    if(!win){ setTimeout(_addGear, 500); return; }
+    const wbar = win.querySelector('.os-wbar');
+    if(!wbar) return;
+    if(wbar.querySelector('#crTokTermGear')) return;
+    const spacer = wbar.querySelector('.spacer');
+    const close  = wbar.querySelector('.wclose');
+    const gear   = document.createElement('button');
+    gear.id        = 'crTokTermGear';
+    gear.type      = 'button';
+    gear.title     = 'Token Terminal settings';
+    gear.textContent = '⚙';
+    gear.style.cssText = [
+      'background:transparent','border:1px solid var(--line)','color:var(--dim)',
+      'border-radius:5px','padding:2px 8px','cursor:pointer','margin-right:6px',
+      'font:13px ui-monospace,Menlo,monospace',
+    ].join(';');
+    gear.addEventListener('click', _toggleSettings);
+    // Insert just before the Close button.
+    if(close) wbar.insertBefore(gear, close);
+    else      wbar.appendChild(gear);
+  }
+
+  function _boot(){
+    _addGear();
+    _wireTop10();
+    // Apply persisted settings on boot so the keys are wired before
+    // the first fetch fires.
+    _applySettings(_loadSettings());
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', _boot);
+  } else {
+    setTimeout(_boot, 800);
   }
 })();
 </script>
