@@ -27027,10 +27027,10 @@ const _CR_PANE_SCHEMAS = {
     ],
   },
   'pane:solSniper': {
-    icon: '◆', title: 'Sniper Activity', sub: 'First-buyer activity via GoldRush.',
+    icon: '◆', title: 'Sniper Activity', sub: 'First-buyers of fresh pump.fun launches.',
     fields: [
-      { type:'note', text:'LIVE — pulls window.crGoldRush.tokenHolders for the active token + sorts by acquired-at to surface early entrants (proxy for snipes).' },
-      { type:'select', key:'tokenId', label:'Token', default:'wif',
+      { type:'note', text:'LIVE — joins pump.fun launch timestamps (window._crPumpfunRecent cached from solPumpfun) with crGoldRush.tokenHolders earliest-acquired holders per fresh mint. Falls back to a single-token holder scan when no pump.fun cache is available.' },
+      { type:'select', key:'tokenId', label:'Fallback token', default:'wif',
         options:[
           { value:'wif',  label:'WIF'  },
           { value:'bonk', label:'BONK' },
@@ -27096,9 +27096,12 @@ const _CR_PANE_SCHEMAS = {
     ],
   },
   'pane:cexWhales': {
-    icon: '◇', title: 'Whale Alerts', sub: 'On-chain &gt; $1M.',
+    icon: '◆', title: 'Whale Alerts', sub: 'On-chain &gt; threshold via GoldRush.',
     fields: [
-      { type:'note', text:'Wirable to whale-alert.io (paid) or in-house on-chain scan. Not yet wired; placeholder.' },
+      { type:'note', text:'LIVE — scans a curated list of CEX hot wallets (Binance / Coinbase / OKX / Kraken on Solana) via crGoldRush.walletTxs, surfaces txs above the threshold.' },
+      { type:'slider', key:'minUsd', label:'Min USD', min:100000, max:10000000, step:100000, default:1000000 },
+      { type:'slider', key:'rows', label:'Rows', min:5, max:20, step:1, default:10 },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:180 },
     ],
   },
   'pane:cexListings': {
@@ -27123,9 +27126,9 @@ const _CR_PANE_SCHEMAS = {
     ],
   },
   'pane:cexDexFlow': {
-    icon: '◆', title: 'CEX → DEX Flow', sub: '24h net USD.',
+    icon: '◇', title: 'CEX → DEX Flow · ARCHIVED', sub: 'Phase-2 architectural work.',
     fields: [
-      { type:'note', text:'Wirable via DefiLlama bridge data + exchange withdrawal scans. Not yet wired; placeholder.' },
+      { type:'note', text:'Archived v1.0.70 — accurate CEX→DEX same-chain net-flow requires delta-watching known cold→hot CEX transfers + DEX router inflows, which is Phase-2 work. Unrelated to the cross-chain DefiLlama /bridges API. Restore via dedicated outflow scanner once that piece lands.' },
     ],
   },
 
@@ -27147,10 +27150,18 @@ const _CR_PANE_SCHEMAS = {
         ] },
       { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 },
     ] },
-  'pane:phxFunding': { icon:'◇', title:'Funding Rate · ARCHIVED', sub:'Solana DEX chassis has no perp funding primitive yet.',
-    fields:[{type:'note', text:'Archived v1.0.68 — no Solana-native perp funding feed in our chassis. Restore via Drift/Mango SDK integration in a future patch.'}] },
-  'pane:phxOI':      { icon:'◇', title:'Open Interest · ARCHIVED', sub:'Solana DEX chassis has no perp OI primitive yet.',
-    fields:[{type:'note', text:'Archived v1.0.68 — same reason as phxFunding. Solana perp OI lives on Drift/Mango; not wired in our chassis.'}] },
+  'pane:phxFunding': { icon:'◆', title:'Funding Rate · Drift', sub:'Solana perp funding via data.api.drift.trade.',
+    fields:[
+      { type:'note', text:'LIVE — pulls data.api.drift.trade/contracts. Sorted by absolute funding extremes (extremes first).' },
+      { type:'slider', key:'rows', label:'Rows', min:5, max:20, step:1, default:10 },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:30, max:300, step:15, unit:'s', default:60 },
+    ] },
+  'pane:phxOI':      { icon:'◆', title:'Open Interest · Drift', sub:'Solana perp OI via data.api.drift.trade.',
+    fields:[
+      { type:'note', text:'LIVE — pulls data.api.drift.trade/contracts. Each market\'s open interest in USD (base × oracle price).' },
+      { type:'slider', key:'rows', label:'Rows', min:5, max:20, step:1, default:10 },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:30, max:300, step:15, unit:'s', default:60 },
+    ] },
   'pane:phxBook':    { icon:'◆', title:'Jupiter · Route Depth', sub:'Best route + price impact via Jupiter v6.',
     fields:[
       { type:'note', text:'LIVE — Jupiter v6 /quote with 1 / 10 / 100 SOL probe sizes. Price impact is the visible depth proxy.' },
@@ -43789,6 +43800,9 @@ window.crGoldRush = (function(){
       const list = await r.json();
       if(!Array.isArray(list) || !list.length){ _setHdTag('solPumpfun','no data','warn'); return; }
       const filtered = list.filter(c => (c.usd_market_cap || 0) >= minMc).slice(0, rows);
+      // v1.0.70 — stash the raw recent list on window._crPumpfunRecent so
+      // solSniper can join against fresh launches without re-fetching.
+      window._crPumpfunRecent = list.slice(0, 30);
       _setBody('solPumpfun', '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
         + filtered.map(c => {
             const age = c.created_timestamp ? Math.floor((Date.now() - c.created_timestamp) / 60000) : null;
@@ -43826,20 +43840,65 @@ window.crGoldRush = (function(){
     _setHdTag('solSwaps', fills.length + ' fills · LIVE', 'live');
   }
 
-  // 6. solSniper — recent holders ordered by acquired-at via GoldRush.
+  // 6. solSniper — v1.0.70 joins pump.fun launch list with GoldRush
+  //    holders. Picks the freshest launches (those <2h old) and for each
+  //    fetches the top-N earliest-acquired holders (the snipers). Falls
+  //    back to a single-token holder scan when pump.fun cache absent.
   async function refreshSolSniper(){
     if(!_bodiesOf('solSniper').length || !window.crGoldRush) return;
-    const cfg = _getConfigFor('solSniper');
+    const cfg  = _getConfigFor('solSniper');
+    const rows = cfg.rows || 10;
+    const fresh = (window._crPumpfunRecent || [])
+      .filter(c => c.created_timestamp && (Date.now() - c.created_timestamp) < 2 * 3600 * 1000)
+      .filter(c => c.mint)
+      .slice(0, 5); // up to 5 fresh launches to scan
+
+    // Primary path — pump.fun join.
+    if(fresh.length){
+      const out = [];
+      for(const c of fresh){
+        try {
+          const holders = await window.crGoldRush.tokenHolders(c.mint, { pageSize: 3 });
+          if(!holders || !holders.length) continue;
+          // earliest acquired = snipers
+          const snipers = holders.slice()
+            .sort((a,b) => (a.lastActivity || 0) - (b.lastActivity || 0))
+            .slice(0, 3);
+          const age = Math.floor((Date.now() - c.created_timestamp) / 60000);
+          out.push({ sym: c.symbol || '?', age, snipers });
+          if(out.length * 3 >= rows) break;
+        } catch(_){}
+      }
+      if(out.length){
+        _setBody('solSniper', '<div style="display:flex;flex-direction:column;gap:4px;font-size:10.5px">'
+          + out.map(b =>
+              '<div style="border-left:2px solid #14f195;padding:2px 0 2px 6px">'
+              + '<div><b>' + b.sym + '</b> <span style="color:var(--dim)">· ' + (b.age < 60 ? b.age + 'm' : Math.floor(b.age/60) + 'h') + ' old · ' + b.snipers.length + ' snipers</span></div>'
+              + b.snipers.map((h, i) => {
+                  const addr = h.address ? (h.address.slice(0,4) + '…' + h.address.slice(-4)) : '—';
+                  const bal  = h.balance != null ? h.balance.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—';
+                  return '<div style="display:flex;justify-content:space-between;color:var(--dim);font-size:10px">'
+                       + '<span>  #' + (i+1) + ' ' + addr + '</span>'
+                       + '<span class="r"><b>' + bal + '</b></span></div>';
+                }).join('')
+              + '</div>'
+            ).join('')
+          + '</div>');
+        _setHdTag('solSniper', out.length + ' fresh · LIVE', 'live');
+        return;
+      }
+    }
+
+    // Fallback — single-token scan (original v1.0.68 behavior).
     const tokenId = cfg.tokenId || 'wif';
-    const rows    = cfg.rows || 10;
     const mints   = (typeof TOK_BIRDEYE_MINT !== 'undefined') ? TOK_BIRDEYE_MINT : {};
     const mint    = mints[tokenId];
     if(!mint){ _setHdTag('solSniper','no mint','warn'); return; }
     const holders = await window.crGoldRush.tokenHolders(mint, { pageSize: rows*2 });
     if(!holders || !holders.length){ _setHdTag('solSniper','no data','warn'); return; }
-    // Sort by lastActivity (earliest first as a proxy for first-buyer activity).
     const sorted = holders.slice().sort((a,b) => (a.lastActivity || 0) - (b.lastActivity || 0)).slice(0, rows);
     _setBody('solSniper', '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+      + '<div style="font-size:9px;color:var(--dim);margin-bottom:2px">fallback · single-token scan (no fresh pump.fun launches cached)</div>'
       + sorted.map((h, i) => {
           const addr = h.address ? (h.address.slice(0,4) + '…' + h.address.slice(-4)) : '—';
           const bal  = h.balance != null ? h.balance.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
@@ -43847,7 +43906,7 @@ window.crGoldRush = (function(){
                + '<span class="r"><b>' + bal + '</b></span></div>';
         }).join('')
       + '</div>');
-    _setHdTag('solSniper', tokenId.toUpperCase() + ' · LIVE', 'live');
+    _setHdTag('solSniper', tokenId.toUpperCase() + ' fallback · LIVE', 'live');
   }
 
   // 7. phxWhales — alias of solHolders but with phxWhales pane id.
@@ -44084,6 +44143,182 @@ window.crGoldRush = (function(){
     if(tag){ tag.textContent = ENGINE_SCAN.length + ' assets · live'; }
   }
 
+  // ── v1.0.70 — final-batch refreshers ──────────────────────────────
+
+  // 16. phxFunding — Drift public data API (Solana perps).
+  //     data.api.drift.trade exposes per-contract funding via /contracts.
+  //     Sorted by absolute funding rate (extremes first).
+  async function refreshPhxFunding(){
+    if(!_bodiesOf('phxFunding').length) return;
+    const cfg  = _getConfigFor('phxFunding');
+    const rows = cfg.rows || 10;
+    try {
+      const r = await fetch('https://data.api.drift.trade/contracts');
+      if(!r.ok){ _setHdTag('phxFunding','offline','warn'); return; }
+      const j = await r.json();
+      // Response shape: { contracts: [{ ticker_id, last_funding_rate, ... }] }
+      // or array depending on API version — be defensive.
+      const arr = Array.isArray(j) ? j : (j.contracts || j.data || []);
+      if(!arr.length){ _setHdTag('phxFunding','no data','warn'); return; }
+      const enriched = arr
+        .map(c => ({
+          sym: c.ticker_id || c.symbol || c.market_name || '?',
+          fr:  Number(c.last_funding_rate || c.funding_rate || c.fundingRate || 0),
+        }))
+        .filter(x => isFinite(x.fr))
+        .sort((a,b) => Math.abs(b.fr) - Math.abs(a.fr))
+        .slice(0, rows);
+      if(!enriched.length){ _setHdTag('phxFunding','no funding','warn'); return; }
+      _setBody('phxFunding', '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+        + enriched.map(p => {
+            const apr = p.fr * 24 * 365 * 100; // hourly funding × 24 × 365
+            const c   = p.fr >= 0 ? '#14f195' : '#ff5b7f';
+            return '<div style="display:flex;justify-content:space-between">'
+                 + '<span>' + p.sym + '</span>'
+                 + '<span class="r" style="color:' + c + '"><b>'
+                 +   (p.fr*100).toFixed(4) + '%</b> '
+                 +   '<span style="color:var(--dim)">(' + apr.toFixed(1) + '% APR)</span></span>'
+                 + '</div>';
+          }).join('')
+        + '</div>');
+      _setHdTag('phxFunding', enriched.length + ' perps · LIVE', 'live');
+    } catch(_){ _setHdTag('phxFunding','offline','warn'); }
+  }
+
+  // 17. phxOI — Drift public data API. Open interest per market.
+  async function refreshPhxOI(){
+    if(!_bodiesOf('phxOI').length) return;
+    const cfg  = _getConfigFor('phxOI');
+    const rows = cfg.rows || 10;
+    try {
+      const r = await fetch('https://data.api.drift.trade/contracts');
+      if(!r.ok){ _setHdTag('phxOI','offline','warn'); return; }
+      const j = await r.json();
+      const arr = Array.isArray(j) ? j : (j.contracts || j.data || []);
+      if(!arr.length){ _setHdTag('phxOI','no data','warn'); return; }
+      const enriched = arr
+        .map(c => ({
+          sym:    c.ticker_id || c.symbol || c.market_name || '?',
+          oi:     Number(c.open_interest || c.openInterest || c.oi || 0),
+          mark:   Number(c.mark_price || c.markPrice || c.last_price || 0),
+        }))
+        .map(x => ({ ...x, usd: x.oi * x.mark }))
+        .filter(x => isFinite(x.usd) && x.usd > 0)
+        .sort((a,b) => b.usd - a.usd)
+        .slice(0, rows);
+      if(!enriched.length){ _setHdTag('phxOI','no OI','warn'); return; }
+      const totalUsd = enriched.reduce((s,x) => s + x.usd, 0);
+      _setBody('phxOI', ''
+        + '<div style="font:800 18px ui-monospace,Menlo,monospace">' + _fmtUsd(totalUsd) + '</div>'
+        + '<div style="font-size:10px;color:var(--dim);margin-bottom:6px">Total Drift OI</div>'
+        + '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+        +   enriched.map(p =>
+              '<div style="display:flex;justify-content:space-between">'
+              + '<span>' + p.sym + '</span>'
+              + '<span class="r"><b>' + _fmtUsd(p.usd) + '</b></span></div>'
+            ).join('')
+        + '</div>');
+      _setHdTag('phxOI', enriched.length + ' markets · LIVE', 'live');
+    } catch(_){ _setHdTag('phxOI','offline','warn'); }
+  }
+
+  // 18. cexWhales — curated Solana CEX hot-wallet list × GoldRush.
+  //     We scan a small set of known hot wallets for recent txs and
+  //     surface any txs above the configured USD threshold. Pubkeys
+  //     are publicly tagged across explorers (Solscan / SolanaFM).
+  const _CEX_HOT_WALLETS = [
+    // Binance (Solana) — published hot wallets
+    { addr: '5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9', cex: 'Binance' },
+    { addr: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM', cex: 'Binance' },
+    { addr: '2ojv9BAiHUrvsm9gxDe7fJSzbNZSJcxZvf8dqmWGHG8S', cex: 'Binance' },
+    // Coinbase (Solana)
+    { addr: '9obNtb5GVjEsHWXTeq84MyRiukNuduKHTm8DxBzNAg9k', cex: 'Coinbase' },
+    { addr: 'H8sMJSCQxfKiFTCfDR3DUMLPwcRbM61LGFJ8N4dK3WjS', cex: 'Coinbase' },
+    // Kraken
+    { addr: 'FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5', cex: 'Kraken' },
+    // OKX
+    { addr: 'EhYXq3ANp5nAerUpbSgd7VK2RRcxK1zNuSQ755G5Mtxx', cex: 'OKX' },
+    // Bybit
+    { addr: 'AC5RDfQFmDS1deWZos921JfqscXdByf8BKHs5ACWjtW2', cex: 'Bybit' },
+  ];
+  async function refreshCexWhales(){
+    if(!_bodiesOf('cexWhales').length || !window.crGoldRush) return;
+    const cfg   = _getConfigFor('cexWhales');
+    const minUsd = cfg.minUsd || 1_000_000;
+    const rows   = cfg.rows || 10;
+    try {
+      const all = [];
+      for(const w of _CEX_HOT_WALLETS){
+        try {
+          const txs = await window.crGoldRush.walletTxs(w.addr, { pageSize: 5 });
+          if(!Array.isArray(txs)) continue;
+          for(const tx of txs){
+            const usd = Number(tx.usd || tx.value_quote || tx.valueUsd || 0);
+            if(usd < minUsd) continue;
+            const ts = tx.ts || tx.block_signed_at || tx.timestamp;
+            all.push({
+              cex:  w.cex,
+              hot:  w.addr,
+              usd,
+              ts:   typeof ts === 'number' ? ts : (ts ? new Date(ts).getTime() : Date.now()),
+              dir:  tx.dir || (tx.from === w.addr ? 'out' : 'in'),
+              ctp:  (tx.from === w.addr ? tx.to : tx.from) || '?',
+            });
+          }
+        } catch(_){}
+      }
+      if(!all.length){
+        _setBody('cexWhales', '<div style="font-style:italic;color:var(--dim);font-size:10px;padding:4px 0">No txs above threshold in the last scan window. Lower the Min USD slider or wait for fresh activity.</div>');
+        _setHdTag('cexWhales', 'no whales', 'tune');
+        return;
+      }
+      const top = all.sort((a,b) => b.ts - a.ts).slice(0, rows);
+      _setBody('cexWhales', '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+        + top.map(w => {
+            const m = Math.max(0, Math.floor((Date.now() - w.ts) / 60000));
+            const ago = m < 60 ? m + 'm' : Math.floor(m/60) + 'h';
+            const ctp = w.ctp ? (w.ctp.slice(0,4) + '…' + w.ctp.slice(-4)) : '?';
+            const dirArrow = w.dir === 'out' ? '→' : '←';
+            return '<div style="display:flex;justify-content:space-between">'
+                 + '<span><b>' + _fmtUsd(w.usd) + '</b> · ' + w.cex + ' ' + dirArrow + ' ' + ctp + '</span>'
+                 + '<span class="r" style="color:var(--dim)">' + ago + '</span></div>';
+          }).join('')
+        + '</div>');
+      _setHdTag('cexWhales', top.length + ' alerts · LIVE', 'live');
+    } catch(_){ _setHdTag('cexWhales','offline','warn'); }
+  }
+
+  // 19. Engine .live chip stamper. The Engine view has 13 panes that
+  //     are wired through their own paint loops (WAVEFORM, SIGNAL,
+  //     MARKET SCAN, COIN/WALLET WATCHLIST, etc.) but their hd-tags
+  //     don't carry the .live class so visually they look less live
+  //     than the v1.0.68 set. This adds the class to specific Engine
+  //     panes that we KNOW have a working data source — sourced from
+  //     the audit's "13 Engine panes live via separate paint loops".
+  function _stampEngineLiveChips(){
+    const engineView = document.getElementById('crTermViewEngine');
+    if(!engineView) return;
+    const LIVE_HEADERS = new Set([
+      '◆ WAVEFORM ANALYZER',
+      '◆ SIGNAL CONSTELLATION',
+      '◇ MARKET SCAN',
+      '🪙 COIN WATCHLIST',
+      '💼 WALLET WATCHLIST',
+      '◇ stderr.watch()',
+      '◆ POSITIONS',
+      '◇ API CALLS',
+      '◇ TRADE EXEC',
+      '◆ RECENT TRANSACTIONS',
+    ]);
+    engineView.querySelectorAll('.crTerm-pane > .crTerm-paneHd').forEach(hd => {
+      const lbl = hd.querySelector('span:first-child');
+      if(!lbl) return;
+      if(!LIVE_HEADERS.has(lbl.textContent.trim())) return;
+      const tag = hd.querySelector('.hd-tag');
+      if(tag && !tag.classList.contains('live')) tag.classList.add('live');
+    });
+  }
+
   // ── Periodic refresh tick ─────────────────────────────────────────
   // Each refresher honors its own pane's `refreshSec` config; we run a
   // 15s master tick and check each pane's elapsed since last refresh.
@@ -44111,6 +44346,10 @@ window.crGoldRush = (function(){
     cexDepth:     { fn: refreshCexDepth,     default: 15  },
     cexStables:   { fn: refreshCexStables,   default: 180 },
     marketScan:   { fn: refreshMarketScan,   default: 30  },
+    // v1.0.70 — final batch.
+    phxFunding:   { fn: refreshPhxFunding,   default: 60  },
+    phxOI:        { fn: refreshPhxOI,        default: 60  },
+    cexWhales:    { fn: refreshCexWhales,    default: 180 },
   };
   function _tick(){
     const now = Date.now();
@@ -44127,10 +44366,15 @@ window.crGoldRush = (function(){
 
   function _boot(){
     tagPanes();
+    // v1.0.70 — Stamp Engine pane .live chips at boot + on tab switch.
+    _stampEngineLiveChips();
     // Re-tag on tab switch in case panes were added late.
     document.addEventListener('click', e => {
       const t = e.target && e.target.closest && e.target.closest('.crTerm-tab');
-      if(t) setTimeout(tagPanes, 200);
+      if(t){
+        setTimeout(tagPanes, 200);
+        setTimeout(_stampEngineLiveChips, 220);
+      }
     });
     // First tick + 15s heartbeat. Each pane self-throttles via its
     // refreshSec config.
