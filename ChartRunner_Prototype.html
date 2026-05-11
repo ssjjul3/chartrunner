@@ -27383,11 +27383,18 @@ function _tokSnapshot(id){
   //       shows '—' via _tokFmtPx instead of a fake $0.48 for BTC)
   const _hasBin  = !!TOK_BINANCE_PAIR[id];
   const _hasPyth = !!TOK_PYTH_FEED[id];
+  const _hasBird = (typeof TOK_BIRDEYE_MINT !== 'undefined') && !!TOK_BIRDEYE_MINT[id];
   const _pythPx  = _hasPyth ? _tokPythPx(id) : null;
+  // v1.0.63 — Never synth a price for tokens we KNOW have a real
+  // source (Binance pair, Pyth feed, or Birdeye mint). Show "—" until
+  // the live fetch lands. Synth-fake only kicks in for tokens with
+  // zero real sources — currently nothing in TOK_LIST hits that path.
+  // Old behavior: tokens with no Binance pair fell through to
+  // `rng() * 1000 + 0.001`, which is how FART rendered at $717.84.
   const px       = (_pythPx != null) ? _pythPx
                  : (live && !isNaN(live.px)) ? live.px
                  : (livePx != null ? livePx
-                 : (_hasBin ? null : (rng() * 1000 + 0.001)));
+                 : ((_hasBin || _hasBird || _hasPyth) ? null : (rng() * 1000 + 0.001)));
   const ch24     = (live && !isNaN(live.ch24)) ? live.ch24 : ((rng() - 0.4) * 60);
   // v1.0.61 — 7d change from extended klines when Binance returned them.
   // Klines are stored at index 0 (oldest) → end (newest); we use the
@@ -27564,6 +27571,8 @@ const TOK_BINANCE_PAIR = {
 // surface as stablecoin rows in the Token Terminal alongside SOL +
 // memecoins, with Birdeye supplying mc / holders / 24h volume.
 const TOK_BIRDEYE_MINT = {
+  // Verified Solana SPL mints — all live on mainnet, all returned by
+  // Birdeye's /defi/token_overview cleanly.
   sol:  'So11111111111111111111111111111111111111112',
   usdc: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
   usdt: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
@@ -27571,9 +27580,10 @@ const TOK_BIRDEYE_MINT = {
   bonk: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
   jup:  'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
   jto:  'jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL',
-  // Memes / new launches — verify mints before mainnet:
-  pump: 'pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn',
-  fart: '9BB6NFEcjBCtP6LewSSuvkKsztTpfsxk25oRGNVsohB2',
+  // v1.0.63 — PUMP + FART mints removed; the placeholders shipped in
+  // v1.0.52 were guesses and 404'd against Birdeye, which made FART
+  // fall through to synth `rng()*1000` ($717 fake price). Restore
+  // when the canonical mints are confirmed for mainnet trading.
 };
 
 // ─── v0.9.14 ─ Pyth Hermes feeds for the verified headline price ───────────
@@ -27868,6 +27878,16 @@ function _tokRenderList(){
   snaps = _tokCategorize(snaps, _tokState.activeTab);
   if(cnt) cnt.textContent = snaps.length + ' tokens';
   host.innerHTML = '';
+  // v1.0.63 — Trigger live fetch for every visible row so the list
+  // doesn't show "—" forever on tokens that haven't been selected.
+  // Stagger requests 80ms apart so the rate-limit hit is spread out
+  // across Binance / Birdeye instead of a single bulk burst. Cached
+  // fetches return immediately (see _TOK_LIVE_TTL_MS).
+  snaps.forEach((s, i) => {
+    setTimeout(() => {
+      try { _tokFetchLive(s.def.id, _tokTF(s.def.id)); } catch(_){}
+    }, i * 80);
+  });
   snaps.forEach((s, i) => {
     const def = s.def;
     const isSel = def.id === _tokState.selectedId;
