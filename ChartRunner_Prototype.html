@@ -27178,6 +27178,76 @@ const _CR_PANE_SCHEMAS = {
       { type:'note', text:'LIVE — pings public mainnet-beta RPC for current slot + epoch progress. Falls back to api.mainnet-beta.solana.com.' },
       { type:'slider', key:'refreshSec', label:'Refresh', min:15, max:120, step:5, unit:'s', default:30 },
     ] },
+
+  // ── v1.0.71 — Engine watchlist schemas. Both panes write through to
+  //   their localStorage keys (the same the Engine paint loop +
+  //   Token Terminal star toggle read), so editing in the gear here
+  //   updates the watchlist everywhere it's shown. The schema's
+  //   persist() hook fires on Save and the field's loader() seeds the
+  //   textarea with the currently-stored value.
+  'pane:walletWatchlist': {
+    icon: '💼', title: 'Wallet Watchlist', sub: 'Paste Solana addresses (one per line).',
+    fields: [
+      { type:'note', text:'LIVE — paint loop pulls balances every 2s for each address via _crFetchSolBalance. List persists across sessions. Comma OR newline separated, leading/trailing whitespace ignored.' },
+      { type:'textarea', key:'wallets', label:'Tracked wallets',
+        hint:'One pubkey per line. Saved to localStorage.cr_wallet_watchlist_v1.',
+        placeholder:'PDi6BNFCbGE9H72zxCMNWpDfWo5Rp3gvdhCyfpfcAWM\n66f6ZRU1JP7dAePpkN535Dv6nJ1H1vxVVVbxUdyGiSjy',
+        loader: () => {
+          try {
+            const raw = localStorage.getItem('cr_wallet_watchlist_v1') || '';
+            return raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean).join(',');
+          } catch(_){ return ''; }
+        },
+      },
+    ],
+    persist: (cfg) => {
+      try {
+        const list = String(cfg.wallets || '').split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+        localStorage.setItem('cr_wallet_watchlist_v1', list.join(','));
+        // Nudge the Engine paint loop immediately so the user sees
+        // their edit before the next 2s tick.
+        try { if(typeof window._crRepaintEngineWatchlists === 'function') window._crRepaintEngineWatchlists(); } catch(_){}
+      } catch(_){}
+    },
+  },
+  'pane:coinWatchlist': {
+    icon: '🪙', title: 'Coin Watchlist', sub: 'Star tokens in Token Terminal or paste IDs here.',
+    fields: [
+      { type:'note', text:'LIVE — Engine paint loop reads localStorage.cr_tok_watchlist_v1 (a Set of token ids: btc / eth / sol / jup / bonk / wif / jto / pyth / doge …). Star a token in the Token app to add it from there, OR edit the list directly below.' },
+      { type:'textarea', key:'tokens', label:'Tracked token ids',
+        hint:'One id per line (e.g. sol, jup, bonk). Saved to localStorage.cr_tok_watchlist_v1.',
+        placeholder:'sol\njup\nbonk\nwif',
+        loader: () => {
+          try {
+            const raw = localStorage.getItem('cr_tok_watchlist_v1') || '';
+            // Stored as JSON array of ids in some builds, comma-string in others — accept both.
+            let ids = [];
+            try { const parsed = JSON.parse(raw); if(Array.isArray(parsed)) ids = parsed; } catch(_){}
+            if(!ids.length) ids = raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+            return ids.join(',');
+          } catch(_){ return ''; }
+        },
+      },
+    ],
+    persist: (cfg) => {
+      try {
+        const list = String(cfg.tokens || '').split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+        // Token Terminal expects a JSON array under this key.
+        localStorage.setItem('cr_tok_watchlist_v1', JSON.stringify(list));
+        // Reload Token Terminal's in-memory Set so its Watchlist
+        // tab + star toggles reflect the new state without a reload.
+        try {
+          if(typeof _tokState !== 'undefined' && typeof _tokLoadWatchlist === 'function'){
+            _tokState.watchlist = _tokLoadWatchlist();
+          }
+        } catch(_){}
+        // Repaint Engine watchlists immediately.
+        try { if(typeof window._crRepaintEngineWatchlists === 'function') window._crRepaintEngineWatchlists(); } catch(_){}
+        // Schedule a Token Terminal re-render so the Watchlist tab updates.
+        try { if(typeof window._tokScheduleRerender === 'function') window._tokScheduleRerender(); } catch(_){}
+      } catch(_){}
+    },
+  },
 };
 
 function _crTermPaneQuickConfig(w, onSave){
@@ -27229,6 +27299,14 @@ function _crTermPaneQuickConfig(w, onSave){
     const cur = (() => {
       if(field.legacyKey && w[field.legacyKey] != null) return w[field.legacyKey];
       if(field.key && w.config && w.config[field.key] != null) return w.config[field.key];
+      // v1.0.71 — field-level loader() seeds the default from outside
+      //   sources (e.g. localStorage) when the widget has no saved
+      //   value yet. Used by walletWatchlist + coinWatchlist so the
+      //   textarea opens pre-populated with the existing wallets /
+      //   coins instead of blank.
+      if(typeof field.loader === 'function'){
+        try { const v = field.loader(); if(v != null) return v; } catch(_){}
+      }
       return field.default != null ? field.default : '';
     })();
 
@@ -27356,6 +27434,14 @@ function _crTermPaneQuickConfig(w, onSave){
           w.config[field.key] = v;
         }
       });
+      // v1.0.71 — Some pane configs persist outside the widget config
+      // (e.g. walletWatchlist + coinWatchlist write through to their
+      // localStorage keys so the Engine paint loops + Token Terminal
+      // see the same source of truth). If the schema declared a
+      // persist(cfg, w) hook, run it after the regular save.
+      if(typeof schema.persist === 'function'){
+        try { schema.persist(w.config, w); } catch(_){}
+      }
       try { if(typeof crNotify === 'function') crNotify((schema.title || w.type) + ' · saved'); } catch(_){}
       try { if(typeof onSave === 'function') onSave(); } catch(_){}
     } catch(_){}

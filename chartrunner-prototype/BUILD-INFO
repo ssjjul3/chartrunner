@@ -1,3 +1,55 @@
+deployed: 2026-05-12T10:30:00Z · v1.0.71 (Wallet + Coin Watchlist now have
+gear → config window.
+
+USER FEEDBACK: "wallet watchlist should have configs to paste wallets."
+
+The two Engine watchlist panes — walletWatchlist + coinWatchlist —
+were already LIVE (paint loops pull balances + token IDs from their
+localStorage keys), but the gear icon opened an empty config window
+because they weren't in _CR_PANE_SCHEMAS. v1.0.71 adds both schemas
++ a generic schema.persist() hook so non-widget-local state (i.e.
+localStorage) can write through on Save.
+
+NEW SCHEMA SUPPORT
+  · field.loader() — function called when the widget has no saved
+    value yet. Returns the seed value for the input. Used to
+    pre-populate the textarea from localStorage.
+  · schema.persist(cfg, w) — function called after the regular save.
+    Writes through to whatever external store the pane reads from.
+
+walletWatchlist
+  · Title: "Wallet Watchlist · Paste Solana addresses"
+  · Field: textarea "Tracked wallets" — one pubkey per line, comma
+    OR newline separated, leading/trailing whitespace ignored
+  · loader → reads cr_wallet_watchlist_v1, formats one-per-line
+  · persist → writes back to cr_wallet_watchlist_v1, calls
+    window._crRepaintEngineWatchlists() so the pane updates
+    immediately instead of waiting for the next 2s tick.
+
+coinWatchlist
+  · Title: "Coin Watchlist · Star or paste token IDs"
+  · Field: textarea "Tracked token ids" — sol / jup / bonk / wif / …
+  · loader → reads cr_tok_watchlist_v1 (accepts JSON array OR
+    comma-string for forward-compat)
+  · persist → writes JSON array to cr_tok_watchlist_v1, reloads
+    Token Terminal's in-memory Set via _tokState.watchlist =
+    _tokLoadWatchlist() (so its Watchlist tab + star toggles
+    reflect the edit without a reload), repaints Engine
+    watchlists, schedules a Token Terminal re-render.
+
+PANE CONFIG MATRIX (post-v1.0.71)
+  Every shipped pane now has the right level of config:
+  · Both Engine watchlists: textarea for the list itself
+  · Token-bound panes (solPrice / solHolders / solSniper /
+    phxWhales): select with the supported token IDs
+  · Symbol-bound CEX panes (cexAgg / cexOI / cexDepth): select
+    with BTC / ETH / SOL / JUP toggle
+  · Row-count panes (everything with a table): rows slider
+  · Threshold panes (cexWhales / solPumpfun): min-USD slider
+  · Every refresh: refreshSec slider with sensible min/max
+  · Archived panes: note-only, with a restore-path text
+)
+
 deployed: 2026-05-12T10:00:00Z · v1.0.70 (Unlock final 18 panes — every
 visible terminal pane now LIVE or explicitly ARCHIVED.
 
