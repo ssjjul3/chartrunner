@@ -44450,22 +44450,58 @@ window.crGoldRush = (function(){
     });
   }
 
+  // v1.0.72 — Force-tick any pane that lives inside the currently
+  // visible view. Used on tab switch + Terminal app open so the user
+  // sees fresh data immediately instead of waiting for the 15s tick.
+  function _forceTickForVisiblePanes(){
+    Object.keys(REFRESHERS).forEach(paneId => {
+      const bodies = _bodiesOf(paneId);
+      // Pane must exist + at least one of its bodies must be in a
+      // visible (non-.hidden) view. Hidden source clones still match
+      // — we accept that, throttle the work via _lastRun age.
+      if(!bodies.length) return;
+      _lastRun[paneId] = 0; // force re-fire next tick
+      try { REFRESHERS[paneId].fn(); } catch(_){}
+      _lastRun[paneId] = Date.now();
+    });
+  }
+
   function _boot(){
     tagPanes();
     // v1.0.70 — Stamp Engine pane .live chips at boot + on tab switch.
     _stampEngineLiveChips();
-    // Re-tag on tab switch in case panes were added late.
+    // Re-tag on tab switch in case panes were added late, AND
+    // force-tick every refresher so the user sees data immediately
+    // instead of waiting up to 15s for the master tick.
     document.addEventListener('click', e => {
       const t = e.target && e.target.closest && e.target.closest('.crTerm-tab');
       if(t){
-        setTimeout(tagPanes, 200);
-        setTimeout(_stampEngineLiveChips, 220);
+        setTimeout(() => {
+          try { tagPanes(); } catch(_){}
+          try { _stampEngineLiveChips(); } catch(_){}
+          try { _forceTickForVisiblePanes(); } catch(_){}
+        }, 200);
+      }
+      // Also force-tick on Terminal app open — the user just brought
+      // the window forward, they want fresh data NOW.
+      const appLauncher = e.target && e.target.closest && e.target.closest('[data-os-app="terminal"], [data-app="terminal"]');
+      if(appLauncher){
+        setTimeout(() => {
+          try { tagPanes(); } catch(_){}
+          try { _stampEngineLiveChips(); } catch(_){}
+          try { _forceTickForVisiblePanes(); } catch(_){}
+        }, 400);
       }
     });
     // First tick + 15s heartbeat. Each pane self-throttles via its
     // refreshSec config.
     setTimeout(_tick, 1500);
     setInterval(_tick, 15000);
+    // v1.0.72 — Belt-and-suspenders re-tag + force-tick passes at
+    // boot+3s and boot+8s, in case some panes are late-attached by
+    // the OS chrome / window manager initialisation.
+    setTimeout(() => { try { tagPanes(); _stampEngineLiveChips(); _forceTickForVisiblePanes(); } catch(_){} }, 3000);
+    setTimeout(() => { try { tagPanes(); _stampEngineLiveChips(); _forceTickForVisiblePanes(); } catch(_){} }, 8000);
   }
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', _boot);

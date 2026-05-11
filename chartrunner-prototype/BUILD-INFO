@@ -1,3 +1,41 @@
+deployed: 2026-05-12T11:00:00Z · v1.0.72 (Force-tick + re-tag on every
+Terminal tab click and on Terminal app launch.
+
+USER REPORT: Solana tab still showed all-mock data after v1.0.68-71.
+
+ROOT CAUSE: The master tick fires every 15 seconds. If a user clicked
+the Solana tab right after switching from Engine, they'd see the
+original static HTML for up to 14 seconds until the next tick caught
+them. Also, if the v1.0.60 _boot ran before the Terminal app's first
+render, tagPanes wouldn't find some panes and they'd stay un-tagged
+until the first user click.
+
+FIX: Every Terminal tab click now (200ms after the click, to let the
+view-toggle complete) runs:
+  · tagPanes() — re-walk Solana + CEX views, assign data-pane-id to
+    any pane that lost it / never got one
+  · _stampEngineLiveChips() — paint .live class on Engine tags
+  · _forceTickForVisiblePanes() — for every refresher whose pane
+    body exists in the DOM, reset its _lastRun + fire it immediately
+
+Same triple-action also runs:
+  · 400ms after any click on a Terminal app launcher (data-os-app=
+    "terminal" / data-app="terminal") — catches the case of the
+    user opening the Terminal app
+  · at boot+3s and boot+8s — catches late-attached DOM cases
+
+Result: the moment the user switches to a tab, every pane on it
+either paints LIVE data or surfaces an offline / rate-limited /
+cors-blocked tag. No more 15-second mock-data window.
+
+If after reload the user STILL sees mock data, the cause is on the
+data-source side:
+  · No Birdeye API key configured → solTopTokens/solTrending header
+    chip shows "offline"
+  · No GoldRush API key → solHolders/solSmart/solSniper/phxWhales
+    silently return early (no chip change). Fix: paste a free
+    GoldRush key in Token Terminal settings.)
+
 deployed: 2026-05-12T10:30:00Z · v1.0.71 (Wallet + Coin Watchlist now have
 gear → config window.
 
