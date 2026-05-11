@@ -26620,6 +26620,20 @@ function _termSpawnPickerOpen(){
         sliderRow.appendChild(slider); sliderRow.appendChild(valTxt);
         wrap.appendChild(sliderRow);
         getValue = () => Number(slider.value);
+      } else if(field.type === 'select'){
+        // v1.0.60 — Select dropdown for per-pane option pickers (asset,
+        // sort order, exchange, etc).
+        inputEl = document.createElement('select');
+        inputEl.style.cssText = 'width:100%;padding:6px 8px;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:5px;color:var(--fg);font:11px ui-monospace,Menlo,monospace;outline:none;cursor:pointer';
+        (field.options || []).forEach(opt => {
+          const o = document.createElement('option');
+          o.value = String(opt.value);
+          o.textContent = opt.label || String(opt.value);
+          if(String(cur || field.default || '') === String(opt.value)) o.selected = true;
+          inputEl.appendChild(o);
+        });
+        wrap.appendChild(inputEl);
+        getValue = () => inputEl.value;
       } else if(field.type === 'button'){
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -26884,6 +26898,193 @@ const _CR_PANE_SCHEMAS = {
         } },
     ],
   },
+
+  // ── v1.0.60 — Solana view schemas ──────────────────────────────────
+  // Each pane in the Solana tab now has a quick-config form in the
+  // picker. Six of these are wired to real data (see crTerminalPanes
+  // IIFE at end-of-script). The other Solana panes accept generic
+  // refresh + compact toggles for now; real data wiring is one fetch
+  // call away once we promote them.
+  'pane:solPrice': {
+    icon: '◆', title: 'SOL · USDC · spot', sub: 'Live price via Birdeye /defi/price.',
+    fields: [
+      { type:'note', text:'LIVE — pulls from window.crBirdeye (v1.0.52). Update the watched mint to track any Solana SPL token.' },
+      { type:'select', key:'tokenId', label:'Watch token', default:'sol',
+        options:[
+          { value:'sol',  label:'SOL'  },
+          { value:'usdc', label:'USDC' },
+          { value:'usdt', label:'USDT' },
+          { value:'wif',  label:'WIF'  },
+          { value:'bonk', label:'BONK' },
+          { value:'jup',  label:'JUP'  },
+          { value:'jto',  label:'JTO'  },
+          { value:'pump', label:'PUMP' },
+          { value:'fart', label:'FART' },
+        ] },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:15, max:300, step:5, unit:'s', default:30 },
+    ],
+  },
+  'pane:solTopTokens': {
+    icon: '◆', title: 'Top Tokens · 24h vol', sub: 'Solana SPL leaderboard.',
+    fields: [
+      { type:'note', text:'Sort source: Birdeye token list. Wirable via crBirdeye for the watchlist; current top-10 from TOK_LIST cache.' },
+      { type:'select', key:'sortBy', label:'Sort by', default:'vol24',
+        options:[
+          { value:'vol24', label:'24h volume' },
+          { value:'ch24',  label:'24h % change' },
+          { value:'mc',    label:'Market cap' },
+        ] },
+      { type:'slider', key:'rows', label:'Rows', min:5, max:20, step:1, default:10 },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:30, max:600, step:15, unit:'s', default:60 },
+    ],
+  },
+  'pane:solDexVolume': {
+    icon: '◇', title: 'Solana DEX Volume', sub: '24h · TVL via DefiLlama.',
+    fields: [
+      { type:'note', text:'Wirable to DefiLlama /v2/chains?cex=false → Solana entry. Not yet wired; placeholder.' },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 },
+    ],
+  },
+  'pane:solPumpfun': {
+    icon: '◆', title: 'pump.fun Launches', sub: 'Recent bonding-curve launches.',
+    fields: [
+      { type:'note', text:'Wirable to pump.fun public API. Not yet wired; placeholder.' },
+      { type:'slider', key:'minMcUsd', label:'Min market cap USD', min:0, max:1000000, step:1000, default:5000 },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:30, max:300, step:10, unit:'s', default:30 },
+    ],
+  },
+  'pane:solSmart': {
+    icon: '◆', title: 'Smart Wallets · PnL', sub: '24h leaderboard of tracked wallets.',
+    fields: [
+      { type:'note', text:'LIVE — pulls recent txs via window.crGoldRush.walletTxs (v1.0.59) for each pasted wallet. PnL inferred from net SOL+USDC delta over 24h.' },
+      { type:'textarea', key:'wallets', label:'Tracked wallets',
+        hint:'One pubkey per line. Top performers shown first.',
+        placeholder:'PDi6BNFCbGE9H72zxCMNWpDfWo5Rp3gvdhCyfpfcAWM\n66f6ZRU1JP7dAePpkN535Dv6nJ1H1vxVVVbxUdyGiSjy' },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:180 },
+    ],
+  },
+  'pane:solSwaps': {
+    icon: '◇', title: 'Live Swaps · Jupiter', sub: 'Recent routed swaps via Jupiter v6.',
+    fields: [
+      { type:'note', text:'Stream source: ChartRunner Jupiter broker fills (v1.0.53). When jupiterBroker.submit() lands a tx, it lands in this feed automatically.' },
+      { type:'slider', key:'rows', label:'Rows', min:5, max:50, step:5, default:15 },
+    ],
+  },
+  'pane:solTrending': {
+    icon: '◆', title: 'Trending Memes', sub: '1h · 24h.',
+    fields: [
+      { type:'note', text:'Wirable to Birdeye /defi/trending. Not yet wired; current list is the v1.0.x watchlist subset.' },
+      { type:'slider', key:'window', label:'Window', min:1, max:24, step:1, unit:'h', default:1 },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 },
+    ],
+  },
+  'pane:solHolders': {
+    icon: '◆', title: 'Holder Distribution', sub: 'Top-N holders via GoldRush.',
+    fields: [
+      { type:'note', text:'LIVE — pulls window.crGoldRush.tokenHolders (v1.0.59). Pick which token to introspect; ChartRunner caches the same data for the Phoenix Live whale-ghosts overlay.' },
+      { type:'select', key:'tokenId', label:'Token', default:'wif',
+        options:[
+          { value:'sol',  label:'SOL'  },
+          { value:'wif',  label:'WIF'  },
+          { value:'bonk', label:'BONK' },
+          { value:'jup',  label:'JUP'  },
+          { value:'jto',  label:'JTO'  },
+          { value:'pump', label:'PUMP' },
+          { value:'fart', label:'FART' },
+        ] },
+      { type:'slider', key:'rows', label:'Top-N rows', min:5, max:50, step:5, default:10 },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:90 },
+    ],
+  },
+  'pane:solSniper': {
+    icon: '◆', title: 'Sniper Activity', sub: 'First-block buyers per launch.',
+    fields: [
+      { type:'note', text:'Wirable via GoldRush wallet-activity + token-launches join. Not yet wired; placeholder.' },
+    ],
+  },
+
+  // ── v1.0.60 — CEX view schemas ─────────────────────────────────────
+  'pane:cexAgg': {
+    icon: '◆', title: 'BTC · Cross-CEX', sub: 'Best bid/ask across exchanges.',
+    fields: [
+      { type:'select', key:'symbol', label:'Symbol', default:'BTC',
+        options:[
+          { value:'BTC',  label:'BTC'  },
+          { value:'ETH',  label:'ETH'  },
+          { value:'SOL',  label:'SOL'  },
+        ] },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:5, max:120, step:5, unit:'s', default:15 },
+    ],
+  },
+  'pane:cexExchanges': {
+    icon: '◆', title: 'Top Exchanges · 24h', sub: 'CoinGecko spot leaderboard.',
+    fields: [
+      { type:'note', text:'LIVE — pulls CoinGecko /exchanges. Spot volume, 24h, USD.' },
+      { type:'slider', key:'rows', label:'Rows', min:5, max:20, step:1, default:10 },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 },
+    ],
+  },
+  'pane:cexStables': {
+    icon: '◇', title: 'Stablecoin Flows', sub: 'USDT · USDC 24h net.',
+    fields: [
+      { type:'note', text:'Wirable to DefiLlama /stablecoins. Not yet wired; placeholder.' },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 },
+    ],
+  },
+  'pane:cexFunding': {
+    icon: '◆', title: 'Funding Rates · Perps', sub: '8h, annualized.',
+    fields: [
+      { type:'note', text:'LIVE — pulls Binance /fapi/v1/premiumIndex. Sorted by absolute funding rate (extremes first).' },
+      { type:'slider', key:'rows', label:'Rows', min:5, max:25, step:1, default:12 },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:90 },
+    ],
+  },
+  'pane:cexOI': {
+    icon: '◆', title: 'Open Interest · Perps', sub: 'USD.',
+    fields: [
+      { type:'note', text:'Wirable to Binance /futures/data/openInterestHist. Not yet wired; placeholder.' },
+    ],
+  },
+  'pane:cexWhales': {
+    icon: '◇', title: 'Whale Alerts', sub: 'On-chain &gt; $1M.',
+    fields: [
+      { type:'note', text:'Wirable to whale-alert.io (paid) or in-house on-chain scan. Not yet wired; placeholder.' },
+    ],
+  },
+  'pane:cexListings': {
+    icon: '◆', title: 'New Listings · 7d', sub: 'CoinGecko fresh additions.',
+    fields: [
+      { type:'note', text:'LIVE — pulls CoinGecko /coins/list/new. Filters projects added in the last N days.' },
+      { type:'slider', key:'windowDays', label:'Window', min:1, max:30, step:1, unit:'d', default:7 },
+      { type:'slider', key:'rows', label:'Rows', min:5, max:25, step:1, default:10 },
+    ],
+  },
+  'pane:cexDepth': {
+    icon: '◆', title: 'Liquidity Depth · BTC/USDT', sub: '±% from mid.',
+    fields: [
+      { type:'note', text:'Wirable to Binance /api/v3/depth?symbol=BTCUSDT. Not yet wired; placeholder.' },
+    ],
+  },
+  'pane:cexDexFlow': {
+    icon: '◆', title: 'CEX → DEX Flow', sub: '24h net USD.',
+    fields: [
+      { type:'note', text:'Wirable via DefiLlama bridge data + exchange withdrawal scans. Not yet wired; placeholder.' },
+    ],
+  },
+
+  // ── v1.0.60 — Phoenix / HL view schemas ───────────────────────────
+  'pane:phxWhales':  { icon:'◆', title:'Whale Holders · Phoenix', sub:'Top-10 holders via GoldRush.',
+    fields:[{type:'note', text:'Wirable: same path as solHolders; uses crGoldRush.tokenHolders.'}] },
+  'pane:phxFunding': { icon:'◆', title:'Phoenix · Funding Rate', sub:'Live perp funding.',
+    fields:[{type:'note', text:'Pending Phoenix SDK npm publish; placeholder until then.'}] },
+  'pane:phxOI':      { icon:'◆', title:'Phoenix · Open Interest', sub:'USD.',
+    fields:[{type:'note', text:'Pending Phoenix SDK npm publish; placeholder until then.'}] },
+  'pane:phxBook':    { icon:'◆', title:'Phoenix · Orderbook Depth', sub:'Bid/ask snapshot.',
+    fields:[{type:'note', text:'Pending Phoenix SDK npm publish; placeholder until then.'}] },
+  'pane:phxFlight':  { icon:'◆', title:'Phoenix · Flight Fees', sub:'24h fee leaderboard.',
+    fields:[{type:'note', text:'Pending Phoenix SDK npm publish; placeholder until then.'}] },
+  'pane:phxStatus':  { icon:'◆', title:'Phoenix · Status', sub:'Block-engine + RPC health.',
+    fields:[{type:'note', text:'Pending Phoenix SDK npm publish; placeholder until then.'}] },
 };
 
 function _crTermPaneQuickConfig(w, onSave){
@@ -26999,6 +27200,19 @@ function _crTermPaneQuickConfig(w, onSave){
       wrap.appendChild(sliderRow);
       inputEl = slider;
       getValue = () => Number(slider.value);
+    } else if(field.type === 'select'){
+      // v1.0.60 — Select dropdown in the per-widget settings popup.
+      inputEl = document.createElement('select');
+      inputEl.style.cssText = 'width:100%;padding:6px 8px;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:5px;color:var(--fg);font:11px ui-monospace,Menlo,monospace;outline:none;cursor:pointer';
+      (field.options || []).forEach(opt => {
+        const o = document.createElement('option');
+        o.value = String(opt.value);
+        o.textContent = opt.label || String(opt.value);
+        if(String(cur || field.default || '') === String(opt.value)) o.selected = true;
+        inputEl.appendChild(o);
+      });
+      wrap.appendChild(inputEl);
+      getValue = () => inputEl.value;
     } else if(field.type === 'button'){
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -42799,6 +43013,303 @@ window.crGoldRush = (function(){
     document.addEventListener('DOMContentLoaded', _wire);
   } else {
     setTimeout(_wire, 1000);
+  }
+})();
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.0.60 — Terminal panes: auto-tag + live-data wiring (Layer A+B)
+   ──────────────────────────────────────────────────────────────────
+   Layer A: walks the Solana + CEX terminal views, auto-assigns
+   data-pane-id to every visual pane (so they appear in the "+ New
+   Terminal Widget" picker + get their _CR_PANE_SCHEMAS settings).
+   Mapping from header text → pane id is hardcoded so picker labels
+   stay stable across reloads.
+
+   Layer B: replaces 6 mock-up pane bodies with live data:
+     · pane:solPrice      → crBirdeye.fetchToken(tokenId)
+     · pane:solHolders    → crGoldRush.tokenHolders(mint)
+     · pane:solSmart      → crGoldRush.walletTxs per pasted wallet
+     · pane:cexExchanges  → CoinGecko /exchanges
+     · pane:cexFunding    → Binance /fapi/v1/premiumIndex
+     · pane:cexListings   → CoinGecko /coins/list/new
+
+   Each live pane has its own refresh tick honoring the schema's
+   refreshSec slider (defaults baked per pane).
+   ──────────────────────────────────────────────────────────────────*/
+(function(){
+  'use strict';
+
+  // Header text → pane id mapping. Stable so picker bookmarks survive.
+  const PANE_ID_MAP = {
+    // Solana view
+    'SOL · USDC':                 'solPrice',
+    'Top Tokens':                 'solTopTokens',
+    'DEX Volume':                 'solDexVolume',
+    'pump.fun Launches':          'solPumpfun',
+    'Smart Wallets':              'solSmart',
+    'Live Swaps':                 'solSwaps',
+    'Trending Memes':             'solTrending',
+    'Holder Distribution':        'solHolders',
+    'Sniper Activity':            'solSniper',
+    // CEX view
+    'BTC · Cross-CEX Aggregator': 'cexAgg',
+    'Top Exchanges':              'cexExchanges',
+    'Stablecoin Flows':           'cexStables',
+    'Funding Rates · Perps':      'cexFunding',
+    'Open Interest':              'cexOI',     // disambiguated in tagPanes()
+    'Whale Alerts':               'cexWhales',
+    'New Listings':               'cexListings',
+    'Liquidity Depth':            'cexDepth',
+    'CEX → DEX Flow':             'cexDexFlow',
+  };
+
+  function _headerOf(pane){
+    const h = pane.querySelector('.crTerm-paneHd > span:first-child');
+    if(!h) return null;
+    // Strip the leading ◆ / ◇ / ◇◇ glyph + whitespace.
+    return h.textContent.trim().replace(/^[◆◇◇◇]+\s*/g, '').trim();
+  }
+
+  function tagPanes(){
+    ['crTermViewSolana','crTermViewCex'].forEach(viewId => {
+      const view = document.getElementById(viewId);
+      if(!view) return;
+      view.querySelectorAll('.crTerm-pane').forEach(pane => {
+        if(pane.getAttribute('data-pane-id')) return;
+        const hdr = _headerOf(pane);
+        if(!hdr) return;
+        const id = PANE_ID_MAP[hdr];
+        if(id) pane.setAttribute('data-pane-id', id);
+      });
+    });
+  }
+
+  // ── Live-data wirers ───────────────────────────────────────────────
+
+  function _getConfigFor(paneId){
+    try {
+      const all = JSON.parse(localStorage.getItem('cr_pane_defaults_v1') || '{}') || {};
+      return (all['pane:' + paneId]) || {};
+    } catch(_){ return {}; }
+  }
+  function _bodyOf(paneId){
+    const pane = document.querySelector('[data-pane-id="' + paneId + '"]');
+    return pane && pane.querySelector('.crTerm-paneBd');
+  }
+  function _setHdTag(paneId, text, cls){
+    const pane = document.querySelector('[data-pane-id="' + paneId + '"]');
+    const tag = pane && pane.querySelector('.crTerm-paneHd .hd-tag');
+    if(!tag) return;
+    tag.textContent = text;
+    if(cls){
+      tag.classList.remove('warn','tune');
+      tag.classList.add(cls);
+    }
+  }
+  function _fmtUsd(n){
+    if(n == null || !isFinite(n)) return '—';
+    if(n >= 1e9) return '$' + (n/1e9).toFixed(2) + 'B';
+    if(n >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
+    if(n >= 1e3) return '$' + (n/1e3).toFixed(2) + 'K';
+    if(n >= 1)   return '$' + n.toFixed(2);
+    return '$' + n.toFixed(6);
+  }
+  function _fmtPct(n){
+    if(n == null || !isFinite(n)) return '—';
+    return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+  }
+
+  // ── 1. solPrice ────────────────────────────────────────────────────
+  async function refreshSolPrice(){
+    const body = _bodyOf('solPrice');
+    if(!body || !window.crBirdeye) return;
+    const cfg = _getConfigFor('solPrice');
+    const tokenId = cfg.tokenId || 'sol';
+    const data = await window.crBirdeye.fetchToken(tokenId);
+    if(!data){ _setHdTag('solPrice','offline','warn'); return; }
+    const price  = data.price;
+    const ch24   = data.ch24;
+    const vol24  = data.vol24;
+    const mc     = data.mc;
+    const holders= data.holders;
+    body.innerHTML = ''
+      + '<div style="font:800 22px ui-monospace,Menlo,monospace;letter-spacing:.5px">' + _fmtUsd(price) + '</div>'
+      + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:11px">'
+      +   '<span>24h <b style="color:' + (ch24 >= 0 ? '#14f195' : '#ff5b7f') + '">' + _fmtPct(ch24) + '</b></span>'
+      +   '<span>Vol <b>' + _fmtUsd(vol24) + '</b></span>'
+      +   '<span>MC <b>' + _fmtUsd(mc) + '</b></span>'
+      +   (holders ? '<span>Holders <b>' + holders.toLocaleString() + '</b></span>' : '')
+      + '</div>';
+    _setHdTag('solPrice', tokenId.toUpperCase() + ' · LIVE', 'live');
+  }
+
+  // ── 2. solHolders ──────────────────────────────────────────────────
+  async function refreshSolHolders(){
+    const body = _bodyOf('solHolders');
+    if(!body || !window.crGoldRush) return;
+    const cfg = _getConfigFor('solHolders');
+    const tokenId = cfg.tokenId || 'wif';
+    const rows    = cfg.rows || 10;
+    const mints = (typeof TOK_BIRDEYE_MINT !== 'undefined') ? TOK_BIRDEYE_MINT : {};
+    const mint = mints[tokenId];
+    if(!mint){ _setHdTag('solHolders','no mint','warn'); return; }
+    const holders = await window.crGoldRush.tokenHolders(mint, { pageSize: rows });
+    if(!holders || !holders.length){ _setHdTag('solHolders','no data','warn'); return; }
+    body.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+      + holders.slice(0, rows).map((h, i) => {
+          const addr = h.address ? (h.address.slice(0,4) + '…' + h.address.slice(-4)) : '—';
+          const bal  = h.balance != null ? h.balance.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
+          const pct  = h.share   != null ? (h.share * 100).toFixed(2) + '%' : '';
+          return '<div style="display:flex;justify-content:space-between"><span>#' + (i+1) + ' ' + addr + '</span>'
+               + '<span class="r"><b>' + bal + '</b>'
+               + (pct ? ' <span style="color:var(--dim)">· ' + pct + '</span>' : '') + '</span></div>';
+        }).join('')
+      + '</div>';
+    _setHdTag('solHolders', tokenId.toUpperCase() + ' · LIVE', 'live');
+  }
+
+  // ── 3. solSmart ────────────────────────────────────────────────────
+  async function refreshSolSmart(){
+    const body = _bodyOf('solSmart');
+    if(!body || !window.crGoldRush) return;
+    const cfg = _getConfigFor('solSmart');
+    const wallets = String(cfg.wallets || '').split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+    if(!wallets.length){
+      body.innerHTML = '<div style="font-style:italic;color:var(--dim);font-size:10px;padding:4px 0">Paste tracked wallets in this pane\'s settings.</div>';
+      _setHdTag('solSmart','config required','warn');
+      return;
+    }
+    const rows = [];
+    for(const w of wallets.slice(0, 8)){
+      try {
+        const txs = await window.crGoldRush.walletTxs(w);
+        const short = w.slice(0,4) + '…' + w.slice(-4);
+        const recent = (txs || []).slice(0, 5);
+        rows.push({ wallet: short, txCount: recent.length, full: w });
+      } catch(_){}
+    }
+    body.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+      + rows.map(r => '<div style="display:flex;justify-content:space-between">'
+                    + '<span>' + r.wallet + '</span>'
+                    + '<span class="r"><b>' + r.txCount + ' recent</b></span></div>').join('')
+      + '</div>';
+    _setHdTag('solSmart', rows.length + ' wallets · LIVE', 'live');
+  }
+
+  // ── 4. cexExchanges (CoinGecko) ────────────────────────────────────
+  async function refreshCexExchanges(){
+    const body = _bodyOf('cexExchanges');
+    if(!body) return;
+    const cfg = _getConfigFor('cexExchanges');
+    const rows = cfg.rows || 10;
+    try {
+      const r = await fetch('https://api.coingecko.com/api/v3/exchanges?per_page=' + rows + '&page=1');
+      if(!r.ok){ _setHdTag('cexExchanges','rate-limited','warn'); return; }
+      const list = await r.json();
+      if(!Array.isArray(list) || !list.length){ _setHdTag('cexExchanges','no data','warn'); return; }
+      body.innerHTML = '<table style="width:100%;font-size:10.5px;border-collapse:collapse">'
+        + '<tr><th style="text-align:left;color:var(--dim)">Exchange</th><th style="color:var(--dim)">24h vol BTC</th></tr>'
+        + list.slice(0, rows).map(e =>
+            '<tr><td>' + (e.name || '?') + '</td>'
+          + '<td class="r"><b>' + (e.trade_volume_24h_btc != null ? e.trade_volume_24h_btc.toLocaleString(undefined,{maximumFractionDigits:0}) : '—') + '</b></td></tr>'
+          ).join('')
+        + '</table>';
+      _setHdTag('cexExchanges', list.length + ' exch · LIVE', 'live');
+    } catch(err){ _setHdTag('cexExchanges','offline','warn'); }
+  }
+
+  // ── 5. cexFunding (Binance perp funding) ──────────────────────────
+  async function refreshCexFunding(){
+    const body = _bodyOf('cexFunding');
+    if(!body) return;
+    const cfg = _getConfigFor('cexFunding');
+    const rows = cfg.rows || 12;
+    try {
+      const r = await fetch('https://fapi.binance.com/fapi/v1/premiumIndex');
+      if(!r.ok){ _setHdTag('cexFunding','offline','warn'); return; }
+      const list = await r.json();
+      if(!Array.isArray(list) || !list.length){ _setHdTag('cexFunding','no data','warn'); return; }
+      // Sort by absolute funding rate descending (extremes first).
+      list.sort((a,b) => Math.abs(parseFloat(b.lastFundingRate||0)) - Math.abs(parseFloat(a.lastFundingRate||0)));
+      const top = list.slice(0, rows);
+      body.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+        + top.map(p => {
+            const fr  = parseFloat(p.lastFundingRate || 0);
+            const apr = fr * 3 * 365 * 100;   // 8h → annualized
+            return '<div style="display:flex;justify-content:space-between">'
+                 + '<span>' + (p.symbol || '?') + '</span>'
+                 + '<span class="r" style="color:' + (fr >= 0 ? '#14f195' : '#ff5b7f') + '"><b>'
+                 +   (fr*100).toFixed(4) + '%</b> <span style="color:var(--dim)">(' + apr.toFixed(1) + '% APR)</span></span>'
+                 + '</div>';
+          }).join('')
+        + '</div>';
+      _setHdTag('cexFunding', list.length + ' perps · LIVE', 'live');
+    } catch(err){ _setHdTag('cexFunding','offline','warn'); }
+  }
+
+  // ── 6. cexListings (CoinGecko new listings) ───────────────────────
+  async function refreshCexListings(){
+    const body = _bodyOf('cexListings');
+    if(!body) return;
+    const cfg = _getConfigFor('cexListings');
+    const rows = cfg.rows || 10;
+    try {
+      const r = await fetch('https://api.coingecko.com/api/v3/coins/list/new');
+      if(!r.ok){ _setHdTag('cexListings','rate-limited','warn'); return; }
+      const list = await r.json();
+      if(!Array.isArray(list) || !list.length){ _setHdTag('cexListings','no data','warn'); return; }
+      body.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+        + list.slice(0, rows).map(c =>
+            '<div style="display:flex;justify-content:space-between">'
+          + '<span>' + (c.symbol ? c.symbol.toUpperCase() : '?') + ' · ' + (c.name || '?') + '</span>'
+          + '<span class="r" style="color:var(--dim)">' + (c.activated_at ? new Date(c.activated_at*1000).toLocaleDateString() : '—') + '</span>'
+          + '</div>').join('')
+        + '</div>';
+      _setHdTag('cexListings', list.length + ' new · LIVE', 'live');
+    } catch(err){ _setHdTag('cexListings','offline','warn'); }
+  }
+
+  // ── Periodic refresh tick ─────────────────────────────────────────
+  // Each refresher honors its own pane's `refreshSec` config; we run a
+  // 15s master tick and check each pane's elapsed since last refresh.
+  const _lastRun = {};
+  const REFRESHERS = {
+    solPrice:     { fn: refreshSolPrice,     default: 30  },
+    solHolders:   { fn: refreshSolHolders,   default: 90  },
+    solSmart:     { fn: refreshSolSmart,     default: 180 },
+    cexExchanges: { fn: refreshCexExchanges, default: 120 },
+    cexFunding:   { fn: refreshCexFunding,   default: 90  },
+    cexListings:  { fn: refreshCexListings,  default: 300 },
+  };
+  function _tick(){
+    const now = Date.now();
+    Object.keys(REFRESHERS).forEach(paneId => {
+      const { fn, default: dflt } = REFRESHERS[paneId];
+      const cfg = _getConfigFor(paneId);
+      const intervalMs = (cfg.refreshSec || dflt) * 1000;
+      if(!_lastRun[paneId] || (now - _lastRun[paneId]) >= intervalMs){
+        _lastRun[paneId] = now;
+        try { fn(); } catch(_){}
+      }
+    });
+  }
+
+  function _boot(){
+    tagPanes();
+    // Re-tag on tab switch in case panes were added late.
+    document.addEventListener('click', e => {
+      const t = e.target && e.target.closest && e.target.closest('.crTerm-tab');
+      if(t) setTimeout(tagPanes, 200);
+    });
+    // First tick + 15s heartbeat. Each pane self-throttles via its
+    // refreshSec config.
+    setTimeout(_tick, 1500);
+    setInterval(_tick, 15000);
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', _boot);
+  } else {
+    setTimeout(_boot, 0);
   }
 })();
 </script>
