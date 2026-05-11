@@ -27280,7 +27280,23 @@ const TOK_BINANCE_PAIR = {
   doge:'DOGEUSDT', link:'LINKUSDT', tron:'TRXUSDT', arb:'ARBUSDT', op:'OPUSDT',
   jup:'JUPUSDT', jto:'JTOUSDT', tia:'TIAUSDT', pepe:'PEPEUSDT', bonk:'BONKUSDT',
   wif:'WIFUSDT',
-  // hype / pump / mog / fart: no Binance pair (yet) — synth fallback.
+  // hype / pump / mog / fart: no Binance pair (yet) — Birdeye fills these in.
+};
+
+// v1.0.52 — Birdeye mint addresses for the Frontier Etherway track ($20k).
+// Birdeye covers the Solana memes Binance doesn't list (PUMP, FART, MOG,
+// HYPE) — we hit /defi/token_overview to get price + 24h change + holders
+// + market cap + 24h volume in one round-trip. See the crBirdeye IIFE
+// at the bottom of the script for the actual wire-up.
+const TOK_BIRDEYE_MINT = {
+  sol:  'So11111111111111111111111111111111111111112',
+  wif:  'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm',
+  bonk: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+  jup:  'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
+  jto:  'jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL',
+  // Memes / new launches — verify mints before mainnet:
+  pump: 'pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn',
+  fart: '9BB6NFEcjBCtP6LewSSuvkKsztTpfsxk25oRGNVsohB2',
 };
 
 // ─── v0.9.14 ─ Pyth Hermes feeds for the verified headline price ───────────
@@ -27383,32 +27399,78 @@ function _tokScheduleRerender(){
 // where a stale-cache miss would drop the widget back to synth-seeded values.
 function _tokFetchLive(id, tf){
   const pair = TOK_BINANCE_PAIR[id];
-  if(!pair) return null;
   const key = id + '|' + tf;
   const now = Date.now();
   const cached = _tokLiveCache[key];
   if(cached && (now - cached.t) < _TOK_LIVE_TTL_MS) return cached;
   if(_tokLiveInflight[key]) return cached || null;
+  // v1.0.52 — If this is a Solana-chain token AND we have a Birdeye
+  // mint mapping, fetch from Birdeye in parallel. Birdeye fills in
+  // PUMP/FART/HYPE/etc that Binance doesn't list, and enriches the
+  // tokens Binance DOES have with mc / holders / liquidity.
+  const def       = (typeof TOK_LIST !== 'undefined') ? TOK_LIST.find(t => t.id === id) : null;
+  const wantBird  = def && def.chain === 'sol'
+                       && typeof TOK_BIRDEYE_MINT !== 'undefined'
+                       && !!TOK_BIRDEYE_MINT[id]
+                       && window.crBirdeye
+                       && typeof window.crBirdeye.fetchToken === 'function';
+  // Bail early if NEITHER source covers this token (no Binance pair AND
+  // no Birdeye mint). Preserves the v0.9.43 synth-fallback contract.
+  if(!pair && !wantBird) return null;
   _tokLiveInflight[key] = true;
-  // Two parallel fetches.
-  const p1 = fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=' + pair).then(r => r.json()).catch(() => null);
-  const p2 = fetch('https://api.binance.com/api/v3/klines?symbol=' + pair + '&interval=' + tf + '&limit=60').then(r => r.json()).catch(() => null);
-  Promise.all([p1, p2]).then(([t24, kl]) => {
+  // Binance fetches (only if a pair exists). null-promises keep the
+  // Promise.all shape stable when only one source applies.
+  const p1 = pair
+    ? fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=' + pair).then(r => r.json()).catch(() => null)
+    : Promise.resolve(null);
+  const p2 = pair
+    ? fetch('https://api.binance.com/api/v3/klines?symbol=' + pair + '&interval=' + tf + '&limit=60').then(r => r.json()).catch(() => null)
+    : Promise.resolve(null);
+  const p3 = wantBird ? window.crBirdeye.fetchToken(id).catch(() => null) : Promise.resolve(null);
+  Promise.all([p1, p2, p3]).then(([t24, kl, bird]) => {
     delete _tokLiveInflight[key];
-    if(!t24 || !kl || !Array.isArray(kl)) return;
-    const closes = kl.map(k => parseFloat(k[4])).filter(v => !isNaN(v));
-    // v0.9.54 — Also keep full OHLC so the candle chart toggle has data.
-    const klines = kl.map(k => ({
-      t: +k[0], o: parseFloat(k[1]), h: parseFloat(k[2]),
-      l: parseFloat(k[3]), c: parseFloat(k[4]), v: parseFloat(k[5])
-    })).filter(b => !isNaN(b.o) && !isNaN(b.c));
-    _tokLiveCache[key] = {
-      t: Date.now(),
-      px: parseFloat(t24.lastPrice),
-      ch24: parseFloat(t24.priceChangePercent),
-      vol24: parseFloat(t24.quoteVolume),
-      closes, klines,
-    };
+    // Birdeye result merges over the Binance snapshot. If Binance gave
+    // us nothing AND Birdeye did, build the entry from Birdeye alone.
+    let entry = null;
+    if(t24 && kl && Array.isArray(kl)){
+      const closes = kl.map(k => parseFloat(k[4])).filter(v => !isNaN(v));
+      const klines = kl.map(k => ({
+        t: +k[0], o: parseFloat(k[1]), h: parseFloat(k[2]),
+        l: parseFloat(k[3]), c: parseFloat(k[4]), v: parseFloat(k[5])
+      })).filter(b => !isNaN(b.o) && !isNaN(b.c));
+      entry = {
+        t: Date.now(),
+        px: parseFloat(t24.lastPrice),
+        ch24: parseFloat(t24.priceChangePercent),
+        vol24: parseFloat(t24.quoteVolume),
+        closes, klines,
+      };
+    } else if(bird && bird.price != null){
+      // Birdeye-only path: no candle history (Birdeye's free tier
+      // doesn't expose it cheaply). Sparkline will fall back to synth.
+      entry = {
+        t: Date.now(),
+        px: bird.price,
+        ch24: bird.ch24 != null ? bird.ch24 : 0,
+        vol24: bird.vol24 != null ? bird.vol24 : 0,
+        closes: [],
+        klines: [],
+      };
+    }
+    if(!entry) return;
+    // Always overlay Birdeye-specific fields (holders / mc / liquidity)
+    // when present, regardless of which path built the base entry.
+    if(bird){
+      if(bird.mc        != null) entry.mc        = bird.mc;
+      if(bird.holders   != null) entry.holders   = bird.holders;
+      if(bird.liquidity != null) entry.liquidity = bird.liquidity;
+      if(bird.supply    != null) entry.supply    = bird.supply;
+      if(bird.logoURI)           entry.logoURI   = bird.logoURI;
+      entry.dataSource = pair ? 'binance+birdeye' : 'birdeye';
+    } else if(pair){
+      entry.dataSource = 'binance';
+    }
+    _tokLiveCache[key] = entry;
     // v0.9.13 — Debounce the re-render fan-out. Previously, every fetch
     // resolution called renderWidgets() (which does layer.innerHTML='' and
     // recreates all widget DOM). With multiple pinned token widgets +
@@ -42195,6 +42257,153 @@ window.crSnsIdentity = (function(){
     resolveName: resolveName,
     peek:        peek,
     clear:       clear,
+  };
+})();
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.0.52 — Birdeye integration (Frontier Sidetrack: Etherway · $20k)
+   ──────────────────────────────────────────────────────────────────
+   Etherway's track wants integration with one of:
+     Solflare · Kamino · DFlow · QuickNode · Birdeye
+   We picked Birdeye because it covers the Solana memes Binance doesn't
+   list (PUMP, FART, MOG, HYPE) — letting our existing token-terminal
+   surface real per-coin price + 24h change + holders + market cap +
+   24h volume in one round-trip.
+
+   API: https://public-api.birdeye.so/defi/token_overview?address=<mint>
+   Headers: X-API-KEY: <key>   x-chain: solana
+
+   API key:
+     · window.crBirdeyeKey OR localStorage.cr_birdeye_key_v1
+     · falls back to public endpoint (limited) if neither set
+     · crBirdeye.setApiKey(key) persists to localStorage
+
+   Cache: 30s per mint + in-flight dedupe (mirrors crSnsIdentity).
+
+   Wire-up:
+     · _tokFetchLive (line ~27384) now calls crBirdeye.fetchToken(id)
+       for tokens whose chain is 'sol'. Birdeye result merges into
+       _tokLiveCache so the existing list renderer + profile renderer
+       see real data with no further changes.
+   ──────────────────────────────────────────────────────────────────*/
+window.crBirdeye = (function(){
+  'use strict';
+
+  var BASE     = 'https://public-api.birdeye.so';
+  var TTL_MS   = 30 * 1000;
+  var cache    = new Map();          // mint → { data, t }
+  var inflight = new Map();          // mint → Promise
+
+  function _apiKey(){
+    try {
+      if(window.crBirdeyeKey) return String(window.crBirdeyeKey);
+      var k = localStorage.getItem('cr_birdeye_key_v1');
+      if(k) return k;
+    } catch(_){}
+    return '';
+  }
+
+  function _headers(){
+    var h = { 'x-chain': 'solana' };
+    var k = _apiKey();
+    if(k) h['X-API-KEY'] = k;
+    return h;
+  }
+
+  // Map TOK_LIST id → mint. TOK_BIRDEYE_MINT lives near line 27293; we
+  // pull from the global if defined, otherwise no-op.
+  function _mintFor(tokenId){
+    try {
+      if(typeof TOK_BIRDEYE_MINT !== 'undefined' && TOK_BIRDEYE_MINT[tokenId]){
+        return TOK_BIRDEYE_MINT[tokenId];
+      }
+    } catch(_){}
+    return null;
+  }
+
+  // Fetch /defi/token_overview which gives us the richest single-call
+  // payload (price + ch24% + 24h volume + holders + market cap).
+  // Falls back to /defi/price if token_overview is gated by the key.
+  async function _fetchOne(mint){
+    try {
+      var r = await fetch(BASE + '/defi/token_overview?address=' + encodeURIComponent(mint), { headers: _headers() });
+      if(r.ok){
+        var j = await r.json();
+        var d = j && j.data;
+        if(d){
+          return {
+            price:          d.price,
+            ch24:           d.priceChange24hPercent,
+            vol24:          d.v24hUSD,
+            mc:             d.mc,
+            holders:        d.holder,
+            liquidity:      d.liquidity,
+            supply:         d.supply,
+            symbol:         d.symbol,
+            name:           d.name,
+            logoURI:        d.logoURI,
+            updateAt:       Date.now(),
+          };
+        }
+      }
+    } catch(err){
+      try { console.warn('[crBirdeye] token_overview failed:', mint, err.message); } catch(_){}
+    }
+    // Fallback: price-only endpoint.
+    try {
+      var r2 = await fetch(BASE + '/defi/price?address=' + encodeURIComponent(mint), { headers: _headers() });
+      if(!r2.ok) return null;
+      var j2 = await r2.json();
+      var d2 = j2 && j2.data;
+      if(!d2) return null;
+      return {
+        price:     d2.value,
+        ch24:      d2.priceChange24h,
+        updateAt:  Date.now(),
+      };
+    } catch(err){
+      try { console.warn('[crBirdeye] price fallback failed:', mint, err.message); } catch(_){}
+      return null;
+    }
+  }
+
+  async function fetchToken(tokenId){
+    var mint = _mintFor(tokenId);
+    if(!mint) return null;
+
+    var hit = cache.get(mint);
+    if(hit && (Date.now() - hit.t) < TTL_MS) return hit.data;
+    if(inflight.has(mint)) return inflight.get(mint);
+
+    var p = (async function(){
+      var data = await _fetchOne(mint);
+      cache.set(mint, { data: data, t: Date.now() });
+      inflight.delete(mint);
+      return data;
+    })();
+    inflight.set(mint, p);
+    return p;
+  }
+
+  function peek(tokenId){
+    var mint = _mintFor(tokenId);
+    if(!mint) return null;
+    var hit = cache.get(mint);
+    if(!hit) return null;
+    if((Date.now() - hit.t) > TTL_MS) return null;
+    return hit.data;
+  }
+
+  function setApiKey(key){
+    try { localStorage.setItem('cr_birdeye_key_v1', String(key||'')); } catch(_){}
+    cache.clear();
+    if(typeof toast === 'function') toast(key ? 'Birdeye key saved' : 'Birdeye key cleared');
+  }
+
+  return {
+    fetchToken: fetchToken,
+    peek:       peek,
+    setApiKey:  setApiKey,
   };
 })();
 </script>
