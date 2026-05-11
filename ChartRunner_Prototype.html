@@ -846,9 +846,52 @@
     box-shadow:0 0 18px rgba(153,69,255,.18),0 16px 40px rgba(0,0,0,.6)!important}
   /* v1.0.36 — Lite-profile restructure: avatar centered + equipment L/R,
      tabbed pane (Game / Wallet). Sits below the .lp-head row. */
+  /* v1.0.48 — Equipment chips retired; avatar now sits in a solo row
+     directly below the billboard. lp-avatar-row-solo overrides the
+     3-col grid back to a centered flex. */
   #crLightProfile .lp-avatar-row{display:grid;grid-template-columns:1fr auto 1fr;
     gap:8px;align-items:center;padding:14px 12px 12px;
     border-bottom:1px solid rgba(255,255,255,0.06)}
+  #crLightProfile .lp-avatar-row-solo{display:flex;justify-content:center;
+    padding:14px 12px 14px;border-bottom:1px solid rgba(255,255,255,0.06)}
+  /* v1.0.48 — Green LED dot-matrix billboard. Black bg + brightly
+     glowing mint text (#14f195) on top of a layered radial-gradient
+     that fakes the LED pixel grid. Looks like the cabin signs in
+     reference. cycles via JS — see crLpBillboard IIFE at end of file. */
+  #crLightProfile .lp-billboard{position:relative;
+    background:#040608;border-top:1px solid rgba(20,241,149,0.25);
+    border-bottom:1px solid rgba(20,241,149,0.35);
+    padding:10px 12px;text-align:center;overflow:hidden;
+    box-shadow:inset 0 1px 8px rgba(0,0,0,0.6),
+               inset 0 0 24px rgba(20,241,149,0.06)}
+  /* The dot-matrix grid: tiny faint mint dots evenly spaced. The text
+     sits ABOVE this layer so it reads cleanly while the background
+     hints at "LED panel". */
+  #crLightProfile .lp-billboard::before{content:"";position:absolute;inset:0;
+    background:radial-gradient(circle at center, rgba(20,241,149,0.18) 0.8px, transparent 1.4px);
+    background-size:5px 5px;background-position:0 0;
+    pointer-events:none;opacity:0.55;mix-blend-mode:screen}
+  #crLightProfile .lp-bb-text{position:relative;display:inline-block;
+    color:#14f195;font:800 14px ui-monospace,Menlo,Monaco,monospace;
+    letter-spacing:1.5px;text-transform:uppercase;
+    text-shadow:0 0 4px #14f195, 0 0 10px rgba(20,241,149,0.7),
+                0 0 18px rgba(20,241,149,0.45);
+    transition:opacity .35s ease, transform .35s ease;
+    white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  #crLightProfile .lp-bb-text.swap{opacity:0;transform:translateY(-6px)}
+  /* Theme overrides — keep billboard mint-on-black across all themes
+     (it's meant to read as a hardware sign regardless of OS chrome). */
+  body[data-os-theme="platinum"] #crLightProfile .lp-billboard,
+  body[data-os-theme="solana"]   #crLightProfile .lp-billboard,
+  body[data-os-theme="ascii"]    #crLightProfile .lp-billboard,
+  body[data-os-theme="frontier"] #crLightProfile .lp-billboard{
+    background:#040608 !important;
+    border-color:rgba(20,241,149,0.35) !important}
+  body[data-os-theme="platinum"] #crLightProfile .lp-bb-text,
+  body[data-os-theme="solana"]   #crLightProfile .lp-bb-text,
+  body[data-os-theme="ascii"]    #crLightProfile .lp-bb-text,
+  body[data-os-theme="frontier"] #crLightProfile .lp-bb-text{
+    color:#14f195 !important}
   #crLightProfile .lp-portrait-big{width:108px;height:108px;border-radius:12px;
     background:radial-gradient(circle at center,rgba(20,241,149,0.20),rgba(10,15,28,0.6));
     border:1px solid rgba(20,241,149,0.45);overflow:hidden;
@@ -902,6 +945,15 @@
     line-height:14px;text-align:center;border-radius:3px;margin-right:6px;
     background:rgba(20,241,149,0.15);color:#bff7df;font-size:9px;font-weight:700}
   #crLightProfile .lp-wposrow .v{font-variant-numeric:tabular-nums;font-weight:700}
+  /* v1.0.49 — Hide every menubar clock (desktop + in-game). Per user
+     spec: "in headbar delete time and day in desktop and in game".
+     Targets: #crClock (desktop Apple menubar), #crBarClock (in-game
+     OS bar), #osClock (older splash taskbar clock), #topClock (in-
+     game topbar). The JS tickers (osUpdateClock, tickClock, tickBar)
+     keep firing harmlessly — they just write to hidden nodes. We use
+     !important so they stay hidden through every theme override. */
+  #crClock, #crBarClock, #osClock, #topClock { display:none !important; }
+
   /* v1.0.36 / v1.0.39 — Run-controls strip in the Game tab.
      v1.0.39 fix: 3-col grid was clipping "Coins" past the panel right edge
      and the 5th button (Connect → "Connected" label when active) was
@@ -6042,19 +6094,28 @@
        and the 250-ms wallet sync don't break. The visible wallet tab reads
        the same numbers via mirror IDs (#crLpWCrds, #crLpWRun, etc). -->
   <div id="crLightProfile" style="display:none">
+    <!-- v1.0.48 — Lite-profile head simplified: drop "Trader" subtitle.
+         Equipment chips (formerly flanking the avatar) replaced by a
+         single green LED dot-matrix billboard at the top that cycles
+         every ~2.5s through three readouts: name → asset · TF → mode. -->
     <div class="lp-head">
       <div class="lp-id">
         <div class="lp-name" id="crLpName">anon_runner</div>
-        <div class="lp-role">Trader</div>
       </div>
       <button class="lp-x" id="crLpClose" type="button" title="Close">×</button>
     </div>
-    <div class="lp-avatar-row">
-      <div class="lp-eq lp-eq-l" id="crLpEqL"></div>
+    <div class="lp-billboard" id="crLpBillboard" aria-live="polite">
+      <span class="lp-bb-text" id="crLpBbText">anon_runner</span>
+    </div>
+    <div class="lp-avatar-row lp-avatar-row-solo">
       <div class="lp-portrait lp-portrait-big">
         <canvas id="crLpAvatar" width="120" height="120" style="image-rendering:pixelated"></canvas>
       </div>
-      <div class="lp-eq lp-eq-r" id="crLpEqR"></div>
+      <!-- Legacy equipment columns kept hidden so chip-distribution code
+           in _refreshLightProfile doesn't crash; values now feed the
+           billboard rotator instead via window.crLpBillboard.set(...). -->
+      <div class="lp-eq lp-eq-l" id="crLpEqL" style="display:none"></div>
+      <div class="lp-eq lp-eq-r" id="crLpEqR" style="display:none"></div>
     </div>
     <!-- Legacy chip rail (run-state) and stat rail kept hidden for back-
          compat with _refreshLightProfile. The visible surfaces below are
@@ -31532,6 +31593,10 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
     // around the centered avatar. Even-index chips (0, 2, 4) go LEFT,
     // odd-index chips (1, 3) go RIGHT — keeps the visual rhythm balanced
     // even when 3 or 5 chips are queued.
+    // v1.0.48 — eqL/eqR are now hidden (display:none on the elements).
+    // We still populate them so the data is queryable for debugging,
+    // but the visible surface is the dot-matrix billboard above the
+    // avatar that cycles name → asset · TF → mode every ~2.5s.
     if(eqL && eqR){
       _chipQueue.forEach((c, i) => {
         const col = (i % 2 === 0) ? eqL : eqR;
@@ -31542,6 +31607,38 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
         col.appendChild(chip);
       });
     }
+    // v1.0.48 — Push the three primary readouts into the billboard
+    // rotator. Pulls fresh values each refresh tick so name/asset/mode
+    // stay in sync with the run state.
+    try {
+      if(window.crLpBillboard && typeof window.crLpBillboard.set === 'function'){
+        const _bbName = (() => {
+          try {
+            const n = document.getElementById('profileName');
+            return (n && n.value) ? n.value : 'anon_runner';
+          } catch(_){ return 'anon_runner'; }
+        })();
+        const _bbAsset = (() => {
+          try {
+            const a  = (typeof currentAsset !== 'undefined' && currentAsset) ? String(currentAsset).toUpperCase() : 'BTC';
+            const tf = (typeof timeframe    !== 'undefined' && timeframe)    ? String(timeframe) : '15m';
+            return a + ' · ' + tf;
+          } catch(_){ return 'BTC · 15m'; }
+        })();
+        const _bbMode = (() => {
+          try {
+            const ch = (typeof game !== 'undefined') ? game.campaignChapter : null;
+            if(ch && typeof CAMPAIGN_CHAPTERS !== 'undefined' && CAMPAIGN_CHAPTERS[ch]){
+              return 'CH.' + ch + ' · ' + (CAMPAIGN_CHAPTERS[ch].goal || 'Campaign');
+            }
+            const m = (typeof game !== 'undefined' && game.mode) ? game.mode : 'timeismoney';
+            const MODE_LABEL = { timeismoney:'Time is Money', speedrun:'Speedrun', monster:'Monster Mode' };
+            return MODE_LABEL[m] || m;
+          } catch(_){ return 'Time is Money'; }
+        })();
+        window.crLpBillboard.set([_bbName, _bbAsset, _bbMode]);
+      }
+    } catch(_){}
 
     // v1.0.36 — Wallet-tab mirrors. The hidden legacy #crLpCrds / #crLpRun
     // were already filled above; mirror them into the visible Wallet tab
@@ -41821,6 +41918,89 @@ window.crMapsTx = (function(){
     PROGRAM_ID:      PROGRAM_ID_B58,
     RPC_URL:         RPC_URL,
   };
+})();
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.0.48 — Lite-profile dot-matrix billboard rotator
+   ──────────────────────────────────────────────────────────────────
+   Cycles the green LED billboard above the avatar through the three
+   readouts pushed in via window.crLpBillboard.set([msg1, msg2, msg3])
+   from _refreshLightProfile. Each message displays for ~2.5s then
+   cross-fades to the next via the .swap class (defined in the CSS at
+   line ~895). Pause when the lite profile isn't visible to save CPU.
+   ──────────────────────────────────────────────────────────────────*/
+(function(){
+  'use strict';
+  const HOLD_MS = 2500;
+  const FADE_MS = 350;
+  let messages = ['anon_runner', 'BTC · 15m', 'Time is Money'];
+  let idx = 0;
+  let timer = null;
+
+  function _textEl(){ return document.getElementById('crLpBbText'); }
+  function _panelOpen(){
+    const p = document.getElementById('crLightProfile');
+    return !!(p && p.classList.contains('on'));
+  }
+
+  function _render(text){
+    const el = _textEl();
+    if(!el) return;
+    el.classList.add('swap');
+    setTimeout(() => {
+      el.textContent = text;
+      el.classList.remove('swap');
+    }, FADE_MS);
+  }
+
+  function _tick(){
+    if(!_panelOpen()) return;
+    idx = (idx + 1) % messages.length;
+    _render(messages[idx]);
+  }
+
+  function start(){
+    stop();
+    // Render the first message immediately (no fade), then schedule.
+    const el = _textEl();
+    if(el) el.textContent = messages[idx] || '';
+    timer = setInterval(_tick, HOLD_MS);
+  }
+  function stop(){
+    if(timer){ clearInterval(timer); timer = null; }
+  }
+
+  function set(arr){
+    if(!Array.isArray(arr) || arr.length === 0) return;
+    // Compare to current — only restart timer if content actually changed.
+    const same = arr.length === messages.length && arr.every((v, i) => v === messages[i]);
+    messages = arr.slice();
+    if(idx >= messages.length) idx = 0;
+    if(!same){
+      const el = _textEl();
+      if(el && !el.textContent) el.textContent = messages[0];
+    }
+    if(!timer && _panelOpen()) start();
+  }
+
+  // Watch the panel — restart the rotator when it opens, stop when it closes.
+  function _watchPanel(){
+    const p = document.getElementById('crLightProfile');
+    if(!p) { setTimeout(_watchPanel, 300); return; }
+    new MutationObserver(() => {
+      if(_panelOpen()){ if(!timer) start(); }
+      else            { stop(); }
+    }).observe(p, { attributes:true, attributeFilter:['class','style'] });
+    if(_panelOpen()) start();
+  }
+
+  window.crLpBillboard = { set: set, start: start, stop: stop };
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', _watchPanel);
+  } else {
+    setTimeout(_watchPanel, 0);
+  }
 })();
 </script>
 </body>
