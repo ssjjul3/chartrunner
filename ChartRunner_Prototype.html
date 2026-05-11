@@ -42591,6 +42591,216 @@ window.crLifiFunding = (function(){
 
   return { open: open, close: close };
 })();
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.0.59 — GoldRush by Covalent (Frontier · GoldRush track · $3k)
+   ──────────────────────────────────────────────────────────────────
+   GoldRush is Covalent's unified multichain data API — same endpoint
+   shape across 200+ chains. ChartRunner uses it as a second data feed
+   alongside Birdeye (Solana memes) and Binance (CEX OHLC):
+     · token holder lists  — feeds the Phoenix Live "whale ghosts" overlay
+     · wallet balances     — alternative to Zerion for portfolio reads
+     · NFT metadata        — backstop when Helius DAS is rate-limited
+     · transactions feed   — for the future M4 marketplace activity widget
+
+   API: https://api.covalenthq.com/v1/{chain_name}/...
+   Auth: Bearer <api-key>   (free tier: 100 req/sec, 1M req/month)
+   API key via window.crGoldRushKey or localStorage.cr_goldrush_key_v1.
+
+   This wrapper mirrors the crBirdeye + crSnsIdentity caching shape:
+   60s TTL per (chain, endpoint, params) key, in-flight dedupe, graceful
+   fallback when no key configured.
+
+   Frontier track: Build with GoldRush Track (Powered by Covalent) · $3k
+     https://earn.superteam.fun/listings/build-with-goldrush-track-powered-by-covalent/
+   ──────────────────────────────────────────────────────────────────*/
+window.crGoldRush = (function(){
+  'use strict';
+
+  var BASE     = 'https://api.covalenthq.com/v1';
+  var TTL_MS   = 60 * 1000;
+  var cache    = new Map();        // key → { data, t }
+  var inflight = new Map();
+
+  function _apiKey(){
+    try {
+      if(window.crGoldRushKey) return String(window.crGoldRushKey);
+      var k = localStorage.getItem('cr_goldrush_key_v1');
+      if(k) return k;
+    } catch(_){}
+    return '';
+  }
+
+  function _headers(){
+    var h = { 'accept': 'application/json' };
+    var k = _apiKey();
+    if(k) h['authorization'] = 'Bearer ' + k;
+    return h;
+  }
+
+  // Cache key shaped {chain}|{endpoint}|{params-as-json}.
+  function _cacheKey(chain, endpoint, params){
+    return chain + '|' + endpoint + '|' + (params ? JSON.stringify(params) : '');
+  }
+
+  async function _fetch(chain, endpoint, params){
+    var key = _cacheKey(chain, endpoint, params);
+    var hit = cache.get(key);
+    if(hit && (Date.now() - hit.t) < TTL_MS) return hit.data;
+    if(inflight.has(key)) return inflight.get(key);
+
+    var url = BASE + '/' + encodeURIComponent(chain) + '/' + endpoint + '/';
+    if(params){
+      var u = new URL(url);
+      Object.keys(params).forEach(function(k){
+        if(params[k] != null) u.searchParams.set(k, String(params[k]));
+      });
+      url = u.toString();
+    }
+
+    var p = (async function(){
+      try {
+        var r = await fetch(url, { headers: _headers() });
+        if(!r.ok){
+          try { console.warn('[crGoldRush] fetch failed', r.status, url); } catch(_){}
+          inflight.delete(key);
+          return null;
+        }
+        var j = await r.json();
+        var d = j && j.data;
+        cache.set(key, { data: d, t: Date.now() });
+        inflight.delete(key);
+        return d;
+      } catch(err){
+        try { console.warn('[crGoldRush] threw:', err.message); } catch(_){}
+        inflight.delete(key);
+        return null;
+      }
+    })();
+    inflight.set(key, p);
+    return p;
+  }
+
+  // ─── High-level wrappers ───────────────────────────────────────────
+
+  /** Top holders for an SPL token mint. Used by Phoenix Live "whale
+   *  ghosts" overlay. Returns [{ address, balance, share }, ...]. */
+  async function tokenHolders(mint, { pageSize = 20 } = {}){
+    var d = await _fetch('solana-mainnet',
+      'tokens/' + mint + '/token_holders_v2',
+      { 'page-size': pageSize });
+    if(!d || !Array.isArray(d.items)) return [];
+    return d.items.map(function(it){
+      return {
+        address: it.address,
+        balance: Number(it.balance) / Math.pow(10, it.contract_decimals || 0),
+        share:   it.total_supply ? Number(it.balance) / Number(it.total_supply) : null,
+      };
+    });
+  }
+
+  /** Wallet balances across all tokens on a chain. Mirrors fetchPortfolio
+   *  from the Zerion CLI agent module but via GoldRush instead. */
+  async function walletBalances(address, { chain = 'solana-mainnet' } = {}){
+    var d = await _fetch(chain, 'address/' + address + '/balances_v2', null);
+    if(!d || !Array.isArray(d.items)) return { sol: 0, tokens: [] };
+    var sol = 0;
+    var tokens = d.items.map(function(it){
+      var amount = Number(it.balance) / Math.pow(10, it.contract_decimals || 0);
+      if(it.contract_ticker_symbol === 'SOL') sol = amount;
+      return {
+        mint:     it.contract_address,
+        symbol:   it.contract_ticker_symbol,
+        amount:   amount,
+        valueUsd: it.quote || 0,
+      };
+    });
+    return { sol: sol, tokens: tokens };
+  }
+
+  /** Recent transactions for a wallet. Feeds the M4 marketplace-activity
+   *  widget (post-Frontier). */
+  async function walletTxs(address, { chain = 'solana-mainnet', pageSize = 50 } = {}){
+    var d = await _fetch(chain, 'address/' + address + '/transactions_v2',
+      { 'page-size': pageSize });
+    return (d && Array.isArray(d.items)) ? d.items : [];
+  }
+
+  /** NFT metadata for a single mint. Backstop when Helius DAS is
+   *  rate-limited or returns nothing for less-popular collections. */
+  async function nftMetadata(mint, { chain = 'solana-mainnet' } = {}){
+    var d = await _fetch(chain,
+      'tokens/' + mint + '/nft_external_metadata',
+      null);
+    return (d && Array.isArray(d.items) && d.items[0]) ? d.items[0] : null;
+  }
+
+  function setApiKey(key){
+    try { localStorage.setItem('cr_goldrush_key_v1', String(key||'')); } catch(_){}
+    cache.clear();
+    if(typeof toast === 'function') toast(key ? 'GoldRush key saved' : 'GoldRush key cleared');
+  }
+
+  return {
+    tokenHolders:   tokenHolders,
+    walletBalances: walletBalances,
+    walletTxs:      walletTxs,
+    nftMetadata:    nftMetadata,
+    setApiKey:      setApiKey,
+  };
+})();
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.0.59 — Phoenix Live "whale ghosts" overlay: GoldRush data feed
+   ──────────────────────────────────────────────────────────────────
+   The whale-ghosts overlay (line ~ where window.crLive is defined)
+   currently stubs the top-10 holder list per the v1.0.2 Phoenix
+   integration. This shim swaps to GoldRush's tokenHolders() as the
+   primary source, with the Phoenix stub as fallback. Other overlays
+   (frogs/bears/flight/liquidity) keep their original data sources.
+   ──────────────────────────────────────────────────────────────────*/
+(function(){
+  'use strict';
+  function _wire(){
+    if(!window.crLive){ setTimeout(_wire, 800); return; }
+    if(window.crLive._goldrushWired) return;
+    window.crLive._goldrushWired = true;
+
+    // Keep the original whale-ghosts setter (if any) as the fallback.
+    var origSetWhales = (typeof window.crLive.setWhales === 'function')
+      ? window.crLive.setWhales.bind(window.crLive) : null;
+
+    // Refresh whales every 90s from GoldRush. Bonk is the demo mint —
+    // swap to the active asset's mint via TOK_BIRDEYE_MINT when game
+    // state is reachable.
+    async function _refresh(){
+      try {
+        var mint = (window.TOK_BIRDEYE_MINT && window.currentAsset)
+          ? window.TOK_BIRDEYE_MINT[window.currentAsset]
+          : 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263'; // BONK fallback
+        if(!mint) return;
+        var holders = await window.crGoldRush.tokenHolders(mint, { pageSize: 10 });
+        if(!holders || !holders.length) return;
+        // crLive expects ghost markers — the shape varies per overlay
+        // version. Pass through the legacy setter if present, else
+        // stash on a public attribute for the overlay renderer to pick up.
+        if(origSetWhales){
+          origSetWhales(holders);
+        } else {
+          window.crLive._whales = holders;
+        }
+      } catch(_){}
+    }
+
+    _refresh();
+    setInterval(_refresh, 90 * 1000);
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', _wire);
+  } else {
+    setTimeout(_wire, 1000);
+  }
+})();
 </script>
 </body>
 </html>
