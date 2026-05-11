@@ -43139,20 +43139,32 @@ window.crGoldRush = (function(){
       return (all['pane:' + paneId]) || {};
     } catch(_){ return {}; }
   }
-  function _bodyOf(paneId){
-    const pane = document.querySelector('[data-pane-id="' + paneId + '"]');
-    return pane && pane.querySelector('.crTerm-paneBd');
+  // v1.0.62 — Walk ALL matching panes (source + every pinned clone).
+  // Pinned widgets are DOM clones of terminal panes — both have the
+  // same data-pane-id. querySelector returned only the first match
+  // (always the hidden source in the terminal view), so the visible
+  // pinned widget never updated. Fix: forEach over querySelectorAll.
+  function _bodiesOf(paneId){
+    return Array.from(document.querySelectorAll('[data-pane-id="' + paneId + '"]'))
+      .map(p => p.querySelector('.crTerm-paneBd'))
+      .filter(Boolean);
+  }
+  function _setBody(paneId, html){
+    _bodiesOf(paneId).forEach(body => { body.innerHTML = html; });
   }
   function _setHdTag(paneId, text, cls){
-    const pane = document.querySelector('[data-pane-id="' + paneId + '"]');
-    const tag = pane && pane.querySelector('.crTerm-paneHd .hd-tag');
-    if(!tag) return;
-    tag.textContent = text;
-    if(cls){
-      tag.classList.remove('warn','tune');
-      tag.classList.add(cls);
-    }
+    document.querySelectorAll('[data-pane-id="' + paneId + '"]').forEach(pane => {
+      const tag = pane.querySelector('.crTerm-paneHd .hd-tag');
+      if(!tag) return;
+      tag.textContent = text;
+      if(cls){
+        tag.classList.remove('warn','tune','live');
+        tag.classList.add(cls);
+      }
+    });
   }
+  // Back-compat alias for the in-flight refresher signatures.
+  function _bodyOf(paneId){ return _bodiesOf(paneId)[0] || null; }
   function _fmtUsd(n){
     if(n == null || !isFinite(n)) return '—';
     if(n >= 1e9) return '$' + (n/1e9).toFixed(2) + 'B';
@@ -43168,8 +43180,7 @@ window.crGoldRush = (function(){
 
   // ── 1. solPrice ────────────────────────────────────────────────────
   async function refreshSolPrice(){
-    const body = _bodyOf('solPrice');
-    if(!body || !window.crBirdeye) return;
+    if(!_bodiesOf('solPrice').length || !window.crBirdeye) return;
     const cfg = _getConfigFor('solPrice');
     const tokenId = cfg.tokenId || 'sol';
     const data = await window.crBirdeye.fetchToken(tokenId);
@@ -43179,21 +43190,20 @@ window.crGoldRush = (function(){
     const vol24  = data.vol24;
     const mc     = data.mc;
     const holders= data.holders;
-    body.innerHTML = ''
+    _setBody('solPrice', ''
       + '<div style="font:800 22px ui-monospace,Menlo,monospace;letter-spacing:.5px">' + _fmtUsd(price) + '</div>'
       + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:11px">'
       +   '<span>24h <b style="color:' + (ch24 >= 0 ? '#14f195' : '#ff5b7f') + '">' + _fmtPct(ch24) + '</b></span>'
       +   '<span>Vol <b>' + _fmtUsd(vol24) + '</b></span>'
       +   '<span>MC <b>' + _fmtUsd(mc) + '</b></span>'
       +   (holders ? '<span>Holders <b>' + holders.toLocaleString() + '</b></span>' : '')
-      + '</div>';
+      + '</div>');
     _setHdTag('solPrice', tokenId.toUpperCase() + ' · LIVE', 'live');
   }
 
   // ── 2. solHolders ──────────────────────────────────────────────────
   async function refreshSolHolders(){
-    const body = _bodyOf('solHolders');
-    if(!body || !window.crGoldRush) return;
+    if(!_bodiesOf('solHolders').length || !window.crGoldRush) return;
     const cfg = _getConfigFor('solHolders');
     const tokenId = cfg.tokenId || 'wif';
     const rows    = cfg.rows || 10;
@@ -43201,8 +43211,12 @@ window.crGoldRush = (function(){
     const mint = mints[tokenId];
     if(!mint){ _setHdTag('solHolders','no mint','warn'); return; }
     const holders = await window.crGoldRush.tokenHolders(mint, { pageSize: rows });
-    if(!holders || !holders.length){ _setHdTag('solHolders','no data','warn'); return; }
-    body.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+    if(!holders || !holders.length){
+      _setBody('solHolders', '<div style="font-style:italic;color:var(--dim);font-size:10px;padding:4px 0">No holder data. Add a GoldRush API key in Token Terminal settings.</div>');
+      _setHdTag('solHolders','no data','warn');
+      return;
+    }
+    _setBody('solHolders', '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
       + holders.slice(0, rows).map((h, i) => {
           const addr = h.address ? (h.address.slice(0,4) + '…' + h.address.slice(-4)) : '—';
           const bal  = h.balance != null ? h.balance.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
@@ -43211,18 +43225,17 @@ window.crGoldRush = (function(){
                + '<span class="r"><b>' + bal + '</b>'
                + (pct ? ' <span style="color:var(--dim)">· ' + pct + '</span>' : '') + '</span></div>';
         }).join('')
-      + '</div>';
+      + '</div>');
     _setHdTag('solHolders', tokenId.toUpperCase() + ' · LIVE', 'live');
   }
 
   // ── 3. solSmart ────────────────────────────────────────────────────
   async function refreshSolSmart(){
-    const body = _bodyOf('solSmart');
-    if(!body || !window.crGoldRush) return;
+    if(!_bodiesOf('solSmart').length || !window.crGoldRush) return;
     const cfg = _getConfigFor('solSmart');
     const wallets = String(cfg.wallets || '').split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
     if(!wallets.length){
-      body.innerHTML = '<div style="font-style:italic;color:var(--dim);font-size:10px;padding:4px 0">Paste tracked wallets in this pane\'s settings.</div>';
+      _setBody('solSmart', '<div style="font-style:italic;color:var(--dim);font-size:10px;padding:4px 0">Click the ⚙ on this widget · paste tracked wallets in Settings.</div>');
       _setHdTag('solSmart','config required','warn');
       return;
     }
@@ -43235,18 +43248,17 @@ window.crGoldRush = (function(){
         rows.push({ wallet: short, txCount: recent.length, full: w });
       } catch(_){}
     }
-    body.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+    _setBody('solSmart', '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
       + rows.map(r => '<div style="display:flex;justify-content:space-between">'
                     + '<span>' + r.wallet + '</span>'
                     + '<span class="r"><b>' + r.txCount + ' recent</b></span></div>').join('')
-      + '</div>';
+      + '</div>');
     _setHdTag('solSmart', rows.length + ' wallets · LIVE', 'live');
   }
 
   // ── 4. cexExchanges (CoinGecko) ────────────────────────────────────
   async function refreshCexExchanges(){
-    const body = _bodyOf('cexExchanges');
-    if(!body) return;
+    if(!_bodiesOf('cexExchanges').length) return;
     const cfg = _getConfigFor('cexExchanges');
     const rows = cfg.rows || 10;
     try {
@@ -43254,21 +43266,20 @@ window.crGoldRush = (function(){
       if(!r.ok){ _setHdTag('cexExchanges','rate-limited','warn'); return; }
       const list = await r.json();
       if(!Array.isArray(list) || !list.length){ _setHdTag('cexExchanges','no data','warn'); return; }
-      body.innerHTML = '<table style="width:100%;font-size:10.5px;border-collapse:collapse">'
+      _setBody('cexExchanges', '<table style="width:100%;font-size:10.5px;border-collapse:collapse">'
         + '<tr><th style="text-align:left;color:var(--dim)">Exchange</th><th style="color:var(--dim)">24h vol BTC</th></tr>'
         + list.slice(0, rows).map(e =>
             '<tr><td>' + (e.name || '?') + '</td>'
           + '<td class="r"><b>' + (e.trade_volume_24h_btc != null ? e.trade_volume_24h_btc.toLocaleString(undefined,{maximumFractionDigits:0}) : '—') + '</b></td></tr>'
           ).join('')
-        + '</table>';
+        + '</table>');
       _setHdTag('cexExchanges', list.length + ' exch · LIVE', 'live');
     } catch(err){ _setHdTag('cexExchanges','offline','warn'); }
   }
 
   // ── 5. cexFunding (Binance perp funding) ──────────────────────────
   async function refreshCexFunding(){
-    const body = _bodyOf('cexFunding');
-    if(!body) return;
+    if(!_bodiesOf('cexFunding').length) return;
     const cfg = _getConfigFor('cexFunding');
     const rows = cfg.rows || 12;
     try {
@@ -43276,28 +43287,26 @@ window.crGoldRush = (function(){
       if(!r.ok){ _setHdTag('cexFunding','offline','warn'); return; }
       const list = await r.json();
       if(!Array.isArray(list) || !list.length){ _setHdTag('cexFunding','no data','warn'); return; }
-      // Sort by absolute funding rate descending (extremes first).
       list.sort((a,b) => Math.abs(parseFloat(b.lastFundingRate||0)) - Math.abs(parseFloat(a.lastFundingRate||0)));
       const top = list.slice(0, rows);
-      body.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+      _setBody('cexFunding', '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
         + top.map(p => {
             const fr  = parseFloat(p.lastFundingRate || 0);
-            const apr = fr * 3 * 365 * 100;   // 8h → annualized
+            const apr = fr * 3 * 365 * 100;
             return '<div style="display:flex;justify-content:space-between">'
                  + '<span>' + (p.symbol || '?') + '</span>'
                  + '<span class="r" style="color:' + (fr >= 0 ? '#14f195' : '#ff5b7f') + '"><b>'
                  +   (fr*100).toFixed(4) + '%</b> <span style="color:var(--dim)">(' + apr.toFixed(1) + '% APR)</span></span>'
                  + '</div>';
           }).join('')
-        + '</div>';
+        + '</div>');
       _setHdTag('cexFunding', list.length + ' perps · LIVE', 'live');
     } catch(err){ _setHdTag('cexFunding','offline','warn'); }
   }
 
   // ── 6. cexListings (CoinGecko new listings) ───────────────────────
   async function refreshCexListings(){
-    const body = _bodyOf('cexListings');
-    if(!body) return;
+    if(!_bodiesOf('cexListings').length) return;
     const cfg = _getConfigFor('cexListings');
     const rows = cfg.rows || 10;
     try {
@@ -43305,13 +43314,13 @@ window.crGoldRush = (function(){
       if(!r.ok){ _setHdTag('cexListings','rate-limited','warn'); return; }
       const list = await r.json();
       if(!Array.isArray(list) || !list.length){ _setHdTag('cexListings','no data','warn'); return; }
-      body.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+      _setBody('cexListings', '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
         + list.slice(0, rows).map(c =>
             '<div style="display:flex;justify-content:space-between">'
           + '<span>' + (c.symbol ? c.symbol.toUpperCase() : '?') + ' · ' + (c.name || '?') + '</span>'
           + '<span class="r" style="color:var(--dim)">' + (c.activated_at ? new Date(c.activated_at*1000).toLocaleDateString() : '—') + '</span>'
           + '</div>').join('')
-        + '</div>';
+        + '</div>');
       _setHdTag('cexListings', list.length + ' new · LIVE', 'live');
     } catch(err){ _setHdTag('cexListings','offline','warn'); }
   }
@@ -43446,8 +43455,11 @@ window.crGoldRush = (function(){
     if(document.getElementById('crTokTermSettings')) return;
     const panel = document.createElement('div');
     panel.id = 'crTokTermSettings';
+    // v1.0.62 — Panel sits below the floating gear button (top:34px to
+    // clear the gear's top:6+button height). z-index:7 keeps it above
+    // the gear (z:6) so the gear isn't blocked when the panel is open.
     panel.style.cssText = [
-      'position:absolute','top:38px','right:8px','width:300px','z-index:5',
+      'position:absolute','top:34px','right:8px','width:300px','z-index:7',
       'background:linear-gradient(180deg,rgba(20,30,55,.98),rgba(10,15,28,.99))',
       'border:1px solid rgba(126,231,135,.35)','border-radius:8px',
       'box-shadow:0 16px 40px rgba(0,0,0,.6),0 0 0 1px rgba(126,231,135,.10) inset',
@@ -43530,28 +43542,48 @@ window.crGoldRush = (function(){
     p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
   }
 
+  // v1.0.62 — Gear button hardened. Previously the button was hidden
+  // when the wbar's order was reversed by splash CSS (close on the
+  // left of the title). Now we put the gear in the body's top-right
+  // corner as a floating overlay — independent of wbar layout, always
+  // visible, never overlaps the title or close button.
   function _addGear(){
     const win = document.getElementById('win-tokenterm');
     if(!win){ setTimeout(_addGear, 500); return; }
-    const wbar = win.querySelector('.os-wbar');
-    if(!wbar) return;
-    if(wbar.querySelector('#crTokTermGear')) return;
-    const spacer = wbar.querySelector('.spacer');
-    const close  = wbar.querySelector('.wclose');
-    const gear   = document.createElement('button');
+    const body = win.querySelector('.os-wbody');
+    if(!body){ setTimeout(_addGear, 500); return; }
+    if(document.getElementById('crTokTermGear')) return;
+    // Ensure the body is positioning-context for the absolute gear.
+    if(!body.style.position) body.style.position = 'relative';
+    const gear = document.createElement('button');
     gear.id        = 'crTokTermGear';
     gear.type      = 'button';
     gear.title     = 'Token Terminal settings';
-    gear.textContent = '⚙';
+    gear.textContent = '⚙ SETTINGS';
     gear.style.cssText = [
-      'background:transparent','border:1px solid var(--line)','color:var(--dim)',
-      'border-radius:5px','padding:2px 8px','cursor:pointer','margin-right:6px',
-      'font:13px ui-monospace,Menlo,monospace',
+      'position:absolute','top:6px','right:8px','z-index:6',
+      'background:rgba(20,241,149,0.10)',
+      'border:1px solid rgba(20,241,149,0.50)',
+      'color:#bff7df','border-radius:5px',
+      'padding:4px 10px','cursor:pointer',
+      'font:700 10px ui-monospace,Menlo,Monaco,monospace',
+      'letter-spacing:.6px',
+      'transition:background .12s ease,border-color .12s ease',
     ].join(';');
-    gear.addEventListener('click', _toggleSettings);
-    // Insert just before the Close button.
-    if(close) wbar.insertBefore(gear, close);
-    else      wbar.appendChild(gear);
+    gear.addEventListener('mouseover', () => {
+      gear.style.background = 'rgba(20,241,149,0.20)';
+      gear.style.borderColor = 'rgba(20,241,149,0.85)';
+    });
+    gear.addEventListener('mouseout', () => {
+      gear.style.background = 'rgba(20,241,149,0.10)';
+      gear.style.borderColor = 'rgba(20,241,149,0.50)';
+    });
+    gear.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      _toggleSettings();
+    });
+    body.appendChild(gear);
   }
 
   function _boot(){
