@@ -43716,6 +43716,111 @@ window.crGoldRush = (function(){
     setTimeout(_boot, 800);
   }
 })();
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.0.65 — Double-click a pinned widget → open its config window
+   ──────────────────────────────────────────────────────────────────
+   Single document-level delegated handler. When a dblclick lands on
+   any .cr-widget descendant (excluding title-bar drag handle, close
+   button, and resize grip — those have their own semantics), we look
+   up the widget's data-id in widgets.items (desktop) or
+   chartWidgets.items (in-game chart layer), then call the existing
+   _crTermPaneQuickConfig popup.
+
+   No changes to renderWidgets / renderChartWidgets — they keep their
+   minimal listener set; this IIFE adds dblclick across both layers
+   with one piece of code.
+
+   Visual affordance: cursor:zoom-in on .wBody hover so the gesture is
+   discoverable. The "+ New Terminal Widget" picker still works as
+   before for SPAWNING new widgets — this is the per-widget edit path.
+   ──────────────────────────────────────────────────────────────────*/
+(function(){
+  'use strict';
+
+  // Inject the cursor affordance once. Theme overrides honored via
+  // !important since pane widgets may apply their own cursor styles.
+  function _injectCss(){
+    if(document.getElementById('crWidgetDblCfgStyles')) return;
+    const s = document.createElement('style');
+    s.id = 'crWidgetDblCfgStyles';
+    s.textContent = ''
+      + '.cr-widget .wBody { cursor: zoom-in; }\n'
+      + '.cr-widget .wBody [data-drag],\n'
+      + '.cr-widget .wBody button,\n'
+      + '.cr-widget .wBody input,\n'
+      + '.cr-widget .wBody select,\n'
+      + '.cr-widget .wBody textarea { cursor: auto; }\n'
+      + '.cr-widget .wTitle { cursor: grab; }\n';
+    document.head.appendChild(s);
+  }
+  _injectCss();
+
+  function _findWidget(id){
+    try {
+      if(typeof widgets !== 'undefined' && Array.isArray(widgets.items)){
+        const hit = widgets.items.find(x => x.id === id);
+        if(hit) return { w: hit, scope: 'desktop' };
+      }
+    } catch(_){}
+    try {
+      if(typeof chartWidgets !== 'undefined' && Array.isArray(chartWidgets.items)){
+        const hit = chartWidgets.items.find(x => x.id === id);
+        if(hit) return { w: hit, scope: 'chart' };
+      }
+    } catch(_){}
+    return null;
+  }
+
+  function _onDblClick(e){
+    // Find the .cr-widget container the dblclick happened inside.
+    const widgetEl = e.target && e.target.closest && e.target.closest('.cr-widget');
+    if(!widgetEl) return;
+
+    // Bail when the click was on inner interactive bits — their own
+    // listeners should handle them. Specifically:
+    //   .wTitle / [data-drag]  — drag-to-move handle
+    //   [data-close]           — close × button
+    //   .wResize               — bottom-right resize grip
+    //   button / input / etc   — never intercept form controls
+    if(e.target.closest('[data-drag]'))   return;
+    if(e.target.closest('[data-close]'))  return;
+    if(e.target.closest('.wResize'))      return;
+    if(e.target.closest('button, input, select, textarea, a')) return;
+
+    const id = widgetEl.getAttribute('data-id');
+    if(!id) return;
+    const found = _findWidget(id);
+    if(!found){
+      try { console.warn('[crWidgetDblCfg] no widget found for id', id); } catch(_){}
+      return;
+    }
+    if(typeof window._crTermPaneQuickConfig !== 'function'){
+      try { console.warn('[crWidgetDblCfg] _crTermPaneQuickConfig missing'); } catch(_){}
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    // Open the per-widget settings popup. onSave persists + re-renders
+    // the right layer so any field change (e.g. tokenId for solHolders,
+    // wallets for solSmart) takes effect immediately.
+    window._crTermPaneQuickConfig(found.w, function(){
+      try {
+        if(found.scope === 'desktop'){
+          if(typeof _wSave === 'function') _wSave();
+          if(typeof renderWidgets === 'function') renderWidgets();
+        } else {
+          if(typeof _cwSave === 'function') _cwSave();
+          if(typeof renderChartWidgets === 'function') renderChartWidgets();
+        }
+      } catch(_){}
+    });
+  }
+
+  // Capture-phase listener so we beat any inner dblclick handlers that
+  // would otherwise swallow the event (e.g. textareas inside pane bodies).
+  document.addEventListener('dblclick', _onDblClick, true);
+})();
 </script>
 </body>
 </html>
