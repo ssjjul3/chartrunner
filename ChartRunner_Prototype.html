@@ -912,7 +912,10 @@
   /* v1.0.36 — Theme picker window. Mac OS 9 platinum-style modal with
      a 2×2 grid of theme cards + a Background section (file input,
      current preview, Reset). Lazy-built by the IIFE at end-of-script. */
-  #crThemeWin{position:fixed;inset:0;z-index:99500;display:none;
+  /* z-index 99700 — above the existing 99500 overlay used by the
+     v1.0.20 NFT picker (same DOM area, would otherwise tie). Below
+     #crRunTube (999999 !important) which is intentionally always-on-top. */
+  #crThemeWin{position:fixed;inset:0;z-index:99700;display:none;
     align-items:center;justify-content:center;
     background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
   #crThemeWin.on{display:flex}
@@ -956,9 +959,11 @@
   #crThemeWin .tw-sw-frontier{background:linear-gradient(135deg,#f4eedd 0%,#d6c79a 60%,#1a1a18 60% 75%,#f4eedd 75%)}
   #crThemeWin .tw-bg-row{display:flex;align-items:center;gap:12px}
   #crThemeWin .tw-bg-preview{width:96px;height:64px;border-radius:8px;
-    border:1px solid rgba(180,200,230,0.18);background:rgba(0,0,0,0.4) center/cover;
+    border:1px dashed rgba(180,200,230,0.35);background:rgba(0,0,0,0.4) center/cover;
     flex-shrink:0;display:flex;align-items:center;justify-content:center;
-    font-size:9px;color:var(--dim);text-align:center;text-transform:uppercase;letter-spacing:.4px}
+    font-size:9px;color:var(--dim);text-align:center;text-transform:uppercase;letter-spacing:.4px;
+    cursor:copy}
+  #crThemeWin .tw-bg-preview:hover{border-color:rgba(20,241,149,0.6)}
   #crThemeWin .tw-bg-actions{display:flex;flex-direction:column;gap:6px;flex:1}
   #crThemeWin .tw-btn{appearance:none;cursor:pointer;background:rgba(20,241,149,0.10);
     border:1px solid rgba(20,241,149,0.45);color:#bff7df;
@@ -41258,7 +41263,7 @@ const crL3 = (function(){
       +         '<button class="tw-btn tw-btn-danger" id="crTwBgReset" type="button">Reset to default</button>'
       +       '</div>'
       +     '</div>'
-      +     '<div class="tw-bg-hint">Image is stored in your browser only (per-wallet). Big files (&gt; 4 MB) may be rejected by your browser&rsquo;s storage limits.</div>'
+      +     '<div class="tw-bg-hint">Click <b>Upload</b> or drag an image / gif onto the preview tile. Stored in your browser only (per-wallet). Files &gt; 4 MB rejected.</div>'
       +   '</div>'
       + '</div>';
     document.body.appendChild(win);
@@ -41302,44 +41307,119 @@ const crL3 = (function(){
     });
 
     // Background upload. v1.0.37 — Use a real button that programmatically
-    // clicks the (visually-hidden) file input. The old `<label for="...">`
-    // pattern was silently not triggering the picker in some Chrome builds
-    // when display:none was applied to the input.
-    const file = win.querySelector('#crTwBgFile');
+    // clicks the (visually-hidden) file input.
+    // v1.0.38 — Tightened up after user reported uploads still didn't fire:
+    //   · stopPropagation on the pick click so the modal-backdrop close
+    //     handler can never see it
+    //   · file input is REPLACED with a freshly-cloned node before each
+    //     click (works around Chrome quirk where the change event won't
+    //     fire twice on the same input even if .value was reset)
+    //   · drag-and-drop onto the preview tile as a backup path
+    //   · console.* + toast at each checkpoint so failures are visible
+    let file = win.querySelector('#crTwBgFile');
     const pick = win.querySelector('#crTwBgPick');
-    if(pick && file){
-      pick.addEventListener('click', () => {
-        try { file.click(); } catch(_){}
-      });
+    const preview = win.querySelector('#crTwBgPreview');
+
+    function _attachChange(node){
+      node.addEventListener('change', _onPicked);
     }
-    file.addEventListener('change', e => {
+    function _onPicked(e){
       const f = e.target.files && e.target.files[0];
+      console.log('[crThemeWin] file change fired:', f);
+      if(!f){
+        if(typeof toast === 'function') toast('No file picked');
+        return;
+      }
+      _ingest(f);
+      // Reset by replacing the node — Chrome will re-fire change for
+      // the same filename on the next pick.
+      try {
+        const fresh = e.target.cloneNode(false);
+        fresh.value = '';
+        _attachChange(fresh);
+        e.target.parentNode.replaceChild(fresh, e.target);
+        file = fresh;
+      } catch(err){ console.warn('[crThemeWin] reset failed', err); }
+    }
+    function _ingest(f){
       if(!f) return;
-      // Cap at ~4 MB so localStorage doesn't choke. Anything bigger
-      // gets the Coach modal (or alert fallback) explaining why.
+      if(!/^image\//.test(f.type) && !/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(f.name||'')){
+        if(typeof toast === 'function') toast('Not an image file');
+        return;
+      }
       if(f.size > 4 * 1024 * 1024){
         const msg = 'Image is ' + (f.size/1024/1024).toFixed(1) + ' MB — please pick something under 4 MB.';
         if(typeof window.crConfirm === 'function'){
           try { window.crConfirm({ title:'Background too large', body:msg, ok:'OK', cancel:null }); }
           catch(_){ try { alert(msg); } catch(__){} }
         } else { try { alert(msg); } catch(_){} }
-        file.value = '';
         return;
       }
+      if(typeof toast === 'function') toast('Reading ' + f.name + '…');
       const reader = new FileReader();
       reader.onload = () => {
         const url = String(reader.result || '');
-        if(!url) return;
-        _saveBg(url);
-        _applyBg(url);
-        if(typeof toast === 'function') toast('Desktop background updated');
+        console.log('[crThemeWin] FileReader loaded, length:', url.length);
+        if(!url){
+          if(typeof toast === 'function') toast('Empty file');
+          return;
+        }
+        try {
+          _saveBg(url);
+          _applyBg(url);
+          if(typeof toast === 'function') toast('Background updated');
+        } catch(err){
+          console.error('[crThemeWin] apply failed', err);
+          if(typeof toast === 'function') toast('Save failed: ' + (err.message || err));
+        }
       };
       reader.onerror = () => {
-        if(typeof toast === 'function') toast('Could not read image');
+        console.error('[crThemeWin] FileReader error', reader.error);
+        if(typeof toast === 'function') toast('Read failed: ' + (reader.error && reader.error.message || 'unknown'));
       };
-      reader.readAsDataURL(f);
-      file.value = '';
-    });
+      try { reader.readAsDataURL(f); }
+      catch(err){
+        console.error('[crThemeWin] readAsDataURL threw', err);
+        if(typeof toast === 'function') toast('readAsDataURL threw: ' + err.message);
+      }
+    }
+
+    if(pick && file){
+      pick.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('[crThemeWin] pick clicked, calling file.click()');
+        try { file.click(); }
+        catch(err){
+          console.error('[crThemeWin] file.click() threw', err);
+          if(typeof toast === 'function') toast('Picker open failed: ' + err.message);
+        }
+      });
+    }
+    _attachChange(file);
+
+    // Drag-and-drop onto the preview tile — backup path if the picker
+    // ever silently no-ops in a particular browser.
+    if(preview){
+      preview.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        preview.style.outline = '2px dashed rgba(20,241,149,0.85)';
+      });
+      preview.addEventListener('dragleave', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        preview.style.outline = '';
+      });
+      preview.addEventListener('drop', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        preview.style.outline = '';
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        console.log('[crThemeWin] drop:', f);
+        _ingest(f);
+      });
+    }
 
     // Reset.
     win.querySelector('#crTwBgReset').addEventListener('click', () => {
