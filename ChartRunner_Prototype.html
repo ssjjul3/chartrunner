@@ -43565,6 +43565,20 @@ window.crGoldRush = (function(){
 (function(){
   'use strict';
 
+  // v1.0.75 — Diagnostic harness. Every refresher pushes its status here
+  // so the user can `console.dir(window._crTermDiag)` and see what's
+  // happening. Survives across ticks.
+  window._crTermDiag = {
+    iifeReached: Date.now(),
+    bootRan: null,
+    tagPanesCalls: 0,
+    panesTagged: {},   // paneId → count
+    refresherCalls: {},// paneId → { calls, ok, fail, lastErr }
+    forceTickCalls: 0,
+    obsHookInstalled: false,
+  };
+  try { console.log('[crTerm] v1.0.75 IIFE reached at', new Date(window._crTermDiag.iifeReached).toISOString()); } catch(_){}
+
   // Header text → pane id mapping. Stable so picker bookmarks survive.
   const PANE_ID_MAP = {
     // Solana view
@@ -43597,17 +43611,39 @@ window.crGoldRush = (function(){
   }
 
   function tagPanes(){
+    window._crTermDiag.tagPanesCalls++;
     ['crTermViewSolana','crTermViewCex'].forEach(viewId => {
       const view = document.getElementById(viewId);
-      if(!view) return;
+      if(!view){
+        window._crTermDiag.panesTagged[viewId + ':MISSING'] =
+          (window._crTermDiag.panesTagged[viewId + ':MISSING'] || 0) + 1;
+        return;
+      }
       view.querySelectorAll('.crTerm-pane').forEach(pane => {
         if(pane.getAttribute('data-pane-id')) return;
         const hdr = _headerOf(pane);
         if(!hdr) return;
         const id = PANE_ID_MAP[hdr];
-        if(id) pane.setAttribute('data-pane-id', id);
+        if(id){
+          pane.setAttribute('data-pane-id', id);
+          window._crTermDiag.panesTagged[id] =
+            (window._crTermDiag.panesTagged[id] || 0) + 1;
+        } else {
+          window._crTermDiag.panesTagged['UNMAPPED:' + hdr] =
+            (window._crTermDiag.panesTagged['UNMAPPED:' + hdr] || 0) + 1;
+        }
       });
     });
+  }
+  // v1.0.75 — diag helper. Wraps refresher calls so each fn's
+  // success/failure is recorded on window._crTermDiag.refresherCalls.
+  function _diag(paneId, status, extra){
+    const d = window._crTermDiag.refresherCalls;
+    if(!d[paneId]) d[paneId] = { calls:0, ok:0, fail:0, lastErr:null, lastStatus:null };
+    d[paneId].calls++;
+    d[paneId].lastStatus = status;
+    if(status === 'ok') d[paneId].ok++;
+    if(status === 'fail'){ d[paneId].fail++; d[paneId].lastErr = String(extra || ''); }
   }
 
   // ── Live-data wirers ───────────────────────────────────────────────
@@ -43827,24 +43863,54 @@ window.crGoldRush = (function(){
   //   marketScan    → calls _tokFetchLive for the 9 engine-scanned assets
 
   function _coinId(sym){ return ({BTC:'bitcoin', ETH:'ethereum', SOL:'solana'})[sym] || 'bitcoin'; }
+  // v1.0.75 — Read Birdeye key the same way window.crBirdeye does:
+  // window.crBirdeyeKey override → localStorage.cr_birdeye_key_v1
+  // fallback → empty (public endpoint, rate-limited but still works
+  // for small queries).
   const _BIRD_HEADERS = () => {
-    const k = (window.crBirdeye && window.crBirdeye._key) ? window.crBirdeye._key : '';
+    let k = '';
+    try {
+      if(window.crBirdeyeKey) k = String(window.crBirdeyeKey);
+      else { const stored = localStorage.getItem('cr_birdeye_key_v1'); if(stored) k = stored; }
+    } catch(_){}
     return k ? { 'X-API-KEY': k, 'x-chain':'solana' } : { 'x-chain':'solana' };
   };
 
+  // v1.0.75 — Body status helper. When a refresher fails or has no
+  // pane in the DOM, paint a visible status message so the user
+  // never sees "stale mock HTML" with no explanation.
+  function _setBodyStatus(paneId, msg, color){
+    const bodies = _bodiesOf(paneId);
+    if(!bodies.length) return;
+    const c = color || 'var(--dim)';
+    const html = '<div style="font:11px ui-monospace,Menlo,monospace;color:' + c + ';padding:8px;font-style:italic;line-height:1.4">' + msg + '</div>';
+    bodies.forEach(b => { b.innerHTML = html; });
+  }
+
   // 1. solTopTokens — Birdeye token list (volume desc).
   async function refreshSolTopTokens(){
-    if(!_bodiesOf('solTopTokens').length) return;
+    if(!_bodiesOf('solTopTokens').length){ _diag('solTopTokens', 'no-pane'); return; }
+    _diag('solTopTokens', 'start');
     const cfg  = _getConfigFor('solTopTokens');
     const rows = cfg.rows || 10;
     const sort = cfg.sortBy === 'mc' ? 'mc' : (cfg.sortBy === 'ch24' ? 'v24hChangePercent' : 'v24hUSD');
     try {
       const url = 'https://public-api.birdeye.so/defi/tokenlist?sort_by=' + sort + '&sort_type=desc&offset=0&limit=' + Math.min(rows, 50);
       const r = await fetch(url, { headers: _BIRD_HEADERS() });
-      if(!r.ok){ _setHdTag('solTopTokens','offline','warn'); return; }
+      if(!r.ok){
+        _setHdTag('solTopTokens','offline · ' + r.status,'warn');
+        _setBodyStatus('solTopTokens', 'Birdeye returned HTTP ' + r.status + (r.status === 401 || r.status === 429 ? '. Add a Birdeye API key: Token Terminal → ⚙ Settings.' : '. Retrying in next tick.'), '#ff5b7f');
+        _diag('solTopTokens', 'fail', 'HTTP ' + r.status);
+        return;
+      }
       const j = await r.json();
       const list = (j && j.data && j.data.tokens) || [];
-      if(!list.length){ _setHdTag('solTopTokens','no data','warn'); return; }
+      if(!list.length){
+        _setHdTag('solTopTokens','no data','warn');
+        _setBodyStatus('solTopTokens', 'Birdeye returned an empty token list.', '#bfa600');
+        _diag('solTopTokens', 'fail', 'empty list');
+        return;
+      }
       _setBody('solTopTokens', '<table style="width:100%;font-size:10.5px;border-collapse:collapse">'
         + '<tr><th style="text-align:left;color:var(--dim)">Token</th><th class="r" style="color:var(--dim)">Px</th><th class="r" style="color:var(--dim)">24h</th><th class="r" style="color:var(--dim)">Vol</th></tr>'
         + list.slice(0, rows).map(t => {
@@ -43859,7 +43925,12 @@ window.crGoldRush = (function(){
           }).join('')
         + '</table>');
       _setHdTag('solTopTokens', list.length + ' SPL · LIVE', 'live');
-    } catch(_){ _setHdTag('solTopTokens','offline','warn'); }
+      _diag('solTopTokens', 'ok');
+    } catch(err){
+      _setHdTag('solTopTokens','offline','warn');
+      _setBodyStatus('solTopTokens', 'Network error: ' + (err && err.message || err) + '. Retrying in next tick.', '#ff5b7f');
+      _diag('solTopTokens', 'fail', err && err.message || err);
+    }
   }
 
   // 2. solTrending — Birdeye trending list.
@@ -44493,19 +44564,21 @@ window.crGoldRush = (function(){
   // visible view. Used on tab switch + Terminal app open so the user
   // sees fresh data immediately instead of waiting for the 15s tick.
   function _forceTickForVisiblePanes(){
+    window._crTermDiag.forceTickCalls++;
+    let firedCount = 0, noBodyCount = 0;
     Object.keys(REFRESHERS).forEach(paneId => {
       const bodies = _bodiesOf(paneId);
-      // Pane must exist + at least one of its bodies must be in a
-      // visible (non-.hidden) view. Hidden source clones still match
-      // — we accept that, throttle the work via _lastRun age.
-      if(!bodies.length) return;
-      _lastRun[paneId] = 0; // force re-fire next tick
-      try { REFRESHERS[paneId].fn(); } catch(_){}
+      if(!bodies.length){ noBodyCount++; return; }
+      _lastRun[paneId] = 0;
+      try { REFRESHERS[paneId].fn(); firedCount++; } catch(_){}
       _lastRun[paneId] = Date.now();
     });
+    window._crTermDiag.lastForceTick = { t: Date.now(), fired: firedCount, noBody: noBodyCount };
   }
 
   function _boot(){
+    window._crTermDiag.bootRan = Date.now();
+    try { console.log('[crTerm] _boot ran at', new Date(window._crTermDiag.bootRan).toISOString()); } catch(_){}
     tagPanes();
     // v1.0.70 — Stamp Engine pane .live chips at boot + on tab switch.
     _stampEngineLiveChips();
@@ -44550,8 +44623,17 @@ window.crGoldRush = (function(){
     // click event but DO change the window's visible state.
     function _hookTerminalWindow(){
       const win = document.getElementById('win-terminal');
-      if(!win || win._cRrefresherHooked) return;
+      if(!win){
+        window._crTermDiag.obsHookInstalled = 'NO #win-terminal';
+        return;
+      }
+      if(win._cRrefresherHooked){
+        window._crTermDiag.obsHookInstalled = 'already-hooked';
+        return;
+      }
       win._cRrefresherHooked = true;
+      window._crTermDiag.obsHookInstalled = Date.now();
+      try { console.log('[crTerm] terminal window observer installed'); } catch(_){}
       const trigger = () => {
         setTimeout(() => {
           try { tagPanes(); } catch(_){}

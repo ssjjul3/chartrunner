@@ -1,3 +1,70 @@
+deployed: 2026-05-12T13:00:00Z · v1.0.75 (Deep diagnostic harness.
+
+USER REPORT: "Terminal application is still broken and did not update."
+
+I did a deep audit and found NO logic bugs in the IIFE — the script
+parses cleanly, all 9 Solana headers match PANE_ID_MAP exactly,
+PANE_ID_MAP keys are all present. So whatever's blocking falls into
+one of these:
+  · Browser cached the old HTML (user needs hard reload)
+  · IIFE never reached due to upstream throw in the same 2.2MB
+    <script> block
+  · Refreshers fire but Birdeye/GoldRush all return errors silently
+    (only header chip changes, body stays on mock HTML)
+
+v1.0.75 surfaces all three with concrete telemetry the user can read
+in DevTools.
+
+DIAGNOSTIC HARNESS (window._crTermDiag)
+  · iifeReached         — timestamp when the IIFE evaluated. If
+                          missing, the IIFE never ran.
+  · bootRan             — timestamp when _boot fired. If iifeReached
+                          is set but bootRan is null, DOMContentLoaded
+                          never fired (impossible-ish) OR the IIFE
+                          itself threw before registering _boot.
+  · tagPanesCalls       — count of tagPanes() invocations. Should
+                          be ≥ 1 after boot + ≥ 4 after opening
+                          Terminal + clicking the 4 tabs.
+  · panesTagged         — map of paneId → tag count. Should contain
+                          18 entries (9 Solana + 9 CEX). Any
+                          UNMAPPED:* entries surface header text
+                          that didn't match PANE_ID_MAP.
+  · refresherCalls      — map of paneId → { calls, ok, fail,
+                          lastErr, lastStatus }. Inspect to see
+                          which refreshers are succeeding vs failing
+                          and why.
+  · forceTickCalls      — count of _forceTickForVisiblePanes runs.
+  · lastForceTick       — { t, fired, noBody }. fired=N means N
+                          refreshers actually ran; noBody=N means
+                          N had no tagged body in the DOM.
+  · obsHookInstalled    — timestamp when the MutationObserver
+                          attached to #win-terminal. "NO
+                          #win-terminal" means the element wasn\'t
+                          in the DOM at hook time.
+
+HOW TO USE
+  1. Hard-reload (Cmd+Shift+R)
+  2. Open DevTools → Console
+  3. Look for [crTerm] log lines printed by the IIFE
+  4. Run: console.dir(window._crTermDiag)
+  5. Send me the output — every failure mode is now telemetered.
+
+VISIBLE STATUS PAINTING
+  Failed refreshers no longer just change the header chip — they
+  now paint a STATUS MESSAGE into the pane body too. So instead
+  of "old mock HTML + offline chip" you see:
+    "Birdeye returned HTTP 401. Add a Birdeye API key:
+     Token Terminal → ⚙ Settings."
+  or
+    "Network error: Failed to fetch. Retrying in next tick."
+  Mock HTML can no longer be confused with stale-live state.
+
+OTHER FIXES IN THIS PATCH
+  · _BIRD_HEADERS reads localStorage.cr_birdeye_key_v1 the same
+    way window.crBirdeye does. Was checking
+    window.crBirdeye._key which is never set, so the X-API-KEY
+    header was never being sent even when a key was configured.)
+
 deployed: 2026-05-12T12:00:00Z · v1.0.74 (Two bugs: widget config showed
 generic note + Terminal panes stayed on mock HTML.
 
