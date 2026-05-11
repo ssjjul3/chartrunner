@@ -27669,16 +27669,75 @@ const _tokLiveInflight = {}; // dedup concurrent fetches
 // into a single render pass so pinned token widgets stop flickering when
 // multiple Binance fetches (or a TF change + N pinned widgets) all land
 // within a short window.
+// v0.9.13 → v1.0.66 — Trailing-edge debounce + soft refresh for pinned widgets.
+//
+// The original v0.9.13 was throttle-on-leading-edge with a 200 ms window.
+// That handled "small bursts" but broke under v1.0.63 mass-fetch (22
+// staggered token fetches per list render, 80 ms apart). Each fetch
+// resolution fired renderWidgets() + renderChartWidgets() — both do
+// layer.innerHTML = '' which destroys EVERY widget canvas including the
+// pinned token sparklines. _crPaintTokSparks repaints within 1 s but
+// the dead frame in between caused the visible flicker.
+//
+// v1.0.66 changes:
+//   1. Proper trailing-edge debounce so 22 fetches → 1 settle at the end.
+//   2. Window bumped 200 → 800 ms (covers a 22-fetch fan-out at 80 ms stride).
+//   3. Replaced the destructive renderWidgets / renderChartWidgets calls
+//      with _softRefreshTokenWidgets() — walks the existing widget DOM
+//      and updates only the price + 24h% + live-dot text spans in-place.
+//      Sparkline canvases stay alive (re-painted on the 1 s _crPaintTokSparks
+//      tick that already exists, from fresh _tokLiveCache data).
 let _tokRerenderTimer = null;
 function _tokScheduleRerender(){
-  if(_tokRerenderTimer) return;
+  if(_tokRerenderTimer) clearTimeout(_tokRerenderTimer);
   _tokRerenderTimer = setTimeout(() => {
     _tokRerenderTimer = null;
     try { _tokRenderList(); } catch(_){}
     try { _tokRenderProfile(); } catch(_){}
-    try { if(typeof renderWidgets      === 'function') renderWidgets();      } catch(_){}
-    try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
-  }, 200);
+    try { _softRefreshTokenWidgets(); } catch(_){}
+  }, 800);
+}
+
+// v1.0.66 — Soft refresh for pinned token widgets. Walks every canvas
+// with data-w-tok-spark="<id>" (the unique attribute the widget body
+// stamps on its sparkline canvas), climbs to the enclosing .cr-widget,
+// finds the price + 24h% text spans by their data-w-tok-* attributes
+// (added in this version), and updates their textContent in-place.
+// No DOM rebuild → no canvas destruction → no flicker.
+function _softRefreshTokenWidgets(){
+  try {
+    const sparks = document.querySelectorAll('canvas[data-w-tok-spark]');
+    sparks.forEach(cv => {
+      const id = cv.getAttribute('data-w-tok-spark');
+      if(!id) return;
+      const widget = cv.closest('.cr-widget');
+      if(!widget) return;
+      const s = (typeof _tokSnapshot === 'function') ? _tokSnapshot(id) : null;
+      if(!s) return;
+      // Price (with optional Pyth badge preserved — only the text node updates).
+      const pxEl = widget.querySelector('[data-w-tok-px]');
+      if(pxEl){
+        const pxTxt = (typeof _tokFmtPx === 'function') ? _tokFmtPx(s.px) : String(s.px);
+        if(pxEl.textContent !== pxTxt) pxEl.textContent = pxTxt;
+      }
+      // 24h % change.
+      const chEl = widget.querySelector('[data-w-tok-ch24]');
+      if(chEl){
+        const sign = s.ch24 >= 0 ? '+' : '';
+        const chTxt = sign + s.ch24.toFixed(1) + '%';
+        if(chEl.textContent !== chTxt) chEl.textContent = chTxt;
+        chEl.style.color = s.ch24 >= 0 ? '#3ddc97' : '#ff5b7f';
+      }
+      // Live-dot color (fresh/stale/synth).
+      const dotEl = widget.querySelector('[data-w-tok-dot]');
+      if(dotEl){
+        const cached = (typeof _tokLiveCache !== 'undefined' && s.hasBinance)
+          ? _tokLiveCache[s.def.id + '|' + s.tf] : null;
+        const fresh = cached && (Date.now() - cached.t) < _TOK_LIVE_TTL_MS;
+        dotEl.style.color = s.live ? (fresh ? '#3ddc97' : '#ffd166') : '#5a5a72';
+      }
+    });
+  } catch(_){}
 }
 
 // v0.9.54 — Once we've seen live data for an id, keep using the most recent
@@ -29219,12 +29278,15 @@ function _wBodyHTML(w){
       ? '<span title="Verified by Pyth Hermes" style="display:inline-block;font:600 7px ui-monospace,Menlo,monospace;color:#9b8cff;border:1px solid rgba(155,140,255,.4);background:rgba(155,140,255,.08);padding:1px 4px;border-radius:3px;letter-spacing:.4px;margin-right:4px;vertical-align:middle">PYTH ✓</span>'
       : '';
     return '' +
+      // v1.0.66 — Tag price + 24h% + live-dot with data-w-tok-* attrs
+      // so _softRefreshTokenWidgets can update them in place without
+      // touching the canvas. Stops the v1.0.63-introduced flicker.
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
-        '<div><div style="font-weight:700;font-size:14px">' + s.def.tag + ' <span style="font-size:8px;color:' + dotColor + '">●</span></div>' +
+        '<div><div style="font-weight:700;font-size:14px">' + s.def.tag + ' <span data-w-tok-dot style="font-size:8px;color:' + dotColor + '">●</span></div>' +
         '<div class="dim" style="font-size:9px">' + s.def.chain + ' · ' + s.tf + '</div></div>' +
         '<div style="text-align:right">' +
-          '<div style="font-weight:700;font-variant-numeric:tabular-nums">' + pythBadge + _tokFmtPx(s.px) + '</div>' +
-          '<div style="font-weight:700;font-variant-numeric:tabular-nums;font-size:10px;color:' + (s.ch24 >= 0 ? '#3ddc97' : '#ff5b7f') + '">' + (s.ch24 >= 0 ? '+' : '') + s.ch24.toFixed(1) + '%</div>' +
+          '<div style="font-weight:700;font-variant-numeric:tabular-nums">' + pythBadge + '<span data-w-tok-px>' + _tokFmtPx(s.px) + '</span></div>' +
+          '<div data-w-tok-ch24 style="font-weight:700;font-variant-numeric:tabular-nums;font-size:10px;color:' + (s.ch24 >= 0 ? '#3ddc97' : '#ff5b7f') + '">' + (s.ch24 >= 0 ? '+' : '') + s.ch24.toFixed(1) + '%</div>' +
         '</div>' +
       '</div>' +
       '<canvas id="' + sparkId + '" data-w-tok-spark="' + s.def.id + '" data-w-tok-chart-type="' + (isCandle ? 'candle' : 'line') + '" style="display:block;width:100%;height:auto;aspect-ratio:5 / 1;min-height:36px;margin-top:6px;background:rgba(0,0,0,.18);border-radius:3px;transition:opacity .15s ease"></canvas>' +
