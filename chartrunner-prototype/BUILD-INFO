@@ -1,3 +1,48 @@
+deployed: 2026-05-12T12:00:00Z · v1.0.74 (Two bugs: widget config showed
+generic note + Terminal panes stayed on mock HTML.
+
+USER REPORTS:
+  "all widget configs show: This is a built-in terminal pane. Behavior
+  + refresh cadence are baked in."
+  "and in terminal no widget displays are updated"
+
+BUG 1 — Widget gear opens with generic schema
+  Cause: _crTermPaneQuickConfig() resolved schemas via
+    _CR_PANE_SCHEMAS[w.type]
+  but pinned terminal panes carry w.type === 'pane' with the
+  specific id on w.paneId / w.sourceId / w.payload. Every
+  pane therefore hit the GENERIC fallback at _CR_PANE_SCHEMAS['pane']
+  ("built-in terminal pane…"), masking the rich per-pane
+  schemas we built in v1.0.60 / v1.0.68 / v1.0.70 / v1.0.71
+  (Top Tokens, Trending, Sniper Activity, Wallet Watchlist,
+  Coin Watchlist — every one).
+
+  Fix: try 'pane:<paneId>' key FIRST when w.type === 'pane',
+  fall back to widget type, fall back to generic.
+
+BUG 2 — Terminal panes stay on mock HTML
+  Cause: _forceTickForVisiblePanes only fired on .crTerm-tab
+  click events. Opening the Terminal app via keyboard
+  shortcut / desktop icon / programmatic call doesn't
+  dispatch a tab-click, so panes inside the window stayed
+  un-tagged + un-refreshed until the user clicked something.
+
+  Fix: MutationObserver hook on #win-terminal. Watches the
+  window's own class/style attribute (open/close transition)
+  and its .crTerm-tabs subtree (internal view switch). On
+  any visible-state change, re-runs tagPanes() +
+  _stampEngineLiveChips() + _forceTickForVisiblePanes() at
+  +60ms. Belt-and-suspenders: observer hook installs at
+  boot+500ms with a retry at boot+2500ms in case the
+  win-terminal element late-mounts.
+
+After this patch, opening Terminal → switching to Solana
+should paint live data within ~1s of the window appearing.
+If panes still show mock data, the cause is API-key on the
+data side (no Birdeye / GoldRush key → solTopTokens,
+solHolders, cexWhales etc fail their fetch silently —
+header should now visibly say "offline" or "no data").)
+
 deployed: 2026-05-12T11:30:00Z · v1.0.73 (USDT joins the full Profile
 Wallet tab pinned defaults, with a real on-chain balance.
 

@@ -27283,7 +27283,18 @@ function _crTermPaneQuickConfig(w, onSave){
   const prior = document.getElementById('crPaneQuickCfg');
   if(prior && prior.parentNode) prior.parentNode.removeChild(prior);
 
-  const schema = _CR_PANE_SCHEMAS[w.type] || {
+  // v1.0.74 — Schema lookup: pinned built-in panes have w.type === 'pane'
+  // with the specific pane id on w.paneId / w.sourceId. Until now we
+  // looked up _CR_PANE_SCHEMAS[w.type] which hit the GENERIC 'pane' note
+  // ("built-in terminal pane. Behavior + refresh cadence are baked in")
+  // for every pane regardless of id — masking the rich per-pane schemas
+  // we added in v1.0.60 / v1.0.68 / v1.0.70 / v1.0.71. Now we try the
+  // specific 'pane:<id>' key first, then fall back to widget type.
+  const _paneId = w && (w.paneId || w.sourceId || w.payload);
+  const _specificKey = (w.type === 'pane' && _paneId) ? ('pane:' + _paneId) : null;
+  const schema = (_specificKey && _CR_PANE_SCHEMAS[_specificKey])
+    || _CR_PANE_SCHEMAS[w.type]
+    || {
     icon:'◇', title:w.type, sub:'No quick-config schema for this pane type.',
     fields: [{ type:'note', text:'Quick-config schemas are declared per pane type in _CR_PANE_SCHEMAS. Add one to expose configurable fields here.' }],
   };
@@ -44530,6 +44541,43 @@ window.crGoldRush = (function(){
     // the OS chrome / window manager initialisation.
     setTimeout(() => { try { tagPanes(); _stampEngineLiveChips(); _forceTickForVisiblePanes(); } catch(_){} }, 3000);
     setTimeout(() => { try { tagPanes(); _stampEngineLiveChips(); _forceTickForVisiblePanes(); } catch(_){} }, 8000);
+    // v1.0.74 — Mutation-observe the Terminal window. The moment it
+    // opens (class `.on` toggles on, or display flips from none) OR
+    // its tab strip changes view (data-termview attr on the active
+    // tab), re-tag + force-tick. Catches the case where the user
+    // opens the Terminal app via keyboard shortcut / programmatic
+    // open / desktop icon — paths that don't dispatch a `.crTerm-tab`
+    // click event but DO change the window's visible state.
+    function _hookTerminalWindow(){
+      const win = document.getElementById('win-terminal');
+      if(!win || win._cRrefresherHooked) return;
+      win._cRrefresherHooked = true;
+      const trigger = () => {
+        setTimeout(() => {
+          try { tagPanes(); } catch(_){}
+          try { _stampEngineLiveChips(); } catch(_){}
+          try { _forceTickForVisiblePanes(); } catch(_){}
+        }, 60);
+      };
+      // Watch the window's own attributes (class/style toggles) for
+      // open/close transitions.
+      const winObs = new MutationObserver(() => {
+        const visible = win.classList.contains('on') ||
+                        (win.style.display && win.style.display !== 'none');
+        if(visible) trigger();
+      });
+      winObs.observe(win, { attributes: true, attributeFilter: ['class', 'style'] });
+      // Watch tab strip too — covers internal view switch.
+      const tabs = win.querySelector('.crTerm-tabs');
+      if(tabs){
+        const tabObs = new MutationObserver(trigger);
+        tabObs.observe(tabs, { attributes: true, subtree: true, attributeFilter: ['class'] });
+      }
+      // Kick once now in case window is already open at boot.
+      trigger();
+    }
+    setTimeout(_hookTerminalWindow, 500);
+    setTimeout(_hookTerminalWindow, 2500); // retry if win-terminal late-mounts
   }
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', _boot);
