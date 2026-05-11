@@ -982,10 +982,12 @@
     font-family:Monaco,monospace!important}
   body[data-os-theme="ascii"] #crThemeWin .tw-themecard{
     background:#000!important;border-color:#33ff66!important;color:#33ff66!important}
-  /* v1.0.36 — Custom desktop background, applied as a CSS variable. The
-     splash gradient stays on top so the bg shows through with subtle
-     atmosphere. Set --cr-desktop-bg via JS when an image is uploaded. */
-  .splash[data-cr-desktop-bg="1"]{
+  /* v1.0.36 / v1.0.37 — Custom desktop background. Selector specificity
+     bumped (html body .splash[…]) so it BEATS the per-theme platinum /
+     solana / ascii / frontier .splash overrides — otherwise the theme
+     CSS at line ~1276 would trump the user's uploaded image. */
+  html body .splash[data-cr-desktop-bg="1"],
+  html body[data-os-theme] .splash[data-cr-desktop-bg="1"]{
     background:
       linear-gradient(rgba(5,7,13,0.45),rgba(5,7,13,0.65)),
       var(--cr-desktop-bg,radial-gradient(1000px 600px at 30% 20%,rgba(153,69,255,.18),transparent 60%)) !important;
@@ -41251,8 +41253,8 @@ const crL3 = (function(){
       +     '<div class="tw-bg-row">'
       +       '<div class="tw-bg-preview" id="crTwBgPreview">No image</div>'
       +       '<div class="tw-bg-actions">'
-      +         '<label class="tw-btn" for="crTwBgFile" style="cursor:pointer">Upload image / gif</label>'
-      +         '<input id="crTwBgFile" type="file" accept="image/*,image/gif" style="display:none">'
+      +         '<button class="tw-btn" id="crTwBgPick" type="button">Upload image / gif</button>'
+      +         '<input id="crTwBgFile" type="file" accept="image/*" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">'
       +         '<button class="tw-btn tw-btn-danger" id="crTwBgReset" type="button">Reset to default</button>'
       +       '</div>'
       +     '</div>'
@@ -41280,22 +41282,36 @@ const crL3 = (function(){
         + '<div class="tw-name">' + t.name + '</div>'
         + '<div class="tw-sub">'  + t.sub  + '</div>';
       card.addEventListener('click', () => {
-        try { if(typeof applyTheme === 'function') applyTheme(t.id); } catch(_){}
-        // Sync the legacy themeIdx so the fallback cycle behavior stays
-        // in step if anyone re-enables it.
+        // v1.0.37 — Inline theme switch. applyTheme() is private to the
+        // ChartRunnerOSExt IIFE (line ~34685) so it's not callable from
+        // here. We just flip splash[data-theme]; a MutationObserver in
+        // the TVChrome IIFE (line ~36784) auto-mirrors that to
+        // body[data-os-theme], which all the per-theme CSS overrides key
+        // off of. So one attribute write = both surfaces theme.
         try {
-          if(typeof THEMES !== 'undefined' && typeof themeIdx !== 'undefined'){
-            const idx = THEMES.indexOf(t.id);
-            if(idx >= 0) themeIdx = idx;
+          const splash = document.getElementById('splash');
+          if(splash){
+            if(t.id === 'platinum') splash.removeAttribute('data-theme');
+            else                    splash.setAttribute('data-theme', t.id);
           }
         } catch(_){}
+        if(typeof toast === 'function') toast('Theme: ' + t.name);
         _markActive();
       });
       grid.appendChild(card);
     });
 
-    // Background upload.
+    // Background upload. v1.0.37 — Use a real button that programmatically
+    // clicks the (visually-hidden) file input. The old `<label for="...">`
+    // pattern was silently not triggering the picker in some Chrome builds
+    // when display:none was applied to the input.
     const file = win.querySelector('#crTwBgFile');
+    const pick = win.querySelector('#crTwBgPick');
+    if(pick && file){
+      pick.addEventListener('click', () => {
+        try { file.click(); } catch(_){}
+      });
+    }
     file.addEventListener('change', e => {
       const f = e.target.files && e.target.files[0];
       if(!f) return;
