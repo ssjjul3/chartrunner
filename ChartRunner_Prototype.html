@@ -11,6 +11,13 @@
      copy in the source folder both work. -->
 <link rel="icon" type="image/png" href="../LOGO.png" />
 <link rel="apple-touch-icon" href="../LOGO.png" />
+<!-- v1.0.47 — @solana/web3.js for direct in-page Phantom signing of
+     chartrunner_maps save_map. Loaded async with onload-gated init so
+     the rest of the page renders without waiting on it. The crMapsTx
+     IIFE checks for window.solanaWeb3 before signing; if the script
+     fails to load, save falls back to the legacy /solana-connect/
+     bounce path. ~270 KB minified, cacheable. -->
+<script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js" async></script>
 <style>
   :root{
     --bg0:#05070d; --bg1:#0a0f1c; --bg2:#121a30;
@@ -10370,8 +10377,11 @@ window.crChainSave = (function(){
     return null;
   }
 
-  // Trigger the redirect-flow. Caller must have already saved the map locally
-  // (so we can hash its contents).
+  // v1.0.47 — Anchor a map on devnet. Tries the DIRECT in-page Phantom
+  // signing path first (window.crMapsTx, owned by the IIFE at the bottom
+  // of this script). If web3.js failed to load, Phantom isn't injected,
+  // or the direct call throws, falls back to the legacy
+  // /solana-connect/?action=save-map redirect bounce.
   async function anchorByName(name){
     var map = findByName(name);
     if (!map){
@@ -10385,9 +10395,37 @@ window.crChainSave = (function(){
       if (wantConnect && crWallet) crWallet.connect();
       return false;
     }
+    var canon, hashHex, hashBytes;
     try {
-      var canon = canonicalJson(map);
-      var hashHex = await sha256Hex(canon);
+      canon     = canonicalJson(map);
+      hashHex   = await sha256Hex(canon);
+      hashBytes = new Uint8Array(32);
+      for (var i = 0; i < 32; i++){
+        hashBytes[i] = parseInt(hashHex.substr(i*2, 2), 16);
+      }
+    } catch(err){
+      try { toast && toast('Hash failed: ' + (err.message || err)); } catch(_){}
+      return false;
+    }
+    // ── DIRECT path (v1.0.47) ────────────────────────────────────────
+    if (window.crMapsTx && typeof window.crMapsTx.signAndSendSave === 'function'){
+      try {
+        var sig = await window.crMapsTx.signAndSendSave(name, hashBytes);
+        if (sig){
+          markOnChain(name, sig);
+          try { toast && toast('🪙 ' + name + ' anchored · ' + sig.slice(0, 8) + '…'); } catch(_){}
+          return true;
+        }
+        // sig === null means direct path opted out (web3.js not loaded yet, etc).
+        // Fall through to bounce.
+      } catch(err){
+        try { console.warn('[crChainSave] direct save failed, falling back to bounce:', err); } catch(_){}
+        try { toast && toast('Direct sign failed · using fallback'); } catch(_){}
+        // Fall through to bounce.
+      }
+    }
+    // ── FALLBACK: legacy /solana-connect/ redirect bounce ─────────────
+    try {
       var url = '../solana-connect/?action=save-map'
               + '&name=' + encodeURIComponent(name)
               + '&hash=' + hashHex
@@ -41625,6 +41663,164 @@ const crL3 = (function(){
   } else {
     setTimeout(_wire, 0);
   }
+})();
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.0.47 — Direct in-page Phantom signing for chartrunner_maps
+   ──────────────────────────────────────────────────────────────────
+   Replaces the legacy ../solana-connect/?action=save-map redirect
+   bounce with a direct provider.signAndSendTransaction call so the
+   user never leaves the game. Uses @solana/web3.js (loaded async via
+   <script> tag in <head>); if the lib never arrives or Phantom isn't
+   injected, signAndSendSave returns null and crChainSave.anchorByName
+   falls back to the bounce.
+
+   Anchor instruction format:
+     · 8-byte discriminator = sha256("global:save_map")[:8]
+     · Borsh string `name`: u32 LE length + utf-8 bytes
+     · 32-byte content_hash
+
+   PDA derivation:
+     seeds = [b"map", owner.pubkey, name.utf8]
+     program = DbzEqKfgCBqneR6Yuc17yEPc1fbVeqTeGy721f1n3UvH (devnet)
+   ──────────────────────────────────────────────────────────────────*/
+window.crMapsTx = (function(){
+  'use strict';
+
+  var PROGRAM_ID_B58 = 'DbzEqKfgCBqneR6Yuc17yEPc1fbVeqTeGy721f1n3UvH';
+  var RPC_URL        = 'https://api.devnet.solana.com';
+
+  // Cache the 8-byte discriminator after first compute.
+  var _disc = null;
+  async function _saveMapDiscriminator(){
+    if (_disc) return _disc;
+    var buf = new TextEncoder().encode('global:save_map');
+    var d   = await crypto.subtle.digest('SHA-256', buf);
+    _disc   = new Uint8Array(d).slice(0, 8);
+    return _disc;
+  }
+
+  // Concatenate Uint8Arrays.
+  function _cat(parts){
+    var n = 0;
+    for (var i = 0; i < parts.length; i++) n += parts[i].length;
+    var out = new Uint8Array(n);
+    var o = 0;
+    for (var j = 0; j < parts.length; j++){
+      out.set(parts[j], o);
+      o += parts[j].length;
+    }
+    return out;
+  }
+
+  function _u32le(n){
+    var b = new Uint8Array(4);
+    new DataView(b.buffer).setUint32(0, n, true);
+    return b;
+  }
+
+  // Build the Anchor instruction data buffer for save_map(name, hash).
+  async function _buildIxData(name, hashBytes){
+    var disc = await _saveMapDiscriminator();
+    var nameBytes = new TextEncoder().encode(name);
+    var nameLen   = _u32le(nameBytes.length);
+    return _cat([disc, nameLen, nameBytes, hashBytes]);
+  }
+
+  // Phantom provider (same path the rest of the codebase uses).
+  function _phantom(){
+    return (window.phantom && window.phantom.solana) || window.solana || null;
+  }
+  function _web3(){
+    return window.solanaWeb3 || null;
+  }
+
+  // signAndSendSave(name, hashBytes) → Promise<sig|null>
+  // Returns null if the direct path can't run (web3.js missing, Phantom
+  // not injected) so the caller falls back to the bounce. Throws on
+  // actual signing / RPC failure so the caller can decide whether to
+  // bounce-fallback or surface the error.
+  async function signAndSendSave(name, hashBytes){
+    var web3 = _web3();
+    var ph   = _phantom();
+    if (!web3){
+      try { console.warn('[crMapsTx] @solana/web3.js not loaded yet, deferring to bounce'); } catch(_){}
+      return null;
+    }
+    if (!ph){
+      try { console.warn('[crMapsTx] no Phantom provider, deferring to bounce'); } catch(_){}
+      return null;
+    }
+    if (!ph.isConnected || !ph.publicKey){
+      // Try a silent connect first (already-trusted dapp). If the user
+      // rejects or hasn't authorized this site, fall through to bounce.
+      try { await ph.connect({ onlyIfTrusted: true }); } catch(_){
+        try { console.warn('[crMapsTx] Phantom not connected, deferring to bounce'); } catch(__){}
+        return null;
+      }
+      if (!ph.publicKey) return null;
+    }
+
+    var ownerPk    = new web3.PublicKey(ph.publicKey.toString());
+    var programPk  = new web3.PublicKey(PROGRAM_ID_B58);
+    var systemPk   = web3.SystemProgram.programId;
+
+    // Derive the map PDA: ["map", owner, name].
+    var seeds = [
+      new TextEncoder().encode('map'),
+      ownerPk.toBytes(),
+      new TextEncoder().encode(name),
+    ];
+    var pdaResult = web3.PublicKey.findProgramAddressSync(seeds, programPk);
+    var mapPk     = pdaResult[0];
+
+    var ixData = await _buildIxData(name, hashBytes);
+
+    var ix = new web3.TransactionInstruction({
+      programId: programPk,
+      keys: [
+        { pubkey: mapPk,    isSigner: false, isWritable: true  }, // map (init_if_needed)
+        { pubkey: ownerPk,  isSigner: true,  isWritable: true  }, // owner (payer)
+        { pubkey: systemPk, isSigner: false, isWritable: false }, // system_program
+      ],
+      data: ixData,
+    });
+
+    var conn = new web3.Connection(RPC_URL, { commitment: 'confirmed' });
+    var bh   = await conn.getLatestBlockhash('confirmed');
+
+    var tx = new web3.Transaction({
+      recentBlockhash:    bh.blockhash,
+      feePayer:           ownerPk,
+      lastValidBlockHeight: bh.lastValidBlockHeight,
+    });
+    tx.add(ix);
+
+    // Phantom's signAndSendTransaction returns { signature } or { signature, ... }
+    var res = await ph.signAndSendTransaction(tx);
+    var sig = (res && res.signature) ? res.signature : (typeof res === 'string' ? res : null);
+    if (!sig) throw new Error('No signature returned from Phantom');
+
+    // Confirm — but don't block forever. 30 s cap.
+    try {
+      await conn.confirmTransaction({
+        signature: sig,
+        blockhash: bh.blockhash,
+        lastValidBlockHeight: bh.lastValidBlockHeight,
+      }, 'confirmed');
+    } catch(err){
+      // Confirmation failed but the sig may still land. Surface the sig
+      // anyway so the local copy reflects the attempt.
+      try { console.warn('[crMapsTx] confirmTransaction failed:', err); } catch(_){}
+    }
+    return sig;
+  }
+
+  return {
+    signAndSendSave: signAndSendSave,
+    PROGRAM_ID:      PROGRAM_ID_B58,
+    RPC_URL:         RPC_URL,
+  };
 })();
 </script>
 </body>
