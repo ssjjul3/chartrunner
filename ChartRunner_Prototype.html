@@ -23681,7 +23681,10 @@ function osRefreshShop(){
 // Player can append other tokens; the addition is persisted per wallet
 // address in localStorage (cr_wallet_tokens_v1::<addr> or ::guest).
 const CR_WALLET_TOKENS_KEY = 'cr_wallet_tokens_v1';
-const CR_WALLET_DEFAULTS = ['SOL', 'USDC', 'RUN']; // pinned, can't be removed
+// v1.0.73 — USDT joins the pinned defaults. Balance comes from the
+// v1.0.67 _crLpStableBal poller (GoldRush mainnet, 3-min cache); USDC
+// also reads from the same source instead of returning 0.
+const CR_WALLET_DEFAULTS = ['SOL', 'USDC', 'USDT', 'RUN']; // pinned, can't be removed
 function _crWalletAddrKey(){
   try {
     if (typeof crWallet !== 'undefined' && crWallet.isConnected && crWallet.isConnected()) {
@@ -23747,14 +23750,21 @@ async function _crWalletFetchSol(){
 }
 function _crWalletBalanceFor(sym){
   // RUN mirrors game.run so the player sees in-game P&L. SOL pulls from
-  // the live devnet RPC cache (populated by _crWalletFetchSol). USDC and
-  // CRDS stay 0 until an on-chain mint exists.
+  // the live devnet RPC cache (populated by _crWalletFetchSol). USDT
+  // and USDC pull from window._crLpStableBal — the v1.0.67 GoldRush
+  // mainnet poller (3-min cache); null means "not yet fetched" so we
+  // return null to keep the row's "—" placeholder until data lands.
   try {
     if (sym === 'RUN' && typeof game !== 'undefined' && typeof game.run === 'number') return game.run;
   } catch(_){}
   if (sym === 'SOL' && typeof _crWalletBalances === 'object'
       && _crWalletBalances.SOL !== null){
     return _crWalletBalances.SOL;
+  }
+  if ((sym === 'USDT' || sym === 'USDC') && window._crLpStableBal){
+    const key = sym.toLowerCase();
+    const v = window._crLpStableBal[key];
+    if (typeof v === 'number') return v;
   }
   return 0;
 }
@@ -23799,22 +23809,40 @@ function _crWalletRender(){
     const isDefault = CR_WALLET_DEFAULTS.indexOf(sym) >= 0;
     const bal = _crWalletBalanceFor(sym);
     // v0.9.89 — SOL is a real on-chain balance; show 4 decimals so a
-    // 0.0042 SOL airdrop is visible. Other tokens stay integer-formatted.
+    // 0.0042 SOL airdrop is visible. v1.0.73 — USDT/USDC pull from
+    // _crLpStableBal (GoldRush mainnet); show 2 decimals like fiat,
+    // "—" when not yet fetched.
     let balText;
     if (sym === 'SOL'){
       if (!connected) balText = '—';
       else if (_crWalletBalances && _crWalletBalances.SOL === null && _crWalletBalances.fetching) balText = '…';
       else balText = bal.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+    } else if (sym === 'USDT' || sym === 'USDC'){
+      if (!connected) balText = '—';
+      else if (window._crLpStableBal == null) balText = '…';
+      else balText = bal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     } else {
       balText = bal === 0 ? '0' : bal.toLocaleString('en-US');
     }
+    // v1.0.73 — Stablecoin brand-color accent on the symbol pill.
+    const pillBg = (sym === 'USDT')
+      ? 'linear-gradient(135deg,rgba(38,161,123,.30),rgba(38,161,123,.10))'
+      : (sym === 'USDC')
+        ? 'linear-gradient(135deg,rgba(39,117,202,.30),rgba(39,117,202,.10))'
+        : 'linear-gradient(135deg,rgba(20,241,149,.18),rgba(153,69,255,.18))';
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4);font-size:12px';
     row.innerHTML =
-      '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,rgba(20,241,149,.18),rgba(153,69,255,.18));border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font:bold 10px ui-monospace,Menlo,monospace;color:var(--fg)">' + sym.slice(0,3) + '</div>' +
+      '<div style="width:28px;height:28px;border-radius:50%;background:' + pillBg + ';border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font:bold 10px ui-monospace,Menlo,monospace;color:var(--fg)">' + sym.slice(0,3) + '</div>' +
       '<div style="flex:1;min-width:0">' +
-        '<div style="font-weight:700;color:var(--fg)">$' + sym + (isDefault ? '' : ' <span style="font-size:9px;color:var(--dim);font-weight:400;text-transform:uppercase;letter-spacing:.4px">custom</span>') + (sym === 'SOL' && connected ? ' <span style="font-size:9px;color:#3ddc97;font-weight:600;text-transform:uppercase;letter-spacing:.4px">devnet</span>' : '') + '</div>' +
-        '<div style="font-size:10px;color:var(--dim)">' + (sym === 'RUN' ? 'Run-token · in-game P&L' : (sym === 'SOL' ? 'Solana · gas + native (live RPC)' : (sym === 'USDC' ? 'USD-C stable · default quote' : 'SPL token · custom'))) + '</div>' +
+        '<div style="font-weight:700;color:var(--fg)">$' + sym + (isDefault ? '' : ' <span style="font-size:9px;color:var(--dim);font-weight:400;text-transform:uppercase;letter-spacing:.4px">custom</span>') + (sym === 'SOL' && connected ? ' <span style="font-size:9px;color:#3ddc97;font-weight:600;text-transform:uppercase;letter-spacing:.4px">devnet</span>' : '') + ((sym === 'USDT' || sym === 'USDC') && connected ? ' <span style="font-size:9px;color:#3ddc97;font-weight:600;text-transform:uppercase;letter-spacing:.4px">mainnet</span>' : '') + '</div>' +
+        '<div style="font-size:10px;color:var(--dim)">' +
+          (sym === 'RUN'  ? 'Run-token · in-game P&L' :
+           sym === 'SOL'  ? 'Solana · gas + native (live RPC)' :
+           sym === 'USDC' ? 'USD-C stable · default quote (live)' :
+           sym === 'USDT' ? 'Tether USD stable · settle asset (live)' :
+                            'SPL token · custom') +
+        '</div>' +
       '</div>' +
       '<div style="font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--fg);min-width:80px;text-align:right">' + balText + '</div>' +
       (isDefault ? '' : '<button class="cr-go" data-wallet-rm="' + sym + '" type="button" style="font-size:10px;padding:3px 7px;background:transparent;border:1px solid var(--line);color:#ff5b7f">×</button>');
@@ -44889,6 +44917,9 @@ window.crGoldRush = (function(){
         if(t.mint === USDC_MINT) usdc = Number(t.amount) || 0;
       }
       window._crLpStableBal = { usdt: usdt, usdc: usdc, t: Date.now(), wallet: w };
+      // v1.0.73 — re-paint the full Profile Wallet tab so the USDT +
+      // USDC rows flip from "…" to the live amount as soon as data lands.
+      try { if(typeof _crWalletRender === 'function') _crWalletRender(); } catch(_){}
     } catch(err){
       try { console.warn('[crLpStableBal] fetch failed:', err.message); } catch(_){}
     }
