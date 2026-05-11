@@ -1,7 +1,7 @@
 /* ────────────────────────────────────────────────────────────────────────
  *  @chartrunner/core/brokers — broker driver registry
  * ────────────────────────────────────────────────────────────────────────
- *  M1.4 contract. Four drivers ship today; ChartRunnerSDK reads
+ *  M1.4 contract. Five drivers ship today; ChartRunnerSDK reads
  *  `currentBroker()` for every order route. Default = 'mock' so existing
  *  paper-trading behaviour is preserved.
  *
@@ -11,6 +11,8 @@
  *                     until npm publishes; throws "awaiting publish" today)
  *    jupiter        → Solana DEX aggregator (v1.0.53, LIVE, no SDK dep —
  *                     hits the public quote/swap HTTP API directly)
+ *    jito           → MEV-protected bundle submission on top of Jupiter
+ *                     (v1.0.54, LIVE — atomic 2-tx bundle, tip + swap)
  *
  *  Switching drivers does not change SDK call shapes. Tools stay the
  *  same; settlement venue changes underneath. This is Shift 1 from the
@@ -21,12 +23,14 @@ import { mockBroker } from './mock.js';
 import { binancePaperBroker } from './binance-paper.js';
 import { phoenixBroker } from './phoenix.js';
 import { jupiterBroker } from './jupiter.js';
+import { jitoBroker } from './jito.js';
 
 const REGISTRY = {
   'mock':           mockBroker,
   'binance-paper':  binancePaperBroker,
   'phoenix':        phoenixBroker,
   'jupiter':        jupiterBroker,
+  'jito':           jitoBroker,
 };
 
 let _current = 'mock';
