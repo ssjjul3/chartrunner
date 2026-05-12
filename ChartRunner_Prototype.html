@@ -26498,7 +26498,123 @@ function _wbRenderTerms(){
  * Built-in panes spawn via the existing widget system (type: 'pane').
  * Workbench-built terms spawn as a new widget type ('wbterm') with body
  * sourced from wb.terms[id].body and live-bound spans.
+ *
+ * v1.0.89 — Picker now has a top-level toggle between LIBRARY (the
+ * existing spawn + per-widget settings flow) and API DOCS (new in
+ * v1.0.89). _crTermPickerDocsHtml() returns the documentation body.
  * =======================================================================*/
+function _crTermPickerDocsHtml(){
+  // Inline docs page styled to feel native to the picker. Sections:
+  //   1. What the Terminal is (tabs + panes overview)
+  //   2. Public JS API surface (window.crTermForceTick, etc.)
+  //   3. Pane catalog (id → source → cadence)
+  //   4. localStorage keys
+  //   5. Diagnostics (window._crTermDiag)
+  //   6. Broker chassis
+  return ''
+    + '<style>'
+    + '  .crDocs h3{font:700 14px Inter,sans-serif;color:#bff7df;margin:22px 0 8px;letter-spacing:.3px;border-bottom:1px solid rgba(126,231,135,.18);padding-bottom:4px}'
+    + '  .crDocs h3:first-child{margin-top:4px}'
+    + '  .crDocs p{margin:0 0 10px;color:#cfd2db;font-size:12.5px;line-height:1.6}'
+    + '  .crDocs code{background:rgba(20,241,149,.10);color:#bff7df;padding:1px 6px;border-radius:3px;font:500 11.5px ui-monospace,Menlo,monospace}'
+    + '  .crDocs .api-row{display:grid;grid-template-columns:200px 1fr;gap:10px;padding:6px 0;border-bottom:1px dashed rgba(255,255,255,.06);font-size:12px}'
+    + '  .crDocs .api-row:last-of-type{border-bottom:0}'
+    + '  .crDocs .api-row .sig{font:600 11.5px ui-monospace,Menlo,monospace;color:#14F195;white-space:nowrap;overflow-x:auto}'
+    + '  .crDocs .api-row .desc{color:var(--dim);font-size:11.5px;line-height:1.55}'
+    + '  .crDocs table.cat{width:100%;border-collapse:collapse;margin:6px 0 12px;font-size:11.5px}'
+    + '  .crDocs table.cat th,.crDocs table.cat td{text-align:left;padding:5px 8px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:top}'
+    + '  .crDocs table.cat th{font:600 10px ui-monospace,Menlo,monospace;color:#7aa3d8;text-transform:uppercase;letter-spacing:.5px}'
+    + '  .crDocs table.cat td.id{font:600 11.5px ui-monospace,Menlo,monospace;color:#bff7df;white-space:nowrap}'
+    + '  .crDocs table.cat td.src{color:#c39dff}'
+    + '  .crDocs table.cat td.cad{color:#FFD166;font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:nowrap}'
+    + '  .crDocs ul{margin:4px 0 12px;padding-left:18px}'
+    + '  .crDocs ul li{margin:2px 0;font-size:12px;color:#cfd2db}'
+    + '  .crDocs .lskey{font:600 11px ui-monospace,Menlo,monospace;color:#FFD166}'
+    + '  .crDocs .tip{padding:8px 12px;background:rgba(20,241,149,.06);border-left:2px solid #14F195;border-radius:4px;font-size:11.5px;color:#bff7df;margin:8px 0}'
+    + '</style>'
+    + '<div class="crDocs">'
+
+    + '<h3>1 · What the Terminal is</h3>'
+    + '<p>The Terminal is the in-game multi-pane research dashboard. Four tabs: <code>ENGINE</code> · <code>DEXTRACKER</code> · <code>SOLANATRACKER</code> · <code>CEXTRACKER</code>. Each pane is independently spawnable on the desktop via this picker. 39 panes total; 21 are wired to live data sources, the rest paint visible status messages (<code>offline · 401</code>, etc.) so failure modes are inspectable.</p>'
+
+    + '<h3>2 · Public JS API surface</h3>'
+    + '<p>Exposed on <code>window</code>. Safe to call from DevTools.</p>'
+    + '<div class="api-row"><div class="sig">window.crTermForceTick()</div><div class="desc">Force every visible Terminal pane to re-fire its refresher right now. Use after rotating API keys. Returns void. Updates <code>window._crTermDiag.lastForceTick</code> with <code>{ t, fired, noBody }</code>.</div></div>'
+    + '<div class="api-row"><div class="sig">window.crBirdeye.setApiKey(key)</div><div class="desc">Set the Birdeye API key + clear cache. Persists to <code>localStorage.cr_birdeye_key_v1</code>.</div></div>'
+    + '<div class="api-row"><div class="sig">window.crGoldRush.setApiKey(key)</div><div class="desc">Set the GoldRush key. Persists to <code>localStorage.cr_goldrush_key_v1</code>.</div></div>'
+    + '<div class="api-row"><div class="sig">window.crBrokers.setQuoteAsset(id)</div><div class="desc">Switch the broker chassis settle asset across all 5 drivers (mock · binance-paper · phoenix · jupiter · jito). <code>id</code> ∈ {<code>usdc</code>, <code>usdt</code>, …}.</div></div>'
+    + '<div class="api-row"><div class="sig">window.crQvac.ask(agentId, prompt, history)</div><div class="desc">Route a bot agent reply through the 3-engine local-AI adapter (QVAC bridge → Web-LLM → scripted stub). Returns Promise&lt;string&gt;. See <code>SUBMISSION-QVAC.md</code>.</div></div>'
+    + '<div class="api-row"><div class="sig">window.crQvac.configure(opts)</div><div class="desc">Set <code>{ bridgeUrl, model, engine }</code>. Engine ∈ <code>stub | bridge | auto | auto-with-webllm | webllm</code>. Default <code>stub</code>.</div></div>'
+    + '<div class="api-row"><div class="sig">window.crGuestOpen(tab)</div><div class="desc">Open the Continue-as-Guest modal. <code>tab</code> ∈ <code>login | register</code>.</div></div>'
+    + '<div class="api-row"><div class="sig">window.crGuestSession()</div><div class="desc">Read current guest session: <code>{ username, email, expiresAt }</code> or <code>null</code>.</div></div>'
+
+    + '<h3>3 · Pane catalog</h3>'
+    + '<p>Pane IDs are stable. Use them as keys for <code>localStorage.cr_pane_defaults_v1[paneId]</code> overrides.</p>'
+    + '<table class="cat">'
+    + '<thead><tr><th>Pane ID</th><th>Source</th><th>Refresh</th></tr></thead>'
+    + '<tbody>'
+    + '<tr><td class="id">solPrice</td><td class="src">Birdeye <code>/defi/token_overview</code></td><td class="cad">30 s</td></tr>'
+    + '<tr><td class="id">solTopTokens</td><td class="src">Birdeye <code>/defi/tokenlist</code></td><td class="cad">60 s</td></tr>'
+    + '<tr><td class="id">solTrending</td><td class="src">Birdeye <code>/defi/token_trending</code></td><td class="cad">120 s</td></tr>'
+    + '<tr><td class="id">solHolders</td><td class="src">GoldRush <code>tokenHolders</code></td><td class="cad">90 s</td></tr>'
+    + '<tr><td class="id">solSmart</td><td class="src">GoldRush <code>walletTxs</code> (per pasted wallet)</td><td class="cad">180 s</td></tr>'
+    + '<tr><td class="id">solSniper</td><td class="src">solPumpfun cache × GoldRush holders</td><td class="cad">180 s</td></tr>'
+    + '<tr><td class="id">solDexVolume</td><td class="src">DefiLlama <code>/overview/dexs/solana</code></td><td class="cad">180 s</td></tr>'
+    + '<tr><td class="id">solPumpfun</td><td class="src"><code>frontend-api.pump.fun/coins</code></td><td class="cad">30 s</td></tr>'
+    + '<tr><td class="id">solSwaps</td><td class="src"><code>window._crJupFills</code> (local broker fills)</td><td class="cad">10 s</td></tr>'
+    + '<tr><td class="id">phxWhales</td><td class="src">GoldRush holders, Solana-token-keyed</td><td class="cad">120 s</td></tr>'
+    + '<tr><td class="id">phxBook</td><td class="src">Jupiter v6 <code>/quote</code> · probes 1/10/100 SOL</td><td class="cad">60 s</td></tr>'
+    + '<tr><td class="id">phxFlight</td><td class="src">DefiLlama <code>/overview/fees/solana</code></td><td class="cad">180 s</td></tr>'
+    + '<tr><td class="id">phxStatus</td><td class="src">Solana mainnet-beta RPC <code>getEpochInfo</code></td><td class="cad">30 s</td></tr>'
+    + '<tr><td class="id">phxFunding</td><td class="src">Drift <code>data.api.drift.trade/contracts</code> (CORS-proxied)</td><td class="cad">60 s</td></tr>'
+    + '<tr><td class="id">phxOI</td><td class="src">Drift contracts, OI × mark</td><td class="cad">60 s</td></tr>'
+    + '<tr><td class="id">cexAgg</td><td class="src">CoinGecko <code>/coins/{id}/tickers</code></td><td class="cad">60 s</td></tr>'
+    + '<tr><td class="id">cexExchanges</td><td class="src">CoinGecko <code>/exchanges</code></td><td class="cad">120 s</td></tr>'
+    + '<tr><td class="id">cexStables</td><td class="src">DefiLlama <code>/stablecoins</code></td><td class="cad">180 s</td></tr>'
+    + '<tr><td class="id">cexFunding</td><td class="src">Binance <code>/fapi/v1/premiumIndex</code></td><td class="cad">90 s</td></tr>'
+    + '<tr><td class="id">cexOI</td><td class="src">Binance <code>/fapi/v1/openInterest</code> + <code>/premiumIndex</code></td><td class="cad">30 s</td></tr>'
+    + '<tr><td class="id">cexDepth</td><td class="src">Binance <code>/api/v3/depth</code> top-20</td><td class="cad">15 s</td></tr>'
+    + '<tr><td class="id">cexListings</td><td class="src">CoinGecko <code>/coins/list/new</code></td><td class="cad">300 s</td></tr>'
+    + '<tr><td class="id">cexWhales</td><td class="src">9 curated Solana CEX hot wallets × GoldRush <code>walletTxs</code></td><td class="cad">180 s</td></tr>'
+    + '<tr><td class="id">marketScan</td><td class="src">Engine bug fix — triggers <code>_tokFetchLive</code> for 9 scanned assets</td><td class="cad">30 s</td></tr>'
+    + '</tbody>'
+    + '</table>'
+    + '<div class="tip">Birdeye- and GoldRush-gated panes need their respective API keys set via Token Terminal ⚙ Settings — saving there also fires <code>window.crTermForceTick()</code> immediately (v1.0.88).</div>'
+
+    + '<h3>4 · localStorage keys</h3>'
+    + '<ul>'
+    + '<li><span class="lskey">cr_birdeye_key_v1</span> — Birdeye API key</li>'
+    + '<li><span class="lskey">cr_goldrush_key_v1</span> — GoldRush API key</li>'
+    + '<li><span class="lskey">cr_pane_defaults_v1</span> — per-pane config overrides keyed by <code>pane:&lt;paneId&gt;</code>. Read by every refresher via <code>_getConfigFor()</code>.</li>'
+    + '<li><span class="lskey">cr_tokterm_settings_v1</span> — Token Terminal ⚙ Settings panel state.</li>'
+    + '<li><span class="lskey">cr_tok_watchlist_v1</span> — JSON array of starred token IDs.</li>'
+    + '<li><span class="lskey">cr_wallet_watchlist_v1</span> — comma/whitespace list of Solana pubkeys.</li>'
+    + '<li><span class="lskey">cr_qvac_*</span> — bridgeUrl, model, engine_pref for the QVAC adapter.</li>'
+    + '<li><span class="lskey">cr_guest_users_v1</span> / <span class="lskey">cr_guest_session_v1</span> — Continue-as-Guest auth records.</li>'
+    + '</ul>'
+
+    + '<h3>5 · Diagnostics</h3>'
+    + '<p>Run in DevTools console to inspect runtime state:</p>'
+    + '<div class="api-row"><div class="sig">window._crTermDiag</div><div class="desc"><code>{ iifeReached, bootRan, tagPanesCalls, panesTagged, refresherCalls, forceTickCalls, lastForceTick, obsHookInstalled }</code>. Failure-mode telemetry — see <code>refresherCalls[paneId].lastErr</code> for fetch errors.</div></div>'
+    + '<div class="api-row"><div class="sig">window._crBirdeyeDebug</div><div class="desc">Raw last Birdeye <code>token_overview.data</code> per mint. Inspect to verify field mappings if a price looks wrong.</div></div>'
+
+    + '<h3>6 · Broker chassis</h3>'
+    + '<p>5 drivers in <code>sdk-m1-scaffold/sdk/brokers/</code>. Pick via <code>window.crBrokers.setActive(\'jupiter\')</code>:</p>'
+    + '<ul>'
+    + '<li><code>mock</code> — synthetic fills (development)</li>'
+    + '<li><code>binance-paper</code> — Binance paper-trade endpoint</li>'
+    + '<li><code>phoenix</code> — Phoenix Rise (scaffolded, awaiting <code>@ellipsis-labs/rise</code> npm publish)</li>'
+    + '<li><code>jupiter</code> — Jupiter v6 swap routing (LIVE)</li>'
+    + '<li><code>jito</code> — Jito MEV-protected bundles atop Jupiter (LIVE)</li>'
+    + '</ul>'
+    + '<p>USDT and USDC are both first-class quote assets. Switch with <code>window.crBrokers.setQuoteAsset(\'usdt\')</code>.</p>'
+
+    + '<h3>7 · Adding a pane</h3>'
+    + '<p>The Library tab (top-left of this picker) shows every spawnable pane. <b>+</b> button on a row spawns it on the chart background (in-game) or the OS desktop (lite-profile). Click the row name to open the per-pane config form on the right and save defaults.</p>'
+
+    + '</div>';
+}
+
 function _termCollectBuiltinPanes(){
   // Walk the live Terminal views and grab each pane's data-pane-id + label.
   // v0.9.50 — Coin Watchlist + Wallet Watchlist are now REAL DOM panes
@@ -26553,26 +26669,38 @@ function _termSpawnPickerOpen(){
   card.innerHTML =
     '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">' +
       '<div style="font-size:14px;font-weight:700">+ New Terminal Widget</div>' +
-      '<div style="font-size:10px;color:var(--dim)">spawns on ' + (inGame ? 'chart background' : 'desktop') + '</div>' +
+      '<div style="font-size:10px;color:var(--dim)" id="crTermPickerSub">spawns on ' + (inGame ? 'chart background' : 'desktop') + '</div>' +
       '<div style="flex:1"></div>' +
+      // v1.0.89 — Top-level toggle between Library and API Docs view.
+      '<div style="display:flex;gap:0;border:1px solid var(--line);border-radius:6px;overflow:hidden">' +
+        '<button id="crTermPickerTabLib"  type="button" data-mode="library" style="background:rgba(126,231,135,.20);border:0;color:#bff7df;padding:5px 12px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.4px">Library</button>' +
+        '<button id="crTermPickerTabDocs" type="button" data-mode="docs"    style="background:transparent;border:0;border-left:1px solid var(--line);color:var(--dim);padding:5px 12px;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.4px">API Docs</button>' +
+      '</div>' +
       '<button id="crTermPickerX" type="button" style="background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:4px 10px;cursor:pointer;font:11px ui-monospace,Menlo,monospace">close</button>' +
     '</div>' +
-    // v0.9.97 — Quick configurations chip strip above the grid. One-tap
-    // presets that spawn a pre-configured pane and close the picker.
-    // Each chip wraps a (paneId | widgetType | wbId) + a baked config
-    // and an optional spawn override. Adds zero schema overhead — just
-    // calls the same spawn primitives the + buttons use.
-    '<div style="padding:10px 16px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Quick configurations</div>' +
-    '<div id="crTermPickerPresets" style="display:flex;gap:6px;overflow-x:auto;padding:0 16px 12px;border-bottom:1px solid var(--line)"></div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;flex:1;min-height:0">' +
-      '<div style="border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0">' +
-        '<div style="padding:10px 16px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Library</div>' +
-        '<div id="crTermPickerBuiltins" style="flex:1;overflow:auto;padding:0 10px 10px"></div>' +
+    // ── LIBRARY VIEW ──────────────────────────────────────────────
+    '<div id="crTermPickerLibraryView" style="display:flex;flex-direction:column;flex:1;min-height:0">' +
+      // v0.9.97 — Quick configurations chip strip above the grid. One-tap
+      // presets that spawn a pre-configured pane and close the picker.
+      // Each chip wraps a (paneId | widgetType | wbId) + a baked config
+      // and an optional spawn override. Adds zero schema overhead — just
+      // calls the same spawn primitives the + buttons use.
+      '<div style="padding:10px 16px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Quick configurations</div>' +
+      '<div id="crTermPickerPresets" style="display:flex;gap:6px;overflow-x:auto;padding:0 16px 12px;border-bottom:1px solid var(--line)"></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;flex:1;min-height:0">' +
+        '<div style="border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0">' +
+          '<div style="padding:10px 16px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Library</div>' +
+          '<div id="crTermPickerBuiltins" style="flex:1;overflow:auto;padding:0 10px 10px"></div>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;min-height:0">' +
+          '<div style="padding:10px 16px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Per-widget settings</div>' +
+          '<div id="crTermPickerCfg" style="flex:1;overflow:auto;padding:0 16px 14px;display:flex;flex-direction:column;gap:12px"></div>' +
+        '</div>' +
       '</div>' +
-      '<div style="display:flex;flex-direction:column;min-height:0">' +
-        '<div style="padding:10px 16px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Per-widget settings</div>' +
-        '<div id="crTermPickerCfg" style="flex:1;overflow:auto;padding:0 16px 14px;display:flex;flex-direction:column;gap:12px"></div>' +
-      '</div>' +
+    '</div>' +
+    // ── API DOCS VIEW (hidden by default) ─────────────────────────
+    '<div id="crTermPickerDocsView" style="display:none;flex:1;min-height:0;overflow:auto;padding:14px 22px 22px;font:13px Inter,-apple-system,system-ui,sans-serif;line-height:1.55;color:#e6e6ee">' +
+      _crTermPickerDocsHtml() +
     '</div>';
   ov.appendChild(card);
   document.body.appendChild(ov);
@@ -26882,6 +27010,28 @@ function _termSpawnPickerOpen(){
   card.querySelector('#crTermPickerX').addEventListener('click', _termSpawnPickerClose);
   ov.addEventListener('click', (e) => { if(e.target === ov) _termSpawnPickerClose(); });
   document.addEventListener('keydown', _termSpawnPickerEscOnce);
+
+  // v1.0.89 — Library / API Docs toggle. The two views share the same
+  // card chrome; we just flip display + active-button styling.
+  const tabLib  = card.querySelector('#crTermPickerTabLib');
+  const tabDocs = card.querySelector('#crTermPickerTabDocs');
+  const viewLib  = card.querySelector('#crTermPickerLibraryView');
+  const viewDocs = card.querySelector('#crTermPickerDocsView');
+  const subLine  = card.querySelector('#crTermPickerSub');
+  function _setPickerMode(mode){
+    const isDocs = (mode === 'docs');
+    viewLib.style.display  = isDocs ? 'none' : 'flex';
+    viewDocs.style.display = isDocs ? 'block' : 'none';
+    tabLib.style.background  = isDocs ? 'transparent' : 'rgba(126,231,135,.20)';
+    tabLib.style.color       = isDocs ? 'var(--dim)'  : '#bff7df';
+    tabDocs.style.background = isDocs ? 'rgba(126,231,135,.20)' : 'transparent';
+    tabDocs.style.color      = isDocs ? '#bff7df'              : 'var(--dim)';
+    if(subLine) subLine.textContent = isDocs
+      ? 'Public API surface · pane catalog · localStorage keys'
+      : ('spawns on ' + (inGame ? 'chart background' : 'desktop'));
+  }
+  tabLib .addEventListener('click', () => _setPickerMode('library'));
+  tabDocs.addEventListener('click', () => _setPickerMode('docs'));
 }
 function _termSpawnPickerClose(){
   const ov = document.getElementById('crTermPicker');
