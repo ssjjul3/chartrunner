@@ -43044,6 +43044,14 @@ window.crBirdeye = (function(){
         var j = await r.json();
         var d = j && j.data;
         if(d){
+          // v1.0.78 — Debug stash. The user reported SOL · USDC showing
+          // $1.708 instead of $184. Stash the raw response per mint so
+          // we can inspect window._crBirdeyeDebug in DevTools if the
+          // issue recurs.
+          try {
+            if(!window._crBirdeyeDebug) window._crBirdeyeDebug = {};
+            window._crBirdeyeDebug[mint] = { raw: d, t: Date.now() };
+          } catch(_){}
           return {
             price:          d.price,
             ch24:           d.priceChange24hPercent,
@@ -44396,6 +44404,26 @@ window.crGoldRush = (function(){
 
   // ── v1.0.70 — final-batch refreshers ──────────────────────────────
 
+  // v1.0.78 — Drift fetch helper with CORS-proxy fallback. Some
+  // user origins fail the direct fetch (browser-extension blockers,
+  // strict CSP, or origin filtering on Drift's side). When direct
+  // fails we transparently retry via corsproxy.io. Both responses
+  // share the same shape.
+  const _DRIFT_URL = 'https://data.api.drift.trade/contracts';
+  async function _fetchDrift(){
+    // Try direct first.
+    try {
+      const r = await fetch(_DRIFT_URL);
+      if(r.ok) return r.json();
+    } catch(_){}
+    // Fallback via corsproxy.io.
+    try {
+      const r = await fetch('https://corsproxy.io/?' + encodeURIComponent(_DRIFT_URL));
+      if(r.ok) return r.json();
+    } catch(_){}
+    return null;
+  }
+
   // 16. phxFunding — Drift public data API (Solana perps).
   //     data.api.drift.trade exposes per-contract funding via /contracts.
   //     Sorted by absolute funding rate (extremes first).
@@ -44404,9 +44432,8 @@ window.crGoldRush = (function(){
     const cfg  = _getConfigFor('phxFunding');
     const rows = cfg.rows || 10;
     try {
-      const r = await fetch('https://data.api.drift.trade/contracts');
-      if(!r.ok){ _setHdTag('phxFunding','offline','warn'); return; }
-      const j = await r.json();
+      const j = await _fetchDrift();
+      if(!j){ _setHdTag('phxFunding','drift offline','warn'); return; }
       // Response shape: { contracts: [{ ticker_id, last_funding_rate, ... }] }
       // or array depending on API version — be defensive.
       const arr = Array.isArray(j) ? j : (j.contracts || j.data || []);
@@ -44442,9 +44469,8 @@ window.crGoldRush = (function(){
     const cfg  = _getConfigFor('phxOI');
     const rows = cfg.rows || 10;
     try {
-      const r = await fetch('https://data.api.drift.trade/contracts');
-      if(!r.ok){ _setHdTag('phxOI','offline','warn'); return; }
-      const j = await r.json();
+      const j = await _fetchDrift();
+      if(!j){ _setHdTag('phxOI','drift offline','warn'); return; }
       const arr = Array.isArray(j) ? j : (j.contracts || j.data || []);
       if(!arr.length){ _setHdTag('phxOI','no data','warn'); return; }
       const enriched = arr

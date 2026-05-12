@@ -1,3 +1,47 @@
+deployed: 2026-05-12T14:30:00Z · v1.0.78 (Drift CORS proxy fallback +
+Birdeye response debug stash.
+
+USER REPORTS after v1.0.77 deploy:
+  · Phoenix Funding Rate + Open Interest still show "offline"
+  · SOL · USDC showed $1.708 (likely a pre-v1.0.77 artifact when
+    the canonical pane id was clobbered; should be SOL price ~$184
+    once v1.0.77 deployed + hard-reloaded with a Birdeye key)
+
+FIX 1 — Drift CORS proxy fallback
+  data.api.drift.trade IS used by Drift's own frontend so CORS is
+  configured server-side, but some user origins still fail the
+  direct fetch (browser-extension blockers / strict CSP / origin
+  filtering). v1.0.78 introduces _fetchDrift() helper:
+    1. Try direct fetch to data.api.drift.trade/contracts
+    2. If that fails or non-OK, retry via
+       https://corsproxy.io/?<URL> as transparent fallback
+    3. Return parsed JSON or null
+  Both refreshers (phxFunding + phxOI) now call _fetchDrift()
+  instead of fetching directly. On 100% failure they tag the
+  header "drift offline" so the user knows which lane the
+  failure came from.
+
+FIX 2 — Birdeye response debug stash
+  Every Birdeye token_overview hit now stashes the raw `data`
+  field on window._crBirdeyeDebug[mint] = { raw, t }. So if the
+  $1.708 SOL price issue recurs after v1.0.77 deploy + hard-
+  reload, the user can run:
+      window._crBirdeyeDebug["So111…112"]
+  in DevTools and see which field is returning what value.
+
+WHAT THE USER SHOULD SEE AFTER DEPLOY
+  Phoenix tab:
+    · Whale Holders → "offline · 401" (needs GoldRush key)
+    · Funding Rate · Drift → live (or "drift offline" if BOTH
+      direct + corsproxy fail)
+    · Open Interest · Drift → live (same)
+    · Orderbook Depth (phxBook) → live (Jupiter v6)
+    · Flight Fees → live (DefiLlama)
+    · Phoenix Status → live (mainnet-beta RPC)
+  Solana tab SOL · USDC pane:
+    · With Birdeye key configured → live SOL price (~$184)
+    · Without key → "offline · 401" status message)
+
 deployed: 2026-05-12T14:00:00Z · v1.0.77 (THE root cause — stop
 _wAttachPaneDrag clobbering canonical pane IDs.
 
