@@ -31065,12 +31065,25 @@ function _wAdd(type, sourceId, dropX, dropY){
 function _wAttachPaneDrag(){
   // v0.8k#24ca — Engine (ex-Darkflow) panes are now in this list so they can
   // be dragged out to the desktop / chart background like the tracker panes.
+  // v1.0.77 — CRITICAL: this used to UNCONDITIONALLY overwrite data-pane-id
+  // with 'crTermViewSolana.0'-style ordinals. That clobbered the canonical
+  // ids ('solPrice', 'solTopTokens', etc.) that v1.0.60's tagPanes() had
+  // already assigned, breaking BOTH the live-data refreshers AND the
+  // per-pane gear-config schema lookup. Now we only set data-pane-id when
+  // the pane has none — preserving any canonical id, and falling back to
+  // ordinal id only for un-tagged panes (Engine/Phoenix panes that the
+  // canonical map doesn't cover).
   ['crTermViewDarkflow','crTermViewPhoenix','crTermViewHyper','crTermViewSolana','crTermViewCex','crTermViewStrats'].forEach(viewId => {
     const view = document.getElementById(viewId);
     if(!view) return;
     view.querySelectorAll('.crTerm-pane').forEach((pane, i) => {
-      const id = viewId + '.' + i;
-      pane.setAttribute('data-pane-id', id);
+      // Preserve canonical paneId if already assigned. Only stamp ordinal
+      // fallback for un-tagged panes.
+      let id = pane.getAttribute('data-pane-id');
+      if(!id){
+        id = viewId + '.' + i;
+        pane.setAttribute('data-pane-id', id);
+      }
       // Make sure the pane wrapper itself is NOT draggable (older builds may
       // have set this) so window-drag mousemove events get through.
       if(pane.getAttribute('draggable') === 'true') pane.removeAttribute('draggable');
@@ -43620,7 +43633,13 @@ window.crGoldRush = (function(){
         return;
       }
       view.querySelectorAll('.crTerm-pane').forEach(pane => {
-        if(pane.getAttribute('data-pane-id')) return;
+        // v1.0.77 — Upgrade ordinal IDs (e.g. 'crTermViewSolana.0' set
+        // by _wAttachPaneDrag if it raced ahead of us) to canonical
+        // IDs. Skip only when the existing id is already a canonical
+        // one (i.e. matches a value in PANE_ID_MAP).
+        const existing = pane.getAttribute('data-pane-id');
+        const isCanonical = existing && Object.values(PANE_ID_MAP).indexOf(existing) >= 0;
+        if(isCanonical) return;
         const hdr = _headerOf(pane);
         if(!hdr) return;
         const id = PANE_ID_MAP[hdr];

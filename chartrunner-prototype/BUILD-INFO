@@ -1,3 +1,52 @@
+deployed: 2026-05-12T14:00:00Z · v1.0.77 (THE root cause — stop
+_wAttachPaneDrag clobbering canonical pane IDs.
+
+After v1.0.60-76 telemetry, traced the actual issue back to
+TWO conflicting taggers racing on .crTerm-pane elements:
+
+  · v1.0.60 IIFE tagPanes() (at boot+0) assigns canonical paneIds
+    like 'solPrice', 'solTopTokens', 'cexFunding'.
+  · _wAttachPaneDrag at line 31065 (at boot+250) UNCONDITIONALLY
+    overwrites with ordinals: 'crTermViewSolana.0',
+    'crTermViewSolana.1', etc.
+
+The latter wins because it runs later. End state: every Solana
++ CEX pane carried an ordinal id, not a canonical one. This
+single bug caused two reported symptoms:
+
+  · "Solana tab still shows mock data" — refreshers do
+    document.querySelectorAll('[data-pane-id="solPrice"]'),
+    find nothing (because the real attribute says
+    'crTermViewSolana.0'), early-return.
+  · "All widget configs show 'built-in pane'" — pinned widget
+    sourceId was 'crTermViewSolana.0', schema lookup tried
+    _CR_PANE_SCHEMAS['pane:crTermViewSolana.0'] (does not
+    exist), fell back to the generic 'pane' note.
+
+THE FIX
+  · _wAttachPaneDrag now preserves existing data-pane-id and
+    only stamps an ordinal when the pane has NO id. Canonical
+    ids set by v1.0.60 are preserved.
+  · tagPanes() upgrades ordinal IDs to canonical when it sees
+    them. If _wAttachPaneDrag ever wins the race, the next
+    tagPanes call (boot+3s, +8s, tab click, win-terminal
+    MutationObserver) fixes it.
+
+After this patch, the canonical id is stable across all races.
+Refreshers find their bodies, gear config opens the right
+schema, MutationObserver/force-tick paths work as designed.
+
+Combined with v1.0.76 (visible body status on warn), the
+Solana tab will:
+  · show live data for the non-Birdeye panes
+    (DEX Volume from DefiLlama, Live Swaps from local Jupiter)
+  · show a clear "offline · 401" status body for Birdeye-gated
+    panes (Top Tokens, Trending, Holders, Sniper, SOL · USDC,
+    Smart Wallets) until a Birdeye API key is configured
+
+And clicking the gear on any pinned pane finally shows its
+real schema with the right textareas / sliders / selects.)
+
 deployed: 2026-05-12T13:30:00Z · v1.0.76 (Universal status-on-failure.
 
 USER REPORT: Terminal still looks like mock data despite v1.0.60-75
