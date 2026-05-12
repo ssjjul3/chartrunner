@@ -44435,8 +44435,23 @@ window.crGoldRush = (function(){
       .map(p => p.querySelector('.crTerm-paneBd'))
       .filter(Boolean);
   }
+  // v1.0.95 — Idempotent body paint. Every pane refresher (~24 of them,
+  // tick spacing 10s–300s) used to do `body.innerHTML = html` even when
+  // the payload was byte-identical to what's already on screen. That
+  // wiped the body's DOM on every tick — destroying nested canvases,
+  // resetting scroll, and visibly flashing every widget tab. Route
+  // through crSafeHTML so we skip the swap when content is unchanged,
+  // skip when an INPUT inside the body has focus, and preserve scroll.
+  // Falls back to the raw write if crSafeHTML isn't on the page yet
+  // (script load order).
   function _setBody(paneId, html){
-    _bodiesOf(paneId).forEach(body => { body.innerHTML = html; });
+    _bodiesOf(paneId).forEach(body => {
+      if(typeof window.crSafeHTML === 'function'){
+        window.crSafeHTML(body, html);
+      } else if(body.innerHTML !== html){
+        body.innerHTML = html;
+      }
+    });
   }
   // v1.0.90 — Default behaviour: HIDE panes whose backend signalled a
   // warn/offline state, instead of painting an error message into the
@@ -44707,7 +44722,12 @@ window.crGoldRush = (function(){
     if(!bodies.length) return;
     const c = color || 'var(--dim)';
     const html = '<div style="font:11px ui-monospace,Menlo,monospace;color:' + c + ';padding:8px;font-style:italic;line-height:1.4">' + msg + '</div>';
-    bodies.forEach(b => { b.innerHTML = html; });
+    // v1.0.95 — Idempotent. Same status string on every failed tick used
+    // to reflash the body; skip when the message hasn't changed.
+    bodies.forEach(b => {
+      if(typeof window.crSafeHTML === 'function') window.crSafeHTML(b, html);
+      else if(b.innerHTML !== html) b.innerHTML = html;
+    });
   }
 
   // 1. solTopTokens — Birdeye token list (volume desc).
