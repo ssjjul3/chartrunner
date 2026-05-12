@@ -1,3 +1,59 @@
+deployed: 2026-05-12T17:00:00Z · v1.0.84 (Coach typing wipe round 3 +
+docs audit.
+
+USER REPORT: "Coach interface and command is glitching, deletes
+what I type."
+
+ROUND-3 ROOT CAUSE (after v1.0.67 + v1.0.69 already fixed direct
+DOM-rebuild on Coach state ticks):
+
+  v1.0.81 introduced crQvac.ask() routing for the 5 bot agents.
+  The Web-LLM fallback engine lazy-loads @mlc-ai/web-llm on first
+  call — that downloads a 1GB GGUF model + compiles WebGPU shaders,
+  which can freeze the main thread for tens of seconds. During
+  that freeze, the browser drops keystrokes from the input field
+  the user is still typing into.
+
+FIX: Web-LLM is now OPT-IN.
+  · Default cr_qvac_engine_pref flipped from "auto" → "stub"
+  · ask() pref values:
+      "stub"             — only scripted stubs (default, NEVER blocks)
+      "bridge"           — QVAC bridge only (fast HTTP, never blocks)
+      "auto"             — bridge then stub (no Web-LLM)
+      "auto-with-webllm" — bridge then Web-LLM then stub (the
+                           previous "auto" behavior, explicit opt-in)
+      "webllm"           — Web-LLM only (explicit opt-in)
+  · _ensureWebLLM() now bails out immediately unless pref is
+    "webllm" or "auto-with-webllm".
+
+User wanting QVAC bridge: run the Node companion (per
+SUBMISSION-QVAC.md) + set pref="bridge" or "auto". No model load,
+no thread freeze, no dropped characters.
+
+User wanting in-tab Web-LLM: opt in explicitly via
+crQvac.configure({engine:"auto-with-webllm"}). First message triggers
+the 1GB download — they expect it.
+
+DOCS AUDIT
+  · SIDETRACK-SUBMISSIONS-INDEX.md: added row 17 for Tether QVAC
+    (SUBMISSION-QVAC.md, v1.0.81, integrated). Combined ceiling
+    updated to ~$154.5k+ (QVAC prize TBD). Build-versions stamp
+    extended from "v1.0.51-59" to "v1.0.51 → v1.0.81". Bullet
+    summary: "12 of 17 have working code shipped" (was 11/16).
+  · SUBMISSION-TETHER.md: M5 row reframed from "Hyperliquid
+    integration" → "Drift perps integration" (Solana-native; v1.0.70
+    funding + OI panes already pull from data.api.drift.trade).
+
+NOT TOUCHED (decision)
+  Other docs (COMPETITIVE.md, EXECUTION-CHECKLIST.md, PITCH-DELIVERY.md,
+  PROBLEM.md, REPO-STRUCTURE.md, TRACTION.md, VIDEO-SCRIPT.md,
+  X-LAUNCH.md) still mention Hyperliquid as historical/competitive
+  context — those references are accurate descriptions of the
+  pre-v1.0.68 plan and don\'t mislead about current product state.
+  Scrubbing them risks rewriting history. SUBMISSION-TETHER.md was
+  the only doc where Hyperliquid appeared as a CURRENT roadmap
+  commitment — that one needed the correction.)
+
 deployed: 2026-05-12T16:00:00Z · v1.0.81 (QVAC adapter for in-game
 bots — Tether QVAC hackathon track.
 

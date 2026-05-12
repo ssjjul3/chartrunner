@@ -1,7 +1,7 @@
 # ChartRunner — Frontier Sidetrack Submissions Index
-**Status:** all 16 target tracks have a submission doc.
-**Combined ceiling:** ~$149.5k USDC / USDG / USDT / jupUSD.
-**Build versions:** v1.0.51 (SNS) → v1.0.59 (GoldRush).
+**Status:** all 17 target tracks have a submission doc.
+**Combined ceiling:** ~$154.5k+ USDC / USDG / USDT / jupUSD (QVAC track prize TBD).
+**Build versions:** v1.0.51 (SNS) → v1.0.81 (QVAC) · v1.0.83 latest published.
 
 This is the single page you reference when filling Superteam Earn forms. Each row has the doc, the prize, the demo path, and the status of code-touch vs writeup-only.
 
@@ -27,8 +27,9 @@ This is the single page you reference when filling Superteam Earn forms. Each ro
 | 14 | Torque · Build with Torque MCP | [`SUBMISSION-TORQUE.md`](./SUBMISSION-TORQUE.md) | $3k USDC | **integrated** | v1.0.57 |
 | 15 | LI.FI · Superteam Germany | [`SUBMISSION-LIFI.md`](./SUBMISSION-LIFI.md) | $2.5k USDC | **integrated** | v1.0.58 |
 | 16 | Jito · Build on Jito Infrastructure | [`SUBMISSION-JITO.md`](./SUBMISSION-JITO.md) | $2k USDC | **integrated** | v1.0.54 |
+| 17 | Tether QVAC · Local AI SDK (Galáctica WDK) | [`SUBMISSION-QVAC.md`](./SUBMISSION-QVAC.md) | TBD | **integrated** (adapter live; Node bridge pending) | v1.0.81 |
 
-**11 of 16 have working code shipped.** 4 are doc-only (the writeup wins on framing the existing v1.0.50 features). 1 is architecture-only pending SDK access (Cloak). 1 is scaffolded-but-blocked-on-toolchain (MagicBlock).
+**12 of 17 have working code shipped.** 4 are doc-only (the writeup wins on framing the existing v1.0.50 features). 1 is architecture-only pending SDK access (Cloak). 1 is scaffolded-but-blocked-on-toolchain (MagicBlock).
 
 ---
 
@@ -145,8 +146,9 @@ v1.0.56 Zerion agents    · 6 autonomous detector agents (CCV/SFP/HnS/BARR/FA/OI
 v1.0.57 Torque MCP       · ChartRunner as MCP server (6 tools, 3 resources)
 v1.0.58 LI.FI funding    · '+ Fund' button → Jumper iframe (Germany regional)
 v1.0.59 GoldRush         · 4 subsystems backbone (holders/balances/txs/NFTs)
+v1.0.81 Tether QVAC      · in-game AI agents via local-AI adapter (bridge + Web-LLM + stub)
 
-Combined ceiling ~\$149.5k. 11 integrated, 4 doc-only, 1 plan + 1 scaffolded.
+Combined ceiling ~\$154.5k+. 12 integrated, 4 doc-only, 1 plan + 1 scaffolded.
 "
 git push
 ```

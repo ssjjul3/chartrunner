@@ -100,7 +100,7 @@ Both jupiter + jito fill records now include `quoteAsset: 'USDC' | 'USDT'` so th
 | Milestone | USDT touch point |
 |---|---|
 | **M1 — Tokenomics** | USDT as treasury reserve option alongside USDC; $CRDS / $RUN swap engine quotes both |
-| **M5 — Hyperliquid integration** | USDT settle on Hyperliquid pairs (HL is USDT-native) |
+| **M5 — Drift perps integration** | USDT settle on Drift Protocol perp markets (Solana-native; v1.0.70 already pulls funding + OI from data.api.drift.trade) |
 | **M8 — Token launch tournaments** | Tournament entry fees in USDT for non-US players, USDC for US players |
 | **M10 — Mainnet** | USDT pairs go live on mainnet from day 1 of the deploy |
 

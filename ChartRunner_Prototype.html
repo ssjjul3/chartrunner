@@ -44930,6 +44930,12 @@ window.crQvac = (function(){
   }
 
   // ── Engine 2 — Web-LLM (lazy-loaded browser inference) ────────────
+  // v1.0.84 — Web-LLM is OPT-IN now. Loading the engine downloads a
+  // ~1GB GGUF model + compiles WebGPU shaders, which can freeze the
+  // main thread for tens of seconds on the first call. That freeze
+  // dropped keystrokes for users typing in Coach during the load.
+  // Default pref is now 'stub'; user must explicitly set 'webllm'
+  // or 'auto' to enable.
   let _webllmEngine = null;
   let _webllmInflight = null;
   async function _ensureWebLLM(){
@@ -44938,9 +44944,10 @@ window.crQvac = (function(){
     _webllmInflight = (async () => {
       try {
         // Lazy ESM import — only paid at first message that reaches
-        // this engine. Skips if the user disabled Web-LLM via prefs.
-        const pref = _getCfg(LS_PREF, 'auto');
-        if(pref === 'stub' || pref === 'bridge-only') return null;
+        // this engine. Strict opt-in: pref must be 'webllm' or
+        // 'auto-with-webllm'. Plain 'auto' is bridge-only.
+        const pref = _getCfg(LS_PREF, 'stub');
+        if(pref !== 'webllm' && pref !== 'auto-with-webllm') return null;
         const mod = await import('https://esm.run/@mlc-ai/web-llm');
         const engine = await mod.CreateMLCEngine(_getCfg(LS_MODEL, DEFAULT_MODEL), {
           initProgressCallback: (p) => {
@@ -44993,19 +45000,23 @@ window.crQvac = (function(){
   }
 
   // ── Public API ─────────────────────────────────────────────────────
+  // v1.0.84 — Default engine pref is "stub" now (was "auto"). Web-LLM
+  // and the QVAC bridge are explicit opt-ins to avoid the model-load
+  // freeze that was dropping characters in Coach inputs.
   async function ask(agentId, prompt, history){
-    const pref = _getCfg(LS_PREF, 'auto');
-    // 1) Try bridge if pref allows.
-    if(pref === 'auto' || pref === 'bridge' || pref === 'bridge-only'){
+    const pref = _getCfg(LS_PREF, 'stub');
+    // 1) Try bridge if pref allows. Bridge is a fast HTTP call.
+    if(pref === 'auto' || pref === 'bridge' || pref === 'auto-with-webllm'){
       const r = await _askBridge(agentId, prompt, history);
       if(r) return r;
     }
-    // 2) Try Web-LLM if pref allows.
-    if(pref === 'auto' || pref === 'webllm'){
+    // 2) Try Web-LLM if user explicitly enabled it.
+    if(pref === 'webllm' || pref === 'auto-with-webllm'){
       const r = await _askWebLLM(agentId, prompt, history);
       if(r) return r;
     }
-    // 3) Always-available scripted stub.
+    // 3) Always-available scripted stub. Returned synchronously-ish
+    //    via setTimeout in pushFromWidget — never blocks the UI.
     return _stub(agentId);
   }
 
