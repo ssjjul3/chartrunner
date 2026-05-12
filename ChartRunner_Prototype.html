@@ -35959,11 +35959,59 @@ function log(msg){
         if(!name){ _flashRed(nameEl); return; }
         if(!pass){ _flashRed(passEl); return; }
         try {
-          const hash = await _sha256Hex(pass);
-          if(hash !== STEALTH_AUTH_HASH){
-            _flashRed(passEl);
-            _showErr('Invalid credentials. Stealth access is invite only.');
-            return;
+          // v1.0.91 — Check the GUEST account store first. If the
+          // username matches a registered guest user AND the salted
+          // SHA-256(salt+password) matches that user's hash, sign in
+          // as that guest. Otherwise fall through to the shared
+          // STEALTH_AUTH_HASH (invite-only stealth password).
+          let guestSignedIn = false;
+          try {
+            const usersRaw = localStorage.getItem('cr_guest_users_v1');
+            const users    = usersRaw ? (JSON.parse(usersRaw) || {}) : {};
+            // Allow both username and email as the identifier.
+            let username = users[name] ? name : null;
+            if(!username){
+              const target = name.toLowerCase();
+              for(const u in users){
+                if(users[u] && String(users[u].email || '').toLowerCase() === target){
+                  username = u; break;
+                }
+              }
+            }
+            if(username){
+              const rec  = users[username];
+              const hash = await _sha256Hex((rec.salt || '') + pass);
+              if(hash === rec.passwordHash){
+                // Guest sign-in success: write a session so auto-resume
+                // works on next load too.
+                try {
+                  localStorage.setItem('cr_guest_session_v1', JSON.stringify({
+                    username, email: rec.email,
+                    expiresAt: Date.now() + 30 * 24 * 3600 * 1000,
+                  }));
+                } catch(_){}
+                guestSignedIn = true;
+                // Pre-write the profile name BEFORE the shared-success
+                // path runs below (which also writes it). Using the
+                // resolved username so even email-based sign-in lands
+                // on the right name.
+                try { localStorage.setItem('cr_profile_name_v1', username); } catch(_){}
+                if(nameEl) nameEl.value = username; // mirror so the
+                                                   // shared-success
+                                                   // block uses the
+                                                   // canonical name.
+              }
+            }
+          } catch(_){}
+
+          if(!guestSignedIn){
+            // Fall back to the shared stealth password.
+            const hash = await _sha256Hex(pass);
+            if(hash !== STEALTH_AUTH_HASH){
+              _flashRed(passEl);
+              _showErr('Invalid credentials. Stealth access is invite only.');
+              return;
+            }
           }
         } catch(err){
           _showErr('Crypto subsystem unavailable in this browser.');
@@ -42461,13 +42509,18 @@ const crL3 = (function(){
     _injectCss();
     const ov = document.createElement('div');
     ov.id = 'crGuestOv';
+    // v1.0.91 — Guest modal is REGISTER-ONLY. Sign-in for returning
+    // guests happens via the main boot screen's Name + Password form
+    // (trySignIn now checks the guest store before the shared
+    // STEALTH_AUTH_HASH). Tabs strip kept in markup but the Sign-In
+    // tab is hidden by inline style — restoring is one CSS flip.
     ov.innerHTML =
-      '<div id="crGuestCard" role="dialog" aria-label="Sign in or register">' +
-        '<h3 id="crGuestTitle">Welcome back</h3>' +
-        '<div class="sub" id="crGuestSub">Sign in to continue as guest.</div>' +
-        '<div class="tabs">' +
-          '<button class="tab active" type="button" data-tab="login">Sign In</button>' +
-          '<button class="tab" type="button" data-tab="register">Register</button>' +
+      '<div id="crGuestCard" role="dialog" aria-label="Register">' +
+        '<h3 id="crGuestTitle">Create your account</h3>' +
+        '<div class="sub" id="crGuestSub">Pick a username + password. Persists on this device · sign in next time on the welcome screen.</div>' +
+        '<div class="tabs" style="display:none">' +
+          '<button class="tab" type="button" data-tab="login">Sign In</button>' +
+          '<button class="tab active" type="button" data-tab="register">Register</button>' +
         '</div>' +
         // Login form
         '<form id="crGuestLoginForm" autocomplete="on" novalidate>' +
@@ -42572,8 +42625,13 @@ const crL3 = (function(){
   }
 
   // ── UI state ──────────────────────────────────────────────────────
-  let _activeTab = 'login';
+  // v1.0.91 — Sign-in path lives on the boot screen now. Guest modal
+  // is register-only. _setTab still flips the underlying state for
+  // forward-compat (Sign-In can be restored by un-hiding the .tabs
+  // strip in markup), but defaults to register.
+  let _activeTab = 'register';
   function _setTab(t){
+    if(t !== 'login' && t !== 'register') t = 'register';
     _activeTab = t;
     const ov = document.getElementById('crGuestOv');
     if(!ov) return;
@@ -42581,7 +42639,7 @@ const crL3 = (function(){
     document.getElementById('crGuestLoginForm').style.display = (t === 'login') ? '' : 'none';
     document.getElementById('crGuestRegForm').style.display   = (t === 'register') ? '' : 'none';
     document.getElementById('crGuestTitle').textContent = (t === 'login') ? 'Welcome back' : 'Create your account';
-    document.getElementById('crGuestSub').textContent   = (t === 'login') ? 'Sign in to continue as guest.' : 'Pick a username + password. Persists on this device.';
+    document.getElementById('crGuestSub').textContent   = (t === 'login') ? 'Sign in to continue as guest.' : 'Pick a username + password. Persists on this device · sign in next time on the welcome screen.';
   }
   function _showErr(id, msg){
     const el = document.getElementById(id);
@@ -42730,7 +42788,10 @@ const crL3 = (function(){
     const btn = document.getElementById('crBootGuest');
     if(btn && !btn._wired){
       btn._wired = true;
-      btn.addEventListener('click', () => _open('login'));
+      // v1.0.91 — Default to the Register tab. Returning users sign
+      // in via the boot Name + Password form (trySignIn checks the
+      // guest store first, then falls back to the shared password).
+      btn.addEventListener('click', () => _open('register'));
     }
     // Auto-resume: if a valid session exists on load, dismiss boot
     // immediately. User can sign out via crGuestSignOut() if they want
