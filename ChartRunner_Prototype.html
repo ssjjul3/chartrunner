@@ -42788,10 +42788,44 @@ const crL3 = (function(){
     const btn = document.getElementById('crBootGuest');
     if(btn && !btn._wired){
       btn._wired = true;
-      // v1.0.91 — Default to the Register tab. Returning users sign
-      // in via the boot Name + Password form (trySignIn checks the
-      // guest store first, then falls back to the shared password).
-      btn.addEventListener('click', () => _open('register'));
+      // v1.0.92 — One-click guest entry. No modal, no form, no
+      // credentials. Generate a random handle (guest-XXXX), mark the
+      // session as authed, dismiss the boot screen. The full
+      // register/upgrade flow stays accessible via
+      // window.crGuestOpen('register') from DevTools or any future
+      // "Create an account" button inside the game.
+      btn.addEventListener('click', () => {
+        const handle = 'guest-' + Math.floor(Math.random() * 36 * 36 * 36 * 36)
+                                        .toString(36)
+                                        .padStart(4, '0');
+        try {
+          // Lightweight session — same key shape as registered users
+          // so the boot auto-resume path picks it up too, but with
+          // no email and no password hash (it's an anonymous guest).
+          localStorage.setItem('cr_guest_session_v1', JSON.stringify({
+            username: handle,
+            email: '',
+            anonymous: true,
+            expiresAt: Date.now() + 30 * 24 * 3600 * 1000,
+          }));
+          localStorage.setItem('cr_stealth_auth_v1', '1');
+          localStorage.setItem('cr_profile_name_v1', handle);
+        } catch(_){}
+        // Mirror into the boot form field so existing handlers
+        // downstream see the right name.
+        try {
+          const profileNameEl = document.getElementById('profileName');
+          if(profileNameEl && !profileNameEl.value) profileNameEl.value = handle;
+          const nm = document.getElementById('crBootName');
+          if(nm) nm.value = handle;
+        } catch(_){}
+        // Dismiss the boot screen.
+        try {
+          const boot = document.getElementById('crBoot');
+          if(boot){ boot.classList.add('out'); boot.style.pointerEvents = 'none'; }
+        } catch(_){}
+        try { if(typeof toast === 'function') toast('Welcome, ' + handle + '!'); } catch(_){}
+      });
     }
     // Auto-resume: if a valid session exists on load, dismiss boot
     // immediately. User can sign out via crGuestSignOut() if they want
