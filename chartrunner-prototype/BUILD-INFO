@@ -1,3 +1,67 @@
+deployed: 2026-05-12T17:30:00Z · v1.0.85 (Continue as Guest — industry-
+standard register / login flow.
+
+USER ASK: "add a continue as guest button that shows the same form
+as the whitelist form but with: username, password, email — should
+be an industry standard registration and login process."
+
+BOOT SCREEN
+  Added "👤 Continue as Guest" button next to "🪙 Connect Wallet".
+  Click opens a modal with two tabs:
+
+  SIGN IN tab
+    · Username OR email · password · Sign in
+  REGISTER tab
+    · Username (3–20 chars, /^[a-zA-Z0-9_]+$/)
+    · Email (RFC-ish regex /^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/)
+    · Password (min 8 chars + live strength meter: 4 bars,
+      Very weak → Weak → OK → Strong → Very strong)
+    · Confirm password (must match)
+
+CRYPTO
+  Salted SHA-256 — every new user gets 16 random bytes (hex) as
+  salt via crypto.getRandomValues. passwordHash =
+  SHA-256(salt + plaintext) computed via crypto.subtle.digest.
+  Salt + hash stored; plaintext never persisted. Industry-standard
+  for client-side without a server (would be PBKDF2/Argon2 with
+  server-side iteration count in production, but the SDK path here
+  uses what\'s available in the browser without dependencies).
+
+STORAGE
+  · localStorage.cr_guest_users_v1
+      { [username]: { email, salt, passwordHash, createdAt } }
+  · localStorage.cr_guest_session_v1
+      { username, email, expiresAt }   // 30-day TTL
+
+SESSION
+  Successful login or register sets a 30-day session, marks
+  cr_stealth_auth_v1='1' (so the Start-Run gate admits the player),
+  flips #profileName to the username, dismisses the boot screen.
+  Boot screen auto-resumes on next load if the session is still
+  valid — no re-login until expiry. window.crGuestSignOut() clears.
+
+VALIDATION
+  · Unique-username check + unique-email check before allowing register
+  · Login resolves username OR email → user record → hash compare
+  · Specific error messages ("Username taken", "Wrong password",
+    "No account found for …") — no enumeration timing leak in this
+    static build, but messages are intentionally specific because
+    this is a stealth-alpha demo, not a hardened production system
+
+A11Y / UX
+  · Esc closes the modal
+  · Backdrop click closes the modal
+  · autocomplete=username / current-password / new-password attrs
+    set correctly so password managers (1Password, Bitwarden) work
+  · Tab toggle preserves entered values within the session
+  · Footer reminds: "Sessions persist 30 days on this device ·
+    passwords salted + SHA-256 hashed locally."
+
+PUBLIC API
+  window.crGuestOpen(initialTab)   — open the modal programmatically
+  window.crGuestSession()          — read the current session
+  window.crGuestSignOut()          — clear session)
+
 deployed: 2026-05-12T17:00:00Z · v1.0.84 (Coach typing wipe round 3 +
 docs audit.
 

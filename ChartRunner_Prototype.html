@@ -5744,12 +5744,11 @@
   </svg>
   <div class="title">Welcome to ChartRunnerOS</div>
   <div class="ver">v1.0.17</div>
-  <!-- v0.9.7-stealth — closed access. Two paths:
+  <!-- v0.9.7-stealth → v1.0.85 — Three paths:
        1. Username + password (shared invite credential, SHA-256 gated)
        2. Whitelisted Solana wallet (allowlist of pubkeys)
-       No guest mode. No Esc skip. The previous wallet-first / Continue-as-Guest
-       UI is retired for stealth alpha. To extend access, either change the
-       STEALTH_AUTH_HASH or add to STEALTH_WALLET_WHITELIST in the JS below. -->
+       3. Continue as Guest — industry-standard register/login (v1.0.85).
+          Per-user records w/ salted SHA-256 passwords in localStorage. -->
   <form class="crBootLogin" id="crBootLogin" autocomplete="off" novalidate>
     <div class="crLoginRow">
       <label for="crBootName">Name</label>
@@ -5766,8 +5765,9 @@
       <button type="submit" id="crBootSignIn" class="crLoginBtn primary">Sign In</button>
     </div>
     <div class="crLoginDivider"><span>or</span></div>
-    <div class="crLoginActions" style="justify-content:center">
+    <div class="crLoginActions" style="justify-content:center;gap:8px;flex-wrap:wrap">
       <button type="button" id="crBootConnect" class="crLoginBtn">🪙 Connect Wallet</button>
+      <button type="button" id="crBootGuest"   class="crLoginBtn">👤 Continue as Guest</button>
     </div>
     <div class="crLoginErr" id="crBootErr" style="display:none"></div>
   </form>
@@ -42225,6 +42225,381 @@ const crL3 = (function(){
       });
     }
   }, 200);
+})();
+
+/* ═════════════════════════════════════════════════════════════════════════
+ *  v1.0.85 — GUEST REGISTER / LOGIN
+ * ═════════════════════════════════════════════════════════════════════════
+ *  Click "Continue as Guest" on the boot screen → opens this modal. Two
+ *  tabs at the top: Sign In | Register.
+ *
+ *  REGISTER fields:  username · email · password · confirm password
+ *  LOGIN    fields:  username OR email · password
+ *
+ *  Storage:
+ *    localStorage.cr_guest_users_v1   { [username]: { email, salt,
+ *                                                     passwordHash,
+ *                                                     createdAt } }
+ *    localStorage.cr_guest_session_v1 { username, email, expiresAt }
+ *
+ *  Password hashing: SHA-256(salt + password) — same crypto.subtle path
+ *  the boot login uses. Salt = 16 random bytes (hex) per user.
+ *  Session: 30-day expiry. On successful auth → dismiss boot, mark
+ *  cr_stealth_auth_v1='1' for the Start-Run gate.
+ *  ────────────────────────────────────────────────────────────────────── */
+(function(){
+  const USERS_KEY   = 'cr_guest_users_v1';
+  const SESSION_KEY = 'cr_guest_session_v1';
+  const SESSION_TTL = 30 * 24 * 3600 * 1000; // 30 days
+
+  function _injectCss(){
+    if(document.getElementById('crGuestCss')) return;
+    const css = document.createElement('style');
+    css.id = 'crGuestCss';
+    css.textContent = [
+      '#crGuestOv{position:fixed;inset:0;z-index:99850;display:none;',
+      '  align-items:center;justify-content:center;background:rgba(0,0,0,.55);',
+      '  backdrop-filter:blur(3px)}',
+      '#crGuestOv.on{display:flex}',
+      '#crGuestCard{width:min(420px,calc(100% - 60px));',
+      '  background:linear-gradient(180deg,rgba(20,30,55,.98),rgba(8,12,22,.99));',
+      '  border:1px solid rgba(126,231,135,.35);border-left:3px solid #14F195;',
+      '  border-radius:10px;padding:22px 26px;color:#e6e6ee;',
+      '  font-family:Inter,-apple-system,system-ui,sans-serif;',
+      '  box-shadow:0 24px 60px rgba(0,0,0,.7),0 0 32px rgba(20,241,149,.10)}',
+      '#crGuestCard h3{margin:0 0 4px;font:700 17px Inter,sans-serif;color:#bff7df;letter-spacing:.3px}',
+      '#crGuestCard .sub{font:500 11px ui-monospace,Menlo,monospace;color:#7aa3d8;',
+      '  margin-bottom:14px;letter-spacing:.4px}',
+      '#crGuestCard .tabs{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(255,255,255,.10)}',
+      '#crGuestCard .tab{flex:1;padding:9px 14px;background:transparent;',
+      '  border:0;color:#7aa3d8;cursor:pointer;font:600 12px ui-monospace,Menlo,monospace;',
+      '  letter-spacing:.6px;border-bottom:2px solid transparent;text-transform:uppercase}',
+      '#crGuestCard .tab.active{color:#bff7df;border-bottom-color:#14F195}',
+      '#crGuestCard label{display:block;font:600 11px ui-monospace,Menlo,monospace;',
+      '  color:#bff7df;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;margin-top:11px}',
+      '#crGuestCard input{width:100%;padding:8px 10px;box-sizing:border-box;',
+      '  background:rgba(10,15,28,.7);border:1px solid rgba(255,255,255,.10);',
+      '  border-radius:5px;color:#e6e6ee;font:13px ui-monospace,Menlo,monospace;outline:none}',
+      '#crGuestCard input:focus{border-color:#14F195}',
+      '#crGuestCard .hint{font-size:10.5px;color:#7aa3d8;margin-top:3px;font-style:italic}',
+      '#crGuestCard .strength{display:flex;gap:3px;margin-top:5px}',
+      '#crGuestCard .strength .bar{flex:1;height:4px;background:rgba(255,255,255,.08);border-radius:2px}',
+      '#crGuestCard .strength .bar.on{background:#14F195}',
+      '#crGuestCard .strength .bar.warn{background:#FFD166}',
+      '#crGuestCard .strength .bar.bad{background:#ff5b7f}',
+      '#crGuestCard .row{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}',
+      '#crGuestCard button.btn{padding:8px 16px;border:1px solid rgba(255,255,255,.10);',
+      '  border-radius:6px;background:transparent;color:#9aa0a6;cursor:pointer;',
+      '  font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.4px}',
+      '#crGuestCard button.btn.primary{background:rgba(126,231,135,.20);',
+      '  border-color:rgba(126,231,135,.55);color:#bff7df}',
+      '#crGuestCard button.btn.primary:hover{background:rgba(126,231,135,.30)}',
+      '#crGuestCard .err{margin:8px 0 0;padding:8px 10px;background:rgba(255,91,127,.10);',
+      '  border-left:2px solid #ff5b7f;border-radius:4px;font-size:11.5px;color:#ffb3c1;display:none}',
+      '#crGuestCard .err.on{display:block}',
+      '#crGuestCard .ok{margin:8px 0 0;padding:8px 10px;background:rgba(20,241,149,.10);',
+      '  border-left:2px solid #14F195;border-radius:4px;font-size:11.5px;color:#bff7df;display:none}',
+      '#crGuestCard .ok.on{display:block}',
+      '#crGuestCard .footer{margin-top:14px;font-size:10.5px;color:#7aa3d8;line-height:1.5;text-align:center}',
+      '#crGuestCard .footer a{color:#bff7df;cursor:pointer;text-decoration:underline}',
+    ].join('\n');
+    document.head.appendChild(css);
+  }
+
+  function _injectDom(){
+    if(document.getElementById('crGuestOv')) return;
+    _injectCss();
+    const ov = document.createElement('div');
+    ov.id = 'crGuestOv';
+    ov.innerHTML =
+      '<div id="crGuestCard" role="dialog" aria-label="Sign in or register">' +
+        '<h3 id="crGuestTitle">Welcome back</h3>' +
+        '<div class="sub" id="crGuestSub">Sign in to continue as guest.</div>' +
+        '<div class="tabs">' +
+          '<button class="tab active" type="button" data-tab="login">Sign In</button>' +
+          '<button class="tab" type="button" data-tab="register">Register</button>' +
+        '</div>' +
+        // Login form
+        '<form id="crGuestLoginForm" autocomplete="on" novalidate>' +
+          '<label for="crGLId">Username or email</label>' +
+          '<input id="crGLId" name="username" type="text" autocomplete="username" required maxlength="120" placeholder="satoshi or you@domain.com"/>' +
+          '<label for="crGLPass">Password</label>' +
+          '<input id="crGLPass" name="password" type="password" autocomplete="current-password" required maxlength="200" placeholder="••••••••"/>' +
+          '<div class="err" id="crGLErr"></div>' +
+          '<div class="row">' +
+            '<button type="button" class="btn" data-act="cancel">Cancel</button>' +
+            '<button type="submit" class="btn primary">Sign in</button>' +
+          '</div>' +
+        '</form>' +
+        // Register form (hidden by default)
+        '<form id="crGuestRegForm" autocomplete="on" novalidate style="display:none">' +
+          '<label for="crGRUser">Username</label>' +
+          '<input id="crGRUser" name="username" type="text" autocomplete="username" required minlength="3" maxlength="20" placeholder="3–20 chars · a-z 0-9 _" pattern="[a-zA-Z0-9_]{3,20}"/>' +
+          '<div class="hint">3–20 chars. Letters, digits, underscores.</div>' +
+          '<label for="crGREmail">Email</label>' +
+          '<input id="crGREmail" name="email" type="email" autocomplete="email" required maxlength="120" placeholder="you@domain.com"/>' +
+          '<label for="crGRPass">Password</label>' +
+          '<input id="crGRPass" name="new-password" type="password" autocomplete="new-password" required minlength="8" maxlength="200" placeholder="At least 8 characters"/>' +
+          '<div class="strength" id="crGRStrength" aria-hidden="true">' +
+            '<div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>' +
+          '</div>' +
+          '<div class="hint" id="crGRStrengthLabel">Use a mix of letters, digits, and symbols.</div>' +
+          '<label for="crGRConf">Confirm password</label>' +
+          '<input id="crGRConf" name="confirm-password" type="password" autocomplete="new-password" required minlength="8" maxlength="200" placeholder="Repeat password"/>' +
+          '<div class="err" id="crGRErr"></div>' +
+          '<div class="ok" id="crGROk"></div>' +
+          '<div class="row">' +
+            '<button type="button" class="btn" data-act="cancel">Cancel</button>' +
+            '<button type="submit" class="btn primary">Create account</button>' +
+          '</div>' +
+        '</form>' +
+        '<div class="footer">Sessions persist 30 days on this device · passwords salted + SHA-256 hashed locally.</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => { if(e.target === ov) _close(); });
+    _wireEvents();
+  }
+
+  // ── Crypto helpers ────────────────────────────────────────────────
+  async function _sha256Hex(str){
+    const buf = new TextEncoder().encode(str);
+    const d = await crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+  function _randomSaltHex(){
+    const a = new Uint8Array(16);
+    crypto.getRandomValues(a);
+    return Array.from(a).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  // ── User store helpers ────────────────────────────────────────────
+  function _loadUsers(){
+    try { return JSON.parse(localStorage.getItem(USERS_KEY) || '{}') || {}; }
+    catch(_){ return {}; }
+  }
+  function _saveUsers(users){
+    try { localStorage.setItem(USERS_KEY, JSON.stringify(users)); } catch(_){}
+  }
+  function _findByEmail(email){
+    const u = _loadUsers();
+    const target = String(email||'').toLowerCase();
+    for(const name in u){
+      if(u[name] && String(u[name].email||'').toLowerCase() === target) return { name, rec: u[name] };
+    }
+    return null;
+  }
+
+  // ── Session helpers ───────────────────────────────────────────────
+  function _setSession(username, email){
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        username, email, expiresAt: Date.now() + SESSION_TTL,
+      }));
+    } catch(_){}
+  }
+  function _getSession(){
+    try {
+      const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+      if(!s || !s.username || !s.expiresAt) return null;
+      if(Date.now() > s.expiresAt){ localStorage.removeItem(SESSION_KEY); return null; }
+      return s;
+    } catch(_){ return null; }
+  }
+  function _clearSession(){
+    try { localStorage.removeItem(SESSION_KEY); } catch(_){}
+  }
+
+  // ── Validation ────────────────────────────────────────────────────
+  const RE_USER  = /^[a-zA-Z0-9_]{3,20}$/;
+  const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  function _pwStrength(pw){
+    let s = 0;
+    if(pw.length >= 8)   s++;
+    if(pw.length >= 12)  s++;
+    if(/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s++;
+    if(/\d/.test(pw) && /[^a-zA-Z0-9]/.test(pw)) s++;
+    return Math.min(4, s);
+  }
+
+  // ── UI state ──────────────────────────────────────────────────────
+  let _activeTab = 'login';
+  function _setTab(t){
+    _activeTab = t;
+    const ov = document.getElementById('crGuestOv');
+    if(!ov) return;
+    ov.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.getAttribute('data-tab') === t));
+    document.getElementById('crGuestLoginForm').style.display = (t === 'login') ? '' : 'none';
+    document.getElementById('crGuestRegForm').style.display   = (t === 'register') ? '' : 'none';
+    document.getElementById('crGuestTitle').textContent = (t === 'login') ? 'Welcome back' : 'Create your account';
+    document.getElementById('crGuestSub').textContent   = (t === 'login') ? 'Sign in to continue as guest.' : 'Pick a username + password. Persists on this device.';
+  }
+  function _showErr(id, msg){
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.textContent = msg;
+    el.classList.add('on');
+  }
+  function _clearErrs(){
+    ['crGLErr','crGRErr','crGROk'].forEach(id => {
+      const el = document.getElementById(id);
+      if(el){ el.textContent = ''; el.classList.remove('on'); }
+    });
+  }
+  function _paintStrength(pw){
+    const score = _pwStrength(pw);
+    const bars = document.querySelectorAll('#crGRStrength .bar');
+    bars.forEach((b, i) => {
+      b.classList.remove('on','warn','bad');
+      if(i < score){
+        if(score === 1) b.classList.add('bad');
+        else if(score === 2) b.classList.add('warn');
+        else b.classList.add('on');
+      }
+    });
+    const lbl = document.getElementById('crGRStrengthLabel');
+    if(lbl){
+      lbl.textContent = pw.length === 0
+        ? 'Use a mix of letters, digits, and symbols.'
+        : ['Very weak', 'Weak', 'OK', 'Strong', 'Very strong'][score] + ' password.';
+    }
+  }
+
+  // ── Handlers ──────────────────────────────────────────────────────
+  function _close(){
+    const ov = document.getElementById('crGuestOv');
+    if(ov) ov.classList.remove('on');
+    _clearErrs();
+  }
+  function _open(initialTab){
+    _injectDom();
+    _clearErrs();
+    _setTab(initialTab || 'login');
+    document.getElementById('crGuestOv').classList.add('on');
+    setTimeout(() => {
+      const focusId = _activeTab === 'login' ? 'crGLId' : 'crGRUser';
+      const f = document.getElementById(focusId);
+      if(f) f.focus();
+    }, 50);
+  }
+  window.crGuestOpen = _open;
+  window.crGuestSession = _getSession;
+  window.crGuestSignOut = _clearSession;
+
+  async function _handleLogin(e){
+    if(e) e.preventDefault();
+    _clearErrs();
+    const id   = (document.getElementById('crGLId').value || '').trim();
+    const pass = document.getElementById('crGLPass').value || '';
+    if(!id || !pass){ _showErr('crGLErr', 'Enter your username or email and password.'); return; }
+    // Resolve identifier → username
+    const users = _loadUsers();
+    let username = null;
+    if(users[id]) username = id;
+    else {
+      const hit = _findByEmail(id);
+      if(hit) username = hit.name;
+    }
+    if(!username){ _showErr('crGLErr', 'No account found for "' + id + '".'); return; }
+    const rec = users[username];
+    const hash = await _sha256Hex((rec.salt || '') + pass);
+    if(hash !== rec.passwordHash){ _showErr('crGLErr', 'Wrong password.'); return; }
+    _setSession(username, rec.email);
+    try { localStorage.setItem('cr_stealth_auth_v1', '1'); } catch(_){}
+    try { localStorage.setItem('cr_profile_name_v1', username); } catch(_){}
+    _close();
+    // Dismiss boot + flip profile name input if present.
+    try {
+      const boot = document.getElementById('crBoot');
+      if(boot){ boot.classList.add('out'); boot.style.pointerEvents = 'none'; }
+      const profileNameEl = document.getElementById('profileName');
+      if(profileNameEl && !profileNameEl.value) profileNameEl.value = username;
+      if(typeof toast === 'function') toast('Signed in as ' + username);
+    } catch(_){}
+  }
+
+  async function _handleRegister(e){
+    if(e) e.preventDefault();
+    _clearErrs();
+    const username = (document.getElementById('crGRUser').value || '').trim();
+    const email    = (document.getElementById('crGREmail').value || '').trim();
+    const pass     = document.getElementById('crGRPass').value || '';
+    const conf     = document.getElementById('crGRConf').value || '';
+
+    if(!RE_USER.test(username)){ _showErr('crGRErr', 'Username must be 3–20 chars: letters, digits, underscores.'); return; }
+    if(!RE_EMAIL.test(email)){   _showErr('crGRErr', 'Enter a valid email address.'); return; }
+    if(pass.length < 8){         _showErr('crGRErr', 'Password must be at least 8 characters.'); return; }
+    if(pass !== conf){           _showErr('crGRErr', 'Passwords do not match.'); return; }
+
+    const users = _loadUsers();
+    if(users[username]){         _showErr('crGRErr', 'Username "' + username + '" is taken.'); return; }
+    if(_findByEmail(email)){     _showErr('crGRErr', 'An account already uses this email.'); return; }
+
+    const salt = _randomSaltHex();
+    const passwordHash = await _sha256Hex(salt + pass);
+    users[username] = { email, salt, passwordHash, createdAt: Date.now() };
+    _saveUsers(users);
+    _setSession(username, email);
+    try { localStorage.setItem('cr_stealth_auth_v1', '1'); } catch(_){}
+    try { localStorage.setItem('cr_profile_name_v1', username); } catch(_){}
+
+    const ok = document.getElementById('crGROk');
+    if(ok){ ok.textContent = 'Account created. Signing you in…'; ok.classList.add('on'); }
+    setTimeout(() => {
+      _close();
+      try {
+        const boot = document.getElementById('crBoot');
+        if(boot){ boot.classList.add('out'); boot.style.pointerEvents = 'none'; }
+        const profileNameEl = document.getElementById('profileName');
+        if(profileNameEl && !profileNameEl.value) profileNameEl.value = username;
+        if(typeof toast === 'function') toast('Welcome, ' + username + '!');
+      } catch(_){}
+    }, 600);
+  }
+
+  function _wireEvents(){
+    const ov = document.getElementById('crGuestOv');
+    if(!ov || ov._wired) return;
+    ov._wired = true;
+    ov.querySelectorAll('.tab').forEach(btn => {
+      btn.addEventListener('click', () => _setTab(btn.getAttribute('data-tab')));
+    });
+    ov.querySelectorAll('[data-act="cancel"]').forEach(btn => {
+      btn.addEventListener('click', _close);
+    });
+    document.getElementById('crGuestLoginForm').addEventListener('submit', _handleLogin);
+    document.getElementById('crGuestRegForm').addEventListener('submit', _handleRegister);
+    const pwInput = document.getElementById('crGRPass');
+    if(pwInput) pwInput.addEventListener('input', e => _paintStrength(e.target.value));
+    document.addEventListener('keydown', e => {
+      if(e.key === 'Escape' && ov.classList.contains('on')) _close();
+    });
+  }
+
+  // Wire the boot button + auto-resume an existing session.
+  function _boot(){
+    const btn = document.getElementById('crBootGuest');
+    if(btn && !btn._wired){
+      btn._wired = true;
+      btn.addEventListener('click', () => _open('login'));
+    }
+    // Auto-resume: if a valid session exists on load, dismiss boot
+    // immediately. User can sign out via crGuestSignOut() if they want
+    // a clean gate next time.
+    const sess = _getSession();
+    if(sess && sess.username){
+      try {
+        localStorage.setItem('cr_stealth_auth_v1', '1');
+        localStorage.setItem('cr_profile_name_v1', sess.username);
+        const boot = document.getElementById('crBoot');
+        if(boot){ boot.classList.add('out'); boot.style.pointerEvents = 'none'; }
+      } catch(_){}
+    }
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', _boot);
+  } else {
+    setTimeout(_boot, 0);
+  }
 })();
 
 /* ═════════════════════════════════════════════════════════════════════════
