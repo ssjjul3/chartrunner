@@ -43677,6 +43677,24 @@ window.crGoldRush = (function(){
         tag.classList.add(cls);
       }
     });
+    // v1.0.76 — Belt-and-suspenders. If any refresher signals failure
+    // via _setHdTag('warn') but doesn't also call _setBodyStatus, the
+    // pane body keeps its original mock HTML — which the user reads
+    // as "nothing updated." Paint a generic status on warn paths so
+    // failure is ALWAYS visible. Skip if the body already contains
+    // a recently-painted status div (avoid overwriting specific
+    // messages from refreshers that DO call _setBodyStatus).
+    if(cls === 'warn'){
+      try {
+        _bodiesOf(paneId).forEach(body => {
+          // Skip if body already shows our status format.
+          if(body.querySelector('div[style*="ui-monospace"]')) return;
+          // Otherwise stamp a generic message including the tag text.
+          body.innerHTML = '<div style="font:11px ui-monospace,Menlo,monospace;color:#ff5b7f;padding:8px;font-style:italic;line-height:1.4">' +
+            text + ' — see console / Token Terminal Settings for API keys.</div>';
+        });
+      } catch(_){}
+    }
   }
   // Back-compat alias for the in-flight refresher signatures.
   function _bodyOf(paneId){ return _bodiesOf(paneId)[0] || null; }
@@ -43695,11 +43713,16 @@ window.crGoldRush = (function(){
 
   // ── 1. solPrice ────────────────────────────────────────────────────
   async function refreshSolPrice(){
-    if(!_bodiesOf('solPrice').length || !window.crBirdeye) return;
+    if(!_bodiesOf('solPrice').length) return;
+    if(!window.crBirdeye){ _setHdTag('solPrice','no birdeye','warn'); _setBodyStatus('solPrice','Birdeye client not initialised. Reload the page.','#ff5b7f'); return; }
     const cfg = _getConfigFor('solPrice');
     const tokenId = cfg.tokenId || 'sol';
     const data = await window.crBirdeye.fetchToken(tokenId);
-    if(!data){ _setHdTag('solPrice','offline','warn'); return; }
+    if(!data){
+      _setHdTag('solPrice','offline','warn');
+      _setBodyStatus('solPrice', 'Birdeye 401 — no API key. Get a free key at https://bds.birdeye.so/ and paste it in the Token Terminal Settings (⚙ icon).', '#ff5b7f');
+      return;
+    }
     const price  = data.price;
     const ch24   = data.ch24;
     const vol24  = data.vol24;
@@ -43718,16 +43741,21 @@ window.crGoldRush = (function(){
 
   // ── 2. solHolders ──────────────────────────────────────────────────
   async function refreshSolHolders(){
-    if(!_bodiesOf('solHolders').length || !window.crGoldRush) return;
+    if(!_bodiesOf('solHolders').length) return;
+    if(!window.crGoldRush){ _setHdTag('solHolders','no goldrush','warn'); _setBodyStatus('solHolders','GoldRush client not initialised. Reload the page.','#ff5b7f'); return; }
     const cfg = _getConfigFor('solHolders');
     const tokenId = cfg.tokenId || 'wif';
     const rows    = cfg.rows || 10;
     const mints = (typeof TOK_BIRDEYE_MINT !== 'undefined') ? TOK_BIRDEYE_MINT : {};
     const mint = mints[tokenId];
-    if(!mint){ _setHdTag('solHolders','no mint','warn'); return; }
+    if(!mint){
+      _setHdTag('solHolders','no mint','warn');
+      _setBodyStatus('solHolders', 'No mint registered for token "' + tokenId + '". Pick a different token in the gear ⚙.', '#bfa600');
+      return;
+    }
     const holders = await window.crGoldRush.tokenHolders(mint, { pageSize: rows });
     if(!holders || !holders.length){
-      _setBody('solHolders', '<div style="font-style:italic;color:var(--dim);font-size:10px;padding:4px 0">No holder data. Add a GoldRush API key in Token Terminal settings.</div>');
+      _setBodyStatus('solHolders', 'No GoldRush API key configured. Get a free one at https://goldrush.dev/ and paste it in the Token Terminal Settings (⚙).', '#ff5b7f');
       _setHdTag('solHolders','no data','warn');
       return;
     }
@@ -43746,11 +43774,12 @@ window.crGoldRush = (function(){
 
   // ── 3. solSmart ────────────────────────────────────────────────────
   async function refreshSolSmart(){
-    if(!_bodiesOf('solSmart').length || !window.crGoldRush) return;
+    if(!_bodiesOf('solSmart').length) return;
+    if(!window.crGoldRush){ _setHdTag('solSmart','no goldrush','warn'); _setBodyStatus('solSmart','GoldRush client not initialised. Reload the page.','#ff5b7f'); return; }
     const cfg = _getConfigFor('solSmart');
     const wallets = String(cfg.wallets || '').split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
     if(!wallets.length){
-      _setBody('solSmart', '<div style="font-style:italic;color:var(--dim);font-size:10px;padding:4px 0">Click the ⚙ on this widget · paste tracked wallets in Settings.</div>');
+      _setBodyStatus('solSmart', 'No wallets configured. Click the ⚙ on this widget and paste Solana pubkeys (one per line).', 'var(--dim)');
       _setHdTag('solSmart','config required','warn');
       return;
     }
@@ -43940,10 +43969,14 @@ window.crGoldRush = (function(){
     const rows = cfg.rows || 10;
     try {
       const r = await fetch('https://public-api.birdeye.so/defi/token_trending?sort_by=rank&sort_type=asc&offset=0&limit=' + Math.min(rows, 20), { headers: _BIRD_HEADERS() });
-      if(!r.ok){ _setHdTag('solTrending','offline','warn'); return; }
+      if(!r.ok){
+        _setHdTag('solTrending','offline · ' + r.status,'warn');
+        _setBodyStatus('solTrending', r.status === 401 ? 'Birdeye 401 — no API key. Get one free at https://bds.birdeye.so/ and paste it in Token Terminal ⚙.' : 'Birdeye returned HTTP ' + r.status + '. Retrying in next tick.', '#ff5b7f');
+        return;
+      }
       const j = await r.json();
       const list = (j && j.data && j.data.tokens) || [];
-      if(!list.length){ _setHdTag('solTrending','no data','warn'); return; }
+      if(!list.length){ _setHdTag('solTrending','no data','warn'); _setBodyStatus('solTrending','Birdeye returned an empty trending list.', '#bfa600'); return; }
       _setBody('solTrending', '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
         + list.slice(0, rows).map((t, i) => {
             const ch = t.price24hChangePercent;
@@ -43955,7 +43988,10 @@ window.crGoldRush = (function(){
           }).join('')
         + '</div>');
       _setHdTag('solTrending', list.length + ' trending · LIVE', 'live');
-    } catch(_){ _setHdTag('solTrending','offline','warn'); }
+    } catch(err){
+      _setHdTag('solTrending','offline','warn');
+      _setBodyStatus('solTrending', 'Network error: ' + (err && err.message || err), '#ff5b7f');
+    }
   }
 
   // 3. solDexVolume — DefiLlama Solana overview.
@@ -43963,7 +43999,7 @@ window.crGoldRush = (function(){
     if(!_bodiesOf('solDexVolume').length) return;
     try {
       const r = await fetch('https://api.llama.fi/overview/dexs/solana?excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true');
-      if(!r.ok){ _setHdTag('solDexVolume','offline','warn'); return; }
+      if(!r.ok){ _setHdTag('solDexVolume','offline · ' + r.status,'warn'); _setBodyStatus('solDexVolume','DefiLlama returned HTTP ' + r.status + '. Retrying in next tick.', '#ff5b7f'); return; }
       const j = await r.json();
       const v24   = j.total24h;
       const v7d   = j.total7d;
@@ -43981,7 +44017,7 @@ window.crGoldRush = (function(){
         +   top.map(p => '<div style="display:flex;justify-content:space-between"><span>' + (p.name || '?') + '</span><span class="r"><b>' + _fmtUsd(p.total24h) + '</b></span></div>').join('')
         + '</div>');
       _setHdTag('solDexVolume', 'Solana · LIVE', 'live');
-    } catch(_){ _setHdTag('solDexVolume','offline','warn'); }
+    } catch(err){ _setHdTag('solDexVolume','offline','warn'); _setBodyStatus('solDexVolume','Network error: ' + (err && err.message || err), '#ff5b7f'); }
   }
 
   // 4. solPumpfun — pump.fun frontend API (CORS-tolerant; fallback gracefully).
@@ -43992,9 +44028,9 @@ window.crGoldRush = (function(){
     const minMc = cfg.minMcUsd || 0;
     try {
       const r = await fetch('https://frontend-api.pump.fun/coins?offset=0&limit=' + Math.min(rows*3, 50) + '&sort=created_timestamp&order=DESC');
-      if(!r.ok){ _setHdTag('solPumpfun','offline','warn'); return; }
+      if(!r.ok){ _setHdTag('solPumpfun','offline · ' + r.status,'warn'); _setBodyStatus('solPumpfun','pump.fun API returned HTTP ' + r.status + '. May be rate-limited.', '#ff5b7f'); return; }
       const list = await r.json();
-      if(!Array.isArray(list) || !list.length){ _setHdTag('solPumpfun','no data','warn'); return; }
+      if(!Array.isArray(list) || !list.length){ _setHdTag('solPumpfun','no data','warn'); _setBodyStatus('solPumpfun','pump.fun returned no launches.', '#bfa600'); return; }
       const filtered = list.filter(c => (c.usd_market_cap || 0) >= minMc).slice(0, rows);
       // v1.0.70 — stash the raw recent list on window._crPumpfunRecent so
       // solSniper can join against fresh launches without re-fetching.
@@ -44010,7 +44046,7 @@ window.crGoldRush = (function(){
           }).join('')
         + '</div>');
       _setHdTag('solPumpfun', filtered.length + ' new · LIVE', 'live');
-    } catch(_){ _setHdTag('solPumpfun','cors-blocked','warn'); }
+    } catch(err){ _setHdTag('solPumpfun','cors-blocked','warn'); _setBodyStatus('solPumpfun','pump.fun CORS blocked or network error: ' + (err && err.message || err) + '. Browser blocks direct fetches from this origin.', '#ff5b7f'); }
   }
 
   // 5. solSwaps — local Jupiter broker fill log.

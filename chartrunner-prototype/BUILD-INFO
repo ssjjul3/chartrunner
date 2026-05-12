@@ -1,3 +1,46 @@
+deployed: 2026-05-12T13:30:00Z · v1.0.76 (Universal status-on-failure.
+
+USER REPORT: Terminal still looks like mock data despite v1.0.60-75
+wiring being live. Diagnostic via DevTools confirmed:
+  · IIFE + boot fired ✓
+  · Hundreds of Birdeye 401 fetches in Network tab ✓
+  · Solana panes still showed original mock HTML ✗
+
+ROOT CAUSE: only v1.0.75's solTopTokens called _setBodyStatus on
+failure. Every other refresher (solPrice, solHolders, solSmart,
+solTrending, solDexVolume, solPumpfun, solSwaps, solSniper,
+phxWhales, phxFunding, phxOI, phxBook, phxFlight, phxStatus,
+cexAgg, cexExchanges, cexFunding, cexOI, cexDepth, cexStables,
+cexListings, cexWhales) updated only the small header chip
+("offline" / "no data") and left the body on the original
+mock HTML, indistinguishable from "live but identical to mock".
+
+FIX: instead of editing 22 refreshers individually, make
+_setHdTag(paneId, text, "warn") ALSO paint a body status. So
+every existing fail path that signals warn now produces a
+visible body message:
+    "offline · 401 — see console / Token Terminal Settings
+     for API keys."
+
+Skips overwrite if body already contains a status div from a
+specific refresher that DID call _setBodyStatus directly
+(solTopTokens v1.0.75, solPrice/solHolders/solSmart/
+solTrending/solDexVolume/solPumpfun v1.0.76).
+
+Result: the moment you switch to the Solana tab, every
+Birdeye-gated pane shows a clear "no API key" message
+instead of mock HTML. No more confusion about whether
+panes are firing.
+
+QUICK FIX TO GET BIRDEYE WORKING
+  1. Get a free key: https://bds.birdeye.so/ (sign in
+     with Google, free tier = 1000 calls/day)
+  2. In DevTools Console run:
+       localStorage.setItem("cr_birdeye_key_v1", "YOUR_KEY")
+  3. Hard-reload (Cmd+Shift+R).
+
+Every Birdeye pane will start serving live data within 1s.)
+
 deployed: 2026-05-12T13:00:00Z · v1.0.75 (Deep diagnostic harness.
 
 USER REPORT: "Terminal application is still broken and did not update."
