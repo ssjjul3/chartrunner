@@ -10515,13 +10515,13 @@ window.crChainSave = (function(){
       try { toast && toast('Map not found locally — save first'); } catch(_){}
       return false;
     }
-    if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
-      var wantConnect = window.confirm(
-        'Anchoring a map on Solana devnet requires a connected wallet. Connect now?'
-      );
-      if (wantConnect && crWallet) crWallet.connect();
-      return false;
-    }
+    // v1.0.99 — Removed the upfront crWallet.isConnected() → crWallet.connect()
+    // bounce. crMapsTx.signAndSendSave now handles the connect dance itself
+    // (silent → prompted) and stamps crWallet on success. So we go straight
+    // to the direct path; only if Phantom is actually missing OR the user
+    // rejects the popup does the legacy /solana-connect/ bounce kick in.
+    // This keeps the user in-page on first anchor instead of redirecting
+    // through the React handshake app every cold session.
     var canon, hashHex, hashBytes;
     try {
       canon     = canonicalJson(map);
@@ -42419,15 +42419,15 @@ const crL3 = (function(){
         '<h3>Request access</h3>' +
         '<div class="sub">Stealth alpha · we add wallets in batches.</div>' +
         '<form id="crWaitlistForm" autocomplete="off" novalidate>' +
-          '<label for="crWlName">Name</label>' +
-          '<input id="crWlName" name="name" type="text" required maxlength="60" placeholder="Satoshi N."/>' +
-          '<label for="crWlEmail">Email</label>' +
-          '<input id="crWlEmail" name="email" type="email" required maxlength="120" placeholder="you@domain.com"/>' +
+          // v1.0.100 — Name + Email fields cut. X handle + wallet are the
+          // only signals we actually need to whitelist + DM. Name/Email
+          // input nodes stay out of the DOM entirely; the submit handler
+          // null-checks them in case anything else references the ids.
           '<label for="crWlX">X handle</label>' +
-          '<input id="crWlX" name="xhandle" type="text" maxlength="40" placeholder="@yourhandle"/>' +
+          '<input id="crWlX" name="xhandle" type="text" required maxlength="40" placeholder="@yourhandle"/>' +
           '<label for="crWlWallet">Wallet address</label>' +
           '<input id="crWlWallet" name="wallet" type="text" required maxlength="64" readonly/>' +
-          '<div class="ok" id="crWlOk" style="display:none">Request received. We\'ll email you when the whitelist opens.</div>' +
+          '<div class="ok" id="crWlOk" style="display:none">Request received. We\'ll DM you on X when the whitelist opens.</div>' +
           '<div class="row">' +
             '<button type="button" id="crWlCancel">Cancel</button>' +
             '<button type="submit" class="primary" id="crWlSubmit">Send request</button>' +
@@ -42450,7 +42450,9 @@ const crL3 = (function(){
     if(form) form.reset(), wal.value = walletPk || (window._crRejectedWallet || '');
     if(sub){ sub.disabled = false; sub.textContent = 'Send request'; }
     ov.classList.add('on');
-    setTimeout(() => { try { document.getElementById('crWlName').focus(); } catch(_){} }, 50);
+    // v1.0.100 — Name input is gone; focus the X handle (now the first
+    // editable field). Wallet is readonly so it doesn't grab focus.
+    setTimeout(() => { try { document.getElementById('crWlX').focus(); } catch(_){} }, 50);
   }
   function _close(){
     const ov = document.getElementById('crWaitlistOv');
@@ -42482,21 +42484,22 @@ const crL3 = (function(){
     if(form){
       form.addEventListener('submit', e => {
         e.preventDefault();
-        const name   = (document.getElementById('crWlName').value || '').trim();
-        const email  = (document.getElementById('crWlEmail').value || '').trim();
-        const xhdl   = (document.getElementById('crWlX').value || '').trim();
+        // v1.0.100 — Name + Email cut. X handle and wallet are the two
+        // signals we collect now. Both required. Normalise the X handle
+        // to a leading '@' so the mailto body and the localStorage audit
+        // log are consistent regardless of how the user typed it.
+        let xhdl = (document.getElementById('crWlX').value || '').trim();
         const wallet = (document.getElementById('crWlWallet').value || '').trim();
-        if(!name || !email || !wallet) return;
-        const entry = { name, email, xhandle: xhdl, wallet, ts: Date.now() };
+        if(!xhdl || !wallet) return;
+        if(xhdl && xhdl[0] !== '@') xhdl = '@' + xhdl;
+        const entry = { xhandle: xhdl, wallet, ts: Date.now() };
         _save(entry);
         // Open mailto: with prefilled body so the request actually
         // reaches the team without a backend.
         try {
-          const subj = encodeURIComponent('ChartRunner waitlist · ' + (name || 'request'));
+          const subj = encodeURIComponent('ChartRunner waitlist · ' + xhdl);
           const body = encodeURIComponent(
-            'Name: ' + name + '\n' +
-            'Email: ' + email + '\n' +
-            'X handle: ' + (xhdl || '—') + '\n' +
+            'X handle: ' + xhdl + '\n' +
             'Wallet: ' + wallet + '\n' +
             'Submitted: ' + new Date().toISOString() + '\n' +
             '— sent via chartrunner.xyz/play/'
@@ -43383,25 +43386,67 @@ window.crMapsTx = (function(){
   // not injected) so the caller falls back to the bounce. Throws on
   // actual signing / RPC failure so the caller can decide whether to
   // bounce-fallback or surface the error.
-  async function signAndSendSave(name, hashBytes){
+  //
+  // v1.0.99 — Two changes to stop premature bounce-back to /solana-connect/:
+  //   1) Wait up to 2.5 s for the async @solana/web3.js script tag in <head>
+  //      to land before giving up. The script is ~270 KB and loaded async,
+  //      so a fast Anchor click after page load can race the script.
+  //   2) On stale Phantom session (crWallet.isConnected() === true but
+  //      ph.publicKey === null — happens after Phantom auto-locks, browser
+  //      restart, or cleared site data), try silent connect first, then
+  //      a prompted connect. Only bounce if the user actively rejects the
+  //      Phantom approval popup or Phantom isn't installed at all.
+  async function _waitForWeb3(maxMs){
     var web3 = _web3();
+    if (web3) return web3;
+    var waited = 0;
+    while (!_web3() && waited < maxMs){
+      await new Promise(function(r){ setTimeout(r, 100); });
+      waited += 100;
+    }
+    return _web3();
+  }
+  async function signAndSendSave(name, hashBytes){
+    var web3 = await _waitForWeb3(2500);
     var ph   = _phantom();
     if (!web3){
-      try { console.warn('[crMapsTx] @solana/web3.js not loaded yet, deferring to bounce'); } catch(_){}
+      try { console.warn('[crMapsTx] @solana/web3.js still not loaded after 2.5s, deferring to bounce'); } catch(_){}
+      try { window.crMapsTxLastSkipReason = 'web3-timeout'; } catch(_){}
       return null;
     }
     if (!ph){
       try { console.warn('[crMapsTx] no Phantom provider, deferring to bounce'); } catch(_){}
+      try { window.crMapsTxLastSkipReason = 'no-phantom'; } catch(_){}
       return null;
     }
     if (!ph.isConnected || !ph.publicKey){
-      // Try a silent connect first (already-trusted dapp). If the user
-      // rejects or hasn't authorized this site, fall through to bounce.
-      try { await ph.connect({ onlyIfTrusted: true }); } catch(_){
-        try { console.warn('[crMapsTx] Phantom not connected, deferring to bounce'); } catch(__){}
+      // Silent connect first (already-trusted dapp — fastest path, no popup).
+      try { await ph.connect({ onlyIfTrusted: true }); } catch(_){ /* fall through to prompted connect */ }
+      // If still no publicKey, request explicit user approval. This shows
+      // the Phantom popup but keeps the user IN-PAGE — no /solana-connect/
+      // redirect required. Only bounce if the user rejects the popup or
+      // Phantom errors out.
+      if (!ph.publicKey){
+        try {
+          await ph.connect();
+        } catch(err){
+          try { console.warn('[crMapsTx] Phantom connect rejected/errored, deferring to bounce:', err); } catch(__){}
+          try { window.crMapsTxLastSkipReason = 'phantom-rejected'; } catch(__){}
+          return null;
+        }
+      }
+      if (!ph.publicKey){
+        try { window.crMapsTxLastSkipReason = 'no-pubkey-after-connect'; } catch(_){}
         return null;
       }
-      if (!ph.publicKey) return null;
+      // v1.0.99 — Stamp crWallet too so the rest of the app sees a
+      // connected wallet without a page reload (mirrors what the bounce
+      // round-trip would have set on return).
+      try {
+        if (typeof crWallet !== 'undefined' && typeof crWallet.setConnected === 'function'){
+          crWallet.setConnected(ph.publicKey.toString(), 'phantom');
+        }
+      } catch(_){}
     }
 
     var ownerPk    = new web3.PublicKey(ph.publicKey.toString());
