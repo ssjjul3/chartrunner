@@ -28151,7 +28151,13 @@ function _softRefreshChatWidgets(){
         }
       }
       const renderedLog = msgs.slice(-50).map(m => {
-        const isMe = m.from === 'you';
+        // v1.0.98 — Coach (crCoach) entries are { role, text, t } with
+        // role ∈ {'user','coach'}; bot agent chats use { from, text }
+        // where from === 'you' marks the user side. The old check only
+        // looked at m.from, so every Coach message — including the user's
+        // own — rendered as a COACH bubble (no YOU side ever appeared in
+        // pinned Coach widgets). Same regression _refreshBotCoachLog had.
+        const isMe = (m.role === 'user') || (m.from === 'you');
         const who  = isMe ? 'YOU' : (agentId === 'coach' ? 'COACH' : agentId.toUpperCase());
         const txt  = String(m.text).replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' }[c]));
         const style = isMe
@@ -44478,8 +44484,13 @@ window.crGoldRush = (function(){
     document.querySelectorAll('[data-pane-id="' + paneId + '"]').forEach(pane => {
       const tag = pane.querySelector('.crTerm-paneHd .hd-tag');
       if(tag){
-        tag.textContent = text;
-        if(cls){
+        // v1.0.97 — Idempotent text + class writes. The previous
+        // unconditional `remove('warn','tune','live')` + `add(cls)` fired
+        // a style recalc on every pane refresher even when the chip was
+        // already in the right state. With ~24 panes refreshing on
+        // staggered intervals, that was a steady drip of restyles.
+        if(tag.textContent !== text) tag.textContent = text;
+        if(cls && !tag.classList.contains(cls)){
           tag.classList.remove('warn','tune','live');
           tag.classList.add(cls);
         }
@@ -45515,25 +45526,62 @@ window.crGoldRush = (function(){
       win._cRrefresherHooked = true;
       window._crTermDiag.obsHookInstalled = Date.now();
       try { console.log('[crTerm] terminal window observer installed'); } catch(_){}
+      // v1.0.97 — Debounce trigger() and gate it on actual state
+      // transitions, not every attribute mutation.
+      //
+      // Before: any class/style change on #win-terminal (drag, resize,
+      // z-index bump, anything) fired trigger() → _forceTickForVisiblePanes()
+      // → 24 pane refreshers running in rapid succession → visible
+      // "wave of reloads" as panes repainted one after another. The tab
+      // observer was even worse: ANY subtree class change inside .crTerm-tabs
+      // (e.g. each chip toggle, hover state, focus ring) triggered the same
+      // force-tick storm.
+      //
+      // After: trigger() coalesces all mutations within a 250ms window
+      // into a single fire. Window observer only fires on hidden→visible
+      // transitions (the original intent — "user opened the terminal,
+      // freshen the data"). Tab observer filters to actual tab .active
+      // class flips, not arbitrary subtree mutations.
+      let _wasVisible = win.classList.contains('on') ||
+                        (win.style.display && win.style.display !== 'none');
+      let _triggerTimer = null;
       const trigger = () => {
-        setTimeout(() => {
+        if(_triggerTimer) return;
+        _triggerTimer = setTimeout(() => {
+          _triggerTimer = null;
           try { tagPanes(); } catch(_){}
           try { _stampEngineLiveChips(); } catch(_){}
           try { _forceTickForVisiblePanes(); } catch(_){}
-        }, 60);
+        }, 250);
       };
       // Watch the window's own attributes (class/style toggles) for
-      // open/close transitions.
+      // open/close transitions. Only fire when visibility actually
+      // flips from hidden to visible.
       const winObs = new MutationObserver(() => {
         const visible = win.classList.contains('on') ||
                         (win.style.display && win.style.display !== 'none');
-        if(visible) trigger();
+        if(visible && !_wasVisible){
+          _wasVisible = true;
+          trigger();
+        } else if(!visible){
+          _wasVisible = false;
+        }
       });
       winObs.observe(win, { attributes: true, attributeFilter: ['class', 'style'] });
-      // Watch tab strip too — covers internal view switch.
+      // Watch tab strip too — covers internal view switch. Filter to
+      // .crTerm-tab elements only (the tab buttons themselves), not the
+      // whole subtree. Refresh only fires when a tab gains/loses .active.
       const tabs = win.querySelector('.crTerm-tabs');
       if(tabs){
-        const tabObs = new MutationObserver(trigger);
+        const tabObs = new MutationObserver((mutations) => {
+          // Only react if a tab button's class actually changed (not
+          // arbitrary descendant style/class noise).
+          const realTabChange = mutations.some(m =>
+            m.target && m.target.classList &&
+            m.target.classList.contains && m.target.classList.contains('crTerm-tab')
+          );
+          if(realTabChange) trigger();
+        });
         tabObs.observe(tabs, { attributes: true, subtree: true, attributeFilter: ['class'] });
       }
       // Kick once now in case window is already open at boot.
