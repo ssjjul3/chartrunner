@@ -1,3 +1,41 @@
+deployed: 2026-05-12T18:30:00Z · v1.0.88 (Token Settings → Terminal
+widgets immediate refresh.
+
+USER ASK: "when birdseye api key put in token settings it should
+also update terminal widgets."
+
+CAUSE
+  Token Terminal ⚙ Settings → Save wrote the Birdeye + GoldRush
+  keys to localStorage AND called crBirdeye.setApiKey() /
+  crGoldRush.setApiKey() (which clear THEIR caches). But the
+  Terminal app's pane refreshers (Solana / Phoenix / CEX tabs) sit
+  in a separate v1.0.60 IIFE with its own 15-second master tick —
+  they only pick up the new key on the next tick boundary.
+
+  Result: user pastes a Birdeye key, hits Save, opens Terminal →
+  Solana panes still show "offline · 401" for up to 15 seconds.
+
+FIX
+  · v1.0.60 IIFE exposes _forceTickForVisiblePanes() as
+    window.crTermForceTick — public alias for any caller that
+    mutates an API key at runtime.
+  · Token Settings save handler now calls
+    window.crTermForceTick() right after _applySettings(). The
+    Terminal panes re-fire their refreshers within ~1 s — Birdeye
+    + GoldRush panes flip from "offline" to live data immediately.
+
+NEW PUBLIC API
+  window.crTermForceTick()   // force every visible pane to
+                             // re-fire its refresher now.
+                             // Returns void. Updates
+                             // window._crTermDiag.lastForceTick
+                             // with { t, fired, noBody } so
+                             // DevTools shows what happened.
+
+The same hook is reusable: if any future flow rotates a key, just
+call window.crTermForceTick() and the Terminal catches up
+immediately.)
+
 deployed: 2026-05-12T18:00:00Z · v1.0.87 (Landing page refresh +
 game-widget design.
 
