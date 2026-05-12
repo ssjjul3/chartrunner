@@ -44263,29 +44263,52 @@ window.crGoldRush = (function(){
   function _setBody(paneId, html){
     _bodiesOf(paneId).forEach(body => { body.innerHTML = html; });
   }
+  // v1.0.90 — Default behaviour: HIDE panes whose backend signalled a
+  // warn/offline state, instead of painting an error message into the
+  // body. Cleaner UX: the user only sees panes that have working data.
+  // Toggle via localStorage.cr_hide_offline_panes_v1:
+  //   '1' (default) → hide failed panes
+  //   '0'           → show panes with the visible "offline" status
+  //                   message (the v1.0.76 behaviour, useful for
+  //                   debugging which fetches are failing).
+  function _shouldHideOffline(){
+    try {
+      const v = localStorage.getItem('cr_hide_offline_panes_v1');
+      return v == null ? true : (v === '1');
+    } catch(_){ return true; }
+  }
   function _setHdTag(paneId, text, cls){
     document.querySelectorAll('[data-pane-id="' + paneId + '"]').forEach(pane => {
       const tag = pane.querySelector('.crTerm-paneHd .hd-tag');
-      if(!tag) return;
-      tag.textContent = text;
-      if(cls){
-        tag.classList.remove('warn','tune','live');
-        tag.classList.add(cls);
+      if(tag){
+        tag.textContent = text;
+        if(cls){
+          tag.classList.remove('warn','tune','live');
+          tag.classList.add(cls);
+        }
+      }
+      // v1.0.90 — Hide panes on warn (no API connection / fetch failed)
+      // and re-show them on live. data-cr-offline attribute marks the
+      // hidden state so we can also restore the original body content
+      // when the pane comes back to life.
+      if(cls === 'warn' && _shouldHideOffline()){
+        pane.setAttribute('data-cr-offline', '1');
+        pane.style.display = 'none';
+      } else if(cls === 'live'){
+        if(pane.getAttribute('data-cr-offline')){
+          pane.removeAttribute('data-cr-offline');
+        }
+        if(pane.style.display === 'none') pane.style.display = '';
       }
     });
-    // v1.0.76 — Belt-and-suspenders. If any refresher signals failure
-    // via _setHdTag('warn') but doesn't also call _setBodyStatus, the
-    // pane body keeps its original mock HTML — which the user reads
-    // as "nothing updated." Paint a generic status on warn paths so
-    // failure is ALWAYS visible. Skip if the body already contains
-    // a recently-painted status div (avoid overwriting specific
-    // messages from refreshers that DO call _setBodyStatus).
-    if(cls === 'warn'){
+    // Legacy v1.0.76 body-status painting — only fires when the user
+    // explicitly opted into showing offline panes via
+    // cr_hide_offline_panes_v1='0'. Keeps the diagnostic surface
+    // available for anyone who wants to see WHY a pane failed.
+    if(cls === 'warn' && !_shouldHideOffline()){
       try {
         _bodiesOf(paneId).forEach(body => {
-          // Skip if body already shows our status format.
           if(body.querySelector('div[style*="ui-monospace"]')) return;
-          // Otherwise stamp a generic message including the tag text.
           body.innerHTML = '<div style="font:11px ui-monospace,Menlo,monospace;color:#ff5b7f;padding:8px;font-style:italic;line-height:1.4">' +
             text + ' — see console / Token Terminal Settings for API keys.</div>';
         });
