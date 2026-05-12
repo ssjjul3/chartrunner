@@ -28093,6 +28093,35 @@ function _tokScheduleRerender(){
   }, 800);
 }
 
+// v1.0.93 — Idempotent innerHTML setter. Bot Terminal Coach + Phone SMS +
+// engine watchlists + Token Terminal lists all rebuilt their hosts on every
+// crCoach tick / 250 ms / 2 s / 5 s interval — same HTML, full DOM swap.
+// That caused the "widget panes glitching and reloading all the time"
+// symptom: scroll positions snapped to bottom, canvases were destroyed
+// and recreated, and any <input> nested inside one of those hosts lost
+// the user's in-progress typing (the Coach input deletion bug).
+//
+// crSafeHTML guards against all of that:
+//   • Skip the write entirely if the new HTML is byte-identical.
+//   • Skip the write if the user is currently typing into an INPUT or
+//     TEXTAREA inside the host (so subscriptions never wipe live input).
+//   • Preserve scroll-at-bottom when content actually does change.
+function crSafeHTML(el, html){
+  if(!el) return;
+  if(el.innerHTML === html) return;
+  try {
+    const ae = document.activeElement;
+    if(ae && el.contains(ae) && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)){
+      return;
+    }
+  } catch(_){}
+  const wasAtBottom = el.scrollHeight > 0
+    && (el.scrollHeight - el.scrollTop - el.clientHeight) < 8;
+  el.innerHTML = html;
+  if(wasAtBottom) el.scrollTop = el.scrollHeight;
+}
+try { window.crSafeHTML = crSafeHTML; } catch(_){}
+
 // v1.0.67 — Soft refresh for pinned Chat / Coach widgets. Walks every
 // [data-chat-log] inside a .cr-widget, fetches the latest message log
 // for its agent id (or crCoach.getHistory() when agentId === 'coach'),
@@ -30203,7 +30232,7 @@ function _crPaintEngineWatchlists(){
     } catch(_){}
     if(coinTag) coinTag.textContent = ids.length + ' · synced';
     if(!ids.length){
-      coinHost.innerHTML = '<div class="dim" style="font-style:italic;font-size:10px;padding:6px">Star tokens in Token to populate.</div>';
+      crSafeHTML(coinHost, '<div class="dim" style="font-style:italic;font-size:10px;padding:6px">Star tokens in Token to populate.</div>');
     } else {
       const rows = ids.map(id => {
         const s = (typeof _tokSnapshot === 'function') ? _tokSnapshot(id) : null;
@@ -30219,7 +30248,7 @@ function _crPaintEngineWatchlists(){
           '<span style="text-align:right;color:' + chCol + ';font-variant-numeric:tabular-nums">' + chTxt + '</span>' +
         '</div>';
       }).join('');
-      coinHost.innerHTML = rows;
+      crSafeHTML(coinHost, rows);
     }
   }
 
@@ -30234,7 +30263,7 @@ function _crPaintEngineWatchlists(){
     } catch(_){}
     if(walTag) walTag.textContent = addrs.length + ' wallets · cached 60s';
     if(!addrs.length){
-      walHost.innerHTML = '<div class="dim" style="font-style:italic;font-size:10px;padding:6px">Add Solana addresses via Configure Terminal Widgets ⚙ → Wallet Watchlist.</div>';
+      crSafeHTML(walHost, '<div class="dim" style="font-style:italic;font-size:10px;padding:6px">Add Solana addresses via Configure Terminal Widgets ⚙ → Wallet Watchlist.</div>');
     } else {
       const rows = addrs.map(addr => {
         // Reuse the cache populated by _crPaintWalletWatchlists / floating widgets.
@@ -30252,7 +30281,7 @@ function _crPaintEngineWatchlists(){
           '<span style="color:#9bcb6a;font-variant-numeric:tabular-nums">' + bal + '</span>' +
         '</div>';
       }).join('');
-      walHost.innerHTML = rows;
+      crSafeHTML(walHost, rows);
     }
   }
 }
@@ -39250,10 +39279,11 @@ const crCoach = (function(){
 
   function render(){
     const msgs = crCoach.getHistory();
+    let html;
     if(!msgs.length){
-      log.innerHTML = '<div class="empty">Press <kbd style="background:rgba(126,231,135,.12);padding:1px 4px;border-radius:3px">C</kbd> any time. Try: "how do I bracket?"</div>';
+      html = '<div class="empty">Press <kbd style="background:rgba(126,231,135,.12);padding:1px 4px;border-radius:3px">C</kbd> any time. Try: "how do I bracket?"</div>';
     } else {
-      log.innerHTML = msgs.slice(-50).map(m => {
+      html = msgs.slice(-50).map(m => {
         const cls = (m.role === 'user') ? 'you' : 'coach';
         const who = (m.role === 'user') ? 'YOU' : 'COACH';
         return '<div class="crTvCoachMsg ' + cls + '">' +
@@ -39262,7 +39292,14 @@ const crCoach = (function(){
                '</div>';
       }).join('');
     }
-    log.scrollTop = log.scrollHeight;
+    // v1.0.93 — Idempotent paint. Skips when content is unchanged, so
+    // the user typing into crTvCoachInp doesn't see the log flicker on
+    // every keystroke / Coach state change.
+    if(typeof crSafeHTML === 'function'){
+      crSafeHTML(log, html);
+    } else {
+      if(log.innerHTML !== html){ log.innerHTML = html; log.scrollTop = log.scrollHeight; }
+    }
     refreshUnread();
   }
 
@@ -39467,19 +39504,25 @@ const crCoach = (function(){
   const smsSend   = document.getElementById('crPhSmsSend');
   function refreshSms(){
     if(!smsThread) return;
-    smsThread.innerHTML = '';
-    const wrap = document.createElement('div');
-    wrap.className = 'sms-thread';
-    crCoach.getHistory().forEach(m => {
-      const b = document.createElement('div');
-      b.className = 'sms-msg ' + (m.role === 'coach' ? 'coach' : 'me');
-      b.textContent = m.text;
-      wrap.appendChild(b);
-    });
-    smsThread.appendChild(wrap);
-    smsThread.scrollTop = smsThread.scrollHeight;
-    // v0.8k#24k — Pulse the Matrix face when the thread updates.
-    try { if(typeof crCoachTalk === 'function') crCoachTalk(900); } catch(_){}
+    // v1.0.93 — Build the new thread HTML once, then hand to crSafeHTML
+    // so we skip the DOM swap when nothing changed (no flicker, no scroll
+    // jump, no wiping the SMS input the user might be typing into).
+    const escapeHtml = s => String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+    const msgs = crCoach.getHistory();
+    const inner = '<div class="sms-thread">' + msgs.map(m =>
+      '<div class="sms-msg ' + (m.role === 'coach' ? 'coach' : 'me') + '">' + escapeHtml(m.text) + '</div>'
+    ).join('') + '</div>';
+    const prev = smsThread.innerHTML;
+    if(typeof crSafeHTML === 'function'){
+      crSafeHTML(smsThread, inner);
+    } else if(prev !== inner){
+      smsThread.innerHTML = inner;
+      smsThread.scrollTop = smsThread.scrollHeight;
+    }
+    // Only pulse the Matrix face when the thread actually changed.
+    if(prev !== inner){
+      try { if(typeof crCoachTalk === 'function') crCoachTalk(900); } catch(_){}
+    }
   }
   crCoach.subscribe(refreshSms);
   function sendSms(){
@@ -39921,7 +39964,10 @@ const crL3 = (function(){
                 + '<span class="r">' + pnlStr + '</span></div>';
         });
       }
-      openHost.innerHTML = html;
+      // v1.0.93 — Idempotent paint: this runs every 250ms via setInterval
+      // so any unguarded innerHTML write is a per-tick DOM rebuild.
+      if(typeof crSafeHTML === 'function') crSafeHTML(openHost, html);
+      else if(openHost.innerHTML !== html) openHost.innerHTML = html;
     }
 
     // v0.8k#24ca — AVAILABLE TOOLS pane: real SDK methods + indicators
@@ -39957,7 +40003,9 @@ const crL3 = (function(){
       } catch(_){}
       const tag = document.getElementById('crTermToolsTag');
       if(tag) tag.textContent = (lines.length) + ' lanes · live';
-      toolsHost.innerHTML = lines.join('') || '<div class="dim">no tools wired</div>';
+      const toolsHtml = lines.join('') || '<div class="dim">no tools wired</div>';
+      if(typeof crSafeHTML === 'function') crSafeHTML(toolsHost, toolsHtml);
+      else if(toolsHost.innerHTML !== toolsHtml) toolsHost.innerHTML = toolsHtml;
     }
 
     // v0.8k#24ca — EDGE FORMULAS: live ATR, candle range, vol from the
@@ -39998,11 +40046,14 @@ const crL3 = (function(){
       }
     } catch(_){}
 
-    // Logs
+    // Logs — v1.0.93: idempotent paint so the 250ms heartbeat doesn't
+    // wipe these on every tick (which destroyed scroll + caused flicker).
     const fillLog = (id, items, mapper) => {
       const el = document.getElementById(id);
       if(!el) return;
-      el.innerHTML = items.slice(0, 16).map(mapper).join('');
+      const html = items.slice(0, 16).map(mapper).join('');
+      if(el.innerHTML === html) return;
+      el.innerHTML = html;
       el.scrollTop = 0;
     };
     fillLog('crTermApiLog', crL3.getApi(),
@@ -40024,7 +40075,8 @@ const crL3 = (function(){
               + '<span class="dim r">' + tx.time + '</span></div>';
       });
       if(!html) html = '<div class="dim">no transactions yet</div>';
-      txHost.innerHTML = html;
+      if(typeof crSafeHTML === 'function') crSafeHTML(txHost, html);
+      else if(txHost.innerHTML !== html) txHost.innerHTML = html;
     }
 
     // v0.8k#24ca — Market scan: real multi-asset list pulled from the ASSETS
@@ -40077,7 +40129,8 @@ const crL3 = (function(){
               + '<span class="r">' + dltStr + '</span>'
               + '<span class="r dim">' + fmtVol(vol) + '</span></div>';
       });
-      mkt.innerHTML = html;
+      if(typeof crSafeHTML === 'function') crSafeHTML(mkt, html);
+      else if(mkt.innerHTML !== html) mkt.innerHTML = html;
       const tag = document.getElementById('crTermMktTag');
       if(tag) tag.textContent = list.length + ' assets · live';
     }
@@ -40202,21 +40255,30 @@ const crL3 = (function(){
     const apiLog  = document.getElementById('crPhTermApiLog');
     const execLog = document.getElementById('crPhTermExecLog');
     const fmtLine = it => '<span style="color:#4d7a30">' + it.t + '</span>  ' + colorizeLog(it.line);
-    if(apiLog)  apiLog.innerHTML  = apiItems.map(fmtLine).join('<br>');
-    if(execLog) execLog.innerHTML = execItems.map(fmtLine).join('<br>');
+    // v1.0.93 — Idempotent paints (250ms heartbeat). Skip same-content
+    // writes to stop the phone Terminal panes from flickering every tick.
+    if(apiLog){
+      const h = apiItems.map(fmtLine).join('<br>');
+      if(apiLog.innerHTML !== h) apiLog.innerHTML = h;
+    }
+    if(execLog){
+      const h = execItems.map(fmtLine).join('<br>');
+      if(execLog.innerHTML !== h) execLog.innerHTML = h;
+    }
     set('crPhTermApiCnt',  apiItems.length);
     set('crPhTermExecCnt', execItems.length);
     // Recent Tx — reuse the desktop pane's data if present.
     try {
       const tx = document.getElementById('crPhTermTx');
       const desktopTx = document.getElementById('crTermTx');
-      if(tx && desktopTx && desktopTx.innerHTML) tx.innerHTML = desktopTx.innerHTML;
+      if(tx && desktopTx && desktopTx.innerHTML && tx.innerHTML !== desktopTx.innerHTML) tx.innerHTML = desktopTx.innerHTML;
     } catch(_){}
     // Combined fallback log (legacy id, still painted so older code paths work).
     const log = document.getElementById('crPhTermLog');
     if(log){
       const items = crL3.getExec().concat(crL3.getApi()).sort((a,b) => b.t.localeCompare(a.t)).slice(0, 30);
-      log.innerHTML = items.map(it => '<span style="color:#4d7a30">' + it.t + '</span>  ' + colorizeLog(it.line)).join('<br>');
+      const h = items.map(it => '<span style="color:#4d7a30">' + it.t + '</span>  ' + colorizeLog(it.line)).join('<br>');
+      if(log.innerHTML !== h) log.innerHTML = h;
     }
   }
   // v0.8k#24bc — Strats panel for the new STRATS tab. Mirrors the desktop
@@ -41158,23 +41220,31 @@ const crL3 = (function(){
     const sel = document.getElementById('crBotChatAgent');
     if(!log || !sel) return;
     const agentId = sel.value;
+    let html;
     if(!agentId){
-      log.innerHTML = '<div style="color:var(--dim);font-style:italic">Connect an agent on the Agents row above to start chatting.</div>';
-      return;
+      html = '<div style="color:var(--dim);font-style:italic">Connect an agent on the Agents row above to start chatting.</div>';
+    } else {
+      const chat = _ensureChat(agentId);
+      if(!chat.length){
+        const a = BOT_AGENTS.find(x => x.id === agentId);
+        html = '<div style="color:var(--dim);font-style:italic">Chatting with ' + (a ? a.nm : agentId) + ' · paper-mode · messages stay in-session.</div>';
+      } else {
+        const esc = (s) => String(s).replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' }[c]));
+        html = chat.map(m => {
+          const who = m.from === 'you' ? 'you' : (BOT_AGENTS.find(a => a.id === m.from)?.nm || m.from);
+          const color = m.from === 'you' ? '#9bff9b' : '#bff7df';
+          return '<div style="margin-bottom:6px"><span style="color:' + color + ';font-weight:700">' + esc(who) + ':</span> <span style="color:#cfd2db">' + esc(m.text) + '</span></div>';
+        }).join('');
+      }
     }
-    const chat = _ensureChat(agentId);
-    if(!chat.length){
-      const a = BOT_AGENTS.find(x => x.id === agentId);
-      log.innerHTML = '<div style="color:var(--dim);font-style:italic">Chatting with ' + (a ? a.nm : agentId) + ' · paper-mode · messages stay in-session.</div>';
-      return;
+    // v1.0.93 — Idempotent paint. crBotChatInput sits right below this log
+    // and was getting wiped whenever the chat re-rendered on agent reply.
+    if(typeof crSafeHTML === 'function'){
+      crSafeHTML(log, html);
+    } else if(log.innerHTML !== html){
+      log.innerHTML = html;
+      log.scrollTop = log.scrollHeight;
     }
-    const esc = (s) => String(s).replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' }[c]));
-    log.innerHTML = chat.map(m => {
-      const who = m.from === 'you' ? 'you' : (BOT_AGENTS.find(a => a.id === m.from)?.nm || m.from);
-      const color = m.from === 'you' ? '#9bff9b' : '#bff7df';
-      return '<div style="margin-bottom:6px"><span style="color:' + color + ';font-weight:700">' + esc(who) + ':</span> <span style="color:#cfd2db">' + esc(m.text) + '</span></div>';
-    }).join('');
-    log.scrollTop = log.scrollHeight;
   }
   function _botChatSend(){
     const inp = document.getElementById('crBotChatInput');
@@ -41285,17 +41355,27 @@ const crL3 = (function(){
     function _refreshBotCoachLog(){
       const host = document.getElementById('crBotCoachLog');
       if(!host || typeof crCoach === 'undefined') return;
-      host.innerHTML = '';
-      crCoach.getHistory().forEach(m => {
-        const row = document.createElement('div');
-        const isMe = m.from === 'you';
-        row.style.cssText = 'margin:3px 0;padding:6px 10px;border-radius:6px;line-height:1.4;'
+      // v1.0.93 — m.from is wrong here: crCoach.getHistory() entries use
+      // m.role ('user' | 'coach'), not m.from. The old code put every
+      // message in the "COACH" bubble. Fix that, build the HTML once, and
+      // route it through crSafeHTML so we skip the swap when nothing
+      // changed. That stops the Bot Terminal Coach pane from flickering
+      // on every crCoach tick (which was wiping any text the user was
+      // typing into crBotCoachInput on the same pane).
+      const escapeHtml = s => String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+      const html = crCoach.getHistory().map(m => {
+        const isMe = (m.role === 'user') || (m.from === 'you');
+        const style = 'margin:3px 0;padding:6px 10px;border-radius:6px;line-height:1.4;'
           + (isMe ? 'background:rgba(20,241,149,0.12);color:#bff7df;text-align:right'
                   : 'background:rgba(155,140,255,0.10);color:#cfd2db');
-        row.textContent = (isMe ? 'YOU' : 'COACH') + ' · ' + m.text;
-        host.appendChild(row);
-      });
-      host.scrollTop = host.scrollHeight;
+        return '<div style="' + style + '">' + (isMe ? 'YOU' : 'COACH') + ' · ' + escapeHtml(m.text) + '</div>';
+      }).join('');
+      if(typeof crSafeHTML === 'function'){
+        crSafeHTML(host, html);
+      } else if(host.innerHTML !== html){
+        host.innerHTML = html;
+        host.scrollTop = host.scrollHeight;
+      }
     }
     const coachInp  = document.getElementById('crBotCoachInput');
     const coachSend = document.getElementById('crBotCoachSend');
