@@ -31370,16 +31370,36 @@ setTimeout(_wAttachPaneDrag, 250);
     });
     renderWidgets();
   }, 50);
-  // Periodic refresh so live values (price, last chat message) update.
-  // v0.8k#24cc — Skip periodic rebuilds while a wbterm edit form is open;
-  // a full innerHTML reset would discard the user's in-progress changes.
-  setInterval(() => {
-    try {
-      // Skip if any widget is currently being edited.
-      if(document.querySelector('#crWidgetLayer .cr-w-editing')) return;
-      renderWidgets();
-    } catch(_){}
-  }, 5000);
+  // v1.0.104 — The 5-second periodic renderWidgets() rebuild is the bug
+  // the user has been hunting since v1.0.93. The old guard only skipped
+  // when a widget had the .cr-w-editing class (which Coach / token / map
+  // widgets NEVER get — that class only flipped on during the old
+  // title-name editor flow, which is itself archived since v1.0.102).
+  // Net effect: every 5 seconds, layer.innerHTML = '' detonated the
+  // entire desktop-widget layer, destroying every <input>, every canvas,
+  // every scroll position — including the Coach widget's chat input
+  // mid-keystroke. That's why typing into Coach felt like it "deleted
+  // what you wrote": the input element was a different DOM node every
+  // 5 s.
+  //
+  // The original purpose was "keep live values fresh" for price /
+  // last-chat-message spans. Coach, token, and coin/wallet watchlists
+  // all already have their own surgical refreshers that run on shorter
+  // cadences AND skip when an input inside the widget is focused:
+  //
+  //   _softRefreshChatWidgets    — fires on every crCoach.subscribe tick
+  //                                (line 29950); updates [data-chat-log]
+  //                                in place via diff-then-write
+  //   _softRefreshTokenWidgets   — fires whenever token state changes
+  //                                (TF flip, holdings edit, _tokSchedule)
+  //   _crPaintTokSparks          — every 1 s; canvas paint only
+  //   _crPaintCoinWatchlists     — every 2 s; updates per-row textContent
+  //   _crPaintWalletWatchlists   — every 5 s; updates per-row textContent
+  //   _crPaintCoachPortraits     — every animation frame; canvas paint
+  //
+  // So we can safely drop the destructive 5-s tick. If a brand-new
+  // widget type ever needs a periodic refresh, give it its own soft
+  // refresher — never reach for renderWidgets() from a timer.
 })();
 
 /* =========================================================================
@@ -31586,15 +31606,12 @@ function renderChartWidgets(){
     });
     renderChartWidgets();
   }, 80);
-  // Periodic refresh so chart-pinned widgets see live data updates.
-  // v0.8k#24cc — Same safeguard for the chart layer: don't rebuild while
-  // an inline wbterm editor is open on a chart-pinned widget.
-  setInterval(() => {
-    try {
-      if(document.querySelector('#crChartWidgetLayer .cr-w-editing')) return;
-      renderChartWidgets();
-    } catch(_){}
-  }, 5000);
+  // v1.0.104 — Twin of the desktop-layer 5-s renderWidgets() rebuild
+  // (just removed). Same bug: layer.innerHTML='' detonates every Coach
+  // input pinned to the chart background. Soft refreshers
+  // (_softRefreshChatWidgets, _softRefreshTokenWidgets, _crPaintTokSparks,
+  // _crPaintCoinWatchlists, _crPaintWalletWatchlists, the wbterm bind
+  // tick below) cover every widget type — no destructive rebuild needed.
   // v0.8k#24cb — Faster bind pass for wbterm widgets — updates the live
   // values (price / P&L / score / log) inside the user-built body without
   // re-cloning the whole pane HTML.
