@@ -1115,26 +1115,19 @@
     overflow:hidden}
   .cr-tut-portrait canvas{display:block;width:100%;height:100%;image-rendering:pixelated;
     filter:drop-shadow(0 0 8px rgba(20,241,149,.5))}
+  /* v1.0.103 — Beam + scanline overlays archived. The .cr-tut-portrait::after
+     "beam" (3.5s green line sweeping top → bottom) and the .cr-tut-hologloom
+     scanline (2.4s background-position animation with mix-blend-mode:screen)
+     collided with the 30fps canvas paint underneath. When the beam crossed
+     the invader, the compositor restarted mid-paint cycle and the whole
+     widget appeared to reload — every ~3.5s, in lockstep with the beam.
+     Stripped both. Bob + halo (painted in the canvas itself) carry all the
+     animation we need. Restore: re-add the @keyframes + the ::after rule. */
   .cr-tut-hologloom{position:absolute;inset:0;pointer-events:none;
     background:linear-gradient(180deg,
-      rgba(20,241,149,0.05) 0%,
-      rgba(20,241,149,0.10) 50%,
-      rgba(20,241,149,0.05) 100%);
-    background-size:100% 4px;background-repeat:repeat;
-    mix-blend-mode:screen;animation:crHoloScan 2.4s linear infinite}
-  @keyframes crHoloScan{
-    0%   { background-position:0 0; }
-    100% { background-position:0 8px; }
-  }
-  .cr-tut-portrait::after{content:'';position:absolute;left:0;right:0;height:2px;
-    background:rgba(20,241,149,0.65);box-shadow:0 0 8px rgba(20,241,149,0.7);
-    animation:crHoloLine 3.5s linear infinite}
-  @keyframes crHoloLine{
-    0%   { top:-4px;  opacity:.0 }
-    10%  { opacity:.7 }
-    90%  { opacity:.7 }
-    100% { top:101%;  opacity:.0 }
-  }
+      rgba(20,241,149,0.04) 0%,
+      rgba(20,241,149,0.06) 50%,
+      rgba(20,241,149,0.04) 100%)}
   /* v0.9.47 — Tutorial card restyled to match the Setup Guide aesthetic
      (TRENDLINE / STEP 2 OF 2 / TWO ANCHOR / "Click anchor 2" / hint).
      Header row carries icon + uppercase tinted name + step pill + dots.
@@ -29988,7 +29981,16 @@ function _wEnsureLayer(){
       ctx2.restore();
     });
   }
-  setInterval(_crPaintCoachPortraits, 1000 / 30);
+  // v1.0.103 — Was setInterval(_, 33ms). 30 fps off-cycle from the browser's
+  // 60 fps compositor caused the canvas paint to land mid-frame, producing
+  // visible flicker every time the heavy filters (drop-shadow + radial
+  // gradient + invader bitmap) blended with the surrounding overlays.
+  // requestAnimationFrame syncs with the compositor — paint lands at the
+  // exact frame boundary, no half-frame artifacts.
+  (function _coachRAFLoop(){
+    try { _crPaintCoachPortraits(); } catch(_){}
+    requestAnimationFrame(_coachRAFLoop);
+  })();
   // v0.8k#24by — Make the Coach portraits draggable into a chat widget.
   // The portrait wrappers carry draggable="true" already; this attaches
   // the same dataTransfer payload the bot rows use, so dropping anywhere
@@ -46179,6 +46181,17 @@ window.crQvac = (function(){
       try { console.warn('[crWidgetDblCfg] no widget found for id', id); } catch(_){}
       return;
     }
+    // v1.0.103 — Coach widget dblclick opens a commands + suggested-questions
+    // popover instead of the generic per-widget config dialog. crCoach has no
+    // tunable config (it's a chat surface, not a data pane) so the config
+    // dialog was empty for Coach. Now: dblclick reveals what Coach actually
+    // understands + clickable starters.
+    if(found.w && found.w.type === 'coach'){
+      e.preventDefault();
+      e.stopPropagation();
+      _crOpenCoachCommands(widgetEl, found.w);
+      return;
+    }
     if(typeof window._crTermPaneQuickConfig !== 'function'){
       try { console.warn('[crWidgetDblCfg] _crTermPaneQuickConfig missing'); } catch(_){}
       return;
@@ -46209,6 +46222,128 @@ window.crQvac = (function(){
       } catch(_){}
     });
   }
+
+  // v1.0.103 — Coach commands popover. Shown on dblclick of any Coach
+  // pinned widget. Cheat-sheet style: keywords Coach recognises + a few
+  // clickable starter questions that auto-fire crCoach.userSays() + flash
+  // the answer in the widget log. No external state — pure DOM popover
+  // anchored to the widget that received the dblclick.
+  const COACH_TOPICS = [
+    { label: 'How do I bracket?',          send: 'how do I bracket?' },
+    { label: 'Explain OCO',                 send: 'tell me about OCO' },
+    { label: 'When to ladder?',             send: 'when should I ladder?' },
+    { label: 'Hedge basics',                send: 'explain hedge' },
+    { label: 'I\'m scared / nervous',       send: 'scared to take this trade' },
+    { label: 'Risk per trade?',             send: 'what risk per trade?' },
+    { label: 'Show my wallet',              send: 'wallet status' },
+    { label: 'How am I doing?',             send: 'how am I doing? show profit' },
+    { label: 'I\'m stuck',                  send: 'I\'m stuck, help me' },
+  ];
+  const COACH_KEYWORDS = [
+    'help', 'how', 'stuck',
+    'scared', 'afraid', 'risk', 'loss',
+    'win', 'profit', 'made',
+    'oco', 'hedge', 'ladder', 'bracket',
+    'wallet', 'sol', 'crds', 'run',
+    'hi', 'hey', 'hello',
+  ];
+
+  function _crOpenCoachCommands(widgetEl, w){
+    // Close any existing popover first (so dblclicking another Coach
+    // widget re-anchors instead of stacking).
+    const prior = document.getElementById('crCoachCmdsPop');
+    if(prior && prior.parentNode) prior.parentNode.removeChild(prior);
+
+    const pop = document.createElement('div');
+    pop.id = 'crCoachCmdsPop';
+    pop.style.cssText = 'position:fixed;z-index:99700;max-width:320px;'
+      + 'background:linear-gradient(180deg,rgba(20,30,55,.98),rgba(8,12,22,.99));'
+      + 'border:1px solid rgba(20,241,149,0.45);border-left:3px solid #14F195;'
+      + 'border-radius:8px;padding:12px 14px;color:#e6e6ee;'
+      + 'font:12px Inter,-apple-system,system-ui,sans-serif;'
+      + 'box-shadow:0 16px 40px rgba(0,0,0,.7),0 0 24px rgba(20,241,149,.10)';
+
+    pop.innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+        + '<div style="font:700 12px ui-monospace,Menlo,monospace;letter-spacing:1px;color:#3ddc97;text-shadow:0 0 6px rgba(20,241,149,.6)">COACH · COMMANDS</div>'
+        + '<div style="flex:1"></div>'
+        + '<button id="crCoachCmdsX" type="button" style="background:transparent;border:1px solid rgba(255,255,255,.10);color:var(--dim);border-radius:4px;padding:2px 8px;cursor:pointer;font:10px ui-monospace,Menlo,monospace">close</button>'
+      + '</div>'
+      + '<div style="font:10px ui-monospace,Menlo,monospace;color:var(--dim);letter-spacing:.4px;text-transform:uppercase;margin-bottom:4px">Try one of these</div>'
+      + '<div id="crCoachCmdsQs" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px"></div>'
+      + '<div style="font:10px ui-monospace,Menlo,monospace;color:var(--dim);letter-spacing:.4px;text-transform:uppercase;margin-bottom:4px">Keywords L3 recognises</div>'
+      + '<div id="crCoachCmdsKw" style="display:flex;flex-wrap:wrap;gap:3px;font:10px ui-monospace,Menlo,monospace;color:#bff7df"></div>'
+      + '<div style="margin-top:10px;font-size:10px;color:var(--dim);font-style:italic">L3 is a hardcoded coach today — full LLM upgrade lands at M2.</div>';
+
+    document.body.appendChild(pop);
+
+    // Build the suggested questions as clickable chips.
+    const qHost = pop.querySelector('#crCoachCmdsQs');
+    COACH_TOPICS.forEach(t => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = t.label;
+      b.style.cssText = 'background:rgba(20,241,149,0.10);border:1px solid rgba(20,241,149,0.35);'
+        + 'color:#bff7df;padding:4px 8px;border-radius:4px;cursor:pointer;'
+        + 'font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.3px';
+      b.addEventListener('mouseenter', () => { b.style.background = 'rgba(20,241,149,0.20)'; });
+      b.addEventListener('mouseleave', () => { b.style.background = 'rgba(20,241,149,0.10)'; });
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        try {
+          if(typeof crCoach !== 'undefined' && typeof crCoach.userSays === 'function'){
+            crCoach.userSays(t.send);
+          }
+        } catch(_){}
+        _crCloseCoachCommands();
+      });
+      qHost.appendChild(b);
+    });
+
+    // Build the keyword list (read-only chips).
+    const kwHost = pop.querySelector('#crCoachCmdsKw');
+    COACH_KEYWORDS.forEach(k => {
+      const s = document.createElement('span');
+      s.textContent = k;
+      s.style.cssText = 'background:rgba(155,140,255,0.10);border:1px solid rgba(155,140,255,0.25);'
+        + 'border-radius:3px;padding:1px 5px';
+      kwHost.appendChild(s);
+    });
+
+    // Anchor below the widget if there's room, else above.
+    try {
+      const rect = widgetEl.getBoundingClientRect();
+      const popH = pop.offsetHeight || 280;
+      const popW = pop.offsetWidth  || 320;
+      const margin = 8;
+      let top = rect.bottom + margin;
+      let left = rect.left;
+      if(top + popH > window.innerHeight - 10) top = Math.max(10, rect.top - popH - margin);
+      if(left + popW > window.innerWidth - 10) left = Math.max(10, window.innerWidth - popW - 10);
+      pop.style.top  = top + 'px';
+      pop.style.left = left + 'px';
+    } catch(_){}
+
+    // Wiring: close button + click-outside + Esc.
+    pop.querySelector('#crCoachCmdsX').addEventListener('click', _crCloseCoachCommands);
+    setTimeout(() => {
+      document.addEventListener('click', _crCoachCmdsClickAway, true);
+      document.addEventListener('keydown', _crCoachCmdsEscOnce, true);
+    }, 0);
+  }
+  function _crCloseCoachCommands(){
+    const pop = document.getElementById('crCoachCmdsPop');
+    if(pop && pop.parentNode) pop.parentNode.removeChild(pop);
+    document.removeEventListener('click', _crCoachCmdsClickAway, true);
+    document.removeEventListener('keydown', _crCoachCmdsEscOnce, true);
+  }
+  function _crCoachCmdsClickAway(e){
+    const pop = document.getElementById('crCoachCmdsPop');
+    if(!pop) return;
+    if(pop.contains(e.target)) return;
+    _crCloseCoachCommands();
+  }
+  function _crCoachCmdsEscOnce(e){ if(e.key === 'Escape') _crCloseCoachCommands(); }
 
   // Capture-phase listener so we beat any inner dblclick handlers that
   // would otherwise swallow the event (e.g. textareas inside pane bodies).
