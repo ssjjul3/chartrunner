@@ -3305,12 +3305,10 @@
   #crChartWidgetLayer .cr-widget.cr-pane-widget .wTitle .ic,
   #crChartWidgetLayer .cr-widget.cr-pane-widget .wTitle .nm{
     display:inline; opacity:0.7 }
-  /* The .nm itself is the click target — give it a hover affordance so the
-     user knows it's interactive. */
-  .cr-widget .wTitle .nm{cursor:text}
-  .cr-widget .wTitle .nm:hover{
-    background:rgba(255,255,255,.06); border-radius:3px }
-  .cr-widget.cr-w-editing .wTitle .nm{cursor:pointer}
+  /* v1.0.102 — Title-name editing removed. Reset cursor to default and
+     drop the hover affordance so the name no longer reads as interactive.
+     The cr-w-editing rules above are dormant (nothing toggles the class). */
+  .cr-widget .wTitle .nm{cursor:default}
   /* Make rows / tabs draggable: visual cue on hover. */
   [draggable="true"]{cursor:grab}
   [draggable="true"]:active{cursor:grabbing}
@@ -29655,7 +29653,14 @@ function _wBodyHTML(w){
     const msgs = (typeof crCoach !== 'undefined' && typeof crCoach.getHistory === 'function')
       ? crCoach.getHistory() : [];
     const renderedLog = msgs.slice(-50).map(m => {
-      const isMe = m.from === 'you';
+      // v1.0.102 — m.from === 'you' was the same regression already
+      // fixed in _refreshBotCoachLog (v1.0.93) and _softRefreshChatWidgets
+      // (v1.0.98). crCoach.getHistory() returns { role, text, t } not
+      // { from, text } — so the initial widget render painted every
+      // user message as a COACH bubble. Soft refresh painted them
+      // correctly, but the first paint and any renderWidgets() rebuild
+      // reverted to the bug. Fix it at the source.
+      const isMe = (m.role === 'user') || (m.from === 'you');
       const who  = isMe ? 'YOU' : 'COACH';
       const txt  = String(m.text).replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' }[c]));
       const style = isMe
@@ -30022,20 +30027,25 @@ function _wEnsureLayer(){
       const tf = tfBtn.getAttribute('data-w-tok-tf');
       const id = tfBtn.getAttribute('data-w-tok-id');
       if(!tf || !id || typeof _tokSetTF !== 'function') return;
-      // v0.9.54 — Smooth TF switch: fade the canvas, swap state, fade back in.
-      const card = tfBtn.closest('.cr-widget');
-      const cv = card && card.querySelector('canvas[data-w-tok-spark]');
-      if(cv){ cv.style.opacity = '0.35'; }
+      // v1.0.101 — Soft TF switch. Old path: renderWidgets() nuked
+      // the entire widget layer (layer.innerHTML = '') just to flip
+      // the active TF chip — destroying every canvas and forcing a
+      // fade-back-in workaround. New path: flip the active class
+      // on the chip in-place, update token state, let the existing
+      // 1s _crPaintTokSparks tick redraw the canvas with new TF data,
+      // and call _softRefreshTokenWidgets to refresh price spans.
       _tokSetTF(id, tf);
-      try { renderWidgets(); } catch(_){}
-      try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+      try {
+        const card = tfBtn.closest('.cr-widget');
+        if(card){
+          card.querySelectorAll('[data-w-tok-tf][data-w-tok-id="' + id + '"]').forEach(btn => {
+            btn.classList.toggle('active', btn === tfBtn);
+          });
+        }
+      } catch(_){}
+      try { if(typeof _softRefreshTokenWidgets === 'function') _softRefreshTokenWidgets(); } catch(_){}
+      try { if(typeof _crPaintTokSparks === 'function') _crPaintTokSparks(); } catch(_){}
       try { if(typeof _tokRenderProfile === 'function') _tokRenderProfile(); } catch(_){}
-      // The canvas in the freshly re-rendered DOM is a different node, so we
-      // re-find and ramp opacity back up. setTimeout lets the new node mount.
-      setTimeout(() => {
-        const card2 = layer.querySelector('.cr-widget [data-w-tok-spark="' + id + '"]');
-        if(card2){ card2.style.opacity = '0'; requestAnimationFrame(() => { card2.style.opacity = '1'; }); }
-      }, 30);
       return;
     }
     // v0.9.54 — Chart-type toggle (line ↔ candle). Persisted on the widget.
@@ -30049,8 +30059,16 @@ function _wEnsureLayer(){
       if(w){
         w.tokChart = (next === 'candle') ? 'candle' : 'line';
         try { _wPersist && _wPersist(); } catch(_){}
-        try { renderWidgets(); } catch(_){}
-        try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+        // v1.0.101 — Soft repaint. The canvas's draw mode is read from
+        // its data-w-tok-chart-type attribute by _crPaintTokSparks on
+        // every tick. Update the attribute in-place, repaint once now,
+        // and skip the layer rebuild.
+        try {
+          const card = chartBtn.closest('.cr-widget');
+          const cv   = card && card.querySelector('canvas[data-w-tok-spark]');
+          if(cv) cv.setAttribute('data-w-tok-chart-type', w.tokChart);
+        } catch(_){}
+        try { if(typeof _crPaintTokSparks === 'function') _crPaintTokSparks(); } catch(_){}
       }
       return;
     }
@@ -30067,8 +30085,9 @@ function _wEnsureLayer(){
         const n = parseFloat(v);
         if(isNaN(n) || n < 0){ try { toast('Invalid amount'); } catch(_){} return; }
         _tokSetHolding(id, n);
-        try { renderWidgets(); } catch(_){}
-        try { if(typeof renderChartWidgets === 'function') renderChartWidgets(); } catch(_){}
+        // v1.0.101 — Soft refresh: _softRefreshTokenWidgets updates
+        // the holdings text node in-place. The canvas survives.
+        try { if(typeof _softRefreshTokenWidgets === 'function') _softRefreshTokenWidgets(); } catch(_){}
       };
       if(typeof window.crPrompt === 'function'){
         window.crPrompt({
@@ -31207,24 +31226,22 @@ function renderWidgets(){
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
-    // v0.8k#24cc — Click on the title's .nm enters/saves edit mode. Works
-    // for every widget type (wbterm edits wb.terms; others edit per-widget
-    // titleOverride/bodyOverride). Stop drag from kicking in on mousedown.
-    const nmEl = el.querySelector('.wTitle .nm');
-    if(nmEl){
-      nmEl.addEventListener('mousedown', e => e.stopPropagation());
-      nmEl.addEventListener('click', e => {
-        e.stopPropagation();
-        if(typeof _wEditToggle === 'function') _wEditToggle(el);
-      });
-    }
-    // Double-click on the body (not name) still opens the source app for
-    // map / chat / terminal / pane. Edit mode is name-click; this stays
-    // useful for "open the real app" jumps.
+    // v1.0.102 — Title-name click handler removed. The edit page it opened
+    // (rename / body override) added noise without value and conflicted
+    // with the v1.0.65 dblclick-to-config flow. Edit functions
+    // (_wEditStart / _wEditToggle / _wEditSave / _wEditPersist /
+    // _wEditCancel) stay defined but are now unreachable from the UI.
+    // The cr-w-editing CSS rules (line ~3292) and the .nm cursor:pointer
+    // rule (line ~3313) are dormant — nothing flips the class anymore.
+    // If you ever need to restore: re-wire the click listener here AND
+    // the matching one in the chart-layer renderer (~line 31543).
+    // Double-click on the body still opens the source app for
+    // map / chat / terminal / pane.
     el.addEventListener('dblclick', (ev) => {
-      // Skip if the dblclick happened on the editable name or inside an
-      // open editor.
-      if(ev.target && ev.target.closest && ev.target.closest('.wTitle .nm, .cr-w-edit')) return;
+      // Skip if the dblclick happened inside an open editor (defensive —
+      // editor is now unreachable but the legacy guard stays in case
+      // some other path opens it).
+      if(ev.target && ev.target.closest && ev.target.closest('.cr-w-edit')) return;
       try{
         if(w.type === 'map'){
           if(typeof crMaps !== 'undefined' && typeof crMaps.load === 'function'){
@@ -31521,16 +31538,8 @@ function renderChartWidgets(){
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
-    // v0.8k#24cc — Click on title's .nm enters/saves edit mode (same as
-    // the desktop renderer). Works for every widget type on the chart layer.
-    const nmEl2 = el.querySelector('.wTitle .nm');
-    if(nmEl2){
-      nmEl2.addEventListener('mousedown', e => e.stopPropagation());
-      nmEl2.addEventListener('click', e => {
-        e.stopPropagation();
-        if(typeof _wEditToggle === 'function') _wEditToggle(el);
-      });
-    }
+    // v1.0.102 — Title-name click handler removed (chart layer; matches the
+    // desktop renderer change above). Edit page is unreachable from the UI.
     layer.appendChild(el);
   });
 }
@@ -37043,30 +37052,11 @@ function log(msg){
     const raw = (_TUT.kind === 'game') ? TUTORIAL_GAME_STEPS : TUTORIAL_OS_STEPS;
     return raw.filter(s => !s.archived);
   }
-  function _drawTutorialPortrait(){
-    // Holographic Coach portrait — Invader sprite with green halo + bobbing.
-    const c = document.getElementById('crTutPortrait');
-    if(!c) return;
-    const ctx2 = c.getContext('2d');
-    const W2 = c.width, H2 = c.height;
-    ctx2.clearRect(0, 0, W2, H2);
-    const t = performance.now() / 1000;
-    const bob = Math.sin(t * 1.6) * 4;
-    // Halo
-    const grd = ctx2.createRadialGradient(W2/2, H2/2 + bob, 4, W2/2, H2/2 + bob, W2/2 + 14);
-    grd.addColorStop(0, 'rgba(20,241,149,0.55)');
-    grd.addColorStop(0.5, 'rgba(20,241,149,0.18)');
-    grd.addColorStop(1, 'rgba(20,241,149,0.00)');
-    ctx2.fillStyle = grd;
-    ctx2.fillRect(0, 0, W2, H2);
-    // Sprite (Invader at scale 4)
-    ctx2.save();
-    ctx2.translate(W2 / 2, H2 / 2 + bob);
-    ctx2.shadowColor = 'rgba(20,241,149,0.7)';
-    ctx2.shadowBlur = 12;
-    if(typeof drawInvader === 'function') drawInvader(ctx2, 4);
-    ctx2.restore();
-  }
+  // v1.0.102 — _drawTutorialPortrait removed. crTutPortrait has
+  // data-coach-portrait="1" so the global _crPaintCoachPortraits tick
+  // (line ~29959, 30 fps) already paints it. Keeping two competing
+  // setIntervals on the same canvas caused visible flicker (same root
+  // cause as the Bot Terminal Coach face).
   let _tutDrawTimer = null;
   function _spotlight(progId){
     const spot = document.getElementById('crTutSpot');
@@ -37262,7 +37252,9 @@ function log(msg){
     _TUT.idx = 0;
     root.style.display = 'block';
     _renderTutStep();
-    if(!_tutDrawTimer) _tutDrawTimer = setInterval(_drawTutorialPortrait, 1000 / 30);
+    // v1.0.102 — Tutorial portrait now painted by the global
+    // _crPaintCoachPortraits tick. Local setInterval removed (caused
+    // flicker via competing 30 fps loop on the same canvas).
     document.addEventListener('keydown', _tutKey, true);
     const menu = document.getElementById('crMenuTutorial');
     if(menu) menu.classList.add('on');
@@ -41338,33 +41330,19 @@ const crL3 = (function(){
     });
     // v0.8k#24bx — Bot Terminal Coach tab wiring. Shared memory with the
     // existing crCoach character so the same conversation lives across
-    // Mail / SMS / Bot Terminal. Holographic portrait paints in a setInterval.
-    let _botCoachTimer = null;
-    function _drawBotCoachPortrait(){
-      const c = document.getElementById('crBotCoachPortrait');
-      if(!c) return;
-      const ctx2 = c.getContext('2d');
-      const W2 = c.width, H2 = c.height;
-      ctx2.clearRect(0, 0, W2, H2);
-      const t = performance.now() / 1000;
-      const bob = Math.sin(t * 1.6) * 3;
-      const grd = ctx2.createRadialGradient(W2/2, H2/2 + bob, 4, W2/2, H2/2 + bob, W2/2 + 8);
-      grd.addColorStop(0, 'rgba(20,241,149,0.55)');
-      grd.addColorStop(0.6, 'rgba(20,241,149,0.15)');
-      grd.addColorStop(1, 'rgba(20,241,149,0.00)');
-      ctx2.fillStyle = grd;
-      ctx2.fillRect(0, 0, W2, H2);
-      ctx2.save();
-      ctx2.translate(W2 / 2, H2 / 2 + bob);
-      ctx2.shadowColor = 'rgba(20,241,149,0.7)';
-      ctx2.shadowBlur = 10;
-      if(typeof drawInvader === 'function') drawInvader(ctx2, 3);
-      ctx2.restore();
-    }
-    function _startBotCoachPortrait(){
-      if(_botCoachTimer) return;
-      _botCoachTimer = setInterval(_drawBotCoachPortrait, 1000 / 30);
-    }
+    // v1.0.102 — _drawBotCoachPortrait + _startBotCoachPortrait removed.
+    // They were a redundant 30 fps paint loop targeting crBotCoachPortrait,
+    // which ALREADY has data-coach-portrait="1" and is painted by the
+    // global _crPaintCoachPortraits tick (line ~29959, also 30 fps).
+    // Two paints per frame on independent setInterval schedules → visible
+    // flicker on the Coach face. The global tick handles every coach
+    // portrait everywhere (tutorial / bot terminal / pinned widgets) so
+    // there's nothing to keep here.
+    //
+    // Compat: _startBotCoachPortrait is referenced from line ~41349 and the
+    // tab-switch handler below. Keep a no-op shim so those call sites
+    // don't throw — the actual painting is handled by the global tick.
+    function _startBotCoachPortrait(){ /* paint handled globally — see _crPaintCoachPortraits */ }
     function _refreshBotCoachLog(){
       const host = document.getElementById('crBotCoachLog');
       if(!host || typeof crCoach === 'undefined') return;
@@ -46207,18 +46185,27 @@ window.crQvac = (function(){
     }
     e.preventDefault();
     e.stopPropagation();
-    // Open the per-widget settings popup. onSave persists + re-renders
-    // the right layer so any field change (e.g. tokenId for solHolders,
-    // wallets for solSmart) takes effect immediately.
+    // Open the per-widget settings popup. onSave persists + re-fetches
+    // so any field change (e.g. tokenId for solHolders, wallets for
+    // solSmart) takes effect immediately — without nuking the whole
+    // widget layer.
     window._crTermPaneQuickConfig(found.w, function(){
       try {
+        // v1.0.101 — Persist only; SKIP renderWidgets / renderChartWidgets.
+        // The old onSave called the destructive layer-rebuilder
+        // (layer.innerHTML = '' → re-mount every widget) on every Save —
+        // that's why every slider tweak on the per-widget config dialog
+        // reloaded ALL widgets, destroyed canvases, and reset scroll.
+        // Now: persist via _wSave/_cwSave, then fire crTermForceTick()
+        // which re-fires each pane's refresher. _setBody is idempotent
+        // (v1.0.95), so widgets whose data didn't change don't repaint —
+        // only the widget whose config actually changed visibly updates.
         if(found.scope === 'desktop'){
           if(typeof _wSave === 'function') _wSave();
-          if(typeof renderWidgets === 'function') renderWidgets();
         } else {
           if(typeof _cwSave === 'function') _cwSave();
-          if(typeof renderChartWidgets === 'function') renderChartWidgets();
         }
+        if(typeof window.crTermForceTick === 'function') window.crTermForceTick();
       } catch(_){}
     });
   }
