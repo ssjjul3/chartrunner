@@ -4384,6 +4384,29 @@
   .os-icon[data-prog="display"],
   .dockBtn[data-prog="display"] { display: none !important; }
 
+  /* v1.0.105 — Topbar mock buttons hidden. These were TradingView-style
+     decorative icons that either toasted "coming soon" (crTvAlert,
+     crTvScreen, crTvCandle, crTvReplayIcon) or weren't even wired
+     (crTvLayout, crTvUndo, crTvRedo, crTvSettings, crTvFullscreen).
+     User-facing rule: no mocked game content. Restore individually as
+     each handler is implemented by removing the matching selector below
+     AND wiring its click handler in the bind() block around line 39035. */
+  #crTvCandle,
+  #crTvLayout,
+  #crTvAlert,
+  #crTvReplayIcon,
+  #crTvUndo,
+  #crTvRedo,
+  #crTvScreen,
+  #crTvSettings,
+  #crTvFullscreen { display: none !important; }
+
+  /* v1.0.105 — The tvSep dividers next to those buttons now bracket
+     empty space. Hide the orphaned separators around them. The two
+     surviving separators (before Indicators, before Coach) stay. */
+  #crTopBar > .tvSep ~ .tvSep + #crTvUndo,
+  #crTopBar > #crTvScreen + .tvSep { display: none !important; }
+
   /* v1.0.35 — In-game lite profile cleanup per user request:
        (1) Drop SCORE and P&L stat columns — score is irrelevant for the
            player's wallet view; P&L lives in the brackets themselves.
@@ -13532,6 +13555,11 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
     if(palette === 'primitives' && !PRIMITIVE_CATS.has(t.cat)) return;
     // v0.9.23 — Tools palette: exclude primitive categories (clean separation).
     if(palette === 'tools' && PRIMITIVE_CATS.has(t.cat)) return;
+    // v1.0.105 — Skip non-live tools entirely. The old code added them with
+    // a yellow "SOON" badge that did nothing on click except toast "coming
+    // soon" — pure noise. User-facing rule: no mocked content. Re-enable
+    // a tool by flipping its `live: true` in WB_LASER_TOOLS.
+    if(!t.live) return;
     if(!byCat[t.cat]) byCat[t.cat] = [];
     byCat[t.cat].push(t);
   });
@@ -22369,7 +22397,11 @@ function pickMode(mode){
     5:  { goal:'Place a Fib Extension on BTC 4h.',                  tip:'Hotkey 3 → Fib Extension → 3 anchor points (start, retracement low, end).',                    asset:'btc', tf:'4h',  indicators:['reflevels'],         loadout:['fibExt'],      probes:[] },
     6:  { goal:'Drop an FRVP (Fixed-Range Volume Profile) on BTC 1h.', tip:'Hotkey 2 → FRVP → click range start, click range end. POC + VAH/VAL paint inside.',         asset:'btc', tf:'1h',  indicators:['reflevels','vrvp'], loadout:['frvp'],       probes:[] },
     7:  { goal:'Place a Ray — 1-anchor extending line.',             tip:'Hotkey 2 → Ray → click anchor 1 (start), click anchor 2 (sets angle). Ray extends past anchor 2 forever.', asset:'btc', tf:'15m', indicators:[],                   loadout:['ray'],         probes:[] },
-    8:  { goal:'Draw a Channel — parallel trendlines.',              tip:'Hotkey 2 → Channel → click anchor 1, anchor 2 (lower line), then anchor 3 (sets channel width).', asset:'btc', tf:'1h',  indicators:[],                   loadout:['channel'],     probes:[] },
+    // v1.0.105 — Ch.8 archived: loadout `'channel'` is not a real tool id
+    // (the catalog has `parChannel` / `disjoint`, both currently live:false
+    // and now filtered from the menus). Restore by implementing a live
+    // channel tool + flipping `archived` off.
+    8:  { archived:true, goal:'Draw a Channel — parallel trendlines.',              tip:'Hotkey 2 → Channel → click anchor 1, anchor 2 (lower line), then anchor 3 (sets channel width).', asset:'btc', tf:'1h',  indicators:[],                   loadout:['channel'],     probes:[] },
     9:  { goal:'Draw a Rectangle — mark a price zone.',              tip:'Hotkey 2 → Rectangle → click corner 1, click corner 2 (opposite corner).',                    asset:'btc', tf:'15m', indicators:[],                   loadout:['rect'],        probes:[] },
     // ── PRIMITIVES ─────────────────────────────────────────────────────
     10: { goal:'Place a bracket, then drag the stop or target to edit it before fill.', tip:'Hotkey 3 → Bracket → click entry, click stop, click target. Hover any line to drag-edit.', asset:'btc', tf:'15m', indicators:[],                   loadout:['bracket'],     probes:[] },
@@ -22388,9 +22420,16 @@ function pickMode(mode){
     22: { goal:'Toggle the EMA(20) on the BTC 1h chart.',             tip:'Top-bar → Indicators dropdown → EMA. Read trend direction off the slope.',                  asset:'btc', tf:'1h',  indicators:['ema'],              loadout:[],              probes:[] },
     23: { goal:'Toggle the Volume indicator on BTC 15m.',             tip:'Top-bar → Indicators dropdown → VOL. Breakout WITH volume = real; breakout WITHOUT = bait.', asset:'btc', tf:'15m', indicators:['vol'],              loadout:[],              probes:[] },
     24: { goal:'Toggle the Ichimoku Cloud on ETH 4h.',                tip:'Top-bar → Indicators dropdown → ICHI. Price above green cloud = bull; below red = bear.',   asset:'eth', tf:'4h',  indicators:['ichi'],             loadout:[],              probes:[] },
-    25: { goal:'Toggle MACD on BTC 1h. Watch for the cross-over.',    tip:'Top-bar → Indicators dropdown → MACD. Cross above signal line = bullish momentum shift.',    asset:'btc', tf:'1h',  indicators:['macd'],             loadout:[],              probes:[] },
-    26: { goal:'Toggle Bollinger Bands on BTC 1h. Spot a squeeze.',   tip:'Top-bar → Indicators dropdown → BB. Bands narrow = volatility incoming; bands ride = strong trend.', asset:'btc', tf:'1h',  indicators:['bb'],               loadout:[],              probes:[] },
-    27: { goal:'Toggle ATR on BTC 1h. Read it as your stop-distance ruler.', tip:'Top-bar → Indicators dropdown → ATR. Position size = (account × risk%) / (1.5 × ATR).', asset:'btc', tf:'1h',  indicators:['atr'],              loadout:[],              probes:[] },
+    // v1.0.105 — Ch.25/26/27 archived: their indicator ids (`macd`, `bb`,
+    // `atr`) are not present in the INDICATORS catalog (only fg/sma/ema/
+    // vol/rsi/srsi/obv/ichi/vrvp/reflevels exist). Chapter goals were
+    // literally impossible to complete because the indicator never appeared
+    // in the dropdown. Restore by adding entries to INDICATORS + chart
+    // rendering hooks, then flipping `archived` off. Tracked as an M3
+    // imminent-solvable (Workbench Indicators rebuild).
+    25: { archived:true, goal:'Toggle MACD on BTC 1h. Watch for the cross-over.',    tip:'Top-bar → Indicators dropdown → MACD. Cross above signal line = bullish momentum shift.',    asset:'btc', tf:'1h',  indicators:['macd'],             loadout:[],              probes:[] },
+    26: { archived:true, goal:'Toggle Bollinger Bands on BTC 1h. Spot a squeeze.',   tip:'Top-bar → Indicators dropdown → BB. Bands narrow = volatility incoming; bands ride = strong trend.', asset:'btc', tf:'1h',  indicators:['bb'],               loadout:[],              probes:[] },
+    27: { archived:true, goal:'Toggle ATR on BTC 1h. Read it as your stop-distance ruler.', tip:'Top-bar → Indicators dropdown → ATR. Position size = (account × risk%) / (1.5 × ATR).', asset:'btc', tf:'1h',  indicators:['atr'],              loadout:[],              probes:[] },
     // ── BOTS ───────────────────────────────────────────────────────────
     // v0.9.66 — Each level meets ONE bot from the existing DETECTOR_BOTS
     // roster. Bots both highlight setups (visual ring) and build setups
@@ -22590,6 +22629,17 @@ function pickMode(mode){
       for(let i = 1; i <= _CAMPAIGN_MAX; i++){
         const card = document.getElementById('modeCampaign' + i);
         if(!card) continue;
+        // v1.0.105 — Hide cards for archived chapters so the player never
+        // sees a route that toasts "archived" on click. The archived flag
+        // lives on the CAMPAIGN_CHAPTERS entry; _launchCampaignChapter
+        // already silently denies — this hides the card too.
+        const ch = CAMPAIGN_CHAPTERS[i];
+        if(ch && ch.archived){
+          card.style.display = 'none';
+          continue;
+        } else {
+          card.style.display = '';
+        }
         if(stars[i] && stars[i].earned) card.classList.add('crChStar');
         else card.classList.remove('crChStar');
       }
@@ -25268,7 +25318,11 @@ function _wbRenderPrimitives(){
   const PRIM_CAT_ORDER = ['forecast','fib','orders'];
   const PRIM_CAT_LABELS = { forecast:'🎯 Forecasting', fib:'🪜 Fibonacci', orders:'◇ Orders' };
   PRIM_CAT_ORDER.forEach(catId => {
-    const tools = WB_LASER_TOOLS.filter(t => t.cat === catId);
+    // v1.0.105 — Filter out non-live primitives. Drops the empty SOON
+    // rows from the Workbench Primitives tab (barPattern, fibChannel,
+    // fibTimeZone, fibCircles). Category headers with zero live items
+    // are then skipped entirely.
+    const tools = WB_LASER_TOOLS.filter(t => t.cat === catId && t.live);
     if(!tools.length) return;
     const header = document.createElement('div');
     header.style.cssText = 'display:flex;align-items:center;gap:8px;margin:8px 0 4px;padding:0 4px;font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--dim);text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:4px';
@@ -25371,7 +25425,9 @@ function _wbRenderTools(){
   // v0.9.41 — Skip primitive cats; they live in the Primitives tab.
   WB_TOOL_CATEGORIES.forEach(cat => {
     if(_wbIsPrimCat(cat.id)) return;
-    const tools = WB_LASER_TOOLS.filter(t => t.cat === cat.id);
+    // v1.0.105 — Filter out non-live tools. Drops the empty SOON rows
+    // from the Workbench Tools tab (triangle, parChannel, disjoint, etc).
+    const tools = WB_LASER_TOOLS.filter(t => t.cat === cat.id && t.live);
     if(!tools.length) return;
     const header = document.createElement('div');
     header.style.cssText = 'display:flex;align-items:center;gap:8px;margin:8px 0 4px;padding:0 4px;font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--dim);text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:4px';
