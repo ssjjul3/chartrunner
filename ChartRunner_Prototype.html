@@ -1,8 +1,34 @@
 <!doctype html>
 <html lang="en">
 <head>
+<!-- ============================================================
+     ChartRunner — version banner
+     ============================================================
+     CURRENT VERSION: v1.0.106
+     LAST UPDATED:    2026-05-14
+     M0.5 active · pitch + Frontier shipped · in-page Phantom sign repaired
+
+     Bump this banner on EVERY version commit. The surface-health daily
+     task greps for `v1\.0\.\d+` in `head -80` of this file to detect
+     deploy drift (local vs chartrunner.xyz/play/). Inline annotations
+     elsewhere don't update reliably — this is the source of truth.
+
+     Recent versions:
+       v1.0.93–v1.0.104  post-Frontier polish (crSafeHTML, Coach + widget
+                         flicker eliminated, in-page Phantom direct-sign
+                         repaired, evaluator-driven imminent-solvable system)
+       v1.0.105          no-mocked-content pass: SOON items hidden,
+                         broken Campaign chapters archived, topbar mock
+                         buttons hidden
+       v1.0.106          Token Terminal bug-sweep fixes — crBirdeye +
+                         crGoldRush gain hasKey(); refreshSolHolders +
+                         refreshSolSmart short-circuit on missing key
+                         instead of mislabelling empty results; Birdeye
+                         /defi/price fallback no longer smuggles a raw
+                         USD delta into ch24; _headerOf regex deduped
+     ============================================================ -->
 <meta charset="utf-8" />
-<title>ChartRunner — Prototype</title>
+<title>ChartRunner — Prototype · v1.0.106</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <!-- v1.0.24 — Favicon = LOGO.png. The game ships at chartrunner.xyz/play/
      while LOGO.png lives at chartrunner.xyz/LOGO.png (staged from
@@ -43932,9 +43958,14 @@ window.crBirdeye = (function(){
       var j2 = await r2.json();
       var d2 = j2 && j2.data;
       if(!d2) return null;
+      // v1.0.106 — /defi/price returns a raw USD delta in priceChange24h,
+      // not a percent. token_overview returns priceChange24hPercent. Don't
+      // assign the raw delta to ch24 — downstream _fmtPct treats ch24 as a
+      // percent and would print "$0.05 → +0.05%". Leave ch24 undefined so
+      // the UI shows "—" instead of nonsense, until the user adds a key
+      // that unlocks token_overview.
       return {
         price:     d2.value,
-        ch24:      d2.priceChange24h,
         updateAt:  Date.now(),
       };
     } catch(err){
@@ -44048,11 +44079,17 @@ window.crBirdeye = (function(){
     return p;
   }
 
+  // v1.0.106 — Expose hasKey() so refreshers can distinguish "no key
+  // configured" (user needs to paste one in Settings ⚙) from "API
+  // returned an empty payload" (real condition worth surfacing).
+  function hasKey(){ return _apiKey() !== ''; }
+
   return {
     fetchToken: fetchToken,
     fetchOhlcv: fetchOhlcv,
     peek:       peek,
     setApiKey:  setApiKey,
+    hasKey:     hasKey,
   };
 })();
 
@@ -44357,12 +44394,17 @@ window.crGoldRush = (function(){
     if(typeof toast === 'function') toast(key ? 'GoldRush key saved' : 'GoldRush key cleared');
   }
 
+  // v1.0.106 — Expose hasKey() so refreshers can distinguish "no key
+  // configured" from a genuinely empty API result.
+  function hasKey(){ return _apiKey() !== ''; }
+
   return {
     tokenHolders:   tokenHolders,
     walletBalances: walletBalances,
     walletTxs:      walletTxs,
     nftMetadata:    nftMetadata,
     setApiKey:      setApiKey,
+    hasKey:         hasKey,
   };
 })();
 
@@ -44483,7 +44525,8 @@ window.crGoldRush = (function(){
     const h = pane.querySelector('.crTerm-paneHd > span:first-child');
     if(!h) return null;
     // Strip the leading ◆ / ◇ / ◇◇ glyph + whitespace.
-    return h.textContent.trim().replace(/^[◆◇◇◇]+\s*/g, '').trim();
+    // v1.0.106 — Dedupe ◇ in the char class (was [◆◇◇◇], cosmetic).
+    return h.textContent.trim().replace(/^[◆◇]+\s*/g, '').trim();
   }
 
   function tagPanes(){
@@ -44668,6 +44711,15 @@ window.crGoldRush = (function(){
   async function refreshSolHolders(){
     if(!_bodiesOf('solHolders').length) return;
     if(!window.crGoldRush){ _setHdTag('solHolders','no goldrush','warn'); _setBodyStatus('solHolders','GoldRush client not initialised. Reload the page.','#ff5b7f'); return; }
+    // v1.0.106 — Gate the API key check BEFORE the fetch so a missing
+    // key gets the "paste a key in ⚙" message, and a genuinely empty
+    // holder list gets a distinct "no data" message instead of being
+    // mislabelled as a key problem.
+    if(typeof window.crGoldRush.hasKey === 'function' && !window.crGoldRush.hasKey()){
+      _setHdTag('solHolders','no key','warn');
+      _setBodyStatus('solHolders', 'No GoldRush API key configured. Get a free one at https://goldrush.dev/ and paste it in the Token Terminal Settings (⚙).', '#ff5b7f');
+      return;
+    }
     const cfg = _getConfigFor('solHolders');
     const tokenId = cfg.tokenId || 'wif';
     const rows    = cfg.rows || 10;
@@ -44680,8 +44732,8 @@ window.crGoldRush = (function(){
     }
     const holders = await window.crGoldRush.tokenHolders(mint, { pageSize: rows });
     if(!holders || !holders.length){
-      _setBodyStatus('solHolders', 'No GoldRush API key configured. Get a free one at https://goldrush.dev/ and paste it in the Token Terminal Settings (⚙).', '#ff5b7f');
       _setHdTag('solHolders','no data','warn');
+      _setBodyStatus('solHolders', 'GoldRush returned no holders for ' + tokenId.toUpperCase() + '. The mint may be new or the call may have been rate-limited.', '#bfa600');
       return;
     }
     _setBody('solHolders', '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
@@ -44701,6 +44753,15 @@ window.crGoldRush = (function(){
   async function refreshSolSmart(){
     if(!_bodiesOf('solSmart').length) return;
     if(!window.crGoldRush){ _setHdTag('solSmart','no goldrush','warn'); _setBodyStatus('solSmart','GoldRush client not initialised. Reload the page.','#ff5b7f'); return; }
+    // v1.0.106 — Without this short-circuit, walletTxs() returns null for
+    // every wallet, the row builder substitutes [] for the tx list, and
+    // the UI silently renders "<wallet> · 0 recent" rows — which look
+    // like inactive wallets instead of "you need to paste an API key".
+    if(typeof window.crGoldRush.hasKey === 'function' && !window.crGoldRush.hasKey()){
+      _setHdTag('solSmart','no key','warn');
+      _setBodyStatus('solSmart', 'No GoldRush API key configured. Get a free one at https://goldrush.dev/ and paste it in the Token Terminal Settings (⚙).', '#ff5b7f');
+      return;
+    }
     const cfg = _getConfigFor('solSmart');
     const wallets = String(cfg.wallets || '').split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
     if(!wallets.length){
