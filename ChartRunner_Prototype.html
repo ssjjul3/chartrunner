@@ -12228,6 +12228,37 @@ window.addEventListener('keydown', e=>{
   }
   if(e.key===' ') e.preventDefault();
   if(e.key==='Tab'){ e.preventDefault(); toggleDrawer(); return; }
+  // v1.0.103 — Quick bracket: tap `B` drops a 1:2 BUY bracket at current price.
+  // Matches the original abilities.md spec (tap-2 → quick mode) which drifted
+  // into the multi-step laser flow when hotkey 2 was repurposed for the spawn
+  // menu. Restored here under a fresh key so existing key-2 muscle memory and
+  // the menu-driven full editor flow are both preserved. SDK-only (no canvas
+  // touch); the chart picks up the new visualBracket via the same render path
+  // used by confirmBracket().
+  if(k === 'b' && !bracketEditor.open && !ladderEditor.open
+     && !(typeof shopIsOpen === 'function' && shopIsOpen())
+     && !(typeof vehiclePickerIsOpen === 'function' && vehiclePickerIsOpen())){
+    e.preventDefault();
+    const price = currentPrice();
+    if(!isFinite(price)){ toast('No price yet'); return; }
+    const side = 'buy';
+    const slDistance = 60;
+    const rr = 2.0;
+    const risk = 20;
+    const pkg = sdk.bracket({ risk, rr, side, price, slDistance });
+    game.visualBrackets.push({
+      id: pkg.id, wx: player.wx, side: pkg.side,
+      entry: pkg.entry, tp: pkg.tp, sl: pkg.sl,
+      t: 0, outcome: null, upsideDown: !!player.upsideDown
+    });
+    try {
+      const s = slotEls && slotEls[1];
+      if(s && s.el){ s.el.classList.add('active'); setTimeout(()=>s.el.classList.remove('active'), 600); }
+    } catch(_){}
+    try { log('quick bracket @ ' + price.toFixed(2) + ' · ' + rrDisplay(rr) + ' · BUY'); } catch(_){}
+    try { toast('Bracket placed · ' + rrDisplay(rr)); } catch(_){}
+    return;
+  }
   // v0.8a — ESC closes the SDK panel / L3 terminal / Menu drawer (Mac-style window close).
   // Only acts if something is open; otherwise falls through so bracket/ladder editors still
   // get their own ESC handlers (those live behind the `typing` branch above).
@@ -15897,6 +15928,47 @@ function updateCombat(dt){
           }
         }
       }
+    }
+  }
+  // v1.0.103 — Bracket lines damage monsters. Monsters that drift across an
+  // OPEN bracket's TP or SL line (inside the bracket's x-span) take 1 damage
+  // per 250ms. Narrative: bears trying to flip your trade die trying. Mechanic
+  // is gameplay-only (no SDK call, no order modification); rendering stays the
+  // chart's job. Cooldown prevents one-tick instakill of bosses.
+  for(const m of game.monsters){
+    if(m.dead) continue;
+    if((m._bracketCdUntil || 0) > now) continue;
+    for(const br of game.visualBrackets){
+      if(br.outcome) continue; // only open brackets damage
+      const dxw = m.wx - br.wx;
+      if(dxw < -10 || dxw > 250) continue; // matches drawBracketGhost x-span
+      const pxd = Math.max(0.001, pxPerDollarAt(m.py));
+      const band = 10 / pxd; // 10 screen-px tolerance in price units
+      const nearTp = Math.abs(m.py - br.tp) < band;
+      const nearSl = Math.abs(m.py - br.sl) < band;
+      if(!nearTp && !nearSl) continue;
+      m.hp -= 1;
+      m._bracketCdUntil = now + 0.25;
+      const sxh = sX(m.wx), syh = priceToY(m.py);
+      try { spawnParticles(sxh, syh, nearTp ? '#3ddc97' : '#ff5b7f', m.isBoss?7:5, m.isBoss?140:100); } catch(_){}
+      if(m.hp <= 0){
+        m.dead = true; game.kills++;
+        if(m.isBoss){
+          game.run += 1; game.score += 100; game.crds += 8;
+          try { log('kill BOSS via bracket (+1 $RUN, +8 $CRDS)'); } catch(_){}
+          try { spawnParticles(sxh, syh, '#14f195', 22, 300); } catch(_){}
+          try { spawnFloat(sxh, syh-22, '+1 $RUN · bracket kill', '#ffd166'); } catch(_){}
+          try { hitStop(120); } catch(_){}
+          try { screenFlash(); } catch(_){}
+        } else {
+          game.crds += 2; game.score += 25;
+          try { log('kill ' + m.kind + ' via bracket (+2 $CRDS)'); } catch(_){}
+          try { spawnParticles(sxh, syh, '#3ddc97', 12, 200); } catch(_){}
+          try { spawnFloat(sxh, syh-18, '+2 $CRDS · bracket kill', '#3ddc97'); } catch(_){}
+          try { hitStop(55); } catch(_){}
+        }
+      }
+      break; // one bracket-hit per frame per monster
     }
   }
   game.monsters = game.monsters.filter(m=>!m.dead && Math.abs(m.wx-player.wx)<2400);
