@@ -25150,16 +25150,42 @@ function osRefreshShop(){
   function save(rec){
     try { localStorage.setItem(LS_KEY, JSON.stringify(rec)); } catch(_){}
   }
-  function getCurrentName(){
+  // v1.0.122 — Names are tied to a wallet. Helpers below check wallet state
+  // + match against the wallet the name was claimed under, so disconnecting
+  // (or connecting a DIFFERENT wallet) reverts the display to anon_runner.
+  function _walletConnectedAddr(){
+    try {
+      if (typeof crWallet !== 'undefined' && crWallet.isConnected && crWallet.isConnected()) {
+        return (typeof crWallet.get === 'function') ? crWallet.get() : null;
+      }
+    } catch(_){}
+    return null;
+  }
+  function _nameVisibleForCurrentWallet(){
     const rec = load();
-    return (rec && rec.name) ? rec.name : 'anon_runner';
+    if (!rec || !rec.name) return null;
+    const addr = _walletConnectedAddr();
+    if (!addr) return null;                    // no wallet → no claimed name
+    if (rec.wallet && rec.wallet !== addr) return null;  // different wallet → don't show
+    return rec.name;
+  }
+  function getCurrentName(){
+    // External callers (applyName + injectButtons + window._crPlayerNameApply)
+    // expect either the visible-for-current-wallet name or the 'anon_runner'
+    // fallback. Keeps the rest of the IIFE wallet-agnostic.
+    return _nameVisibleForCurrentWallet() || 'anon_runner';
   }
 
   // Mirrors. Every place "anon_runner" appears as a default needs to update
   // when the user claims. The lite-profile crLpName + crLpBbText are the
   // primary surfaces; osProfileName + window.crLpName-ish mirrors too.
   function applyName(name){
-    const n = name || getCurrentName();
+    // v1.0.122 — `name` arg used to bypass the wallet-gate, which left the
+    // freshly-claimed name visible even after disconnect. Always re-resolve
+    // through getCurrentName() so the wallet rule is the single source of
+    // truth. Callers that pass `name` are usually right-after-save and a
+    // wallet IS connected at that moment, so the visible value matches.
+    const n = getCurrentName();
     const ids = ['crLpName', 'crLpBbText', 'osProfileName', 'crProfilePlayerName'];
     ids.forEach(id => {
       const el = document.getElementById(id);
@@ -25167,14 +25193,15 @@ function osRefreshShop(){
         try { el.textContent = n; } catch(_){}
       }
     });
-    // Update any button labels showing the current name
+    // Update any button labels showing the current name. The button reads
+    // "Claim name" only when nothing is visible for the connected wallet.
+    const visible = _nameVisibleForCurrentWallet();
     const btns = document.querySelectorAll('[data-cr-name-btn]');
     btns.forEach(b => {
-      const claimed = !!(load() && load().name);
-      b.innerHTML = claimed
-        ? ('<span style="margin-right:5px">🪙</span>' + n)
+      b.innerHTML = visible
+        ? ('<span style="margin-right:5px">🪙</span>' + visible)
         : '<span style="margin-right:5px">🪙</span>Claim name';
-      b.classList.toggle('cr-name-btn-claimed', claimed);
+      b.classList.toggle('cr-name-btn-claimed', !!visible);
     });
   }
   window._crPlayerNameApply = applyName;
@@ -25389,7 +25416,15 @@ function osRefreshShop(){
     const input = document.getElementById('crNameInput');
     const name = (input.value || '').trim().toLowerCase();
     if (validate(name)){ setStatus(validate(name), 'err'); return; }
-    save({ name, claimedAt: Date.now(), onChain: false, sig: null });
+    // v1.0.122 — Refuse to claim without a connected wallet; names are
+    // wallet-bound now, so the local-only path also needs an address to
+    // bind the record to.
+    const walletAddr = _walletConnectedAddr();
+    if (!walletAddr){
+      setStatus('Connect a wallet first — names are tied to your wallet.', 'err');
+      return;
+    }
+    save({ name, claimedAt: Date.now(), onChain: false, sig: null, wallet: walletAddr });
     applyName(name);
     setStatus('Saved locally. Anchor on-chain anytime for permanence.', 'ok');
     try { if (typeof crNotify === 'function') crNotify('🪙 Name set · ' + name); } catch(_){}
@@ -25400,9 +25435,16 @@ function osRefreshShop(){
     const input = document.getElementById('crNameInput');
     const name = (input.value || '').trim().toLowerCase();
     if (validate(name)){ setStatus(validate(name), 'err'); return; }
+    // v1.0.122 — On-chain claim inherently needs a wallet to sign; bind the
+    // record to the connected address so the name only shows for that wallet.
+    const walletAddr = _walletConnectedAddr();
+    if (!walletAddr){
+      setStatus('Connect a wallet first — names are tied to your wallet.', 'err');
+      return;
+    }
     // Save locally first so the name is visible even if the bridge round-trip
     // takes time / the user cancels in the wallet popup.
-    save({ name, claimedAt: Date.now(), onChain: false, sig: null });
+    save({ name, claimedAt: Date.now(), onChain: false, sig: null, wallet: walletAddr });
     applyName(name);
     if (typeof crRegistry === 'undefined' || typeof crRegistry.saveOnChain !== 'function') {
       setStatus('On-chain bridge unavailable. Saved locally.', 'warn');
@@ -25483,6 +25525,14 @@ function osRefreshShop(){
     injectButtons();
     applyName();
     watchOnChainConfirmation();
+    // v1.0.122 — Re-apply the name whenever the wallet connects/disconnects
+    // (or switches address). crWallet.on fires immediately with current
+    // state too, so this also covers the initial paint after boot.
+    try {
+      if (typeof crWallet !== 'undefined' && typeof crWallet.on === 'function') {
+        crWallet.on(function(){ try { applyName(); } catch(_){} });
+      }
+    } catch(_){}
     try { window.crPlayerName = { open: openModal, get: getCurrentName, applyName }; } catch(_){}
   }
 
