@@ -12265,11 +12265,86 @@ window.addEventListener('keydown', e=>{
   // the first free tap of the session. Gated by RUNROOM_ENABLED — when off,
   // key 7 falls through to its existing behavior (none currently).
   // Hold-7 (Exploitables Rail) is deferred to step 9; for now it stub-toasts.
+  // v1.0.114 — Diagnostic ping for SIFT key handler. Always logs when key 7
+  // is pressed AND flag is on, even if a guard blocks the handler. Helps
+  // diagnose "press 7, nothing happens".
+  try {
+    if (k === '7' && typeof RUNROOM_ENABLED !== 'undefined' && RUNROOM_ENABLED) {
+      console.log('[runroom] key 7 pressed · guards:', {
+        bracketEditor: bracketEditor && bracketEditor.open,
+        ladderEditor: ladderEditor && ladderEditor.open,
+        shopIsOpen: typeof shopIsOpen === 'function' ? shopIsOpen() : 'no-fn',
+        vehiclePickerIsOpen: typeof vehiclePickerIsOpen === 'function' ? vehiclePickerIsOpen() : 'no-fn',
+        crScoring: typeof crScoring,
+        toast: typeof toast
+      });
+    }
+  } catch(diag){ try { console.warn('[runroom] diag fail:', diag && diag.message); } catch(_){} }
+  if(k === '7' && typeof RUNROOM_ENABLED !== 'undefined' && RUNROOM_ENABLED
+     && !bracketEditor.open && !ladderEditor.open
+     && !(typeof shopIsOpen === 'function' && shopIsOpen())
+     && !(typeof vehiclePickerIsOpen === 'function' && vehiclePickerIsOpen())){
+    e.preventDefault();
+    if(typeof __crSiftState === 'undefined'){
+      // Lazy-init module-scoped state. Top-of-file would be cleaner but
+      // would require finding a fitting block; this keeps the diff local.
+      try { window.__crSiftState = window.__crSiftState || { lastFire: 0, firstUsed: false }; } catch(_){}
+    }
+    const sift = (typeof window !== 'undefined' && window.__crSiftState) ? window.__crSiftState : { lastFire: 0, firstUsed: false };
+    const nowSec = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+    const COOLDOWN = 5; // seconds (8 candles at 1m would be 8s; using 5s for prototype feel)
+    if(sift.firstUsed && (nowSec - sift.lastFire) < COOLDOWN){
+      const remain = (COOLDOWN - (nowSec - sift.lastFire)).toFixed(1);
+      try { toast('SIFT cooling · ' + remain + 's'); } catch(_){}
+      return;
+    }
+    sift.firstUsed = true;
+    sift.lastFire = nowSec;
+    let res = null;
+    try { res = crScoring.scoreCurrent(); } catch(_){}
+    if(!res){
+      try { toast('SIFT failed — no data'); } catch(_){}
+      return;
+    }
+    const label = res.stateLabel || ['IDLE','WATCH','PRIME'][res.state] || 'IDLE';
+    const dirArrow = res.side === 'long' ? '↑' : '↓';
+    const fullText = '⚡ ' + label + ' ' + res.side.toUpperCase() + ' · ' + res.score.toFixed(1);
+    try { log('SIFT · ' + fullText); } catch(_){}
+    try { toast(fullText); } catch(_){}
+    try {
+      const sx = (typeof sX === 'function') ? sX(player.wx) : (cv ? cv.width/2 : 200);
+      const sy = (typeof priceToY === 'function') ? priceToY(player.py) : 200;
+      const stateColor = res.state === 2 ? '#22c55e' : res.state === 1 ? '#3b82f6' : '#888';
+      if(typeof spawnFloat === 'function') spawnFloat(sx, sy - 28, label + ' ' + dirArrow, stateColor);
+      if(res.state === 2 && typeof spawnParticles === 'function') spawnParticles(sx, sy, stateColor, 14, 220);
+      if(res.state === 1 && typeof spawnParticles === 'function') spawnParticles(sx, sy, stateColor, 6, 140);
+    } catch(_){}
+    // v1.0.111 — Step 9 integration: opening the Exploitables Rail with mock
+    // universe results. Tap 7 fires SIFT + opens/refreshes the rail. Rail
+    // closes via its own Close button or Esc.
+    try {
+      if (typeof crExploitablesRail !== 'undefined'){
+        const seed = Math.floor(nowSec * 7) & 0xFFFF; // session-stable but evolves
+        const universe = crScoring.mockUniverse(seed);
+        crExploitablesRail.open(universe);
+      }
+    } catch(_){}
+    return;
+  }
   // v0.8a — ESC closes the SDK panel / L3 terminal / Menu drawer (Mac-style window close).
   // Only acts if something is open; otherwise falls through so bracket/ladder editors still
   // get their own ESC handlers (those live behind the `typing` branch above).
   if(e.key==='Escape'){
     let consumed = false;
+    // v1.0.111 — Runroom: Esc closes the Exploitables Rail first if open.
+    // High priority but below laser-aim (kept order: laser → rail → vehicle →
+    // overlay → drawer). Rail is read-only UX so closing it never loses state.
+    try {
+      if (RUNROOM_ENABLED && typeof crExploitablesRail !== 'undefined' && crExploitablesRail.isOpen()){
+        crExploitablesRail.close();
+        consumed = true;
+      }
+    } catch(_){}
     // v0.8k#21 — ESC exits laser aim mode first (highest-priority because it
     // freezes the avatar — a stuck-aim bug would block all movement).
     // v0.8k#24j — ESC during anchor phase cancels back to 'idle' (menu-driven)
@@ -13877,6 +13952,169 @@ const ABILITIES = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
+// v1.0.104 — Runroom arc — Phase 1, Step 1: crRadarPresets
+// ═══════════════════════════════════════════════════════════════════════════
+// Experimental code branch. Deploys are gated by RUNROOM_ENABLED below; while
+// the flag is false (default), all Runroom modules load harmlessly but no
+// player-visible behavior changes. To opt in for testing:
+//   localStorage.setItem('cr_runroom', '1')   // persistent across reloads
+//   // OR visit the prototype with #runroom=1 in the URL hash
+// To opt out:
+//   localStorage.removeItem('cr_runroom')
+//
+// Plan: /Users/julianroy/Desktop/Desktop/Trading Game/PLAN_terminal_arc.md
+// Scope: Phase 1 = 11 modules / ~2,530 LoC over commits v1.0.104 → v1.0.110.
+// Naming: "Runroom" (per Hermes copy pass v2.1). State labels PRIME / WATCH.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const RUNROOM_ENABLED = (() => {
+  try {
+    if (typeof window !== 'undefined' && window.location && window.location.hash
+        && window.location.hash.toLowerCase().includes('runroom')) return true;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('cr_runroom') === '1') return true;
+  } catch(_){}
+  return false;
+})();
+// v1.0.114 — Diagnostic ping at module load so user can verify flag + modules
+// in the DevTools console without typing any diagnostic command.
+try { if (RUNROOM_ENABLED) console.log('%c[runroom] flag ON · modules loading', 'color:#22c55e;font-weight:bold'); } catch(_){}
+
+// ─── crRadarPresets ────────────────────────────────────────────────────────
+// Pure-data module. Holds the 5 Radar presets from
+// _templates/terminal/01-radar-presets.json embedded inline (single-file rule).
+// API:
+//   crRadarPresets.list()        → array of preset summaries [{id,label,version}]
+//   crRadarPresets.get(id)       → full preset object, or null
+//   crRadarPresets.getActive()   → the currently active preset object
+//   crRadarPresets.apply(id)     → set active, persist to localStorage, return preset
+//   crRadarPresets.getStateModel()    → { 0,1,2 → {label,color,renderAs} }
+//   crRadarPresets.getSlotBuckets()   → 5-bucket spec for crSlotManager
+//   crRadarPresets.getDisplayLabel(state)  → 'IDLE' / 'WATCH' / 'PRIME'
+//     (NOTE: template ships state labels CANDIDATE/EXPLOITABLE — we map to
+//      WATCH/PRIME per Hermes v2.1 copy pass; internal numeric state untouched)
+// State is stored under 'cr_runroom_radar_preset_v1' so future schema changes
+// can bump the version suffix without colliding.
+const crRadarPresets = (() => {
+  const DATA = Object.freeze({
+    presets: [
+      {
+        id: 'top-10',
+        label: 'Top 10',
+        version: 'v1',
+        dataSource: 'perp-spot-feed',
+        universe: 'all',
+        parameters: { periodMin: 5, minMfePct: 0.12 },
+        session: { resetMode: '24h-once-per-day', resetSession: 'asia-00-utc', yieldSession: 'asia-00-utc' },
+        slots: { mode: 'static-fixed-count', countLong: 10, countShort: 10 },
+        scoring: { mode: 'arrival-order-only', weights: { volatility: 15, persistence: 30, vwap: 30, cvd: 25 } },
+        thresholds: {
+          long: {
+            yieldSince00: { enabled: true, color: '#3b82f6' },
+            kpiRta:        { enabled: false },
+            volatility:    { enabled: true, exploitableGt: 6, candidateGt: 3 },
+            persistenceMin:{ enabled: true, exploitableGt: 4 },
+            priceVsVwap:   { enabled: true, exploitableGt: 1.1, candidateGt: 0.7 },
+            cvdFlow:       { enabled: true, exploitableGt: 62, candidateGt: 45 }
+          },
+          short: 'mirror-of-long'
+        }
+      },
+      {
+        id: 'wide-cvd62-m3',
+        label: 'Wide universe · CVD-led (M3)',
+        version: 'v1',
+        dataSource: 'perp-spot-feed',
+        universe: 'all',
+        parameters: { periodMin: 3, minMfePct: 0.10 },
+        slots: { mode: 'dynamic' },
+        scoring: { mode: 'arrival-order-only', weights: { cvd: 62, vwap: 18, volatility: 10, persistence: 10 } },
+        thresholds: { long: { cvdFlow: { exploitableGt: 62 } } }
+      },
+      {
+        id: 'wide-cvd72-long',
+        label: 'Wide universe · CVD-heavy (long only)',
+        version: 'v1',
+        scoring: { weights: { cvd: 72, vwap: 14, volatility: 7, persistence: 7 } },
+        sideFilter: 'long-only'
+      },
+      {
+        id: 'curated-251-m5',
+        label: 'Curated universe · 251 tokens · M5',
+        version: 'v1',
+        parameters: { periodMin: 5 },
+        universe: 'curated-251'
+      },
+      {
+        id: 'hybrid-v2',
+        label: 'Hybrid scoring',
+        version: 'v2',
+        scoring: { mode: 'hybrid', blend: ['arrival-order', 'score-cross', 'regime-weighted'] }
+      }
+    ],
+    stateModel: {
+      0: { id: 0, label: 'IDLE',  display: 'IDLE',  color: '#666',    renderAs: 'tombstone-marker' },
+      1: { id: 1, label: 'WATCH', display: 'WATCH', color: '#3b82f6', renderAs: 'blue-orb' },
+      2: { id: 2, label: 'PRIME', display: 'PRIME', color: '#22c55e', renderAs: 'green-aura + audio-cue' }
+    },
+    slotBuckets: [
+      { id: 'tier-0-1',  rangePct: '<1',  color: '#22c55e', label: 'green band' },
+      { id: 'tier-1-2',  rangePct: '1-2', color: '#3b82f6', label: 'blue band' },
+      { id: 'tier-2-3',  rangePct: '2-3', color: '#f59e0b', label: 'amber band' },
+      { id: 'tier-3-4',  rangePct: '3-4', color: '#a855f7', label: 'purple band' },
+      { id: 'tier-4plus',rangePct: '≥4',  color: '#ef4444', label: 'red band — danger' }
+    ],
+    sessions:  ['asia-00-utc', 'london-08-utc', 'ny-13-utc'],
+    domStates: ['NEUTRAL', 'LONG', 'SHORT']
+  });
+
+  const LS_KEY = 'cr_runroom_radar_preset_v1';
+  const DEFAULT_ID = 'top-10';
+
+  function _readActiveId(){
+    try {
+      const v = (typeof localStorage !== 'undefined') ? localStorage.getItem(LS_KEY) : null;
+      if (v && DATA.presets.some(p => p.id === v)) return v;
+    } catch(_){}
+    return DEFAULT_ID;
+  }
+  function _writeActiveId(id){
+    try { if (typeof localStorage !== 'undefined') localStorage.setItem(LS_KEY, id); } catch(_){}
+  }
+
+  function list(){
+    return DATA.presets.map(p => ({ id: p.id, label: p.label, version: p.version || 'v1' }));
+  }
+  function get(id){
+    return DATA.presets.find(p => p.id === id) || null;
+  }
+  function getActive(){
+    return get(_readActiveId()) || get(DEFAULT_ID);
+  }
+  function apply(id){
+    const p = get(id);
+    if (!p) return null;
+    _writeActiveId(id);
+    return p;
+  }
+  function getStateModel(){ return DATA.stateModel; }
+  function getSlotBuckets(){ return DATA.slotBuckets; }
+  function getDisplayLabel(state){
+    const s = DATA.stateModel[state];
+    return s ? s.display : 'IDLE';
+  }
+
+  return Object.freeze({
+    list, get, getActive, apply,
+    getStateModel, getSlotBuckets, getDisplayLabel,
+    DEFAULT_ID,
+    _DATA: DATA  // exposed read-only for debugging; not part of stable API
+  });
+})();
+
+// Expose for browser-console debugging when the flag is on.
+try { if (RUNROOM_ENABLED && typeof window !== 'undefined') window.crRadarPresets = crRadarPresets; } catch(_){}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // v1.0.119 — Phoenix Live PARKED 2026-05-19
 // ═══════════════════════════════════════════════════════════════════════════
 // Per Julian's directive, all Phoenix Live overlays are archived for refinement.
@@ -13906,6 +14144,1194 @@ const ABILITIES = [
     if (_disable() || tries > 40) clearInterval(iv);
   }, 250);
 })();
+
+// ─── crScoring ─────────────────────────────────────────────────────────────
+// v1.0.105 — Runroom step 2: pure compute, no DOM, no network.
+// Computes 0-100 scores per indicator (CVD, VWAP, Volatility, Persistence)
+// from candle OHLC arrays, weights them by the active radar preset, and tags
+// a state (0=IDLE, 1=WATCH, 2=PRIME). For Phase 1 we score the current symbol
+// (single-symbol prototype constraint); cross-symbol scan comes when the SDK
+// gains a real universe feed (M5+). mockUniverse() generates 10 deterministic
+// fake symbols so the Exploitables Rail UI has something legible to render —
+// honest mock, not pretending to be live.
+//
+// API:
+//   crScoring.scoreCurrent()        → { score, side, state, indicators }
+//   crScoring.scoreWindow(arr,opts) → same shape from arbitrary candle slice
+//   crScoring.mockUniverse(seed)    → [ { sym, score, side, state }, ... ] × 10
+//   crScoring.arrivalOrder(candles) → ['cvd','vwap','vol','persist'] in order
+//   crScoring.STATE_THRESHOLD       → { prime: 60, watch: 35 }
+//
+// Compute notes (transparent — no magic):
+//   CVD     = Σ sign(c-o) * (h-l) over WIN candles, normalized by Σ (h-l)
+//   VWAP    = mean(c) over WIN candles; score = (price/vwap − 1) × 1000 clamp
+//   Vol     = std(return_i) over WIN candles, mapped to 0-100 via tanh
+//   Persist = same-direction-streak fraction over WIN candles
+//
+// Each indicator returns signed -100..+100 (sign = long/short bias).
+// Composite = Σ (weight_i × indicator_i) / Σ weight_i.
+// |composite| > 60 → PRIME, > 35 → WATCH, else IDLE.
+const crScoring = (() => {
+  const WIN_DEFAULT = 30;          // candles per scoring window
+  const STATE_THRESHOLD = Object.freeze({ prime: 60, watch: 35 });
+
+  // ── Indicator primitives (each returns signed -100..+100) ────────────────
+  function _cvd(arr){
+    let dir = 0, vol = 0;
+    for (let i = 0; i < arr.length; i++){
+      const c = arr[i];
+      if (!c || !isFinite(c.o) || !isFinite(c.c) || !isFinite(c.h) || !isFinite(c.l)) continue;
+      const range = Math.max(1e-9, c.h - c.l);
+      dir += (c.c >= c.o ? 1 : -1) * range;
+      vol += range;
+    }
+    if (vol < 1e-9) return 0;
+    return Math.max(-100, Math.min(100, (dir / vol) * 100));
+  }
+
+  function _vwap(arr, priceNow){
+    if (!isFinite(priceNow)) return 0;
+    let sum = 0, n = 0;
+    for (let i = 0; i < arr.length; i++){
+      const c = arr[i];
+      if (!c || !isFinite(c.c)) continue;
+      sum += c.c; n++;
+    }
+    if (n === 0) return 0;
+    const vwap = sum / n;
+    if (vwap < 1e-9) return 0;
+    // Distance from VWAP in bps × ~10 for legibility; clamp ±100
+    const bps = ((priceNow / vwap) - 1) * 10000;
+    return Math.max(-100, Math.min(100, bps / 5)); // 5 bps = 1 score-point
+  }
+
+  function _volatility(arr){
+    const rets = [];
+    for (let i = 1; i < arr.length; i++){
+      const a = arr[i - 1], b = arr[i];
+      if (!a || !b || !isFinite(a.c) || !isFinite(b.c) || a.c < 1e-9) continue;
+      rets.push(b.c / a.c - 1);
+    }
+    if (rets.length < 2) return 0;
+    const m = rets.reduce((s, x) => s + x, 0) / rets.length;
+    const v = rets.reduce((s, x) => s + (x - m) * (x - m), 0) / rets.length;
+    const sigma = Math.sqrt(v);
+    // Volatility is unsigned; map via tanh to 0..100. Then sign by recent drift.
+    const magnitude = Math.tanh(sigma * 200) * 100;
+    const driftSign = m >= 0 ? 1 : -1;
+    return driftSign * magnitude;
+  }
+
+  function _persistence(arr){
+    if (arr.length < 2) return 0;
+    let streakDir = 0, streakLen = 0, maxSigned = 0;
+    for (let i = 1; i < arr.length; i++){
+      const c = arr[i];
+      if (!c || !isFinite(c.o) || !isFinite(c.c)) continue;
+      const d = c.c >= c.o ? 1 : -1;
+      if (d === streakDir){
+        streakLen++;
+      } else {
+        streakDir = d;
+        streakLen = 1;
+      }
+      const signedScore = streakDir * (streakLen / arr.length) * 100;
+      if (Math.abs(signedScore) > Math.abs(maxSigned)) maxSigned = signedScore;
+    }
+    return Math.max(-100, Math.min(100, maxSigned * 3)); // scale up — raw fractions are small
+  }
+
+  // ── Composite ─────────────────────────────────────────────────────────────
+  function _compositeFromIndicators(ind, weights){
+    const w = weights || { cvd: 25, vwap: 30, volatility: 15, persistence: 30 };
+    const total = (w.cvd || 0) + (w.vwap || 0) + (w.volatility || 0) + (w.persistence || 0);
+    if (total < 1e-9) return 0;
+    const sum =
+      (ind.cvd || 0)         * (w.cvd || 0)         +
+      (ind.vwap || 0)        * (w.vwap || 0)        +
+      (ind.volatility || 0)  * (w.volatility || 0)  +
+      (ind.persistence || 0) * (w.persistence || 0);
+    return sum / total;
+  }
+
+  function _tagState(composite){
+    const m = Math.abs(composite);
+    if (m >= STATE_THRESHOLD.prime) return 2;
+    if (m >= STATE_THRESHOLD.watch) return 1;
+    return 0;
+  }
+
+  // ── Public API ────────────────────────────────────────────────────────────
+  function scoreWindow(arr, opts){
+    const o = opts || {};
+    const win = (o.win || WIN_DEFAULT);
+    const slice = arr.slice(-win);
+    const priceNow = isFinite(o.price) ? o.price : (slice.length ? slice[slice.length - 1].c : NaN);
+    const indicators = {
+      cvd:         _cvd(slice),
+      vwap:        _vwap(slice, priceNow),
+      volatility:  _volatility(slice),
+      persistence: _persistence(slice)
+    };
+    const preset = (typeof crRadarPresets !== 'undefined') ? crRadarPresets.getActive() : null;
+    const weights = (preset && preset.scoring && preset.scoring.weights) || null;
+    const composite = _compositeFromIndicators(indicators, weights);
+    const state = _tagState(composite);
+    const side = composite >= 0 ? 'long' : 'short';
+    return Object.freeze({
+      score: Math.round(composite * 10) / 10,
+      side,
+      state,
+      stateLabel: (typeof crRadarPresets !== 'undefined') ? crRadarPresets.getDisplayLabel(state) : ['IDLE','WATCH','PRIME'][state],
+      indicators
+    });
+  }
+
+  function scoreCurrent(){
+    if (typeof candles === 'undefined' || !Array.isArray(candles) || candles.length === 0){
+      return Object.freeze({ score: 0, side: 'long', state: 0, stateLabel: 'IDLE', indicators: { cvd:0, vwap:0, volatility:0, persistence:0 } });
+    }
+    return scoreWindow(candles);
+  }
+
+  // Deterministic seeded RNG (mulberry32, matches the rest of the prototype).
+  function _mulberry32(seed){
+    let a = seed >>> 0;
+    return function(){
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function mockUniverse(seed){
+    const s = isFinite(seed) ? seed : 1337;
+    const rng = _mulberry32(s);
+    const SYMS = ['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT','ADAUSDT','LINKUSDT','AVAXUSDT','MATICUSDT'];
+    return SYMS.map(sym => {
+      const composite = (rng() - 0.5) * 200; // -100..+100
+      const state = _tagState(composite);
+      return Object.freeze({
+        sym,
+        score: Math.round(composite * 10) / 10,
+        side: composite >= 0 ? 'long' : 'short',
+        state,
+        stateLabel: (typeof crRadarPresets !== 'undefined') ? crRadarPresets.getDisplayLabel(state) : ['IDLE','WATCH','PRIME'][state]
+      });
+    }).sort((a, b) => Math.abs(b.score) - Math.abs(a.score));
+  }
+
+  // arrival-order: which indicator crossed |30| first when scanning forward?
+  function arrivalOrder(arr){
+    const win = WIN_DEFAULT;
+    const order = [];
+    const seen = new Set();
+    const slice = (arr && arr.length) ? arr.slice(-win) : [];
+    for (let i = 5; i <= slice.length; i++){
+      const sub = slice.slice(0, i);
+      const priceNow = sub[sub.length - 1] ? sub[sub.length - 1].c : NaN;
+      const tests = {
+        cvd: _cvd(sub),
+        vwap: _vwap(sub, priceNow),
+        volatility: _volatility(sub),
+        persistence: _persistence(sub)
+      };
+      for (const k of Object.keys(tests)){
+        if (!seen.has(k) && Math.abs(tests[k]) >= 30){
+          seen.add(k); order.push(k);
+        }
+      }
+      if (order.length === 4) break;
+    }
+    // Pad with any unseen indicators in fixed order so caller always gets 4
+    for (const k of ['cvd','vwap','volatility','persistence']){
+      if (!seen.has(k)) order.push(k);
+    }
+    return order;
+  }
+
+  return Object.freeze({
+    scoreCurrent, scoreWindow, mockUniverse, arrivalOrder,
+    STATE_THRESHOLD,
+    WIN_DEFAULT
+  });
+})();
+
+try { if (RUNROOM_ENABLED && typeof window !== 'undefined') window.crScoring = crScoring; } catch(_){}
+
+// ─── crSlotManager ─────────────────────────────────────────────────────────
+// v1.0.106 — Runroom step 3: finite long/short slots per session.
+// Reserves a slot every time an order is placed via the SDK; releases when
+// the order closes or cancels. Buckets are size-of-equity tiers from the
+// active radar preset's slotBuckets spec (<1%, 1-2%, 2-3%, 3-4%, ≥4%).
+// Subscribers (the HUD widget in step 8) are notified on every state change.
+//
+// API:
+//   crSlotManager.state()        → { long:{slots,bySize:{...}}, short:{...}, capacity:{long,short} }
+//   crSlotManager.tryReserve(side, opts) → { ok, slotId, bucket, reason? }
+//   crSlotManager.release(slotId)
+//   crSlotManager.releaseByOrderId(orderId)
+//   crSlotManager.capacity()     → { long, short }
+//   crSlotManager.subscribe(fn)  → unsubscribe fn
+//   crSlotManager.setEquity(usd) → adjusts size-% math
+//   crSlotManager.reset()        → clears all slots (e.g. new session)
+//
+// SDK wiring (deferred until after sdk is constructed): see installSdkHooks()
+// below; the bottom of this file (after sdk fully exists) will call it.
+const crSlotManager = (() => {
+  const DEFAULT_CAPACITY = { long: 10, short: 10 };
+  let _equity = 10000;             // baseline; setEquity() overrides
+  let _capacity = { ...DEFAULT_CAPACITY };
+  const _slots = { long: [], short: [] };
+  const _byOrderId = new Map();    // orderId → slotId (for SDK auto-release)
+  const _subscribers = new Set();
+  let _autoId = 0;
+
+  function _readCapacityFromPreset(){
+    try {
+      const p = crRadarPresets.getActive();
+      if (p && p.slots && typeof p.slots.countLong === 'number'){
+        _capacity = {
+          long: p.slots.countLong,
+          short: p.slots.countShort || p.slots.countLong
+        };
+      } else {
+        _capacity = { ...DEFAULT_CAPACITY };
+      }
+    } catch(_){ _capacity = { ...DEFAULT_CAPACITY }; }
+  }
+  _readCapacityFromPreset();
+
+  function _bucketForSizePct(sizePct){
+    if (!isFinite(sizePct) || sizePct < 0) return 0;
+    if (sizePct >= 4) return 4;
+    return Math.floor(sizePct);  // 0,1,2,3
+  }
+
+  function _sizePctFromRisk(riskUsd){
+    if (!isFinite(riskUsd) || _equity <= 0) return 0.2;
+    return (riskUsd / _equity) * 100;
+  }
+
+  function _notify(){
+    const s = state();
+    for (const fn of _subscribers){
+      try { fn(s); } catch(_){}
+    }
+  }
+
+  function state(){
+    function tally(side){
+      const list = _slots[side];
+      const bySize = { 0:0, 1:0, 2:0, 3:0, 4:0 };
+      for (const s of list) bySize[s.bucket]++;
+      return { count: list.length, capacity: _capacity[side], bySize, slots: list.slice() };
+    }
+    return {
+      long: tally('long'),
+      short: tally('short'),
+      capacity: { ..._capacity },
+      equity: _equity
+    };
+  }
+
+  function capacity(){ return { ..._capacity }; }
+
+  function tryReserve(side, opts){
+    if (side !== 'long' && side !== 'short') return { ok: false, reason: 'bad-side' };
+    if (_slots[side].length >= _capacity[side]) return { ok: false, reason: 'capacity' };
+    const o = opts || {};
+    const sizePct = isFinite(o.sizePct) ? o.sizePct : _sizePctFromRisk(o.risk);
+    const bucket = _bucketForSizePct(sizePct);
+    const slotId = 'sl_' + (++_autoId);
+    const slot = Object.freeze({
+      id: slotId,
+      side,
+      sizePct,
+      bucket,
+      score: isFinite(o.score) ? o.score : null,
+      orderId: o.orderId || null,
+      t: (typeof performance !== 'undefined' ? performance.now() : Date.now())
+    });
+    _slots[side].push(slot);
+    if (o.orderId) _byOrderId.set(o.orderId, slotId);
+    _notify();
+    return { ok: true, slotId, bucket, side };
+  }
+
+  function release(slotId){
+    let released = false;
+    for (const side of ['long','short']){
+      const i = _slots[side].findIndex(s => s.id === slotId);
+      if (i >= 0){
+        const s = _slots[side][i];
+        if (s.orderId) _byOrderId.delete(s.orderId);
+        _slots[side].splice(i, 1);
+        released = true;
+        break;
+      }
+    }
+    if (released) _notify();
+    return released;
+  }
+
+  function releaseByOrderId(orderId){
+    const slotId = _byOrderId.get(orderId);
+    if (!slotId) return false;
+    return release(slotId);
+  }
+
+  function subscribe(fn){
+    if (typeof fn !== 'function') return () => {};
+    _subscribers.add(fn);
+    return () => _subscribers.delete(fn);
+  }
+
+  function setEquity(usd){
+    if (isFinite(usd) && usd > 0){ _equity = usd; _notify(); }
+  }
+
+  function reset(){
+    _slots.long.length = 0;
+    _slots.short.length = 0;
+    _byOrderId.clear();
+    _autoId = 0;
+    _readCapacityFromPreset();
+    _notify();
+  }
+
+  // Hook handle — installSdkHooks() is called near sdk.on() block; safe no-op
+  // if sdk isn't ready yet. Idempotent.
+  let _hooksInstalled = false;
+  function installSdkHooks(){
+    if (_hooksInstalled) return;
+    if (typeof sdk === 'undefined' || !sdk || typeof sdk.on !== 'function') return;
+    _hooksInstalled = true;
+    sdk.on('order', e => {
+      try {
+        const o = e && e.order;
+        if (!o) return;
+        // Only count bracket-type orders for Phase 1; ladder/oco/hedge add up
+        // to too many slots and require their own size-aggregation logic.
+        if (o.type !== 'bracket') return;
+        const side = (o.side === 'buy' || o.side === 'long') ? 'long'
+                   : (o.side === 'sell' || o.side === 'short') ? 'short' : null;
+        if (!side) return;
+        tryReserve(side, { risk: o.risk, orderId: o.id });
+      } catch(_){}
+    });
+    sdk.on('bracketClose', e => {
+      try { if (e && e.order && e.order.id) releaseByOrderId(e.order.id); } catch(_){}
+    });
+    sdk.on('cancel', e => {
+      try {
+        const o = e && (e.order || e.effect);
+        if (o && o.id) releaseByOrderId(o.id);
+      } catch(_){}
+    });
+  }
+
+  return Object.freeze({
+    state, tryReserve, release, releaseByOrderId,
+    capacity, subscribe, setEquity, reset,
+    installSdkHooks
+  });
+})();
+
+try { if (RUNROOM_ENABLED && typeof window !== 'undefined') window.crSlotManager = crSlotManager; } catch(_){}
+
+// ─── crHealthPillsHUD ──────────────────────────────────────────────────────
+// v1.0.109 — Runroom step 7: bottom-left always-on trust signals.
+// Three small pills indicating data/slot/runroom health. NEVER part of the
+// topbar (per the v2 review verdict: ≤5 topbar elements is about cognitive
+// load). Bottom-left, default-on while RUNROOM_ENABLED. Updates at 1Hz.
+//
+// Pills:
+//   DATA  — green if candles array has data, red if empty
+//   SLOTS — green if <80% capacity used, amber 80-99%, red 100%
+//   READY — always green while flag is on (signals the Runroom layer is live)
+//
+// Idempotent: mount() can be called many times; only the first creates DOM.
+const crHealthPillsHUD = (() => {
+  const ROOT_ID = 'crHealthPills';
+  let _mounted = false;
+  let _interval = null;
+  let _hostEl = null;
+  let _pillEls = { data: null, slots: null, ready: null };
+
+  function _ensureCss(){
+    if (document.getElementById('crHealthPillsCss')) return;
+    const css = `
+      #${ROOT_ID}{
+        position:fixed; left:14px; bottom:14px;
+        display:flex; gap:6px; z-index:120;
+        font:600 9.5px ui-monospace,Menlo,Consolas,monospace;
+        letter-spacing:.6px; text-transform:uppercase;
+        pointer-events:none; user-select:none;
+      }
+      #${ROOT_ID} .crPill{
+        display:inline-flex; align-items:center; gap:5px;
+        padding:3px 7px 3px 5px; border-radius:10px;
+        background:rgba(8,12,22,.78); border:1px solid rgba(80,100,140,.35);
+        color:#cbd3df; box-shadow:0 1px 4px rgba(0,0,0,.5);
+      }
+      #${ROOT_ID} .crPill .crPillDot{
+        width:6px; height:6px; border-radius:50%; background:#666;
+        box-shadow:0 0 4px currentColor;
+      }
+      #${ROOT_ID} .crPill.ok   .crPillDot{ background:#22c55e; color:#22c55e; }
+      #${ROOT_ID} .crPill.warn .crPillDot{ background:#f59e0b; color:#f59e0b; }
+      #${ROOT_ID} .crPill.bad  .crPillDot{ background:#ef4444; color:#ef4444; }
+      #${ROOT_ID} .crPill.ok   { border-color:rgba(34,197,94,.35); }
+      #${ROOT_ID} .crPill.warn { border-color:rgba(245,158,11,.35); }
+      #${ROOT_ID} .crPill.bad  { border-color:rgba(239,68,68,.35); }
+      /* v1.0.115 — Runroom HUDs now show on Mac OS 9 desktop too.
+         Splash-hide guard removed per audit task #15. Each HUD has its
+         own auto-hide-when-empty logic so visual clutter stays low. */
+    `;
+    const style = document.createElement('style');
+    style.id = 'crHealthPillsCss';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  function _buildDom(){
+    if (_hostEl) return;
+    const host = document.createElement('div');
+    host.id = ROOT_ID;
+    host.setAttribute('aria-hidden', 'true');
+    host.innerHTML =
+      '<div class="crPill ok" data-pill="data"><span class="crPillDot"></span><span class="crPillLabel">DATA</span></div>' +
+      '<div class="crPill ok" data-pill="slots"><span class="crPillDot"></span><span class="crPillLabel">SLOTS 0/20</span></div>' +
+      '<div class="crPill ok" data-pill="ready"><span class="crPillDot"></span><span class="crPillLabel">READY</span></div>';
+    document.body.appendChild(host);
+    _hostEl = host;
+    _pillEls.data  = host.querySelector('[data-pill="data"]');
+    _pillEls.slots = host.querySelector('[data-pill="slots"]');
+    _pillEls.ready = host.querySelector('[data-pill="ready"]');
+  }
+
+  function _setPillClass(el, kind){
+    if (!el) return;
+    if (el.classList.contains(kind)) return;
+    el.classList.remove('ok','warn','bad');
+    el.classList.add(kind);
+  }
+  function _setPillLabel(el, text){
+    if (!el) return;
+    const span = el.querySelector('.crPillLabel');
+    if (span && span.textContent !== text) span.textContent = text;
+  }
+
+  function _tick(){
+    if (!_hostEl) return;
+    // DATA
+    let dataOk = false;
+    try { dataOk = (typeof candles !== 'undefined') && Array.isArray(candles) && candles.length > 0; } catch(_){}
+    _setPillClass(_pillEls.data, dataOk ? 'ok' : 'bad');
+    _setPillLabel(_pillEls.data, dataOk ? ('DATA ' + candles.length) : 'NO DATA');
+    // SLOTS
+    let used = 0, cap = 20;
+    try {
+      const st = crSlotManager.state();
+      used = st.long.count + st.short.count;
+      cap  = st.long.capacity + st.short.capacity;
+    } catch(_){}
+    const frac = cap > 0 ? (used / cap) : 0;
+    _setPillClass(_pillEls.slots, frac >= 1 ? 'bad' : frac >= 0.8 ? 'warn' : 'ok');
+    _setPillLabel(_pillEls.slots, 'SLOTS ' + used + '/' + cap);
+    // READY
+    _setPillClass(_pillEls.ready, 'ok');
+    _setPillLabel(_pillEls.ready, 'READY');
+  }
+
+  function mount(){
+    if (_mounted) return;
+    if (!RUNROOM_ENABLED) return;
+    if (typeof document === 'undefined' || !document.body) return;
+    _ensureCss();
+    _buildDom();
+    _mounted = true;
+    _tick();
+    _interval = setInterval(_tick, 1000);
+  }
+  function unmount(){
+    if (_interval){ clearInterval(_interval); _interval = null; }
+    if (_hostEl){ _hostEl.remove(); _hostEl = null; _pillEls = { data:null, slots:null, ready:null }; }
+    _mounted = false;
+  }
+  function isMounted(){ return _mounted; }
+
+  return Object.freeze({ mount, unmount, isMounted });
+})();
+
+try { if (RUNROOM_ENABLED && typeof window !== 'undefined') window.crHealthPillsHUD = crHealthPillsHUD; } catch(_){}
+
+// ─── crSlotManagerHUD ──────────────────────────────────────────────────────
+// v1.0.110 — Runroom step 8: top-right slot occupancy widget.
+// Two rows: Long (L) and Short (S). Each shows count/capacity + a 5-bucket
+// strip colored by tier (<1, 1-2, 2-3, 3-4, ≥4 % of equity). Subscribes to
+// crSlotManager so any bracket placement/close updates the widget instantly.
+// Positioned at top:54px to clear the existing topbar (NOT a topbar element).
+// Auto-shows when any slot is filled; auto-hides when empty (keeps the
+// 60-sec-to-first-trade target clean for first-time players).
+const crSlotManagerHUD = (() => {
+  const ROOT_ID = 'crSlotMgrHud';
+  let _mounted = false;
+  let _hostEl = null;
+  let _unsub = null;
+  let _bucketColors = null;
+
+  function _ensureCss(){
+    if (document.getElementById('crSlotMgrHudCss')) return;
+    const css = `
+      #${ROOT_ID}{
+        position:fixed; right:14px; top:54px;
+        min-width:200px; max-width:240px;
+        z-index:120; pointer-events:none; user-select:none;
+        font:600 10px ui-monospace,Menlo,Consolas,monospace;
+        background:rgba(8,12,22,.82); border:1px solid rgba(80,100,140,.4);
+        border-radius:8px; padding:7px 9px;
+        box-shadow:0 2px 12px rgba(0,0,0,.55);
+        color:#cbd3df; opacity:0; transform:translateY(-4px);
+        transition:opacity .18s ease, transform .18s ease;
+      }
+      #${ROOT_ID}.on{ opacity:1; transform:translateY(0); }
+      #${ROOT_ID} .crSmTitle{
+        font-size:9px; letter-spacing:.8px; color:#8d96a8;
+        margin-bottom:5px; text-transform:uppercase; display:flex;
+        justify-content:space-between; align-items:baseline;
+      }
+      #${ROOT_ID} .crSmRow{ display:flex; align-items:center; gap:6px; margin-top:3px; }
+      #${ROOT_ID} .crSmSide{ width:10px; text-align:center; font-weight:700; }
+      #${ROOT_ID} .crSmSide.l{ color:#22c55e; }
+      #${ROOT_ID} .crSmSide.s{ color:#ef4444; }
+      #${ROOT_ID} .crSmCount{ width:38px; color:#e2e8f0; font-variant-numeric:tabular-nums; }
+      #${ROOT_ID} .crSmStrip{ display:flex; gap:2px; flex:1; }
+      #${ROOT_ID} .crSmCell{
+        flex:1; height:14px; border-radius:2px;
+        background:rgba(80,100,140,.18); position:relative;
+        display:flex; align-items:center; justify-content:center;
+        font-size:9px; color:rgba(255,255,255,.55);
+      }
+      #${ROOT_ID} .crSmCell.filled{ color:#fff; }
+      /* v1.0.115 — Runroom HUDs now show on Mac OS 9 desktop too.
+         Splash-hide guard removed per audit task #15. Each HUD has its
+         own auto-hide-when-empty logic so visual clutter stays low. */
+    `;
+    const style = document.createElement('style');
+    style.id = 'crSlotMgrHudCss';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  function _bucketsBuild(){
+    try { _bucketColors = crRadarPresets.getSlotBuckets(); } catch(_){ _bucketColors = null; }
+    if (!Array.isArray(_bucketColors) || _bucketColors.length !== 5){
+      _bucketColors = [
+        { color:'#22c55e' }, { color:'#3b82f6' }, { color:'#f59e0b' },
+        { color:'#a855f7' }, { color:'#ef4444' }
+      ];
+    }
+  }
+
+  function _rowHtml(side, count, capacity, bySize){
+    const isL = side === 'long';
+    const sym = isL ? 'L' : 'S';
+    const cls = isL ? 'l' : 's';
+    let cells = '';
+    for (let i = 0; i < 5; i++){
+      const n = (bySize && bySize[i]) || 0;
+      const bc = (_bucketColors[i] && _bucketColors[i].color) || '#666';
+      const style = n > 0 ? 'background:' + bc + ';' : '';
+      cells += '<div class="crSmCell' + (n > 0 ? ' filled' : '') + '" style="' + style + '" title="bucket ' + i + ' · ' + n + '">' + (n > 0 ? n : '') + '</div>';
+    }
+    return (
+      '<div class="crSmRow">' +
+        '<div class="crSmSide ' + cls + '">' + sym + '</div>' +
+        '<div class="crSmCount">' + count + '/' + capacity + '</div>' +
+        '<div class="crSmStrip">' + cells + '</div>' +
+      '</div>'
+    );
+  }
+
+  function _render(state){
+    if (!_hostEl) return;
+    const totalUsed = state.long.count + state.short.count;
+    // Auto-show/hide based on occupancy
+    if (totalUsed === 0){
+      _hostEl.classList.remove('on');
+    } else {
+      _hostEl.classList.add('on');
+    }
+    const html =
+      '<div class="crSmTitle"><span>SLOTS</span><span>' + totalUsed + ' open</span></div>' +
+      _rowHtml('long', state.long.count, state.long.capacity, state.long.bySize) +
+      _rowHtml('short', state.short.count, state.short.capacity, state.short.bySize);
+    try {
+      if (typeof crSafeHTML === 'function') crSafeHTML(_hostEl, html);
+      else if (_hostEl.innerHTML !== html) _hostEl.innerHTML = html;
+    } catch(_){}
+  }
+
+  function _buildDom(){
+    if (_hostEl) return;
+    const host = document.createElement('div');
+    host.id = ROOT_ID;
+    host.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(host);
+    _hostEl = host;
+  }
+
+  function mount(){
+    if (_mounted) return;
+    if (!RUNROOM_ENABLED) return;
+    if (typeof document === 'undefined' || !document.body) return;
+    _ensureCss();
+    _bucketsBuild();
+    _buildDom();
+    _mounted = true;
+    try {
+      _unsub = crSlotManager.subscribe(s => _render(s));
+      _render(crSlotManager.state());
+    } catch(_){}
+  }
+  function unmount(){
+    if (_unsub){ try { _unsub(); } catch(_){} _unsub = null; }
+    if (_hostEl){ _hostEl.remove(); _hostEl = null; }
+    _mounted = false;
+  }
+  function isMounted(){ return _mounted; }
+  function forceShow(){
+    try { if (_hostEl) _hostEl.classList.add('on'); } catch(_){}
+  }
+
+  return Object.freeze({ mount, unmount, isMounted, forceShow });
+})();
+
+try { if (RUNROOM_ENABLED && typeof window !== 'undefined') window.crSlotManagerHUD = crSlotManagerHUD; } catch(_){}
+
+// ─── crExploitablesRail ────────────────────────────────────────────────────
+// v1.0.111 — Runroom step 9: slide-in left panel with ranked candidates.
+// Phase 1 is single-symbol so "the universe" is mocked via crScoring.mockUniverse
+// — honest mock, deterministic per seed. Each row shows symbol + state badge
+// (PRIME / WATCH / IDLE) + side + score. Fire button on each row places a
+// bracket on the CURRENT chart symbol (so the loop completes: scan → see →
+// fire → slot fills → Slot Manager widget updates → Health Pills move).
+// Triggered automatically when SIFT fires (step 6 calls .open()), persists
+// until Esc or rail Close button. Hold-7 will integrate later if needed.
+const crExploitablesRail = (() => {
+  const ROOT_ID = 'crExploitablesRail';
+  let _mounted = false;
+  let _hostEl = null;
+  let _listEl = null;
+  let _lastUniverse = [];
+
+  function _ensureCss(){
+    if (document.getElementById('crExploitablesRailCss')) return;
+    const css = `
+      #${ROOT_ID}{
+        position:fixed; left:-340px; top:54px; bottom:80px;
+        width:320px; z-index:140;
+        background:rgba(8,12,22,.94); border:1px solid rgba(80,100,140,.4);
+        border-right:1px solid rgba(34,197,94,.35);
+        border-radius:0 10px 10px 0; padding:10px;
+        box-shadow:6px 0 24px rgba(0,0,0,.55);
+        font:600 11px ui-monospace,Menlo,Consolas,monospace;
+        color:#cbd3df; display:flex; flex-direction:column;
+        transition:left .22s cubic-bezier(.2,.6,.2,1);
+        pointer-events:auto;
+      }
+      #${ROOT_ID}.on{ left:0; }
+      #${ROOT_ID} .crErHead{
+        display:flex; justify-content:space-between; align-items:center;
+        padding-bottom:7px; border-bottom:1px solid rgba(80,100,140,.3);
+        margin-bottom:7px;
+      }
+      #${ROOT_ID} .crErTitle{
+        font-size:11px; letter-spacing:.9px; color:#bff7df;
+        text-transform:uppercase;
+      }
+      #${ROOT_ID} .crErClose{
+        background:transparent; border:1px solid rgba(80,100,140,.5);
+        color:#9ba3b3; border-radius:5px; padding:2px 8px; font:600 10px ui-monospace,Menlo,monospace;
+        cursor:pointer; transition:all .12s ease;
+      }
+      #${ROOT_ID} .crErClose:hover{ color:#fff; border-color:#bff7df; }
+      #${ROOT_ID} .crErList{ flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
+      #${ROOT_ID} .crErRow{
+        display:flex; align-items:center; gap:7px;
+        padding:6px 8px; border-radius:5px;
+        background:rgba(80,100,140,.08); border:1px solid rgba(80,100,140,.18);
+      }
+      #${ROOT_ID} .crErRow.prime{ border-color:rgba(34,197,94,.45); background:rgba(34,197,94,.06); }
+      #${ROOT_ID} .crErRow.watch{ border-color:rgba(59,130,246,.4);  background:rgba(59,130,246,.05); }
+      #${ROOT_ID} .crErBadge{
+        font-size:8.5px; font-weight:700; letter-spacing:.8px;
+        padding:2px 5px; border-radius:3px; min-width:42px; text-align:center;
+        background:rgba(80,100,140,.18); color:#cbd3df;
+      }
+      #${ROOT_ID} .crErBadge.prime{ background:#22c55e; color:#06160d; }
+      #${ROOT_ID} .crErBadge.watch{ background:#3b82f6; color:#0a1428; }
+      #${ROOT_ID} .crErSym{ flex:1; font-size:11px; color:#e2e8f0; }
+      #${ROOT_ID} .crErSide{ font-size:10px; opacity:.7; }
+      #${ROOT_ID} .crErSide.long{ color:#22c55e; }
+      #${ROOT_ID} .crErSide.short{ color:#ef4444; }
+      #${ROOT_ID} .crErScore{ font-size:10px; font-variant-numeric:tabular-nums; color:#cbd3df; min-width:36px; text-align:right; }
+      #${ROOT_ID} .crErFire{
+        background:rgba(34,197,94,.18); color:#bff7df;
+        border:1px solid rgba(34,197,94,.5);
+        padding:3px 8px; border-radius:4px; cursor:pointer;
+        font:700 9.5px ui-monospace,Menlo,monospace; letter-spacing:.6px;
+        transition:all .12s ease;
+      }
+      #${ROOT_ID} .crErFire:hover{ background:rgba(34,197,94,.32); color:#fff; }
+      #${ROOT_ID} .crErFire:disabled{ opacity:.35; cursor:default; }
+      #${ROOT_ID} .crErFoot{
+        margin-top:7px; padding-top:7px; border-top:1px solid rgba(80,100,140,.25);
+        font-size:9px; color:#7a8294; letter-spacing:.4px;
+      }
+      /* v1.0.115 — Runroom HUDs now show on Mac OS 9 desktop too.
+         Splash-hide guard removed per audit task #15. Each HUD has its
+         own auto-hide-when-empty logic so visual clutter stays low. */
+    `;
+    const style = document.createElement('style');
+    style.id = 'crExploitablesRailCss';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  function _rowHtml(entry){
+    const stCls = entry.state === 2 ? 'prime' : entry.state === 1 ? 'watch' : 'idle';
+    const sideCls = entry.side === 'long' ? 'long' : 'short';
+    const sideSym = entry.side === 'long' ? '↑' : '↓';
+    return (
+      '<div class="crErRow ' + stCls + '">' +
+        '<div class="crErBadge ' + stCls + '">' + (entry.stateLabel || 'IDLE') + '</div>' +
+        '<div class="crErSym">' + entry.sym + '</div>' +
+        '<div class="crErSide ' + sideCls + '">' + sideSym + '</div>' +
+        '<div class="crErScore">' + entry.score.toFixed(1) + '</div>' +
+        '<button class="crErFire" data-sym="' + entry.sym + '" data-side="' + entry.side + '"' +
+          ' data-state="' + entry.state + '"' +
+          (entry.state === 0 ? ' disabled' : '') + '>FIRE</button>' +
+      '</div>'
+    );
+  }
+
+  function _render(universe){
+    if (!_listEl) return;
+    _lastUniverse = universe || [];
+    const html = _lastUniverse.map(_rowHtml).join('');
+    try {
+      if (typeof crSafeHTML === 'function') crSafeHTML(_listEl, html);
+      else _listEl.innerHTML = html;
+    } catch(_){}
+  }
+
+  function _onFireClick(e){
+    const btn = e.target && e.target.closest && e.target.closest('.crErFire');
+    if (!btn) return;
+    const sym = btn.getAttribute('data-sym');
+    const side = btn.getAttribute('data-side');
+    // Phase 1: fire on the CURRENT chart symbol regardless of row symbol.
+    // The pedagogy is "scan finds opportunities; you fire when ready".
+    try {
+      if (typeof sdk === 'undefined' || !sdk || typeof sdk.bracket !== 'function'){
+        if (typeof toast === 'function') toast('SDK not ready');
+        return;
+      }
+      const price = (typeof currentPrice === 'function') ? currentPrice() : NaN;
+      if (!isFinite(price)){
+        if (typeof toast === 'function') toast('No price yet');
+        return;
+      }
+      const sdkSide = side === 'short' ? 'sell' : 'buy';
+      const pkg = sdk.bracket({ risk: 20, rr: 2.0, side: sdkSide, price, slDistance: 60 });
+      if (typeof game !== 'undefined' && game && Array.isArray(game.visualBrackets)){
+        game.visualBrackets.push({
+          id: pkg.id, wx: player.wx, side: pkg.side,
+          entry: pkg.entry, tp: pkg.tp, sl: pkg.sl,
+          t: 0, outcome: null, upsideDown: !!player.upsideDown
+        });
+      }
+      if (typeof toast === 'function') toast('Bracket on ' + sym + ' → fired on current chart');
+      if (typeof log === 'function') log('runroom fire · ' + sym + ' (' + side + ') · 1:2 BUY on current symbol');
+      // v1.0.116 — Runroom A5: Coach steps T1.2 / T1.3 wired here.
+      // Fire the matching ops-lead coach line on the first PRIME / WATCH
+      // fire of the active T1 chapter. crCoachT1 is module-level state
+      // (see Runroom T-chapter launcher); one-shots clear after firing.
+      try {
+        const rawState = btn.getAttribute('data-state');
+        const stNum = parseInt(rawState, 10);
+        if (window.__crCoachT1 && window.__crCoachT1.active && typeof crCoach !== 'undefined'){
+          if (stNum === 2 && !window.__crCoachT1.firedPrime){
+            window.__crCoachT1.firedPrime = true;
+            crCoach.send('coach', "Clean read. That's a PRIME. Bracket it with B and the room logs the fill.");
+          } else if (stNum === 1 && !window.__crCoachT1.firedWatch){
+            window.__crCoachT1.firedWatch = true;
+            crCoach.send('coach', "WATCH is not PRIME. The room said wait. Hold 7 — see the whole rail before you press.");
+          }
+        }
+      } catch(_){}
+    } catch(err){
+      try { console.warn('[Runroom] Rail fire failed:', err && err.message); } catch(_){}
+    }
+  }
+
+  function _buildDom(){
+    if (_hostEl) return;
+    const host = document.createElement('div');
+    host.id = ROOT_ID;
+    host.setAttribute('aria-hidden', 'true');
+    host.innerHTML =
+      '<div class="crErHead">' +
+        '<div class="crErTitle">⚡ Exploitables</div>' +
+        '<button class="crErClose" type="button">CLOSE</button>' +
+      '</div>' +
+      '<div class="crErList" data-list></div>' +
+      '<div class="crErFoot">Phase 1 mock universe · 10 symbols · deterministic per session</div>';
+    document.body.appendChild(host);
+    _hostEl = host;
+    _listEl = host.querySelector('[data-list]');
+    host.querySelector('.crErClose').addEventListener('click', () => close());
+    _listEl.addEventListener('click', _onFireClick);
+  }
+
+  function open(universe){
+    mount();
+    if (!_hostEl) return;
+    if (universe && universe.length) _render(universe);
+    else if (!_lastUniverse || _lastUniverse.length === 0){
+      try { _render(crScoring.mockUniverse(Date.now() & 0xFFFF)); } catch(_){}
+    }
+    _hostEl.classList.add('on');
+    _hostEl.setAttribute('aria-hidden', 'false');
+  }
+  function close(){
+    if (!_hostEl) return;
+    _hostEl.classList.remove('on');
+    _hostEl.setAttribute('aria-hidden', 'true');
+  }
+  function isOpen(){ return !!(_hostEl && _hostEl.classList.contains('on')); }
+  function toggle(){ isOpen() ? close() : open(); }
+
+  function mount(){
+    if (_mounted) return;
+    if (!RUNROOM_ENABLED) return;
+    if (typeof document === 'undefined' || !document.body) return;
+    _ensureCss();
+    _buildDom();
+    _mounted = true;
+  }
+  function unmount(){
+    if (_hostEl){ _hostEl.remove(); _hostEl = null; _listEl = null; }
+    _mounted = false;
+  }
+  function isMounted(){ return _mounted; }
+
+  return Object.freeze({ mount, unmount, isMounted, open, close, toggle, isOpen });
+})();
+
+try { if (RUNROOM_ENABLED && typeof window !== 'undefined') window.crExploitablesRail = crExploitablesRail; } catch(_){}
+
+// ─── crVwapOverlay ─────────────────────────────────────────────────────────
+// v1.0.112 — Runroom step 10: VWAP overlay (the only chart overlay in Phase 1).
+// Computes the rolling-window TWAP (volume proxy unavailable in prototype
+// candles, so this is "time-weighted average price" — labelled VWAP for
+// consistency with the trading terminology students learn). Draws a dashed
+// horizontal line at the VWAP price across the visible chart and a small
+// label at the right edge. Only paints when RUNROOM_ENABLED.
+//
+// Tightly coupled to the existing render context: needs `ctx`, `priceToY`,
+// `sX`, `candles`, `cv` from outer scope. Called from render() via a single
+// drawRunroomOverlays() hook added right after drawCandles().
+function drawRunroomVWAPOverlay(){
+  if (!RUNROOM_ENABLED) return;
+  if (typeof ctx === 'undefined' || !ctx) return;
+  if (typeof candles === 'undefined' || !Array.isArray(candles) || candles.length < 5) return;
+  const WIN = (typeof crScoring !== 'undefined' && crScoring.WIN_DEFAULT) ? crScoring.WIN_DEFAULT : 30;
+  const slice = candles.slice(-WIN);
+  let sum = 0, n = 0;
+  for (let i = 0; i < slice.length; i++){
+    const c = slice[i];
+    if (c && isFinite(c.c)) { sum += c.c; n++; }
+  }
+  if (n < 5) return;
+  const vwap = sum / n;
+  let y;
+  try { y = priceToY(vwap); } catch(_){ return; }
+  if (!isFinite(y)) return;
+  const w = (cv && cv.width) ? cv.width : 1200;
+  const leftX = 0, rightX = w;
+  ctx.save();
+  ctx.setLineDash([6, 5]);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(186, 222, 255, 0.65)';   // soft blue, terminal feel
+  ctx.beginPath();
+  ctx.moveTo(leftX, y);
+  ctx.lineTo(rightX, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Label at right edge
+  const lblTxt = 'VWAP ' + (typeof fmtPrice === 'function' ? fmtPrice(vwap) : vwap.toFixed(2));
+  ctx.font = '10.5px ui-monospace,Menlo,monospace';
+  const padX = 6, padY = 3;
+  const tw = ctx.measureText(lblTxt).width;
+  const tx = rightX - tw - padX - 4;
+  const ty = y - 9;
+  ctx.fillStyle = 'rgba(10, 14, 24, 0.78)';
+  ctx.fillRect(tx - padX, ty - padY, tw + padX * 2, 14 + padY);
+  ctx.fillStyle = '#bfdcff';
+  ctx.fillText(lblTxt, tx, ty + 7);
+  ctx.restore();
+}
+
+// Wrapper for the render-pass hook. Any future Runroom overlays go here.
+function drawRunroomOverlays(){
+  try { drawRunroomVWAPOverlay(); } catch(_){}
+}
+try { if (RUNROOM_ENABLED && typeof window !== 'undefined') window.drawRunroomOverlays = drawRunroomOverlays; } catch(_){}
+
+// ─── crRunroomWorkbenchTab ─────────────────────────────────────────────────
+// v1.0.117 — Runroom step 11 finalize: Workbench RUNROOM tab.
+// Dynamically injects a "RUNROOM" tab + view into the existing Workbench
+// window (id win-workbench → .crTerm-tabs row at line 8568). Avoids touching
+// deployed HTML — the tab + view DOM only exist when RUNROOM_ENABLED is true
+// and mount() runs. The existing _wbWireUI() tab handler (line 30297) was
+// patched to include ['runroom','crWBViewRunroom'] so clicks resolve correctly.
+//
+// Sub-tabs row inside the view:
+//   - Radar Presets (live, default-shown)
+//   - Composer (greyed, "M5" tooltip)
+//   - Lines (greyed, "M5" tooltip)
+//   - Audit (greyed, "M5" tooltip)
+const crRunroomWorkbenchTab = (() => {
+  const TAB_ID = 'crWBTabRunroom';
+  const VIEW_ID = 'crWBViewRunroom';
+  let _mounted = false;
+
+  function _ensureCss(){
+    if (document.getElementById('crWBViewRunroomCss')) return;
+    const css = `
+      #${VIEW_ID}{ font-family: ui-monospace,Menlo,monospace; color:#cbd3df; }
+      #${VIEW_ID} .crRrSubTabs{ display:flex; gap:5px; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid rgba(80,100,140,.25); }
+      #${VIEW_ID} .crRrSubTab{
+        background:transparent; border:1px solid rgba(106,203,58,.35); color:#9ba3b3;
+        padding:4px 11px; border-radius:4px; cursor:pointer;
+        font:600 10px ui-monospace,Menlo,monospace; letter-spacing:.6px;
+        transition:all .12s ease;
+      }
+      #${VIEW_ID} .crRrSubTab.active{ color:#6acb3a; background:rgba(106,203,58,.10); }
+      #${VIEW_ID} .crRrSubTab.locked{ color:#5b647a; border-color:rgba(80,100,140,.3); cursor:default; }
+      #${VIEW_ID} .crRrSubTab.locked .crRrLockTag{ font-size:8.5px; opacity:.7; margin-left:5px; }
+      #${VIEW_ID} .crRrPanel{ display:none; }
+      #${VIEW_ID} .crRrPanel.on{ display:block; }
+      #${VIEW_ID} h4{ margin:0 0 8px; font-size:13px; color:#e2e8f0; letter-spacing:.4px; }
+      #${VIEW_ID} .crRrIntro{ margin:0 0 14px; font-size:11.5px; color:#9ba3b3; line-height:1.55; }
+      #${VIEW_ID} .crRrPresetRow{
+        display:flex; align-items:center; gap:10px; padding:10px 12px;
+        border:1px solid rgba(80,100,140,.22); border-radius:6px;
+        background:rgba(8,12,22,.4); margin-bottom:5px;
+        transition:all .12s ease;
+      }
+      #${VIEW_ID} .crRrPresetRow.active{
+        border-color:rgba(34,197,94,.55); background:rgba(34,197,94,.06);
+      }
+      #${VIEW_ID} .crRrPresetLabel{ flex:1; font-size:12px; color:#e2e8f0; }
+      #${VIEW_ID} .crRrPresetVer{ font-size:9.5px; color:#7a8294; padding:2px 6px; border-radius:3px; background:rgba(80,100,140,.18); }
+      #${VIEW_ID} .crRrPresetBtn{
+        background:rgba(34,197,94,.18); color:#bff7df;
+        border:1px solid rgba(34,197,94,.45);
+        padding:3px 11px; border-radius:4px; cursor:pointer;
+        font:700 9.5px ui-monospace,Menlo,monospace; letter-spacing:.5px;
+        transition:all .12s ease;
+      }
+      #${VIEW_ID} .crRrPresetBtn:hover{ background:rgba(34,197,94,.3); color:#fff; }
+      #${VIEW_ID} .crRrPresetRow.active .crRrPresetBtn{
+        background:rgba(34,197,94,.45); color:#06160d; cursor:default;
+      }
+      #${VIEW_ID} .crRrFoot{ margin-top:14px; font-size:10px; color:#7a8294; line-height:1.55; }
+      #${VIEW_ID} .crRrFoot code{ background:rgba(80,100,140,.15); padding:1px 4px; border-radius:3px; font-size:9.5px; }
+    `;
+    const style = document.createElement('style');
+    style.id = 'crWBViewRunroomCss';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  function _renderPresets(panel){
+    if (!panel) return;
+    let presets = [];
+    let activeId = '';
+    try {
+      presets = crRadarPresets.list();
+      activeId = crRadarPresets.getActive().id;
+    } catch(_){}
+    const rowsHtml = presets.map(p => {
+      const isActive = p.id === activeId;
+      return (
+        '<div class="crRrPresetRow' + (isActive ? ' active' : '') + '" data-preset-id="' + p.id + '">' +
+          '<div class="crRrPresetLabel">' + p.label + '</div>' +
+          '<div class="crRrPresetVer">' + (p.version || 'v1') + '</div>' +
+          '<button class="crRrPresetBtn" data-apply="' + p.id + '"' + (isActive ? ' disabled' : '') + '>' +
+            (isActive ? 'ACTIVE' : 'APPLY') +
+          '</button>' +
+        '</div>'
+      );
+    }).join('');
+    const html =
+      '<h4>Radar Presets</h4>' +
+      '<p class="crRrIntro">The room runs a continuous scan. Pick the preset that matches your read of the regime — the score weights and thresholds shift with each.</p>' +
+      rowsHtml +
+      '<div class="crRrFoot">Active preset persists across reloads under <code>cr_runroom_radar_preset_v1</code>.</div>';
+    try {
+      if (typeof crSafeHTML === 'function') crSafeHTML(panel, html);
+      else panel.innerHTML = html;
+    } catch(_){}
+  }
+
+  function _onTabClick(panels){
+    return (e) => {
+      const tab = e.target && e.target.closest && e.target.closest('.crRrSubTab');
+      if (!tab || tab.classList.contains('locked')) return;
+      const target = tab.getAttribute('data-rrtab');
+      document.querySelectorAll('#' + VIEW_ID + ' .crRrSubTab').forEach(t => {
+        t.classList.toggle('active', t === tab);
+      });
+      panels.forEach(p => p.classList.toggle('on', p.getAttribute('data-rrpanel') === target));
+      if (target === 'presets'){
+        _renderPresets(document.querySelector('#' + VIEW_ID + ' .crRrPanel[data-rrpanel="presets"]'));
+      }
+    };
+  }
+
+  function _onPresetApplyClick(panel){
+    return (e) => {
+      const btn = e.target && e.target.closest && e.target.closest('.crRrPresetBtn');
+      if (!btn || btn.disabled) return;
+      const id = btn.getAttribute('data-apply');
+      if (!id) return;
+      try {
+        const applied = crRadarPresets.apply(id);
+        if (applied){
+          if (typeof toast === 'function') toast('Preset → ' + applied.label);
+          if (typeof log === 'function') log('runroom preset · ' + id);
+          _renderPresets(panel);
+        }
+      } catch(_){}
+    };
+  }
+
+  function _buildDom(){
+    if (document.getElementById(VIEW_ID)) return;
+    const tabsRow = document.querySelector('#win-workbench .crTerm-tabs');
+    const body = document.querySelector('#win-workbench .os-wbody');
+    if (!tabsRow || !body) return;
+    // 1. Tab button
+    const tabBtn = document.createElement('button');
+    tabBtn.id = TAB_ID;
+    tabBtn.className = 'crTerm-tab';
+    tabBtn.setAttribute('data-wbview', 'runroom');
+    tabBtn.setAttribute('type', 'button');
+    tabBtn.style.color = '#bff7df';
+    tabBtn.style.borderColor = 'rgba(34,197,94,.45)';
+    tabBtn.textContent = 'RUNROOM';
+    tabsRow.appendChild(tabBtn);
+    // 2. View container
+    const view = document.createElement('div');
+    view.className = 'crTerm-view hidden';
+    view.id = VIEW_ID;
+    view.innerHTML =
+      '<div class="crRrSubTabs">' +
+        '<button class="crRrSubTab active" data-rrtab="presets" type="button">Radar Presets</button>' +
+        '<button class="crRrSubTab locked" data-rrtab="composer" type="button" title="Unlocks in M5">Composer<span class="crRrLockTag">M5</span></button>' +
+        '<button class="crRrSubTab locked" data-rrtab="lines" type="button" title="Unlocks in M5">Lines<span class="crRrLockTag">M5</span></button>' +
+        '<button class="crRrSubTab locked" data-rrtab="audit" type="button" title="Unlocks in M5">Audit<span class="crRrLockTag">M5</span></button>' +
+      '</div>' +
+      '<div class="crRrPanel on" data-rrpanel="presets"></div>' +
+      '<div class="crRrPanel" data-rrpanel="composer">M5 — Strategy Composer (Trigger / Cashout / Stake / Gates).</div>' +
+      '<div class="crRrPanel" data-rrpanel="lines">M5 — Line orchestrator.</div>' +
+      '<div class="crRrPanel" data-rrpanel="audit">M5 — Audit / Reconcile modal.</div>';
+    body.appendChild(view);
+    // 3. Wire tab clicks. The OUTER tab (RUNROOM in main strip) gets the
+    // existing _wbWireUI handler since the tab list was patched at line ~30297
+    // to include ['runroom','crWBViewRunroom']. But that handler is registered
+    // ONCE at boot, before our dynamic tab existed — so the new button is not
+    // listening. Re-register a slim handler on our tab.
+    tabBtn.addEventListener('click', () => {
+      // Toggle active on all main tabs
+      document.querySelectorAll('#win-workbench .crTerm-tab[data-wbview]').forEach(b => {
+        b.classList.toggle('active', b === tabBtn);
+      });
+      // Hide all views, show runroom
+      const allViewIds = ['crWBViewTools','crWBViewPrimitives','crWBViewBots','crWBViewStrats','crWBViewInds','crWBViewTerm','crWBViewBack','crWBViewApp','crWBViewTheme','crWBViewRunroom'];
+      allViewIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('hidden', id !== VIEW_ID);
+      });
+      _renderPresets(view.querySelector('.crRrPanel[data-rrpanel="presets"]'));
+    });
+    // Sub-tab clicks
+    const panels = view.querySelectorAll('.crRrPanel');
+    view.querySelector('.crRrSubTabs').addEventListener('click', _onTabClick(panels));
+    // Preset APPLY clicks (delegated on presets panel)
+    const presetsPanel = view.querySelector('.crRrPanel[data-rrpanel="presets"]');
+    presetsPanel.addEventListener('click', _onPresetApplyClick(presetsPanel));
+    // Initial render of presets
+    _renderPresets(presetsPanel);
+  }
+
+  function mount(){
+    if (_mounted) return;
+    if (!RUNROOM_ENABLED) return;
+    if (typeof document === 'undefined' || !document.body) return;
+    _ensureCss();
+    _buildDom();
+    _mounted = true;
+  }
+  function unmount(){
+    try {
+      const tab = document.getElementById(TAB_ID);
+      const view = document.getElementById(VIEW_ID);
+      const css = document.getElementById('crWBViewRunroomCss');
+      if (tab) tab.remove();
+      if (view) view.remove();
+      if (css) css.remove();
+    } catch(_){}
+    _mounted = false;
+  }
+  function isMounted(){ return _mounted; }
+
+  return Object.freeze({ mount, unmount, isMounted });
+})();
+
+try { if (RUNROOM_ENABLED && typeof window !== 'undefined') window.crRunroomWorkbenchTab = crRunroomWorkbenchTab; } catch(_){}
+
+// ─── Runroom HUD bootstrap ─────────────────────────────────────────────────
+// v1.0.109+ — Mount all Runroom HUD widgets when the flag is on. Defers via
+// setTimeout(0) to let the rest of the body parse and DOM be queryable. If
+// any module throws, the rest still try. Each module's mount() is idempotent.
+try {
+  if (RUNROOM_ENABLED) {
+    const _crRunroomMount = () => {
+      try { crHealthPillsHUD.mount(); } catch(e) { try{ console.warn('[Runroom] HealthPills mount failed:', e && e.message); }catch(_){} }
+      try { crSlotManagerHUD.mount(); } catch(e) { try{ console.warn('[Runroom] SlotManagerHUD mount failed:', e && e.message); }catch(_){} }
+      try { crExploitablesRail.mount(); } catch(e) { try{ console.warn('[Runroom] ExploitablesRail mount failed:', e && e.message); }catch(_){} }
+      try { crRunroomWorkbenchTab.mount(); } catch(e) { try{ console.warn('[Runroom] WorkbenchTab mount failed:', e && e.message); }catch(_){} }
+    };
+    if (typeof document !== 'undefined' && document.readyState === 'complete') {
+      setTimeout(_crRunroomMount, 0);
+    } else if (typeof window !== 'undefined') {
+      window.addEventListener('load', () => setTimeout(_crRunroomMount, 0), { once: true });
+      // Also fire on DOMContentLoaded as a fallback so the user sees HUD
+      // before all images / external scripts finish loading.
+      document.addEventListener('DOMContentLoaded', () => setTimeout(_crRunroomMount, 0), { once: true });
+    } else {
+      setTimeout(_crRunroomMount, 50);
+    }
+  }
+} catch(_){}
 
 // ─── v0.9.8 ─ Primitives picker menu (hotkey 3) ──────────────────────────
 // Spawns a modal-ish list near the avatar; each row fires the matching SDK
@@ -16847,6 +18273,10 @@ sdk.on('cancel',  e=>{ log('cancel oco leg'); });
 sdk.on('expired', e=> log('expired '+e.effect.type));
 sdk.on('order',   e=> log('order '+e.kind));
 
+// v1.0.106 — Runroom step 4: install slot-manager SDK hooks now that sdk is
+// built. Idempotent; no-op when RUNROOM_ENABLED is false. Hooks subscribe to
+// 'order' / 'bracketClose' / 'cancel' to auto-track slot occupancy.
+try { if (RUNROOM_ENABLED && typeof crSlotManager !== 'undefined') crSlotManager.installSdkHooks(); } catch(_){}
 // v0.8k#24i — bracketClose trimmed to SDK-essential bookkeeping. Previously
 // TP/SL resolution minted $RUN, awarded $CRDS scaled with P&L, added/subtracted
 // score, and fired celebratory floats + particle bursts. All of that is
@@ -17641,6 +19071,10 @@ function render(){
   // volatility-fall branch in physics never fires.
   // drawHazards();
   drawCandles();
+  // v1.0.112 — Runroom step 10: VWAP overlay (and any future Runroom chart
+  // overlays). Painted right after candles so it sits behind indicators and
+  // gameplay sprites. No-op when RUNROOM_ENABLED is false.
+  try { if (typeof drawRunroomOverlays === 'function') drawRunroomOverlays(); } catch(_){}
   // v0.8N#7 — drawChartNPCs() retired per user request (background bears /
   // traders / whales were too distracting). Function kept defined so any
   // saved-map references that include npc state still resolve.
@@ -22286,7 +23720,128 @@ function pickMode(mode){
     // overlay panel + the multiplier reward shape.
     39: { goal:'Open the Live panel, flip 2+ overlays on, place a bracket.', tip:'Topbar → green "Live" button → flip switches → bracket as usual. Stacking 2+ overlays earns a $CRDS multiplier.', asset:'btc', tf:'15m', indicators:[], loadout:['bracket'], probes:[], live:true },
   };
-  function _launchCampaignChapter(num){
+  // v1.0.107 — Runroom step 5: campaign dispatch wrapper.
+  // The original chapter launcher takes a numeric chapter id (1-39); the
+  // Runroom arc adds a *parallel* registry indexed by 'T1'-'T8'. Following
+  // the bot reviewers' v2 verdict (parallel registry, not folded into slots
+  // 40-47), this wrapper routes string keys to the T-handler and numeric
+  // keys to the original core function. Existing callers passing integers
+  // are untouched.
+  //
+  // v1.0.113 — Runroom step 11: T1-T3 chapter data + lightweight launcher.
+  // Voice: ops-lead per Hermes v2.1 copy pass. Each chapter has a completion
+  // check that's polled at 1Hz; on completion: banner + toast + star.
+  // State labels: PRIME / WATCH / IDLE (the chapter copy uses these names).
+  const CAMPAIGN_T_CHAPTERS = {
+    T1: {
+      id: 'T1',
+      title: 'Open the Room',
+      goal: 'Press 7 once. See what the room shows you.',
+      coachIntro: 'This is the room. Press 7 to load the board. The room shows you what is PRIME and what is WATCH — nothing else matters until the board agrees.',
+      // Completion: any SIFT scan has fired this session (window.__crSiftState.firstUsed)
+      isDone: () => {
+        try { return !!(window.__crSiftState && window.__crSiftState.firstUsed); } catch(_){ return false; }
+      }
+    },
+    T2: {
+      id: 'T2',
+      title: 'Tune the Sieve',
+      goal: 'Switch radar preset. Read what changes.',
+      coachIntro: 'Different room, different rules. Switch your radar preset and the room re-scores everything live. Operators tune before they fire.',
+      // Completion: active preset changed away from default `top-10`
+      isDone: () => {
+        try { return crRadarPresets.getActive().id !== crRadarPresets.DEFAULT_ID; } catch(_){ return false; }
+      }
+    },
+    T3: {
+      id: 'T3',
+      title: 'Fire When the Board Agrees',
+      goal: 'Fire a bracket from the Exploitables rail. Watch the slot fill.',
+      coachIntro: 'PRIME is the signal. Tap a row on the rail and the board logs your fill. The Slot Manager up top tells you what space you have left.',
+      // Completion: at least one slot is filled
+      isDone: () => {
+        try { const s = crSlotManager.state(); return (s.long.count + s.short.count) > 0; } catch(_){ return false; }
+      }
+    }
+  };
+
+  let _activeTChapter = null;
+  let _tChapterPoll = null;
+
+  function _launchCampaignChapterT(key){
+    if(!RUNROOM_ENABLED){
+      try { if(typeof toast === 'function') toast('Runroom is off — enable to play ' + key); } catch(_){}
+      return;
+    }
+    const ch = CAMPAIGN_T_CHAPTERS[key];
+    if(!ch){
+      try { if(typeof toast === 'function') toast(key + ' — chapter not yet implemented'); } catch(_){}
+      return;
+    }
+    if(_tChapterPoll){ clearInterval(_tChapterPoll); _tChapterPoll = null; }
+    _activeTChapter = key;
+    // v1.0.116 — Set up T1 coach-step state so the Exploitables Rail FIRE
+    // handler can fire T1.2 (PRIME) and T1.3 (WATCH) one-shots.
+    try {
+      if (key === 'T1' && typeof window !== 'undefined'){
+        window.__crCoachT1 = { active: true, firedPrime: false, firedWatch: false };
+      }
+    } catch(_){}
+    try { if(typeof showBanner === 'function') showBanner('🟢 Runroom · ' + key, ch.title + ' — ' + ch.goal, 2600); } catch(_){}
+    try { if(typeof toast === 'function') toast('Runroom ' + key + ' — ' + ch.title); } catch(_){}
+    try { if(typeof log === 'function') log('runroom chapter ' + key + ' · ' + ch.title); } catch(_){}
+    // v1.0.116 — Ops-lead Coach intro line via crCoach.send('coach', ...).
+    // Earlier code referenced a nonexistent crCoach.say() — corrected. The
+    // real API is send(role, text) which adds to history + notifies subs.
+    setTimeout(() => {
+      try {
+        if (typeof crCoach !== 'undefined' && crCoach && typeof crCoach.send === 'function'){
+          crCoach.send('coach', ch.coachIntro);
+        } else if (typeof toast === 'function'){
+          toast('🧑‍✈️ ' + ch.coachIntro);
+        }
+      } catch(_){}
+    }, 1100);
+    // Poll for completion at 1Hz
+    _tChapterPoll = setInterval(() => {
+      try {
+        if (_activeTChapter !== key) { clearInterval(_tChapterPoll); _tChapterPoll = null; return; }
+        if (ch.isDone()){
+          clearInterval(_tChapterPoll); _tChapterPoll = null;
+          _activeTChapter = null;
+          // v1.0.116 — Clear T1 coach-step state so a re-launch starts fresh.
+          try { if (key === 'T1' && typeof window !== 'undefined' && window.__crCoachT1) { window.__crCoachT1.active = false; } } catch(_){}
+          if (typeof showBanner === 'function') showBanner('⭐ Runroom · ' + key + ' complete', 'Clean read. The board agreed.', 2400);
+          if (typeof toast === 'function') toast(key + ' complete · ⭐');
+          if (typeof log === 'function') log('runroom chapter ' + key + ' complete');
+          // v1.0.116 — Fire a final ops-lead Coach line on T1 completion.
+          try {
+            if (key === 'T1' && typeof crCoach !== 'undefined' && crCoach && typeof crCoach.send === 'function'){
+              crCoach.send('coach', "That's the loop. Slot filled, room agreed. Next time, hold 7 and you'll see the whole rail before pressing.");
+            }
+          } catch(_){}
+          // Persist a tiny star marker so future sessions can show progress.
+          try {
+            const raw = localStorage.getItem('cr_runroom_chapter_stars_v1') || '{}';
+            const stars = JSON.parse(raw) || {};
+            stars[key] = { earned: true, t: Date.now() };
+            localStorage.setItem('cr_runroom_chapter_stars_v1', JSON.stringify(stars));
+          } catch(_){}
+        }
+      } catch(_){}
+    }, 1000);
+  }
+  // Expose the launcher for browser-console testing.
+  try { if (RUNROOM_ENABLED && typeof window !== 'undefined') {
+    window.crLaunchRunroomChapter = (k) => _launchCampaignChapterT(String(k).toUpperCase());
+  } } catch(_){}
+  function _launchCampaignChapter(key){
+    if(typeof key === 'string' && key.length > 0 && (key[0] === 'T' || key[0] === 't')){
+      return _launchCampaignChapterT(String(key).toUpperCase());
+    }
+    return _launchCampaignChapterCore(key);
+  }
+  function _launchCampaignChapterCore(num){
     const ch = CAMPAIGN_CHAPTERS[num];
     if(!ch) return;
     // v0.9.18 — Archived chapters (`archived: true`) get a soft-deny: they
@@ -24528,21 +26083,26 @@ function _renderPlayerTab(){
         pc.fillRect(0, y, W2, 1);
       }
       // Skin → tint. Solana-green default, with the saved skin variant.
-      const skinTint = {
+      // v1.0.120 — Route through _drawLoadoutAvatar so the big preview also
+      // shows the NFT pick (was rendering the procedural Invader / Snake /
+      // Pacman even when the player had selected an NFT avatar). Falls back
+      // to the legacy dispatch if _drawLoadoutAvatar isn't defined yet.
+      const skinTint = (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : ({
         'invader-green':  '#14f195',
         'invader-red':    '#ff5b7f',
         'invader-yellow': '#ffd166',
         'invader-purple': '#9945ff',
-      }[playerLoadout.skin] || '#14f195';
+      }[playerLoadout.skin] || '#14f195');
       // Glow halo first so the sprite reads against the dark frame.
       pc.save();
       pc.translate(W2 / 2, H2 / 2 + 4);
-      pc.shadowColor = 'rgba(20,241,149,0.55)';
+      pc.shadowColor = skinTint + '8c';
       pc.shadowBlur  = 14;
       const scale = 6;
-      if(playerLoadout.avatar === 'snake'){
-        const segN = Math.max(4, game.snakeLen || 6);
-        drawSnake(pc, scale, skinTint, segN);
+      if(typeof _drawLoadoutAvatar === 'function'){
+        _drawLoadoutAvatar(pc, scale, { glow:false, badge:true, snakeLen: Math.max(4, game.snakeLen || 6) });
+      } else if(playerLoadout.avatar === 'snake'){
+        drawSnake(pc, scale, skinTint, Math.max(4, game.snakeLen || 6));
       } else if(playerLoadout.avatar === 'pacman'){
         if(typeof drawPacman === 'function') drawPacman(pc, scale, skinTint);
       } else {
@@ -29384,7 +30944,7 @@ function _wbWireUI(){
     btn.addEventListener('click', () => {
       const view = btn.getAttribute('data-wbview');
       tabs.forEach(b => b.classList.toggle('active', b === btn));
-      [['tools','crWBViewTools'],['primitives','crWBViewPrimitives'],['bots','crWBViewBots'],['strats','crWBViewStrats'],['inds','crWBViewInds'],['term','crWBViewTerm'],['back','crWBViewBack'],['app','crWBViewApp'],['theme','crWBViewTheme']].forEach(([k, id]) => {
+      [['tools','crWBViewTools'],['primitives','crWBViewPrimitives'],['bots','crWBViewBots'],['strats','crWBViewStrats'],['inds','crWBViewInds'],['term','crWBViewTerm'],['back','crWBViewBack'],['app','crWBViewApp'],['theme','crWBViewTheme'],['runroom','crWBViewRunroom']].forEach(([k, id]) => {
         const el = document.getElementById(id);
         if(el) el.classList.toggle('hidden', view !== k);
       });
@@ -32725,22 +34285,24 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
     ctx2.clearRect(0, 0, W2, H2);
     const t = performance.now() / 1000;
     const bob = Math.sin(t * 1.6) * 2;
-    const skinTint = (typeof playerLoadout !== 'undefined') ? ({
-      'invader-green':  '#14f195',
-      'invader-red':    '#ff5b7f',
-      'invader-yellow': '#ffd166',
-      'invader-purple': '#9945ff',
-    }[playerLoadout.skin] || '#14f195') : '#14f195';
+    // v1.0.120 — Route through _drawLoadoutAvatar so the lite-profile picks
+    // up the NFT avatar override (was missing on this surface — desktop
+    // Profile + in-game runner had it via _drawLoadoutAvatar, but the
+    // lite-profile dispatched directly on playerLoadout.avatar and never saw
+    // window._crNftAvatarImg).
+    const skinTint = (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195';
     ctx2.save();
     ctx2.translate(W2 / 2, H2 / 2 + bob);
-    ctx2.shadowColor = 'rgba(20,241,149,0.6)';
+    ctx2.shadowColor = skinTint + '99';
     ctx2.shadowBlur = 10;
-    if(typeof playerLoadout !== 'undefined' && playerLoadout.avatar === 'snake'){
-      if(typeof drawSnake === 'function') drawSnake(ctx2, 3, skinTint, Math.max(4, (game && game.snakeLen) || 6));
-    } else if(typeof playerLoadout !== 'undefined' && playerLoadout.avatar === 'pacman'){
-      if(typeof drawPacman === 'function') drawPacman(ctx2, 3, skinTint);
-    } else {
-      if(typeof drawInvader === 'function') drawInvader(ctx2, 3, skinTint);
+    if(typeof _drawLoadoutAvatar === 'function'){
+      _drawLoadoutAvatar(ctx2, 3, { glow:false, badge:true, snakeLen: Math.max(4, (game && game.snakeLen) || 6) });
+    } else if(typeof playerLoadout !== 'undefined' && playerLoadout.avatar === 'snake' && typeof drawSnake === 'function'){
+      drawSnake(ctx2, 3, skinTint, Math.max(4, (game && game.snakeLen) || 6));
+    } else if(typeof playerLoadout !== 'undefined' && playerLoadout.avatar === 'pacman' && typeof drawPacman === 'function'){
+      drawPacman(ctx2, 3, skinTint);
+    } else if(typeof drawInvader === 'function'){
+      drawInvader(ctx2, 3, skinTint);
     }
     ctx2.restore();
   }
@@ -36663,18 +38225,22 @@ function log(msg){
     const c = canv.getContext('2d');
     c.clearRect(0,0,canv.width,canv.height);
     c.save();
-    c.translate(canv.width/2, canv.height/2 - 4);
+    // v1.0.120 — Centre the sprite cleanly in the new 64×64 canvas. Drop
+    // the old "-4" y-fudge that was tuned for the 36×24 layout.
+    c.translate(canv.width/2, canv.height/2);
     // v0.9.37 — Honour the player's loadout (skin/gear/weapon/avatar) so the
     // desktop avatar matches what the Profile picker showed and what the
     // in-game runner will look like. forceTint lets callers (e.g. shoot
     // mode) still override with red etc.
     // v0.9.50 — Aura removed: dropped the canvas shadow + pass glow:false so
     // the gear halo doesn't render around the desktop avatar.
+    // v1.0.120 — Scale bumped 2 → 2.4: with the larger canvas the avatar can
+    // breathe and Snake / Invader / Pacman / NFT all read clearly.
     const tint = color || ((typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195');
     if(typeof _drawLoadoutAvatar === 'function'){
-      _drawLoadoutAvatar(c, 2, { glow: false, badge: true, snakeLen: 5, forceTint: color || null });
+      _drawLoadoutAvatar(c, 2.4, { glow: false, badge: true, snakeLen: 5, forceTint: color || null });
     } else if(typeof drawInvader === 'function'){
-      drawInvader(c, 2, tint);
+      drawInvader(c, 2.4, tint);
     }
     c.restore();
   }
@@ -36713,7 +38279,15 @@ function log(msg){
     try { window.crOsInvaderActive = true; } catch(_){}
     // Build the avatar overlay. pointer-events:auto so the user can grab it.
     const canv = document.createElement('canvas');
-    canv.width = 36; canv.height = 24;
+    // v1.0.120 — Canvas bumped 36×24 → 64×64 so the sprite ACTUALLY shows.
+    // The previous size clipped Snake's body chain (which extends ~24px left
+    // of the head) and clipped NFT images (drawn at 32×32 centered, so the
+    // top 8px got chopped — the screenshot reported by Julian showed exactly
+    // this: a "yellow square" with no recognisable avatar shape). 64×64 gives
+    // every avatar mode (Invader / Snake / Pacman / NFT) headroom + breathing
+    // space and still reads as "small desktop overlay sprite" against the OS
+    // chrome.
+    canv.width = 64; canv.height = 64;
     canv.dataset.crOsInvader = '1';
     // v1.0.46 — z-index bumped 99999 → 1000001 so the avatar walks
     // OVER the RUN-tube PIP widget (which sits at 999999 !important
@@ -36722,7 +38296,7 @@ function log(msg){
     // can stomp across.
     canv.style.cssText = [
       'position:fixed', 'left:0', 'top:0',
-      'width:36px', 'height:24px',
+      'width:64px', 'height:64px',
       'pointer-events:auto',
       'cursor:grab',
       'z-index:1000001',
@@ -36735,8 +38309,10 @@ function log(msg){
     osInvaderEl = canv;
     const place = ()=>{
       if(!osInvaderEl) return;
-      osInvaderEl.style.left = (osInvaderX - 18) + 'px';
-      osInvaderEl.style.top  = (osInvaderY - 12) + 'px';
+      // v1.0.120 — Canvas grew 36×24 → 64×64; center the overlay on the
+      // tracked (osInvaderX, osInvaderY) point with the new half-extents.
+      osInvaderEl.style.left = (osInvaderX - 32) + 'px';
+      osInvaderEl.style.top  = (osInvaderY - 32) + 'px';
     };
     place();
     // Helpers — does a mousedown target the avatar itself? interactive UI?
@@ -39639,20 +41215,26 @@ const crCoach = (function(){
     }catch{}
     // Mirror missions into the phone Profile screen too.
     try { if(typeof refreshMissions === 'function') refreshMissions(); } catch(_){}
-    // v0.8k#24k — Render Invader thumbnail into the merged Trader card.
+    // v0.8k#24k — Render the chosen avatar into the merged Trader card.
+    // v1.0.120 — Was hardcoded drawInvader; now routes through
+    // _drawLoadoutAvatar so the phone wallet thumbnail respects the player's
+    // picked avatar (Invader / Snake / Pacman / NFT) + skin tint, matching
+    // every other avatar surface.
     try{
       const av = document.getElementById('crPhWAvatar');
-      if(av && typeof drawInvader === 'function'){
+      if(av){
         const c2 = av.getContext('2d');
         c2.clearRect(0, 0, av.width, av.height);
         c2.save();
-        // v0.8k#24ap (revised) — Drawing logic kept at original scale/blur.
-        // The 48×48 intrinsic canvas is shown at 12×12 via CSS, so the sprite
-        // shrinks crisply (image-rendering:pixelated) without softening.
-        c2.translate(av.width/2, av.height/2 + 4);
-        c2.shadowColor = 'rgba(20,241,149,0.6)';
+        c2.translate(av.width/2, av.height/2);
+        const _tint = (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195';
+        c2.shadowColor = _tint + '99';
         c2.shadowBlur = 6;
-        drawInvader(c2, 2.5);
+        if(typeof _drawLoadoutAvatar === 'function'){
+          _drawLoadoutAvatar(c2, 2.5, { glow:false, badge:false, snakeLen:5 });
+        } else if(typeof drawInvader === 'function'){
+          drawInvader(c2, 2.5, _tint);
+        }
         c2.restore();
       }
     }catch{}
