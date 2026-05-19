@@ -25968,6 +25968,7 @@ function _renderPlayerTab(){
       // if it's active). In-game render reads playerLoadout per frame.
       try { if (typeof osRefreshProfile === 'function') osRefreshProfile(); } catch(_){}
       try { if (typeof window.refreshOsInvaderAvatar === 'function') window.refreshOsInvaderAvatar(); } catch(_){}
+      try { if (typeof window.refreshPhInvader === 'function') window.refreshPhInvader(); } catch(_){}
       if(typeof toast === 'function') toast('Avatar: ' + b.textContent.trim());
     };
   });
@@ -25988,6 +25989,7 @@ function _renderPlayerTab(){
         // profile preview, AND the Player-menu desktop avatar (if it's up).
         try { if (typeof osRefreshProfile === 'function') osRefreshProfile(); } catch(_){}
         try { if (typeof window.refreshOsInvaderAvatar === 'function') window.refreshOsInvaderAvatar(); } catch(_){}
+      try { if (typeof window.refreshPhInvader === 'function') window.refreshPhInvader(); } catch(_){}
         if(typeof onApply === 'function') onApply(next);
         if(typeof toast === 'function'){
           toast(slotKey.charAt(0).toUpperCase() + slotKey.slice(1) + ': '
@@ -39916,11 +39918,36 @@ function log(msg){
     if (!url) { window._crNftAvatarImg = null; return; }
     const cur = window._crNftAvatarImg;
     if (cur && cur.src === url && cur.complete) return;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload  = () => { window._crNftAvatarImg = img; };
-    img.onerror = () => { window._crNftAvatarImg = null; };
-    img.src = url;
+    // v1.0.120 — Two-pass loader. Most Solana NFT CDNs (Magic Eden CDN,
+    // shdw-drive, Arweave gateways) DON'T send Access-Control-Allow-Origin,
+    // so crossOrigin='anonymous' fires onerror and the NFT silently falls
+    // back to the procedural Invader sprite. Try with CORS first (best — we
+    // could later getImageData for shader effects); on error retry WITHOUT
+    // crossOrigin so the image at least renders.
+    const _tryLoad = (useCors) => {
+      const img = new Image();
+      if (useCors) img.crossOrigin = 'anonymous';
+      img.onload  = () => {
+        window._crNftAvatarImg = img;
+        // Tell live surfaces to repaint now that the bitmap is ready.
+        try { if (typeof osRefreshProfile === 'function') osRefreshProfile(); } catch(_){}
+        try { if (typeof window.refreshOsInvaderAvatar === 'function') window.refreshOsInvaderAvatar(); } catch(_){}
+        try { if (typeof window.refreshPhInvader === 'function') window.refreshPhInvader(); } catch(_){}
+        try { if (typeof window._renderPlayerTab === 'function') window._renderPlayerTab(); } catch(_){}
+      };
+      img.onerror = () => {
+        if (useCors) {
+          // CORS pass failed — retry without crossOrigin so the bitmap at
+          // least renders (canvas becomes tainted; that's fine — we never
+          // read pixels back from the avatar canvas).
+          _tryLoad(false);
+        } else {
+          window._crNftAvatarImg = null;
+        }
+      };
+      img.src = url;
+    };
+    _tryLoad(true);
   }
 
   // Apply the saved NFT avatar to every visible surface.
@@ -39946,6 +39973,15 @@ function log(msg){
       if(profileCv)  profileCv.style.opacity  = '1';
       window._crNftAvatarImg = null;
     }
+    // v1.0.120 — Repaint every live avatar canvas so the NFT pick (or clear)
+    // propagates instantly. Profile thumbnail already calls osRefreshProfile
+    // from the picker handler; this covers the desktop edit-mode avatar +
+    // floating phone cursor + lite-profile portrait. In-game runner reads
+    // _crNftAvatarImg per frame so it picks up automatically.
+    try { if (typeof osRefreshProfile === 'function') osRefreshProfile(); } catch(_){}
+    try { if (typeof window.refreshOsInvaderAvatar === 'function') window.refreshOsInvaderAvatar(); } catch(_){}
+    try { if (typeof window.refreshPhInvader === 'function') window.refreshPhInvader(); } catch(_){}
+    try { if (typeof window._renderPlayerTab === 'function') window._renderPlayerTab(); } catch(_){}
   }
   // Expose so other modules can refresh after wallet changes.
   window._crNftApplyAvatar = _nftApplyAvatar;
@@ -41051,31 +41087,52 @@ const crCoach = (function(){
   // suppressed so only the Invader is visible.
   phone.style.cursor = 'auto';
   // Floating Invader cursor for the phone — built once, reused.
+  // v1.0.120 — Canvas 36×24 → 64×64 (same reason as the OS edit-mode avatar:
+  // bigger canvas so NFT images / Snake chains aren't clipped) and the paint
+  // routed through _drawLoadoutAvatar so the floating phone cursor matches
+  // the player's chosen avatar + skin + NFT pick instead of always being a
+  // green Invader. Exposed as a global repaint hook so changes to loadout
+  // (Profile picker / NFT picker) update the live cursor sprite.
   let phInvaderEl = null;
+  function _paintPhInvader(c){
+    const cx = c.getContext('2d');
+    cx.clearRect(0, 0, c.width, c.height);
+    cx.save();
+    cx.translate(c.width/2, c.height/2);
+    const _tint = (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#14f195';
+    cx.shadowColor = _tint + '99';
+    cx.shadowBlur = 6;
+    if(typeof _drawLoadoutAvatar === 'function'){
+      _drawLoadoutAvatar(cx, 2.4, { glow:false, badge:false, snakeLen:5 });
+    } else if(typeof drawInvader === 'function'){
+      drawInvader(cx, 2.4, _tint);
+    }
+    cx.restore();
+  }
   function buildPhInvader(){
     if(phInvaderEl) return phInvaderEl;
     const c = document.createElement('canvas');
-    c.width = 36; c.height = 24;
+    c.width = 64; c.height = 64;
     c.style.cssText = [
-      'position:fixed','left:0','top:0','width:36px','height:24px',
+      'position:fixed','left:0','top:0','width:64px','height:64px',
       'pointer-events:none','z-index:99998',
       'image-rendering:pixelated','display:none'
     ].join(';');
-    try {
-      const cx = c.getContext('2d');
-      cx.translate(c.width/2, c.height/2 - 4);
-      cx.shadowColor = 'rgba(20,241,149,0.6)';
-      cx.shadowBlur = 6;
-      if(typeof drawInvader === 'function') drawInvader(cx, 2);
-    } catch(_){}
+    try { _paintPhInvader(c); } catch(_){}
     document.body.appendChild(c);
     phInvaderEl = c;
     return c;
   }
+  // Expose a refresh hook so the Profile picker can repaint the live phone
+  // cursor when the player changes their avatar mid-session.
+  window.refreshPhInvader = function(){
+    if(phInvaderEl){ try { _paintPhInvader(phInvaderEl); } catch(_){} }
+  };
   function placePhInvader(x, y){
     const el = buildPhInvader();
-    el.style.left = (x - 18) + 'px';
-    el.style.top  = (y - 12) + 'px';
+    // v1.0.120 — Center the bigger 64×64 canvas on the cursor point.
+    el.style.left = (x - 32) + 'px';
+    el.style.top  = (y - 32) + 'px';
     el.style.display = 'block';
   }
   function hidePhInvader(){
