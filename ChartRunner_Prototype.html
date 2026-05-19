@@ -25957,11 +25957,29 @@ function _renderPlayerTab(){
   setSlot('skin',    _findOpt(PLAYER_OPTIONS.skin,    playerLoadout.skin));
   setSlot('vehicle', _findOpt(PLAYER_OPTIONS.vehicle, playerLoadout.vehicle));
   // Avatar tabs (top of the central column) — sync on/off and wire click.
+  // v1.0.121 — Standard avatars (Invader / Snake) are the default; the NFT
+  // pick only takes effect after the player presses the "+" button to choose
+  // one. Clicking an avatar tab clears any previously-picked NFT so the
+  // procedural sprite renders. Without this, the NFT silently kept
+  // overriding the tab choice — clicking Invader would still show the NFT.
   document.querySelectorAll('.player-altar-avatar-tabs .paa-tab').forEach(b => {
-    b.classList.toggle('on', b.dataset.avatar === playerLoadout.avatar);
+    // "on" state reflects BOTH the selected avatar AND that no NFT is
+    // currently active. If an NFT is picked, neither tab shows the active
+    // pill (the + frame is the active surface).
+    const _nftActive = !!(window._crNftLoadSelected && window._crNftLoadSelected())
+                    || !!(window._crNftAvatarImg);
+    b.classList.toggle('on', !_nftActive && b.dataset.avatar === playerLoadout.avatar);
     b.onclick = () => {
       playerLoadout.avatar = b.dataset.avatar;
       _savePlayerLoadout();
+      // v1.0.121 — Picking a tab opts OUT of the NFT avatar. Clears the
+      // saved NFT pick + the live image cache; subsequent draws fall through
+      // to the procedural sprite (Invader / Snake) with the chosen skin.
+      try {
+        if (typeof window._crNftClearSelected === 'function') window._crNftClearSelected();
+        window._crNftAvatarImg = null;
+        if (typeof window._crNftApplyAvatar === 'function') window._crNftApplyAvatar();
+      } catch(_){}
       _renderPlayerTab();
       // v0.9.34/37 — Propagate to every avatar surface (desktop Profile
       // thumbnail, lite-profile preview, AND the live Player-menu avatar
@@ -39985,6 +40003,11 @@ function log(msg){
   }
   // Expose so other modules can refresh after wallet changes.
   window._crNftApplyAvatar = _nftApplyAvatar;
+  // v1.0.121 — Avatar-tab handler in _renderPlayerTab needs to clear the
+  // saved NFT when the player opts back to Invader / Snake. The IIFE
+  // wrapper would otherwise hide _nftClearSelected from that call site.
+  window._crNftClearSelected = _nftClearSelected;
+  window._crNftLoadSelected  = _nftLoadSelected;
 
   function _nftRenderPicker(){
     const grid = document.getElementById('crNftGrid');
