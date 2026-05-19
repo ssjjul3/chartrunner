@@ -12259,6 +12259,12 @@ window.addEventListener('keydown', e=>{
     try { toast('Bracket placed · ' + rrDisplay(rr)); } catch(_){}
     return;
   }
+  // v1.0.108 — Runroom step 6: SIFT ability (key 7).
+  // Tap 7 → score the current symbol via crScoring → toast result + float
+  // the state badge + spawn particles when state is PRIME. Cooldown 5s after
+  // the first free tap of the session. Gated by RUNROOM_ENABLED — when off,
+  // key 7 falls through to its existing behavior (none currently).
+  // Hold-7 (Exploitables Rail) is deferred to step 9; for now it stub-toasts.
   // v0.8a — ESC closes the SDK panel / L3 terminal / Menu drawer (Mac-style window close).
   // Only acts if something is open; otherwise falls through so bracket/ladder editors still
   // get their own ESC handlers (those live behind the `typing` branch above).
@@ -13869,6 +13875,37 @@ const ABILITIES = [
     toast('🟢 Primitives laser — pick a primitive · press 3 or Esc to exit');
   }},
 ];
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.0.119 — Phoenix Live PARKED 2026-05-19
+// ═══════════════════════════════════════════════════════════════════════════
+// Per Julian's directive, all Phoenix Live overlays are archived for refinement.
+// Override window.crLive AFTER its IIFE has run, forcing every overlay flag off
+// and hiding #crLivePanel. Drawing functions (drawWhaleGhosts, drawLiquidityWater)
+// still exist but no-op because their first line checks `crLive.get(id)` first.
+// Resume by removing this block. See memory: project_phoenix_live_parked_2026_05_19.md
+(function archivePhoenixLive(){
+  function _disable(){
+    try {
+      if (!window.crLive) return false;
+      window.crLive.get   = function(){ return false; };
+      window.crLive.count = function(){ return 0; };
+      window.crLive.mult  = function(){ return 1; };
+      const s = document.createElement('style');
+      s.id = 'crPhoenixLiveArchive';
+      s.textContent = '#crLivePanel{display:none !important;}';
+      document.head.appendChild(s);
+      return true;
+    } catch(_){ return false; }
+  }
+  // crLive may not exist yet at this point in script load order; retry until it does.
+  if (_disable()) return;
+  let tries = 0;
+  const iv = setInterval(() => {
+    tries++;
+    if (_disable() || tries > 40) clearInterval(iv);
+  }, 250);
+})();
 
 // ─── v0.9.8 ─ Primitives picker menu (hotkey 3) ──────────────────────────
 // Spawns a modal-ish list near the avatar; each row fires the matching SDK
@@ -16809,6 +16846,7 @@ sdk.on('fill',    e=>{ log('fill '+e.order.type+' @ '+e.order.price.toFixed(2));
 sdk.on('cancel',  e=>{ log('cancel oco leg'); });
 sdk.on('expired', e=> log('expired '+e.effect.type));
 sdk.on('order',   e=> log('order '+e.kind));
+
 // v0.8k#24i — bracketClose trimmed to SDK-essential bookkeeping. Previously
 // TP/SL resolution minted $RUN, awarded $CRDS scaled with P&L, added/subtracted
 // score, and fired celebratory floats + particle bursts. All of that is
@@ -23525,6 +23563,381 @@ function osRefreshShop(){
   });
 })();
 
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.0.119 — Profile Phase 1 · Track 1 · Name Claim
+// ═══════════════════════════════════════════════════════════════════════════
+// On-chain runner-name claim via chartrunner_registry (entity type 6 = TokenProfile,
+// reserved per crRegistry IIFE comments at line 9514). Local-first persistence
+// so the claimed name shows immediately; on-chain bounce via solana-connect
+// gives the durability + uniqueness guarantee.
+//
+// Storage key: cr_player_name_v1 = { name, claimedAt, onChain, sig }
+// crLpName + osProfileName + any other "anon_runner" mirror picks up the new
+// name via _crPlayerNameApply() — called on every save/load.
+//
+// UX: a small 🪙 button is injected next to #crLpName (lite-profile head)
+// AND inside Profile > Player tab. Clicking opens a modal with input,
+// availability check, and Claim button.
+//
+// First-time-connect prompt is NOT auto-fired in v1.0.119; the button is the
+// only entry. Auto-prompt is a v1.0.120+ candidate.
+// ═══════════════════════════════════════════════════════════════════════════
+(function crPlayerNameClaim(){
+  const LS_KEY = 'cr_player_name_v1';
+  const ENTITY_TOKENPROFILE = 6;  // matches crRegistry IIFE ENTITY map
+  const NAME_RE = /^[a-z0-9_]{3,20}$/;
+  const FORBIDDEN = new Set(['anon_runner', 'admin', 'root', 'chartrunner', 'system']);
+
+  function load(){
+    try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; }
+    catch(_){ return null; }
+  }
+  function save(rec){
+    try { localStorage.setItem(LS_KEY, JSON.stringify(rec)); } catch(_){}
+  }
+  function getCurrentName(){
+    const rec = load();
+    return (rec && rec.name) ? rec.name : 'anon_runner';
+  }
+
+  // Mirrors. Every place "anon_runner" appears as a default needs to update
+  // when the user claims. The lite-profile crLpName + crLpBbText are the
+  // primary surfaces; osProfileName + window.crLpName-ish mirrors too.
+  function applyName(name){
+    const n = name || getCurrentName();
+    const ids = ['crLpName', 'crLpBbText', 'osProfileName', 'crProfilePlayerName'];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.textContent !== n) {
+        try { el.textContent = n; } catch(_){}
+      }
+    });
+    // Update any button labels showing the current name
+    const btns = document.querySelectorAll('[data-cr-name-btn]');
+    btns.forEach(b => {
+      const claimed = !!(load() && load().name);
+      b.innerHTML = claimed
+        ? ('<span style="margin-right:5px">🪙</span>' + n)
+        : '<span style="margin-right:5px">🪙</span>Claim name';
+      b.classList.toggle('cr-name-btn-claimed', claimed);
+    });
+  }
+  window._crPlayerNameApply = applyName;
+
+  // Inject CSS once.
+  function injectCss(){
+    if (document.getElementById('crNameClaimCss')) return;
+    const css = `
+      .cr-name-btn{
+        display:inline-flex;align-items:center;gap:4px;
+        background:rgba(20,241,149,.08);
+        border:1px solid rgba(20,241,149,.45);
+        color:#7ee787;
+        font:700 10px ui-monospace,Menlo,Consolas,monospace;
+        letter-spacing:.04em;text-transform:uppercase;
+        padding:3px 9px;border-radius:5px;cursor:pointer;
+        margin-left:6px;vertical-align:middle;
+        transition:all .12s ease;
+      }
+      .cr-name-btn:hover{background:rgba(20,241,149,.16);color:#bff7df;}
+      .cr-name-btn-claimed{
+        background:rgba(153,69,255,.08);
+        border-color:rgba(153,69,255,.45);
+        color:#b79cff;
+      }
+      .cr-name-btn-claimed:hover{background:rgba(153,69,255,.16);color:#d4baff;}
+      #crNameModal{
+        position:fixed;inset:0;z-index:100200;background:rgba(0,0,0,.65);
+        display:none;align-items:center;justify-content:center;padding:20px;
+      }
+      #crNameModal.on{display:flex;animation:crConfirmIn .18s ease-out;}
+      #crNameModal .nmCard{
+        width:min(420px,100%);max-width:420px;
+        background:linear-gradient(180deg,rgba(20,30,55,.96),rgba(12,18,35,.96));
+        border:1px solid rgba(20,241,149,.45);border-radius:10px;
+        padding:18px 20px;color:#e9efff;
+        box-shadow:0 30px 80px rgba(0,0,0,.7),0 0 0 1px rgba(20,241,149,.1) inset;
+        font:13px ui-monospace,Menlo,Consolas,monospace;
+      }
+      #crNameModal h2{margin:0 0 6px;font-size:14px;color:#bff7df;letter-spacing:.04em;text-transform:uppercase;}
+      #crNameModal p.nmIntro{margin:0 0 14px;font-size:11.5px;color:#9ba3b3;line-height:1.45;}
+      #crNameModal .nmRow{display:flex;gap:6px;margin-bottom:10px;}
+      #crNameModal input{
+        flex:1;background:rgba(8,12,22,.7);
+        border:1px solid rgba(80,100,140,.55);
+        border-radius:5px;padding:8px 10px;color:#e9efff;
+        font:600 13px ui-monospace,Menlo,monospace;letter-spacing:.02em;
+      }
+      #crNameModal input:focus{outline:none;border-color:rgba(20,241,149,.7);box-shadow:0 0 0 2px rgba(20,241,149,.18);}
+      #crNameModal .nmCheck{
+        background:rgba(80,100,140,.18);
+        border:1px solid rgba(80,100,140,.45);
+        color:#cbd3df;border-radius:5px;padding:8px 12px;
+        font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;
+        transition:all .12s ease;white-space:nowrap;
+      }
+      #crNameModal .nmCheck:hover{background:rgba(80,100,140,.32);color:#fff;}
+      #crNameModal .nmStatus{
+        font-size:11px;margin:0 0 12px;min-height:16px;letter-spacing:.02em;
+      }
+      #crNameModal .nmStatus.ok{color:#7ee787;}
+      #crNameModal .nmStatus.warn{color:#ffd166;}
+      #crNameModal .nmStatus.err{color:#ff5b7f;}
+      #crNameModal .nmStatus.info{color:#9ba3b3;}
+      #crNameModal .nmFoot{
+        display:flex;gap:8px;justify-content:flex-end;margin-top:6px;
+      }
+      #crNameModal .nmBtn{
+        background:transparent;border:1px solid rgba(80,100,140,.55);
+        color:#cbd3df;border-radius:5px;padding:7px 14px;cursor:pointer;
+        font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.05em;text-transform:uppercase;
+        transition:all .12s ease;
+      }
+      #crNameModal .nmBtn:hover{color:#fff;border-color:#bff7df;}
+      #crNameModal .nmBtn.primary{
+        background:rgba(20,241,149,.85);color:#06160d;border-color:rgba(20,241,149,.7);
+        box-shadow:0 4px 14px rgba(20,241,149,.25);
+      }
+      #crNameModal .nmBtn.primary:hover{background:#14f195;}
+      #crNameModal .nmBtn.primary:disabled,
+      #crNameModal .nmCheck:disabled{opacity:.45;cursor:default;}
+      #crNameModal .nmRules{font-size:10px;color:#7a8294;margin:8px 0 0;line-height:1.4;}
+      #crNameModal .nmRules code{background:rgba(80,100,140,.18);padding:1px 4px;border-radius:3px;}
+    `;
+    const s = document.createElement('style'); s.id = 'crNameClaimCss'; s.textContent = css;
+    document.head.appendChild(s);
+  }
+
+  // Modal DOM.
+  function buildModal(){
+    if (document.getElementById('crNameModal')) return;
+    const m = document.createElement('div');
+    m.id = 'crNameModal';
+    m.setAttribute('aria-hidden', 'true');
+    m.innerHTML = ''
+      + '<div class="nmCard" role="dialog" aria-labelledby="crNameModalTtl">'
+      +   '<h2 id="crNameModalTtl">🪙 Claim your runner name</h2>'
+      +   '<p class="nmIntro">Pick a unique name. It anchors on Solana via <code style="background:rgba(80,100,140,.18);padding:1px 4px;border-radius:3px">chartrunner_registry</code> on devnet so no one else can take it.</p>'
+      +   '<div class="nmRow">'
+      +     '<input id="crNameInput" type="text" placeholder="your_name" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false">'
+      +     '<button id="crNameCheckBtn" class="nmCheck" type="button">Check</button>'
+      +   '</div>'
+      +   '<p id="crNameStatus" class="nmStatus info">Lowercase letters, digits, and underscores. 3–20 characters.</p>'
+      +   '<p class="nmRules">Names persist locally instantly. The on-chain anchor (<code>saveOnChain</code>) opens the Solana wallet bridge for signature. You can skip the on-chain anchor for now and still keep the local-first name.</p>'
+      +   '<div class="nmFoot">'
+      +     '<button id="crNameCancelBtn" class="nmBtn" type="button">Cancel</button>'
+      +     '<button id="crNameClaimLocalBtn" class="nmBtn" type="button" disabled>Save local-only</button>'
+      +     '<button id="crNameClaimBtn" class="nmBtn primary" type="button" disabled>Anchor on-chain</button>'
+      +   '</div>'
+      + '</div>';
+    document.body.appendChild(m);
+    // Wire handlers
+    m.addEventListener('click', (e) => { if (e.target === m) closeModal(); });
+    document.getElementById('crNameCancelBtn').addEventListener('click', closeModal);
+    document.getElementById('crNameCheckBtn').addEventListener('click', onCheckClick);
+    document.getElementById('crNameClaimLocalBtn').addEventListener('click', onClaimLocalClick);
+    document.getElementById('crNameClaimBtn').addEventListener('click', onClaimOnChainClick);
+    const input = document.getElementById('crNameInput');
+    input.addEventListener('input', () => {
+      // Reset status on edit; re-disable claim buttons until checked
+      setStatus(NAME_RE.test(input.value) ? 'Press Check to see if it\'s available.' : 'Lowercase letters, digits, and underscores. 3–20 characters.', NAME_RE.test(input.value) ? 'info' : 'warn');
+      enableClaim(false);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') onCheckClick();
+      if (e.key === 'Escape') closeModal();
+    });
+  }
+
+  function setStatus(msg, kind){
+    const el = document.getElementById('crNameStatus');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = 'nmStatus ' + (kind || 'info');
+  }
+
+  function enableClaim(on){
+    const localBtn = document.getElementById('crNameClaimLocalBtn');
+    const onChainBtn = document.getElementById('crNameClaimBtn');
+    if (localBtn) localBtn.disabled = !on;
+    if (onChainBtn) onChainBtn.disabled = !on;
+  }
+
+  function openModal(){
+    injectCss();
+    buildModal();
+    const m = document.getElementById('crNameModal');
+    if (!m) return;
+    m.classList.add('on');
+    m.setAttribute('aria-hidden', 'false');
+    const input = document.getElementById('crNameInput');
+    const cur = load();
+    if (input) {
+      input.value = (cur && cur.name) ? cur.name : '';
+      setTimeout(() => input.focus(), 50);
+    }
+    enableClaim(false);
+    setStatus('Lowercase letters, digits, and underscores. 3–20 characters.', 'info');
+  }
+  function closeModal(){
+    const m = document.getElementById('crNameModal');
+    if (!m) return;
+    m.classList.remove('on');
+    m.setAttribute('aria-hidden', 'true');
+  }
+
+  function validate(name){
+    if (!name) return 'Name required.';
+    if (name.length < 3) return 'Too short. 3 characters minimum.';
+    if (name.length > 20) return 'Too long. 20 characters max.';
+    if (!NAME_RE.test(name)) return 'Only lowercase letters, digits, and underscores.';
+    if (FORBIDDEN.has(name)) return '"' + name + '" is reserved. Pick another.';
+    return null;
+  }
+
+  async function onCheckClick(){
+    const input = document.getElementById('crNameInput');
+    if (!input) return;
+    const name = (input.value || '').trim().toLowerCase();
+    input.value = name; // normalize display
+    const err = validate(name);
+    if (err){ setStatus(err, 'err'); enableClaim(false); return; }
+    setStatus('Checking availability…', 'info');
+    enableClaim(false);
+    // Phase 1 availability check: query crRegistry.findOnChain(6, name).
+    // Falls back to "assume available" if registry is unreachable.
+    try {
+      let onChainHit = null;
+      if (typeof crRegistry !== 'undefined' && typeof crRegistry.findOnChain === 'function') {
+        onChainHit = await Promise.resolve(crRegistry.findOnChain(ENTITY_TOKENPROFILE, name)).catch(() => null);
+      }
+      if (onChainHit) {
+        setStatus('"' + name + '" is already claimed on-chain.', 'err');
+        enableClaim(false);
+        return;
+      }
+      const cur = load();
+      if (cur && cur.name === name) {
+        setStatus('That\'s your current name. Pick a new one or close.', 'warn');
+        enableClaim(false);
+        return;
+      }
+      setStatus('"' + name + '" looks available. Click "Save local-only" or "Anchor on-chain".', 'ok');
+      enableClaim(true);
+    } catch(e){
+      setStatus('Couldn\'t reach registry. You can save locally; anchor later.', 'warn');
+      enableClaim(true);
+    }
+  }
+
+  function onClaimLocalClick(){
+    const input = document.getElementById('crNameInput');
+    const name = (input.value || '').trim().toLowerCase();
+    if (validate(name)){ setStatus(validate(name), 'err'); return; }
+    save({ name, claimedAt: Date.now(), onChain: false, sig: null });
+    applyName(name);
+    setStatus('Saved locally. Anchor on-chain anytime for permanence.', 'ok');
+    try { if (typeof crNotify === 'function') crNotify('🪙 Name set · ' + name); } catch(_){}
+    setTimeout(closeModal, 600);
+  }
+
+  function onClaimOnChainClick(){
+    const input = document.getElementById('crNameInput');
+    const name = (input.value || '').trim().toLowerCase();
+    if (validate(name)){ setStatus(validate(name), 'err'); return; }
+    // Save locally first so the name is visible even if the bridge round-trip
+    // takes time / the user cancels in the wallet popup.
+    save({ name, claimedAt: Date.now(), onChain: false, sig: null });
+    applyName(name);
+    if (typeof crRegistry === 'undefined' || typeof crRegistry.saveOnChain !== 'function') {
+      setStatus('On-chain bridge unavailable. Saved locally.', 'warn');
+      try { if (typeof crNotify === 'function') crNotify('🪙 Saved local-only · ' + name, 'warn'); } catch(_){}
+      setTimeout(closeModal, 800);
+      return;
+    }
+    setStatus('Opening Solana bridge…', 'info');
+    try {
+      // saveOnChain(type, name, contentJson, royaltyBps). Royalty 0 for the
+      // player profile entry. Content describes the entry kind so future
+      // queries can distinguish player vs other TokenProfile entries.
+      const content = { kind: 'player', name, claimedAt: Date.now() };
+      crRegistry.saveOnChain(ENTITY_TOKENPROFILE, name, content, 0);
+      // The bridge will redirect back to /play/?regAction=save-entity&regType=6&regName=<name>&sig=...
+      // crRegistry's URL handler (line ~9498 area) processes that and calls
+      // crRegistry.markEntity(type, name, { onChain:true, sig }). We hook
+      // that completion below via a setInterval that watches for the flag.
+      setStatus('Bridge opened. Complete the wallet popup.', 'ok');
+    } catch(e){
+      setStatus('Bridge call failed: ' + (e && e.message || e), 'err');
+    }
+  }
+
+  // Watch for on-chain completion: crRegistry.findOnChain returns an entry
+  // with .sig once the bridge redirects back. Update local record to onChain:true.
+  function watchOnChainConfirmation(){
+    setInterval(() => {
+      try {
+        const rec = load();
+        if (!rec || !rec.name || rec.onChain) return;
+        if (typeof crRegistry === 'undefined' || typeof crRegistry.findOnChain !== 'function') return;
+        const hit = crRegistry.findOnChain(ENTITY_TOKENPROFILE, rec.name);
+        if (hit && hit.sig) {
+          save({ ...rec, onChain: true, sig: hit.sig });
+          applyName(rec.name);
+          try { if (typeof crNotify === 'function') crNotify('🪙 Name anchored on-chain · ' + rec.name); } catch(_){}
+        }
+      } catch(_){}
+    }, 4000);
+  }
+
+  // Inject the Claim Name buttons next to crLpName + into Profile > Player tab.
+  function injectButtons(){
+    // 1) Lite-profile head — crLpName lives in #crLightProfile .lp-name
+    const lpName = document.getElementById('crLpName');
+    if (lpName && !lpName.parentNode.querySelector('[data-cr-name-btn]')) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'cr-name-btn';
+      btn.setAttribute('data-cr-name-btn', '1');
+      btn.title = 'Claim your runner name on-chain';
+      btn.addEventListener('click', openModal);
+      lpName.parentNode.appendChild(btn);
+    }
+    // 2) Profile > Player tab — sit above the player-altar in #crProfileViewPlayer
+    const playerView = document.getElementById('crProfileViewPlayer');
+    if (playerView && !playerView.querySelector('[data-cr-name-btn]')) {
+      const head = document.createElement('div');
+      head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 4px 14px;border-bottom:1px solid rgba(80,100,140,.22);margin-bottom:14px;';
+      head.innerHTML = '<div style="font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;color:#9ba3b3">Runner identity</div>'
+                     + '<div style="display:flex;align-items:center;gap:8px"><span id="crProfilePlayerName" style="font:700 13px ui-monospace,Menlo,monospace;color:#e9efff">anon_runner</span></div>';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'cr-name-btn';
+      btn.setAttribute('data-cr-name-btn', '1');
+      btn.title = 'Claim your runner name on-chain';
+      btn.addEventListener('click', openModal);
+      head.querySelector('div:last-child').appendChild(btn);
+      playerView.insertBefore(head, playerView.firstChild);
+    }
+    applyName();
+  }
+
+  function bootstrap(){
+    if (typeof document === 'undefined' || !document.body) return;
+    injectCss();
+    injectButtons();
+    applyName();
+    watchOnChainConfirmation();
+    try { window.crPlayerName = { open: openModal, get: getCurrentName, applyName }; } catch(_){}
+  }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', bootstrap);
+  } else {
+    setTimeout(bootstrap, 200);
+  }
+})();
+
 // ─── v0.9.42 ─ Profile Wallet tab ────────────────────────────────────────────
 // Renamed from "Balances". Surfaces Solana wallet connection + a holdings
 // list. SOL / USDC / RUN are pinned defaults (always shown, even at 0).
@@ -23864,20 +24277,43 @@ function _drawLoadoutAvatar(ctx, scale, opts){
   // sprite on the desktop and in-game; gear is now signalled by the badge +
   // future per-gear effects, not a passive halo. Kept GEAR_GLOW table intact
   // in case a later version brings back a toggleable version.
-  // v1.0.26 — In-game avatar is ALWAYS the equipped sprite from the
-  // PLAYER tab (Invader/Snake + skin tint), never the NFT. v1.0.23 had
-  // an NFT-image override here that swapped the chart sprite for the
-  // picked NFT — that's reverted. NFT picker still works and saves to
-  // localStorage; the picked image is reserved for future M2.6 (proper
-  // in-game NFT sprite swap with sizing + animation that matches the
-  // procedural sprite). For now: equipped sprite wins, every render.
-  // Sprite. Snake honors its growing-length state when caller passes snakeLen.
-  if (lo.avatar === 'snake' && typeof drawSnake === 'function') {
+  // v1.0.119 — NFT avatar override re-enabled (Profile Phase 1 · Track 2).
+  // v1.0.23 had this path; v1.0.26 reverted it. M2.6 brings it back: when the
+  // player has picked an NFT and the image is fully loaded, render the NFT
+  // as the in-game sprite. Falls through to the procedural sprite (Invader/
+  // Snake/Pacman + skin tint) on no-NFT / not-loaded / opts.useNft===false.
+  // Caller can force the procedural sprite with `opts.useNft = false`.
+  const _nftImg = (typeof window !== 'undefined') ? window._crNftAvatarImg : null;
+  const _useNft = _nftImg && _nftImg.complete && _nftImg.naturalWidth > 0 && opts.useNft !== false;
+  if (_useNft) {
+    const SPRITE_PX = 16 * scale;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    try {
+      ctx.drawImage(_nftImg, -SPRITE_PX/2, -SPRITE_PX/2, SPRITE_PX, SPRITE_PX);
+    } catch(_){
+      // drawImage can throw on tainted canvases; fall through to procedural sprite.
+      window._crNftAvatarImg = null;
+      _drawProceduralSprite(ctx, scale, tint, lo, opts);
+    }
+    ctx.restore();
+  } else if (lo.avatar === 'snake' && typeof drawSnake === 'function') {
     drawSnake(ctx, scale, tint, Math.max(4, opts.snakeLen || 4));
   } else if (lo.avatar === 'pacman' && typeof drawPacman === 'function') {
     drawPacman(ctx, scale, tint);
   } else if (typeof drawInvader === 'function') {
     drawInvader(ctx, scale, tint);
+  }
+  // Defensive helper: only used when drawImage throws above. Mirrors the
+  // procedural branch so caller still sees a sprite.
+  function _drawProceduralSprite(ctx, scale, tint, lo, opts){
+    if (lo.avatar === 'snake' && typeof drawSnake === 'function') {
+      drawSnake(ctx, scale, tint, Math.max(4, opts.snakeLen || 4));
+    } else if (lo.avatar === 'pacman' && typeof drawPacman === 'function') {
+      drawPacman(ctx, scale, tint);
+    } else if (typeof drawInvader === 'function') {
+      drawInvader(ctx, scale, tint);
+    }
   }
   // Weapon badge — drawn LAST so it sits in front of the sprite.
   if (opts.badge !== false) {
@@ -37895,14 +38331,20 @@ function log(msg){
     return items;
   }
 
-  // v1.0.26 — Stub. v1.0.23 cached the picked NFT image into
-  // window._crNftAvatarImg for in-game canvas render; v1.0.26 reverted
-  // that path so the equipped sprite always wins on the chart. We keep
-  // _nftPreloadImage as a no-op so callers don't break — and we ensure
-  // window._crNftAvatarImg never leaks into _drawLoadoutAvatar via
-  // stale state.
-  function _nftPreloadImage(_url){
-    window._crNftAvatarImg = null;
+  // v1.0.119 — Re-enabled the NFT sprite path that v1.0.26 disabled.
+  // Loads the picked NFT image, caches it in window._crNftAvatarImg,
+  // and _drawLoadoutAvatar uses it as the in-game sprite (Profile Phase 1 T2).
+  // crossOrigin='anonymous' so canvas drawImage doesn't taint the canvas
+  // when later operations need to read pixels.
+  function _nftPreloadImage(url){
+    if (!url) { window._crNftAvatarImg = null; return; }
+    const cur = window._crNftAvatarImg;
+    if (cur && cur.src === url && cur.complete) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload  = () => { window._crNftAvatarImg = img; };
+    img.onerror = () => { window._crNftAvatarImg = null; };
+    img.src = url;
   }
 
   // Apply the saved NFT avatar to every visible surface.
@@ -46092,20 +46534,6 @@ window.crQvac = (function(){
       });
     }
   } catch(_){}
-})();
-</script>
-<script>
-/* v1.0.118 — Phoenix Live PARKED 2026-05-19. crLive.get() forced to false,
-   #crLivePanel hidden via CSS. Code preserved (drawWhaleGhosts / drawLiquidityWater
-   still exist; just no-op). Resume by removing this block. */
-(function(){
-  if(!window.crLive) return;
-  window.crLive.get   = function(){ return false; };
-  window.crLive.count = function(){ return 0; };
-  window.crLive.mult  = function(){ return 1; };
-  var s = document.createElement(q[style]q);
-  s.textContent = q[#crLivePanel{display:none !important;}q];
-  document.head.appendChild(s);
 })();
 </script>
 </body>
