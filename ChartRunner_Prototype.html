@@ -9491,7 +9491,7 @@ window.crWallet = (function(){
  * API surface:
  *   crRegistry.saveOnChain(type, name, contentJson, royaltyBps)
  *   crRegistry.listOnMarket(type, name, priceSol)
- *   crRegistry.buyFromMarket(type, name, sellerAddr, priceSol)
+ *   crRegistry.buyFromMarket(type, name, sellerAddr, priceSol, maxPriceSol?)
  *   crRegistry.cancelListing(type, name)
  *   crRegistry.markEntity(type, name, { onChain, sig, listed, buyer, ... })
  *   crRegistry.canonicalJson(payload, excludeKeys)
@@ -9688,19 +9688,24 @@ window.crRegistry = (function(){
     window.location.href = url;
     return true;
   }
-  function buyFromMarket(type, name, sellerAddr, priceSol){
+  function buyFromMarket(type, name, sellerAddr, priceSol, maxPriceSol){
     if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
       var ok = window.confirm('Buying on the marketplace requires a connected wallet. Connect now?');
       if (ok && crWallet) crWallet.connect();
       return false;
     }
     var lamports = BigInt(Math.round(priceSol * 1e9));
+    // v0.9.8 — buy_entity needs a max_price slippage ceiling. Default it to the
+    // displayed price (buy succeeds only if the on-chain price hasn't risen above
+    // what the player saw). Callers may pass a higher maxPriceSol for tolerance.
+    var maxLamports = BigInt(Math.round((maxPriceSol != null ? maxPriceSol : priceSol) * 1e9));
     var url = '../solana-connect/?action=buy-entity'
-            + '&seller=' + encodeURIComponent(sellerAddr)
-            + '&type='   + encodeURIComponent(type)
-            + '&name='   + encodeURIComponent(name)
-            + '&price='  + lamports.toString()
-            + '&return=' + encodeURIComponent('/play/');
+            + '&seller='   + encodeURIComponent(sellerAddr)
+            + '&type='     + encodeURIComponent(type)
+            + '&name='     + encodeURIComponent(name)
+            + '&price='    + lamports.toString()
+            + '&maxPrice=' + maxLamports.toString()
+            + '&return='   + encodeURIComponent('/play/');
     window.location.href = url;
     return true;
   }
@@ -9809,6 +9814,13 @@ window.crRegistry = (function(){
       } else if (regAction === 'buy-entity'){
         patch = { boughtSig: sig, boughtAt: Date.now() };
         toastMsg = '💰 Bought ' + label + ' "' + regName + '" — license minted';
+        // v0.9.8 — refresh the marketplace + owned set so the bought listing
+        // disappears and the item shows as Owned. crMarket is defined later in
+        // the file but exists by the time this redirect-return handler runs.
+        setTimeout(function(){ try {
+          if (typeof crMarketSyncOwned === 'function') crMarketSyncOwned();
+          else if (window.crMarket) window.crMarket.refresh();
+        } catch(_){} }, 1200);
       } else if (regAction === 'cancel-listing'){
         patch = { listed: false, listingSig: null, listingPrice: null };
         toastMsg = '✖ Listing cancelled';
@@ -10146,6 +10158,202 @@ window.crGhost = (function(){
     start:      start,
     stop:       stop,
     isEnabled:  isEnabled,
+  };
+})();
+
+/* =========================================================================
+ * crMarket — live on-chain marketplace reads from chartrunner_registry.
+ * v0.9.8 — reads real Listing + License + EntityRecord PDAs via getProgramAccounts
+ * (same JSON-RPC pattern as crGhost). Replaces the OS_SHOP_P2P mock seed in the
+ * P2P Marketplace tab with actual on-chain listings, and drives the "Purchased"
+ * (Owned) tab from the connected wallet's License PDAs.
+ *
+ * Two RPC calls per refresh:
+ *   1. all Listing accounts            (memcmp disc, dataSize 89)
+ *   2. all EntityRecord accounts       (memcmp disc, dataSize 152)
+ * then join Listing.entity → EntityRecord{type,name,owner,royalty} to build rows.
+ * Licenses are fetched on demand for the connected wallet (memcmp buyer @ offset 8).
+ *
+ * Buy/list/cancel still bounce through crRegistry → /solana-connect/; this IIFE is
+ * read-only (no signing).
+ * =======================================================================*/
+window.crMarket = (function(){
+  var PROGRAM_ID = 'ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn';
+  var RPC_URL    = 'https://api.devnet.solana.com';
+  var POLL_MS    = 60_000;
+
+  var B58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  function _b58encode(bytes){
+    var digits = [0];
+    for (var i = 0; i < bytes.length; i++) {
+      var carry = bytes[i];
+      for (var j = 0; j < digits.length; j++) {
+        carry += digits[j] << 8; digits[j] = carry % 58; carry = (carry / 58) | 0;
+      }
+      while (carry) { digits.push(carry % 58); carry = (carry / 58) | 0; }
+    }
+    var s = '';
+    for (var k = 0; k < bytes.length && bytes[k] === 0; k++) s += '1';
+    for (var m = digits.length - 1; m >= 0; m--) s += B58_ALPHABET[digits[m]];
+    return s;
+  }
+  function _b64decode(s){
+    var bin = atob(s); var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  // Anchor account discriminators = sha256("account:<Name>")[0..8], lazily computed.
+  var _disc = {};   // name → base58 string
+  async function _ensureDisc(name){
+    if (_disc[name]) return _disc[name];
+    var d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('account:' + name));
+    _disc[name] = _b58encode(new Uint8Array(d).slice(0, 8));
+    return _disc[name];
+  }
+  async function _gpa(discB58, dataSize, extraFilters){
+    var filters = [{ memcmp: { offset: 0, bytes: discB58 } }];
+    if (dataSize != null) filters.push({ dataSize: dataSize });
+    if (extraFilters) filters = filters.concat(extraFilters);
+    var body = { jsonrpc:'2.0', id:1, method:'getProgramAccounts', params:[
+      PROGRAM_ID, { encoding:'base64', commitment:'confirmed', filters: filters } ] };
+    var r = await fetch(RPC_URL, { method:'POST', headers:{'Content-Type':'application/json'},
+                                   body: JSON.stringify(body) });
+    var json = await r.json();
+    if (!json || !json.result) throw new Error('empty RPC response');
+    return json.result;   // [{ pubkey, account:{ data:[b64,'base64'] } }]
+  }
+  function _trimStr(b){
+    var end = b.length; while (end > 0 && b[end-1] === 0) end--;
+    return new TextDecoder().decode(b.slice(0, end));
+  }
+  // EntityRecord: [8]disc [8..40]owner [40]type [41..45]nameLen [45..]name
+  //               then content_hash[32], royalty u16, saved_at i64, bump u8.
+  function _decodeEntity(bytes){
+    if (bytes.length < 45) return null;
+    var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    var owner = _b58encode(bytes.slice(8, 40));
+    var type  = bytes[40];
+    var nameLen = dv.getUint32(41, true);
+    if (nameLen > 64 || 45 + nameLen > bytes.length) return null;
+    var name = _trimStr(bytes.slice(45, 45 + nameLen));
+    var off = 45 + nameLen;
+    var royalty = (off + 34 <= bytes.length) ? dv.getUint16(off + 32, true) : 0;
+    return { owner: owner, type: type, name: name, royaltyBps: royalty };
+  }
+  // Listing: [8]disc [8..40]entity [40..72]seller [72..80]price u64 [80..88]listed_at
+  function _decodeListing(bytes){
+    if (bytes.length < 88) return null;
+    var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return {
+      entity:   _b58encode(bytes.slice(8, 40)),
+      seller:   _b58encode(bytes.slice(40, 72)),
+      price:    dv.getBigUint64(72, true),
+      listedAt: Number(dv.getBigInt64(80, true)),
+    };
+  }
+  // License: [8]disc [8..40]buyer [40..72]entity [72..80]price_paid [80..88]bought_at
+  function _decodeLicense(bytes){
+    if (bytes.length < 88) return null;
+    var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return {
+      buyer:     _b58encode(bytes.slice(8, 40)),
+      entity:    _b58encode(bytes.slice(40, 72)),
+      pricePaid: dv.getBigUint64(72, true),
+      boughtAt:  Number(dv.getBigInt64(80, true)),
+    };
+  }
+  function _b64of(item){
+    return item && item.account && item.account.data && item.account.data[0];
+  }
+
+  var _listings = [];     // [{ type, name, seller, priceSol, royaltyBps, listedAt }]
+  var _entityByPda = {};  // pubkey → { owner, type, name, royaltyBps }
+  var _lastFetch = 0, _inflight = false;
+
+  async function _buildEntityMap(){
+    var disc = await _ensureDisc('EntityRecord');
+    var rows = await _gpa(disc, 152);
+    var map = {};
+    rows.forEach(function(it){
+      try {
+        var b64 = _b64of(it); if (!b64) return;
+        var e = _decodeEntity(_b64decode(b64));
+        if (e) map[it.pubkey] = e;
+      } catch(_){}
+    });
+    _entityByPda = map;
+    return map;
+  }
+
+  async function fetchListings(){
+    if (_inflight) return _listings;
+    _inflight = true;
+    try {
+      var entMap = await _buildEntityMap();
+      var disc = await _ensureDisc('Listing');
+      var rows = await _gpa(disc, 89);
+      var out = [];
+      rows.forEach(function(it){
+        try {
+          var b64 = _b64of(it); if (!b64) return;
+          var l = _decodeListing(_b64decode(b64));
+          if (!l) return;
+          var e = entMap[l.entity];
+          if (!e) return;   // listing whose entity we couldn't resolve — skip
+          out.push({
+            type: e.type, name: e.name, seller: l.seller,
+            priceSol: Number(l.price) / 1e9, royaltyBps: e.royaltyBps,
+            listedAt: l.listedAt, entity: l.entity,
+          });
+        } catch(_){}
+      });
+      out.sort(function(a,b){ return b.listedAt - a.listedAt; });
+      _listings = out;
+      _lastFetch = Date.now();
+      try { window.dispatchEvent(new CustomEvent('crMarket:listings', { detail:{ count: out.length } })); } catch(_){}
+    } catch(err){
+      if (typeof console !== 'undefined') console.warn('crMarket listings:', err.message || err);
+    } finally { _inflight = false; }
+    return _listings;
+  }
+
+  async function fetchLicenses(walletB58){
+    if (!walletB58) return [];
+    try {
+      if (!Object.keys(_entityByPda).length) await _buildEntityMap();
+      var disc = await _ensureDisc('License');
+      // memcmp buyer @ offset 8 (right after the 8-byte discriminator).
+      var rows = await _gpa(disc, 89, [{ memcmp: { offset: 8, bytes: walletB58 } }]);
+      var out = [];
+      rows.forEach(function(it){
+        try {
+          var b64 = _b64of(it); if (!b64) return;
+          var lic = _decodeLicense(_b64decode(b64));
+          if (!lic) return;
+          var e = _entityByPda[lic.entity];
+          out.push({
+            entity: lic.entity,
+            type: e ? e.type : null, name: e ? e.name : '(unknown)',
+            pricePaidSol: Number(lic.pricePaid) / 1e9, boughtAt: lic.boughtAt,
+          });
+        } catch(_){}
+      });
+      try { window.dispatchEvent(new CustomEvent('crMarket:licenses', { detail:{ count: out.length } })); } catch(_){}
+      return out;
+    } catch(err){
+      if (typeof console !== 'undefined') console.warn('crMarket licenses:', err.message || err);
+      return [];
+    }
+  }
+
+  function getListings(){ return _listings; }
+  function refresh(){ return fetchListings(); }
+
+  return {
+    fetchListings: fetchListings,
+    getListings:   getListings,
+    fetchLicenses: fetchLicenses,
+    refresh:       refresh,
   };
 })();
 
@@ -17569,7 +17777,7 @@ function rebuildWorld(){
   const r = mulberry32(candles.length*7919 | 0);
   // v0.9.48 — Coins (and any pickup) are off in Campaign mode so the only
   // chart-floating object the player has to engage with is the lesson item.
-  const _coinsOff = (typeof game !== 'undefined') && (game.coinsDisabled === true || game.campaignChapter);
+  const _coinsOff = (typeof game !== 'undefined') && (game.coinsDisabled === true || game.campaignChapter || game.coinSpawnTest);
   if(!_coinsOff){
     for(let i=3;i<candles.length-3;i++){
       if(r()<0.18){
@@ -17591,6 +17799,103 @@ function rebuildWorld(){
   // returns false on an empty array, so the kill path is silently neutered.
 }
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t^=t+Math.imul(t^t>>>7,61|t);return((t^t>>>14)>>>0)/4294967296;};}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   TEST ALGO — dynamic coin spawn / despawn (the difficulty-adjusted delivery
+   layer from docs/architecture/M1-chart-issuance.md). The shipped game places
+   coins statically once per run; this is an OPT-IN test of coins that spawn over
+   time and disappear after a lifetime.
+
+   Enable:  append ?coinspawn=1 to the URL, or run crCoinSpawn.on() in the console.
+   Tune:    crCoinSpawn.set({ targetLive:8, lifeMin:2, lifeMax:5 })   ·   crCoinSpawn.off()
+
+   Mapping to the M1 model:
+     - targetLive  ≈ the per-epoch coin budget divided across concurrent players
+                     (here a single-player on-screen DENSITY target — the real
+                     per-player division is a server concern, Phase 2).
+     - lifeMin/Max = coin lifetime before despawn ("spawn and despawn over time
+                     so the algorithm can adjust").
+     - the controller refills toward targetLive each pulse, bounded by maxPerPulse
+       (a smooth, Bitcoin-difficulty-style bounded retarget — no sudden pops).
+   ─────────────────────────────────────────────────────────────────────────── */
+const COIN_SPAWN_CFG = {
+  targetLive: 6,        // density target: how many live coins to keep near the player
+  lifeMin: 3.0,         // seconds a coin lives before it despawns
+  lifeMax: 6.0,
+  fadeIn: 0.30,         // seconds to fade + scale in
+  fadeOut: 0.80,        // seconds of remaining life over which it fades out
+  spawnEvery: 0.45,     // min seconds between spawn pulses
+  maxPerPulse: 2,       // bounded step per pulse (smooth ramp, not a burst)
+  aheadMinCandles: 4,   // spawn from this many candles ahead of the player ...
+  aheadMaxCandles: 26,  // ... out to here (the reaction window)
+  credsFrac: 0.18,      // 18% creds (purple) / 82% tick (gold) — matches the static mix
+  heightMin: 70,        // screen px above the candle high (÷priceScale → world)
+  heightMax: 230
+};
+function updateCoinSpawner(dt){
+  if(!game.coinSpawnTest) return;
+  if(game.coinsDisabled === true || game.campaignChapter || !game.coinsEnabled) return;
+  if(!candles || !candles.length || !isFinite(player.wx)) return;
+  const cfg = COIN_SPAWN_CFG;
+  // 1) age + despawn spawned coins; count the live ones for the controller.
+  let live = 0;
+  for(let i = game.pickups.length - 1; i >= 0; i--){
+    const pk = game.pickups[i];
+    if(!pk._spawned) continue;
+    if(pk.taken){ game.pickups.splice(i,1); game._coinTaken = (game._coinTaken||0)+1; continue; }
+    pk.life -= dt;
+    if(pk.life <= 0){ game.pickups.splice(i,1); game._coinExpired = (game._coinExpired||0)+1; continue; }
+    live++;
+  }
+  game._coinLive = live;
+  // 2) difficulty retarget — refill toward the density target, bounded per pulse.
+  game._coinAcc = (game._coinAcc||0) + dt;
+  if(game._coinAcc < cfg.spawnEvery) return;
+  game._coinAcc = 0;
+  const deficit = cfg.targetLive - live;
+  if(deficit <= 0) return;
+  const n = Math.min(deficit, cfg.maxPerPulse);
+  const pIdx = Math.floor(player.wx / STEP);
+  for(let k = 0; k < n; k++){
+    const span = Math.max(1, cfg.aheadMaxCandles - cfg.aheadMinCandles);
+    const idx = pIdx + cfg.aheadMinCandles + Math.floor(Math.random()*span);
+    if(idx < 1 || idx >= candles.length - 1) continue;
+    const wx = idx*STEP + STEP/2;
+    const py = candles[idx].h + (cfg.heightMin + Math.random()*(cfg.heightMax - cfg.heightMin))/priceScale;
+    const maxLife = cfg.lifeMin + Math.random()*(cfg.lifeMax - cfg.lifeMin);
+    const kind = Math.random() < cfg.credsFrac ? 'creds' : 'tick';
+    game.pickups.push({ wx, py, kind, taken:false, _spawned:true, life:maxLife, maxLife });
+    game._coinSpawned = (game._coinSpawned||0)+1;
+  }
+}
+// Per-coin alpha for spawned coins: fade (and scale) in, then fade out near death.
+function coinSpawnAlpha(pk){
+  if(!pk || !pk._spawned) return 1;
+  const cfg = COIN_SPAWN_CFG;
+  const aIn  = Math.max(0, Math.min(1, (pk.maxLife - pk.life) / cfg.fadeIn));
+  const aOut = Math.max(0, Math.min(1, pk.life / cfg.fadeOut));
+  return Math.min(aIn, aOut);
+}
+// Console + URL control surface for the test.
+const crCoinSpawn = {
+  on(){
+    game.coinSpawnTest = true; game.coinsEnabled = true;
+    // Clear static tick/creds so the run is a clean spawn/despawn test.
+    game.pickups = game.pickups.filter(p => p._spawned || (p.kind !== 'tick' && p.kind !== 'creds'));
+    game._coinSpawned = game._coinExpired = game._coinTaken = 0; game._coinAcc = 0;
+    console.log('[crCoinSpawn] ON — coins now spawn + despawn dynamically.', COIN_SPAWN_CFG);
+  },
+  off(){
+    game.coinSpawnTest = false;
+    game.pickups = game.pickups.filter(p => !p._spawned);
+    try { if(typeof rebuildWorld === 'function') rebuildWorld(); } catch(_){}
+    console.log('[crCoinSpawn] OFF — static coins restored.');
+  },
+  set(o){ Object.assign(COIN_SPAWN_CFG, o || {}); console.log('[crCoinSpawn] cfg', COIN_SPAWN_CFG); return COIN_SPAWN_CFG; },
+  cfg: COIN_SPAWN_CFG
+};
+try { window.crCoinSpawn = crCoinSpawn; } catch(_){}
+try { if(/[?&]coinspawn=1/.test(location.search)) game.coinSpawnTest = true; } catch(_){}
 
 function restart(){
   // v0.9.56 — Clear any in-flight OS-tutorial gate poller. Without this, hitting
@@ -18768,6 +19073,8 @@ function update(dt){
   // pickup hitbox radius). sx/sy are screen coords only for spawn-effect placement.
   const playerSx = sX(player.wx);
   const playerSy = priceToY(player.py) - player.h/2;
+  // v0.9.x test — dynamic coin spawn/despawn controller (opt-in; see crCoinSpawn).
+  if(game.coinSpawnTest) updateCoinSpawner(dt);
   // v0.8f — Magnez removed. $CRDS pickups are now collected passively.
   for(const pk of game.pickups){
     if(pk.taken) continue;
@@ -22360,6 +22667,8 @@ function drawPickups(){
       ctx.font = 'bold 10px ui-monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText('L', 0, 0.5);
     } else {
+      // v0.9.x test — spawned coins fade + pop in, then fade out near despawn.
+      if(pk._spawned){ const a = coinSpawnAlpha(pk); ctx.globalAlpha = a; const s = 0.6 + 0.4*a; ctx.scale(s, s); }
       ctx.shadowColor = pk.kind==='tick' ? '#ffd166' : '#9b8cff';
       ctx.shadowBlur = 12+glow;
       ctx.fillStyle = pk.kind==='tick' ? '#ffd166' : '#9b8cff';
@@ -22368,6 +22677,26 @@ function drawPickups(){
       ctx.font='bold 8px ui-monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(pk.kind==='tick'?'T':'C', 0, 0.5);
     }
+    ctx.restore();
+  }
+  // v0.9.x test — coin spawn/despawn debug readout (screen space, like drawBullets).
+  if(game.coinSpawnTest){
+    ctx.save();
+    ctx.globalAlpha = 1;
+    const cfg = COIN_SPAWN_CFG;
+    const lines = [
+      'COIN SPAWN TEST',
+      'live ' + (game._coinLive||0) + ' / target ' + cfg.targetLive,
+      'spawned ' + (game._coinSpawned||0) + ' · expired ' + (game._coinExpired||0) + ' · taken ' + (game._coinTaken||0),
+      'life ' + cfg.lifeMin + '–' + cfg.lifeMax + 's · crCoinSpawn.set({…}) · .off()'
+    ];
+    const bx = 12, by = 118, bw = 258, bh = lines.length*14 + 12;
+    ctx.fillStyle = 'rgba(10,14,24,0.80)';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = 'rgba(255,209,102,0.55)'; ctx.lineWidth = 1; ctx.strokeRect(bx+0.5, by+0.5, bw, bh);
+    ctx.font = '11px ui-monospace,monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillStyle = '#ffd166';
+    lines.forEach((t,i)=> ctx.fillText(t, bx+9, by+7+i*14));
     ctx.restore();
   }
 }
@@ -25005,22 +25334,30 @@ function osRenderShopList(elId, list, opts){
     const row = document.createElement('div');
     row.className = 'os-shop-item';
     const metaLine = it.meta ? `<div class="meta" style="font-size:10px;color:#5a5a52;margin-top:2px">${it.meta}</div>` : '';
+    // v0.9.8 — owned/own-listing states for live on-chain listings.
+    const btnLabel = it.owned ? '✓ Owned' : it.isMine ? 'Your listing' : (sol ? 'Buy · $SOL' : 'Buy');
+    const btnDisabled = (it.owned || it.isMine) ? ' disabled style="opacity:.55;cursor:default"' : '';
     row.innerHTML = `<div class="ic">${it.ic}</div>
       <div><div class="nm">${it.nm}</div><div class="pr">${it.pr}</div>${metaLine}</div>
-      <button class="buy">${sol ? 'Buy · $SOL' : 'Buy'}</button>`;
+      <button class="buy"${btnDisabled}>${btnLabel}</button>`;
     row.querySelector('.buy').addEventListener('click', ()=> {
+      if (it.owned || it.isMine) return;   // already owned / own listing — no buy
       // v0.9.6 — P2P buys now route through crRegistry.buyFromMarket which
       // bounces to /solana-connect/?action=buy-entity for the wallet popup.
       // The seed listings (no `seller` field) keep the Phase-2 toast since
       // they aren't real on-chain entities. Real listings will get a seller
       // address and on-chain price once players start posting their own.
-      if (sol && it.seller && it.cat) {
+      if (sol && it.seller) {
+        // Prefer the explicit entity type on live on-chain listings; fall back
+        // to deriving it from the category for any legacy card shape.
         var typeMap = { bots:2, maps:0, strategies:1, indicators:3, backtests:4, apps:5 };
-        var type = typeMap[it.cat];
+        var type = (it.type !== undefined && it.type !== null) ? it.type : typeMap[it.cat];
         if (type !== undefined && typeof crRegistry !== 'undefined') {
-          var priceSol = parseFloat(String(it.pr).replace(/[^\d.]/g, '')) || 0;
+          var priceSol = (it.priceSol != null) ? it.priceSol
+                       : (parseFloat(String(it.pr).replace(/[^\d.]/g, '')) || 0);
           if (priceSol > 0) {
-            crRegistry.buyFromMarket(type, it.nm, it.seller, priceSol);
+            // maxPrice = displayed price (exact-price slippage guard).
+            crRegistry.buyFromMarket(type, it.nm, it.seller, priceSol, priceSol);
             return;
           }
         }
@@ -25076,9 +25413,55 @@ function renderMarketplaceCats(){
     bar.appendChild(b);
   });
 }
+// v0.9.8 — live on-chain P2P listings (from crMarket). When populated, these
+// replace the OS_SHOP_P2P mock seed (which then only shows as an empty-state
+// demo if the chain has no listings yet). Built from crMarket.getListings().
+let _p2pLive = null;
+let _ownedEntities = new Set();   // entity PDAs the connected wallet holds a License for
+const _ENTITY_TYPE_TO_CAT  = { 0:'maps', 1:'strategies', 2:'bots', 3:'indicators', 4:'backtests', 5:'apps', 6:'tokenprofiles', 7:'widgets', 8:'tools' };
+const _ENTITY_TYPE_TO_ICON = { 0:'🗺', 1:'🪄', 2:'🤖', 3:'📈', 4:'📊', 5:'🎴', 6:'🪙', 7:'🧩', 8:'🛠' };
+function crMarketSyncP2P(){
+  try {
+    if (typeof crMarket === 'undefined') return;
+    const rows = crMarket.getListings() || [];
+    const me = (typeof crWallet !== 'undefined' && crWallet.isConnected()) ? crWallet.get() : null;
+    _p2pLive = rows.map(r => ({
+      ic:   _ENTITY_TYPE_TO_ICON[r.type] || '🪙',
+      nm:   r.name,
+      pr:   (Math.round(r.priceSol * 1e6) / 1e6) + ' $SOL',
+      meta: 'by ' + (r.seller ? (r.seller.slice(0,4) + '…' + r.seller.slice(-4)) : 'anon')
+            + (r.royaltyBps ? ' · ' + (r.royaltyBps/100) + '% royalty' : ''),
+      cat:    _ENTITY_TYPE_TO_CAT[r.type] || 'all',
+      seller: r.seller,
+      type:   r.type,        // explicit entity type — buy handler prefers this
+      priceSol: r.priceSol,
+      owned:  _ownedEntities.has(r.entity),       // buyer already holds a license
+      isMine: !!(me && r.seller === me),          // the connected wallet is the seller
+    }));
+    osRefreshShop();
+  } catch(_){}
+}
+// v0.9.8 — fetch the connected wallet's License PDAs, build the owned-entity set,
+// then repaint so owned listings show "✓ Owned" instead of Buy. No-op when no
+// wallet is connected.
+function crMarketSyncOwned(){
+  try {
+    if (typeof crMarket === 'undefined') return;
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
+      _ownedEntities = new Set(); crMarketSyncP2P(); return;
+    }
+    crMarket.refresh();   // refresh listings first
+    crMarket.fetchLicenses(crWallet.get()).then(function(list){
+      _ownedEntities = new Set((list || []).map(function(l){ return l.entity; }));
+      crMarketSyncP2P();
+    });
+  } catch(_){}
+}
 function osRefreshShop(){
   osRenderShopList('osShopGear', OS_SHOP_GEAR, { cat: _marketActiveCat.gear });
-  osRenderShopList('osShopP2P',  OS_SHOP_P2P,  { sol:true, cat: _marketActiveCat.p2p });
+  // Prefer live on-chain listings; fall back to the seed demo when chain is empty.
+  const p2p = (_p2pLive && _p2pLive.length) ? _p2pLive : OS_SHOP_P2P;
+  osRenderShopList('osShopP2P',  p2p,  { sol:true, cat: _marketActiveCat.p2p });
   renderMarketplaceCats();
 }
 
@@ -25099,10 +25482,16 @@ function osRefreshShop(){
       // v0.8k#24bw — Repaint category bar with the new view's options.
       _marketActiveView = view;
       if(typeof renderMarketplaceCats === 'function') renderMarketplaceCats();
+      // v0.9.8 — entering P2P view: pull fresh on-chain listings + owned set.
+      if(view === 'p2p' && typeof crMarketSyncOwned === 'function') crMarketSyncOwned();
     });
   });
   // Initial paint of the category bar (defaults to gear/all).
   if(typeof renderMarketplaceCats === 'function') renderMarketplaceCats();
+  // v0.9.8 — repaint P2P whenever crMarket finishes a listings fetch, and pull
+  // an initial set shortly after boot so the shop isn't empty on first open.
+  window.addEventListener('crMarket:listings', function(){ if(typeof crMarketSyncP2P === 'function') crMarketSyncP2P(); });
+  if(typeof crMarketSyncOwned === 'function') setTimeout(function(){ crMarketSyncOwned(); }, 2500);
 })();
 
 // v0.8k#24w/#24av/#24bq — Profile tab switcher (Player · Balances · Stats · Missions).
