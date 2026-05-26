@@ -168,6 +168,35 @@
     text-overflow:ellipsis;white-space:nowrap}
   .cfg-ind-slot .tag{font-size:8px;letter-spacing:.4px;color:var(--dim);text-transform:uppercase}
   .cfg-ind-slot.active .tag{color:#3ddc97}
+  /* v1.0.x — Configure Run broker picker: CEX/DEX segmented toggle + an
+     iOS-style vertical scroll wheel. Cosmetic field only. */
+  .cfg-broker{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+  .cfg-brokerSeg{display:inline-flex;border:1px solid var(--line);border-radius:8px;
+    overflow:hidden;background:rgba(10,15,28,.8);flex:0 0 auto}
+  .cfg-brokerSeg button{border:0;background:transparent;color:var(--dim);
+    padding:8px 20px;font:inherit;font-size:12px;font-weight:700;letter-spacing:.6px;
+    cursor:pointer;text-transform:uppercase;transition:background .12s,color .12s}
+  .cfg-brokerSeg button + button{border-left:1px solid var(--line)}
+  .cfg-brokerSeg button.on[data-bk="dex"]{background:rgba(155,140,255,.16);color:#cbbcff}
+  .cfg-brokerSeg button.on[data-bk="cex"]{background:rgba(240,185,11,.14);color:#f0b90b}
+  .cfg-wheel{position:relative;width:190px;height:132px;flex:0 0 auto;overflow:hidden;
+    border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.55);
+    -webkit-mask-image:linear-gradient(to bottom,transparent,#000 30%,#000 70%,transparent);
+            mask-image:linear-gradient(to bottom,transparent,#000 30%,#000 70%,transparent)}
+  .cfg-wheel-list{position:absolute;inset:0;margin:0;list-style:none;overflow-y:auto;
+    scroll-snap-type:y mandatory;scrollbar-width:none}
+  .cfg-wheel-list::-webkit-scrollbar{display:none}
+  .cfg-wheel-item{height:30px;line-height:30px;text-align:center;scroll-snap-align:center;
+    font:inherit;font-size:12px;font-weight:600;color:var(--dim);cursor:pointer;opacity:.45;
+    letter-spacing:.3px;transition:color .12s,transform .12s,opacity .12s}
+  .cfg-wheel-item.sel{opacity:1;font-weight:800;transform:scale(1.14)}
+  #cfgBrokerWheel.bk-dex .cfg-wheel-item.sel{color:#cbbcff}
+  #cfgBrokerWheel.bk-cex .cfg-wheel-item.sel{color:#f0b90b}
+  .cfg-wheel-sel{position:absolute;left:8px;right:8px;top:50%;height:30px;
+    transform:translateY(-50%);border-top:1px solid var(--line);
+    border-bottom:1px solid var(--line);border-radius:4px;pointer-events:none}
+  #cfgBrokerWheel.bk-dex .cfg-wheel-sel{border-color:rgba(155,140,255,.4)}
+  #cfgBrokerWheel.bk-cex .cfg-wheel-sel{border-color:rgba(240,185,11,.35)}
   /* v0.8k#24bv — Profile Player altar layout. Three columns × four rows.
      Avatar canvas spans rows 1–3 of the centre column; vehicle slot sits
      in row 4. Left column carries Weapon / Gear / Skin top→bottom. Right
@@ -9940,13 +9969,20 @@ window.crRegistry = (function(){
       } else if (regAction === 'cancel-license-listing'){
         toastMsg = '✖ Resale listing cancelled · rent refunded';
         setTimeout(function(){ try { if(window.crMarketSyncOwned) crMarketSyncOwned(); } catch(_){} }, 1200);
+      } else if (regAction === 'match-init' || regAction === 'match-join'){
+        var _mp = u.searchParams.get('matchPda') || '';
+        var _short = _mp ? (_mp.slice(0,4) + '…' + _mp.slice(-4)) : '';
+        toastMsg = (regAction === 'match-init')
+          ? ('⚔️ Match created · code ' + _short)
+          : ('⚔️ Joined match ' + _short);
+        setTimeout(function(){ try { if(window.crMatch && crMatch.onReturn) crMatch.onReturn(regAction === 'match-init' ? 'init' : 'join', _mp); } catch(_){} }, 600);
       }
       if (Object.keys(patch).length) markEntity(t, regName, patch);
       setTimeout(function(){
         try { toast && toast(toastMsg + ' · ' + sig.slice(0, 8) + '…'); } catch(_){}
       }, 800);
       // Strip params so screenshots don't leak.
-      ['regAction','regType','regName','sig'].forEach(function(p){
+      ['regAction','regType','regName','sig','matchPda'].forEach(function(p){
         u.searchParams.delete(p);
       });
       window.history.replaceState({}, '', u.toString());
@@ -10547,6 +10583,147 @@ window.crMarket = (function(){
     fetchLicenses:      fetchLicenses,
     checkHandle:        checkHandle,
     refresh:            refresh,
+  };
+})();
+
+/* =========================================================================
+ * crMatch — on-chain PvP match lobby (chartrunner_match), PHASE A.
+ * v0.9.x — the base-layer match lifecycle: create (init_match) + join
+ * (join_match), both signed once through /solana-connect/. Reads MatchState
+ * PDAs via getAccountInfo for the roster. The match program is LIVE on devnet
+ * (3mzEAWZVtTV7sjqkRrPAbB3tT7bA3vVx5wyYQZvfp5zu).
+ *
+ * PHASE B (NOT here — needs @magicblock-labs/ephemeral-rollups-sdk + a live ER
+ * + a per-match session key): delegate_match → stream tick_player to the
+ * MagicBlock Ephemeral Rollup at sub-ms latency → commit_match / commit_and_finish.
+ * Until then, the opponent is the async on-chain ghost overlay (crGhost).
+ * =======================================================================*/
+window.crMatch = (function(){
+  var PROGRAM_ID = '3mzEAWZVtTV7sjqkRrPAbB3tT7bA3vVx5wyYQZvfp5zu';
+  var RPC_URL    = 'https://api.devnet.solana.com';
+  var MATCH_KEY  = 'cr_active_match_v1';   // localStorage: last created/joined match PDA
+
+  var B58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  function _b58encode(bytes){
+    var digits = [0];
+    for (var i = 0; i < bytes.length; i++) {
+      var carry = bytes[i];
+      for (var j = 0; j < digits.length; j++) { carry += digits[j] << 8; digits[j] = carry % 58; carry = (carry / 58) | 0; }
+      while (carry) { digits.push(carry % 58); carry = (carry / 58) | 0; }
+    }
+    var s = '';
+    for (var k = 0; k < bytes.length && bytes[k] === 0; k++) s += '1';
+    for (var m = digits.length - 1; m >= 0; m--) s += B58_ALPHABET[digits[m]];
+    return s;
+  }
+  function _b64decode(s){ var bin = atob(s); var o = new Uint8Array(bin.length); for (var i=0;i<bin.length;i++) o[i]=bin.charCodeAt(i); return o; }
+  function _isB58Pubkey(s){ return typeof s === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s.trim()); }
+
+  function _walletGate(msg){
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
+      var ok = window.confirm(msg + ' requires a connected wallet. Connect now?');
+      if (ok && crWallet) crWallet.connect();
+      return false;
+    }
+    return true;
+  }
+  // Map the in-game asset (e.g. 'btc') to the ticker form the program stores.
+  function _ticker(){
+    var a = (typeof currentAsset !== 'undefined') ? String(currentAsset).toUpperCase() : 'BTC';
+    return a + 'USDT';
+  }
+  function _tf(){ return (typeof timeframe !== 'undefined') ? String(timeframe) : '15m'; }
+  function _randNonce(){
+    // 53-bit random nonce as a decimal string (fits the program's u64).
+    var hi = Math.floor(Math.random() * 0x200000);   // 21 bits
+    var lo = Math.floor(Math.random() * 0x100000000); // 32 bits
+    return (BigInt(hi) * 4294967296n + BigInt(lo)).toString();
+  }
+
+  // Create a match — bounces to /solana-connect/?action=match-init. The bridge
+  // derives the MatchState PDA, signs init_match, and returns ?matchPda=...
+  function createMatch(maxPlayers){
+    if(!_walletGate('Creating a match')) return false;
+    var mp = Math.max(1, Math.min(8, maxPlayers || 2));
+    var url = '../solana-connect/?action=match-init'
+            + '&nonce='      + encodeURIComponent(_randNonce())
+            + '&asset='      + encodeURIComponent(_ticker())
+            + '&timeframe='  + encodeURIComponent(_tf())
+            + '&maxPlayers=' + mp
+            + '&return='     + encodeURIComponent('/play/');
+    window.location.href = url;
+    return true;
+  }
+  // Join a match by its code (the MatchState PDA, base58).
+  function joinMatch(matchPda){
+    if(!_walletGate('Joining a match')) return false;
+    var code = String(matchPda || '').trim();
+    if(!_isB58Pubkey(code)){ try{ toast && toast('That doesn\'t look like a valid match code'); }catch(_){} return false; }
+    var url = '../solana-connect/?action=match-join'
+            + '&matchPda=' + encodeURIComponent(code)
+            + '&return='   + encodeURIComponent('/play/');
+    window.location.href = url;
+    return true;
+  }
+  function joinPrompt(){
+    var code = window.prompt('Paste the match code (the host shared it):', '');
+    if(code == null) return false;
+    return joinMatch(code);
+  }
+
+  // Read a MatchState PDA → roster snapshot. Layout after 8-byte disc:
+  //   [8..40]host [40..48]nonce [48..64]asset [64..72]tf [72]max [73]count
+  //   [74..330]players(8×32) … [466]is_finished
+  async function readMatch(matchPda){
+    try {
+      var body = { jsonrpc:'2.0', id:1, method:'getAccountInfo',
+                   params:[ matchPda, { encoding:'base64', commitment:'confirmed' } ] };
+      var r = await fetch(RPC_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      var json = await r.json();
+      var val = json && json.result && json.result.value;
+      if(!val || !val.data || !val.data[0]) return null;
+      var b = _b64decode(val.data[0]);
+      if(b.length < 467) return null;
+      var dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+      function _trim(x){ var e=x.length; while(e>0 && x[e-1]===0) e--; return new TextDecoder().decode(x.slice(0,e)); }
+      var maxPlayers  = b[72];
+      var playerCount = b[73];
+      var players = [];
+      for(var i=0;i<playerCount && i<8;i++){ players.push(_b58encode(b.slice(74 + i*32, 74 + i*32 + 32))); }
+      return {
+        host:        _b58encode(b.slice(8, 40)),
+        asset:       _trim(b.slice(48, 64)),
+        timeframe:   _trim(b.slice(64, 72)),
+        maxPlayers:  maxPlayers,
+        playerCount: playerCount,
+        players:     players,
+        isFinished:  b[466] === 1,
+      };
+    } catch(err){
+      if (typeof console !== 'undefined') console.warn('crMatch read:', err.message || err);
+      return null;
+    }
+  }
+
+  function getActiveMatch(){ try { return localStorage.getItem(MATCH_KEY) || null; } catch(_){ return null; } }
+  function setActiveMatch(mp){ try { if(mp) localStorage.setItem(MATCH_KEY, mp); } catch(_){} }
+
+  // Called by the crRegistry return handler after a match-init/join bounce.
+  function onReturn(kind, matchPda){
+    if(matchPda) setActiveMatch(matchPda);
+    // Surface the roster shortly after (chain needs a beat to confirm).
+    if(matchPda) setTimeout(function(){ readMatch(matchPda).then(function(m){
+      if(m){ try { toast && toast('Match roster: ' + m.playerCount + '/' + m.maxPlayers + ' · ' + m.asset); } catch(_){} }
+    }); }, 1500);
+  }
+
+  return {
+    createMatch:    createMatch,
+    joinMatch:      joinMatch,
+    joinPrompt:     joinPrompt,
+    readMatch:      readMatch,
+    getActiveMatch: getActiveMatch,
+    onReturn:       onReturn,
   };
 })();
 
@@ -18103,8 +18280,8 @@ try { if(/[?&]coinspawn=1/.test(location.search)) game.coinSpawnTest = true; } c
 try {
   window.ChartRunner = {
     automationVersion: "1.0",
-    capabilities: { sdk:true, setSeed:true, getRunSummary:true,
-                    headless:false, replay:false, rpc:false, input:false, events:false },
+    capabilities: { sdk:true, setSeed:true, getRunSummary:true, step:true, headless:true,
+                    replay:false, rpc:false, input:false, events:false },
     // the live order-issuing SDK instance (bracket/ladder/oco/market/limit/twap/…)
     sdk: sdk,
     // seed the coin-spawner RNG for reproducible runs; returns the applied seed
@@ -18121,7 +18298,21 @@ try {
         seed: (typeof game._botSeed !== 'undefined') ? game._botSeed : null,
         durationMs: game._runStartTs ? Math.round(performance.now() - game._runStartTs) : null
       };
-    }
+    },
+    // advance ONE fixed tick deterministically — immune to rAF/background-tab throttle.
+    // dtMs defaults to ~60fps; pass draw=false to skip rendering for fast headless loops.
+    step: function(dtMs, draw){
+      var dt = Math.min(0.033, ((dtMs == null ? 16.667 : dtMs)) / 1000);
+      var frozen = performance.now() < game.hitStopUntil;
+      if(game.running && !frozen && typeof update === 'function') update(dt);
+      if(typeof updateFxOnly === 'function') updateFxOnly(dt);
+      if(game.running && !frozen && typeof sampleSnakeTrail === 'function') sampleSnakeTrail();
+      if(draw !== false && typeof render === 'function') render(dt);
+      return true;
+    },
+    // when ON, the rAF loop stops advancing the sim — time only moves via step().
+    // Makes runs fully deterministic + immune to background-tab throttling.
+    setHeadless: function(on){ game._headless = !!on; return game._headless; }
   };
 } catch(_){}
 
@@ -18887,7 +19078,8 @@ function frame(ts){
   const dtReal = Math.min(0.033, (ts-last)/1000); last=ts;
   // Hit-stop: freeze main update entirely; FX (particles/floats) keep ticking at real time
   const frozen = ts < game.hitStopUntil;
-  if(game.running && !frozen) update(dtReal);
+  // v0.9.x bot — headless: rAF stops advancing the sim; time moves only via window.ChartRunner.step().
+  if(game.running && !frozen && !game._headless) update(dtReal);
   updateFxOnly(dtReal);
   // v0.8k#10 — Career-score bookkeeping for grindable Indicators. Runs every
   // frame (O(9), trivial). Persists via localStorage at unlock boundaries.
@@ -18896,7 +19088,7 @@ function frame(ts){
   // snake avatar is equipped. Distance-thresholded so spacing stays
   // uniform regardless of speed; this gives the body the "follow every
   // turn" behavior of classic Snake.
-  if(game.running && !frozen && typeof sampleSnakeTrail === 'function') sampleSnakeTrail();
+  if(game.running && !frozen && !game._headless && typeof sampleSnakeTrail === 'function') sampleSnakeTrail();
   render(dtReal);
   // v0.9.7 — Async multiplayer overlay. crGhost paints a docked top-10
   // leaderboard panel for the current asset+timeframe, fed by polling the
@@ -24630,11 +24822,16 @@ function pickMode(mode){
   document.querySelectorAll('#crArenaSubModes [data-arena]').forEach(btn => {
     btn.addEventListener('click', () => {
       const sub = btn.getAttribute('data-arena');
+      // v0.9.x — realtime PvP sub-modes create a real on-chain match (Phase A:
+      // base-layer init/join; the live ER tick stream is Phase B). The other
+      // sub-modes (token-launch / timed / liquidation) stay Phase 2 toasts.
+      const seats = { '1v1': 2, '2v2': 4, 'royal': 8 };
+      if (sub in seats && typeof crMatch !== 'undefined') {
+        crMatch.createMatch(seats[sub]);
+        return;
+      }
       try {
         toast(({
-          '1v1':       '1v1 · Phase 2 (Solana matchmaking)',
-          '2v2':       '2v2 · Phase 2 (Solana matchmaking)',
-          'royal':     'Royal Rumble · Phase 2 (Solana matchmaking)',
           'tournament':'Trading Tournament · Phase 2 (token launch + bracket)',
           'ontime':    'On Time · Phase 2 (timed PnL settlement)',
           'lastman':   'Last Men Standing · Phase 2 (liquidation knock-out)',
@@ -24642,6 +24839,22 @@ function pickMode(mode){
       } catch(_){}
     });
   });
+  // v0.9.x — "Join by code" entry for the arena lobby (added dynamically so no
+  // markup churn). Lets a player paste a host's match code and join on-chain.
+  (function _wireMatchJoin(){
+    const grid = document.getElementById('crArenaSubModes');
+    if(!grid || grid.querySelector('#crMatchJoinBtn')) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'crMatchJoinBtn';
+    b.className = 'modecard';
+    b.style.cssText = 'grid-column:1/-1;cursor:pointer';
+    b.innerHTML = '<div class="modeName">🔑 Join by code</div>'
+                + '<div class="modeDesc">Paste a host\'s match code to join their on-chain match.</div>'
+                + '<div class="modeTag">devnet</div>';
+    b.addEventListener('click', () => { if(typeof crMatch !== 'undefined') crMatch.joinPrompt(); });
+    grid.appendChild(b);
+  })();
   // v0.8k#24mz — Per-mode 🎲 Random button. Click rolls a random asset,
   // timeframe, perspective, indicator subset, and strategy, then launches the
   // chosen mode immediately — bypassing the Configure Run window entirely.
@@ -27031,6 +27244,9 @@ function osRefreshConfigs(){
   osRenderAssetBox('osAssetBox');
   _renderConfigIndicatorGrid();
   _renderConfigStrategyGrid();
+  // v1.0.x — re-centre the broker scroll wheel now that #win-configs is laid
+  // out (the wheel's scroll math needs a measurable clientHeight).
+  try { if(typeof window._crBrokerSync === 'function') window._crBrokerSync(); } catch(_){}
 }
 document.getElementById('osStrategySel').addEventListener('change', e=>{
   const v = e.target.value;
@@ -27055,6 +27271,138 @@ document.getElementById('osTfBox').addEventListener('click', async e=>{
   await applyInterval(b.dataset.tf);
   osRefreshConfigs();
 });
+
+// v1.0.x — Configure Run broker picker (cosmetic). The CEX/DEX segment toggles
+// the venue family; the vertical scroll wheel snap-selects the specific broker.
+// Selection persists to localStorage (cr_broker_v1) and is mirrored onto
+// game.broker, but has NO downstream SDK / order-routing effect yet — it is a
+// display/config field only. sync() is exposed so osRefreshConfigs() can
+// re-centre the wheel once #win-configs is on screen (scroll math needs layout).
+(function wireBrokerPicker(){
+  const BROKERS = {
+    dex: ['Jupiter','Phoenix','Raydium','Orca','Drift','Meteora','Lifinity'],
+    cex: ['Binance','Coinbase','Kraken','Bybit','OKX','Bitget','KuCoin'],
+  };
+  const ITEM_H = 30; // keep in sync with .cfg-wheel-item height
+  const seg   = document.getElementById('cfgBrokerSeg');
+  const wheel = document.getElementById('cfgBrokerWheel');
+  const list  = document.getElementById('cfgBrokerWheelList');
+  if(!seg || !wheel || !list) return;
+
+  let state = { type:'dex', name:'Jupiter' };
+  try {
+    const s = JSON.parse(localStorage.getItem('cr_broker_v1') || 'null');
+    if(s && BROKERS[s.type] && BROKERS[s.type].includes(s.name)) state = { type:s.type, name:s.name };
+  } catch(_){}
+
+  function persist(){
+    try { localStorage.setItem('cr_broker_v1', JSON.stringify(state)); } catch(_){}
+    try { if(typeof game !== 'undefined') game.broker = { type:state.type, name:state.name }; } catch(_){}
+  }
+  // v1.0.x — circular wheel. The broker list is rendered REPEAT times so the
+  // user can scroll endlessly; once a scroll settles we silently re-home the
+  // scroll position to the MIDDLE block (same value, same centre → seamless),
+  // guaranteeing there's always room to keep spinning in either direction.
+  const REPEAT = 60, MIDDLE = 30;
+  const names = () => BROKERS[state.type] || [];
+  const total = () => names().length * REPEAT;
+  const modOf = (g) => { const n = names().length; return n ? ((g % n) + n) % n : 0; };
+  const homeG = (m) => MIDDLE * names().length + m; // global index of `m` in the middle block
+  let homing = false, lastSel = -1, scrollT;
+
+  function setScroll(g, smooth){
+    try { list.scrollTo({ top: g * ITEM_H, behavior: smooth ? 'smooth' : 'auto' }); }
+    catch(_){ list.scrollTop = g * ITEM_H; }
+  }
+  function markSelected(g){
+    if(g === lastSel) return;
+    if(lastSel >= 0 && list.children[lastSel]) list.children[lastSel].classList.remove('sel');
+    if(list.children[g]) list.children[g].classList.add('sel');
+    lastSel = g;
+  }
+  function renderList(){
+    const ns = names();
+    let html = '';
+    for(let r = 0; r < REPEAT; r++)
+      for(let i = 0; i < ns.length; i++)
+        html += '<div class="cfg-wheel-item">' + ns[i] + '</div>';
+    list.innerHTML = html;
+    lastSel = -1;
+  }
+  function recalcPad(){
+    // Top/bottom padding makes scrollTop = g*ITEM_H centre global item g.
+    // clientHeight is only meaningful once the window is visible/laid out.
+    const pad = Math.max(0, (list.clientHeight - ITEM_H) / 2);
+    list.style.paddingTop = pad + 'px';
+    list.style.paddingBottom = pad + 'px';
+  }
+  // Jump to a global index without the scroll handler reacting (used for the
+  // initial centre, segment switch, and the seamless re-home).
+  function jumpTo(g){
+    homing = true;
+    setScroll(g, false);
+    markSelected(g);
+    requestAnimationFrame(() => { homing = false; });
+  }
+  // Centre `state.name` in the middle block (no animation).
+  function homeToSelection(){
+    const m = Math.max(0, names().indexOf(state.name));
+    jumpTo(homeG(m));
+    persist();
+  }
+  list.addEventListener('scroll', () => {
+    if(homing || !names().length) return;
+    let g = Math.round(list.scrollTop / ITEM_H);
+    g = Math.max(0, Math.min(total() - 1, g));
+    const m = modOf(g);
+    markSelected(g);
+    state.name = names()[m];
+    clearTimeout(scrollT);
+    scrollT = setTimeout(() => {
+      persist();
+      const hg = homeG(m);          // seamless re-home: identical value, identical centre
+      if(hg !== g) jumpTo(hg);
+    }, 120);
+  });
+  // Tap a broker to spin to it.
+  list.addEventListener('click', (e) => {
+    const el = e.target.closest('.cfg-wheel-item'); if(!el) return;
+    const g = Array.prototype.indexOf.call(list.children, el);
+    if(g < 0) return;
+    state.name = names()[modOf(g)];
+    setScroll(g, true);
+    markSelected(g);
+    persist();
+  });
+  seg.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if(!b) return;
+    const t = b.dataset.bk; if(!BROKERS[t]) return;
+    state.type = t;
+    seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    wheel.classList.toggle('bk-dex', t === 'dex');
+    wheel.classList.toggle('bk-cex', t === 'cex');
+    if(!BROKERS[t].includes(state.name)) state.name = BROKERS[t][0];
+    renderList();
+    recalcPad();
+    homeToSelection();
+  });
+
+  // Exposed so osRefreshConfigs() can re-centre the wheel on window-open.
+  function sync(){
+    seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.bk === state.type));
+    wheel.classList.toggle('bk-dex', state.type === 'dex');
+    wheel.classList.toggle('bk-cex', state.type === 'cex');
+    if(!list.children.length) renderList();
+    recalcPad();
+    homeToSelection();
+  }
+  window._crBrokerSync = sync;
+
+  // Initial paint (harmless while hidden; sync() re-runs with real layout on open).
+  renderList();
+  wheel.classList.add(state.type === 'cex' ? 'bk-cex' : 'bk-dex');
+  persist();
+})();
 
 // Run window — sync asset label
 function osRefreshRun(){
