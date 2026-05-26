@@ -7389,6 +7389,26 @@
               <button data-tf="1M">1M</button>
             </div>
           </div>
+          <!-- v1.0.x — Broker picker (cosmetic). CEX/DEX segmented toggle picks
+               the venue family (CEX = Binance-gold, DEX = Solana-purple); the
+               scroll wheel below picks the specific broker. Selection persists
+               to cr_broker_v1 + game.broker but has NO downstream SDK effect yet
+               — this is a display/config field only. The wheel is re-centered
+               from osRefreshConfigs() once the window is visible (scroll math
+               needs a laid-out element). -->
+          <div class="os-section">
+            <h4>Broker</h4>
+            <div class="cfg-broker">
+              <div class="cfg-brokerSeg" id="cfgBrokerSeg" role="tablist" aria-label="Broker venue family">
+                <button data-bk="dex" class="on" type="button" role="tab">DEX</button>
+                <button data-bk="cex" type="button" role="tab">CEX</button>
+              </div>
+              <div class="cfg-wheel" id="cfgBrokerWheel" title="Scroll to pick a broker">
+                <div class="cfg-wheel-list" id="cfgBrokerWheelList"></div>
+                <div class="cfg-wheel-sel" aria-hidden="true"></div>
+              </div>
+            </div>
+          </div>
           <!-- v0.9.46 — Indicators + Strategies removed from Configure Run.
                Both are configured in Workbench (Indicators/Strategies tabs)
                and toggled in-run via the side panel; the Configure Run modal
@@ -7523,7 +7543,10 @@
                  a no-op for osRefreshProfile / _nftApplyAvatar. -->
             <div class="md-row" style="gap:10px;align-items:center">
               <input type="text" id="profileName" placeholder="anon_runner" maxlength="20" style="flex:1;background:transparent;border:1px solid #2a2a2e;color:inherit;padding:6px 8px;border-radius:4px;font:inherit;font-size:13px" />
+              <!-- v0.9.x — claim the handle on-chain (globally unique via chartrunner_registry::claim_name). -->
+              <button type="button" id="crNameClaimBtn" title="Claim this handle on-chain — globally unique, no one else can take it" style="background:#1c1c22;border:1px solid #3a3a42;color:#cfd2dd;padding:6px 10px;border-radius:4px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap">🪪 Claim on-chain</button>
             </div>
+            <div id="crNameClaimStatus" style="font-size:10px;color:#5a5a52;margin-top:4px;min-height:12px"></div>
           </div>
           <!-- v0.9.20 — Run Controls moved out of desktop Profile and into the
                in-game lite profile (right sidebar Wallet tab). Find them at
@@ -9493,6 +9516,10 @@ window.crWallet = (function(){
  *   crRegistry.listOnMarket(type, name, priceSol)
  *   crRegistry.buyFromMarket(type, name, sellerAddr, priceSol, maxPriceSol?)
  *   crRegistry.cancelListing(type, name)
+ *   crRegistry.claimName(handle)   // globally-unique runner handle on-chain
+ *   crRegistry.listLicense(entityPda, priceSol)         // resell a license you own
+ *   crRegistry.buyLicense(entityPda, seller, creator, priceSol, maxPriceSol?)
+ *   crRegistry.cancelLicenseListing(entityPda)
  *   crRegistry.markEntity(type, name, { onChain, sig, listed, buyer, ... })
  *   crRegistry.canonicalJson(payload, excludeKeys)
  *   crRegistry.findOnChain(type, name) → entry|null  (with metadata)
@@ -9793,6 +9820,70 @@ window.crRegistry = (function(){
     return true;
   }
 
+  // v0.9.x — claim a globally-unique runner handle on-chain. Bounces to
+  // /solana-connect/?action=claim-name; the registry program's `init` on the
+  // handle PDA is the uniqueness gate. On return the URL handler below persists
+  // the handle to cr_profile_name_v1 + the profile input.
+  function claimName(handle){
+    var h = String(handle || '').trim().toLowerCase();
+    if (!/^[a-z0-9_]{1,32}$/.test(h)){
+      try { toast && toast('Handle must be 1–32 chars: a–z, 0–9, underscore'); } catch(_){}
+      return false;
+    }
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
+      var ok = window.confirm('Claiming a handle on-chain requires a connected wallet. Connect now?');
+      if (ok && crWallet) crWallet.connect();
+      return false;
+    }
+    var url = '../solana-connect/?action=claim-name'
+            + '&name='   + encodeURIComponent(h)
+            + '&return=' + encodeURIComponent('/play/');
+    window.location.href = url;
+    return true;
+  }
+
+  // v0.9.x — RESALE (License resale). entityPda is the EntityRecord PDA (base58)
+  // the license is for — crMarket supplies it on owned-license + resale rows.
+  function _walletGate(msg){
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
+      var ok = window.confirm(msg + ' requires a connected wallet. Connect now?');
+      if (ok && crWallet) crWallet.connect();
+      return false;
+    }
+    return true;
+  }
+  function listLicense(entityPda, priceSol){
+    if(!_walletGate('Reselling a license')) return false;
+    var lamports = BigInt(Math.round(priceSol * 1e9));
+    if(lamports <= 0n){ try{ toast && toast('Price must be > 0'); }catch(_){} return false; }
+    var url = '../solana-connect/?action=list-license'
+            + '&entity=' + encodeURIComponent(entityPda)
+            + '&price='  + lamports.toString()
+            + '&return=' + encodeURIComponent('/play/');
+    window.location.href = url;
+    return true;
+  }
+  function buyLicense(entityPda, sellerAddr, creatorAddr, priceSol, maxPriceSol){
+    if(!_walletGate('Buying a resale license')) return false;
+    var maxLamports = BigInt(Math.round((maxPriceSol != null ? maxPriceSol : priceSol) * 1e9));
+    var url = '../solana-connect/?action=buy-license'
+            + '&entity='   + encodeURIComponent(entityPda)
+            + '&seller='   + encodeURIComponent(sellerAddr)
+            + '&creator='  + encodeURIComponent(creatorAddr)
+            + '&maxPrice=' + maxLamports.toString()
+            + '&return='   + encodeURIComponent('/play/');
+    window.location.href = url;
+    return true;
+  }
+  function cancelLicenseListing(entityPda){
+    if(!_walletGate('Cancelling a resale listing')) return false;
+    var url = '../solana-connect/?action=cancel-license-listing'
+            + '&entity=' + encodeURIComponent(entityPda)
+            + '&return=' + encodeURIComponent('/play/');
+    window.location.href = url;
+    return true;
+  }
+
   // ── URL handler — process redirect-back from /solana-connect/ ──────────
   try {
     var u = new URL(window.location.href);
@@ -9830,6 +9921,25 @@ window.crRegistry = (function(){
         patch = { onChain: false, sig: null, onChainAt: null,
                   listed: false, listingSig: null, listingPrice: null };
         toastMsg = '🗑 ' + label + ' "' + regName + '" unanchored · rent refunded';
+      } else if (regAction === 'claim-name'){
+        // v0.9.x — persist the on-chain handle locally + reflect in the profile
+        // input. No entity patch (names aren't local entities).
+        try {
+          localStorage.setItem('cr_profile_name_v1', regName);
+          localStorage.setItem('cr_name_onchain_v1', '1');
+          var _pn = document.getElementById('profileName');
+          if (_pn) _pn.value = regName;
+        } catch(_){}
+        toastMsg = '🪪 Handle "' + regName + '" claimed on-chain';
+      } else if (regAction === 'list-license'){
+        toastMsg = '📤 License listed for resale';
+        setTimeout(function(){ try { if(window.crMarketSyncOwned) crMarketSyncOwned(); } catch(_){} }, 1200);
+      } else if (regAction === 'buy-license'){
+        toastMsg = '💰 Resale license bought — new license minted';
+        setTimeout(function(){ try { if(window.crMarketSyncOwned) crMarketSyncOwned(); } catch(_){} }, 1200);
+      } else if (regAction === 'cancel-license-listing'){
+        toastMsg = '✖ Resale listing cancelled · rent refunded';
+        setTimeout(function(){ try { if(window.crMarketSyncOwned) crMarketSyncOwned(); } catch(_){} }, 1200);
       }
       if (Object.keys(patch).length) markEntity(t, regName, patch);
       setTimeout(function(){
@@ -9856,6 +9966,10 @@ window.crRegistry = (function(){
     cancelListing:  cancelListing,
     deleteFromChain: deleteFromChain,
     recordRun:      recordRun,
+    claimName:      claimName,
+    listLicense:    listLicense,
+    buyLicense:     buyLicense,
+    cancelLicenseListing: cancelLicenseListing,
   };
 })();
 
@@ -9993,6 +10107,11 @@ window.crGhost = (function(){
       while (end > 0 && b[end - 1] === 0) end--;
       return new TextDecoder().decode(b.slice(0, end));
     }
+    // v0.9.x — appended oracle-proof fields (offset 129+) on post-upgrade
+    // records. Old (129-byte) records have none → verified:false.
+    //   [128] bump · [129] verified bool · [130..162] feed_id · [162..170] price i64
+    //   [170..174] price_expo i32 · [174..182] price_publish i64
+    var verified = bytes.length >= 130 ? (bytes[129] === 1) : false;
     return {
       player:    player,
       nonce:     nonce.toString(),
@@ -10003,6 +10122,7 @@ window.crGhost = (function(){
       duration:  duration,
       mapHash:   mapHash,
       ts:        Number(ts),
+      verified:  verified,          // a Pyth PriceCertificate was cited on-chain
     };
   }
 
@@ -10020,9 +10140,12 @@ window.crGhost = (function(){
             encoding: 'base64',
             commitment: 'confirmed',
             // Filter to RunRecord accounts only via discriminator memcmp.
+            // v0.9.x — NO dataSize filter: post-oracle-upgrade records grew from
+            // 129 → 182 bytes (appended verified/feed/price fields). A fixed
+            // dataSize would silently drop every new record. The disc memcmp is
+            // unique to RunRecord; _decodeRunRecord handles both sizes.
             filters: [
               { memcmp: { offset: 0, bytes: RUN_RECORD_DISCRIMINATOR_B58 } },
-              { dataSize: 129 },
             ],
           },
         ],
@@ -10111,7 +10234,9 @@ window.crGhost = (function(){
       ctx.font = '11px ui-monospace';
       var rank = i < 3 ? medals[i] : ('#' + (i + 1));
       var addr = r.player.slice(0, 4) + '…' + r.player.slice(-4);
-      ctx.fillText(rank + '  ' + addr, x + pad, ry);
+      // v0.9.x — ✓ marks runs whose score price was proven against a Pyth cert.
+      var badge = r.verified ? ' ✓' : '';
+      ctx.fillText(rank + '  ' + addr + badge, x + pad, ry);
       // Score (right-aligned)
       ctx.textAlign = 'right';
       ctx.fillStyle = '#3ddc97';
@@ -10262,12 +10387,26 @@ window.crMarket = (function(){
       boughtAt:  Number(dv.getBigInt64(80, true)),
     };
   }
+  // LicenseListing: [8]disc [8..40]license [40..72]seller [72..104]entity
+  //                 [104..112]price u64 [112..120]listed_at i64
+  function _decodeLicenseListing(bytes){
+    if (bytes.length < 120) return null;
+    var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return {
+      license:  _b58encode(bytes.slice(8, 40)),
+      seller:   _b58encode(bytes.slice(40, 72)),
+      entity:   _b58encode(bytes.slice(72, 104)),
+      price:    dv.getBigUint64(104, true),
+      listedAt: Number(dv.getBigInt64(112, true)),
+    };
+  }
   function _b64of(item){
     return item && item.account && item.account.data && item.account.data[0];
   }
 
-  var _listings = [];     // [{ type, name, seller, priceSol, royaltyBps, listedAt }]
-  var _entityByPda = {};  // pubkey → { owner, type, name, royaltyBps }
+  var _listings = [];        // first-sale [{ type, name, seller, priceSol, royaltyBps, listedAt, entity }]
+  var _resaleListings = [];  // resale     [{ ...same..., creator, resale:true }]
+  var _entityByPda = {};     // pubkey → { owner, type, name, royaltyBps }
   var _lastFetch = 0, _inflight = false;
 
   async function _buildEntityMap(){
@@ -10346,14 +10485,68 @@ window.crMarket = (function(){
     }
   }
 
+  // v0.9.x — availability check for a runner handle. Returns true if the handle
+  // is already claimed (a NameClaim account exists whose name == handle). Uses
+  // memcmp on the Borsh String (4-byte LE len + utf8) at offset 40 (8 disc + 32
+  // owner) — avoids PDA derivation entirely. The on-chain `init` is the real
+  // uniqueness gate; this is just instant pre-flight UX.
+  async function checkHandle(handle){
+    var h = String(handle || '').trim().toLowerCase();
+    if (!/^[a-z0-9_]{1,32}$/.test(h)) return false;
+    var disc = await _ensureDisc('NameClaim');
+    var nb = new TextEncoder().encode(h);
+    var pre = new Uint8Array(4 + nb.length);
+    new DataView(pre.buffer).setUint32(0, nb.length, true);
+    pre.set(nb, 4);
+    var rows = await _gpa(disc, 85, [{ memcmp: { offset: 40, bytes: _b58encode(pre) } }]);
+    return Array.isArray(rows) && rows.length > 0;
+  }
+
+  // v0.9.x — resale listings (LicenseListing PDAs). Joined with the entity map
+  // for type/name/creator(owner). Fires the same 'crMarket:listings' event so
+  // the browse repaints with first-sale + resale merged.
+  async function fetchResaleListings(){
+    try {
+      var entMap = Object.keys(_entityByPda).length ? _entityByPda : await _buildEntityMap();
+      var disc = await _ensureDisc('LicenseListing');
+      var rows = await _gpa(disc, 121);
+      var out = [];
+      rows.forEach(function(it){
+        try {
+          var b64 = _b64of(it); if (!b64) return;
+          var ll = _decodeLicenseListing(_b64decode(b64));
+          if (!ll) return;
+          var e = entMap[ll.entity];
+          if (!e) return;
+          out.push({
+            type: e.type, name: e.name, seller: ll.seller,
+            priceSol: Number(ll.price) / 1e9, royaltyBps: e.royaltyBps,
+            entity: ll.entity, creator: e.owner, listedAt: ll.listedAt, resale: true,
+          });
+        } catch(_){}
+      });
+      out.sort(function(a,b){ return b.listedAt - a.listedAt; });
+      _resaleListings = out;
+      try { window.dispatchEvent(new CustomEvent('crMarket:listings', { detail:{ resale: out.length } })); } catch(_){}
+    } catch(err){
+      if (typeof console !== 'undefined') console.warn('crMarket resale:', err.message || err);
+    }
+    return _resaleListings;
+  }
+
   function getListings(){ return _listings; }
-  function refresh(){ return fetchListings(); }
+  function getResaleListings(){ return _resaleListings; }
+  // refresh pulls first-sale then resale (entity map is built in fetchListings).
+  function refresh(){ return fetchListings().then(function(){ return fetchResaleListings(); }); }
 
   return {
-    fetchListings: fetchListings,
-    getListings:   getListings,
-    fetchLicenses: fetchLicenses,
-    refresh:       refresh,
+    fetchListings:      fetchListings,
+    getListings:        getListings,
+    fetchResaleListings: fetchResaleListings,
+    getResaleListings:  getResaleListings,
+    fetchLicenses:      fetchLicenses,
+    checkHandle:        checkHandle,
+    refresh:            refresh,
   };
 })();
 
@@ -17832,6 +18025,9 @@ const COIN_SPAWN_CFG = {
   heightMin: 70,        // screen px above the candle high (÷priceScale → world)
   heightMax: 230
 };
+// Seeded RNG hook for determinism (window.ChartRunner.setSeed). Falls back to Math.random.
+let _botRng = null;
+function crRand(){ return _botRng ? _botRng() : Math.random(); }
 function updateCoinSpawner(dt){
   if(!game.coinSpawnTest) return;
   if(game.coinsDisabled === true || game.campaignChapter || !game.coinsEnabled) return;
@@ -17858,12 +18054,12 @@ function updateCoinSpawner(dt){
   const pIdx = Math.floor(player.wx / STEP);
   for(let k = 0; k < n; k++){
     const span = Math.max(1, cfg.aheadMaxCandles - cfg.aheadMinCandles);
-    const idx = pIdx + cfg.aheadMinCandles + Math.floor(Math.random()*span);
+    const idx = pIdx + cfg.aheadMinCandles + Math.floor(crRand()*span);
     if(idx < 1 || idx >= candles.length - 1) continue;
     const wx = idx*STEP + STEP/2;
-    const py = candles[idx].h + (cfg.heightMin + Math.random()*(cfg.heightMax - cfg.heightMin))/priceScale;
-    const maxLife = cfg.lifeMin + Math.random()*(cfg.lifeMax - cfg.lifeMin);
-    const kind = Math.random() < cfg.credsFrac ? 'creds' : 'tick';
+    const py = candles[idx].h + (cfg.heightMin + crRand()*(cfg.heightMax - cfg.heightMin))/priceScale;
+    const maxLife = cfg.lifeMin + crRand()*(cfg.lifeMax - cfg.lifeMin);
+    const kind = crRand() < cfg.credsFrac ? 'creds' : 'tick';
     game.pickups.push({ wx, py, kind, taken:false, _spawned:true, life:maxLife, maxLife });
     game._coinSpawned = (game._coinSpawned||0)+1;
   }
@@ -17897,11 +18093,44 @@ const crCoinSpawn = {
 try { window.crCoinSpawn = crCoinSpawn; } catch(_){}
 try { if(/[?&]coinspawn=1/.test(location.search)) game.coinSpawnTest = true; } catch(_){}
 
+/* ───────────────────────────────────────────────────────────────────────────
+   BOT-FRIENDLY automation namespace — quick-wins tier.
+   See docs/architecture/BOT-FRIENDLINESS.md. Additive, single-file,
+   framework-free; the SDK still issues every order. Gives agents / QA /
+   trading bots a stable, documented surface instead of reaching into private
+   globals. Roadmap (headless/replay/rpc/input/events) flagged in capabilities.
+   ─────────────────────────────────────────────────────────────────────────── */
+try {
+  window.ChartRunner = {
+    automationVersion: "1.0",
+    capabilities: { sdk:true, setSeed:true, getRunSummary:true,
+                    headless:false, replay:false, rpc:false, input:false, events:false },
+    // the live order-issuing SDK instance (bracket/ladder/oco/market/limit/twap/…)
+    sdk: sdk,
+    // seed the coin-spawner RNG for reproducible runs; returns the applied seed
+    setSeed: function(n){ game._botSeed = (n>>>0); _botRng = mulberry32(game._botSeed); return game._botSeed; },
+    // snapshot of the current run — for QA assertions / leaderboards
+    getRunSummary: function(){
+      var pl = (typeof player !== 'undefined') ? player : null;
+      return {
+        mode: game.mode, running: !!game.running,
+        score: game.score, crds: game.crds, kills: game.kills,
+        pnl: game.pnl ? { realized: game.pnl.realized, unrealized: game.pnl.unrealized } : null,
+        alive: pl ? pl.alive : null, hp: pl ? pl.hp : null,
+        candleCount: (typeof candles !== 'undefined' && candles) ? candles.length : null,
+        seed: (typeof game._botSeed !== 'undefined') ? game._botSeed : null,
+        durationMs: game._runStartTs ? Math.round(performance.now() - game._runStartTs) : null
+      };
+    }
+  };
+} catch(_){}
+
 function restart(){
   // v0.9.56 — Clear any in-flight OS-tutorial gate poller. Without this, hitting
   // Restart while the tutorial was mid-step left a 250ms setInterval ticking
   // against a stale gateSnap with `_TUT.gateMet` never reaching the new run.
   try { if(typeof _tutClearGate === 'function') _tutClearGate(); } catch(_){}
+  game._runStartTs = performance.now();  // bot-friendly: run-start clock for getRunSummary()
   player.vy=0; player.flying=false; player.upsideDown=false; player.onGround=false; player.alive=true;
   player.hp = player.hpMax; player.iFramesUntil = 0; player.shootCooldown = 0;
   const startIdx = Math.floor(candles.length*0.35);
@@ -25357,7 +25586,12 @@ function osRenderShopList(elId, list, opts){
                        : (parseFloat(String(it.pr).replace(/[^\d.]/g, '')) || 0);
           if (priceSol > 0) {
             // maxPrice = displayed price (exact-price slippage guard).
-            crRegistry.buyFromMarket(type, it.nm, it.seller, priceSol, priceSol);
+            if (it.resale && it.entity && it.creator) {
+              // Resale → buy_license (splits royalty to creator + payout to seller).
+              crRegistry.buyLicense(it.entity, it.seller, it.creator, priceSol, priceSol);
+            } else {
+              crRegistry.buyFromMarket(type, it.nm, it.seller, priceSol, priceSol);
+            }
             return;
           }
         }
@@ -25390,6 +25624,8 @@ const MARKET_CATS = {
     { id:'backtests',   nm:'Backtests' },
     { id:'indicators',  nm:'Indicators' },
     { id:'apps',        nm:'Apps' },
+    // v0.9.x — the connected wallet's owned licenses, each with a Resell button.
+    { id:'owned',       nm:'My Licenses' },
   ],
 };
 const _marketActiveCat = { gear:'all', p2p:'all' };
@@ -25418,26 +25654,33 @@ function renderMarketplaceCats(){
 // demo if the chain has no listings yet). Built from crMarket.getListings().
 let _p2pLive = null;
 let _ownedEntities = new Set();   // entity PDAs the connected wallet holds a License for
+let _ownedLicenses = [];          // full owned-license rows (for the "My Licenses" tab)
 const _ENTITY_TYPE_TO_CAT  = { 0:'maps', 1:'strategies', 2:'bots', 3:'indicators', 4:'backtests', 5:'apps', 6:'tokenprofiles', 7:'widgets', 8:'tools' };
 const _ENTITY_TYPE_TO_ICON = { 0:'🗺', 1:'🪄', 2:'🤖', 3:'📈', 4:'📊', 5:'🎴', 6:'🪙', 7:'🧩', 8:'🛠' };
 function crMarketSyncP2P(){
   try {
     if (typeof crMarket === 'undefined') return;
-    const rows = crMarket.getListings() || [];
     const me = (typeof crWallet !== 'undefined' && crWallet.isConnected()) ? crWallet.get() : null;
-    _p2pLive = rows.map(r => ({
+    const toCard = (r) => ({
       ic:   _ENTITY_TYPE_TO_ICON[r.type] || '🪙',
       nm:   r.name,
       pr:   (Math.round(r.priceSol * 1e6) / 1e6) + ' $SOL',
-      meta: 'by ' + (r.seller ? (r.seller.slice(0,4) + '…' + r.seller.slice(-4)) : 'anon')
+      meta: (r.resale ? '♻ resale · ' : '') + 'by '
+            + (r.seller ? (r.seller.slice(0,4) + '…' + r.seller.slice(-4)) : 'anon')
             + (r.royaltyBps ? ' · ' + (r.royaltyBps/100) + '% royalty' : ''),
       cat:    _ENTITY_TYPE_TO_CAT[r.type] || 'all',
       seller: r.seller,
-      type:   r.type,        // explicit entity type — buy handler prefers this
+      type:   r.type,         // explicit entity type — buy handler prefers this
       priceSol: r.priceSol,
+      entity:  r.entity,
+      creator: r.creator || null,   // royalty recipient (resale only)
+      resale:  !!r.resale,
       owned:  _ownedEntities.has(r.entity),       // buyer already holds a license
       isMine: !!(me && r.seller === me),          // the connected wallet is the seller
-    }));
+    });
+    const first  = (crMarket.getListings() || []).map(toCard);
+    const resale = (crMarket.getResaleListings ? (crMarket.getResaleListings() || []) : []).map(toCard);
+    _p2pLive = first.concat(resale);
     osRefreshShop();
   } catch(_){}
 }
@@ -25448,20 +25691,58 @@ function crMarketSyncOwned(){
   try {
     if (typeof crMarket === 'undefined') return;
     if (typeof crWallet === 'undefined' || !crWallet.isConnected()){
-      _ownedEntities = new Set(); crMarketSyncP2P(); return;
+      _ownedEntities = new Set(); _ownedLicenses = []; crMarketSyncP2P(); return;
     }
-    crMarket.refresh();   // refresh listings first
+    crMarket.refresh();   // refresh first-sale + resale listings first
     crMarket.fetchLicenses(crWallet.get()).then(function(list){
-      _ownedEntities = new Set((list || []).map(function(l){ return l.entity; }));
+      _ownedLicenses = list || [];
+      _ownedEntities = new Set(_ownedLicenses.map(function(l){ return l.entity; }));
       crMarketSyncP2P();
     });
   } catch(_){}
 }
+// v0.9.x — render the connected wallet's owned licenses with a Resell button.
+function osRenderOwnedLicenses(elId, list){
+  const host = document.getElementById(elId);
+  if(!host) return;
+  host.innerHTML = '';
+  if(!list || !list.length){
+    const empty = document.createElement('div');
+    empty.style.cssText = 'grid-column:1/-1;text-align:center;padding:24px;color:var(--dim);font-size:12px;font-style:italic';
+    empty.textContent = (typeof crWallet !== 'undefined' && crWallet.isConnected())
+      ? 'No licenses yet. Buy something from the marketplace to own a license.'
+      : 'Connect a wallet to see the licenses you own.';
+    host.appendChild(empty);
+    return;
+  }
+  list.forEach(it=>{
+    const row = document.createElement('div');
+    row.className = 'os-shop-item';
+    const ic = _ENTITY_TYPE_TO_ICON[it.type] || '🪙';
+    const paid = (Math.round((it.pricePaidSol || 0) * 1e6) / 1e6);
+    row.innerHTML = `<div class="ic">${ic}</div>
+      <div><div class="nm">${it.name}</div><div class="pr">paid ${paid} $SOL</div></div>
+      <button class="buy">📤 Resell</button>`;
+    row.querySelector('.buy').addEventListener('click', ()=>{
+      const ans = window.prompt('Resell "' + it.name + '" — list price in $SOL:', String(paid || 0.1));
+      if(ans == null) return;
+      const price = parseFloat(ans);
+      if(!(price > 0)){ try{ toast && toast('Enter a price greater than 0'); }catch(_){} return; }
+      if(typeof crRegistry !== 'undefined' && crRegistry.listLicense) crRegistry.listLicense(it.entity, price);
+    });
+    host.appendChild(row);
+  });
+}
 function osRefreshShop(){
   osRenderShopList('osShopGear', OS_SHOP_GEAR, { cat: _marketActiveCat.gear });
-  // Prefer live on-chain listings; fall back to the seed demo when chain is empty.
-  const p2p = (_p2pLive && _p2pLive.length) ? _p2pLive : OS_SHOP_P2P;
-  osRenderShopList('osShopP2P',  p2p,  { sol:true, cat: _marketActiveCat.p2p });
+  if(_marketActiveCat.p2p === 'owned'){
+    // "My Licenses" tab — the wallet's owned licenses, each resellable.
+    osRenderOwnedLicenses('osShopP2P', _ownedLicenses);
+  } else {
+    // Prefer live on-chain listings; fall back to the seed demo when chain is empty.
+    const p2p = (_p2pLive && _p2pLive.length) ? _p2pLive : OS_SHOP_P2P;
+    osRenderShopList('osShopP2P',  p2p,  { sol:true, cat: _marketActiveCat.p2p });
+  }
   renderMarketplaceCats();
 }
 
@@ -25492,6 +25773,40 @@ function osRefreshShop(){
   // an initial set shortly after boot so the shop isn't empty on first open.
   window.addEventListener('crMarket:listings', function(){ if(typeof crMarketSyncP2P === 'function') crMarketSyncP2P(); });
   if(typeof crMarketSyncOwned === 'function') setTimeout(function(){ crMarketSyncOwned(); }, 2500);
+})();
+
+// v0.9.x — wire the "Claim on-chain" handle button next to the profile name
+// input: validate → availability check (crMarket.checkHandle) → claim bounce
+// (crRegistry.claimName). Idempotent boot-time wiring; markup is static.
+(function wireNameClaim(){
+  const btn    = document.getElementById('crNameClaimBtn');
+  const input  = document.getElementById('profileName');
+  const status = document.getElementById('crNameClaimStatus');
+  if(!btn || !input) return;
+  const setStatus = (msg, color) => { if(status){ status.textContent = msg || ''; status.style.color = color || '#5a5a52'; } };
+  btn.addEventListener('click', () => {
+    const raw = (input.value || '').trim().toLowerCase();
+    if(!/^[a-z0-9_]{1,32}$/.test(raw)){
+      setStatus('Handle must be 1–32 chars: a–z, 0–9, underscore.', '#e06c75'); return;
+    }
+    if(typeof crWallet === 'undefined' || !crWallet.isConnected()){
+      const ok = window.confirm('Claiming a handle on-chain requires a connected wallet. Connect now?');
+      if(ok && typeof crWallet !== 'undefined') crWallet.connect();
+      return;
+    }
+    setStatus('Checking availability…', '#5a5a52');
+    const check = (typeof crMarket !== 'undefined' && crMarket.checkHandle)
+      ? crMarket.checkHandle(raw) : Promise.resolve(false);
+    Promise.resolve(check).then(taken => {
+      if(taken){ setStatus('“' + raw + '” is already taken. Try another.', '#e06c75'); return; }
+      setStatus('Available — opening wallet to claim…', '#3ddc97');
+      if(typeof crRegistry !== 'undefined' && crRegistry.claimName) crRegistry.claimName(raw);
+    }).catch(() => {
+      // RPC blip — proceed; the on-chain init reverts if the handle is taken.
+      setStatus('Could not verify; opening wallet (claim reverts if taken)…', '#d19a66');
+      if(typeof crRegistry !== 'undefined' && crRegistry.claimName) crRegistry.claimName(raw);
+    });
+  });
 })();
 
 // v0.8k#24w/#24av/#24bq — Profile tab switcher (Player · Balances · Stats · Missions).
