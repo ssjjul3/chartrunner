@@ -4,8 +4,8 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.122
-     LAST UPDATED:    2026-05-20
+     CURRENT VERSION: v1.0.123
+     LAST UPDATED:    2026-05-27
      M0.5 active (multisig + oracle live) · M2.6 wallet-identity surface shipped (NFT avatar + wallet-bound names)
 
      Bump this banner on EVERY version commit. The surface-health daily
@@ -43,9 +43,14 @@
        v1.0.122          runner name is wallet-bound (local + on-chain claim
                          via registry ENTITY_TOKENPROFILE; hides when no
                          wallet connected)
+       v1.0.123          Configure Run: cosmetic Broker field — CEX/DEX
+                         segment toggle (Solana-purple / Binance-gold) +
+                         an infinite vertical scroll wheel to pick the
+                         specific venue. Persists to cr_broker_v1 +
+                         game.broker; no SDK / order-routing effect yet.
      ============================================================ -->
 <meta charset="utf-8" />
-<title>ChartRunner — Prototype · v1.0.122</title>
+<title>ChartRunner — Prototype · v1.0.123</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <!-- v1.0.24 — Favicon = LOGO.png. The game ships at chartrunner.xyz/play/
      while LOGO.png lives at chartrunner.xyz/LOGO.png (staged from
@@ -168,31 +173,31 @@
     text-overflow:ellipsis;white-space:nowrap}
   .cfg-ind-slot .tag{font-size:8px;letter-spacing:.4px;color:var(--dim);text-transform:uppercase}
   .cfg-ind-slot.active .tag{color:#3ddc97}
-  /* v1.0.x — Configure Run broker picker: CEX/DEX segmented toggle + an
+  /* v1.0.123 — Configure Run broker picker: CEX/DEX segmented toggle + an
      iOS-style vertical scroll wheel. Cosmetic field only. */
-  .cfg-broker{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+  .cfg-broker{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
   .cfg-brokerSeg{display:inline-flex;border:1px solid var(--line);border-radius:8px;
     overflow:hidden;background:rgba(10,15,28,.8);flex:0 0 auto}
   .cfg-brokerSeg button{border:0;background:transparent;color:var(--dim);
-    padding:8px 20px;font:inherit;font-size:12px;font-weight:700;letter-spacing:.6px;
+    padding:6px 12px;font:inherit;font-size:11px;font-weight:700;letter-spacing:.4px;
     cursor:pointer;text-transform:uppercase;transition:background .12s,color .12s}
   .cfg-brokerSeg button + button{border-left:1px solid var(--line)}
   .cfg-brokerSeg button.on[data-bk="dex"]{background:rgba(155,140,255,.16);color:#cbbcff}
   .cfg-brokerSeg button.on[data-bk="cex"]{background:rgba(240,185,11,.14);color:#f0b90b}
-  .cfg-wheel{position:relative;width:190px;height:132px;flex:0 0 auto;overflow:hidden;
-    border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.55);
+  .cfg-wheel{position:relative;width:148px;height:78px;flex:0 0 auto;overflow:hidden;
+    border:1px solid var(--line);border-radius:8px;background:rgba(10,15,28,.55);
     -webkit-mask-image:linear-gradient(to bottom,transparent,#000 30%,#000 70%,transparent);
             mask-image:linear-gradient(to bottom,transparent,#000 30%,#000 70%,transparent)}
   .cfg-wheel-list{position:absolute;inset:0;margin:0;list-style:none;overflow-y:auto;
     scroll-snap-type:y mandatory;scrollbar-width:none}
   .cfg-wheel-list::-webkit-scrollbar{display:none}
-  .cfg-wheel-item{height:30px;line-height:30px;text-align:center;scroll-snap-align:center;
-    font:inherit;font-size:12px;font-weight:600;color:var(--dim);cursor:pointer;opacity:.45;
+  .cfg-wheel-item{height:26px;line-height:26px;text-align:center;scroll-snap-align:center;
+    font:inherit;font-size:11px;font-weight:600;color:var(--dim);cursor:pointer;opacity:.4;
     letter-spacing:.3px;transition:color .12s,transform .12s,opacity .12s}
-  .cfg-wheel-item.sel{opacity:1;font-weight:800;transform:scale(1.14)}
+  .cfg-wheel-item.sel{opacity:1;font-weight:800;transform:scale(1.1)}
   #cfgBrokerWheel.bk-dex .cfg-wheel-item.sel{color:#cbbcff}
   #cfgBrokerWheel.bk-cex .cfg-wheel-item.sel{color:#f0b90b}
-  .cfg-wheel-sel{position:absolute;left:8px;right:8px;top:50%;height:30px;
+  .cfg-wheel-sel{position:absolute;left:8px;right:8px;top:50%;height:26px;
     transform:translateY(-50%);border-top:1px solid var(--line);
     border-bottom:1px solid var(--line);border-radius:4px;pointer-events:none}
   #cfgBrokerWheel.bk-dex .cfg-wheel-sel{border-color:rgba(155,140,255,.4)}
@@ -7418,7 +7423,7 @@
               <button data-tf="1M">1M</button>
             </div>
           </div>
-          <!-- v1.0.x — Broker picker (cosmetic). CEX/DEX segmented toggle picks
+          <!-- v1.0.123 — Broker picker (cosmetic). CEX/DEX segmented toggle picks
                the venue family (CEX = Binance-gold, DEX = Solana-purple); the
                scroll wheel below picks the specific broker. Selection persists
                to cr_broker_v1 + game.broker but has NO downstream SDK effect yet
@@ -10725,6 +10730,59 @@ window.crMatch = (function(){
     getActiveMatch: getActiveMatch,
     onReturn:       onReturn,
   };
+})();
+
+/* =========================================================================
+ * crX402 — x402 multi-rail "how do you want to pay?" picker + budget toggle.
+ * v0.9.x SCAFFOLD. x402 lets a server offer many payment rails (Solana USDC,
+ * Base USDC, …) in one accepts[]; the payer PICKS one. This IIFE is the in-game
+ * surface for that choice + the no-auto-spend budget setting.
+ *
+ * The static game can't sign — the actual fetch+pay runs through the wallet
+ * bridge / bot host (see solana-connect/src/lib/x402-{core,client}.ts and
+ * x402-gate/). crX402.pickRail() is the RailPicker those call into when a DOM is
+ * present; here it renders a modal and resolves with the chosen rail (or null).
+ * Design: docs/architecture/x402-integration-plan.md.
+ * =======================================================================*/
+window.crX402 = (function(){
+  var BUDGET_KEY = 'cr_x402_budget_v1';   // opt-in per-rail spend cap (off by default)
+
+  // Present the offered rails; resolve with the chosen one (or null to cancel).
+  // `options` = normalized rows: { id, railLabel, tokenLabel, amountDisplay, signerReady }.
+  function pickRail(options){
+    return new Promise(function(resolve){
+      var payable = (options || []).filter(function(o){ return o.signerReady; });
+      if(!payable.length){ try{ toast && toast('No payable rail wired yet — see x402 plan'); }catch(_){} resolve(null); return; }
+      var ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(6,8,16,.62)';
+      var rows = payable.map(function(o){
+        return '<button class="crX402row" data-id="' + o.id + '" style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:12px;background:#15151b;border:1px solid #34343c;color:#e8e8ef;padding:10px 12px;border-radius:8px;margin-top:8px;cursor:pointer;font:inherit;font-size:13px">'
+             + '<span>' + o.railLabel + ' · ' + o.tokenLabel + '</span><b>' + o.amountDisplay + '</b></button>';
+      }).join('');
+      ov.innerHTML = '<div style="background:#0e0e14;border:1px solid #2a2a32;border-radius:12px;padding:18px 18px 14px;width:min(360px,92vw);font-family:inherit">'
+        + '<div style="font-weight:700;font-size:14px;color:#fff">Choose how to pay</div>'
+        + '<div style="font-size:11px;color:#8a8a98;margin-top:2px">x402 · you authorize each payment in your wallet</div>'
+        + rows
+        + '<button id="crX402cancel" style="width:100%;margin-top:12px;background:transparent;border:1px solid #34343c;color:#9a9aa8;padding:8px;border-radius:8px;cursor:pointer;font:inherit;font-size:12px">Cancel</button>'
+        + '</div>';
+      document.body.appendChild(ov);
+      function done(val){ try{ document.body.removeChild(ov); }catch(_){} resolve(val); }
+      ov.querySelectorAll('.crX402row').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var id = btn.getAttribute('data-id');
+          done(payable.filter(function(o){ return o.id === id; })[0] || null);
+        });
+      });
+      ov.querySelector('#crX402cancel').addEventListener('click', function(){ done(null); });
+      ov.addEventListener('click', function(e){ if(e.target === ov) done(null); });
+    });
+  }
+
+  // Opt-in capped budget (per bot/rail). Off by default → every payment prompts.
+  function getBudget(){ try { return JSON.parse(localStorage.getItem(BUDGET_KEY) || 'null'); } catch(_){ return null; } }
+  function setBudget(b){ try { if(b) localStorage.setItem(BUDGET_KEY, JSON.stringify(b)); else localStorage.removeItem(BUDGET_KEY); } catch(_){} }
+
+  return { pickRail: pickRail, getBudget: getBudget, setBudget: setBudget };
 })();
 
 /* =========================================================================
@@ -27244,7 +27302,7 @@ function osRefreshConfigs(){
   osRenderAssetBox('osAssetBox');
   _renderConfigIndicatorGrid();
   _renderConfigStrategyGrid();
-  // v1.0.x — re-centre the broker scroll wheel now that #win-configs is laid
+  // v1.0.123 — re-centre the broker scroll wheel now that #win-configs is laid
   // out (the wheel's scroll math needs a measurable clientHeight).
   try { if(typeof window._crBrokerSync === 'function') window._crBrokerSync(); } catch(_){}
 }
@@ -27272,7 +27330,7 @@ document.getElementById('osTfBox').addEventListener('click', async e=>{
   osRefreshConfigs();
 });
 
-// v1.0.x — Configure Run broker picker (cosmetic). The CEX/DEX segment toggles
+// v1.0.123 — Configure Run broker picker (cosmetic). The CEX/DEX segment toggles
 // the venue family; the vertical scroll wheel snap-selects the specific broker.
 // Selection persists to localStorage (cr_broker_v1) and is mirrored onto
 // game.broker, but has NO downstream SDK / order-routing effect yet — it is a
@@ -27283,7 +27341,7 @@ document.getElementById('osTfBox').addEventListener('click', async e=>{
     dex: ['Jupiter','Phoenix','Raydium','Orca','Drift','Meteora','Lifinity'],
     cex: ['Binance','Coinbase','Kraken','Bybit','OKX','Bitget','KuCoin'],
   };
-  const ITEM_H = 30; // keep in sync with .cfg-wheel-item height
+  const ITEM_H = 26; // keep in sync with .cfg-wheel-item height
   const seg   = document.getElementById('cfgBrokerSeg');
   const wheel = document.getElementById('cfgBrokerWheel');
   const list  = document.getElementById('cfgBrokerWheelList');
@@ -27299,7 +27357,7 @@ document.getElementById('osTfBox').addEventListener('click', async e=>{
     try { localStorage.setItem('cr_broker_v1', JSON.stringify(state)); } catch(_){}
     try { if(typeof game !== 'undefined') game.broker = { type:state.type, name:state.name }; } catch(_){}
   }
-  // v1.0.x — circular wheel. The broker list is rendered REPEAT times so the
+  // v1.0.123 — circular wheel. The broker list is rendered REPEAT times so the
   // user can scroll endlessly; once a scroll settles we silently re-home the
   // scroll position to the MIDDLE block (same value, same centre → seamless),
   // guaranteeing there's always room to keep spinning in either direction.
