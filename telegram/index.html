@@ -4,9 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.107
-     LAST UPDATED:    2026-05-15
-     M0.5 active · pitch + Frontier shipped · in-page Phantom sign repaired
+     CURRENT VERSION: v1.0.125
+     LAST UPDATED:    2026-05-28
+     Umbrel sovereign OHLC + $CHART visual lock + optimizations (synced from main)
 
      Bump this banner on EVERY version commit. The surface-health daily
      task greps for `v1\.0\.\d+` in `head -80` of this file to detect
@@ -34,9 +34,11 @@
                          wiring. ~18KB / ~390 lines removed. (Scheduled
                          task originally named v1.0.105; bumped to .107
                          because .105 and .106 already shipped.)
+       v1.0.125          (Synced) Sovereign data source (?localdata=1 Umbrel),
+                         finalizeCandleLoad DRY helper, full $CHART visual lock.
      ============================================================ -->
 <meta charset="utf-8" />
-<title>ChartRunner — Prototype · v1.0.107</title>
+<title>ChartRunner — Prototype · v1.0.125 ($CHART currency)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <!-- v1.0.24 — Favicon = LOGO.png. The game ships at chartrunner.xyz/play/
      while LOGO.png lives at chartrunner.xyz/LOGO.png (staged from
@@ -56,7 +58,7 @@
   :root{
     --bg0:#05070d; --bg1:#0a0f1c; --bg2:#121a30;
     --fg:#e9efff; --dim:#8aa0c8; --line:#26324f;
-    --tick:#ffd166; --creds:#9b8cff; --good:#3ddc97; --bad:#ff5b7f;
+    --tick:#ffd166; --chart:#9b8cff; --good:#3ddc97; --bad:#ff5b7f;
     --bull:#26a69a; --bear:#ef5350;
     --accent:#14f195; --accent2:#9945ff;
   }
@@ -262,7 +264,7 @@
   .pill.btn{cursor:pointer;user-select:none}
   .pill.btn:hover{border-color:#3c4a72}
   .tick-dot{width:7px;height:7px;border-radius:50%;background:var(--tick);box-shadow:0 0 6px var(--tick)}
-  .creds-dot{width:7px;height:7px;border-radius:50%;background:var(--creds);box-shadow:0 0 6px var(--creds)}
+  .chart-dot{width:7px;height:7px;border-radius:50%;background:var(--chart);box-shadow:0 0 6px var(--chart)}
 
   /* Menu drawer (unified: skins + perspective + run) */
   .menudrawer{position:absolute;top:52px;right:14px;width:320px;max-height:calc(100vh - 80px);overflow:auto;background:rgba(10,15,28,.96);border:1px solid var(--line);border-radius:12px;padding:12px 12px 10px;display:none;z-index:6;pointer-events:auto;box-shadow:0 20px 60px rgba(0,0,0,.55)}
@@ -5938,7 +5940,7 @@
       <h4>Wallet</h4>
       <div class="md-row" style="align-items:center">
         <div class="pill"><span class="tick-dot"></span><b id="run">0</b> $RUN</div>
-        <div class="pill"><span class="creds-dot"></span><b id="chart">0</b> $CHART</div>
+        <div class="pill"><span class="chart-dot"></span><b id="chart">0</b> $CHART</div>
       </div>
       <!-- v0.8k#11 — Coins on/off toggle. When off, tick ($RUN-style golden) and
            creds ($CHART-style purple) pickups stop spawning on the chart and can't
@@ -6024,7 +6026,7 @@
   <div class="shop" id="shop" role="dialog" aria-modal="true" aria-label="Charge shop">
     <div class="shop-card">
       <h2><span class="c">⚙</span> Charge Shop
-        <span class="shop-bal"><span class="creds-dot"></span><b id="shopBal">0</b> $CHART</span>
+        <span class="shop-bal"><span class="chart-dot"></span><b id="shopBal">0</b> $CHART</span>
         <span class="shop-bal" style="margin-left:6px"><span class="tick-dot"></span><b id="shopRunBal">0</b> $RUN</span>
       </h2>
       <p class="shop-sub">v0.8h: $RUN is scarce (winning trade / boss / mission). Exchange soft $CHART for hard $RUN at 100:1.</p>
@@ -7422,7 +7424,7 @@
             <div class="os-stat"><div class="k">Best score</div><div class="v" id="statBest">0</div></div>
             <div class="os-stat"><div class="k">Total runs</div><div class="v" id="statRuns">0</div></div>
             <div class="os-stat"><div class="k">Total $RUN</div><div class="v" id="statRun" style="color:var(--tick)">0</div></div>
-            <div class="os-stat"><div class="k">Total $CHART</div><div class="v" id="statChart" style="color:var(--creds)">0</div></div>
+            <div class="os-stat"><div class="k">Total $CHART</div><div class="v" id="statChart" style="color:var(--chart)">0</div></div>
             <div class="os-stat"><div class="k">Kills</div><div class="v" id="statKills">0</div></div>
             <div class="os-stat"><div class="k">Distance (best)</div><div class="v" id="statDist">0</div></div>
           </div>
@@ -12006,6 +12008,37 @@ async function loadCandles(tf){
   document.getElementById('src').textContent = 'loading…';
   const interval = BINANCE_INTERVALS.includes(tf) ? tf : '15m';
   const asset = currentAssetObj();
+
+  // Sovereign data integration (Umbrel + n8n refined OHLC pipelines)
+  // Activate with ?localdata=1  (or set window.USE_UMBREL_DATA = true before boot)
+  // The n8n webhook (or tiny code-server static server) must return either:
+  //   - raw Binance kline shape: [[t,o,h,l,c,v], ...]
+  //   - or already mapped objects: [{t,o,h,l,c,v}, ...]
+  // Point this at your Tailscale IP + the webhook you expose from Umbrel.
+  const USE_LOCAL_UMBREL = (window.USE_UMBREL_DATA === true) ||
+                           /[?&]localdata=1/.test(location.search);
+  if (USE_LOCAL_UMBREL) {
+    try {
+      // EDIT: replace with your actual Umbrel Tailscale hostname/IP + port/path
+      const localEndpoint = 'http://100.67.XXX.XXX:5678/webhook/ohlc';
+      const url = `${localEndpoint}?symbol=${asset.sym}&interval=${interval}&limit=1000&tf=${tf}`;
+      const resp = await fetch(url, { mode: 'cors' });
+      if (!resp.ok) throw new Error('local http ' + resp.status);
+      const raw = await resp.json();
+      const arr = Array.isArray(raw) ? raw : (raw.candles || raw.data || raw.klines || []);
+      candles = arr.map(k => Array.isArray(k)
+        ? {t:k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], v:+k[5]}
+        : {t:k.t||k[0], o:+k.o, h:+k.h, l:+k.l, c:+k.c, v:+k.v||0});
+      document.getElementById('src').textContent = 'refined · Umbrel';
+      finalizeCandleLoad();
+      return;
+    } catch (err) {
+      console.warn('[Umbrel] localdata fetch failed — falling back to Binance', err);
+      // fall through to live Binance below
+    }
+  }
+
+  // Live Binance path (public play / default)
   const url = `https://api.binance.com/api/v3/klines?symbol=${asset.sym}&interval=${interval}&limit=1000`;
   try{
     const resp = await fetch(url);
@@ -12018,6 +12051,11 @@ async function loadCandles(tf){
     candles = generateFallbackCandles(tf, 800);
     document.getElementById('src').textContent = 'offline · seeded';
   }
+  finalizeCandleLoad();
+}
+
+function finalizeCandleLoad(){
+  // Common post-processing after any candle source (Binance / Umbrel / fallback)
   // set price scale so the full range fits nicely
   let hi=-Infinity, lo=Infinity;
   for(const c of candles){ if(c.h>hi)hi=c.h; if(c.l<lo)lo=c.l; }
@@ -12046,6 +12084,22 @@ async function loadCandles(tf){
   document.getElementById('lastPx').textContent = fmtPrice(candles[candles.length-1].c);
   document.getElementById('loader').classList.remove('on');
 }
+
+// Dev helper for the new sovereign data path (console or bookmarklet)
+try {
+  window.enableUmbrelData = function(on = true) {
+    window.USE_UMBREL_DATA = !!on;
+    console.log('%c[Umbrel] USE_UMBREL_DATA =', 'color:#9b8cff', window.USE_UMBREL_DATA,
+      '— reload + append ?localdata=1 (or call loadCandles again) to use refined data from your Umbrel instance.');
+  };
+  window.disableUmbrelData = () => window.enableUmbrelData(false);
+} catch(_) {}
+
+// One-time tip on first load in dev
+if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+  console.log('%c[ChartRunner] Sovereign data ready — window.enableUmbrelData() then hard-reload with ?localdata=1', 'color:#ffd166');
+}
+
 function generateFallbackCandles(tf, n){
   // v0.7b-assets — scale volatility proportionally to the asset's seed price so
   // low-priced tokens (XRP, DOGE) don't get BTC-sized candle ranges.
