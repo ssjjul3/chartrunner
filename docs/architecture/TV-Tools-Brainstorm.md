@@ -12,7 +12,7 @@ The underlying design rule stays intact: **ChartRunnerSDK is the only thing that
 
 **Game mechanic:** A glowing horizontal beam across the chart. Collision is diegetic — the player's runner physically lands on it as a thin platform; if they're in upside-down, it's a ceiling. The line also acts as a **price tripwire**: when the live price candle crosses it, the SDK emits a `line.cross` event. Any bracket pre-armed to that line fires at the cross.
 
-**Strategic wrinkle:** Walls consume a $CRDS "ink" cost proportional to how far from current price they're drawn. Drawing walls right next to the current candle is cheap; drawing a moonshot wall at 2× current price costs real $CRDS. This teaches that meaningful S/R lives near market, not at random round numbers.
+**Strategic wrinkle:** Walls consume a $CHART "ink" cost proportional to how far from current price they're drawn. Drawing walls right next to the current candle is cheap; drawing a moonshot wall at 2× current price costs real $CHART. This teaches that meaningful S/R lives near market, not at random round numbers.
 
 **SDK:** `sdk.line({ price, mode: 'horizontal' })` → returns a handle; `.onCross(side, fn)` binds callbacks. Abilities like Bracket can chain: `sdk.bracket({...}).armOnCross(wall)`.
 
@@ -36,7 +36,7 @@ The underlying design rule stays intact: **ChartRunnerSDK is the only thing that
 
 **TV purpose:** A vertical time marker. Used for events, session opens, expected news drops.
 
-**Game mechanic:** A **countdown barrier** placed N candles ahead. As price approaches, the barrier pulses; screen desaturates slightly on the last 3 candles before it. Crossing the barrier triggers a **scheduled SDK action** the player chose at placement time: `closeAll` (harvest wins, cut losers), `takeProfit` (just close greens), `reviewPositions` (open an OCO summary), or `harvestBonus` (pay out a 10% $RUN bonus if P&L is positive, else a $CRDS penalty).
+**Game mechanic:** A **countdown barrier** placed N candles ahead. As price approaches, the barrier pulses; screen desaturates slightly on the last 3 candles before it. Crossing the barrier triggers a **scheduled SDK action** the player chose at placement time: `closeAll` (harvest wins, cut losers), `takeProfit` (just close greens), `reviewPositions` (open an OCO summary), or `harvestBonus` (pay out a 10% $RUN bonus if P&L is positive, else a $CHART penalty).
 
 **Strategic wrinkle:** The vertical line is a **commitment device**. Players bad at taking profit can use it to force themselves out. The barrier is visible to the whole session, so a player sees their own intent drifting closer — hard to ignore. A great tool for Monster Mode where fights can drag.
 
@@ -50,7 +50,7 @@ The underlying design rule stays intact: **ChartRunnerSDK is the only thing that
 
 **Game mechanic:** A **grind rail** for the player avatar. Inside the channel, the runner's movement becomes sticky, tilting along the channel slope — it literally skis the trend. Breaking out of the channel (price crosses either rail) triggers a **charge-up burst**: the next bracket placed within 3s gets a free 1.5× size.
 
-**Strategic wrinkle:** While price stays inside, the channel pays **passive $CRDS** every candle (theta-like), scaling with channel width / ATR. This rewards drawing *tight, meaningful* channels rather than loose catch-all boxes. The tighter the rail, the more it pays — but the more often price breaks out and kills the income.
+**Strategic wrinkle:** While price stays inside, the channel pays **passive $CHART** every candle (theta-like), scaling with channel width / ATR. This rewards drawing *tight, meaningful* channels rather than loose catch-all boxes. The tighter the rail, the more it pays — but the more often price breaks out and kills the income.
 
 **SDK:** `sdk.channel({ p1, p2, slope })` emits `inside` / `breakoutUp` / `breakoutDown`. Income tick fires from `sdk.on('candle.close')` while state is `inside`.
 
@@ -67,7 +67,7 @@ The underlying design rule stays intact: **ChartRunnerSDK is the only thing that
 - **0.382**: +1 Radar ping (reveals next candle direction)
 - **0.500**: auto-fires a 1:2 bracket at this price ("the half tier")
 - **0.618**: golden tier — 2× $RUN drop + 2s of i-frames
-- **0.786**: spawns a $CRDS orb
+- **0.786**: spawns a $CHART orb
 - **1.0** (swing high): triggers a pre-configured OCO above/below
 
 Once touched, the buff is consumed; the platform stays drawn but loses its glow. This turns fib analysis into a **stratified loot map** — the player physically runs the retrace and harvests each level.
@@ -142,7 +142,7 @@ The **POC** (the thickest volume bar) is visualized as a **gold rail** — stand
 
 **Game mechanic:** **Claim territory**. Draw a box — it shows hi/mid/lo rails and the percentage range. Any pickups that spawn inside the box are **1.5×** during the box's active lifetime. The player can set the box to auto-dissolve on breakout (standard range play) or to persist permanently (level marker).
 
-**Strategic wrinkle:** While inside the box, brackets placed get a **fee discount** (lower $CRDS cost) — the game's expression of "tight ranges are cheap to trade, wide ranges expensive". When price breaks out, all active brackets inside the box **auto-trail their SL to the box midline** — a forced "move stop to entry on breakout" hygiene nudge. The breakout itself pays a bonus proportional to how long price stayed inside (patience reward).
+**Strategic wrinkle:** While inside the box, brackets placed get a **fee discount** (lower $CHART cost) — the game's expression of "tight ranges are cheap to trade, wide ranges expensive". When price breaks out, all active brackets inside the box **auto-trail their SL to the box midline** — a forced "move stop to entry on breakout" hygiene nudge. The breakout itself pays a bonus proportional to how long price stayed inside (patience reward).
 
 **SDK:** `sdk.priceRange({ hi, lo, anchorCandle })` → emits `inside`, `breakoutUp`, `breakoutDown`, with a `.livedFor()` accessor for the dwell-time bonus.
 

@@ -69,7 +69,7 @@ Every other competitor in this space is a SaaS with infra. We're a runtime artif
 
 ### 4. Crypto-native culture fit
 
-The game's visual language — Solana purple/green, "upside-down" world, Bonk/Hyperliquid in-game references, $RUN/$CRDS economy, Jupiter routing in the live-swap tape — speaks to the segment that's already on Solana. We're not a TradFi product cosplaying as crypto.
+The game's visual language — Solana purple/green, "upside-down" world, Bonk/Hyperliquid in-game references, $RUN/$CHART economy, Jupiter routing in the live-swap tape — speaks to the segment that's already on Solana. We're not a TradFi product cosplaying as crypto.
 
 ### 5. The Workbench creator economy
 

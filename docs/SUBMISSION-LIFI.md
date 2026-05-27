@@ -36,11 +36,11 @@ Funding via LI.FI is the **on-ramp** to that entire stack. One wallet, one cross
 
 ### `ChartRunner_Prototype.html` — three small additions
 
-**1.** "+ Fund" button on the $CRDS card in the lite-profile Wallet tab:
+**1.** "+ Fund" button on the $CHART card in the lite-profile Wallet tab:
 
 ```html
 <div class="lp-wcard-head">
-  <span class="k">$CRDS · this run</span>
+  <span class="k">$CHART · this run</span>
   <button class="lp-fund" id="crLpFundBtn" type="button">+ Fund</button>
 </div>
 ```
@@ -79,7 +79,7 @@ Destination wallet is auto-filled from `window.crWallet.get()`. If no wallet con
 ```
 Player opens game
   → lite-profile Wallet tab
-  → sees "$CRDS · this run · 0" with "+ Fund" badge
+  → sees "$CHART · this run · 0" with "+ Fund" badge
   → clicks Fund
   → LI.FI modal opens, destination auto-filled
   → swap ETH → USDC on Solana

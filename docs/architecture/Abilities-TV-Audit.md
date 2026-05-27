@@ -102,9 +102,9 @@
 
 **TV‑Status:** **Null Entsprechung.** TradingView hat zwar einen "Magnet Mode" — aber das ist ein **Drawing‑Snap** (Linien rasten auf Candle‑Highs/‑Lows ein), nicht ein Magnet für Pickups. Komplett andere Semantik.
 
-**Problem:** `magnez({duration:6, range:260})` zieht $CRDS‑Orbs in den Runner. $CRDS existiert nicht in TV. Pickup‑Orbs existieren nicht in TV. Es gibt hier nichts zu spiegeln.
+**Problem:** `magnez({duration:6, range:260})` zieht $CHART‑Orbs in den Runner. $CHART existiert nicht in TV. Pickup‑Orbs existieren nicht in TV. Es gibt hier nichts zu spiegeln.
 
-**Verdict:** ❌ **Im TV‑Host versteckt.** Im Standalone‑Mode bleibt Magnez drin (dort gibt es $CRDS). Im Phase‑1‑TV‑Adapter wird der Slot entweder leer gelassen oder durch eine Phase‑2‑Ability ersetzt (z.B. einen der 11 neuen TV‑Drawing‑Tools aus dem Brainstorm).
+**Verdict:** ❌ **Im TV‑Host versteckt.** Im Standalone‑Mode bleibt Magnez drin (dort gibt es $CHART). Im Phase‑1‑TV‑Adapter wird der Slot entweder leer gelassen oder durch eine Phase‑2‑Ability ersetzt (z.B. einen der 11 neuen TV‑Drawing‑Tools aus dem Brainstorm).
 
 **Empfehlung:** Phase‑1‑Code‑Guard — `if(chartHost.mode === 'tv') slot7.hidden = true;`. Slot 7 wird dann frei für z.B. **Fib Retracement** (siehe Brainstorm #5) oder **Horizontal Line** (Brainstorm #1).
 
@@ -160,9 +160,9 @@ Slot 8 wird der Einstiegspunkt für die **TV‑Drawing‑Tools‑Familie** aus `
 
 | Slot (alt) | Ability | Grund |
 |---|---|---|
-| 7 (alt) | 🧲 Magnez | Null TV‑Entsprechung. $CRDS‑Pickup‑Magnet ist reines Game‑Feature, lehrt keine Trading‑Primitive. Im Phase‑1‑TV‑Host wäre er ohnehin unsichtbar. Gelöscht — nicht versteckt. |
+| 7 (alt) | 🧲 Magnez | Null TV‑Entsprechung. $CHART‑Pickup‑Magnet ist reines Game‑Feature, lehrt keine Trading‑Primitive. Im Phase‑1‑TV‑Host wäre er ohnehin unsichtbar. Gelöscht — nicht versteckt. |
 
-**Wichtig:** Magnez war nicht "falsch" — er hat in v0.7b den $CRDS‑Economy‑Loop unterstützt. Aber in der TV‑Spiegelungs‑Logik bricht er die Identität "jede Ability = ein TV‑Tool". Besser raus als halb drin. Der freigewordene Slot wandert nicht zu einer neuen Game‑Fantasie, sondern zu Trail (hochrücken) und öffnet Slot 8 für das erste echte TV‑Drawing‑Tool.
+**Wichtig:** Magnez war nicht "falsch" — er hat in v0.7b den $CHART‑Economy‑Loop unterstützt. Aber in der TV‑Spiegelungs‑Logik bricht er die Identität "jede Ability = ein TV‑Tool". Besser raus als halb drin. Der freigewordene Slot wandert nicht zu einer neuen Game‑Fantasie, sondern zu Trail (hochrücken) und öffnet Slot 8 für das erste echte TV‑Drawing‑Tool.
 
 ### Telemetrie‑Check (für Phase 1)
 

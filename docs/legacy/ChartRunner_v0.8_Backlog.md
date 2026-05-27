@@ -5,7 +5,7 @@ v0.8 restrukturiert die **Wahrnehmung** des Spiels: was der Spieler beim Laden s
 (ChartRunnerOS als nostalgische iMac-Oberfläche), wie die Welten zueinander stehen
 (Monster Mode wird eigener Raum, Upside-Down wird echte Physik-Inversion auf der
 Unterseite der Kerzen), wer die Stimme im Ohr ist (L3 Coach als Avatar mit Persönlichkeit)
-und wie Werte aus dem Spiel hinaus kommen (flüchtige In-Game $CRDS swappen am
+und wie Werte aus dem Spiel hinaus kommen (flüchtige In-Game $CHART swappen am
 Run-Ende in harten $RUN auf Solana/Hyperliquid).
 
 Gleichzeitig wird eine v0.7-Entscheidung kassiert: **Abilities dürfen sich nicht
@@ -29,7 +29,7 @@ rechts). Eintrag ins Spiel ist ein expliziter Klick auf das ChartRunner-Icon.
 ### Monster Mode vs. Upside-Down (Architektur-Pivot)
 
 Heute: ein „Upside-Down" (↓↓) ist gleichzeitig **Kampfraum** (Bären droppen
-$CRDS) **und** physikalische Inversion der Welt. Das verwischt zwei Ideen.
+$CHART) **und** physikalische Inversion der Welt. Das verwischt zwei Ideen.
 
 v0.8 trennt:
 
@@ -90,7 +90,7 @@ bottom-HUD).
 
 ### Tokenomics — flüchtig → hart
 
-- **$CRDS** lebt nur in einem Run. Nach Game-Over: Swap-Screen.
+- **$CHART** lebt nur in einem Run. Nach Game-Over: Swap-Screen.
 - **$RUN** ist hart. Auf Solana gemintet, auf Hyperliquid handelbar.
 - Der Swap läuft über ein zukünftiges On-Chain-Tool. Für v0.8 reicht ein
   Mock-Screen, der den Kurs anzeigt und einen simulierten Tausch durchführt.
@@ -220,12 +220,12 @@ Legend: **I** = Impact (1–5), **E** = Ease (1–5, höher = einfacher),
 
 15. **Monster Mode als eigener Modus** (I 4, E 2, P ✓)
     Der heutige Upside-Down-Kampfraum wird eigenständig. Entry abhängig von
-    Klärungsfrage 2. Alle Monster leben hier, $CRDS wird primär hier verdient.
+    Klärungsfrage 2. Alle Monster leben hier, $CHART wird primär hier verdient.
 
 ### Tokenomics-Layer — v0.8e
 
-16. **End-of-Run Swap-Screen ($CRDS → $RUN)** (I 4, E 3, P ✓)
-    Mock zuerst: Game-Over-Screen zeigt erworbene $CRDS und bietet Tausch zu
+16. **End-of-Run Swap-Screen ($CHART → $RUN)** (I 4, E 3, P ✓)
+    Mock zuerst: Game-Over-Screen zeigt erworbene $CHART und bietet Tausch zu
     $RUN zum aktuellen Kurs (Fake-Orakel). Explicit Confirm, kein Silent-Burn.
 
 17. **Solana $RUN Token — Mock-Signer** (I 3, E 2, P ✗ Phase 2 prep)
@@ -255,9 +255,9 @@ Legend: **I** = Impact (1–5), **E** = Ease (1–5, höher = einfacher),
 - **`ABILITIES` Array** — `maxCharges`/`charges` Felder entfernt; `useAbility()`
   refuse-on-empty-Logik weg. Charge-Dots im HUD (`.ch`, `.dot`, `.on`, `empty`)
   werden Cooldown-Ring.
-- **$CRDS-Shop (v0.7b-items v2)** — „Spend $CRDS to restock charges" passt nicht
+- **$CHART-Shop (v0.7b-items v2)** — „Spend $CHART to restock charges" passt nicht
   mehr. Modal muss umgewidmet werden auf Gear/Items-Kauf oder entfernt für v0.8.
-- **Loot-Orb-Restock** von Bossen — gibt statt Charges jetzt bspw. $CRDS oder
+- **Loot-Orb-Restock** von Bossen — gibt statt Charges jetzt bspw. $CHART oder
   Power-Up-Buffs.
 - **HUD Bottom Wrap** — wenn Abilities ganz unter Menu-Button wandern, wird der
   bottom `hudWrap` optional (Toggle in Settings) oder fällt weg.

@@ -163,7 +163,7 @@ Add three new adapters:
 
 ### LI.FI · $2.5k Germany
 - **What we build:** "Fund your trading wallet" modal in the lite-profile Wallet tab. Embed LI.FI's web widget (iframe or React component, depending on what we can load lazily). User can swap ETH/BSC/etc → SOL/USDC and the funded wallet is what they use for $RUN swaps later (M1).
-- **Code touch points:** new IIFE `crLifiFunding` — adds a "+ Fund" button to the Wallet tab's $CRDS card; on click, lazy-loads LI.FI widget script + opens modal.
+- **Code touch points:** new IIFE `crLifiFunding` — adds a "+ Fund" button to the Wallet tab's $CHART card; on click, lazy-loads LI.FI widget script + opens modal.
 - **Effort:** 1 day.
 - **Bonus:** the same widget supports the Visa Germany "stablecoin payment infrastructure" framing — feature it in both submissions.
 

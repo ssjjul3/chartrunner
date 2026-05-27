@@ -14,9 +14,9 @@ cuts it into shippable slices.
 ### Currency rename & role swap
 
 - **TICK → $RUN**. Hard currency. Earned in the **overworld** by mining with the Pickaxe
-  (the starter weapon). Also purchasable with $CRDS at end of run.
-- **Creds → $CRDS**. Soft currency, but **scarce**. Earned in the **underworld** through
-  fighting (kills, mining), winning trades, winning competitions. **$CRDS must be spent
+  (the starter weapon). Also purchasable with $CHART at end of run.
+- **Creds → $CHART**. Soft currency, but **scarce**. Earned in the **underworld** through
+  fighting (kills, mining), winning trades, winning competitions. **$CHART must be spent
   at the end of every run or it's lost** (forced-spend economy). Spend on: more $RUN,
   or Items.
 
@@ -41,7 +41,7 @@ Gear is purchased with **$RUN**.
   radar, rescue). They are indicators / algorithms, expressed in gamified form.
 - Items are chosen in the **start menu** before a run. How many depends on game mode:
   Creative = unlimited, Time\_is\_Money = 5, Trade = 3, etc.
-- Items are purchased with **$CRDS**.
+- Items are purchased with **$CHART**.
 - Items can **drop from Boss monsters** in the underworld.
 - Items can be **crafted**: fuse upgraded items into new ones. This is the storytelling
   layer — each fusion is a discovery moment ("I built my own RSI").
@@ -55,15 +55,15 @@ Gear is purchased with **$RUN**.
 
 ### Game modes
 
-| Mode | Time/Life | Resources | $CRDS earned | Upside-down | Abilities cap |
+| Mode | Time/Life | Resources | $CHART earned | Upside-down | Abilities cap |
 |---|---|---|---|---|---|
 | **Creative (SDK)** | unlimited | unlimited | no | disabled | unlimited items |
 | **Time\_is\_Money** | fixed session timer | finite items/HP | yes — primary goal | yes | 5 items (default) |
 | **Trade (Phase 2)** | real market cadence | real USDC via Hyperliquid | no (real $) | yes | 3 items |
 
-- **Creative** = the SDK sandbox. Fly, run, use items without constraint, no $CRDS.
+- **Creative** = the SDK sandbox. Fly, run, use items without constraint, no $CHART.
   Think: "draw lines on a chart forever." No combat.
-- **Time\_is\_Money** = the arcade loop. Fixed timer. Maximise $CRDS per session.
+- **Time\_is\_Money** = the arcade loop. Fixed timer. Maximise $CHART per session.
   This is the default competitive mode.
 - **Trade** = Hyperliquid-backed real trading (deferred to Phase 2).
 
@@ -97,10 +97,10 @@ Gear is purchased with **$RUN**.
   around the same SDK calls.
 - All the v0.6a work (real P&L, Sharpe, ATR bands, physics polish) carries forward
   unchanged.
-- The mission + tutorial systems stay. Missions phrased against $CRDS/$RUN instead of
+- The mission + tutorial systems stay. Missions phrased against $CHART/$RUN instead of
   Creds/TICK.
 - The upside-down combat is retained for Time\_is\_Money mode and becomes the primary
-  $CRDS source.
+  $CHART source.
 - Candle loader, perspective modes, juice pass — all retained.
 
 ---
@@ -128,9 +128,9 @@ These are places the spec is underdetermined and I need a decision before buildi
    mode." Recommended starter numbers: **Creative unlimited, Time\_is\_Money 5, Trade
    3**.
 
-5. **$CRDS forced-spend.** At end of run, show a spend screen with two buttons:
+5. **$CHART forced-spend.** At end of run, show a spend screen with two buttons:
    *convert to $RUN at current rate* vs. *buy items*. If player closes the screen
-   without spending, $CRDS goes to zero. Recommended: **soft warning + explicit Confirm
+   without spending, $CHART goes to zero. Recommended: **soft warning + explicit Confirm
    button, not silent burn** (players will rage-quit if they close the tab and lose
    everything).
 
@@ -159,9 +159,9 @@ playable file.
 Goal: nothing looks visually different in-game, but internal data model is aligned
 for v0.7b. Rename all code references; add a game-mode enum; add a start-menu stub.
 
-1. **Rename** `game.tick` → `game.run`, `game.creds` → `game.crds` across the file.
-   Update pill DOM (`#tick` → `#run`, `#creds` → `#crds`), strings in the menu
-   ("0 TICK" → "0 \$RUN", "0 Creds" → "0 \$CRDS"), toasts, logs.
+1. **Rename** `game.tick` → `game.run`, `game.creds` → `game.chart` across the file.
+   Update pill DOM (`#tick` → `#run`, `#creds` → `#chart`), strings in the menu
+   ("0 TICK" → "0 \$RUN", "0 Creds" → "0 \$CHART"), toasts, logs.
 2. **Add** a `gameMode` state: `'creative' | 'timeismoney' | 'trade'`. Default
    `'timeismoney'` to preserve current behaviour. No UI yet.
 3. **Splash** gets three tiles: *Time is Money* (default, currently playable),
@@ -184,7 +184,7 @@ Goal: the six fixed ability slots become a loadout system. Minimum viable items.
    auto-adaptive stub — just make it re-issue on each bar close), Hedge, Radar, Rescue.
 5. **Item drops**: one placeholder boss in the upside-down drops a random item
    instance on kill.
-6. **$CRDS forced-spend**: end-of-run screen with two actions (convert to $RUN, buy
+6. **$CHART forced-spend**: end-of-run screen with two actions (convert to $RUN, buy
    item). Confirm button required.
 7. **Validate**.
 
@@ -196,7 +196,7 @@ Goal: persistent meta-layer starts working. Creative mode becomes fully playable
    (NFT layer deferred — localStorage is an honest stub).
 2. **Evolving weapon**: Pickaxe → Wand → Gun, triggered by hitting $RUN milestones.
    Each stage changes the mining/combat VFX.
-3. **Creative mode**: no HP, no upside-down, unlimited item charges, no $CRDS earn.
+3. **Creative mode**: no HP, no upside-down, unlimited item charges, no $CHART earn.
 4. **Chart pan/zoom in Creative**: mouse-drag pans X/Y; scroll zooms. In other modes,
    camera stays locked.
 5. **Dynamic interval**: a slider (or +/- keys) that re-fetches candles at a custom
@@ -219,7 +219,7 @@ Recommended starter: **v0.7a — economy rename + game mode scaffolding.** It's 
 risk, self-contained, validates in one session, and unblocks v0.7b cleanly.
 
 What I'd ship in that first slice, concretely:
-- Rename TICK → \$RUN and Creds → \$CRDS throughout HTML/JS (search + replace with
+- Rename TICK → \$RUN and Creds → \$CHART throughout HTML/JS (search + replace with
   care around pill DOM ids and the SDK).
 - Add `game.mode` with three values; default `'timeismoney'`.
 - Add a **three-tile splash** replacing the current single Play button. Only the

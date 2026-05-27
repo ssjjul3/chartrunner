@@ -128,7 +128,7 @@ Several Workbench tabs and OS surfaces are hidden behind CSS `display:none !impo
 | Workbench: Bots / Strategies / Indicators / Terminal / Backtest / App Builder / Theme | M3 |
 | Bot Terminal dock icon | M6 |
 | Marketplace dock icon + windows | M4 |
-| Token UI ($CRDS / $RUN balances on desktop, swap, Missions tab) | M1 |
+| Token UI ($CHART / $RUN balances on desktop, swap, Missions tab) | M1 |
 | Real Helius DAS NFT detection (offline picker ships now) | M2.6 |
 | On-chain Name Register | M2.6 |
 | AI Coach v2 (real model endpoint) | M2 |
@@ -147,7 +147,7 @@ For the full M0.5 → M10 roadmap, see [`README.md` § Post-Frontier roadmap](RE
 Avatar centered. Green LED dot-matrix billboard cycles `name → asset · TF → mode` every 2.5s. Two terminal-style tabs:
 
 - **`[ GAME ]`** — Reset · Save · Coins · Support · Perspective · Connect (3×2 grid)
-- **`[ WALLET ]`** — `$CRDS` (this run) · `$RUN` (persisted) · open positions B-L-O
+- **`[ WALLET ]`** — `$CHART` (this run) · `$RUN` (persisted) · open positions B-L-O
 
 Topbar buttons stay in DOM so existing handlers still work — lite profile entries `.click()` through.
 

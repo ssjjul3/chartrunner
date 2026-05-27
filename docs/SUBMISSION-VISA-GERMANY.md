@@ -15,7 +15,7 @@
 
 Visa's side-track is for "founders building on Solana with a clear path to real-world payments and financial infrastructure use cases. Strong fit includes projects in stablecoin payments, payment infrastructure, tokenisation of real-world-assets (RWAs) and DeFi."
 
-**ChartRunner's fit:** the broker layer (v1.0.4) is exactly stablecoin-settled trade routing. Players trade chart primitives — Bracket, OCO, Ladder, TWAP — that fire through pluggable brokers (Mock / Binance Paper / Phoenix today; Jupiter + Jito coming Week 2 of the post-Frontier sprint). Every trade is denominated in stablecoins by default; the in-game `$CRDS` soft-currency swaps to `$RUN` (hard token, Solana mint) on game-over, and `$RUN` becomes USDG-redeemable at M1.
+**ChartRunner's fit:** the broker layer (v1.0.4) is exactly stablecoin-settled trade routing. Players trade chart primitives — Bracket, OCO, Ladder, TWAP — that fire through pluggable brokers (Mock / Binance Paper / Phoenix today; Jupiter + Jito coming Week 2 of the post-Frontier sprint). Every trade is denominated in stablecoins by default; the in-game `$CHART` soft-currency swaps to `$RUN` (hard token, Solana mint) on game-over, and `$RUN` becomes USDG-redeemable at M1.
 
 **Real-world payments angle:** ChartRunner is the *training wheels* layer for retail traders who want to learn trade routing on stablecoin rails before risking real fiat. Every gameplay primitive maps 1:1 to a real SDK call. A player who clears the 39-chapter Campaign has practiced ~3,000 stablecoin-denominated trades in muscle memory.
 
@@ -31,7 +31,7 @@ Visa's side-track is for "founders building on Solana with a clear path to real-
 
 Three concrete Visa-aligned additions on the M1 → M2 sprint:
 
-1. **USDG as the default $RUN settle asset.** $RUN ↔ USDG swap at M1. Players' soft-currency $CRDS converts to $RUN at end-of-run; $RUN cashes out to USDG via Solana mint.
+1. **USDG as the default $RUN settle asset.** $RUN ↔ USDG swap at M1. Players' soft-currency $CHART converts to $RUN at end-of-run; $RUN cashes out to USDG via Solana mint.
 2. **Visa Direct rail for fiat → USDG onramp.** M1 includes MoonPay / Coinbase Onramp evaluation; we'd prioritise a Visa-direct integration alongside if Visa exposes a Solana-aware API.
 3. **Stablecoin trade routing for German retail.** Phoenix Rise integration ships at M5; until then the broker chassis treats USDG as a first-class settle asset alongside USDC.
 
@@ -46,7 +46,7 @@ Per Visa's posted criteria ("product functionality, potential impact, novelty, U
 | Novelty | First gamified Solana trading SDK. First implementation we're aware of where game primitives are 1:1 real SDK orders (not abstractions). |
 | UX | Mac OS 9–style desktop, in-game LED billboard, terminal-style tabs, drag-anywhere widgets. Optimised for the 22-min focused session. |
 | Open source | Anchor programs source-public at github.com/\<owner\>/chartrunner; game HTML source-public on the same repo. MIT licence. |
-| Business plan | $CRDS / $RUN tokenomics paper at M1. Phoenix Rise builder-code fee share is one revenue lane; on-chain registry protocol fee is another; eventual mainnet token launch via M8 tournaments is the third. |
+| Business plan | $CHART / $RUN tokenomics paper at M1. Phoenix Rise builder-code fee share is one revenue lane; on-chain registry protocol fee is another; eventual mainnet token launch via M8 tournaments is the third. |
 
 ## Submission package
 

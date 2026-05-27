@@ -36,7 +36,7 @@
 
 **v0.8k#24j — two-anchor placement for Ladder / Fib Ladder / Bracket / OCO.** Picking one of these from the laser menu now arms a two-click anchor phase instead of dropping at the menu-open price. Click the first candle anchor (snaps to wick-high / wick-low / body-top / body-bottom within 14 px) — a green dot lands. Click the second anchor — the tool is committed with side and dimensions inferred from the anchor pair. While anchor2 is being placed, a dashed ghost preview shows where the tool will actually land (Bracket: entry / TP / SL lines; Ladder: 5 evenly-spaced lines; Fib: 5 fib-level lines; OCO: upper + lower). Esc during the anchor phase cancels back to the menu-driven default without leaving laser aim. HLine and VWAP stay single-click — they're one-price primitives.
 
-**v0.8k#24h — tools never disappear on their own.** The laser-menu overlays (Ladder, Fib Ladder, Bracket, OCO, HLine, VWAP) used to silently vanish when any underlying SDK order filled or cancelled — the `_pruneVisualsForOrderId` path. For a laser-dropped ladder placed near market, the first tick would fill the nearest rung and the whole visual would evaporate the moment the laser closed. The prune is gone. Fill and cancel events still log and still credit $CRDS + score, but they don't touch the overlay arrays. Bracket overlays also no longer dim after TP/SL resolves — the outcome recolor (win green / loss red) is information and stays; the alpha drop was just fade and it's been removed. Ladders, OCOs, brackets, HLines, and VWAPs are now persistent chart tools in the TradingView sense. Only `Del` (on a selected overlay) or `R` (restart) remove them.
+**v0.8k#24h — tools never disappear on their own.** The laser-menu overlays (Ladder, Fib Ladder, Bracket, OCO, HLine, VWAP) used to silently vanish when any underlying SDK order filled or cancelled — the `_pruneVisualsForOrderId` path. For a laser-dropped ladder placed near market, the first tick would fill the nearest rung and the whole visual would evaporate the moment the laser closed. The prune is gone. Fill and cancel events still log and still credit $CHART + score, but they don't touch the overlay arrays. Bracket overlays also no longer dim after TP/SL resolves — the outcome recolor (win green / loss red) is information and stays; the alpha drop was just fade and it's been removed. Ladders, OCOs, brackets, HLines, and VWAPs are now persistent chart tools in the TradingView sense. Only `Del` (on a selected overlay) or `R` (restart) remove them.
 
 **v0.8k#24g — OCO joins the laser menu.** The laser click-menu (press **2**, click the chart) now has a **⇅ OCO here** entry alongside HLine / VWAP / Ladder / Fib Ladder / Bracket. Clicking it drops a one-cancels-other pair centered on the clicked price — upper/lower offsets are symmetric and scaled by `tfVolScale()` so the pair feels proportional on 15m vs. 1d. Hotkey **3** still fires an OCO at the player's current position. The laser path is the price-anchored variant.
 
@@ -64,7 +64,7 @@
 ### Other
 
 - **M** — menu drawer (wallet · skins · perspective · run · shop · stats · vehicles · replay tutorial · L3 terminal · chart background)
-- **B** — $CRDS shop (charges, $CRDS → $RUN exchange). Esc closes.
+- **B** — $CHART shop (charges, $CHART → $RUN exchange). Esc closes.
 - **Tab** — SDK drawer (event log · API · capabilities · tokenomics)
 - **Esc** — skip tutorial · exit laser aim · close menus
 - **R** — restart

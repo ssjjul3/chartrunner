@@ -20,7 +20,7 @@
 Honeycomb's primitives are not "ways to charge money." They're the on-chain version of
 the systems every loot-loop game has had for two decades: identity, progression,
 missions, resources, crafting, staking. ChartRunner already has all of these in
-`localStorage` today (skin/gear/vehicle, Campaign chapters, $CRDS / $RUN, bot crafting
+`localStorage` today (skin/gear/vehicle, Campaign chapters, $CHART / $RUN, bot crafting
 in Workbench). Honeycomb makes them **verifiable, persistent, and portable across
 games**.
 
@@ -101,8 +101,8 @@ Today: click Launch → run → game-over → click "Record on-chain". Tomorrow:
 *is* `participateMission(asset_pool, character)`. The mission has:
 
 - A **duration** (the run's `runLengthSec` from the Maps program) — enforced on-chain.
-- An **entry cost** ($CRDS, paid in to the mission pool).
-- **Rewards** declared up-front (XP + $CRDS or $RUN, weighted by score on `recall`).
+- An **entry cost** ($CHART, paid in to the mission pool).
+- **Rewards** declared up-front (XP + $CHART or $RUN, weighted by score on `recall`).
 
 On game-over, the client calls `recallMission(character)`. The Mission program checks
 that `now >= participate_time + duration`, releases the locked Character, and pays out
@@ -114,8 +114,8 @@ Mission pools partition the playerbase by skill / stake / format:
 
 | Pool | Entry | Duration | Rewards | Audience |
 |---|---|---|---|---|
-| **Newbie Run** | 50 $CRDS | 5 min | +50 XP, 50 $CRDS guaranteed | First-week traders |
-| **Daily Challenge** | 500 $CRDS | 30 min | +500 XP, 0–2000 $CRDS by score tier | Returning players |
+| **Newbie Run** | 50 $CHART | 5 min | +50 XP, 50 $CHART guaranteed | First-week traders |
+| **Daily Challenge** | 500 $CHART | 30 min | +500 XP, 0–2000 $CHART by score tier | Returning players |
 | **Tournament Match** | 1 $RUN | 24 h | Pool → top 10 % of finishers | Competitive |
 | **Educational Run** | 0 | Untimed | +XP, "Graduate" trait on completion | Campaign chapter mode |
 
@@ -140,12 +140,12 @@ await honeycombRecallMission(client, {
 
 ---
 
-### 3 — $CRDS and $RUN as Honeycomb Resources
+### 3 — $CHART and $RUN as Honeycomb Resources
 
 **Honeycomb primitive:** `createMintResourceTransaction`, `createBurnResourceTransaction`, `createDelegateAuthorityTransaction`
-**Replaces in ChartRunner:** the `localStorage` `cr_crds_balance` + `cr_run_balance`, plus the in-run mint events that currently live in JS only.
+**Replaces in ChartRunner:** the `localStorage` `cr_chart_balance` + `cr_run_balance`, plus the in-run mint events that currently live in JS only.
 
-$CRDS and $RUN are Honeycomb resources, not raw SPL tokens. State-compressed: minting
+$CHART and $RUN are Honeycomb resources, not raw SPL tokens. State-compressed: minting
 costs drop from 0.002 SOL to 0.00001 SOL. The ChartRunner backend wallet gets delegated
 `MintResources` + `BurnResources` permissions via `createDelegateAuthorityTransaction`,
 so the engine credits the player directly during a run without round-tripping through
@@ -159,16 +159,16 @@ to do per-pickup at scale.
 // Run engine credits the player during gameplay
 await honeycombMintResource(client, {
   accessToken,
-  resource:  HC_RESOURCE_CRDS,
+  resource:  HC_RESOURCE_CHART,
   owner:     userPublicKey,
   amount:    "250",
   authority: CHARTRUNNER_DELEGATE_AUTHORITY,
   payer:     userPublicKey,  // backend pays the tiny tx fee
 });
 
-// Exchange counter — burn 100 $CRDS to mint 1 $RUN
+// Exchange counter — burn 100 $CHART to mint 1 $RUN
 await honeycombBurnResource(client, {
-  accessToken, resource: HC_RESOURCE_CRDS,
+  accessToken, resource: HC_RESOURCE_CHART,
   owner: userPublicKey, amount: "100",
   authority: CHARTRUNNER_DELEGATE_AUTHORITY, payer: userPublicKey,
 });
@@ -188,7 +188,7 @@ from inputs:
 recipe.inputs  = [
   { kind: "resource",   address: STRATEGY_RESOURCE,  amount: 1 },
   { kind: "resource",   address: INDICATOR_RESOURCE, amount: 1 },
-  { kind: "resource",   address: HC_RESOURCE_CRDS,   amount: 100 },
+  { kind: "resource",   address: HC_RESOURCE_CHART,   amount: 100 },
 ]
 recipe.outputs = [
   { kind: "character",  model: BOT_CHARACTER_MODEL, traitsFrom: "inputs" },
@@ -250,7 +250,7 @@ staked entry fees redistribute to winners.
 ```
 pool = {
   duration: 24h,
-  entry_resource: $CRDS,
+  entry_resource: $CHART,
   entry_amount: 1000,
   reward_distribution: [
     { rank: 1, share: 0.40 },
@@ -332,7 +332,7 @@ The eight concepts map to the M1–M8 milestones in the README:
 | Honeycomb concept | Lands in | Notes |
 |---|---|---|
 | **#1 Profile + Character** | **M1** (tokenomics paper ships) | Bootstrap on Honeynet. One Honeycomb project for ChartRunner. |
-| **#3 Resources ($CRDS, $RUN)** | **M1** | Flips on as part of the M1 bootstrap — the adapter is already scaffolded. |
+| **#3 Resources ($CHART, $RUN)** | **M1** | Flips on as part of the M1 bootstrap — the adapter is already scaffolded. |
 | **#2 NectarMissions for runs** | **M1** | Replaces the Phase-0 `record_run` flow at the same time. |
 | **#4 Crafting recipes (Bots)** | **M3** (Build apps restored) | Workbench bot-builder routes through Honeycomb recipes. |
 | **#5 Streak / badge traits** | **M3** | Free win once Mission lifecycle is wired in M1. |

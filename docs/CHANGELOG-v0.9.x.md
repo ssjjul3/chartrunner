@@ -283,10 +283,10 @@ Slot 3 was the modal Primitives picker; promoted to a parallel laser-aim mode wi
 
 ## v0.9.20 → v0.9.20b — Run Controls in lite profile
 
-v0.9.20 placed the buttons in the right-sidebar Wallet panel (`#crSidePanelWallet`) — wrong target. v0.9.20b corrected: they live in the lite profile widget (`#crLightProfile`, the chart-overlay popover with avatar / name / SCORE / $CRDS / $RUN / P&L / loadout chips / "Open full profile →"). Layout:
+v0.9.20 placed the buttons in the right-sidebar Wallet panel (`#crSidePanelWallet`) — wrong target. v0.9.20b corrected: they live in the lite profile widget (`#crLightProfile`, the chart-overlay popover with avatar / name / SCORE / $CHART / $RUN / P&L / loadout chips / "Open full profile →"). Layout:
 
 1. Avatar + name + ✕
-2. SCORE / $CRDS / $RUN / P&L row
+2. SCORE / $CHART / $RUN / P&L row
 3. Loadout chips (AVATAR / SKIN / GEAR / VEHICLE / WEAPON / BOTS)
 4. **Run Controls** — new section, 2×2 button grid (↻ Reset · 💾 Save · 🪙 Coins · 🔗 Connect)
 5. Open full profile →

@@ -37,7 +37,7 @@
  * MAPPING — what Honeycomb replaces in ChartRunner today:
  *   chartrunner_registry::Profile        → Honeycomb User + Profile
  *   chartrunner_registry::record_run     → NectarMissions participate/recall
- *   $CRDS / $RUN balance                 → ResourceManager mint/burn
+ *   $CHART / $RUN balance                 → ResourceManager mint/burn
  *   ghost / leaderboard achievements     → CharacterManager traits
  *   builder royalties / staking rewards  → NectarStaking pools
  *
@@ -155,7 +155,7 @@ export const CHARTRUNNER_PROJECT_ADDRESS_PLACEHOLDER =
 
 // Resource handles used by the game. The real PublicKeys land here after
 // `createResource` runs once during project bootstrap (see scripts/bootstrap).
-export const HC_RESOURCE_CRDS_PLACEHOLDER = 'CRDSResourceXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+export const HC_RESOURCE_CHART_PLACEHOLDER = 'CHARTResourceXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
 export const HC_RESOURCE_RUN_PLACEHOLDER  = 'RUNResourceXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
 
 // ─── Edge Client construction ─────────────────────────────────────────────
@@ -251,7 +251,7 @@ export async function honeycombCreateProfile(
 //                       — after `duration`, returns the character + claims rewards
 //
 // In ChartRunner terms: "play a Nectar mission" ↔ "submit a run for grading".
-// The reward is paid out as a Honeycomb resource (XP, $CRDS, $RUN, …).
+// The reward is paid out as a Honeycomb resource (XP, $CHART, $RUN, …).
 
 export async function honeycombCreateMissionPool(
   client: EdgeClientStub,
@@ -398,20 +398,20 @@ export async function honeycombCreateCharacter(
 }
 
 // ─── Resource mint / burn ─────────────────────────────────────────────────
-// $CRDS and $RUN are Honeycomb resources, not raw SPL tokens — they cost
+// $CHART and $RUN are Honeycomb resources, not raw SPL tokens — they cost
 // ~0.0000001 SOL per mint at the compressed scale. The ChartRunner backend
 // is the delegated authority for MintResources and BurnResources (see
 // honeycombDelegateChartRunnerAuthority below).
 //
-// Mint   = "this run earned 250 $CRDS"
-// Burn   = "the player just exchanged 1000 $CRDS for 1 $RUN"
-// Faucet = "first-time player gets 100 $CRDS to start"
+// Mint   = "this run earned 250 $CHART"
+// Burn   = "the player just exchanged 1000 $CHART for 1 $RUN"
+// Faucet = "first-time player gets 100 $CHART to start"
 
 export async function honeycombMintResource(
   client: EdgeClientStub,
   args: {
     accessToken: string;
-    resource: string;     // e.g. HC_RESOURCE_CRDS_PLACEHOLDER
+    resource: string;     // e.g. HC_RESOURCE_CHART_PLACEHOLDER
     owner: string;        // recipient
     amount: string;       // decimal string in resource's native units
     authority: string;    // delegated MintResources authority
@@ -460,7 +460,7 @@ export async function honeycombBurnResource(
 //   ResourceManager.{CreateResources, MintResources, BurnResources, ClaimFaucet, CreateRecipe}
 //   CharacterManager.{ManageCharacterModels, AssignCharacterTraits}
 //   NectarMissions.{ManageMissionPool, WithdrawMissionPoolRewards}
-// so the prototype can mint $CRDS / assign traits / settle missions on
+// so the prototype can mint $CHART / assign traits / settle missions on
 // behalf of players without round-tripping every action through the
 // project owner's seed phrase.
 
