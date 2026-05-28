@@ -86,7 +86,7 @@ pre code{background:transparent;padding:0}
 
 <aside class="sidebar">
   <h1>ChartRunner SDK</h1>
-  <div class="ver">v0.9.64 · 2026-05-09</div>
+  <div class="ver">v1.0.125 · 2026-05-28</div>
   <nav>
     <div class="group">Introduction</div>
     <a href="#overview">Overview</a>
@@ -120,7 +120,7 @@ pre code{background:transparent;padding:0}
 
 <main class="main">
 
-<h1 class="page">ChartRunner SDK <span class="tag">v0.9.64</span></h1>
+<h1 class="page">ChartRunner SDK <span class="tag">v1.0.125</span></h1>
 <div class="subtitle">A gamified trading SDK on Solana, built on three pillars — <strong>gamification</strong>, <strong>education</strong>, <strong>on-chain (industry-standard)</strong>. Six in-game primitives (bracket, OCO, ladder, hedge, radar, rescue), four Anchor programs, and a four-partner ecosystem stack — Phoenix for trades, MagicBlock for matches, Honeycomb for the economy, Pyth for the truth.</div>
 
 <div class="callout">
@@ -133,15 +133,15 @@ pre code{background:transparent;padding:0}
 </p>
 <ul>
   <li><strong>A canvas game</strong> — an HTML prototype that runs on real chart candles, with bear monsters, an upside-down world, and six trading primitives wired as in-game abilities.</li>
-  <li><strong>An on-chain layer</strong> — three Anchor programs covering map storage, run records, and realtime multiplayer match state.</li>
+  <li><strong>An on-chain layer</strong> — four Anchor programs (maps · registry · match · oracle), all live on devnet under a Squads V4 2-of-3 multisig.</li>
   <li><strong>Three live ecosystem partners</strong> for trades (Phoenix Rise), matches (MagicBlock Ephemeral Rollups), and economy (Honeycomb).</li>
 </ul>
 
 <div class="gridcards">
   <div class="card"><h4>Phase 0 — Prototype</h4><p>Single canvas runtime · 6 primitives · 8-chapter Campaign · 10 detectors · ✅ live</p></div>
   <div class="card"><h4>Phase 1 — SDK pull-over</h4><p>Drop the runtime onto Dexscreener / TradingView · 🟡 architecture done</p></div>
-  <div class="card"><h4>Phase 2 — Solana</h4><p>3 Anchor programs · devnet live · ghost markers from real PDAs</p></div>
-  <div class="card"><h4>Phase 3 — Mainnet partners</h4><p>Phoenix · MagicBlock · Honeycomb · Pyth · 🟡 scaffolds shipped</p></div>
+  <div class="card"><h4>Phase 2 — Solana</h4><p>4 Anchor programs · ✅ all live devnet · Squads V4 multisig-governed · ghost markers from real PDAs</p></div>
+  <div class="card"><h4>Phase 3 — Mainnet partners</h4><p>Phoenix Rise · MagicBlock ER · ✅ live partners · Honeycomb adapter scaffold · Pyth oracle on-chain</p></div>
 </div>
 
 <h2 id="quickstart">Quickstart</h2>
@@ -254,10 +254,11 @@ open ChartRunner_Prototype.html
   v0.9.7 added defensive caps (<code>MAX_RUN_SCORE</code>, <code>MAX_SHARPE_X100</code>, <code>MAX_DURATION_SEC</code>) so forged scores fail at the program boundary, not just client-side.
 </p>
 
-<h2 id="cr-match">chartrunner_match <span class="tag amber">scaffold</span></h2>
+<h2 id="cr-match">chartrunner_match <span class="tag green">live</span></h2>
 <p>
   Realtime PvP match state. A <code>MatchState</code> PDA holds the asset, timeframe, the participants (up to 8), their live positions and scores. The host calls <code>delegate_match</code> to transfer ownership to the MagicBlock delegation program — after which every <code>tick_player</code> instruction settles on the Ephemeral Rollup at sub-millisecond latency, zero fee.
 </p>
+<div class="callout dim"><strong>Program ID:</strong> <code>3mzEAWZVtTV7sjqkRrPAbB3tT7bA3vVx5wyYQZvfp5zu</code> · devnet · deployed 2026-05-20 (locally built with anchor-lang 1.0.2 + ERS 0.14.2 on platform-tools v1.52 — Playground can't build it since ERS isn't allowlisted) · hardened to v0.9.10 via Squads upgrade.</div>
 <pre><code><span class="kw">pub fn</span> <span class="typ">init_match</span>(ctx: Context&lt;InitMatch&gt;, nonce: u64,
                  asset: [<span class="kw">u8</span>; <span class="num">16</span>], timeframe: [<span class="kw">u8</span>; <span class="num">8</span>],
                  max_players: u8) -&gt; Result&lt;()&gt;
@@ -268,10 +269,11 @@ open ChartRunner_Prototype.html
 <span class="kw">pub fn</span> <span class="typ">commit_and_finish</span>(ctx: Context&lt;CommitMatch&gt;) -&gt; Result&lt;()&gt;
 </code></pre>
 
-<h2 id="cr-oracle">chartrunner_oracle <span class="tag amber">scaffold</span></h2>
+<h2 id="cr-oracle">chartrunner_oracle <span class="tag green">live</span></h2>
 <p>
   Verifiable price-feed primitive backed by Pyth Core. Wraps the Pyth pull-oracle pattern — the client posts a Hermes VAA to a <code>PriceUpdateV2</code> account, then <code>verify_price</code> reads it via <code>pyth-solana-receiver-sdk</code>, enforces a 30-second freshness gate, and writes a <code>PriceCertificate</code> PDA seeded by <code>(payer, feed_id_hex)</code>. <code>chartrunner_registry::record_run</code> and <code>chartrunner_match::tick_player</code> cite the certificate to make scores forge-resistant.
 </p>
+<div class="callout dim"><strong>Program ID:</strong> <code>4vfZVDfDzhR79qdaUdPAzRwUHYB5qbgNwTGBwfy6i5wH</code> · devnet · deployed 2026-05-19 via Solana Playground (no-SDK <code>lib.playground.rs</code> variant — Playground's allowlist doesn't include <code>pyth-solana-receiver-sdk</code>, so the deployed binary uses local mirror structs); v0.9.13 owner-check + staleness clamps in source, in-place SDK upgrade pending one batched re-upgrade cycle.</div>
 <pre><code><span class="kw">pub fn</span> <span class="typ">verify_price</span>(ctx: Context&lt;VerifyPrice&gt;,
                     feed_id_hex: String,
                     max_age_sec: Option&lt;i64&gt;) -&gt; Result&lt;()&gt;
@@ -369,20 +371,20 @@ open ChartRunner_Prototype.html
 </code></pre>
 
 <h3>Resource mint / burn</h3>
-<pre><code><span class="com">// Reward the player 250 $CHART for a clean run</span>
+<pre><code><span class="com">// Reward the player 250 $CRDS for a clean run</span>
 <span class="kw">await</span> <span class="typ">honeycombMintResource</span>(client, {
   accessToken,
-  resource:  HC_RESOURCE_CHART,
+  resource:  HC_RESOURCE_CRDS,
   owner:     userPublicKey,
   amount:    <span class="str">'250'</span>,
   authority: CHARTRUNNER_DELEGATE_AUTHORITY,
   payer:     userPublicKey,
 });
 
-<span class="com">// Burn 1000 $CHART to mint 1 $RUN at the exchange counter</span>
+<span class="com">// Burn 1000 $CRDS to mint 1 $RUN at the exchange counter</span>
 <span class="kw">await</span> <span class="typ">honeycombBurnResource</span>(client, {
   accessToken,
-  resource:  HC_RESOURCE_CHART,
+  resource:  HC_RESOURCE_CRDS,
   owner:     userPublicKey,
   amount:    <span class="str">'1000'</span>,
   authority: CHARTRUNNER_DELEGATE_AUTHORITY,
@@ -402,8 +404,8 @@ open ChartRunner_Prototype.html
 <tr><th>#</th><th>Concept</th><th>Honeycomb primitive</th><th>Replaces in ChartRunner</th><th>Lands in</th></tr>
 <tr><td>1</td><td><strong>Trader Identity</strong> — Profile + Character with traits (rank, primitives, ghostFactor)</td><td><code>createNewProfile</code> + <code>createCharacter</code></td><td><code>cr_player_loadout_v1</code> localStorage</td><td>M1</td></tr>
 <tr><td>2</td><td><strong>Run = NectarMission</strong> — clicking Launch <em>is</em> <code>participateMission</code>; game-over <em>is</em> <code>recallMission</code></td><td>NectarMissions</td><td>Inline <code>record_run</code> call</td><td>M1</td></tr>
-<tr><td>3</td><td><strong>$CHART &amp; $RUN as Resources</strong> — state-compressed mints (~$0.0001 each)</td><td>Resource mint/burn + delegated authority</td><td><code>cr_chart_balance</code> localStorage</td><td>M1</td></tr>
-<tr><td>4</td><td><strong>Crafting Bots via Recipes</strong> — <code>Strategy + Indicator + 100 $CHART → Bot</code> Character</td><td>NectarRecipes</td><td>Workbench bot-builder local state</td><td>M3</td></tr>
+<tr><td>3</td><td><strong>$CRDS &amp; $RUN as Resources</strong> — state-compressed mints (~$0.0001 each)</td><td>Resource mint/burn + delegated authority</td><td><code>cr_crds_balance</code> localStorage</td><td>M1</td></tr>
+<tr><td>4</td><td><strong>Crafting Bots via Recipes</strong> — <code>Strategy + Indicator + 100 $CRDS → Bot</code> Character</td><td>NectarRecipes</td><td>Workbench bot-builder local state</td><td>M3</td></tr>
 <tr><td>5</td><td><strong>Streaks &amp; Badges</strong> — <code>streak_hot_7</code>, <code>bracket_master_100</code>, <code>chapter_8_graduate</code> as non-transferable traits</td><td><code>AssignCharacterTraits</code></td><td>Inline <code>game.streak</code> + Campaign localStorage</td><td>M3</td></tr>
 <tr><td>6</td><td><strong>Tournaments via NectarStaking</strong> — stake Character into pool, top finishers extract rewards</td><td>NectarStaking pool</td><td>(new — token-launch tournament infra)</td><td>M8</td></tr>
 <tr><td>7</td><td><strong>Cross-game portability</strong> — <code>gameInteract</code> grants peer Honeycomb games read-access to traits; ChartRunner becomes the on-ramp</td><td><code>gameInteract</code> permission grant</td><td>(new — network effect)</td><td>M8</td></tr>
@@ -431,7 +433,7 @@ open ChartRunner_Prototype.html
   <strong>What ships before Frontier.</strong> None of the eight concepts are wired live for the May-11 demo. The README and the <code>HONEYCOMB-CONCEPT.md</code> doc describe the design; the scaffolded adapter shows the call shapes; the Honeycomb Cost Comparison numbers prove the economics. Concrete on-chain flips begin at <strong>M1</strong> (tokenomics paper). The Frontier pitch leads with <em>gamification + education + on-chain</em>, not "we already minted 10,000 NFTs."
 </div>
 
-<h2 id="pyth">Pyth Core <span class="tag amber">scaffold</span></h2>
+<h2 id="pyth">Pyth Core <span class="tag green">live integration</span></h2>
 <p>
   Pyth fills the one slot the other three partners assume: the price the score was computed against is <em>provably real</em>. Today, ChartRunner pulls candles from Binance REST and the client signs over the resulting score — fine for replay, not honest at scale. Pyth Core closes that loop. <code>chartrunner_oracle</code> accepts a fresh Pyth update via the receiver SDK's pull pattern, enforces a 30-second freshness gate, and writes a <code>PriceCertificate</code> PDA the registry and match programs cite on-chain. A forged score now requires forging Pyth's signed VAA — i.e. forging Wormhole guardian signatures, which is the same security model as Pyth itself.
 </p>
@@ -477,13 +479,14 @@ open ChartRunner_Prototype.html
 
 <h2 id="program-ids">Program IDs</h2>
 <table>
-<tr><th>Program</th><th>Network</th><th>Address</th></tr>
-<tr><td>chartrunner_maps</td><td>devnet</td><td><code>DbzEqKfgCBqneR6Yuc17yEPc1fbVeqTeGy721f1n3UvH</code></td></tr>
-<tr><td>chartrunner_registry</td><td>devnet</td><td><code>ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn</code></td></tr>
-<tr><td>chartrunner_match</td><td>devnet</td><td><em>pending deploy via Solana Playground</em></td></tr>
-<tr><td>chartrunner_oracle</td><td>devnet</td><td><em>pending deploy via Solana Playground</em></td></tr>
-<tr><td>Pyth solana-receiver</td><td>devnet+mainnet</td><td><code>rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ</code></td></tr>
+<tr><th>Program</th><th>Network</th><th>Address</th><th>Upgrade authority</th></tr>
+<tr><td>chartrunner_maps</td><td>devnet</td><td><code>DbzEqKfgCBqneR6Yuc17yEPc1fbVeqTeGy721f1n3UvH</code></td><td>Squads vault</td></tr>
+<tr><td>chartrunner_registry</td><td>devnet</td><td><code>ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn</code></td><td>Squads vault</td></tr>
+<tr><td>chartrunner_match</td><td>devnet</td><td><code>3mzEAWZVtTV7sjqkRrPAbB3tT7bA3vVx5wyYQZvfp5zu</code></td><td>Squads vault</td></tr>
+<tr><td>chartrunner_oracle</td><td>devnet</td><td><code>4vfZVDfDzhR79qdaUdPAzRwUHYB5qbgNwTGBwfy6i5wH</code></td><td>Squads vault</td></tr>
+<tr><td>Pyth solana-receiver</td><td>devnet+mainnet</td><td><code>rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ</code></td><td>Pyth Network</td></tr>
 </table>
+<div class="callout"><strong>Governance.</strong> All four ChartRunner programs' upgrade authorities are wrapped by a Squads V4 2-of-3 multisig — vault <code>fK1J2TLk2qLy3cjtiSYDSuCnWuxezphBcdqNGZEpVsp</code> (devnet) — so every upgrade is a real on-chain proposal + 2-of-3 approval cycle rather than a single signer push. The first live cycle was executed against <code>chartrunner_oracle</code> on 2026-05-19; on-chain re-verified 2026-05-25.</div>
 
 <h2 id="endpoints">Endpoints</h2>
 <table>
@@ -501,9 +504,17 @@ open ChartRunner_Prototype.html
 <h2 id="changelog">Changelog</h2>
 <table>
 <tr><th>Version</th><th>Highlights</th></tr>
-<tr><td><strong>0.9.11</strong></td><td>Pyth Core adapter — verifiable price feeds · <code>chartrunner_oracle</code> Anchor program · Hermes streaming + on-chain verify</td></tr>
+<tr><td><strong>1.0.93–1.0.125</strong></td><td>Polish + hardening pass — <code>crSafeHTML</code> helper, Terminal observer debounce, Phantom direct-sign repair, whitelist form trim, <code>renderWidgets()</code> destruction removed.</td></tr>
+<tr><td>1.0.50</td><td>Frontier build snapshot — what shipped + was demo'd at Frontier (May 11 2026).</td></tr>
+<tr><td>1.0.23–1.0.122</td><td>NFT picker (Magic Eden) · in-game NFT avatar sprite · unified avatar pipeline · wallet-bound name claim (local + on-chain). M2.6 wallet-identity work largely shipped.</td></tr>
+<tr><td>0.9.27</td><td>RUN-tube + Display — draggable PIP webcam + inline file viewer for demo/pitch recording (early M7 delivery).</td></tr>
+<tr><td>0.9.21–0.9.23</td><td>Campaign UX — terminal notifications · CRT transition · chapter star system · multi-step Coach (Ch1 polished) · 3-way exit (Save/Update/Home).</td></tr>
+<tr><td>0.9.16</td><td>Anchor toolchain bump to 0.32.1 so <code>chartrunner_match</code> (ERS) and <code>chartrunner_oracle</code> (pyth-receiver-sdk) can build — older two programs untouched.</td></tr>
+<tr><td>0.9.13</td><td>Oracle owner-check + staleness clamps in source (live binary upgrade pending one batched re-upgrade).</td></tr>
+<tr><td>0.9.12</td><td>Squads V4 2-of-3 multisig wraps upgrade authorities of all four programs · first real on-chain upgrade cycle executed (oracle).</td></tr>
+<tr><td>0.9.11</td><td>Pyth Core adapter — verifiable price feeds · <code>chartrunner_oracle</code> Anchor program · Hermes streaming + on-chain verify</td></tr>
 <tr><td>0.9.10</td><td>Honeycomb Protocol adapter — game-economy primitives via Edge Client</td></tr>
-<tr><td>0.9.9</td><td>MagicBlock ER scaffold — <code>chartrunner_match</code> Anchor program + TS adapter</td></tr>
+<tr><td>0.9.9</td><td>MagicBlock ER scaffold — <code>chartrunner_match</code> Anchor program + TS adapter (deploy followed on 2026-05-20 once the Anchor 1.85 wall fell)</td></tr>
 <tr><td>0.9.8</td><td>Phoenix Rise broker adapter + Flight builder integration</td></tr>
 <tr><td>0.9.7</td><td>Async multiplayer leaderboard live · wallet-first login · security caps in <code>record_run</code></td></tr>
 <tr><td>0.9.6</td><td><code>chartrunner_registry</code> deployed devnet</td></tr>
