@@ -1041,11 +1041,16 @@
     border-color:rgba(20,241,149,0.85);color:#fff;
     box-shadow:0 0 12px rgba(20,241,149,0.45)}
   /* v1.0.67 — Two-column row inside a wcard for USDT + USDC pair.
-     Same visual rhythm as the single-column cards but splits in half. */
-  #crLightProfile .lp-wcard-row{display:flex;gap:10px}
+     Same visual rhythm as the single-column cards but splits in half.
+     v1.0.126 — SOL joins the row → now 3 columns. Reduced gap and tighter
+     numeric font so the panel stays readable at the existing width. */
+  #crLightProfile .lp-wcard-row{display:flex;gap:6px}
   #crLightProfile .lp-wcard-half{flex:1;min-width:0}
-  #crLightProfile .lp-wcard-half .v{font-size:16px}
-  #crLightProfile .lp-wcard-half .sub{font-size:8px}
+  #crLightProfile .lp-wcard-half .k{font-size:10px;letter-spacing:.3px}
+  #crLightProfile .lp-wcard-half .v{font-size:14px;font-variant-numeric:tabular-nums;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #crLightProfile .lp-wcard-half .sub{font-size:7px;line-height:1.25;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #crLightProfile .lp-wpos{margin-top:6px;display:flex;flex-direction:column;gap:4px}
   #crLightProfile .lp-wposrow{display:flex;justify-content:space-between;
     align-items:center;font-size:11px;color:var(--fg)}
@@ -6384,18 +6389,20 @@
       </div>
     </div>
     <!-- Wallet tab — $CHART · this run / $RUN · persisted / Open positions.
-         v1.0.58 — "+ Fund" button on the $CHART card opens the LI.FI
-         cross-chain funding widget (Jumper Exchange iframe). Lets the
-         player route ETH / BSC / Polygon → SOL or USDC straight to
-         their connected ChartRunner wallet. -->
+         v1.0.58 — Button on the $CHART card opens the LI.FI cross-chain
+         swap widget (Jumper Exchange iframe). Lets the player route
+         ETH / BSC / Polygon → SOL or USDC straight to their connected
+         ChartRunner wallet. v1.0.126 — labelled "Swap" to match what
+         the underlying widget actually does (cross-chain swap, not just
+         a one-way fund). -->
     <div class="lp-tabpane" data-lp-pane="wallet" style="display:none">
       <div class="lp-walletcards">
         <div class="lp-wcard">
           <div class="lp-wcard-head">
             <span class="k">$CHART · this run</span>
             <button class="lp-fund" id="crLpFundBtn" type="button"
-                    title="Fund this wallet from any chain via LI.FI (Jumper Exchange)">
-              + Fund
+                    title="Swap any-chain assets into SOL / USDC via LI.FI (Jumper Exchange)">
+              Swap
             </button>
           </div>
           <div class="v" id="crLpWChart" style="color:#9b8cff">0</div>
@@ -6410,9 +6417,17 @@
              walletBalances (v1.0.59) when an API key is configured.
              Shows "—" until the connected wallet's tokens load. USDT +
              USDC are the broker's two settle-asset options
-             (setQuoteAsset 'usdc' / 'usdt' from v1.0.55). -->
+             (setQuoteAsset 'usdc' / 'usdt' from v1.0.55).
+             v1.0.126 — SOL joins the row as the third half-card.
+             Pulls from _crWalletBalances.SOL (devnet RPC, 30s cache,
+             same source as the full Profile Wallet view). -->
         <div class="lp-wcard">
           <div class="lp-wcard-row">
+            <div class="lp-wcard-half">
+              <div class="k">SOL</div>
+              <div class="v" id="crLpWSol" style="color:#14f195">—</div>
+              <div class="sub">Solana · gas + native</div>
+            </div>
             <div class="lp-wcard-half">
               <div class="k">USDT</div>
               <div class="v" id="crLpWUsdt" style="color:#26a17b">—</div>
@@ -36430,8 +36445,11 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
       if(to && so) to.textContent = so.textContent;
       // v1.0.67 — USDT + USDC balances. window._crLpStableBal is the
       // cache populated by the periodic GoldRush poll (IIFE below).
+      // v1.0.126 — SOL also painted from _crWalletBalances (devnet RPC,
+      // 30s cache); kicks off a fetch on first paint when connected.
       const cardsUsdt = document.getElementById('crLpWUsdt');
       const cardsUsdc = document.getElementById('crLpWUsdc');
+      const cardsSol  = document.getElementById('crLpWSol');
       const stables = window._crLpStableBal || null;
       if(cardsUsdt) cardsUsdt.textContent = (stables && stables.usdt != null)
         ? stables.usdt.toLocaleString('en-US', { maximumFractionDigits: 2 })
@@ -36439,6 +36457,21 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
       if(cardsUsdc) cardsUsdc.textContent = (stables && stables.usdc != null)
         ? stables.usdc.toLocaleString('en-US', { maximumFractionDigits: 2 })
         : '—';
+      if(cardsSol){
+        let _solConnected = false;
+        try { _solConnected = !!(typeof crWallet !== 'undefined' && crWallet.isConnected && crWallet.isConnected()); } catch(_){}
+        if(_solConnected){
+          try { if(typeof _crWalletFetchSol === 'function') _crWalletFetchSol(); } catch(_){}
+          const _solBal = (typeof _crWalletBalances === 'object' && _crWalletBalances) ? _crWalletBalances.SOL : null;
+          if(_solBal === null){
+            cardsSol.textContent = _crWalletBalances && _crWalletBalances.fetching ? '…' : '—';
+          } else {
+            cardsSol.textContent = _solBal.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+          }
+        } else {
+          cardsSol.textContent = '—';
+        }
+      }
     } catch(_){}
 
     _drawLpAvatar();
@@ -47801,7 +47834,8 @@ window.crLifiFunding = (function(){
     if(f) f.src = 'about:blank';
   }
 
-  // Bind the "+ Fund" button when the lite profile DOM is ready.
+  // Bind the "Swap" button when the lite profile DOM is ready.
+  // (Historically labelled "+ Fund" — v1.0.126 renamed to "Swap".)
   function _wire(){
     const btn = document.getElementById('crLpFundBtn');
     if(!btn){ setTimeout(_wire, 500); return; }
