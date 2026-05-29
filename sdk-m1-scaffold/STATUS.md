@@ -14,14 +14,22 @@
 >
 > 70/70 checks pass via [`sdk/core/tests/abilities.test.mjs`](sdk/core/tests/abilities.test.mjs). Build clean (15.8 KB ESM, ~13ms). `tsc --noEmit` clean.
 >
-> **Progress: 13 of ~35 public methods ported (~37%).**
+> **Round 3 — core ability finishers + 2 support methods:**
+> - **Core abilities (+3) — completes the 6 milestone-named set:** `hedgeParachute` (HTML 11927), `liquidityRadar` (11959), `rescueDrone` (11988). Each has two paths (standalone vs TV-host mode); both paths covered.
+> - **Support methods (+2):** `closeAll` (11891), `toggleIndicator` (11915). Required because `rescueDrone` calls `closeAll()` and `liquidityRadar`'s TV-alias calls `toggleIndicator`.
+>
+> 53/53 checks pass via [`sdk/core/tests/round3.test.mjs`](sdk/core/tests/round3.test.mjs). Includes a globalThis-INDICATOR_STATE-stub test that validates the host-toggle path works when the host exposes the global. Build clean (19.5 KB ESM, ~11ms).
+>
+> **Progress: 18 of ~35 public methods ported (~51%).**
+> All 6 milestone-named core abilities (bracket / ladder / oco / hedgeParachute / liquidityRadar / rescueDrone) ✅
+>
+> **Total regression coverage: 147 checks across 3 suites** (bracket 24 + abilities 70 + round3 53). Run all via `npm test`.
 >
 > **Next rounds (per-method commit cadence continues):**
-> - Bigger core abilities: `hedgeParachute` (32L), `liquidityRadar` (29L), `rescueDrone` (25L) — likely CLEAN per scan but want a closer look at effect-array logic.
 > - Tier 2 pro primitives: `scaleOut` (has setTimeout — needs slight adaptation), `iceberg`, `twap`, `trailingTakeProfit`, `ifThen`.
 > - Tier 3 Solana plays: `fundingSnipe`, `borrowShort`, `liquidationGuard`, `copyTrade`, `perpFlip`.
 > - Tier 4 composites: `comboTrade`, `autoFib`, `magnet`.
-> - Big targets last: `tick()` (131L — the per-frame engine), `scoreSetup` (282L — composite of detectors).
+> - Big targets last: `tick()` (131L — the per-frame engine), `scoreSetup` (282L — composite of detectors), `setHostMode` (6L — needs HostMode + ChartHost wiring).
 
 ## Why this folder exists
 

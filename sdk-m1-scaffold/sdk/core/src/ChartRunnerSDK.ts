@@ -114,9 +114,89 @@ export class ChartRunnerSDK {
     this._emit('order', { kind: 'oco', orders: [a, b] });
     return [a, b];
   }
-  hedgeParachute(_o?: { duration?: number; side?: Side; price?: number; risk?: number }): Order | Record<string, unknown> | null { throw new Error('TODO M2.5 — HTML 10656'); }
-  liquidityRadar(_o?: { range?: number }): Record<string, unknown> { throw new Error('TODO M2.5 — HTML 10688'); }
-  rescueDrone(): Record<string, unknown> { throw new Error('TODO M2.5 — HTML 10717'); }
+  /** Hedge Parachute — TV mode: inverseBracket only.
+   *  Standalone: inverseBracket (if price given) + 6s buffer effect.
+   *  Ported from HTML line 11927 (M1.4a Round 3, 2026-05-29). */
+  hedgeParachute({ duration = 6, side = 'buy', price, risk = 20 }: {
+    duration?: number; side?: Side; price?: number; risk?: number;
+  } = {}): Order | Record<string, unknown> | null {
+    if (this.hostMode !== 'standalone') {
+      // TV alias: an inverse bracket with tight TP replaces the 6-second buffer.
+      if (price == null) return null;  // TV caller must supply context
+      this._emit('reframe', { from: 'hedgeParachute', to: 'inverseBracket' });
+      return this.inverseBracket({ side, risk, rr: 1.0, price, slDistance: 40 });
+    }
+    // Standalone: opens REAL inverseBracket alongside the visual buffer effect.
+    // Price provided → real opposing bracket fires + buffer.
+    // Price missing  → buffer-only fallback (preserves legacy callers).
+    let realOrder: Order | null = null;
+    if (price != null) {
+      realOrder = this.inverseBracket({ side, risk, rr: 1.0, price, slDistance: 40 });
+    }
+    const e = {
+      id: this._id(),
+      type: 'hedge',
+      until: performance.now() / 1000 + duration,
+      orderId: realOrder ? realOrder.id : null,
+    };
+    this.activeEffects.push(e);
+    this._emit('effect', { kind: 'hedge', effect: e, order: realOrder });
+    return realOrder || e;
+  }
+  /** Liquidity Radar — TV mode: toggle VRVP indicator only.
+   *  Standalone: toggle in-game VRVP via host-side INDICATOR_STATE
+   *  (when available) + 5s scan-beam effect.
+   *  Ported from HTML line 11959 (M1.4a Round 3, 2026-05-29). */
+  liquidityRadar({ range = 320 }: { range?: number } = {}): Record<string, unknown> {
+    if (this.hostMode !== 'standalone') {
+      // TV alias: flash TV's Volume Profile indicator.
+      this._emit('reframe', { from: 'liquidityRadar', to: 'toggleIndicator' });
+      return this.toggleIndicator({ name: 'VolumeProfileFixedRange', duration: 5 });
+    }
+    // Standalone: toggle in-game VRVP if the host exposes INDICATOR_STATE
+    // (it does in the inline-IIFE build; not in standalone TS-module tests).
+    // typeof guard preserves the inline's "fail silently" behavior.
+    try {
+      const g = globalThis as unknown as { INDICATOR_STATE?: { active: Set<string> } };
+      if (g.INDICATOR_STATE !== undefined && g.INDICATOR_STATE.active) {
+        if (!g.INDICATOR_STATE.active.has('vrvp')) {
+          g.INDICATOR_STATE.active.add('vrvp');
+          // Auto-disable after 5s so the indicator only stays on for the scan.
+          setTimeout(() => {
+            try { g.INDICATOR_STATE?.active.delete('vrvp'); } catch (_) { /* host gone */ }
+          }, 5000);
+        }
+      }
+    } catch (_) { /* host not present — silent fail, expected in TS-module ctx */ }
+    const e = { id: this._id(), type: 'radar', until: performance.now() / 1000 + 5, range };
+    this.activeEffects.push(e);
+    this._emit('effect', { kind: 'radar', effect: e });
+    return e;
+  }
+  /** Rescue Drone — TV mode: closeAll() only (no fantasy immunity).
+   *  Standalone: closeAll() + arm immunity effect.
+   *  Ported from HTML line 11988 (M1.4a Round 3, 2026-05-29). */
+  rescueDrone(): Record<string, unknown> {
+    if (this.hostMode !== 'standalone') {
+      // TV alias: flatten every open position. No in-game immunity — that's
+      // pure fantasy and doesn't exist on a real chart.
+      this._emit('reframe', { from: 'rescueDrone', to: 'closeAll' });
+      return this.closeAll();
+    }
+    // Standalone: calls closeAll() AND arms immunity. Player gets both real
+    // position flatten + gameplay shield (SDK promise: "every ability is a
+    // real trading primitive").
+    const flattened = this.closeAll();
+    const e = {
+      id: this._id(),
+      type: 'rescue',
+      armed: true,
+      flattenedCount: flattened ? flattened.count : 0,
+    };
+    this.activeEffects.push(e);
+    this._emit('effect', { kind: 'rescue', effect: e, flattened });
+    return e;
+  }
 
   // ── order-issuing · reframe / host primitives ─────────────────────────
   /** Open a bracket on the opposite side; tight default RR=1.
@@ -127,8 +207,45 @@ export class ChartRunnerSDK {
     const opp: Side = side === 'buy' ? 'sell' : 'buy';
     return this.bracket({ side: opp, risk, rr, price, slDistance });
   }
-  closeAll(_o?: { types?: string[] }): { count: number; ids: number[] } { throw new Error('TODO M2.5 — HTML 10620'); }
-  toggleIndicator(_o?: { name?: string; visible?: boolean; duration?: number }): Record<string, unknown> { throw new Error('TODO M2.5 — HTML 10644'); }
+  /** Flatten every open order of the named types. Brackets get status='closed'
+   *  + outcome='flatten' + pnl=0; ladders/oco get cancelled=true.
+   *  Ported from HTML line 11891 (M1.4a Round 3, 2026-05-29). */
+  closeAll({ types = ['bracket', 'ladder', 'oco'] }: { types?: string[] } = {}): { count: number; ids: number[] } {
+    const closed: number[] = [];
+    for (const o of this.openOrders) {
+      if (o.status === 'closed' || o.cancelled) continue;
+      if (!types.includes(o.type)) continue;
+      if (o.type === 'bracket') {
+        o.status = 'closed';
+        o.outcome = 'flatten';
+        o.exitPrice = null;  // market-close; exit-price TBD by caller
+        o.pnl = 0;           // conservative: no fake P&L for a manual flatten
+        this._emit('bracketClose', { order: o, reason: 'flatten' });
+      } else {
+        o.cancelled = true;
+        this._emit('cancel', { order: o, reason: 'flatten' });
+      }
+      closed.push(o.id);
+    }
+    this._emit('closeAll', { ids: closed, count: closed.length });
+    return { count: closed.length, ids: closed };
+  }
+  /** Push an 'indicator' effect that the renderer / TV-host adapter intercepts.
+   *  Ported from HTML line 11915 (M1.4a Round 3, 2026-05-29). */
+  toggleIndicator({ name = 'VolumeProfileFixedRange', visible = true, duration = 5 }: {
+    name?: string; visible?: boolean; duration?: number;
+  } = {}): Record<string, unknown> {
+    const e = {
+      id: this._id(),
+      type: 'indicator',
+      name,
+      visible,
+      until: duration ? performance.now() / 1000 + duration : null,
+    };
+    this.activeEffects.push(e);
+    this._emit('effect', { kind: 'indicator', effect: e });
+    return e;
+  }
   /** 5 ladder orders at fib offsets (0.236/0.382/0.5/0.618/0.786 × base).
    *  Ported from HTML line 11818 (M1.4a, 2026-05-29). */
   fibLadder({ side = 'buy', size = 4, price, base = 60 }: {
