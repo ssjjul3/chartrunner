@@ -4,8 +4,10 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.134
-     LAST UPDATED:    2026-05-30  ·  In-game CHART→RUN swap in the chart-field wallet panel. The right-sidebar Wallet panel (#crSidePanelWallet) shown beside the chart during a run displayed $CHART/$RUN balances but had no way to convert — it just said "swaps to $RUN at game-over". Added a swap button (#crSideSwapBtn) inside the $RUN card that mints 1 $RUN by burning 100 $CHART, wired to the existing exchangeChartToRun() (same path as the in-run shop + desktop Profile card). A 1 Hz refresh greys the button out and relabels it "Need 100 $CHART to mint" below threshold. No new mechanic — reuses CHART_PER_RUN + the existing balance mutation; HUD pills, shop, profile card and in-world floats all update through the existing function.
+     CURRENT VERSION: v1.0.136
+     LAST UPDATED:    2026-05-30  ·  Bot-spec loader (P2 bridge → game). A distilled JSON "bot spec" can now become a live detector bot that runs through the SAME detect→fly→build orchestrator as the built-in Hunters — NO Pine and NO transpiler ship in the game. crLoadBotSpec(spec) maps detector.type → an existing sdk.detectX, interprets a build[] recipe over real primitives (bracket with sl modes swingExtreme/atrMult/levelField/pct + rr or target-field; enableIndicator), supports an optional per-spec confluence gate + propose/auto mode, and registers the bot into DETECTOR_BOTS + Workbench. Specs persist as DATA (cr_bot_specs_v1) and re-instantiate on boot (crInitBotSpecs) — functions rebuilt, same pattern as _seedDetectorBots. Surface: window.crBots = { load, list, remove, example }. This is the game-side endpoint of the Umbrel M11 scrape→evaluate→distill pipeline.
+     (v1.0.135 = SNS resolver hardened + phone name-display archived (batched). crSnsIdentity._normalize now validates a well-formed .sol name before caching, so Bonfida HTTP-200 error bodies like "Invalid domain input" no longer become "invalid domain input.sol". The phone lite-profile name pill (#crLpName) is display:none and the LED billboard cycles only asset·TF + mode. Reversible; RESTORE notes inline.)
+     (v1.0.134 = In-game CHART→RUN swap in the chart-field wallet panel. The right-sidebar Wallet panel (#crSidePanelWallet) shown beside the chart during a run displayed $CHART/$RUN balances but had no way to convert — it just said "swaps to $RUN at game-over". Added a swap button (#crSideSwapBtn) inside the $RUN card that mints 1 $RUN by burning 100 $CHART, wired to the existing exchangeChartToRun() (same path as the in-run shop + desktop Profile card). A 1 Hz refresh greys the button out and relabels it "Need 100 $CHART to mint" below threshold. No new mechanic — reuses CHART_PER_RUN + the existing balance mutation; HUD pills, shop, profile card and in-world floats all update through the existing function.)
      (v1.0.133 = Bot co-pilot layer (P0 — "build trades WITH the player"). Three collaboration surfaces over the detect→build orchestrator, all bypassed inside teaching campaign chapters (game.campaignChapter) so Ch.28–33 keep auto-building: (1) Confluence gate — optional scoreSetup() threshold a setup must clear before a bot builds; OFF by default, toggle via crBotCopilot.setGate(true, minScore). (2) Propose vs auto — a bot can PROPOSE instead of auto-firing: it rings the setup + banners "Press B to build" and waits for the player to confirm with the B key (window._crBotProposal + capture-phase keydown). Global default 'auto' (crBotCopilot.setMode('propose')), but Harmonic Hunter + Price Action Bot now default to propose. (3) Collaborative sizing — _botRisk() scales bracket risk by the previously-dormant game.oiBoost flag (1.5× on a side-matched OI confirm) and the live confluence tier (≥12 → 1.25×, <6 → 0.6×), replacing the hardcoded risk:20 in every detector-bot buildAction (threaded via ctx.risk). New: BOT_COPILOT_STATE (localStorage cr_bot_copilot_v1), window.crBotCopilot, pending-proposal ring render in drawBotOrbs.) (P0 — "build trades WITH the player"). Three collaboration surfaces over the detect→build orchestrator, all bypassed inside teaching campaign chapters (game.campaignChapter) so Ch.28–33 keep auto-building: (1) Confluence gate — optional scoreSetup() threshold a setup must clear before a bot builds; OFF by default, toggle via crBotCopilot.setGate(true, minScore). (2) Propose vs auto — a bot can PROPOSE instead of auto-firing: it rings the setup + banners "Press B to build" and waits for the player to confirm with the B key (window._crBotProposal + capture-phase keydown). Global default 'auto' (crBotCopilot.setMode('propose')), but Harmonic Hunter + Price Action Bot now default to propose. (3) Collaborative sizing — _botRisk() scales bracket risk by the previously-dormant game.oiBoost flag (1.5× on a side-matched OI confirm) and the live confluence tier (≥12 → 1.25×, <6 → 0.6×), replacing the hardcoded risk:20 in every detector-bot buildAction (threaded via ctx.risk). New: BOT_COPILOT_STATE (localStorage cr_bot_copilot_v1), window.crBotCopilot, pending-proposal ring render in drawBotOrbs.
      (v1.0.132 = Archived the phone lite-profile runner-name display. A malformed .sol primary-domain resolution could surface "INVALID DOMAIN INPUT.SOL" in the top name pill (.lp-id → #crLpName) and the LED billboard. Pill now display:none; billboard cycles only asset·TF + mode (_bbName dropped); #crLpBbText starts blank. Reversible — #crLpName stays in DOM. RESTORE notes inline.)
      (v1.0.131 = Detector-bot auto-build repair + scan window + 2 new bots. Fixed all six trade Hunters (SFP/CCV/H&S/BARR/FA/Divergence): each buildAction called sdk.bracket({entry,tp,sl,size}) but bracket() only reads {price,slDistance,rr}, so price was undefined → entry:undefined, tp/sl:NaN (a degenerate order that still reported "SETUP BUILT"). Each now derives slDistance + rr from its detector's own stop/target. Detectors gained an opts.candles override; the orb orchestrator (drawBotOrbs) now feeds each only candles up to the player's index (no look-ahead) and flies to the detector's returned matched-candle idx instead of always the player column. Added Harmonic Hunter (Gartley/Bat XABCD via _findSwings, fades the D-point, stop past X, target C) and Price Action Bot (confluence bot whose build spawns a TOOLKIT — Volume Profile + Stoch RSI + Ref Levels — plus a mean-revert bracket; this is the template for multi-primitive bots). VWAP flagged as a follow-up — it isn't a built-in indicator yet, so Ref Levels (POC/value area) stands in.)
@@ -29081,6 +29083,7 @@ const DETECTOR_BOTS = [
     color: '#7ee787',
     icon: '∮',
     isDetectorBot: true,
+    nonTrade: true, // v1.0.133 — stamps game.oiBoost, places no bracket; never proposes
     cooldownMs: 30000, // longer — OI confirmations are infrequent
     detect: (sdk, ctx) => {
       try {
@@ -29308,6 +29311,159 @@ function _seedDetectorBots(){
 // buildAction without serializing function refs through localStorage).
 function _detectorRegistry(id){ return DETECTOR_BOTS.find(d => d.id === id) || null; }
 
+/* ============================================================
+ * v1.0.135 — Bot-spec loader (P2 bridge → game)
+ * ------------------------------------------------------------
+ * Turns a distilled JSON "bot spec" into a live detector bot that
+ * runs through the SAME detect→fly→build orchestrator as the
+ * built-in Hunters. NO Pine and NO transpiler ship in the game:
+ * Pine is scraped + evaluated + distilled on Umbrel (M11); the
+ * survivor is exported as a small DATA spec that this loader maps
+ * onto existing SDK primitives. Spec shape:
+ *   {
+ *     id, name, icon, color, cooldownMs, mode:'auto'|'propose',
+ *     detector: { type:'sfp|ccv|hs|barr|fa|oi|harmonic|priceaction|divergence', params:{} },
+ *     gate: { minScore:6 },                  // optional per-bot confluence gate
+ *     build: [                               // ordered recipe over real primitives
+ *       { primitive:'bracket', sl:{ mode:'swingExtreme'|'atrMult'|'levelField'|'pct', ... }, rr|target },
+ *       { primitive:'enableIndicator', ids:['vrvp','srsi'] }
+ *     ],
+ *     source:{license,repo,pineHash}, backtest:{winRate,n,asset,tf}   // provenance (not executed)
+ *   }
+ * Specs persist as DATA in localStorage (cr_bot_specs_v1) and are
+ * re-instantiated (functions rebuilt) on boot — same pattern as
+ * _seedDetectorBots, since buildAction can't be JSON-serialized.
+ * ============================================================ */
+const _SPEC_DETECTOR_MAP = {
+  sfp:'detectSFP', ccv:'detectCCV',
+  hs:'detectHeadShoulders', headshoulders:'detectHeadShoulders',
+  barr:'detectBumpAndRun', bumpandrun:'detectBumpAndRun',
+  fa:'detectFailedAuction', failedauction:'detectFailedAuction',
+  oi:'detectOIConfirm', harmonic:'detectHarmonic', priceaction:'detectPriceAction',
+};
+const CR_BOT_SPECS_KEY = 'cr_bot_specs_v1';
+// Derive {slDistance, rr} for a spec 'bracket' step from the detector result.
+function _specBracketParams(step, r, here){
+  const sl = step.sl || {};
+  const mode = sl.mode || 'pct';
+  let slDistance = 0;
+  if(mode === 'pct'){
+    slDistance = Math.abs(here) * (Number(sl.value) || 0.01);
+  } else if(mode === 'atrMult'){
+    const atr = (r && r.atr) || Math.abs(here) * 0.01;
+    slDistance = atr * (Number(sl.mult) || 1.5);
+  } else if(mode === 'swingExtreme'){
+    const ref = (r && (r.level != null ? r.level : r.priceB));
+    if(ref == null) return null;
+    slDistance = Math.abs(here - ref) + Math.abs(here) * (Number(sl.padPct) || 0.003);
+  } else if(mode === 'levelField'){
+    const ref = r && r[sl.field];
+    if(ref == null) return null;
+    slDistance = Math.abs(here - ref) + Math.abs(here) * (Number(sl.padPct) || 0.003);
+  }
+  if(!(slDistance > 0)) return null;
+  let rr = 0;
+  if(typeof step.rr === 'number') rr = step.rr;
+  else if(step.target && step.target.field){ const tgt = r && r[step.target.field]; if(tgt != null) rr = Math.abs(tgt - here) / slDistance; }
+  else rr = 2.0;
+  return (rr > 0) ? { slDistance, rr } : null;
+}
+// Build a DETECTOR_BOTS-style live object (with detect/buildAction) from a spec.
+function _specToDetectorBot(spec){
+  if(!spec || typeof spec.id !== 'string' || !spec.detector || typeof spec.detector.type !== 'string'){
+    return { error: 'spec needs id + detector.type' };
+  }
+  if(!Array.isArray(spec.build) || !spec.build.length){ return { error: 'spec needs a non-empty build[]' }; }
+  const type = spec.detector.type.toLowerCase();
+  const bot = {
+    id: spec.id, name: spec.name || spec.id, role: 'detector',
+    color: spec.color || '#9ad1ff', icon: spec.icon || '◆',
+    isDetectorBot: true, fromSpec: true, spec: spec,
+    cooldownMs: Math.max(2000, +spec.cooldownMs || 12000),
+  };
+  if(spec.mode === 'propose' || spec.mode === 'auto') bot.mode = spec.mode;
+  if(type === 'divergence'){
+    const divReg = DETECTOR_BOTS.find(d => d.id === 'det_div');
+    if(divReg && typeof divReg.detect === 'function') bot.detect = divReg.detect;
+    else return { error: 'divergence detector unavailable' };
+  } else if(_SPEC_DETECTOR_MAP[type]){
+    bot.detectorId = _SPEC_DETECTOR_MAP[type];
+  } else {
+    return { error: 'unknown detector type: ' + type };
+  }
+  bot.buildAction = (r, ctx) => {
+    try {
+      if(!r || !r.matched) return false;
+      // Per-spec confluence gate (independent of the global co-pilot gate).
+      if(spec.gate && typeof spec.gate.minScore === 'number' && typeof sdk !== 'undefined' && typeof sdk.scoreSetup === 'function'){
+        try { const sc = sdk.scoreSetup({ side: r.side || 'buy' }); if(sc && typeof sc.score === 'number' && sc.score < spec.gate.minScore) return false; } catch(_){}
+      }
+      const here = (typeof currentPrice === 'function') ? currentPrice() : (ctx && ctx.price);
+      if(here == null || !isFinite(here)) return false;
+      let did = false;
+      for(const step of spec.build){
+        if(!step || !step.primitive) continue;
+        if(step.primitive === 'enableIndicator'){
+          const ids = Array.isArray(step.ids) ? step.ids : (step.id ? [step.id] : []);
+          ids.forEach(id => { if(typeof _botEnableIndicator === 'function' && _botEnableIndicator(id)) did = true; });
+        } else if(step.primitive === 'bracket'){
+          const bp = _specBracketParams(step, r, here);
+          if(bp && typeof sdk !== 'undefined' && typeof sdk.bracket === 'function'){
+            sdk.bracket({ side: r.side, price: here, slDistance: bp.slDistance, rr: bp.rr, risk: (ctx && ctx.risk) || 20 });
+            did = true;
+          }
+        }
+        // Future primitives (ladder / oco / scaleOut) slot in here.
+      }
+      return did;
+    } catch(_){ return false; }
+  };
+  return { bot };
+}
+function _crReadBotSpecs(){ try { const raw = localStorage.getItem(CR_BOT_SPECS_KEY); const a = raw ? JSON.parse(raw) : []; return Array.isArray(a) ? a : []; } catch(_){ return []; } }
+function _crWriteBotSpecs(arr){ try { localStorage.setItem(CR_BOT_SPECS_KEY, JSON.stringify(arr)); } catch(_){} }
+// Instantiate a spec into the live registry + Workbench. persist=false on boot replay.
+function crLoadBotSpec(spec, opts){
+  opts = opts || {};
+  if(typeof spec === 'string'){ try { spec = JSON.parse(spec); } catch(_){ return { ok:false, error:'invalid JSON' }; } }
+  const built = _specToDetectorBot(spec);
+  if(built.error) return { ok:false, error: built.error };
+  const i = DETECTOR_BOTS.findIndex(d => d.id === built.bot.id); // dedupe by id → re-load updates
+  if(i >= 0) DETECTOR_BOTS.splice(i, 1, built.bot); else DETECTOR_BOTS.push(built.bot);
+  try { if(typeof _seedDetectorBots === 'function') _seedDetectorBots(); } catch(_){}
+  if(opts.persist !== false){
+    const specs = _crReadBotSpecs().filter(s => s && s.id !== spec.id);
+    specs.push(spec); _crWriteBotSpecs(specs);
+  }
+  return { ok:true, id: built.bot.id, name: built.bot.name };
+}
+function crListBotSpecs(){ return _crReadBotSpecs(); }
+function crRemoveBotSpec(id){
+  _crWriteBotSpecs(_crReadBotSpecs().filter(s => s && s.id !== id));
+  const i = DETECTOR_BOTS.findIndex(d => d.id === id && d.fromSpec);
+  if(i >= 0) DETECTOR_BOTS.splice(i, 1);
+  try { if(typeof wb !== 'undefined' && Array.isArray(wb.bots)){ const j = wb.bots.findIndex(b => b.id === id); if(j >= 0) wb.bots.splice(j, 1); if(Array.isArray(wb.equipped)){ const e = wb.equipped.indexOf(id); if(e >= 0) wb.equipped.splice(e, 1); } if(typeof _wbSave === 'function') _wbSave(); } } catch(_){}
+  return { ok:true };
+}
+// Re-instantiate persisted specs on boot (data → live bot, functions rebuilt).
+function crInitBotSpecs(){ for(const s of _crReadBotSpecs()){ try { crLoadBotSpec(s, { persist:false }); } catch(_){} } }
+// Console/automation surface + a worked example for docs/testing.
+window.crBots = {
+  load: crLoadBotSpec, list: crListBotSpecs, remove: crRemoveBotSpec,
+  example: {
+    id: 'spec_rsi_div_demo', name: 'RSI Divergence (spec demo)', icon: '÷', color: '#e879f9',
+    cooldownMs: 12000, mode: 'propose',
+    detector: { type: 'divergence' },
+    gate: { minScore: 6 },
+    build: [
+      { primitive: 'enableIndicator', ids: ['srsi', 'reflevels'] },
+      { primitive: 'bracket', sl: { mode: 'swingExtreme', padPct: 0.003 }, rr: 2.0 },
+    ],
+    source: { license: 'MIT', repo: 'example/demo', pineHash: 'demo' },
+    backtest: { winRate: 0.57, n: 240, asset: 'BTC', tf: '1h' },
+  },
+};
+
 function _wbLoad(){
   try{
     const raw = localStorage.getItem(WB_LS_KEY);
@@ -29429,6 +29585,9 @@ function _wbFilterByCategory(items, tabKey){
 // to the new max of 3. Players who had 4 bots equipped from a prior version
 // keep the first 3 in equip order; the 4th is silently demoted.
 _seedDetectorBots();
+// v1.0.135 — Re-instantiate any persisted bot specs (P2 loader) into the live
+// registry + Workbench after the built-ins are seeded.
+try { if(typeof crInitBotSpecs === 'function') crInitBotSpecs(); } catch(_){}
 // v0.9.45 — Seed in-game indicators / terminal widgets / apps so each list
 // has at least one entry under the new "In-game" sub-tab. All idempotent —
 // a player who saved a same-id entry keeps theirs; new players get these
@@ -33633,7 +33792,11 @@ function _botCampaignActive(){ try { return !!(typeof game !== 'undefined' && ga
 // Effective mode: campaign → auto; else per-bot registry override; else global.
 function _botMode(b){
   if(_botCampaignActive()) return 'auto';
-  try { const reg = _detectorRegistry(b.id); if(reg && (reg.mode === 'propose' || reg.mode === 'auto')) return reg.mode; } catch(_){}
+  try {
+    const reg = _detectorRegistry(b.id);
+    if(reg && reg.nonTrade) return 'auto';            // non-bracket bots never propose
+    if(reg && (reg.mode === 'propose' || reg.mode === 'auto')) return reg.mode;
+  } catch(_){}
   return BOT_COPILOT_STATE.mode;
 }
 // Confluence gate — true = clear to build.
@@ -33806,21 +33969,28 @@ function drawBotOrbs(){
       if(k >= 1){
         const reg = _detectorRegistry(b.id);
         const _side = (st.target.result.side || '');
+        let _cool = (b.cooldownMs || 8000);
         if(_botMode(b) === 'propose'){
-          // Co-pilot: stash the proposal, ask the player to confirm with B.
-          // Don't fire — this is "build WITH the player."
-          window._crBotProposal = {
-            botId: b.id, name: b.name, color: b.color,
-            result: st.target.result, price: st.target.price, wx: st.target.wx,
-            side: _side, expires: tNow + 8000,
-          };
-          try {
-            if(typeof showBanner === 'function'){
-              showBanner('🤖 ' + b.name + ' proposes ' + _side.toUpperCase(),
-                'Press B to build · ' + (typeof fmtPrice==='function' ? fmtPrice(st.target.price) : st.target.price.toFixed(2)));
-            }
-          } catch(_){}
-          try { if(typeof spawnParticles === 'function') spawnParticles(drawX, drawY, b.color, 12); } catch(_){}
+          if(window._crBotProposal && window._crBotProposal.expires > tNow){
+            // A proposal is already pending (the slot is a single global).
+            // Don't clobber it — back off briefly and re-offer once it clears.
+            _cool = 1500;
+          } else {
+            // Co-pilot: stash the proposal, ask the player to confirm with B.
+            // Don't fire — this is "build WITH the player."
+            window._crBotProposal = {
+              botId: b.id, name: b.name, color: b.color,
+              result: st.target.result, price: st.target.price, wx: st.target.wx,
+              side: _side, expires: tNow + 8000,
+            };
+            try {
+              if(typeof showBanner === 'function'){
+                showBanner('🤖 ' + b.name + ' proposes ' + _side.toUpperCase(),
+                  'Press B to build · ' + (typeof fmtPrice==='function' ? fmtPrice(st.target.price) : st.target.price.toFixed(2)));
+              }
+            } catch(_){}
+            try { if(typeof spawnParticles === 'function') spawnParticles(drawX, drawY, b.color, 12); } catch(_){}
+          }
         } else {
           // Auto: fire the trade with collaborative sizing.
           let fired = false;
@@ -33843,7 +34013,7 @@ function drawBotOrbs(){
         st.phase = 'orbit';
         st.t = 0;
         st.target = null;
-        st.cooldownUntil = tNow + (b.cooldownMs || 8000);
+        st.cooldownUntil = tNow + _cool;
       }
     }
 
@@ -48005,11 +48175,24 @@ window.crSnsIdentity = (function(){
   var cache   = new Map();             // pubkey-string → { name, t }
   var inflight= new Map();             // pubkey-string → Promise (dedupe)
 
+  // v1.0.135 — Harden against error payloads. Bonfida's proxies sometimes
+  // answer with HTTP 200 but an error body (e.g. { result: "Invalid domain
+  // input" }), which the old code blindly suffixed with ".sol" → "invalid
+  // domain input.sol", surfaced (uppercased) as "INVALID DOMAIN INPUT.SOL".
+  // We now validate that the candidate is a well-formed SNS name — lowercase,
+  // dot-separated labels of [a-z0-9-], 1–63 chars each — before accepting it.
+  // Anything with spaces or stray characters (i.e. an error sentence) → null.
   function _normalize(domain){
     if(!domain) return null;
-    var s = String(domain).trim();
+    var s = String(domain).trim().toLowerCase();
     if(!s) return null;
-    return s.endsWith('.sol') ? s : (s + '.sol');
+    var label = s.endsWith('.sol') ? s.slice(0, -4) : s;
+    if(!label || label.length > 255) return null;
+    var parts = label.split('.');
+    for(var i = 0; i < parts.length; i++){
+      if(!/^[a-z0-9-]{1,63}$/.test(parts[i])) return null;
+    }
+    return label + '.sol';
   }
 
   // Bonfida's public SNS endpoints have shifted naming over time.
