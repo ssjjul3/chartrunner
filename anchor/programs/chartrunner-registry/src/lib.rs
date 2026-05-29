@@ -51,12 +51,10 @@ declare_id!("ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn");
 
 pub const MAX_NAME_LEN: usize = 64;
 pub const MAX_ROYALTY_BPS: u16 = 5000;       // 50% cap to prevent abuse
-// v0.9.7 — fee zeroed for the hackathon devnet demo. The previous
-// `protocol_treasury() == crate::ID` returned the program account, which is
-// owned by the BPF loader (NOT the System program), so every system_program
-// ::transfer to it would have failed at runtime with InvalidAccountOwner.
-// Zero-fee bypasses the buggy branch entirely. Restore to 500 (5%) only AFTER
-// swapping `protocol_treasury()` for a real System-owned wallet pubkey.
+// Fee still 0 on devnet (nothing is charged). v0.9.8 fixed the underlying
+// treasury (now the Squads vault — see protocol_treasury below), so the
+// restored-fee path no longer reverts: flipping this to 500 (5%) is now safe.
+// Left at 0 until we decide to monetize.
 pub const PROTOCOL_FEE_BPS: u16 = 0;
 // Score / sharpe sanity caps for record_run. Without these any wallet can
 // submit u64::MAX score and pollute the leaderboard. Caps chosen as plausible
@@ -65,15 +63,76 @@ pub const MAX_RUN_SCORE:    u64 = 1_000_000;       // 1 M score cap
 pub const MAX_SHARPE_X100:  i32 = 10_000;          // sharpe ≤ 100.00
 pub const MAX_DURATION_SEC: u32 = 24 * 60 * 60;    // 24 h cap
 pub const ENTITY_TYPE_COUNT: u8 = 9;
+// v0.9.x — runner-name (handle) register. Handle PDA is seeded by the handle
+// ONLY (no owner), so the handle is globally unique across all wallets.
+pub const MAX_HANDLE_LEN: usize = 32;
 
-// Hardcoded protocol treasury for the marketplace cut. In prod this would be
-// a multisig; for v0.9.6 it's a constant the seed of which is the program ID.
-// Replace with the real treasury address before mainnet.
+// v0.9.8 — protocol treasury is now the Squads 2-of-3 multisig vault. Fees
+// accrue there; withdrawal requires a multisig proposal. Replaces the old
+// `crate::ID` sink, which was the program account (BPF-loader-owned, NOT
+// System) and would have reverted every fee transfer with InvalidAccountOwner
+// the moment a non-zero fee was restored (M05-self-audit.md finding).
 pub fn protocol_treasury() -> Pubkey {
-    // Same as program ID for now → fees burn back into program data account.
-    // Anyone deploying their own copy gets their own ID and thus their own
-    // fee sink. Swap for a real treasury before going to mainnet.
-    crate::ID
+    anchor_lang::solana_program::pubkey!("fK1J2TLk2qLy3cjtiSYDSuCnWuxezphBcdqNGZEpVsp")
+}
+
+/// Handle charset gate for the name register: lowercase ASCII letters, digits,
+/// and underscore only. Mixed-case is rejected so the same handle can't be
+/// claimed twice under different casing — the client lowercases the user's
+/// input before deriving the PDA AND before calling claim_name.
+pub fn is_valid_handle(s: &str) -> bool {
+    s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+}
+
+// ─── Oracle binding (record_run cites a Pyth PriceCertificate) ──────────────
+// The cert is written by chartrunner_oracle::verify_price (a Pyth pull-oracle).
+// record_run reads it READ-ONLY (no CPI): owner + Anchor discriminator prove it's
+// a genuine oracle cert; feed_id must match the run's asset; publish_time must be
+// fresh. We DON'T re-derive the cert PDA (that would need the exact feed_id_hex
+// string as a new arg → breaking) — and we don't need to: the threat is a *forged
+// price*, which any genuine fresh Pyth cert for the right feed defeats, no matter
+// who minted it. Citing is OPTIONAL (cert via remaining_accounts) so the existing
+// client keeps working; a cited run gets `verified = true` + the proven price.
+pub const ORACLE_PROGRAM_ID: Pubkey =
+    anchor_lang::solana_program::pubkey!("4vfZVDfDzhR79qdaUdPAzRwUHYB5qbgNwTGBwfy6i5wH");
+pub const MAX_CERT_AGE_SEC: i64 = 60;
+// sha256("account:PriceCertificate")[0..8] — the oracle's PriceCertificate disc.
+pub const CERT_DISCRIMINATOR: [u8; 8] = [87, 116, 200, 95, 74, 157, 178, 112];
+// Pyth feed ids (32-byte) for the markets ChartRunner grades. Mirror of the
+// chartrunner_oracle FEED_* hex constants, decoded to bytes.
+pub const FEED_BTC: [u8; 32] = [230,45,246,200,180,168,95,225,166,125,180,77,193,45,229,219,51,15,122,198,107,114,220,101,138,254,223,15,74,65,91,67];
+pub const FEED_ETH: [u8; 32] = [255,97,73,26,147,17,18,221,241,189,129,71,205,27,100,19,117,247,159,88,37,18,109,102,84,128,135,70,52,253,10,206];
+pub const FEED_SOL: [u8; 32] = [239,13,139,111,218,44,235,164,29,161,93,64,149,209,218,57,42,13,47,142,208,198,199,188,15,76,250,200,194,128,181,109];
+
+/// Map a run asset ([u8;16], e.g. "BTCUSDT" null-padded) to its Pyth feed id.
+/// Prefix match keeps it cheap + tolerant of the quote currency (USDT/USD/PERP).
+pub fn feed_id_for(asset: &[u8; 16]) -> Option<[u8; 32]> {
+    // Fixed [u8;3] (no heap) so the byte-string patterns match a `&[u8; 3]`.
+    let p: [u8; 3] = [
+        asset[0].to_ascii_uppercase(),
+        asset[1].to_ascii_uppercase(),
+        asset[2].to_ascii_uppercase(),
+    ];
+    match &p {
+        b"BTC" => Some(FEED_BTC),
+        b"ETH" => Some(FEED_ETH),
+        b"SOL" => Some(FEED_SOL),
+        _ => None,
+    }
+}
+
+/// Read-only mirror of chartrunner_oracle::PriceCertificate (same field order),
+/// so the registry can Borsh-deserialize the cert bytes after the owner +
+/// discriminator gate proves they're authentic.
+#[derive(AnchorDeserialize)]
+pub struct PriceCertificateView {
+    pub feed_id:      [u8; 32],
+    pub price:        i64,
+    pub conf:         u64,
+    pub exponent:     i32,
+    pub publish_time: i64,
+    pub read_at:      i64,
+    pub bump:         u8,
 }
 
 #[program]
@@ -167,9 +226,14 @@ pub mod chartrunner_registry {
         ctx: Context<BuyEntity>,
         _entity_type: u8,
         _name: String,
+        max_price: u64,
     ) -> Result<()> {
         let listing  = &ctx.accounts.listing;
         let price    = listing.price;
+        // v0.9.8 — buyer slippage guard: reject if the listing price moved above
+        // what the buyer agreed to pay. Defense-in-depth alongside the `init`
+        // change on list_entity.
+        require!(price <= max_price, CrError::PriceExceedsMax);
         let fee      = (price as u128)
             .checked_mul(PROTOCOL_FEE_BPS as u128).ok_or(CrError::MathOverflow)?
             .checked_div(10_000).ok_or(CrError::MathOverflow)? as u64;
@@ -247,7 +311,10 @@ pub mod chartrunner_registry {
         // v0.9.7 — sanity caps. Without these any wallet can mint a RunRecord
         // with u64::MAX score and pollute every player's leaderboard.
         require!(score <= MAX_RUN_SCORE,                     CrError::ScoreTooHigh);
-        require!(sharpe_x100.abs() <= MAX_SHARPE_X100,       CrError::SharpeOutOfRange);
+        // v0.9.8 — unsigned_abs() (was .abs()): i32::MIN.abs() overflow-wraps to
+        // a negative in a release build and slipped past this cap. unsigned_abs
+        // returns u32 and never wraps.
+        require!(sharpe_x100.unsigned_abs() <= MAX_SHARPE_X100 as u32, CrError::SharpeOutOfRange);
         require!(duration_secs <= MAX_DURATION_SEC,          CrError::DurationTooLong);
 
         let r = &mut ctx.accounts.run;
@@ -262,6 +329,37 @@ pub mod chartrunner_registry {
         r.recorded_at   = Clock::get()?.unix_timestamp;
         r.bump          = ctx.bumps.run;
 
+        // v0.9.x — OPTIONAL Pyth price proof. If the client supplies a
+        // PriceCertificate as the first remaining account, verify + bind it.
+        r.verified      = false;
+        r.feed_id       = [0u8; 32];
+        r.price         = 0;
+        r.price_expo    = 0;
+        r.price_publish = 0;
+        if let Some(cert_ai) = ctx.remaining_accounts.first() {
+            // (1) owner must be the oracle program.
+            require_keys_eq!(*cert_ai.owner, ORACLE_PROGRAM_ID, CrError::CertWrongOwner);
+            let data = cert_ai.try_borrow_data()?;
+            // (2) discriminator must be PriceCertificate (8 disc + 69 data).
+            require!(data.len() >= 8 + 69, CrError::CertMalformed);
+            require!(data[..8] == CERT_DISCRIMINATOR, CrError::CertBadDiscriminator);
+            let cert = PriceCertificateView::try_from_slice(&data[8..8 + 69])
+                .map_err(|_| CrError::CertMalformed)?;
+            // (3) feed must match the run's asset.
+            let want = feed_id_for(&asset).ok_or(CrError::AssetHasNoFeed)?;
+            require!(cert.feed_id == want, CrError::CertFeedMismatch);
+            // (4) freshness — the Pyth update must be recent relative to now.
+            require!(
+                r.recorded_at.saturating_sub(cert.publish_time) <= MAX_CERT_AGE_SEC,
+                CrError::CertStale
+            );
+            r.verified      = true;
+            r.feed_id       = cert.feed_id;
+            r.price         = cert.price;
+            r.price_expo    = cert.exponent;
+            r.price_publish = cert.publish_time;
+        }
+
         emit!(RunRecorded {
             player: r.player,
             nonce,
@@ -271,6 +369,139 @@ pub mod chartrunner_registry {
             sharpe_x100,
             duration_secs,
             map_hash,
+        });
+        Ok(())
+    }
+
+    // ── NAME REGISTER (globally-unique runner handles) ───────────────────────
+
+    /// Claim a globally-unique runner name (handle). The PDA is seeded by the
+    /// handle ONLY (no owner), so Solana's "account already in use" failure on
+    /// `init` IS the uniqueness enforcer — the second wallet to try a taken
+    /// handle reverts. `name` must be lowercase `[a-z0-9_]`, 1..=32 bytes; the
+    /// client lowercases the user's input before deriving the PDA + calling here.
+    pub fn claim_name(ctx: Context<ClaimName>, name: String) -> Result<()> {
+        require!(!name.is_empty(),                        CrError::EmptyName);
+        require!(name.as_bytes().len() <= MAX_HANDLE_LEN, CrError::HandleTooLong);
+        require!(is_valid_handle(&name),                  CrError::InvalidHandle);
+
+        let n = &mut ctx.accounts.name_claim;
+        n.owner      = ctx.accounts.owner.key();
+        n.name       = name.clone();
+        n.claimed_at = Clock::get()?.unix_timestamp;
+        n.bump       = ctx.bumps.name_claim;
+
+        emit!(NameClaimed { owner: n.owner, name, claimed_at: n.claimed_at });
+        Ok(())
+    }
+
+    /// Release a handle the caller owns (closes the PDA, refunds rent), freeing
+    /// it for anyone to re-claim. Owner-only — `has_one = owner` on the account.
+    pub fn release_name(_ctx: Context<ReleaseName>, _name: String) -> Result<()> {
+        // close = owner on the account constraint handles the refund + zero-out.
+        Ok(())
+    }
+
+    // ── RESALE / ROYALTY (License resale: list → buy → re-mint) ──────────────
+
+    /// List a License the caller owns for resale at `price_lamports`. Creates a
+    /// LicenseListing PDA tied to the license; the license stays the seller's
+    /// until bought. `init` (not init_if_needed) prevents silent re-pricing —
+    /// same front-run defense as list_entity (re-price = cancel then re-list).
+    pub fn list_license(ctx: Context<ListLicense>, price_lamports: u64) -> Result<()> {
+        require!(price_lamports > 0, CrError::PriceMustBePositive);
+        let ll = &mut ctx.accounts.license_listing;
+        ll.license   = ctx.accounts.license.key();
+        ll.seller    = ctx.accounts.seller.key();
+        ll.entity    = ctx.accounts.license.entity;
+        ll.price     = price_lamports;
+        ll.listed_at = Clock::get()?.unix_timestamp;
+        ll.bump      = ctx.bumps.license_listing;
+        emit!(LicenseListed {
+            license: ll.license, seller: ll.seller, entity: ll.entity, price: price_lamports,
+        });
+        Ok(())
+    }
+
+    /// Cancel a resale listing. Refunds the LicenseListing rent to the seller.
+    pub fn cancel_license_listing(_ctx: Context<CancelLicenseListing>) -> Result<()> {
+        // close = seller on the listing account handles the refund.
+        Ok(())
+    }
+
+    /// Buy a resale-listed License. Splits `price` three ways:
+    ///   royalty = price * entity.royalty_bps / 10000  → original creator (entity.owner)
+    ///   fee     = price * PROTOCOL_FEE_BPS  / 10000    → protocol treasury (vault)
+    ///   payout  = price - royalty - fee                → current holder (seller)
+    /// Mints a fresh License PDA for the buyer, then closes the seller's old
+    /// License + the LicenseListing (rent → seller). `max_price` is the buyer's
+    /// slippage guard.
+    pub fn buy_license(ctx: Context<BuyLicense>, max_price: u64) -> Result<()> {
+        let price = ctx.accounts.license_listing.price;
+        require!(price <= max_price, CrError::PriceExceedsMax);
+
+        let royalty = (price as u128)
+            .checked_mul(ctx.accounts.entity.royalty_bps as u128).ok_or(CrError::MathOverflow)?
+            .checked_div(10_000).ok_or(CrError::MathOverflow)? as u64;
+        let fee = (price as u128)
+            .checked_mul(PROTOCOL_FEE_BPS as u128).ok_or(CrError::MathOverflow)?
+            .checked_div(10_000).ok_or(CrError::MathOverflow)? as u64;
+        let payout = price
+            .checked_sub(royalty).ok_or(CrError::MathOverflow)?
+            .checked_sub(fee).ok_or(CrError::MathOverflow)?;
+
+        // Buyer → creator (royalty). Skipped on self-pay.
+        if royalty > 0 && ctx.accounts.creator.key() != ctx.accounts.buyer.key() {
+            system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.to_account_info(),
+                    system_program::Transfer {
+                        from: ctx.accounts.buyer.to_account_info(),
+                        to:   ctx.accounts.creator.to_account_info(),
+                    },
+                ),
+                royalty,
+            )?;
+        }
+        // Buyer → treasury (fee). Skipped if treasury == seller.
+        if fee > 0 && ctx.accounts.treasury.key() != ctx.accounts.seller.key() {
+            system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.to_account_info(),
+                    system_program::Transfer {
+                        from: ctx.accounts.buyer.to_account_info(),
+                        to:   ctx.accounts.treasury.to_account_info(),
+                    },
+                ),
+                fee,
+            )?;
+        }
+        // Buyer → seller (payout).
+        system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                system_program::Transfer {
+                    from: ctx.accounts.buyer.to_account_info(),
+                    to:   ctx.accounts.seller.to_account_info(),
+                },
+            ),
+            payout,
+        )?;
+
+        // Mint the buyer's new License (buyer pays rent).
+        let nl = &mut ctx.accounts.new_license;
+        nl.buyer      = ctx.accounts.buyer.key();
+        nl.entity     = ctx.accounts.entity.key();
+        nl.price_paid = price;
+        nl.bought_at  = Clock::get()?.unix_timestamp;
+        nl.bump       = ctx.bumps.new_license;
+
+        emit!(LicenseResold {
+            entity:  ctx.accounts.entity.key(),
+            seller:  ctx.accounts.seller.key(),
+            buyer:   ctx.accounts.buyer.key(),
+            creator: ctx.accounts.creator.key(),
+            price, royalty, fee,
         });
         Ok(())
     }
@@ -318,8 +549,13 @@ pub struct ListEntity<'info> {
         has_one = owner,
     )]
     pub entity: Account<'info, EntityRecord>,
+    // v0.9.8 — `init` (was `init_if_needed`): a seller can no longer silently
+    // overwrite an active listing's price (the front-run in M05-self-audit.md).
+    // Re-pricing now requires cancel_listing (which closes the PDA) first, so a
+    // pending buy either hits the original price or fails cleanly — never a
+    // surprise price.
     #[account(
-        init_if_needed,
+        init,
         payer = owner,
         space = 8 + Listing::SIZE,
         seeds = [b"listing", entity.key().as_ref()],
@@ -359,7 +595,8 @@ pub struct BuyEntity<'info> {
     /// CHECK: receives lamports; verified by listing.has_one above.
     #[account(mut)]
     pub seller: AccountInfo<'info>,
-    #[account(mut)]
+    // v0.9.8 — block self-purchase (wash-trading / fake volume).
+    #[account(mut, constraint = buyer.key() != seller.key() @ CrError::SelfPurchase)]
     pub buyer: Signer<'info>,
     /// CHECK: protocol treasury (fee sink). Constrained to the value of
     /// `protocol_treasury()` to prevent caller swapping in their own address.
@@ -401,6 +638,132 @@ pub struct RecordRun<'info> {
     pub run: Account<'info, RunRecord>,
     #[account(mut)]
     pub player: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(name: String)]
+pub struct ClaimName<'info> {
+    // PDA seeded by the handle ONLY → globally unique. `init` (not
+    // init_if_needed) is the uniqueness gate: a second claim on a taken handle
+    // fails with "account already in use".
+    #[account(
+        init,
+        payer = owner,
+        space = 8 + NameClaim::SIZE,
+        seeds = [b"name", name.as_bytes()],
+        bump,
+    )]
+    pub name_claim: Account<'info, NameClaim>,
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(name: String)]
+pub struct ReleaseName<'info> {
+    #[account(
+        mut,
+        close = owner,
+        has_one = owner,
+        seeds = [b"name", name.as_bytes()],
+        bump = name_claim.bump,
+    )]
+    pub name_claim: Account<'info, NameClaim>,
+    #[account(mut)]
+    pub owner: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(price_lamports: u64)]
+pub struct ListLicense<'info> {
+    // The license being resold; the seeds bind it to (seller, its entity), and
+    // the constraint confirms the signer is the holder.
+    #[account(
+        seeds = [b"license", seller.key().as_ref(), license.entity.as_ref()],
+        bump = license.bump,
+        constraint = license.buyer == seller.key() @ CrError::NotLicenseHolder,
+    )]
+    pub license: Account<'info, License>,
+    #[account(
+        init,
+        payer = seller,
+        space = 8 + LicenseListing::SIZE,
+        seeds = [b"liclisting", license.key().as_ref()],
+        bump,
+    )]
+    pub license_listing: Account<'info, LicenseListing>,
+    #[account(mut)]
+    pub seller: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CancelLicenseListing<'info> {
+    #[account(
+        seeds = [b"license", seller.key().as_ref(), license.entity.as_ref()],
+        bump = license.bump,
+    )]
+    pub license: Account<'info, License>,
+    #[account(
+        mut,
+        close = seller,
+        seeds = [b"liclisting", license.key().as_ref()],
+        bump = license_listing.bump,
+        has_one = seller,
+    )]
+    pub license_listing: Account<'info, LicenseListing>,
+    #[account(mut)]
+    pub seller: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(max_price: u64)]
+pub struct BuyLicense<'info> {
+    // Entity — source of royalty_bps + creator (entity.owner). Bound via the
+    // old_license seeds (which include entity.key()).
+    pub entity: Account<'info, EntityRecord>,
+    // Seller's existing license — closed on sale (rent → seller). The seeds
+    // bind `seller` to the genuine holder (a wrong seller → nonexistent PDA).
+    #[account(
+        mut,
+        close = seller,
+        seeds = [b"license", seller.key().as_ref(), entity.key().as_ref()],
+        bump = old_license.bump,
+    )]
+    pub old_license: Account<'info, License>,
+    // The active resale listing — closed on sale (rent → seller).
+    #[account(
+        mut,
+        close = seller,
+        seeds = [b"liclisting", old_license.key().as_ref()],
+        bump = license_listing.bump,
+        has_one = seller,
+        constraint = license_listing.license == old_license.key() @ CrError::ListingMismatch,
+    )]
+    pub license_listing: Account<'info, LicenseListing>,
+    // Buyer's new license — minted (fails if the buyer already owns one).
+    #[account(
+        init,
+        payer = buyer,
+        space = 8 + License::SIZE,
+        seeds = [b"license", buyer.key().as_ref(), entity.key().as_ref()],
+        bump,
+    )]
+    pub new_license: Account<'info, License>,
+    /// CHECK: original creator (royalty recipient); pinned to entity.owner.
+    #[account(mut, address = entity.owner)]
+    pub creator: AccountInfo<'info>,
+    /// CHECK: current holder; receives payout + listing/license rent refunds.
+    /// Bound by the old_license seeds + the listing's has_one.
+    #[account(mut)]
+    pub seller: AccountInfo<'info>,
+    #[account(mut, constraint = buyer.key() != seller.key() @ CrError::SelfPurchase)]
+    pub buyer: Signer<'info>,
+    /// CHECK: protocol treasury (fee sink); pinned to protocol_treasury().
+    #[account(mut, address = protocol_treasury())]
+    pub treasury: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -456,9 +819,42 @@ pub struct RunRecord {
     pub map_hash:      [u8; 32],  // 32
     pub recorded_at:   i64,       // 8
     pub bump:          u8,        // 1
+    // ── v0.9.x oracle binding (APPENDED — old PDAs keep the 121-byte layout;
+    //    these are zero/false for any pre-upgrade record) ──
+    pub verified:      bool,      // 1   — a valid Pyth PriceCertificate was cited
+    pub feed_id:       [u8; 32],  // 32  — Pyth feed id (zeroed when unverified)
+    pub price:         i64,       // 8   — proven price (apply price_expo)
+    pub price_expo:    i32,       // 4
+    pub price_publish: i64,       // 8   — Pyth signing time
 }
 impl RunRecord {
-    pub const SIZE: usize = 32 + 8 + 16 + 8 + 8 + 4 + 4 + 32 + 8 + 1;  // 121
+    // v0.9.x — +53 bytes for the appended oracle-proof fields (121 → 174).
+    pub const SIZE: usize = 32 + 8 + 16 + 8 + 8 + 4 + 4 + 32 + 8 + 1
+                          + 1 + 32 + 8 + 4 + 8;  // 174
+}
+
+#[account]
+pub struct NameClaim {
+    pub owner:      Pubkey,    // 32
+    pub name:       String,    // 4 + MAX_HANDLE_LEN
+    pub claimed_at: i64,       // 8
+    pub bump:       u8,        // 1
+}
+impl NameClaim {
+    pub const SIZE: usize = 32 + (4 + MAX_HANDLE_LEN) + 8 + 1;  // 77
+}
+
+#[account]
+pub struct LicenseListing {
+    pub license:   Pubkey,   // 32  — the License PDA being resold
+    pub seller:    Pubkey,   // 32  — current holder
+    pub entity:    Pubkey,   // 32  — for royalty lookup (copy of license.entity)
+    pub price:     u64,      // 8   (lamports)
+    pub listed_at: i64,      // 8
+    pub bump:      u8,        // 1
+}
+impl LicenseListing {
+    pub const SIZE: usize = 32 + 32 + 32 + 8 + 8 + 1;  // 113
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────
@@ -480,6 +876,16 @@ impl RunRecord {
     pub score: u64, pub sharpe_x100: i32, pub duration_secs: u32,
     pub map_hash: [u8; 32],
 }
+#[event] pub struct NameClaimed {
+    pub owner: Pubkey, pub name: String, pub claimed_at: i64,
+}
+#[event] pub struct LicenseListed {
+    pub license: Pubkey, pub seller: Pubkey, pub entity: Pubkey, pub price: u64,
+}
+#[event] pub struct LicenseResold {
+    pub entity: Pubkey, pub seller: Pubkey, pub buyer: Pubkey, pub creator: Pubkey,
+    pub price: u64, pub royalty: u64, pub fee: u64,
+}
 
 // ─── Errors ───────────────────────────────────────────────────────────────
 
@@ -495,4 +901,15 @@ pub enum CrError {
     #[msg("Run score exceeds 1,000,000 cap")]         ScoreTooHigh,
     #[msg("Run sharpe out of plausible range (±100)")] SharpeOutOfRange,
     #[msg("Run duration exceeds 24h cap")]            DurationTooLong,
+    #[msg("Listing price exceeds buyer's max_price")] PriceExceedsMax,
+    #[msg("Cannot buy your own listing")]             SelfPurchase,
+    #[msg("Handle exceeds 32 bytes")]                 HandleTooLong,
+    #[msg("Handle must be lowercase [a-z0-9_]")]      InvalidHandle,
+    #[msg("Caller does not hold this license")]       NotLicenseHolder,
+    #[msg("Price certificate is not owned by the oracle program")] CertWrongOwner,
+    #[msg("Price certificate account is malformed")]  CertMalformed,
+    #[msg("Price certificate has the wrong discriminator")] CertBadDiscriminator,
+    #[msg("Certificate feed does not match the run asset")] CertFeedMismatch,
+    #[msg("Price certificate is stale (>60s old)")]   CertStale,
+    #[msg("No Pyth feed mapped for this asset")]      AssetHasNoFeed,
 }
