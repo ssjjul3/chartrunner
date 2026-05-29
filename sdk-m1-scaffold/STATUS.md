@@ -1,6 +1,10 @@
 # SDK · Status
 
-> **TL;DR:** Phase 1 SDK extraction is *in flight*. The canonical `ChartRunnerSDK` still lives inline in [`ChartRunner_Prototype.html`](../ChartRunner_Prototype.html) (lines ~8438–9948 of the IIFE block). This folder is the lift-and-shift target.
+> **TL;DR:** Phase 1 SDK extraction is *in flight*. The canonical `ChartRunnerSDK` still lives inline in [`ChartRunner_Prototype.html`](../ChartRunner_Prototype.html) at **lines 11709-13219** (1,511 lines — line numbers updated 2026-05-29, see [`docs/architecture/M25-sdk-extraction-status-2026-05-29.md`](../docs/architecture/M25-sdk-extraction-status-2026-05-29.md) for the full pickup spec). This folder is the lift-and-shift target.
+
+> **Per-method porting in flight (M1.4a, started 2026-05-29):**
+> - ✅ `bracket()` — ported from HTML line 11830 → [`sdk/core/src/ChartRunnerSDK.ts`](sdk/core/src/ChartRunnerSDK.ts), 24/24 regression checks pass via [`sdk/core/tests/bracket.test.mjs`](sdk/core/tests/bracket.test.mjs). Build clean (10.5 KB ESM via esbuild, ~11ms).
+> - ⏳ `ladder` / `oco` / `hedgeParachute` / `liquidityRadar` / `rescueDrone` — next per-method ports. Follow the bracket pattern (lift body verbatim into TS, add regression test, keep behavior identical).
 
 ## Why this folder exists
 
