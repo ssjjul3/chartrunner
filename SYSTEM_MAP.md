@@ -1,7 +1,7 @@
 # ChartRunner System Map — canonical
 
 > **Status:** 🟢 canonical · always-current
-> **Last refreshed:** 2026-05-28 (M12 bonus milestone added)
+> **Last refreshed:** 2026-05-28 (M13/M14/M15 bonus milestones added from Grok strategic-intent extraction)
 > **Update protocol:** [`docs/SYSTEM_MAP_UPDATE_PROTOCOL.md`](docs/SYSTEM_MAP_UPDATE_PROTOCOL.md) — what triggers an update, file conventions, who-edits-what
 > **Snapshots:** dated files (e.g. `SYSTEM_MAP_2026-05-28.md`) are point-in-time archives, only created on major rebuilds. This file is the always-current one.
 
@@ -172,6 +172,9 @@ Active: **M0.5** (Security + Anchor unblock). Sources: [`docs/milestones/README.
 | M10 | Mainnet deploy | 🔵 queued | 3/16; checklist + RPC projection + devnet→mainnet diff done |
 | **M11** | **Umbrel-native quant toolset (Scanner · Chart · Strategy · Backtest)** | **🔵 queued** | **4/13; added 2026-05-28 — Hermes-built spine, frontend pending** |
 | **M12** | **Umbrel stack adoption (observability + scraper + dev accelerators)** | **🟢 bonus** | **0/8; added 2026-05-28 — infra sidequest, Julian-hands installs on `umbrel.local`** |
+| **M13** | **Runner Wallet (Chrome ext — wallet + LLM + payments + /play injection)** | **🟢 bonus** | **0/9; added 2026-05-28 — replaces `/solana-connect/` URL-bounce** |
+| **M14** | **Bot-first runtime + Agent Command Center** | **🟢 bonus** | **0/10; added 2026-05-28 — absorbs M2 Coach v2, expands M6 AI/Telegram, adds on-chain `BotBacktestRecord`** |
+| **M15** | **Lightweight Charts hybrid + bloat reduction** | **🟢 bonus** | **0/8; added 2026-05-28 — pairs with M2.5; modular `src/core/` + LWC price engine + transparent game overlay** |
 
 Founding-brainstorm gaps surfaced today (see `BRAINSTORM_VS_SHIP_2026-05-28.md`):
 1. PvP arenas + Sharpe-ELO (M8 centerpiece)

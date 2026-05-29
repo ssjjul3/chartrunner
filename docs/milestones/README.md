@@ -42,6 +42,9 @@ This folder is the source of truth for milestone state. The two evaluator schedu
 | M10 | Mainnet deploy | 🔵 queued |
 | M11 | Umbrel-native quant toolset (Scanner · Chart · Strategy · Backtest) | 🔵 queued (added 2026-05-28) |
 | M12 | Umbrel stack adoption (observability + scraper + dev accelerators) | 🟢 bonus (added 2026-05-28) |
+| M13 | Runner Wallet (Chrome extension — wallet + LLM + payments + /play injection) | 🟢 bonus (added 2026-05-28) |
+| M14 | Bot-first runtime + Agent Command Center (absorbs M2, expands M6) | 🟢 bonus (added 2026-05-28) |
+| M15 | Lightweight Charts hybrid + bloat reduction (pairs with M2.5) | 🟢 bonus (added 2026-05-28) |
 
 ## Evaluator log
 
