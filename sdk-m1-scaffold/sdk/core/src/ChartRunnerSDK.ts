@@ -88,31 +88,143 @@ export class ChartRunnerSDK {
     this._emit('order', { kind: 'bracket', order: pkg });
     return pkg;
   }
-  ladder(_o: { side?: Side; rungs?: number; spacing?: number; size?: number; price: number }): Order[] { throw new Error('TODO M2.5 — HTML 10549'); }
-  oco(_o: { upper?: number; lower?: number; size?: number; price: number }): Order[] { throw new Error('TODO M2.5 — HTML 10590'); }
+  /** Place N ladder orders at fixed spacing from `price`.
+   *  Ported from HTML line 11805 (M1.4a, 2026-05-29). */
+  ladder({ side = 'buy', rungs = 5, spacing = 30, size = 4, price }: {
+    side?: Side; rungs?: number; spacing?: number; size?: number; price: number;
+  }): Order[] {
+    const orders: Order[] = [];
+    for (let i = 1; i <= rungs; i++) {
+      const off = (side === 'buy' ? -1 : 1) * spacing * i;
+      const o: Order = { id: this._id(), type: 'ladder', side, price: price + off, size };
+      this.openOrders.push(o); orders.push(o);
+    }
+    this._emit('order', { kind: 'ladder', orders });
+    return orders;
+  }
+  /** OCO pair: sell above + buy below, mutually-cancelling via `pair` ref.
+   *  Ported from HTML line 11846 (M1.4a, 2026-05-29). */
+  oco({ upper = +80, lower = -80, size = 6, price }: {
+    upper?: number; lower?: number; size?: number; price: number;
+  }): Order[] {
+    const a: Order = { id: this._id(), type: 'oco', side: 'sell', price: price + upper, size, pair: null };
+    const b: Order = { id: this._id(), type: 'oco', side: 'buy',  price: price + lower, size, pair: null };
+    a.pair = b.id; b.pair = a.id;
+    this.openOrders.push(a, b);
+    this._emit('order', { kind: 'oco', orders: [a, b] });
+    return [a, b];
+  }
   hedgeParachute(_o?: { duration?: number; side?: Side; price?: number; risk?: number }): Order | Record<string, unknown> | null { throw new Error('TODO M2.5 — HTML 10656'); }
   liquidityRadar(_o?: { range?: number }): Record<string, unknown> { throw new Error('TODO M2.5 — HTML 10688'); }
   rescueDrone(): Record<string, unknown> { throw new Error('TODO M2.5 — HTML 10717'); }
 
   // ── order-issuing · reframe / host primitives ─────────────────────────
-  inverseBracket(_o?: { side?: Side; risk?: number; rr?: number; price?: number; slDistance?: number }): Order { throw new Error('TODO M2.5 — HTML 10613'); }
+  /** Open a bracket on the opposite side; tight default RR=1.
+   *  Used by hedgeParachute() in TV host mode. Ported from HTML 11869. */
+  inverseBracket({ side = 'buy', risk = 20, rr = 1.0, price, slDistance = 40 }: {
+    side?: Side; risk?: number; rr?: number; price: number; slDistance?: number;
+  }): Order {
+    const opp: Side = side === 'buy' ? 'sell' : 'buy';
+    return this.bracket({ side: opp, risk, rr, price, slDistance });
+  }
   closeAll(_o?: { types?: string[] }): { count: number; ids: number[] } { throw new Error('TODO M2.5 — HTML 10620'); }
   toggleIndicator(_o?: { name?: string; visible?: boolean; duration?: number }): Record<string, unknown> { throw new Error('TODO M2.5 — HTML 10644'); }
-  fibLadder(_o?: { side?: Side; size?: number; price: number; base?: number }): Order[] { throw new Error('TODO M2.5 — HTML 10562'); }
-  trailStop(_o?: { id: number; distance?: number }): Order | null { throw new Error('TODO M2.5 — HTML 10600'); }
+  /** 5 ladder orders at fib offsets (0.236/0.382/0.5/0.618/0.786 × base).
+   *  Ported from HTML line 11818 (M1.4a, 2026-05-29). */
+  fibLadder({ side = 'buy', size = 4, price, base = 60 }: {
+    side?: Side; size?: number; price: number; base?: number;
+  }): Order[] {
+    const levels = [0.236, 0.382, 0.5, 0.618, 0.786];
+    const dir = side === 'buy' ? -1 : 1;
+    const orders: Order[] = [];
+    for (const f of levels) {
+      const off = dir * base * f;
+      const o: Order = { id: this._id(), type: 'ladder', side, price: price + off, size };
+      this.openOrders.push(o); orders.push(o);
+    }
+    this._emit('order', { kind: 'ladder', orders });
+    return orders;
+  }
+  /** Arm a trailing stop on an existing open bracket.
+   *  Ported from HTML line 11856 (M1.4a, 2026-05-29). */
+  trailStop({ id, distance }: { id: number; distance?: number }): Order | null {
+    const o = this.openOrders.find(x => x.id === id);
+    if (!o || o.type !== 'bracket' || o.status !== 'open') return null;
+    const dist = Math.max(0.001, distance != null ? distance : (o.slDistance as number));
+    o.trailing = { active: true, distance: dist, breakeven: false };
+    this._emit('trail', { order: o });
+    return o;
+  }
 
   // ── order-issuing · Tier 1 (missing basics, v0.9.8) ───────────────────
-  market(_o?: { side?: Side; size?: number; price: number }): Order | null { throw new Error('TODO M2.5 — HTML 10742'); }
-  limit(_o?: { side?: Side; price: number; size?: number }): Order | null { throw new Error('TODO M2.5 — HTML 10756'); }
-  stopLoss(_o?: { id: number; price: number }): Order | null { throw new Error('TODO M2.5 — HTML 10769'); }
-  takeProfit(_o?: { id: number; price: number }): Order | null { throw new Error('TODO M2.5 — HTML 10785'); }
+  /** Immediate market order. Status 'open' on creation, emits 'order' + 'fill'.
+   *  Ported from HTML line 11998 (M1.4a, 2026-05-29). */
+  market({ side = 'buy', size = 1, price }: { side?: Side; size?: number; price: number } = { price: NaN }): Order | null {
+    if (price == null || Number.isNaN(price)) return null;
+    const o: Order = {
+      id: this._id(), type: 'market', side, entry: price, size,
+      filledAt: performance.now() / 1000, status: 'open', pnl: 0,
+    };
+    this.openOrders.push(o);
+    this._emit('order', { kind: 'market', order: o });
+    this._emit('fill',  { order: o, price });
+    return o;
+  }
+  /** Resting limit order. Status 'pending' until tick() crosses it.
+   *  Ported from HTML line 12012 (M1.4a, 2026-05-29). */
+  limit({ side = 'buy', price, size = 1 }: { side?: Side; price: number; size?: number } = { price: NaN }): Order | null {
+    if (price == null || Number.isNaN(price)) return null;
+    const o: Order = {
+      id: this._id(), type: 'limit', side, price, size,
+      status: 'pending',
+    };
+    this.openOrders.push(o);
+    this._emit('order', { kind: 'limit', order: o });
+    return o;
+  }
+  /** Add or move SL on an existing open position. Symmetric to takeProfit.
+   *  Ported from HTML line 12025 (M1.4a, 2026-05-29). */
+  stopLoss({ id, price }: { id: number; price: number }): Order | null {
+    const o = this.openOrders.find(x => x.id === id);
+    if (!o || price == null) return null;
+    if (o.status === 'closed' || o.cancelled) return null;
+    o.sl = price;
+    // Recompute slDistance for trailing-stop logic if it gets armed later.
+    if (o.entry != null) {
+      o.slDistance = Math.abs((o.entry as number) - price);
+    }
+    this._emit('modify', { order: o, field: 'sl', price });
+    return o;
+  }
+  /** Add or move TP on an existing open position. Symmetric to stopLoss.
+   *  Ported from HTML line 12041 (M1.4a, 2026-05-29). */
+  takeProfit({ id, price }: { id: number; price: number }): Order | null {
+    const o = this.openOrders.find(x => x.id === id);
+    if (!o || price == null) return null;
+    if (o.status === 'closed' || o.cancelled) return null;
+    o.tp = price;
+    this._emit('modify', { order: o, field: 'tp', price });
+    return o;
+  }
   scaleOut(_o?: { id: number; fraction?: number; price: number }): Order | null { throw new Error('TODO M2.5 — HTML 10798'); }
 
   // ── order-issuing · Tier 2 (pro primitives, v0.9.8) ───────────────────
   twap(_o?: { side?: Side; totalSize?: number; slices?: number; intervalSecs?: number; price: number }): Order | null { throw new Error('TODO M2.5 — HTML 10821'); }
   iceberg(_o?: { side?: Side; visibleSize?: number; hiddenSize?: number; price: number }): Record<string, unknown> | null { throw new Error('TODO M2.5 — HTML 10854'); }
   trailingTakeProfit(_o?: { id: number; distance?: number }): Order | null { throw new Error('TODO M2.5 — HTML 10875'); }
-  ocoBracket(_o?: { upper: number; lower: number; side?: Side; risk?: number; rr?: number; slDistance?: number }): { up: Order; down: Order } | null { throw new Error('TODO M2.5 — HTML 10887'); }
+  /** Two brackets at upper + lower; pending until one triggers + cancels the other.
+   *  Ported from HTML line 12143 (M1.4a, 2026-05-29). */
+  ocoBracket({ upper, lower, side: _side = 'buy', risk = 20, rr = 2.0, slDistance = 60 }: {
+    upper: number; lower: number; side?: Side; risk?: number; rr?: number; slDistance?: number;
+  }): { up: Order; down: Order } | null {
+    if (upper == null || lower == null) return null;
+    const a = this.bracket({ side: 'buy',  risk, rr, price: upper, slDistance });
+    const b = this.bracket({ side: 'sell', risk, rr, price: lower, slDistance });
+    a.status = 'pending'; b.status = 'pending';
+    a.ocoPair = b.id; b.ocoPair = a.id;
+    this._emit('order', { kind: 'ocoBracket', orders: [a, b] });
+    return { up: a, down: b };
+  }
   ifThen(_o?: { triggerPrice: number; side?: 'above' | 'below'; then: (sdk: ChartRunnerSDK) => unknown }): Record<string, unknown> | null { throw new Error('TODO M2.5 — HTML 10900'); }
 
   // ── order-issuing · Tier 3 (Solana signature plays, v0.9.8) ───────────
@@ -132,8 +244,36 @@ export class ChartRunnerSDK {
   scoreSetup(_opts?: { side?: Side; price?: number; weights?: Record<string, number> }): ScoreResult { throw new Error('TODO M2.5 — HTML 11122 (composes the detectors below)'); }
   unrealized(_price: number): number { throw new Error('TODO M2.5 — HTML 11924'); }
   findOrder(id: number): Order | null { return this.openOrders.find(o => o.id === id) ?? null; }
-  cancelOrder(_id: number): boolean { throw new Error('TODO M2.5 — HTML 11940'); }
-  editOrder(_id: number, _patch: Partial<Order>): boolean { throw new Error('TODO M2.5 — HTML 11947'); }
+  /** Mark order cancelled + remove from openOrders + emit 'cancel'.
+   *  Ported from HTML line 13196 (M1.4a, 2026-05-29). */
+  cancelOrder(id: number): boolean {
+    const o = this.findOrder(id);
+    if (!o) return false;
+    o.cancelled = true;
+    this.openOrders = this.openOrders.filter(x => x.id !== id);
+    this._emit('cancel', { order: o });
+    return true;
+  }
+  /** Patch a bracket's tp/sl/entry (recomputes slDistance+rr) or a ladder/oco's price.
+   *  Brackets must be 'open' to be edited; resolved brackets are immutable.
+   *  Ported from HTML line 13203 (M1.4a, 2026-05-29). */
+  editOrder(id: number, patch: Partial<Order>): boolean {
+    const o = this.findOrder(id);
+    if (!o) return false;
+    if (o.type === 'bracket') {
+      if (o.status !== 'open') return false; // resolved brackets are immutable
+      if (patch.tp    != null) o.tp    = patch.tp;
+      if (patch.sl    != null) o.sl    = patch.sl;
+      if (patch.entry != null) o.entry = patch.entry;
+      // slDistance drives risk math; recompute if SL or entry moved
+      o.slDistance = Math.max(0.001, Math.abs((o.entry as number) - (o.sl as number)));
+      o.rr         = Math.abs((o.tp as number) - (o.entry as number)) / (o.slDistance as number);
+    } else if (o.type === 'ladder' || o.type === 'oco') {
+      if (patch.price != null) o.price = patch.price;
+    }
+    this._emit('edit', { order: o, patch });
+    return true;
+  }
 
   // ── detectors (delegate to ./detectors.ts; pure, emit nothing) ─────────
   private _detCtx() {

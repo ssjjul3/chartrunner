@@ -3,8 +3,25 @@
 > **TL;DR:** Phase 1 SDK extraction is *in flight*. The canonical `ChartRunnerSDK` still lives inline in [`ChartRunner_Prototype.html`](../ChartRunner_Prototype.html) at **lines 11709-13219** (1,511 lines — line numbers updated 2026-05-29, see [`docs/architecture/M25-sdk-extraction-status-2026-05-29.md`](../docs/architecture/M25-sdk-extraction-status-2026-05-29.md) for the full pickup spec). This folder is the lift-and-shift target.
 
 > **Per-method porting in flight (M1.4a, started 2026-05-29):**
-> - ✅ `bracket()` — ported from HTML line 11830 → [`sdk/core/src/ChartRunnerSDK.ts`](sdk/core/src/ChartRunnerSDK.ts), 24/24 regression checks pass via [`sdk/core/tests/bracket.test.mjs`](sdk/core/tests/bracket.test.mjs). Build clean (10.5 KB ESM via esbuild, ~11ms).
-> - ⏳ `ladder` / `oco` / `hedgeParachute` / `liquidityRadar` / `rescueDrone` — next per-method ports. Follow the bracket pattern (lift body verbatim into TS, add regression test, keep behavior identical).
+>
+> **Round 1 — `bracket()` solo:** ported from HTML line 11830 → [`sdk/core/src/ChartRunnerSDK.ts`](sdk/core/src/ChartRunnerSDK.ts). 24/24 regression checks pass via [`sdk/core/tests/bracket.test.mjs`](sdk/core/tests/bracket.test.mjs). Build clean (10.5 KB ESM via esbuild, ~11ms).
+>
+> **Round 2 — 12 abilities batch:** all bracket-pattern small methods identified by a CLEAN-vs-host-globals scan. Ported as one focused batch:
+> - **Core abilities (+2):** `ladder` (HTML 11805), `oco` (11846) — 2 of the 6 milestone-named core abilities now done. Remaining: `hedgeParachute`, `liquidityRadar`, `rescueDrone`.
+> - **Bracket family (+3):** `inverseBracket` (11869), `ocoBracket` (12143), `fibLadder` (11818) — composites + variants of bracket/ladder.
+> - **Tier 1 basics (+4):** `market` (11998), `limit` (12012), `stopLoss` (12025), `takeProfit` (12041) — the missing primitives v0.9.8 added.
+> - **Management (+3):** `trailStop` (11856), `cancelOrder` (13196), `editOrder` (13203) — order-lifecycle controls.
+>
+> 70/70 checks pass via [`sdk/core/tests/abilities.test.mjs`](sdk/core/tests/abilities.test.mjs). Build clean (15.8 KB ESM, ~13ms). `tsc --noEmit` clean.
+>
+> **Progress: 13 of ~35 public methods ported (~37%).**
+>
+> **Next rounds (per-method commit cadence continues):**
+> - Bigger core abilities: `hedgeParachute` (32L), `liquidityRadar` (29L), `rescueDrone` (25L) — likely CLEAN per scan but want a closer look at effect-array logic.
+> - Tier 2 pro primitives: `scaleOut` (has setTimeout — needs slight adaptation), `iceberg`, `twap`, `trailingTakeProfit`, `ifThen`.
+> - Tier 3 Solana plays: `fundingSnipe`, `borrowShort`, `liquidationGuard`, `copyTrade`, `perpFlip`.
+> - Tier 4 composites: `comboTrade`, `autoFib`, `magnet`.
+> - Big targets last: `tick()` (131L — the per-frame engine), `scoreSetup` (282L — composite of detectors).
 
 ## Why this folder exists
 
