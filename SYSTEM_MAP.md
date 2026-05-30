@@ -1,7 +1,7 @@
 # ChartRunner System Map — canonical
 
 > **Status:** 🟢 canonical · always-current
-> **Last refreshed:** 2026-05-28 (M13/M14/M15 bonus milestones added from Grok strategic-intent extraction)
+> **Last refreshed:** 2026-05-30 (M14 BotBacktestRecord source path wired; M3 Bot Terminal surface/style unification recorded; deploy gated)
 > **Update protocol:** [`docs/SYSTEM_MAP_UPDATE_PROTOCOL.md`](docs/SYSTEM_MAP_UPDATE_PROTOCOL.md) — what triggers an update, file conventions, who-edits-what
 > **Snapshots:** dated files (e.g. `SYSTEM_MAP_2026-05-28.md`) are point-in-time archives, only created on major rebuilds. This file is the always-current one.
 
@@ -12,7 +12,7 @@ deliverable that crosses ≥2 layers. See the protocol doc for the full
 trigger list.
 
 Sister docs:
-- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the live game** (v1.0.125): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
+- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the game source** (editing source v1.0.150; deploy via ship script): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
 - [`MILESTONE_AUDIT.md`](MILESTONE_AUDIT.md) — milestone state-of-play
 - [`BRAINSTORM_VS_SHIP_2026-05-28.md`](BRAINSTORM_VS_SHIP_2026-05-28.md) — founding-doc cross-reference
 - [`DRIVE_AND_VAULT_MAP_2026-05-28.md`](DRIVE_AND_VAULT_MAP_2026-05-28.md) — Drive-vs-vault comparison + migration verdict (Drive officially non-ChartRunner)
@@ -27,10 +27,11 @@ Sister docs:
 
 | Product | Where it ships | Stage | Source path |
 |---|---|---|---|
-| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Live (v1.0.125) | `ChartRunner_Prototype.html` (single file, 3 MB) |
+| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Editing source v1.0.150; deploy via ship script | `ChartRunner_Prototype.html` (single file, 3.1 MB) |
 | **ChartRunner Mobile (Telegram Mini-App)** | `chartrunner.xyz/telegram/` | Live | `telegram/` in repo + `chartrunner-mobile-bot-built/` in vault |
 | **ChartRunner-as-tool (M11)** | `/opt/data/chartrunner/` on Umbrel | In dev (4/13 done) | Hermes container; not yet user-facing |
 | **Phase 1 SDK** | `chartrunner.xyz/sdk/` (built) | In progress (M2.5 in-flight) | `chartrunner-prototype/sdk/core/` (36 files) |
+| **ChartRunner Wallet** | Standalone web app (no build) | Scaffold v0.1 (2026-05-29) | `wallet/` — self-custody Solana wallet, IDB keystore, real devnet signing via Memo program, MCP stdio surface (13 tools) for Hermes/OpenClaw/Claude/Codex/Grok/Ollama |
 | **Trading-stack v1** | ARCHIVED 2026-05-17 | Dormant | `~/trading-stack` (memory: bot dormant since 2026-04-27, 31 units disabled) |
 
 ---
@@ -76,12 +77,12 @@ Sister docs:
 
 ## 3. On-chain layer (Solana devnet)
 
-All 4 programs live + multisig-governed (Squads V4 2-of-3). Re-verified 2026-05-25; registry re-upgraded 2026-05-27 (`3XHRv5j…` tx).
+All 4 programs live + multisig-governed (Squads V4 2-of-3). Re-verified 2026-05-25; registry re-upgraded 2026-05-27 (`3XHRv5j…` tx). Source is now ahead of deployed registry for M14: `record_bot_backtest` / `BotBacktestRecord` compile locally but need Anchor/IDL build unblock + Squads upgrade before they are live on devnet.
 
 | Program | Status | Last touched | Notes |
 |---|---|---|---|
 | `chartrunner_maps` | 🟢 live + hardened | 2026-05-25 | Multisig authority |
-| `chartrunner_registry` | 🟢 live + re-upgraded | 2026-05-27 | Batched re-upgrade: parity + name-register + resale + oracle-cite; IDL regen done (hand-authored) |
+| `chartrunner_registry` | 🟢 live + re-upgraded; 🟡 M14 source-ahead | 2026-05-30 source, 2026-05-27 deploy | Live: parity + name-register + resale + oracle-cite. Source-ahead: `record_bot_backtest`, `BotBacktestRecord`, `BotBacktestRecorded`, `PDA_BOT_RUN`; Rust `cargo check` passes, Anchor/IDL build blocker remains. |
 | `chartrunner_oracle` | 🟢 live + hardened | 2026-05-20 (Playground build) | Pyth-post still pending |
 | `chartrunner_match` | 🟢 live | 2026-05-20 (local build, platform-tools v1.52) | MagicBlock realtime PvP scoreboard; needs anti-cheat on `tick_player` before live money |
 
@@ -153,28 +154,29 @@ Memory: `reference_openclaw_hermes_as_tools`, `chartrunner_umbrel_agents`.
 
 ## 7. Milestones (the roadmap)
 
-Active: **M0.5** (Security + Anchor unblock). Sources: [`docs/milestones/README.md`](docs/milestones/README.md), [`MILESTONE_AUDIT.md`](MILESTONE_AUDIT.md).
+Active product focus: **M2.6** (Avatar identity + hotkey execution USP). M0.5 remains the external audit/security workstream. Sources: [`docs/milestones/README.md`](docs/milestones/README.md), [`MILESTONE_AUDIT.md`](MILESTONE_AUDIT.md).
 
 | ID | Theme | Status | Progress |
 |---|---|---|---|
-| M0.5 | Security + Anchor unblock | 🟢 active | ongoing |
+| M0.5 | Security + Anchor unblock | 🟡 audit workstream | ongoing |
 | M1 | Tokenomics + fiat onramp | 🔵 next | 0/13; $CHART design fully committed 2026-05-26 |
-| M2 | Coach AI v2 | 🔵 queued | 3/11; LLM endpoints + snapshot spec + matcher audit done |
+| M2 | Coach AI v2 | 🔵 queued | 7/11; endpoint/cost/prompt/eval rounds 1-2 done; 2026-05-30 Coach summon/window surface fixed, LLM integration still open |
 | M2.5 | SDK extraction (Phase 1) | 🟡 partial | in flight; 4/12 Ready done, builds at `chartrunner-prototype/sdk/core/` |
-| M2.6 | NFT avatars + Name Register | 🟡 partial | largely shipped v1.0.23 → v1.0.122; doc drift |
-| M3 | Build apps (Workbench rebuild) | 🔵 queued | 5/16; all research/audit Ready done; tabs CSS-flip ready; +new 2026-05-28 items |
+| M2.6 | Avatar identity + hotkey execution USP | 🟢 active | first-minute USP focus from 2026-05-30 |
+| M3 | Build apps (Workbench rebuild) | 🟡 partial | 6/16; Bot Terminal desktop entry + app chrome/interiors unified 2026-05-30; real Workbench restores/bridges pending |
 | M4 | P2P Marketplace | 🟢 effective-done | UI wired + resale royalty live 2026-05-27 |
 | M5 | Hyperliquid + Helius RPC | 🔵 queued | 4/11; spec + pricing + hackathon decision done |
-| M6 | AI · Telegram bot integration | 🔵 queued | 0/10 |
+| M6 | AI · Telegram bot integration | 🔵 queued | 4/10; bridge research + Bot Terminal icon/surface done; real external bridges still M14/M6 work |
 | M7 | Streaming widget | 🟡 partial | 2/9; RUN-tube + Display shipped early (v0.9.27) |
 | M8 | Token launch tournaments | 🔵 queued | 4/11; World ID + CASH + bracket UX + MagicBlock audit done |
 | M9 | Solana Mobile / RN | 🔵 queued | 0/12; Telegram Mini-App built separately |
 | M10 | Mainnet deploy | 🔵 queued | 3/16; checklist + RPC projection + devnet→mainnet diff done |
-| **M11** | **Umbrel-native quant toolset (Scanner · Chart · Strategy · Backtest)** | **🔵 queued** | **4/13; added 2026-05-28 — Hermes-built spine, frontend pending** |
+| **M11** | **Umbrel-native quant toolset (Scanner · Chart · Strategy · Backtest)** | **🟡 partial** | **5/13; Pine/spec real-OHLC lane wired 2026-05-30; frontend pending** |
 | **M12** | **Umbrel stack adoption (observability + scraper + dev accelerators)** | **🟢 bonus** | **0/8; added 2026-05-28 — infra sidequest, Julian-hands installs on `umbrel.local`** |
 | **M13** | **Runner Wallet (Chrome ext — wallet + LLM + payments + /play injection)** | **🟢 bonus** | **0/9; added 2026-05-28 — replaces `/solana-connect/` URL-bounce** |
-| **M14** | **Bot-first runtime + Agent Command Center** | **🟢 bonus** | **0/10; added 2026-05-28 — absorbs M2 Coach v2, expands M6 AI/Telegram, adds on-chain `BotBacktestRecord`** |
+| **M14** | **Bot-first runtime + Agent Command Center** | **🟡 bonus · source-wired / deploy-gated** | **Bot Terminal slice + app style unification + `BotBacktestRecord` path verified locally 2026-05-30; registry deploy + transports pending** |
 | **M15** | **Lightweight Charts hybrid + bloat reduction** | **🟢 bonus** | **0/8; added 2026-05-28 — pairs with M2.5; modular `src/core/` + LWC price engine + transparent game overlay** |
+| **M16** | **Complete market-data coverage** | **🔵 queued** | **P1 reuse proof landed 2026-05-30** |
 
 Founding-brainstorm gaps surfaced today (see `BRAINSTORM_VS_SHIP_2026-05-28.md`):
 1. PvP arenas + Sharpe-ELO (M8 centerpiece)
@@ -201,7 +203,19 @@ Two parallel OHLC scrapers exist on Umbrel — intentional experiment, winding d
 
 ---
 
-## 9. This session's deliverables (2026-05-28)
+## 9. Recent session deliverables
+
+### 2026-05-30 — M14 BotBacktestRecord closeout
+
+| Deliverable | Path | Status |
+|---|---|---|
+| **Dedicated bot backtest PDA path** | `anchor/programs/chartrunner-registry/src/lib.rs` | Source-wired: `record_bot_backtest`, `RecordBotBacktest`, `BotBacktestRecord`, `BotBacktestRecorded`, `PDA_BOT_RUN` |
+| **Wallet bridge action** | `solana-connect/src/lib/cr-registry-program.ts`, `solana-connect/src/App.tsx` | Source-wired: `buildRecordBotBacktestIx`, `findBotBacktestPda`, `action=record-bot-backtest` |
+| **Game handoff** | `ChartRunner_Prototype.html` | v1.0.150: `crRegistry.recordBotBacktest`; Bot Terminal anchoring prefers the dedicated path, keeps generic Backtest fallback |
+| **Verification + plan** | `docs/superpowers/plans/2026-05-30-m14-bot-backtest-record.md`, `scripts/check_m14_bot_backtest_wiring.mjs` | Static/browser/Rust checks passed; Anchor/IDL build + Squads deploy remain |
+| **Session handover** | `SESSION_HANDOVER_2026-05-30_M14_BOT_BACKTEST_RECORD.md` | Added at wrap |
+
+### 2026-05-28
 
 | Deliverable | Path | Status |
 |---|---|---|

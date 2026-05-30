@@ -1,7 +1,11 @@
 # M14 — Bot-first runtime + Agent Command Center
 
-**Status:** 🟢 BONUS · 0/10 (added 2026-05-28)
+**Status:** 🟡 BONUS · prototype/source-wired / deploy-gated (updated 2026-05-30)
 **Theme:** Make ChartRunner natively **playable by bots / external agents**, with their runs **provably recorded on-chain**. Build a single UI surface — **Bot Terminal / Agent Command Center** — that lets a player connect external agents (Hermes, OpenClaw, Grok, Claude, Codex) to a running game with one button per agent. Coach AI v2 (originally M2) collapses into this surface — the Coach is just one LLM panel inside the Bot Terminal, not its own tab.
+
+> **SHIP NOTE 2026-05-30 — first `/play` implementation slice exists.** `ChartRunner_Prototype.html` v1.0.141→v1.0.150 turned the Bot Terminal into the active Agent Command Center prototype: COACH.llm was restyled to the COACH.exe terminal chrome, the Bot Terminal Coach tab was archived, tabs now open as **CONSOLE / SESSIONS / AGENTS**, sessions persist as `cr_bot_session_records_v1` records with Markdown docs and archive actions, console + pinned agent chat widgets share `window.crAgentBus`, agent work can be anchored from Sessions or `/anchor <agent>`, and v1.0.150 now prefers the dedicated `crRegistry.recordBotBacktest` wallet bridge before falling back to generic Backtest entities. The broader desktop app family now inherits the same Bot Terminal chrome/interior style across Run, Workbench, Journal, Token, Maps, and Profile surfaces. The milestone is no longer "unbuilt"; it is **prototype-wired**, with deployment + real transports still pending.
+
+> **CLOSEOUT 2026-05-30 — M14 heavy path verified locally.** Dedicated bot backtest provenance is now source-wired end-to-end: Anchor registry instruction/account/event, hand-rolled `solana-connect` transaction builder, `action=record-bot-backtest` wallet route, game-side `crRegistry.recordBotBacktest`, and Bot Terminal proof generation. Static wiring checks, JS parse, browser smokes, and `NO_DNA=1 cargo check -p chartrunner-registry` pass. Not complete-on-chain yet: `anchor build -p chartrunner-registry` is blocked by the local Anchor/IDL `missing field discriminator` error, and the Squads-governed devnet registry upgrade has not been proposed/executed.
 
 > **Cross-milestone notes — this milestone *absorbs* and *expands* others:**
 >
@@ -15,27 +19,29 @@
 
 ## Completion condition (all required)
 
-- [ ] **`BotBacktestRecord` PDA on-chain** — new struct in `chartrunner_common` crate (or directly in `chartrunner_registry`). Fields: `bot_id`, `bot_owner`, `strategy_hash`, `asset`, `timeframe`, `start_ts`, `end_ts`, `tx_count`, `net_pnl`, `sharpe_x100`, `oracle_cert_ref` (citation of fresh `chartrunner_oracle::PriceCertificate`). PDA seeds: `[b"bot_run", bot_owner, bot_id, run_nonce.to_le_bytes()]`.
-- [ ] **`chartrunner_registry::record_bot_backtest` instruction** — Anchor function + tests. Multisig-governed upgrade required (see M0.5 deploy-parity workflow per `project_chartrunner_anchor_deploys`).
+- [~] **`BotBacktestRecord` PDA on-chain** — source-wired 2026-05-30 in `chartrunner_registry` (`PDA_BOT_RUN = b"bot_run"`, `BotBacktestRecord`, `BotBacktestRecorded`, proof hashes + compact metrics). **Verified locally:** Rust crate compiles with `NO_DNA=1 cargo check -p chartrunner-registry`; browser smoke confirms the Bot Terminal calls `recordBotBacktest`. **Remaining:** Anchor CLI/IDL build blocker + Squads-governed devnet upgrade before calling it on-chain complete.
+- [~] **`chartrunner_registry::record_bot_backtest` instruction** — Rust instruction + tests + `solana-connect` builder + game handoff are present. Multisig-governed deploy still required (see M0.5 deploy-parity workflow per `project_chartrunner_anchor_deploys`).
 - [ ] **Headless mode upgrades** — replay determinism (same seed + same candles + same SDK calls → same `getRunSummary`), seed capture surfaced in console, score gating (no `recordRun` if headless + suspicious score).
 - [ ] **Bot SDK extension on `window.ChartRunner`** — full SDK call surface (bracket / OCO / ladder / hedge / radar / rescue + scoring components + run state). [[M2.5-sdk-extraction]] dependency: SDK extraction must finish so window.ChartRunner can re-export from a clean module.
-- [ ] **Bot Terminal UI in `/play`** — replaces the Coach tab. Three panels: (a) **Console** — live game state, run controls (start, step, monitor). (b) **Chat** — Coach LLM. (c) **Agents** — connect/switch among Hermes / OpenClaw / Grok / Claude / Codex / Telegram bot. Single unified surface.
-- [ ] **Multi-agent adapter pattern** — factory: `agents.connect("hermes" | "openclaw" | "grok" | "claude" | "codex" | "telegram")` returns a uniform handle with `send(prompt)`, `tail(callback)`, `cancel()`. Each adapter handles its transport quirks internally (Hermes via `umbrel.local:18790`, Telegram via bot API, etc.).
+- [x] **Bot Terminal UI in `/play`** — v1.0.143→v1.0.149 shipped the active surface. Current panels are **CONSOLE / SESSIONS / AGENTS**: console is first, sessions second, agents third; the archived Coach tab stays hidden. Live chat happens through pinned agent widgets and writes into Sessions.
+- [~] **Multi-agent adapter pattern** — `window.crAgentBus` now gives the prototype a uniform local bus for connect/disconnect/send/execute/anchor across Claude / Telegram / Lobster / OpenClaw / Hermes. **Remaining:** external transports + an exported `agents.connect(...)` factory with `tail()` / `cancel()`.
 - [ ] **Local LLM via Coach panel** — Ollama bridge (`umbrel.local:11434` per `reference_chartrunner_umbrel_agents`) OR a remote model. Coach surface uses whichever's available.
-- [ ] **Coach tab deletion** — remove the standalone Coach desktop app from ChartRunnerOS; Bot Terminal hosts the equivalent functionality. UI cleanup.
+- [~] **Coach tab deletion** — Bot Terminal's COACH.llm tab is archived and hidden. The standalone Coach/COACH.llm surfaces remain because LLM parity is not done yet.
 - [ ] **Sample bot scripts** — 4 starter bots in `bots/` directory (or `dev-kit/bots/`): `ladder-radar-combo.js`, `hedge-oco-bot.js`, `rescue-survivor-bot.js`, `fullstack-trader-bot.js`. Each uses the public window.ChartRunner SDK; each auto-records its backtest on-chain.
 - [ ] **Backtest History Viewer** — sortable table of all bot runs by current wallet, filterable by bot/asset/timeframe, exportable to CSV, with a per-row "replay" action (loads the run's seed + candles + SDK call log into a fresh game).
-- [ ] **All bot runs auto-record on-chain** — every successful headless run with valid scoring fires `record_bot_backtest`. **BLOCKED:** Anchor instruction + Runner Wallet payment flow for the rent cost.
+- [~] **All bot runs auto-record on-chain** — manual agent-work anchoring now builds a `cr-agent-work-v1` proof and prefers `recordBotBacktest`. **Remaining:** automatic headless-run recording, deployed instruction, and Runner Wallet/payment flow for rent.
 
 ## Imminent-solvables
 
 ### Ready bucket
 
-- [ ] `[D]` **Design `BotBacktestRecord` schema** — Rust struct + PDA seeds + size accounting. Mirror `RunRecord` style (per `project_chartrunner_anchor_deploys`). One-page design doc at `docs/architecture/M14-bot-backtest-record.md`.
-- [ ] `[D]` **Write `chartrunner_registry::record_bot_backtest`** — Anchor function. Pin to a fresh oracle cert (M0.5 pattern). Tests in `anchor/tests/chartrunner-registry.ts`. **DEPLOY:** via batched upgrade + Squads multisig (Julian-hands, `project_chartrunner_onchain_workflow`).
+- [ ] `[D]` **Rank P1 bot-specs against baselines** — produce a review leaderboard from `pinescript/db/manifest.db` real-OHLC rows. Compare each detector-proxy spec to same-symbol `buy_hold`, `sma_cross`, `ema_cross`, and `rsi_mean_reversion` rows before any Bot Terminal import.
+- [ ] `[D]` **Fix Anchor/IDL build blocker for M14 registry upgrade** — `NO_DNA=1 cargo check -p chartrunner-registry` passes, but `NO_DNA=1 anchor build -p chartrunner-registry` currently fails before compile with `missing field discriminator at line 1 column 409`. Resolve that toolchain/IDL issue, regenerate/check IDL, then prepare the Squads proposal for the `record_bot_backtest` registry upgrade.
+- [x] 2026-05-30 — `[D]` **Design `BotBacktestRecord` schema** — implemented directly in `anchor/programs/chartrunner-registry/src/lib.rs` with `bot_run` PDA seeds, fixed-size hashes, metrics caps, and event shape. Follow-up architecture doc can still extract the design, but the source schema exists.
+- [x] 2026-05-30 — `[D]` **Write `chartrunner_registry::record_bot_backtest`** — Anchor function + tests + `solana-connect` builder + game client call path are present. **DEPLOY:** still pending via batched upgrade + Squads multisig (Julian-hands, `project_chartrunner_onchain_workflow`).
 - [ ] `[D]` **Extend `window.ChartRunner` with Coach panel hook** — `window.ChartRunner.coach = { panel, send(prompt), onResponse(cb) }`. Stays mounted regardless of which tab is open.
-- [ ] `[D]` **Bot Terminal UI mock** — Excalidraw or HTML mock of Console + Chat + Agents 3-panel layout. Drop into `_templates/` or `docs/architecture/`. Get Julian sign-off before building.
-- [ ] `[D]` **Multi-agent adapter scaffolding** — `agents.connect(name)` factory + uniform handle. First adapter: Hermes (Chrome MCP harness from `reference_openclaw_hermes_as_tools`). Add OpenClaw / Grok / Claude / Codex / Telegram iteratively.
+- [x] 2026-05-30 — `[D]` **Bot Terminal UI mock** — superseded by live `/play` implementation. Console/Sessions/Agents are built, styled as one terminal family, and verified in browser.
+- [x] 2026-05-30 — `[D]` **Multi-agent adapter scaffolding** — `window.crAgentBus` is the local uniform bus. External Hermes/OpenClaw/Grok/Claude/Codex/Telegram transports remain the next layer.
 - [ ] `[D]` **Headless run controls in Bot Terminal Console** — start/step/monitor buttons wired to `window.ChartRunner.run.start(headless: true, seed: …, candles: …)` and `step()`.
 - [ ] `[D]` **Backtest History Viewer panel** — reads on-chain `BotBacktestRecord` PDAs for current wallet via `getProgramAccounts`. Renders sortable table.
 - [ ] `[O]` **CSV export + replay viewer** — Tab open: "Replay" loads the row's seed + candles + SDK call log + steps the game through them frame-by-frame. **BLOCKED:** SDK call log instrumentation (M2.5 dependency).
@@ -45,18 +51,28 @@
 ### Blocked bucket
 
 - [ ] `[D]` **Coach tab deletion** — UX-sensitive; players are used to Coach as its own app. **BLOCKED:** Bot Terminal Coach panel parity (must match or exceed Coach tab functionality before deletion).
-- [ ] `[D]` **Auto-record bot runs on-chain** — every successful headless run fires `record_bot_backtest`. **BLOCKED:** Anchor instruction deployed + payment flow (Runner Wallet M13 OR direct multisig vault funding for the rent cost).
+- [ ] `[D]` **Auto-record bot runs on-chain** — every successful headless run fires `record_bot_backtest`. **BLOCKED:** dedicated instruction deployment + payment flow (Runner Wallet M13 OR direct multisig vault funding for the rent cost). Source path is wired; auto-run trigger is not.
 - [ ] `[D]` **Telegram bot as one agent adapter** — relegates [[M6-ai-telegram]] to "Telegram is one transport, not the central surface." **BLOCKED:** strategic decision from Julian on whether M6 closes or stays separate.
 
 ### Done bucket
 
-(empty — newly added 2026-05-28; existing `project_chartrunner_botfriendly` work is the precursor)
+- [x] 2026-05-30 — COACH.llm visual unification with COACH.exe chrome; Bot Terminal Coach tab archived.
+- [x] 2026-05-30 — Application tab/game surfaces inherit the Bot Terminal styleguide: green active tabs, dark terminal panels, mono form fields/buttons, and consistent green borders across Run, Workbench, Journal, Token, Maps, and Profile.
+- [x] 2026-05-30 — Bot Terminal tab model: Console first, Sessions second, Agents third.
+- [x] 2026-05-30 — Real session records: `id`, `title`, `agent`, `created`, `updated`, `events`; legacy `cr_bot_sessions_v1` import preserved.
+- [x] 2026-05-30 — Sessions dropdown + actions: New, Rename, Copy `.md`, Archive, Delete, Anchor on-chain.
+- [x] 2026-05-30 — Markdown session docs render as structured HTML instead of raw `<pre>`.
+- [x] 2026-05-30 — `window.crAgentBus` routes console + pinned agent widgets into the same activity/session store.
+- [x] 2026-05-30 — Agent icons switched from emoji to procedural game-style SVG glyphs.
+- [x] 2026-05-30 — Dedicated M14 `record-bot-backtest` source path exists across registry, wallet bridge, and game client, with generic Backtest fallback retained. Verification: M14 wiring script, agent on-chain wiring script, Bot Terminal browser smoke, Journal alerts regression, JS parse, and Rust `cargo check` passed.
+- [x] 2026-05-30 — P1 Pine/spec pipeline produced the off-chain bot evidence corpus M14 needs before on-chain provenance: 64 data-only specs, 3712 detector-proxy real-OHLC rows across 58 daily symbols, and 232 internal baseline rows. Artifact root: `/opt/data/chartrunner/pinescript/`; local review mirror: `_patches/p1-umbrel-pinescript-pipeline-2026-05-30/`.
 
 ## State
 
-- Progress: 0/10 completion conditions
-- Blockers active: 3 (Coach tab deletion, on-chain auto-record, Telegram adapter strategic call)
+- Progress: first implementation slice complete; source-wired + browser/Rust verified for BotBacktestRecord, deploy-gated for true on-chain completion
+- Blockers active: 7 (Anchor/IDL build blocker, registry deploy, real agent transports, local/remote LLM panel, headless run controls, sample bot scripts, history/replay viewer)
 - Scheduled today: 0
+- Last evaluated: 2026-05-30 (interactive session wrap)
 
 ## Notes
 
@@ -71,6 +87,10 @@ So: **Bot Terminal** is the original code name (per existing dev-kit `bot-termin
 The point isn't on-chain *fees* — it's on-chain *provenance*. A bot that claims a `+18% return on BTC 1h backtest` is just text until anyone can verify the run was executed against a specific oracle-stamped candle series, in a specific order, with a specific SDK call sequence. `BotBacktestRecord` makes that public + immutable, which is the precondition for selling bots/maps/strategies on the marketplace (M4 territory) with believable performance claims.
 
 From the Grok session: *"chartrunner needs to be properly usable by bots, automated bots need to be visible on chain when they play chartrunner"* and *"when bots backtest strategies, can these runs be recordet onchain?"* — both lines point at the same thing.
+
+### 2026-05-30 P1 bridge into M14
+
+The current P1 Pine/spec pipeline is now the off-chain staging lane for M14. It does **not** satisfy the deployed on-chain `BotBacktestRecord` condition yet, but it supplies the evidence those records should ultimately cite: real OHLC dataset path, symbol/timeframe, detector/spec id, equity curve artifact, trade log artifact, and baseline comparison rows. Next M14 slice should turn those rows into a leaderboard and then choose the compact proof fields that belong on-chain.
 
 ### Cross-product positioning
 
@@ -99,4 +119,4 @@ Grok session 2026-05-28 (`grok.com/share/c2hhcmQt…`). Julian's prompts spannin
 - *"Fully implement this new Agent Command Center version of the Bot Terminal / Add agent switching + multi-agent workflows"*
 - *"so i could tell my hermes to install a trade and watch him do that and sell the bot and the map right?"* (revenue thesis — bots/maps as marketable goods, M4 territory)
 
-Important: Grok claimed in that session to have *built* all of this (`bots/ladder-radar-combo.js` etc., `dev-kit/agent-command-center.html`, on-chain `record_bot_backtest`, Backtest History Viewer). **None of these files exist** — verified 2026-05-28. The milestone above captures the actual product direction; the work is **unbuilt**. See `feedback_grok_output_unverified`.
+Important: Grok claimed in that session to have *built* all of this (`bots/ladder-radar-combo.js` etc., `dev-kit/agent-command-center.html`, on-chain `record_bot_backtest`, Backtest History Viewer). **Those claims were false on 2026-05-28.** As of 2026-05-30, the live prototype and source tree now contain the first real M14 slice: Bot Terminal UI/session/agent-bus work plus the dedicated BotBacktestRecord source path. Sample bots, real transports, deployment, and history/replay remain unbuilt.

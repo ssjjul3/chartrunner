@@ -1,6 +1,6 @@
 # M3 — Build apps (Workbench rebuild + Bot Terminal back online)
 
-**Status:** 🔵 QUEUED
+**Status:** 🟡 PARTIAL · 6/16
 **Theme:** Restore the seven archived Workbench tabs (Bots, Strategies, Indicators, Terminal, Backtest, App Builder, Theme) + bring Bot Terminal icon back to Voll-OS dock. Metaplex Agent Kit registers Workbench bots as on-chain agents; Coinbase x402 for paid API access on premium bots / advanced indicators.
 
 > **Update 2026-05-26** ([CONSOLIDATED_STATUS_2026-05-26.md](../../CONSOLIDATED_STATUS_2026-05-26.md)): **x402 scaffolded.** Scope WIDENED beyond the original one-time-unlock framing to **bidirectional** (bots also *pay* external x402 APIs as agents) + **multi-rail** (the x402 V2 `accepts[]` lets the end-user pick Solana / Base / …), with **no silent auto-spend** (explicit wallet authorization, opt-in capped budget). Implementation plan + 5 build-safe scaffold files shipped — `docs/architecture/x402-integration-plan.md` (reconciled with the `M3-x402.md` research below). The `[ ] Coinbase x402 integration` condition is now **scaffolded, not just researched** — **live integration still BLOCKED** on M1 pricing + a production facilitator + `npm i @x402/*` + a deployed gate on the bot host (Phase 2).
@@ -12,7 +12,7 @@
 - [ ] App Builder template gallery rewritten (v0.9.11 P&L Tracker + Trade Notes deprecated)
 - [ ] Metaplex Agent Kit integration: Workbench bots register as on-chain agents (014 registry)
 - [ ] Coinbase x402 integration: premium bot subscriptions + advanced indicator unlock
-- [ ] Bot Terminal icon in Voll-OS dock (feature flag flipped)
+- [x] Bot Terminal icon in Voll-OS dock (surface restored 2026-05-30; real bridges remain M6/M14)
 - [ ] Bot Terminal real bridges scaffolded (the real bridge work lands in M6)
 
 ## Imminent-solvables
@@ -36,7 +36,6 @@
 - [ ] `[D]` Backtest tab restore — **BLOCKED:** restoration plan done.
 - [ ] `[D]` App Builder tab restore + gallery rewrite — **BLOCKED:** restoration plan done.
 - [ ] `[D]` Theme tab restore — **BLOCKED:** restoration plan done.
-- [ ] `[D]` Bot Terminal icon restore (Voll-OS dock) — **BLOCKED:** restoration plan + at least one real bridge scaffold (M6).
 - [ ] `[D]` Metaplex Agent Kit integration — **BLOCKED:** research done + at least Bots tab restored.
 - [ ] `[D]` Coinbase x402 integration — **BLOCKED:** research done + premium tier defined (M1 pricing).
 - [ ] `[O]` Each tab visual regression suite — **BLOCKED:** tabs restored.
@@ -51,7 +50,7 @@
 ### Ready bucket (added 2026-05-28 — founding-brainstorm linkage)
 
 - [ ] `[D]` **Indicator-Fusion → Workbench Bot mint.** The Sep 11 GDD §6 (Bot-Blocks: Sensor / Operator / Actuator) maps 1:1 onto the **archived Workbench Bot tab** (one CSS flip per [[project_chartrunner_v0912_feature_flags]]). Brainstorm cross-ref: [`BRAINSTORM_VS_SHIP_2026-05-28.md`](../../BRAINSTORM_VS_SHIP_2026-05-28.md). Imminent-solvable scope: design the "compile bot → on-chain artifact" mint step (probably a new `register_bot_artifact` instruction in `chartrunner_registry`, since the Metaplex Agent Kit work in this milestone overlaps). Save spec to `docs/architecture/M3-indicator-fusion.md`. **Does not unarchive the tab** — that's a separate condition.
-- [ ] `[O]` **Apply P0 dev-kit bridge-rewiring patch** (staged in [`_patches/p0-bridge-rewiring-2026-05-28/`](../../_patches/p0-bridge-rewiring-2026-05-28/)). Unblocks `executeComposeInRunroom` / `simulateComposeOnCandles` (Strategy Composer) + the Agent Terminal flow over the dev panel's remote bridge. Tooling step, not a tab-restore — but the Strategy Composer is a Workbench Strategies-tab dependency, so this lands here. Apply: `cd ~/projects/chartrunner && cd dev-kit && bash ../Trading\ Game/_patches/p0-bridge-rewiring-2026-05-28/apply.sh`.
+- [x] 2026-05-29 — `[O]` **Apply P0 dev-kit bridge-rewiring patch** — APPLIED to vault's `dev-kit/dev-panel.html`. `git apply --check` clean, `node --check` clean across all 199 KB of inline script. File grew 5035 → 5084 lines (+49, advertised +50/−1). All new symbols present at expected locations: `startHeadless` line 327, `terminalComposeExecute/Simulate` 363-364, `terminalOverlayEnable/Disable/Toggle` 368-370, `terminalChordSimulate` 376, `terminalPanicActivate` 379, `agentsList/Connect/Chat/Execute` 395-398, `onchain*` 401-410, `scoring*` 413-416, `experiments*` 419-420, `renderAgentList` null-guard at 1577. Backup at `dev-kit/dev-panel.html.bak-20260529-072013`. **Note:** correct invocation is `cd "Trading Game" && git apply _patches/p0-bridge-rewiring-2026-05-28/p0-bridge-rewiring.patch` (the apply.sh's default `~/projects/chartrunner` path is wrong — `dev-kit/` lives in the vault, not the repo, per memory `reference_chartrunner_devkit_cowork_access`). To take effect: reload the dev panel tab in Chrome (Cmd+R) — `BroadcastChannel` keeps reusing the old module code until reload.
 
 ### Ready bucket (added v1.0.105 — restore archived Campaign chapters)
 
@@ -62,16 +61,17 @@
 
 ### Done bucket
 
+- [x] 2026-05-30 — Bot Terminal desktop entry + live Coach summon path are back. Application tab strips and app interiors now inherit Bot Terminal visual language (green tabs, dark terminal panels, mono form fields/buttons) across Run, Workbench, Journal, Token, Maps/Profile surfaces. Real bridge work stays in M6/M14.
 - [x] 2026-05-13 — v1.0.105 archived Ch.8/25/26/27 so no broken routes ship while M3 indicators are pending.
 
 ## State
 
-- Progress: 5/16 done — all 5 Ready-bucket research/audit items written 2026-05-20. Remaining: 11 Blocked-bucket restores (gated on the plans now written) + the 4 indicator/tool code builds (MACD/BB/ATR/parChannel — not auto-resolvable, they touch the prototype + need a playtest) + the 7 completion conditions.
-- Blockers active: 11
+- Progress: 6/16 done — all 5 Ready-bucket research/audit items written 2026-05-20, plus the 2026-05-30 Bot Terminal desktop/surface restoration. Remaining: 10 Blocked-bucket restores (gated on the plans now written) + the 4 indicator/tool code builds (MACD/BB/ATR/parChannel — not auto-resolvable, they touch the prototype + need a playtest) + the remaining 6 completion conditions.
+- Blockers active: 10
 - Scheduled today: 0
 
 ## Notes
 
 - Per code intent (CSS comment at line 4367 of `ChartRunner_Prototype.html`), Bots was archived "to move to M3 with the rest of the Build phase". Bots tab MUST be in this milestone.
-- M3 depends on M1 (premium bot pricing needs $RUN/$CRDS economy) and M2 (cost-per-session for AI-backed bots).
+- M3 depends on M1 (premium bot pricing needs $RUN/$CHART economy) and M2 (cost-per-session for AI-backed bots).
 - Each tab restoration is itself decomposable into 3-5 imminent-solvables — evaluator can expand as we get closer.

@@ -1,6 +1,6 @@
 # M16 — Complete Market Data Coverage
 
-**Status:** 🟢 BONUS · 0/14 (added 2026-05-29)
+**Status:** 🟢 BONUS · 0/14 (added 2026-05-29; 2026-05-30 proved the OpenClaw JSONL corpus can drive P1 bot-spec backtests)
 **Theme:** A complete market-data corpus on Umbrel covering every supported venue × every data layer × every available history depth. This is the substrate that makes ChartRunner's backtesting (M11, M14, M3 Workbench Backtest tab) defensible: when a player runs a strategy, the engine has real ticks, real L2 depth, real funding curves to test against — not just OHLCV snapshots from one exchange.
 
 > **Cross-milestone notes:**
@@ -47,12 +47,13 @@
 
 ### Ready bucket
 
+- [ ] `[D]` **Promote P1 real-OHLC coverage audit** — turn the 2026-05-30 P1 reuse run into a small coverage report: which 58 of the 60 `ohlc-full` daily symbols qualified, which 2 were skipped by `min_candles`, and whether those skips are stale/empty/corrupt data.
 - [ ] `[D]` **Run the coverage audit** — `_tools/audit-corpus.py` against `/data/umbrel/chartrunner/`. Output: ground truth on what we have today across the 4 layers × 11 venues. Drives every subsequent prioritization decision in this milestone.
 - [ ] `[D]` **Apply the flaresolverr rewire patch** — staged in `_patches/openclaw-flaresolverr-rewire-2026-05-29/`. Closes the DEX OHLCV gap (1,581 fails + 8,276 rate-limits per audit). Smallest win in this milestone.
 - [ ] `[D]` **Restart Bybit deep scraper** — died with exit 2 on 2026-05-26 04:21 UTC per audit. Investigate cause (likely transient), restart via OpenClaw Cron Jobs.
-- [ ] `[D]` **Write `docs/architecture/M16-corpus-layout.md`** — formalize the existing on-disk JSONL layout + propose extensions for trades / depth / funding. One-page reference doc. Lets future scraper modules slot in without re-inventing the path scheme.
+- [x] 2026-05-29 — `[D]` **Write `docs/architecture/M16-corpus-layout.md`** — DONE → `docs/architecture/M16-corpus-layout.md`. Formalizes the as-built OpenClaw JSONL layout (`<scrape-job>/<cex|dex>/<venue>/<market>/<SYMBOL>/<tf>.jsonl`), the OHLCV line schema (string OHLCV + ms open_time + confirmed flag), proposed trades/depth/funding/oi schemas, `_BACKFILL_STATE.json`, manifests, the audit tool's classification rules, and a 6-step "add a new venue scraper" recipe. Grounded in the resource map + canonical decision + `audit_corpus.py` (not invented).
 - [ ] `[D]` **Audit Hermes corpus** — what's in `/opt/data/chartrunner/data/ohlcv/` (Parquet). Per `M11-canonical-ohlc-decision.md`, Hermes corpus is frozen as a reference snapshot, but we should know what it covers before freezing (in case anything's worth migrating to JSONL).
-- [ ] `[O]` **Coverage gap report** — overnight task: walk the audit output, produce a per-venue priority list of (pair, timeframe, history-gap-days). Output: `docs/architecture/M16-gap-report-{YYYY-MM-DD}.md`. Drives the scraper Cron Job priorities for the next push.
+- [x] 2026-05-29 — `[O]` **Coverage gap report** — DONE → `docs/architecture/M16-gap-report-2026-05-29.md`. Walked the inline corpus audit into a per-venue × per-TF gap ledger (staleness + history-deficit-days) + cost÷value priority list. Headline reframe: DEX isn't the critical path (GeckoTerminal healthy; Dexscreener is the real 0-row hole) — the real path is the 3 stale-scraper restarts (Gate/MEXC/Hyperliquid) + Coinbase/Kraken/KuCoin deep backfills. Per-pair gaps need a full (non-sample) audit run on-host.
 - [ ] `[D]` **Trades-stream scraper for Binance** — Binance has the simplest aggTrades endpoint. First trades-layer venue. Tests the JSONL format + storage growth rate before committing to the other 8 CEX.
 - [ ] `[D]` **Funding-rate scraper for Hyperliquid** — Hyperliquid has the cleanest funding API; small data volume. First perps-funding venue. Tests the layout for the other 5 perp venues.
 - [ ] `[D]` **L2 depth scraper PoC for one CEX** — Binance or Bybit (both have stable depth endpoints). 1Hz polling on BTC/USDT only. Tests storage growth rate. **WARNING:** depth data is multi-TB scale at full coverage; PoC first to size the storage commitment.
@@ -68,7 +69,7 @@
 
 ### Done bucket
 
-(empty — newly added 2026-05-29)
+- [x] 2026-05-30 — `[D]` **P1 reuse proof on real OHLC** — DONE → current Pine/spec backtest runner consumed OpenClaw `ohlc-scraper/data/ohlc-full` JSONL directly. It found 58 usable daily symbol datasets, produced 3712 detector-proxy rows, and produced 232 baseline rows. This does not complete M16's venue/layer coverage goals; it proves the corpus is already usable by product backtests.
 
 ## State
 
@@ -79,6 +80,20 @@
 ## Current state baseline — 2026-05-29 corpus audit
 
 Captured via `_tools/audit_corpus.py` against `/data/umbrel/chartrunner/`. **71,978 files / 430M rows / 88.4 GB** across 10 of 11 venues (Dexscreener absent). Sample-mode (first+last line per file).
+
+### Product reuse proof — 2026-05-30
+
+The P1 Pine/spec pipeline now reads the older OpenClaw scraper path directly:
+
+`/home/umbrel/umbrel/app-data/openclaw/data/.openclaw/workspace/ohlc-scraper/data/ohlc-full`
+
+The first full run used `1d.jsonl` files and qualified 58 daily symbols at `min_candles=90`. It generated:
+
+- 3712 detector-proxy real-OHLC rows (`chartrunner-detector-proxy-v1`)
+- 232 baseline rows (`buy_hold`, `sma_cross`, `ema_cross`, `rsi_mean_reversion`)
+- latest exported bot-spec metrics with `dataset = "ohlc-jsonl-v1"`
+
+This is M16 evidence, not completion: OHLCV exists and is product-usable, but M16 still requires all venues, trades, L2 depth, funding/OI, health dashboards, and full backfill tracking.
 
 | Venue | Rows | TFs | Earliest history | Last update | Diagnosis |
 |---|---:|---:|---|---|---|

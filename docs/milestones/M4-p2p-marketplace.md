@@ -46,5 +46,5 @@
 ## Notes
 
 - Registry program already supports the on-chain primitives (live since v0.9.6). M4 is purely UI + wiring.
-- M4 depends on M1 ($RUN/$CRDS economy for pricing), M2.6 (NFT avatars as marketplace-listable entities).
+- M4 depends on M1 ($RUN/$CHART economy for pricing), M2.6 (NFT avatars as marketplace-listable entities).
 - Resale logic was explicitly deferred to v1 of the registry program — if M4 needs second-sale royalty enforcement, that's an M0.5-style audit + redeploy.

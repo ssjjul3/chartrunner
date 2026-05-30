@@ -12,7 +12,7 @@
 - [ ] All four programs audited (M0.5)
 - [ ] Phoenix Rise live integration (real fills via `@ellipsis-labs/rise` mainnet)
 - [ ] MagicBlock ER live (real PvP matches settled to mainnet)
-- [ ] Honeycomb live (real $CRDS / $RUN as compressed Honeycomb resources)
+- [ ] Honeycomb live (real $CHART / $RUN as compressed Honeycomb resources)
 - [ ] Pyth live (real price certificates on mainnet)
 - [ ] CASH stablecoin live (real settlements in M8 tournaments)
 - [ ] Production RPC: Helius (M5) on mainnet endpoints

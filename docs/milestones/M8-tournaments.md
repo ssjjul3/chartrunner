@@ -1,16 +1,21 @@
-# M8 — Token launch tournaments
+# M8 — Battle Token launch tournaments
 
 **Status:** 🔵 QUEUED (capstone of the social + on-chain gaming arc)
-**Theme:** 1v1 / 2v2 / NvN player token launches. Each player controls a token's supply, fights on the chart, wins opponent supply as reward. Entry + payouts in CASH (Phantom-backed stablecoin, Frontier-recommended). World ID proof-of-human gate against bot farms.
+**Theme:** 1v1 / 2v2 / NvN Battle Token launches. A tournament creates or binds a new token, locks a modular share of supply into arena vaults, streams the whole event on RUN-tube, and distributes claimable supply after the final match/map record settles on-chain. Entry + payouts can use CASH/RUN/accepted SPL mints. World ID gates human lanes; explicit paid bot lanes keep agents welcome but fee-bearing.
 
 ## Completion condition (all required)
 
-- [ ] Token launch primitive on-chain (new instruction in `chartrunner_registry` or a dedicated tournament program)
+- [ ] Battle Token launch primitive on-chain (prefer dedicated `chartrunner_battle` program)
+- [ ] Modular supply vaults (arena, creator, community, protocol, liquidity, burn)
 - [ ] Tournament matchmaking (1v1, 2v2, royal rumble, last-man-standing, on-time, full tournament bracket)
 - [ ] CASH stablecoin entry fee + payout (escrow on-chain)
 - [ ] World ID proof-of-human gate before match start
+- [ ] Explicit bot lanes with paid entry, map licensing, and certified bot identity
 - [ ] Live spectator mode (stream the match — depends on M7)
-- [ ] Match settlement: winner takes opponent supply on-chain (via MagicBlock ER for realtime, settled to base layer via M5/M0.5)
+- [ ] Match settlement: final `chartrunner_match` result binds to battle distribution
+- [ ] Execution receipt binding for Blue Laser trades that affect event settlement
+- [ ] Map + RUN-tube record binding (final replay hash + stream/VOD manifest hash)
+- [ ] Claim/distribution flow for winners, teams, creators, viewers, and community allocations
 
 ## Imminent-solvables
 
@@ -20,31 +25,40 @@
 
 > **OpenClaw data-infra crossmap (2026-05-28):** the **closed-arena seed feeder** in the Blocked bucket can pull deterministic seeds from the 79 GB Umbrel corpus (`/opt/data/chartrunner/`, 381M rows across 7 exchanges; Bybit / OKX / Binance most candle-complete). Combined with `coin_profiles/` regime tags (bull / bear / crab / altseason + volatility band), the seed feeder can serve **regime-balanced match seeds** for fair Sharpe-ELO matchmaking — the GDD §3 "deterministic leaderboards" idea, but realised over real-but-fixed candle windows rather than the GDD's "synthetic processes per VRF-seed." Also enables **`tick_player` anti-cheat baseline** (the MagicBlock audit's open issue): if the seed is a known historical window, max-attainable PnL is computable in advance and out-of-band scores can be flagged. Cross-ref: [`MILESTONE_AUDIT.md` 2026-05-28 addendum](../../MILESTONE_AUDIT.md).
 
-> **All 4 Ready-bucket items done 2026-05-20** (auto-resolve sweep).
+> **Initial 4 Ready-bucket items done 2026-05-20** (auto-resolve sweep). The 2026-05-29 Battle Token addendum extends M8 from generic token launches into a standardized launch-arena contract path.
 
 - [x] 2026-05-20 — `[D]` World ID research — `docs/architecture/M8-world-id.md`. Viable on Solana in 2026 via Wormhole's `solana-world-id-program`; recommend off-chain verify + server-signed seat for v1.
 - [x] 2026-05-20 — `[D]` CASH stablecoin docs — `docs/architecture/M8-cash.md`. CASH is a plain SPL token (Phantom, USD 1:1 via Bridge); mint/burn is issuer-side, ChartRunner only escrows. Full escrow PDA design (Tournament/Vault/Seat) + invariant checklist; recommended mint-agnostic.
 - [x] 2026-05-20 — `[D]` Bracket UX research — `docs/architecture/M8-bracket-ux.md`. chess.com / BLAST / Magic Eden patterns mapped to ChartRunner's 1v1 / royal-rumble / bracket modes.
 - [x] 2026-05-20 — `[O]` MagicBlock audit — `docs/architecture/M8-magicblock-audit.md`. `chartrunner_match` is a complete realtime PvP scoreboard (init/join → delegate → `tick_player` → `commit_and_finish`). M8 still needs a token-launch primitive, the CASH escrow, a World ID gate before `join_match`, and **anti-cheat on `tick_player`** (scores are self-reported/unbounded) before money rides on it. Source auditable now; deploy gated on Rust 1.85.
+- [x] 2026-05-29 — `[D]` Battle Token Launch Arena standard — `docs/architecture/M8-battle-token-launch-arena.md`. Defines the tournament-created token envelope: fixed supply, modular vaults, arena reserve, creator/community/protocol/liquidity/burn allocations, bot lanes, RUN-tube binding, map records, claim flow, and milestone plan. This turns the old "token launch primitive" blocker into an implementable `chartrunner_battle` program path.
+- [x] 2026-05-30 — `[D/O]` Battle Token economy runthroughs — `docs/architecture/M8-battle-token-economic-runthroughs.md` + `docs/architecture/M8-sim/battle_token_event_model.py`. Tests sealed/private, allowlist, fixed-price sale, public CPMM, dynamic-fee launch pool, delayed public handoff, and chaos/bot arena models. Recommends **private match, public token**: score the tournament on a canonical map/virtual AMM, then open public CPMM after settlement.
+- [x] 2026-05-30 — `[D]` Battle Token event scaffolds — `docs/architecture/M8-events/`. Adds schema, fillable event templates, operations plan, event catalog, and `chartrunner_battle` contract scaffold for Human Fair Launch, Creator Allowlist Duel, Sponsored Creator Launch, Bot League Launch, Community Fixed-Price Sale, and Public Chaos Arena.
+- [x] 2026-05-30 — `[D]` On-chain execution plan — `docs/architecture/M8-onchain-execution-plan.md` + `docs/architecture/M8-events/plans/onchain-execution-runbook.md`. Defines Blue Laser execution as `TradeIntent -> broker transaction -> ExecutionReceipt`, with maps attached only for recorded runs, tournaments, Battle Tokens, copytrade, and replay/leaderboard contexts.
 
 ### Blocked bucket
 
-- [ ] `[D]` Token launch primitive design — **BLOCKED:** existing launchpad research + audit firm decision (M0.5).
+- [ ] `[O]` Battle Token program implementation — **BLOCKED:** needs config-schema simulator, contract scaffold, and M0.5 audit slot.
 - [ ] `[D]` Tournament matchmaking server (centralized v1) — **BLOCKED:** primitive designed.
 - [ ] `[D]` CASH escrow contract — **BLOCKED:** CASH docs + M0.5 audit slot.
 - [ ] `[D]` World ID gate wired into match start — **BLOCKED:** research done + bracket UI.
-- [ ] `[D]` Match settlement on-chain — **BLOCKED:** `chartrunner_match` deployed (M0.5).
+- [ ] `[D]` Match settlement on-chain — **BLOCKED:** `chartrunner_match` exists, but Battle Token settlement integration and anti-cheat hardening are pending.
+- [ ] `[D]` Execution receipt program/design integration — **BLOCKED:** needs decision between temporary registry-style records and dedicated `chartrunner_execution`.
 - [ ] `[D]` Live spectator mode — **BLOCKED:** M7 streaming connectors live.
 - [ ] `[O]` Tournament simulation — 100 synthetic 1v1 matches, capture settlement edge cases — **BLOCKED:** settlement live.
+- [ ] `[O]` Battle Token adversarial simulation — deeper follow-up for collusion rings, no-shows, coordinated outside buys, claim timing, and bot-lane fee elasticity — **BLOCKED:** contract schema + settlement path.
 
 ### Done bucket
 
-(none yet)
+- [x] 2026-05-29 — Battle Token Launch Arena concept and milestone map preserved in `docs/architecture/M8-battle-token-launch-arena.md`.
+- [x] 2026-05-30 — Battle Token market-access and AMM runthroughs preserved in `docs/architecture/M8-battle-token-economic-runthroughs.md`.
+- [x] 2026-05-30 — Event scaffolds and operational plans preserved in `docs/architecture/M8-events/`.
+- [x] 2026-05-30 — Blue Laser on-chain execution and map policy preserved in `docs/architecture/M8-onchain-execution-plan.md`.
 
 ## State
 
-- Progress: 4/11 done — all 4 Ready-bucket items written 2026-05-20. Remaining 7 are the Blocked-bucket build chain (token-launch primitive, matchmaking, CASH escrow, World ID gate, settlement, spectator, sim), gated on M0.5 deploy/audit + M5/M7.
-- Blockers active: 7
+- Progress: 8 design/research items done. Remaining build chain: Battle Token program, matchmaking, CASH/RUN escrow, World ID gate, match settlement, execution receipt integration, spectator/RUN-tube binding, tournament sim, and deeper adversarial Battle Token sim.
+- Blockers active: 9
 - Scheduled today: 0
 
 ## Notes

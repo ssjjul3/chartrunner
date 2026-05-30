@@ -32,7 +32,7 @@
 - [ ] `[D]` **Wire scheduled-task outcomes → InfluxDB** — the cron-jobs already log success/failure; pipe those events into InfluxDB. Probably a tiny shell script or n8n flow. Outcome: time-series data on which tasks pass/fail when.
 - [ ] `[O]` **First Cascade Health dashboard in Grafana** — build the dashboard against the wired-up InfluxDB data. Panels: task success rate (24h), failed-task list, per-step latency, ChartRunner $CHART issuance events. **BLOCKED:** Grafana + InfluxDB installed + scheduled-task wiring done.
 - [ ] `[O]` **Wire on-chain devnet event tail → InfluxDB** — tail the three live programs (maps + registry + oracle) for events, push to InfluxDB. Useful for tracking governance actions + oracle posts + map saves.
-- [ ] `[O]` **M12 README / stack-doc** — single page listing every M12-adopted app, its role, where its data goes, who maintains it. Lives at `docs/architecture/umbrel-stack.md`. Prevents this milestone from becoming a "what was that thing for?" mystery in 3 months. `[SCHEDULED 2026-05-28]` — evening evaluator pick #3 → `cr-o-m12-stack-doc-20260529` @ 06:30 CEST 2026-05-29 → `docs/architecture/umbrel-stack.md`.
+- [x] 2026-05-29 — `[O]` **M12 README / stack-doc** — single page listing every M12-adopted app, its role, where its data goes, who maintains it. **DONE** → `docs/architecture/umbrel-stack.md`. (Scheduled `cr-o-m12-stack-doc-20260529` @ 06:30 fired but hit the session limit and wrote nothing; delivered in the 2026-05-29 interactive recovery pass.)
 
 ### Blocked bucket (Tier 2 — install when triggered, NOT before)
 
