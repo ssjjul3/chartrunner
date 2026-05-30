@@ -6829,7 +6829,7 @@
              Terminal Coach tab). View + Special were retired. -->
         <div class="menu" id="crMenuFile" title="Open ChartRunner — launch a run">Game</div>
         <div class="menu" id="crMenuEdit" title="Spawn the desktop edit-mode avatar">Player</div>
-        <div class="menu" id="crMenuHelp" title="Open Coach in the Bot Terminal">Coach</div>
+        <div class="menu" id="crMenuHelp" title="Open Coach chat">Coach</div>
         <!-- v0.8k#24bx — Tutorial menu. Toggles a guided Coach walk-through
              that highlights every OS window in turn while a holographic
              portrait + textbox narrates what to do. Click to start; click
@@ -41033,26 +41033,32 @@ function log(msg){
   // v0.8k#24bz — Player is just the relabelled Edit menu — same handler
   // as before (toggles the desktop edit-mode avatar via toggleOsInvaderCursor).
   bindMenu('crMenuEdit',   ()=> { try { toggleOsInvaderCursor(); } catch(_){} });
-  // v0.8k#24bz / v0.8k#24cb — Coach (was Help) spawns the Coach chat
-  // widget on the desktop instead of opening the Bot Terminal. _wAdd
-  // refuses duplicates, so a second click on a desktop where Coach is
-  // already pinned just toasts and leaves the existing widget alone.
+  // v0.8k#24bz / v1.0.142 — Coach (was Help) summons the pinned Coach
+  // widget. If a saved Coach widget drifted off-screen, bring it back.
   bindMenu('crMenuHelp',   ()=> {
     try {
+      const x = Math.max(20, window.innerWidth  - 320);
+      const y = Math.max(60, window.innerHeight - 360);
+      if(typeof widgets !== 'undefined' && widgets && Array.isArray(widgets.items)){
+        const existing = widgets.items.find(w => w.type === 'coach' && w.sourceId === 'coach');
+        if(existing){
+          existing.x = Math.max(20, x - 100);
+          existing.y = Math.max(40, y - 14);
+          existing.t = Date.now();
+          try { if(typeof _wSave === 'function') _wSave(); } catch(_){}
+          try { if(typeof renderWidgets === 'function') renderWidgets(); } catch(_){}
+          try { if(typeof toast === 'function') toast('Coach brought to desktop'); } catch(_){}
+          return;
+        }
+      }
       if(typeof _wAdd === 'function'){
         // Place Coach near the right side of the screen by default — same
         // anchor the tutorial portrait uses, so the new widget feels at
         // home if it's the first time.
-        const x = Math.max(20, window.innerWidth  - 320);
-        const y = Math.max(60, window.innerHeight - 360);
         _wAdd('coach', 'coach', x, y);
       } else {
-        // Fallback: open Bot Terminal Coach tab.
-        if(typeof osOpenWindowMulti === 'function') osOpenWindowMulti('bot');
-        setTimeout(() => {
-          const tab = document.querySelector('.crTerm-tab[data-botview="coach"]');
-          if(tab) tab.click();
-        }, 30);
+        const btn = document.getElementById('crTvCoachBtn');
+        if(btn) btn.click();
       }
     } catch(_){}
   });
