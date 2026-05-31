@@ -1,7 +1,7 @@
 # ChartRunner System Map — canonical
 
 > **Status:** 🟢 canonical · always-current
-> **Last refreshed:** 2026-05-31 (v1.0.193 current source; SDK OI host-data detector now carries ChartHost open-interest samples into `detectOIConfirm` without adding broker/trading execution; ReplayDataset v2 adds OHLCV + volume resources, manifest/proof hashes, and explicit planned slots for true CVD/perps; COACH.llm provider cockpit remains advice-only; Bot Terminal remains the external bots/agents interface)
+> **Last refreshed:** 2026-05-31 (v1.0.198 current source; first-load wallet/guest login is now a native ChartRunnerOS window over a softly blurred visible splash desktop; Terminal surface mode repair keeps desktop Terminal broad while switching the in-game floating Terminal into chart/run mode; data_jobs collector scaffold emits trades/funding/OI/liquidations resource metadata and ReplayDataset v2 promotes CVD/perps manifest slots when `cr_data_resource_index_v1` exists; SDK OI host-data detector remains read-only; COACH.llm remains advice-only)
 > **Update protocol:** [`docs/SYSTEM_MAP_UPDATE_PROTOCOL.md`](docs/SYSTEM_MAP_UPDATE_PROTOCOL.md) — what triggers an update, file conventions, who-edits-what
 > **Snapshots:** dated files (e.g. `SYSTEM_MAP_2026-05-28.md`) are point-in-time archives, only created on major rebuilds. This file is the always-current one.
 
@@ -12,7 +12,7 @@ deliverable that crosses ≥2 layers. See the protocol doc for the full
 trigger list.
 
 Sister docs:
-- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the game source** (editing source v1.0.193; deploy via ship script): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
+- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the game source** (editing source v1.0.198; deploy via ship script): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
 - [`MILESTONE_AUDIT.md`](MILESTONE_AUDIT.md) — milestone state-of-play
 - [`BRAINSTORM_VS_SHIP_2026-05-28.md`](BRAINSTORM_VS_SHIP_2026-05-28.md) — founding-doc cross-reference
 - [`DRIVE_AND_VAULT_MAP_2026-05-28.md`](DRIVE_AND_VAULT_MAP_2026-05-28.md) — Drive-vs-vault comparison + migration verdict (Drive officially non-ChartRunner)
@@ -27,7 +27,7 @@ Sister docs:
 
 | Product | Where it ships | Stage | Source path |
 |---|---|---|---|
-| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Editing source v1.0.193; deploy via ship script | `ChartRunner_Prototype.html` (single file, 3.5 MB) |
+| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Editing source v1.0.198; deploy via ship script | `ChartRunner_Prototype.html` (single file, 3.5 MB) |
 | **ChartRunner Mobile (Telegram Mini-App)** | `chartrunner.xyz/telegram/` | Live | `telegram/` in repo + `chartrunner-mobile-bot-built/` in vault |
 | **ChartRunner-as-tool (M11)** | `/opt/data/chartrunner/` on Umbrel | In dev (4/13 done) | Hermes container; not yet user-facing |
 | **Phase 1 SDK** | `chartrunner.xyz/sdk/` (built) | In progress (M2.5 in-flight) | `chartrunner-prototype/sdk/core/` (36 files) |
@@ -209,6 +209,23 @@ Two parallel OHLC scrapers exist on Umbrel — intentional experiment, winding d
 
 ## 9. Recent session deliverables
 
+### 2026-05-31 — Terminal surface split scaffold
+
+| Deliverable | Path | Status |
+|---|---|---|
+| **Desktop Terminal scope** | `ChartRunner_Prototype.html` | v1.0.195: desktop Terminal keeps broad market presets and global scanner-style surfaces |
+| **In-game terminal scope** | `ChartRunner_Prototype.html` | In-chart spawning is filtered to run/chart panes, active-run tape, Execution Cockpit state, curated Workbench terms, and Terminal Arc HUD/overlay/promote scaffolds |
+| **Execution boundary** | `ChartRunner_Prototype.html` | Terminal scaffolds remain local UI surfaces and do not add hidden broker, wallet, or order execution paths |
+
+### 2026-05-31 — data_jobs replay resource bridge
+
+| Deliverable | Path | Status |
+|---|---|---|
+| **Collector scaffold** | `data_jobs/` | v1.0.194: adds no-dependency Node collectors for trades, funding, OI, and liquidations, plus `run_all.cjs` dry-run generation |
+| **Resource manifest contract** | `data_jobs/lib/manifest.cjs` | Emits `cr-data-resource-v1` records and a `cr-data-resource-index-v1` manifest keyed for browser localStorage as `cr_data_resource_index_v1` |
+| **ReplayDataset promotion** | `ChartRunner_Prototype.html` | `crReplayLab.installDataResourceIndex(index)` stores generated indexes; `loadDataset()` reads the resource index, attaches matching external resource summaries/proofs, and promotes CVD/perps status from planned to complete or partial |
+| **Regression smoke** | `scripts/check_data_jobs_manifest_wiring.cjs` | Covers scaffold files, manifest hashes, browser index ingestion, dataset resources, and proof hashes |
+
 ### 2026-05-31 — SDK OI host-data detector
 
 | Deliverable | Path | Status |
@@ -268,7 +285,7 @@ Two parallel OHLC scrapers exist on Umbrel — intentional experiment, winding d
 |---|---|---|
 | **Shared alert event model** | `ChartRunner_Prototype.html` | v1.0.185: `window.crAlertBus` normalizes alert-like events and persists them to `cr_alert_events_v1`; alarm save/fire paths mirror into the bus without adding hidden signing or live execution |
 | **Journal alert actions** | `ChartRunner_Prototype.html` | Journal · Alerts renders bus events plus alarm-laser entries with Note / Replay / Ack actions; Note appends to `cr_journal_notes_v1` |
-| **ReplayDataset loader** | `ChartRunner_Prototype.html` | v1.0.185 introduced browser-local ReplayDataset records; v1.0.192 upgrades Alert/Paper/Pine replay to `cr-replay-dataset-v2` with OHLCV + volume resources, source manifest, and dataset proof hashes |
+| **ReplayDataset loader** | `ChartRunner_Prototype.html` | v1.0.185 introduced browser-local ReplayDataset records; v1.0.192 upgrades Alert/Paper/Pine replay to `cr-replay-dataset-v2` with OHLCV + volume resources, and v1.0.194 wires data_jobs resource manifests for true CVD/perps promotion |
 
 ### 2026-05-31 — ChartRunner skill routing + modular orchestration map
 
