@@ -1,7 +1,7 @@
 # ChartRunner System Map — canonical
 
 > **Status:** 🟢 canonical · always-current
-> **Last refreshed:** 2026-05-31 (v1.0.163 current source; v1.0.162 Bot Terminal archive target corrected: local file stays accessible, live `/play` gates the launch surface while crAgentBus/session/proof source remains)
+> **Last refreshed:** 2026-05-31 (v1.0.164 current source; Solana titlebar typography restored to compact legacy sizing while keeping the unified Solana headbar; v1.0.162 Bot Terminal archive target corrected)
 > **Update protocol:** [`docs/SYSTEM_MAP_UPDATE_PROTOCOL.md`](docs/SYSTEM_MAP_UPDATE_PROTOCOL.md) — what triggers an update, file conventions, who-edits-what
 > **Snapshots:** dated files (e.g. `SYSTEM_MAP_2026-05-28.md`) are point-in-time archives, only created on major rebuilds. This file is the always-current one.
 
@@ -12,7 +12,7 @@ deliverable that crosses ≥2 layers. See the protocol doc for the full
 trigger list.
 
 Sister docs:
-- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the game source** (editing source v1.0.163; deploy via ship script): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
+- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the game source** (editing source v1.0.164; deploy via ship script): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
 - [`MILESTONE_AUDIT.md`](MILESTONE_AUDIT.md) — milestone state-of-play
 - [`BRAINSTORM_VS_SHIP_2026-05-28.md`](BRAINSTORM_VS_SHIP_2026-05-28.md) — founding-doc cross-reference
 - [`DRIVE_AND_VAULT_MAP_2026-05-28.md`](DRIVE_AND_VAULT_MAP_2026-05-28.md) — Drive-vs-vault comparison + migration verdict (Drive officially non-ChartRunner)
@@ -27,7 +27,7 @@ Sister docs:
 
 | Product | Where it ships | Stage | Source path |
 |---|---|---|---|
-| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Editing source v1.0.163; deploy via ship script | `ChartRunner_Prototype.html` (single file, 3.1 MB) |
+| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Editing source v1.0.164; deploy via ship script | `ChartRunner_Prototype.html` (single file, 3.1 MB) |
 | **ChartRunner Mobile (Telegram Mini-App)** | `chartrunner.xyz/telegram/` | Live | `telegram/` in repo + `chartrunner-mobile-bot-built/` in vault |
 | **ChartRunner-as-tool (M11)** | `/opt/data/chartrunner/` on Umbrel | In dev (4/13 done) | Hermes container; not yet user-facing |
 | **Phase 1 SDK** | `chartrunner.xyz/sdk/` (built) | In progress (M2.5 in-flight) | `chartrunner-prototype/sdk/core/` (36 files) |
