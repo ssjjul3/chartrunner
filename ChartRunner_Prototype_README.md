@@ -1,4 +1,4 @@
-# ChartRunner — Playable Prototype (v1.0.187)
+# ChartRunner — Playable Prototype (v1.0.190)
 
 > **Fortnite meets Space Invaders meets a trading chart.** Every ability is a real SDK primitive. Every trade is a game move.
 
@@ -70,15 +70,17 @@ Star ratings per chapter: goal hit · probes used · no-skip. Multi-step Coach i
 
 ## Coach
 
-A **pinned widget** at top-left of the chart. Single conversation surface — no modal, no drawer.
+An inline **COACH.llm** button in the in-game top toolbar. Single conversation surface — no modal, no drawer.
 
-- **Hotkey `C`** opens the Coach popover with FAQ matching (`help`, `ladder`, `oco`, `bracket`, `wallet`, `scared`, `win`, etc.)
-- **Double-click** the Coach widget for the commands menu
+- **Hotkey `C`** or the toolbar chat icon opens the Coach popover with ChartRunner/trading context matching (`bracket`, `risk`, `timeframe`, `signal`, `Bot Terminal`, `wallet`, etc.)
+- **Toolbar anchor** keeps the unread dot on the icon and opens the popover below the in-game chrome across Liquid Glass and compact themes (v1.0.189)
+- **Double-click** the legacy Coach widget for the commands menu
 - **Shared memory** across surfaces — typing in the in-game Coach, the Phone SMS app, or the Terminal Coach log all hit the same `crCoach` IIFE
+- **Coach boundary** (v1.0.190) — COACH.llm is the in-game advisor for ChartRunner and trading context. Bot Terminal is the interface for external bots/agents and tool execution.
 - **ATR regime** shown in the Coach header (Coach = Quant unified entity since v1.0.34)
 - **Setup Guide** card per primitive — icon + step counter + animated demo glyph + commit confetti
 
-Real-model Coach (M2) wires `crCoach` to a remote endpoint with chart + position context. Today it's hardcoded FAQ + game-state heuristics.
+Real-model Coach now has a local/BYO provider router behind `window.crCoachProviders`: it builds a bounded `cr.quant.v1` context pack, can call Ollama/OpenAI-compatible endpoints when configured, and always falls back to deterministic browser guidance. Coach cannot execute tools, connect agents, sign, or route orders; wallet/trading actions remain approval-gated through SDK/wallet paths.
 
 ---
 
@@ -148,6 +150,12 @@ Live `/play` Workbench surfaces today: **Tools** + **Primitives**. As of v1.0.17
 **Desktop Terminal sessions (v1.0.175):** the Terminal window keeps a visible command-session pane, persists the command tape to `cr_terminal_session_v1`, and has its own arrow control for latest-command mode. Journal · Sessions keeps this as a secondary trace source. Neither flow signs, anchors, lists, or sells anything without an explicit wallet handoff.
 
 **Journal alert bus + ReplayDataset loader (v1.0.185):** `window.crAlertBus` is the shared browser-local notification/event model for alert-like events. It persists normalized events to `cr_alert_events_v1`, renders them in Journal · Alerts, and lets each event become a Journal note or seed a replay. Paper journal rows keep the same **Replay** action, but the engine now builds `cr-replay-dataset-v1` records from the loaded chart candle source, persists them to `cr_backtest_datasets_v1`, and stores `cr-backtest-run-v1` results in `cr_backtest_replays_v1` with candle hashes, gap reports, and proof hashes.
+
+**Pine Adapter signal bridge (v1.0.188):** `window.crPineAdapter` imports TradingView alerts, TradingView exported trades, and generic webhook payloads into `cr_signal_events_v1` as `cr-signal-event-v1` records. Signals replay through the same ReplayDataset path as Journal rows, producing `cr-backtest-run-v1` records with `signalId` / `signalHash` proof fields. The Pine path is intentionally an adapter, not a runtime: `compilePineSubset()` emits non-executable `cr-strategy-spec-v1` JSON for the supported subset (`ta.sma`, `ta.ema`, `ta.rsi`, `ta.atr`, crosses, `strategy.entry`, `strategy.exit`) and leaves unsupported Pine as metadata.
+
+**COACH.llm context advisor boundary (v1.0.190):** COACH.llm now owns ChartRunner/trading guidance, builds a bounded `cr.quant.v1` snapshot with market/setup/wallet/open-primitive context, and can use an optional local/BYO provider while retaining richer deterministic fallback answers. Bot Terminal remains the external bots/agents interface for `/connect`, `/build`, headless runs, session archives, and tool proposals; Coach cannot execute or bypass approvals.
+
+**COACH.llm toolbar anchor (v1.0.189):** the in-game Coach chat launcher is a normal `#crTopBar` `tvIcon` again, not a fixed floating bubble over the chart. The unread dot stays on the toolbar icon, and the chat popover opens below the top chrome with a Liquid Glass-specific offset.
 
 **Bot Terminal Labs (v1.0.187):** live `chartrunner.xyz/play/` still hides Bot Terminal by default, but `?crLabsBotTerminal=1` or `?crLabs=bot-terminal` exposes the M14 Agent Command Center as a clear LABS surface. Players can connect agents, point the QVAC bridge at a hosted proxy with `?crAgentBridgeUrl=...&crAgentBridgeEngine=bridge` or `/bridge <url>`, see connection/error state, run `/build <template> <name>` to create propose-mode Bot Forge specs, and use `/run headless [steps]`, `/step [n]`, and `/monitor` for headless-safe runs. Trading, wallet, signing, and order-like agent tools stay player-approval gated; BotBacktestRecord anchoring still routes through the explicit wallet handoff.
 

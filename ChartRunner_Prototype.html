@@ -4,8 +4,11 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.187
-     LAST UPDATED:    2026-05-31  ·  Bot Terminal Labs live gate. Public /play keeps Bot Terminal archived by default, but ?crLabsBotTerminal=1 exposes the Agent Command Center with a visible LABS banner, hosted proxy config, player-visible connection states, safe Bot Forge/headless commands, and approval-gated wallet/trading actions.
+     CURRENT VERSION: v1.0.190
+     LAST UPDATED:    2026-05-31  ·  COACH.llm context advisor boundary. COACH.llm now builds a bounded ChartRunner/trading context pack, can call an optional local/BYO provider, and falls back to richer in-browser guidance; Bot Terminal remains the external bots/agents interface and all execution stays approval-gated through SDK/wallet paths.
+     (v1.0.190 = COACH.llm context advisor boundary. Expands crCoachProviders with ChartRunner/trading knowledge, explicit Coach-vs-Bot-Terminal authority split, richer fallback answers for brackets/risk/timeframes/signals, and player-visible copy that keeps external agents in Bot Terminal.)
+     (v1.0.189 = COACH.llm toolbar anchor repair. Keeps #crTvCoachBtn inside the in-game #crTopBar as a normal tvIcon, removes the fixed floating launcher override, and positions the Coach popover below the toolbar with a Liquid Glass-specific offset.)
+     (v1.0.188 = Pine Adapter signal bridge. Adds window.crPineAdapter as a non-runtime import layer: TradingView alerts, exported trades, and webhook payloads normalize into cr-signal-event-v1 records in cr_signal_events_v1, replay through cr-replay-dataset-v1 / cr-backtest-run-v1, and compile the supported Pine-like subset to cr-strategy-spec-v1 JSON without executing arbitrary Pine.)
      (v1.0.187 = Bot Terminal Labs live gate. Public chartrunner.xyz/play still hides Bot Terminal by default; ?crLabsBotTerminal=1 or ?crLabs=bot-terminal enables the launchers/window, marks the surface as LABS, reads ?crAgentBridgeUrl / ?crAgentBridgeEngine into the hosted bridge path, adds visible agent connection status/errors, exposes /build + /run headless + /step + /monitor via crAgentBus, and keeps wallet/trading tools behind explicit player approval.)
      (v1.0.186 = Liquid Glass in-game chrome repair. Restores Liquid Glass material after the cross-theme metric lock for the in-game #crOSBar and #crTopBar: edge-to-edge frosted head strip, lowered toolbar, glass control wells, and blue/mint active states without touching order or SDK paths.)
      (v1.0.185 = ReplayDataset loader pass. Replaced the old local-mock-candles-v1 replay path with a ReplayDataset loader backed by the currently loaded chart candles. Alert and Paper Replay actions now persist cr-replay-dataset-v1 records to cr_backtest_datasets_v1, store cr-backtest-run-v1 records in cr_backtest_replays_v1, include candle hashes/gap reports, and preserve the same Journal UI buttons.)
@@ -7355,16 +7358,25 @@
     overflow:hidden;
   }
   .crTvCoachPop.on{display:flex}
-  body:not(.crSplashUp) .crTvCoachWrap{
-    position:fixed;top:26px;right:10px;z-index:10004;
+  /* v1.0.189 — COACH.llm belongs to the in-game top toolbar. Keep the
+     launcher inline and only float the chat panel below the chrome. */
+  body:not(.crSplashUp) .crChrome.top .crTvCoachWrap{
+    position:relative;top:auto;right:auto;z-index:auto;flex:0 0 auto;
   }
-  body:not(.crSplashUp) #crTvCoachBtn{
-    background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.14);
+  body:not(.crSplashUp) .crChrome.top #crTvCoachBtn{
+    position:relative;
+  }
+  body:not(.crSplashUp) .crChrome.top .crTvCoachDot{
+    top:2px;right:2px;
   }
   body:not(.crSplashUp) .crTvCoachPop{
-    position:fixed;top:62px;right:10px;left:auto;bottom:auto;
+    position:fixed;top:64px;right:10px;left:auto;bottom:auto;
     width:min(340px,calc(100vw - 20px));
     max-height:min(380px,calc(100vh - 82px));
+  }
+  body[data-os-theme="liquid"]:not(.crSplashUp) .crTvCoachPop{
+    top:76px;
+    max-height:min(380px,calc(100vh - 96px));
   }
   body.crLiveCoachOpen #crTopBar{
     opacity:1!important;transform:none!important;pointer-events:auto!important;
@@ -7451,6 +7463,7 @@
     tradeNotesSpawn:  false,    // v0.9.15: Notes now a Journal tab
     // pre-demo additions (will flip true as features land)
     coachQA:          true,    // crCoach.reply() already covers help/ladder/oco/bracket/wallet/scared/win/hello — keyword + state matching, B1 from yesterday's plan
+    coachAI:          true,    // v1.0.190: optional local/BYO Coach LLM router; v1 matcher remains mandatory fallback
     coachTopBar:      true,    // top-bar Coach affordance — button + popover wired in v0.9.13
     terminalConfigGear: true,  // + tab → ⊛ config (widget config + wallet/coin watchlists)
     inGameBalance:    true,    // CHART/RUN visible in-game (menu drawer + in-run shop), hidden on desktop
@@ -28894,6 +28907,7 @@ document.querySelectorAll('.os-window [data-close]').forEach(btn=>{
  * ============================================================ */
 const CR_JRN_KEY = 'cr_journal_v1';
 const CR_ALERT_EVENTS_KEY = 'cr_alert_events_v1';
+const CR_SIGNAL_EVENTS_KEY = 'cr_signal_events_v1';
 const CR_BACKTEST_REPLAYS_KEY = 'cr_backtest_replays_v1';
 const CR_BACKTEST_DATASETS_KEY = 'cr_backtest_datasets_v1';
 function _crJrnEsc(v){
@@ -29035,6 +29049,311 @@ function _crJrnHashValue(value){
     h = Math.imul(h, 16777619);
   }
   return 'fnv1a-' + (h >>> 0).toString(16).padStart(8, '0');
+}
+function _crPineParseMaybeJson(input){
+  if(typeof input !== 'string') return input;
+  const text = input.trim();
+  if(!text) return {};
+  if((text[0] === '{' && text[text.length - 1] === '}') || (text[0] === '[' && text[text.length - 1] === ']')){
+    try { return JSON.parse(text); } catch(_){}
+  }
+  return text;
+}
+function _crPineCsvCells(line){
+  const cells = [];
+  let cur = '', quoted = false;
+  for(let i = 0; i < String(line || '').length; i++){
+    const ch = line[i];
+    if(ch === '"' && line[i + 1] === '"'){ cur += '"'; i++; continue; }
+    if(ch === '"'){ quoted = !quoted; continue; }
+    if(ch === ',' && !quoted){ cells.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+function _crPineCsvRows(text){
+  const lines = String(text || '').split(/\r?\n/).filter(l => l.trim());
+  if(lines.length < 2) return [];
+  const headers = _crPineCsvCells(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+  return lines.slice(1).map(line => {
+    const cells = _crPineCsvCells(line);
+    const row = {};
+    headers.forEach((h, i) => { row[h] = cells[i] != null ? cells[i] : ''; });
+    return row;
+  });
+}
+function _crPineReadSignals(){
+  return _crJrnReadArray(CR_SIGNAL_EVENTS_KEY).map(ev => {
+    if(ev && ev.schema === 'cr-signal-event-v1') return Object.assign({ adapter:'pine-adapter-v1', replayId:null }, _crJrnClone(ev));
+    return _crPineNormalizeSignal(ev, ev && ev.source ? ev.source : 'signal');
+  });
+}
+function _crPineSaveSignals(rows){
+  const saved = _crJrnWriteArray(CR_SIGNAL_EVENTS_KEY, rows, 400);
+  try { window.dispatchEvent(new CustomEvent('cr-signal-events-updated', { detail:{ count:saved.length } })); } catch(_){}
+  return saved;
+}
+function _crPineStoreSignal(ev){
+  const rows = _crPineReadSignals();
+  rows.push(ev);
+  _crPineSaveSignals(rows);
+  return _crJrnClone(ev);
+}
+function _crPinePatchSignal(id, patch){
+  const rows = _crPineReadSignals();
+  const i = rows.findIndex(ev => ev && ev.id === id);
+  if(i < 0) return null;
+  rows[i] = Object.assign({}, rows[i], patch || {});
+  _crPineSaveSignals(rows);
+  return _crJrnClone(rows[i]);
+}
+function _crPineFirstValue(src, keys){
+  const obj = src && typeof src === 'object' ? src : {};
+  for(const k of keys){
+    if(obj[k] != null && obj[k] !== '') return obj[k];
+  }
+  return null;
+}
+function _crPineTf(value){
+  let raw = String(value == null ? '' : value).trim();
+  if(!raw) return (typeof timeframe === 'string' ? timeframe : '15m');
+  raw = raw.replace(/^interval:/i, '').trim();
+  const up = raw.toUpperCase();
+  if(/^\d+$/.test(raw)){
+    const n = +raw;
+    if(n < 60) return n + 'm';
+    if(n % 60 === 0) return (n / 60) + 'h';
+    return n + 'm';
+  }
+  if(up === 'D' || up === '1D') return '1d';
+  if(up === 'W' || up === '1W') return '1w';
+  if(up === 'M' || up === '1M') return '1M';
+  return raw;
+}
+function _crPineSymbolInfo(value){
+  let raw = String(value || '').toUpperCase().trim();
+  if(!raw){
+    try {
+      const a = typeof currentAssetObj === 'function' ? currentAssetObj() : null;
+      raw = a && a.sym ? String(a.sym).toUpperCase() : 'BTCUSDT';
+    } catch(_){ raw = 'BTCUSDT'; }
+  }
+  raw = raw.split(':').pop().replace(/[^A-Z0-9]/g, '');
+  raw = raw.replace(/PERP$/, '');
+  let asset = raw;
+  ['USDT','USDC','USD','BTC','ETH','SOL'].some(q => {
+    if(raw.endsWith(q) && raw.length > q.length){
+      asset = raw.slice(0, -q.length);
+      return true;
+    }
+    return false;
+  });
+  return { symbol:raw || 'BTCUSDT', asset:asset || 'BTC' };
+}
+function _crPineSide(value){
+  const raw = String(value == null ? '' : value).toLowerCase();
+  if(/short|sell|strategy\.short/.test(raw)) return 'sell';
+  return 'buy';
+}
+function _crPineNum(value){
+  if(value == null || value === '') return null;
+  const n = Number(String(value).replace(/[$,%\s]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+function _crPineTs(value){
+  if(value == null || value === '') return Date.now();
+  const n = Number(value);
+  if(Number.isFinite(n) && n > 0) return n < 10000000000 ? n * 1000 : n;
+  const t = Date.parse(String(value));
+  return Number.isFinite(t) ? t : Date.now();
+}
+function _crPineNormalizeSignal(input, source){
+  const parsed = _crPineParseMaybeJson(input);
+  const src = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : { message:String(parsed || '') };
+  const strat = src.strategy && typeof src.strategy === 'object' ? src.strategy : {};
+  const strategyName = typeof src.strategy === 'string'
+    ? src.strategy
+    : (_crPineFirstValue(src, ['strategy_name','strategyName','Strategy','Name']) || _crPineFirstValue(strat, ['name','title']) || '');
+  const symRaw = _crPineFirstValue(src, ['ticker','symbol','tickerid','Symbol','Market']) || _crPineFirstValue(strat, ['symbol','ticker']);
+  const sym = _crPineSymbolInfo(symRaw);
+  const sideRaw = _crPineFirstValue(src, ['action','side','Side','Direction','order_action'])
+    || _crPineFirstValue(strat, ['order_action','action','market_position'])
+    || '';
+  const price = _crPineNum(_crPineFirstValue(src, ['price','close','entry','Entry price','Entry Price','order_price'])
+    || _crPineFirstValue(strat, ['order_price','price']));
+  const sl = _crPineNum(_crPineFirstValue(src, ['sl','SL','stop','Stop','loss','Loss','Stop price','Stop Price']));
+  const tp = _crPineNum(_crPineFirstValue(src, ['tp','TP','target','Target','profit','Profit','Take Profit','Take profit']));
+  const tf = _crPineTf(_crPineFirstValue(src, ['timeframe','tf','interval','Interval','Timeframe']));
+  const ts = _crPineTs(_crPineFirstValue(src, ['time','Time','timestamp','Timestamp','Entry time','Entry Time','date','Date']));
+  const normalizedSource = String(source || 'signal');
+  const rawHash = _crJrnHashValue(src);
+  return {
+    id:String(src.id || src.signalId || _crJrnEventId('signal')),
+    schema:'cr-signal-event-v1',
+    adapter:'pine-adapter-v1',
+    source:normalizedSource,
+    ts,
+    receivedAt:Date.now(),
+    asset:String(src.asset || sym.asset || 'BTC').toUpperCase(),
+    symbol:String(src.symbol || sym.symbol || _crJrnAssetSymbol(sym.asset)).toUpperCase(),
+    timeframe:tf,
+    side:_crPineSide(sideRaw),
+    price,
+    entry:price,
+    sl,
+    tp,
+    message:String(src.message || src.alert_message || src.Comment || src.Commentary || ''),
+    strategy:{
+      name:String(strategyName || ''),
+      orderId:String(_crPineFirstValue(src, ['order_id','Order ID']) || _crPineFirstValue(strat, ['order_id','id']) || ''),
+      marketPosition:String(_crPineFirstValue(src, ['market_position']) || _crPineFirstValue(strat, ['market_position']) || '')
+    },
+    quantity:_crPineNum(_crPineFirstValue(src, ['qty','quantity','Quantity','Contracts'])),
+    exitPrice:_crPineNum(_crPineFirstValue(src, ['exit','Exit price','Exit Price'])),
+    rawHash,
+    replayId:src.replayId || null,
+    raw:_crJrnClone(src)
+  };
+}
+function _crPineImportTradingViewAlert(input){
+  return _crPineStoreSignal(_crPineNormalizeSignal(input, 'tradingview-alert'));
+}
+function _crPineImportWebhook(input){
+  return _crPineStoreSignal(_crPineNormalizeSignal(input, 'webhook'));
+}
+function _crPineImportTradingViewTrades(input){
+  const parsed = _crPineParseMaybeJson(input);
+  let rows = [];
+  if(Array.isArray(parsed)) rows = parsed;
+  else if(typeof parsed === 'string') rows = _crPineCsvRows(parsed);
+  else if(parsed && Array.isArray(parsed.trades)) rows = parsed.trades;
+  else if(parsed && Array.isArray(parsed.data)) rows = parsed.data;
+  else if(parsed && typeof parsed === 'object') rows = [parsed];
+  return rows.map(row => _crPineStoreSignal(_crPineNormalizeSignal(row, 'tradingview-export')));
+}
+function _crPineTradeFromSignal(signal){
+  const ev = _crPineNormalizeSignal(signal || {}, signal && signal.source ? signal.source : 'signal');
+  const entry = Number(ev.entry != null ? ev.entry : ev.price);
+  const riskBase = Number.isFinite(entry) && entry > 0 ? entry : 100;
+  const fallbackRisk = Math.max(0.01, Math.abs(riskBase) * 0.01);
+  const sl = Number.isFinite(Number(ev.sl)) ? Number(ev.sl) : (ev.side === 'sell' ? riskBase + fallbackRisk : riskBase - fallbackRisk);
+  const tp = Number.isFinite(Number(ev.tp)) ? Number(ev.tp) : (ev.side === 'sell' ? riskBase - fallbackRisk * 2 : riskBase + fallbackRisk * 2);
+  return {
+    id:'signal_' + ev.id,
+    ts:ev.ts,
+    asset:ev.asset,
+    tf:ev.timeframe,
+    side:ev.side,
+    setup:ev.strategy && ev.strategy.name ? ev.strategy.name : ev.source,
+    entry:Number.isFinite(entry) ? entry : riskBase,
+    sl,
+    tp,
+    risk:ev.quantity || null,
+    conf:null,
+    levels:'',
+    notes:(ev.message || 'Imported Pine/TradingView signal') + (ev.rawHash ? '\nrawHash: ' + ev.rawHash : ''),
+    checklist:{}
+  };
+}
+function _crPineReplaySignal(idOrSignal){
+  const events = _crPineReadSignals();
+  const ev = typeof idOrSignal === 'string'
+    ? events.find(x => x && x.id === idOrSignal)
+    : _crPineNormalizeSignal(idOrSignal || {}, idOrSignal && idOrSignal.source ? idOrSignal.source : 'signal');
+  if(!ev) return null;
+  const replay = _crJrnCreateReplay({
+    source:'signal',
+    signalId:ev.id,
+    seed:ev.id,
+    signal:ev,
+    trade:_crPineTradeFromSignal(ev)
+  });
+  _crPinePatchSignal(ev.id, { replayId:replay.id, replayAt:Date.now() });
+  return replay;
+}
+function _crPineSupportedOps(code){
+  const text = String(code || '');
+  const pairs = [
+    ['ta.sma', /\bta\.sma\s*\(/],
+    ['ta.ema', /\bta\.ema\s*\(/],
+    ['ta.rsi', /\bta\.rsi\s*\(/],
+    ['ta.atr', /\bta\.atr\s*\(/],
+    ['ta.crossover', /\bta\.crossover\s*\(/],
+    ['ta.crossunder', /\bta\.crossunder\s*\(/],
+    ['strategy.entry', /\bstrategy\.entry\s*\(/],
+    ['strategy.exit', /\bstrategy\.exit\s*\(/]
+  ];
+  return pairs.filter(([, re]) => re.test(text)).map(([op]) => op);
+}
+function _crPineUnsupportedOps(code){
+  const text = String(code || '');
+  const pairs = [
+    ['request.security', /\brequest\.security\s*\(/],
+    ['strategy.order', /\bstrategy\.order\s*\(/],
+    ['strategy.close', /\bstrategy\.close\s*\(/],
+    ['strategy.cancel', /\bstrategy\.cancel\s*\(/],
+    ['alertcondition', /\balertcondition\s*\(/],
+    ['library/import', /^\s*import\s+/m]
+  ];
+  return pairs.filter(([, re]) => re.test(text)).map(([op]) => op);
+}
+function _crPineParseNamedArgs(text){
+  const out = {};
+  String(text || '').replace(/\b([a-zA-Z_]\w*)\s*=\s*([^,\)]+)/g, (_, k, v) => {
+    out[k] = v.trim().replace(/^["']|["']$/g, '');
+    return _;
+  });
+  return out;
+}
+function _crPineCompileSubset(code, opts){
+  const text = String(code || '');
+  const options = opts && typeof opts === 'object' ? opts : {};
+  const nameMatch = text.match(/\bstrategy\s*\(\s*["']([^"']+)["']/) || text.match(/\bindicator\s*\(\s*["']([^"']+)["']/);
+  const name = String(options.name || (nameMatch && nameMatch[1]) || 'Pine Subset Strategy');
+  const lines = text.split(/\r?\n/);
+  const indicators = [];
+  const entries = [];
+  const exits = [];
+  let pendingIf = '';
+  lines.forEach(rawLine => {
+    const line = String(rawLine || '').trim();
+    if(!line || line.startsWith('//')) return;
+    const ifMatch = line.match(/^if\s+(.+)$/);
+    if(ifMatch){ pendingIf = ifMatch[1].trim(); return; }
+    const indMatch = line.match(/^([A-Za-z_]\w*)\s*=\s*(ta\.(?:sma|ema|rsi|atr))\s*\(([^)]*)\)/);
+    if(indMatch){
+      indicators.push({ id:indMatch[1], op:indMatch[2], args:indMatch[3].split(',').map(v => v.trim()).filter(Boolean) });
+    }
+    const entryMatch = line.match(/strategy\.entry\s*\(\s*["']([^"']+)["']\s*,\s*strategy\.(long|short)/);
+    if(entryMatch){
+      entries.push({ id:entryMatch[1], side:entryMatch[2] === 'short' ? 'sell' : 'buy', when:pendingIf || 'true', action:'strategy.entry' });
+      pendingIf = '';
+    }
+    const exitMatch = line.match(/strategy\.exit\s*\((.*)\)/);
+    if(exitMatch){
+      const args = _crPineParseNamedArgs(exitMatch[1]);
+      exits.push({ id:args.id || args[0] || 'exit', from:args.from_entry || args.from || '', profit:args.profit || null, loss:args.loss || null, action:'strategy.exit' });
+      pendingIf = '';
+    }
+  });
+  const ops = _crPineSupportedOps(text);
+  return {
+    schema:'cr-strategy-spec-v1',
+    adapter:'pine-adapter-v1',
+    compiler:'pine-subset-v1',
+    executable:false,
+    name,
+    id:String(options.id || ('strategy_' + _crJrnHashValue({ name, text }).replace(/^fnv1a-/, ''))),
+    createdAt:Date.now(),
+    source:{ kind:'pine-subset', pineHash:_crJrnHashValue(text), lineCount:lines.length },
+    ops,
+    indicators,
+    signals:entries,
+    exits,
+    unsupported:_crPineUnsupportedOps(text),
+    notes:'Compiled to ChartRunner StrategySpec JSON only. Pine code is not executed in-browser.'
+  };
 }
 function _crJrnTfMs(tf){
   const map = {
@@ -29263,9 +29582,12 @@ function _crJrnCreateReplay(opts){
   const replayDataset = _crJrnLoadReplayDataset(trade, spec);
   const replayCandles = Array.isArray(replayDataset.candles) ? replayDataset.candles : [];
   const result = _crJrnEvaluateReplay(trade, replayCandles, replayDataset);
+  const signalHash = spec.signal ? _crJrnHashValue(spec.signal) : null;
   const specProof = {
     source:String(spec.source || 'paper'),
     alertId:spec.alertId || null,
+    signalId:spec.signalId || null,
+    signalHash,
     paperId:spec.paperId || trade.id || null,
     asset:String(trade.asset || 'BTC').toUpperCase(),
     timeframe:String(trade.tf || trade.timeframe || '15m'),
@@ -29280,6 +29602,8 @@ function _crJrnCreateReplay(opts){
     completedAt:Date.now(),
     status:result.outcome === 'invalid' ? 'invalid' : 'passed',
     alertId:spec.alertId || null,
+    signalId:spec.signalId || null,
+    signal:spec.signal ? _crJrnClone(spec.signal) : null,
     paperId:spec.paperId || trade.id || null,
     asset:String(trade.asset || 'BTC').toUpperCase(),
     timeframe:String(trade.tf || trade.timeframe || '15m'),
@@ -29292,6 +29616,7 @@ function _crJrnCreateReplay(opts){
     proof:{
       specHash:_crJrnHashValue(specProof),
       candleHash:replayDataset.candleHash,
+      signalHash,
       resultHash:_crJrnHashValue(result),
       engineVersion:'journal-replay-v1.0.185'
     }
@@ -29304,7 +29629,7 @@ function _crJrnCreateReplay(opts){
       window.crAlertBus.publish({
         type:'backtest',
         severity:result.outcome === 'loss' ? 'warn' : 'info',
-        source:spec.source === 'alert' ? 'alert-replay' : 'paper-replay',
+        source:spec.source === 'alert' ? 'alert-replay' : (spec.source === 'signal' ? 'signal-replay' : 'paper-replay'),
         asset:rec.asset,
         timeframe:rec.timeframe,
         price:Number(trade.entry),
@@ -29328,6 +29653,17 @@ try {
     list:() => _crJrnClone(_crJrnReadArray(CR_BACKTEST_REPLAYS_KEY)),
     datasets:() => _crJrnClone(_crJrnReadArray(CR_BACKTEST_DATASETS_KEY)),
     clear:() => { _crJrnWriteArray(CR_BACKTEST_REPLAYS_KEY, [], 80); _crJrnWriteArray(CR_BACKTEST_DATASETS_KEY, [], 80); return []; }
+  };
+  window.crPineAdapter = {
+    key:CR_SIGNAL_EVENTS_KEY,
+    importTradingViewAlert:_crPineImportTradingViewAlert,
+    importTradingViewTrades:_crPineImportTradingViewTrades,
+    importWebhook:_crPineImportWebhook,
+    compilePineSubset:_crPineCompileSubset,
+    replay:_crPineReplaySignal,
+    list:() => _crJrnClone(_crPineReadSignals()),
+    get:id => _crJrnClone(_crPineReadSignals().find(ev => ev && ev.id === id) || null),
+    clear:() => { _crPineSaveSignals([]); return []; }
   };
   window.crAlertBus = {
     key:CR_ALERT_EVENTS_KEY,
@@ -33984,7 +34320,7 @@ function _wbRenderStrats(){
         '<div style="font-size:18px;width:24px;text-align:center">' + (s.icon || '↗') + '</div>' +
         '<div style="flex:1;min-width:0">' +
           '<div style="font-size:12px;font-weight:700;color:#b58aff">' + s.name + '</div>' +
-          '<div style="font-size:10px;color:var(--dim)">custom · created ' + new Date(s.created).toLocaleDateString() + '</div>' +
+          '<div style="font-size:10px;color:var(--dim)">custom' + (s.strategySpec ? ' · Pine Adapter JSON' : '') + ' · created ' + new Date(s.created).toLocaleDateString() + '</div>' +
         '</div>' +
         '<button class="cr-go" type="button" data-del style="padding:4px 8px;font-size:10px;background:transparent;border:1px solid var(--line);color:var(--dim)">×</button>';
       row.querySelector('[data-del]').addEventListener('click', () => {
@@ -34117,6 +34453,12 @@ function _wbBuildStrat(){
   const code = document.getElementById('wbStratCode')?.value || '';
   if(!name){ if(typeof toast === 'function') toast('Strategy needs a name'); return; }
   const id = 'strat_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+  let strategySpec = null;
+  try {
+    if(window.crPineAdapter && typeof window.crPineAdapter.compilePineSubset === 'function'){
+      strategySpec = window.crPineAdapter.compilePineSubset(code, { id, name });
+    }
+  } catch(_){}
   // v0.9.9 — Persist the Quick Builder snapshot alongside the Pine code so future
   // edits can restore the form state and so the live in-game strategy can read
   // the weights directly when sdk.scoreSetup is called.
@@ -34127,7 +34469,7 @@ function _wbBuildStrat(){
     rr:       +(document.getElementById('wbStratRR')?.value || 2),
     weights:  _wbStratQuickGetWeights(),
   } : null;
-  wb.strategies.push({ id, name, icon, code, quick: quickSnap, created: Date.now(), category: 'creation' });
+  wb.strategies.push({ id, name, icon, code, strategySpec, quick: quickSnap, created: Date.now(), category: 'creation' });
   // Mirror into the live STRATEGIES map so the Strat pill / OS Configs pick it up.
   try {
     if(typeof STRATEGIES !== 'undefined' && typeof STRATEGY_IDS !== 'undefined'){
@@ -48687,6 +49029,494 @@ function log(msg){
 })();
 
 /* =========================================================================
+ * v1.0.190 — crCoachProviders: optional local/BYO Coach LLM router
+ * Coach LLM is an untrusted narrator.
+ * Coach reads context -> Coach advises -> player chooses -> connected agent/tool proposes -> player approves risky action -> SDK/wallet executes.
+ * The v1 keyword/state matcher remains the mandatory fallback for every
+ * disabled, empty, failed, or timed-out provider path.
+ * ===================================================================== */
+window.crCoachProviders = (function(){
+  const CONFIG_KEY = 'cr_coach_provider_v1';
+  const RECEIPTS_KEY = 'cr_coach_compute_receipts_v1';
+  const MAX_RECEIPTS = 40;
+  const DEFAULT_CONFIG = Object.freeze({
+    providerType: 'v1',
+    model: 'llama3.1:8b',
+    baseUrl: '',
+    authMode: 'none',
+    apiKey: '',
+    latencyBudgetMs: 1400,
+    privacyMode: 'local_only'
+  });
+  const subscribers = [];
+  let status = {
+    state: 'idle',
+    providerType: DEFAULT_CONFIG.providerType,
+    model: DEFAULT_CONFIG.model,
+    fallbackUsed: true,
+    fallbackReason: '',
+    latencyMs: 0,
+    privacyMode: DEFAULT_CONFIG.privacyMode,
+    updatedAt: Date.now()
+  };
+
+  function safeJsonParse(raw, fallback){
+    try{
+      const v = JSON.parse(raw);
+      return v && typeof v === 'object' ? v : fallback;
+    }catch(_){ return fallback; }
+  }
+
+  function readConfig(){
+    let stored = {};
+    try{ stored = safeJsonParse(localStorage.getItem(CONFIG_KEY) || '{}', {}); }catch(_){}
+    return normalizeConfig(stored);
+  }
+
+  function writeConfig(next){
+    const cfg = normalizeConfig(Object.assign({}, readConfig(), next || {}));
+    try{ localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); }catch(_){}
+    updateStatus({ state:'configured', providerType:cfg.providerType, model:cfg.model, privacyMode:cfg.privacyMode, fallbackUsed:cfg.providerType === 'v1', fallbackReason:'' });
+    return readConfig();
+  }
+
+  function normalizeConfig(src){
+    const raw = src || {};
+    return {
+      baseUrl: String(raw.baseUrl || DEFAULT_CONFIG.baseUrl),
+      authMode: String(raw.authMode || DEFAULT_CONFIG.authMode),
+      apiKey: String(raw.apiKey || DEFAULT_CONFIG.apiKey),
+      model: String(raw.model || DEFAULT_CONFIG.model),
+      providerType: String(raw.providerType || DEFAULT_CONFIG.providerType),
+      latencyBudgetMs: Math.max(250, Math.min(8000, Number(raw.latencyBudgetMs) || DEFAULT_CONFIG.latencyBudgetMs)),
+      privacyMode: String(raw.privacyMode || DEFAULT_CONFIG.privacyMode)
+    };
+  }
+
+  function getStatus(){ return Object.assign({}, status); }
+
+  function subscribe(fn){
+    if(typeof fn !== 'function') return function(){};
+    subscribers.push(fn);
+    return function(){
+      const i = subscribers.indexOf(fn);
+      if(i >= 0) subscribers.splice(i, 1);
+    };
+  }
+
+  function updateStatus(patch){
+    status = Object.assign({}, status, patch || {}, { updatedAt:Date.now() });
+    subscribers.forEach(fn => { try{ fn(getStatus()); }catch(_){} });
+  }
+
+  function lastReceipts(){
+    try{
+      const arr = safeJsonParse(localStorage.getItem(RECEIPTS_KEY) || '[]', []);
+      return Array.isArray(arr) ? arr.slice(-MAX_RECEIPTS) : [];
+    }catch(_){ return []; }
+  }
+
+  function hashText(s){
+    let h = 2166136261;
+    const text = String(s || '');
+    for(let i=0;i<text.length;i++){
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return ('00000000' + (h >>> 0).toString(16)).slice(-8);
+  }
+
+  function storeReceipt(receipt){
+    try{
+      const arr = lastReceipts();
+      arr.push(Object.assign({ schema:'cr-coach-compute-receipt-v1', created_at:new Date().toISOString() }, receipt || {}));
+      localStorage.setItem(RECEIPTS_KEY, JSON.stringify(arr.slice(-MAX_RECEIPTS)));
+    }catch(_){}
+  }
+
+  function cleanText(text){
+    let out = String(text || '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    out = out.replace(/^(coach|assistant)\s*:\s*/i, '').trim();
+    if(out.length > 520) out = out.slice(0, 517).trim() + '...';
+    return out;
+  }
+
+  function finiteNum(v){
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function rounded(v, digits){
+    const n = finiteNum(v);
+    if(n == null) return null;
+    const p = Math.pow(10, digits == null ? 2 : digits);
+    return Math.round(n * p) / p;
+  }
+
+  function readText(id){
+    try{
+      const el = document.getElementById(id);
+      return el ? String(el.textContent || '').trim() : '';
+    }catch(_){ return ''; }
+  }
+
+  function activeTimeframe(){
+    try{
+      const active = document.querySelector('#tfbox button.on');
+      if(active && active.dataset && active.dataset.tf) return active.dataset.tf;
+    }catch(_){}
+    try{ if(typeof game !== 'undefined' && game.tf) return game.tf; }catch(_){}
+    return '15m';
+  }
+
+  function currentSymbol(){
+    try{
+      const el = document.querySelector('.symbol .sym');
+      if(el && el.textContent) return String(el.textContent).trim();
+    }catch(_){}
+    try{ if(typeof game !== 'undefined' && game.symbol) return String(game.symbol); }catch(_){}
+    return 'BTCUSDT';
+  }
+
+  function currentRegime(){
+    try{
+      if(typeof marketRegime !== 'undefined') return String(marketRegime);
+    }catch(_){}
+    try{
+      const g = (typeof game !== 'undefined') ? game : {};
+      if(g.regime) return String(g.regime);
+      if(g.running) return 'running';
+    }catch(_){}
+    return 'unknown';
+  }
+
+  function currentCcv(){
+    try{
+      if(typeof game !== 'undefined'){
+        if(game.ccv != null) return rounded(game.ccv, 2);
+        if(game.ccvScore != null) return rounded(game.ccvScore, 2);
+      }
+    }catch(_){}
+    const txt = readText('ccvVal') || readText('crSideCcv');
+    const n = parseFloat(txt.replace(/[^0-9.+-]/g, ''));
+    return Number.isFinite(n) ? rounded(n, 2) : null;
+  }
+
+  function currentPriceSafe(){
+    try{ if(typeof currentPrice === 'function') return rounded(currentPrice(), 6); }catch(_){}
+    try{
+      if(typeof candles !== 'undefined' && candles.length) return rounded(candles[candles.length - 1].c, 6);
+    }catch(_){}
+    return null;
+  }
+
+  function openPositions(){
+    try{
+      const g = (typeof game !== 'undefined') ? game : {};
+      return {
+        brackets: (g.visualBrackets || []).length,
+        ladders: (g.visualLadders || []).length,
+        ocos: (g.visualOCO || []).length
+      };
+    }catch(_){ return { brackets:0, ladders:0, ocos:0 }; }
+  }
+
+  function walletSnapshot(){
+    const g = (typeof game !== 'undefined') ? game : {};
+    let connected = false;
+    let pubkey = '';
+    try{
+      connected = !!(window.crWallet && window.crWallet.isConnected && window.crWallet.isConnected());
+      pubkey = connected && window.crWallet.pubkey ? String(window.crWallet.pubkey()).slice(0, 4) + '...' + String(window.crWallet.pubkey()).slice(-4) : '';
+    }catch(_){}
+    return {
+      connected,
+      pubkey,
+      chart: finiteNum(g.chart) || 0,
+      run: finiteNum(g.run) || 0
+    };
+  }
+
+  function pnlSnapshot(){
+    return {
+      pnl: readText('pnlVal') || '$0',
+      sharpe: readText('sharpeVal') || '-'
+    };
+  }
+
+  function worldSnapshot(){
+    const g = (typeof game !== 'undefined') ? game : {};
+    const p = (typeof player !== 'undefined') ? player : {};
+    return {
+      running: !!g.running,
+      runIdx: finiteNum(g.runIdx) || 0,
+      dist: finiteNum(g.dist) || 0,
+      kills: finiteNum(g.kills) || 0,
+      upsideDown: !!p.upsideDown,
+      playerIdx: finiteNum(p.wx) != null && typeof STEP !== 'undefined' ? Math.round(p.wx / STEP) : null
+    };
+  }
+
+  function candleSlice(){
+    try{
+      if(typeof candles === 'undefined' || !Array.isArray(candles)) return [];
+      return candles.slice(-36).map((c, i) => ({
+        i: Math.max(0, candles.length - 36) + i,
+        o: rounded(c.o, 6),
+        h: rounded(c.h, 6),
+        l: rounded(c.l, 6),
+        c: rounded(c.c, 6),
+        v: rounded(c.v, 2)
+      }));
+    }catch(_){ return []; }
+  }
+
+  function activeIndicators(){
+    try{
+      if(typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active){
+        return Array.from(INDICATOR_STATE.active).slice(0, 12).map(id => String(id));
+      }
+    }catch(_){}
+    return [];
+  }
+
+  function strategySnapshot(){
+    const g = (typeof game !== 'undefined') ? game : {};
+    let broker = '';
+    try{
+      if(g.broker && typeof g.broker === 'object') broker = [g.broker.kind, g.broker.venue].filter(Boolean).join(':');
+      else if(g.broker) broker = String(g.broker);
+    }catch(_){}
+    return {
+      mode: String(g.mode || g.runMode || 'sandbox'),
+      strategy: String(g.strategy || 'none'),
+      broker: broker || 'paper',
+      indicators: activeIndicators()
+    };
+  }
+
+  function coachKnowledge(){
+    return {
+      coach: {
+        role: 'in_game_context_advisor',
+        summary: 'COACH.llm explains ChartRunner state, trading structure, risk, primitives, and next-step frameworks from the supplied snapshot.',
+        limits: [
+          'cannot execute tools',
+          'cannot connect external agents',
+          'cannot route orders',
+          'cannot sign wallet transactions',
+          'cannot bypass player approval'
+        ]
+      },
+      botTerminal: {
+        role: 'Bot Terminal is the interface for external bots and agents.',
+        summary: 'Use Bot Terminal for Claude, Telegram, Lobster, OpenClaw, Hermes, hosted bridges, /connect, /build, /run headless, /step, /monitor, session archives, and BotBacktestRecord proof handoffs.',
+        safety: 'External agents may propose work through crAgentBus; trading, wallet, signing, and order-like actions require explicit player approval and must travel through SDK/wallet paths.'
+      },
+      chartrunner: {
+        loop: 'Players run on real or loaded candles, fight market pressure, and use trading primitives as abilities.',
+        primarySurfaces: ['COACH.llm toolbar/widget', 'Primitives laser', 'Configure Run', 'Journal', 'Workbench', 'Bot Terminal'],
+        orderPath: 'ChartRunnerSDK is the order-issuing path. UI, Coach, and bots do not place orders directly.',
+        primitives: {
+          bracket: 'entry plus stop/invalidation plus target or R:R',
+          oco: 'two-sided conditional idea for a range or breakout decision',
+          ladder: 'scaled entries when timing is uncertain but thesis is defined',
+          blueLaser: 'player-triggered primitive/action launcher, not autonomous execution'
+        }
+      },
+      tradingPlaybook: {
+        principles: [
+          'Start with market structure and timeframe alignment.',
+          'Define invalidation before sizing.',
+          'Risk small enough that a normal stop does not change behavior.',
+          'Use brackets for planned entry/stop/target, OCO for two-sided levels, and ladders for scale-in plans.',
+          'Treat signals as hypotheses; wait for confirmation and a clean risk box.',
+          'Coach gives frameworks, not personalized financial advice or blind long/short calls.'
+        ],
+        checklist: ['bias', 'level', 'trigger', 'invalidation', 'size', 'approval']
+      }
+    };
+  }
+
+  function buildCoachSnapshot(){
+    const g = (typeof game !== 'undefined') ? game : {};
+    const knowledge = coachKnowledge();
+    return {
+      schema: 'cr.quant.v1',
+      source: 'coach.llm',
+      boundary: {
+        coachRole: 'in_game_context_advisor',
+        botTerminalRole: 'Bot Terminal is the interface for external bots and agents.',
+        canExecute: false,
+        authority: 'advice_only',
+        approvalGate: 'All trading, wallet, signing, and order-like actions require explicit player approval through SDK/wallet paths.'
+      },
+      coach: { role:'in_game_context_advisor' },
+      symbol: currentSymbol(),
+      tf: activeTimeframe(),
+      price: currentPriceSafe(),
+      regime: currentRegime(),
+      score: finiteNum(g.score) || 0,
+      ccv: currentCcv(),
+      setup: strategySnapshot(),
+      positions: openPositions(),
+      wallet: walletSnapshot(),
+      pnl: pnlSnapshot(),
+      world: worldSnapshot(),
+      chartrunner: knowledge.chartrunner,
+      botTerminal: knowledge.botTerminal,
+      tradingPlaybook: knowledge.tradingPlaybook,
+      candles: candleSlice()
+    };
+  }
+
+  function promptMessages(playerMsg, history, snapshot){
+    const recent = Array.isArray(history) ? history.slice(-6).map(m => ({
+      role: m && m.role === 'user' ? 'user' : 'assistant',
+      content: cleanText(m && m.text)
+    })).filter(m => m.content) : [];
+    const knowledge = coachKnowledge();
+    const system = [
+      'You are COACH.llm, the in-game context advisor inside ChartRunner.',
+      'Use the supplied cr.quant.v1 snapshot, ChartRunner knowledge, and recent chat to answer ChartRunner and general trading questions.',
+      'Bot Terminal is the interface for external bots and agents; do not claim to connect agents, run tools, or move agent work from Bot Terminal.',
+      'You cannot execute tools, place trades, sign, submit, route orders, or promise action.',
+      'For trade questions, give a decision framework with invalidation, risk, and confirmation; avoid blind personalized long/short instructions.',
+      'Give 1-4 concise sentences. Be direct, practical, and risk-aware.'
+    ].join(' ');
+    return [
+      { role:'system', content:system },
+      { role:'user', content:'ChartRunner knowledge: ' + JSON.stringify(knowledge) },
+      { role:'user', content:'Snapshot: ' + JSON.stringify(snapshot) },
+      ...recent,
+      { role:'user', content:'Player: ' + cleanText(playerMsg) }
+    ];
+  }
+
+  function providerUrl(cfg){
+    const pt = cfg.providerType;
+    if(pt === 'ollama') return cfg.baseUrl || 'http://127.0.0.1:11434/api/generate';
+    if(pt === 'openai_compatible' || pt === 'umbrel_mcp') return cfg.baseUrl || '';
+    return '';
+  }
+
+  async function postWithTimeout(url, payload, cfg){
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), cfg.latencyBudgetMs);
+    const headers = { 'Content-Type':'application/json' };
+    if(cfg.authMode !== 'none' && cfg.apiKey) headers.Authorization = 'Bearer ' + cfg.apiKey;
+    try{
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      if(!res.ok) throw new Error('provider http ' + res.status);
+      return await res.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function payloadFor(cfg, messages){
+    if(cfg.providerType === 'ollama'){
+      return {
+        model: cfg.model,
+        prompt: messages.map(m => m.role.toUpperCase() + ': ' + m.content).join('\n\n') + '\n\nASSISTANT:',
+        stream: false,
+        options: { temperature: 0.35, num_predict: 160 }
+      };
+    }
+    return {
+      model: cfg.model,
+      messages,
+      temperature: 0.35,
+      max_tokens: 180,
+      stream: false
+    };
+  }
+
+  function extractText(cfg, json){
+    if(!json) return '';
+    if(cfg.providerType === 'ollama') return cleanText(json.response || json.message || '');
+    try{
+      const choice = json.choices && json.choices[0];
+      if(choice && choice.message) return cleanText(choice.message.content || '');
+      if(choice && choice.text) return cleanText(choice.text);
+    }catch(_){}
+    return '';
+  }
+
+  function isSlashCommand(text){
+    return /^\s*\/\w+/.test(String(text || ''));
+  }
+
+  function fallbackResult(fallbackText, cfg, started, reason, playerMsg, snapshot){
+    const text = cleanText(fallbackText) || 'Place a bracket, size down, and make the next decision explicit.';
+    const latencyMs = Math.round(performance.now() - started);
+    const receipt = {
+      request_hash: hashText(JSON.stringify({ playerMsg:cleanText(playerMsg), snapshot, tBucket:Math.floor(Date.now() / 60000) })),
+      snapshot_schema: snapshot && snapshot.schema ? snapshot.schema : 'cr.quant.v1',
+      provider_id: cfg.providerType + ':' + cfg.model,
+      provider_type: cfg.providerType,
+      model: cfg.model,
+      latency_ms: latencyMs,
+      fallback_used: true,
+      fallback_reason: reason
+    };
+    storeReceipt(receipt);
+    updateStatus({ state:'fallback', providerType:cfg.providerType, model:cfg.model, latencyMs, privacyMode:cfg.privacyMode, fallbackUsed:true, fallbackReason:reason, error:reason });
+    return text;
+  }
+
+  async function ask(playerMsg, history, fallbackText){
+    const started = performance.now();
+    const cfg = readConfig();
+    const msg = cleanText(playerMsg);
+    const snapshot = buildCoachSnapshot();
+    if(!msg) return fallbackResult(fallbackText, cfg, started, 'empty_player_message', playerMsg, snapshot);
+    if(isSlashCommand(playerMsg)) return fallbackResult(fallbackText, cfg, started, 'slash_command_rejected', playerMsg, snapshot);
+    if(cfg.providerType === 'v1') return fallbackResult(fallbackText, cfg, started, 'provider_v1_fallback', playerMsg, snapshot);
+    if(cfg.privacyMode === 'local_only' && cfg.providerType !== 'ollama') return fallbackResult(fallbackText, cfg, started, 'local_only_blocks_remote', playerMsg, snapshot);
+
+    const url = providerUrl(cfg);
+    if(!url) return fallbackResult(fallbackText, cfg, started, 'missing_provider_url', playerMsg, snapshot);
+
+    updateStatus({ state:'asking', providerType:cfg.providerType, model:cfg.model, latencyMs:0, privacyMode:cfg.privacyMode, fallbackUsed:false, fallbackReason:'', error:'' });
+    try{
+      const messages = promptMessages(msg, history, snapshot);
+      const json = await postWithTimeout(url, payloadFor(cfg, messages), cfg);
+      const answer = extractText(cfg, json);
+      if(!answer) return fallbackResult(fallbackText, cfg, started, 'empty_provider_answer', playerMsg, snapshot);
+      if(isSlashCommand(answer)) return fallbackResult(fallbackText, cfg, started, 'provider_slash_command_rejected', playerMsg, snapshot);
+      const latencyMs = Math.round(performance.now() - started);
+      storeReceipt({
+        request_hash: hashText(JSON.stringify({ playerMsg:msg, snapshot, answer })),
+        snapshot_schema: snapshot && snapshot.schema ? snapshot.schema : 'cr.quant.v1',
+        provider_id: cfg.providerType + ':' + cfg.model,
+        provider_type: cfg.providerType,
+        model: cfg.model,
+        latency_ms: latencyMs,
+        fallback_used: false,
+        fallback_reason: ''
+      });
+      updateStatus({ state:'ok', providerType:cfg.providerType, model:cfg.model, latencyMs, privacyMode:cfg.privacyMode, fallbackUsed:false, fallbackReason:'', error:'' });
+      return answer;
+    }catch(err){
+      const reason = err && err.name === 'AbortError' ? 'provider_timeout' : 'provider_failed';
+      return fallbackResult(fallbackText, cfg, started, reason, playerMsg, snapshot);
+    }
+  }
+
+  return { readConfig, writeConfig, getStatus, subscribe, ask, buildCoachSnapshot, coachKnowledge, lastReceipts };
+})();
+
+/* =========================================================================
  * v0.8M#1 — crCoach: shared memory module for L3 Coach across interfaces
  * SMS app on phone, Mail app on desktop, future Web3 wallet — all read
  * and write the same history. Personality is fixed-aggressive for v0.8.
@@ -48696,7 +49526,7 @@ const crCoach = (function(){
   const personality = 'aggressive';
   // Persistent (in-session) chat history. Each entry: { role, text, t }
   const history = [
-    { role:'coach', text:'Hey. L3 here. Open the chart, place a bracket, stop overthinking it.', t: Date.now() - 60000 },
+    { role:'coach', text:'COACH.llm online. Ask me about ChartRunner, risk, brackets, signals, or the current chart; use Bot Terminal when you want external bots and agents.', t: Date.now() - 60000 },
   ];
   const subscribers = [];
 
@@ -48717,39 +49547,110 @@ const crCoach = (function(){
     };
   }
 
-  // Hard, profit-first response generator. Reads the most recent player
-  // message + current game state and chooses a line. No LLM — keyword +
-  // state matching, but feels conversational because of memory.
+  function coachSnapshot(){
+    try{
+      if(window.crCoachProviders && typeof window.crCoachProviders.buildCoachSnapshot === 'function'){
+        return window.crCoachProviders.buildCoachSnapshot();
+      }
+    }catch(_){}
+    return null;
+  }
+
+  function marketLine(s, c){
+    if(s){
+      const px = s.price != null ? ' @ ' + s.price : '';
+      return (s.symbol || 'BTCUSDT') + ' ' + (s.tf || '15m') + px + ', regime ' + (s.regime || 'unknown') + ', score ' + (s.score || 0);
+    }
+    return 'ChartRunner context: score ' + c.score + ', open brackets ' + c.brackets;
+  }
+
+  function openPlansLine(s, c){
+    const p = s && s.positions ? s.positions : { brackets:c.brackets, ladders:c.ladders, ocos:c.ocos };
+    return (p.brackets || 0) + ' brackets, ' + (p.ladders || 0) + ' ladders, ' + (p.ocos || 0) + ' OCOs open';
+  }
+
+  // v1.0.190 — deterministic local fallback. This is not an executor and it
+  // does not call Bot Terminal; it gives useful ChartRunner/trading guidance
+  // when no local/BYO model is configured or the provider times out.
   function reply(playerMsg){
     const c = ctx();
+    const s = coachSnapshot();
     const m = (playerMsg || '').toLowerCase();
-    // Direct help requests
-    if(/help|how|what.*do|stuck/.test(m)){
-      if(!c.running)        return "Click Launch on the top toolbar. Then press 3, pick Bracket, click two candles. Stop reading.";
-      if(c.brackets === 0)  return "Press 3. Pick Bracket. Click entry, click stop. That's it. Now do it.";
-      return "You've placed " + c.brackets + " brackets. Place another. Reps make the trader.";
+
+    if(/bot\s*terminal|external (bot|agent)|agent bus|connect.*(bot|agent)|hosted bridge|claude|telegram|hermes|openclaw|lobster/.test(m)){
+      return "Bot Terminal is the interface for external bots and agents: connect them there, then use /build, /run headless, /step, or /monitor on the crAgentBus. COACH.llm is the in-game context advisor; I can frame " + marketLine(s, c) + ", but I cannot execute or route trades, and wallet/order-like work stays behind player approval.";
     }
+
+    if(/coach|llm|what.*happen|context|brain|model|provider/.test(m)){
+      return "When you talk to COACH.llm, ChartRunner builds a bounded cr.quant.v1 snapshot: symbol, timeframe, price, regime, score, open primitives, wallet state, and recent candles. A local/BYO model can answer from that context, but the browser fallback is still active; either way Coach advises only, while Bot Terminal owns external agents.";
+    }
+
+    if(/chartrunner|how.*game|what.*game|game work|trading game|run on/.test(m)){
+      return "ChartRunner turns candles into a playable field: you run on the chart, read structure, and fire primitives like Bracket, OCO, and Ladder as trading tools. The serious loop is still trading-first: define bias, level, trigger, invalidation, size, then approve any order path through the SDK/wallet gates.";
+    }
+
+    if(/bracket|stop|invalidation|take profit|target|tp|sl|risk.?reward|r:r/.test(m)){
+      return "Bracket means entry + stop/invalidation + target or R:R. Use " + marketLine(s, c) + " as context, mark the level first, put the stop where the thesis is wrong, size from that loss, then let the SDK path handle execution only after you choose it.";
+    }
+
+    if(/oco|one cancels|range break|breakout/.test(m)){
+      return "OCO is for a two-sided decision around a range or breakout: one plan above, one below, and the unused side cancels when the chosen side fires. Use it when the chart is boxed between levels; if you already have a directional thesis, a normal bracket is cleaner.";
+    }
+
+    if(/ladder|scale.?in|scale in|dca|average/.test(m)){
+      return "Ladder is planned scale-in, not revenge DCA. Split entries around a level only after the thesis and invalidation are defined; each rung should still fit the total risk you can accept.";
+    }
+
+    if(/hedge/.test(m)){
+      return "Hedge is defensive, not a magic undo button. If the idea is simply wrong, close or size down; if you need to stay involved, define exactly what the hedge protects and where it comes off.";
+    }
+
+    if(/blue laser|laser|execute|primitive|tool menu|ability/.test(m)){
+      return "The Laser and Primitives controls are the player action layer. Coach can explain which primitive fits the setup, but pressing the tool and approving any trade-like action stays with you.";
+    }
+
     if(/scared|afraid|risk|loss/.test(m))
-      return "Risk 0.5R. If 0.5R scares you, you're on the wrong size. Cut size, not conviction.";
+      return "Cut risk until the stop is boring: 0.25R-0.5R is enough while you are uncertain. Define invalidation first, size from the loss, and do not increase size to win back a prior mistake.";
+
+    if(/position size|sizing|how much|size/.test(m))
+      return "Size comes after invalidation. Decide the max loss, measure entry-to-stop distance, then make the position fit that loss; if the stop is too wide, skip or wait for a tighter trigger.";
+
+    if(/timeframe|tf|15m|1h|4h|daily|higher time|htf/.test(m))
+      return "Use top-down alignment: higher timeframe sets bias and major levels, lower timeframe gives the trigger. If " + marketLine(s, c) + " disagrees with the higher timeframe, reduce size or wait.";
+
+    if(/confluence|ccv|score|indicator|ema|rsi|volume|vwap|setup/.test(m)){
+      const ccv = s && s.ccv != null ? ' CCV ' + s.ccv + '.' : '';
+      return "Confluence is a filter, not permission to over-size." + ccv + " Look for structure, level, momentum/volume, and clean invalidation lining up; if one piece is missing, label it a probe or wait.";
+    }
+
+    if(/pine|tradingview|signal|alert|webhook|replay|backtest/.test(m))
+      return "TradingView/Pine inputs belong in the signal/replay path: alerts normalize into local signal records, then replay or compile to non-executable StrategySpec JSON. Treat them as hypotheses for ChartRunner to test, not code that can secretly execute trades.";
+
+    if(/wallet|sol|on.?chain|sign|signature|approve|chart|run/.test(m))
+      return "Wallet and on-chain actions are explicit handoffs: Coach can explain $CHART/$RUN, maps, or proof records, but signing and order-like actions stay behind player approval. Current wallet loop: $CHART = " + c.chart + ", $RUN = " + c.run + ".";
+
+    if(/\b(should i|buy|sell|long|short|enter|exit|trade)\b/.test(m)){
+      return "I will not give a blind long/short call. For " + marketLine(s, c) + ", build the decision box: higher-timeframe bias, level, trigger, invalidation, and position size; if those are not explicit, no trade is also a viable answer.";
+    }
+
     if(/win|profit|made/.test(m)){
       if(c.score > 100) return "Score " + c.score + ". Decent. Don't celebrate, ladder in to the next setup.";
       return "Show me your equity curve, not your wins. Keep stacking.";
     }
-    if(/oco|hedge|ladder|bracket/.test(m)){
-      if(/oco/.test(m)) return "OCO is for range plays. Drop one when the chart's stuck between two levels — it'll fire whichever side breaks.";
-      if(/ladder/.test(m)) return "Ladder is scale-in. Five rungs, one click. Use it when you can't time the entry but you've called the direction.";
-      if(/hedge/.test(m)) return "Hedge is for when you're wrong but want to stay in the trade. v0.8M ships it. Use Bracket for now.";
-      return "Press 2 for Laser. The Laser menu has Bracket, Ladder, Fib, OCO. Pick the tool that matches the setup.";
+
+    if(/help|how|what.*do|stuck/.test(m)){
+      if(!c.running)        return "Launch a run, read the current " + marketLine(s, c) + " context, then start with a small bracket: entry, stop, target. For external agents or Bot Forge/headless work, open Bot Terminal.";
+      if(c.brackets === 0)  return "Press 3, pick Bracket, click entry, then click the stop/invalidation. Keep the first one small; your job is clean decisions, not size.";
+      return "You have " + openPlansLine(s, c) + ". Manage the active plan first, then add a new setup only if it has its own trigger and invalidation.";
     }
-    if(/wallet|sol|chart|run/.test(m))
-      return "Your $CHART = " + c.chart + ". $RUN = " + c.run + ". Earn more $CHART. Swap at game-over. That's the loop.";
+
     if(/hi|hey|hello|sup|yo/.test(m))
-      return "Hey. " + (c.running ? "You're in a run — " + c.score + " points so far. Keep moving." : "Click Launch. Let's trade.");
+      return "Hey. " + (c.running ? "You're in a run — " + marketLine(s, c) + "." : "Ask me for ChartRunner help, a trading framework, or a read on the current setup.");
     // Default: contextual nudge
-    if(c.upsideDown)     return "Nightmare mode. Stay focused. The bears reward patience.";
-    if(c.brackets > 5)   return "Six brackets out and you're talking to me? Eyes on the chart.";
-    if(c.score === 0)    return "Zero on the board. Place a bracket. Make something happen.";
-    return "Do what your edge says. If you don't have an edge, go to Intel and pick a strategy.";
+    if(c.upsideDown)     return "Nightmare mode. Slow down: mark the level, define invalidation, then decide whether a bracket or no trade fits.";
+    if(c.brackets > 5)   return "You have " + openPlansLine(s, c) + ". Too many open ideas usually means the thesis is blurry; pick the one with the cleanest invalidation.";
+    if(c.score === 0)    return "Zero on the board. Start with a defined bracket or ask me for the decision box; use Bot Terminal only when you want external agents.";
+    return "Use the edge checklist: bias, level, trigger, invalidation, size, approval. If one is missing, wait or run the idea through Bot Terminal as an external-agent proposal.";
   }
 
   function send(role, text){
@@ -48765,7 +49666,16 @@ const crCoach = (function(){
   }
   function userSays(text){
     send('user', text);
-    setTimeout(() => send('coach', reply(text)), 380 + Math.random() * 320);
+    setTimeout(async () => {
+      const fallback = reply(text);
+      let answer = fallback;
+      try{
+        if(window.cr && window.cr.flags && window.cr.flags.coachAI && window.crCoachProviders && typeof window.crCoachProviders.ask === 'function'){
+          answer = await window.crCoachProviders.ask(text, history.slice(), fallback);
+        }
+      }catch(_){ answer = fallback; }
+      send('coach', answer || fallback);
+    }, 380 + Math.random() * 320);
   }
   function subscribe(fn){
     subscribers.push(fn);
@@ -48775,8 +49685,9 @@ const crCoach = (function(){
   function unread(since){
     return history.filter(m => m.role === 'coach' && m.t > (since|0)).length;
   }
-  return { send, userSays, subscribe, getHistory, unread, personality };
+  return { send, userSays, subscribe, getHistory, unread, reply, personality };
 })();
+window.crCoach = crCoach;
 
 /* =========================================================================
  * v0.9.13 — Coach top-bar affordance: button + popover wiring
@@ -57334,6 +58245,9 @@ window.crQvac = (function(){
   // the answer in the widget log. No external state — pure DOM popover
   // anchored to the widget that received the dblclick.
   const COACH_TOPICS = [
+    { label: 'What is COACH.llm?',         send: 'what happens when I talk to COACH.llm?' },
+    { label: 'Bot Terminal vs Coach',      send: 'what is Bot Terminal for?' },
+    { label: 'Explain ChartRunner',        send: 'how does ChartRunner work?' },
     { label: 'How do I bracket?',          send: 'how do I bracket?' },
     { label: 'Explain OCO',                 send: 'tell me about OCO' },
     { label: 'When to ladder?',             send: 'when should I ladder?' },
@@ -57346,7 +58260,10 @@ window.crQvac = (function(){
   ];
   const COACH_KEYWORDS = [
     'help', 'how', 'stuck',
+    'chartrunner', 'coach', 'llm',
+    'bot terminal', 'agent', 'bridge',
     'scared', 'afraid', 'risk', 'loss',
+    'timeframe', 'confluence', 'signal',
     'win', 'profit', 'made',
     'oco', 'hedge', 'ladder', 'bracket',
     'wallet', 'sol', 'chart', 'run',
@@ -57378,7 +58295,7 @@ window.crQvac = (function(){
       + '<div id="crCoachCmdsQs" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px"></div>'
       + '<div style="font:10px ui-monospace,Menlo,monospace;color:var(--dim);letter-spacing:.4px;text-transform:uppercase;margin-bottom:4px">Keywords L3 recognises</div>'
       + '<div id="crCoachCmdsKw" style="display:flex;flex-wrap:wrap;gap:3px;font:10px ui-monospace,Menlo,monospace;color:#bff7df"></div>'
-      + '<div style="margin-top:10px;font-size:10px;color:var(--dim);font-style:italic">L3 is a hardcoded coach today — full LLM upgrade lands at M2.</div>';
+      + '<div style="margin-top:10px;font-size:10px;color:var(--dim);font-style:italic">COACH.llm reads bounded ChartRunner/trading context; Bot Terminal connects external agents and tools.</div>';
 
     document.body.appendChild(pop);
 

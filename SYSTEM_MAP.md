@@ -1,7 +1,7 @@
 # ChartRunner System Map — canonical
 
 > **Status:** 🟢 canonical · always-current
-> **Last refreshed:** 2026-05-31 (v1.0.187 current source; Bot Terminal Labs is query-gated on live with hosted bridge config, visible status/errors, safe build/headless commands, and approval-gated wallet/trading tools while Liquid Glass in-game headbar/toolbar chrome stays repaired, public `/play` keeps Platinum / Solana / Liquid Glass / Black & White / Monochrome themes and archives only ASCII + Frontier, and local/private builds keep the full theme workshop)
+> **Last refreshed:** 2026-05-31 (v1.0.190 current source; COACH.llm now owns ChartRunner/trading guidance via a bounded context pack plus optional local/BYO provider and deterministic fallback, Bot Terminal remains the external bots/agents interface, Pine Adapter signal imports remain source-wired, Bot Terminal Labs is query-gated on live with hosted bridge config, and public `/play` keeps Platinum / Solana / Liquid Glass / Black & White / Monochrome themes while archiving only ASCII + Frontier)
 > **Update protocol:** [`docs/SYSTEM_MAP_UPDATE_PROTOCOL.md`](docs/SYSTEM_MAP_UPDATE_PROTOCOL.md) — what triggers an update, file conventions, who-edits-what
 > **Snapshots:** dated files (e.g. `SYSTEM_MAP_2026-05-28.md`) are point-in-time archives, only created on major rebuilds. This file is the always-current one.
 
@@ -12,7 +12,7 @@ deliverable that crosses ≥2 layers. See the protocol doc for the full
 trigger list.
 
 Sister docs:
-- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the game source** (editing source v1.0.187; deploy via ship script): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
+- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the game source** (editing source v1.0.190; deploy via ship script): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
 - [`MILESTONE_AUDIT.md`](MILESTONE_AUDIT.md) — milestone state-of-play
 - [`BRAINSTORM_VS_SHIP_2026-05-28.md`](BRAINSTORM_VS_SHIP_2026-05-28.md) — founding-doc cross-reference
 - [`DRIVE_AND_VAULT_MAP_2026-05-28.md`](DRIVE_AND_VAULT_MAP_2026-05-28.md) — Drive-vs-vault comparison + migration verdict (Drive officially non-ChartRunner)
@@ -27,7 +27,7 @@ Sister docs:
 
 | Product | Where it ships | Stage | Source path |
 |---|---|---|---|
-| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Editing source v1.0.187; deploy via ship script | `ChartRunner_Prototype.html` (single file, 3.1 MB) |
+| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Editing source v1.0.190; deploy via ship script | `ChartRunner_Prototype.html` (single file, 3.7 MB) |
 | **ChartRunner Mobile (Telegram Mini-App)** | `chartrunner.xyz/telegram/` | Live | `telegram/` in repo + `chartrunner-mobile-bot-built/` in vault |
 | **ChartRunner-as-tool (M11)** | `/opt/data/chartrunner/` on Umbrel | In dev (4/13 done) | Hermes container; not yet user-facing |
 | **Phase 1 SDK** | `chartrunner.xyz/sdk/` (built) | In progress (M2.5 in-flight) | `chartrunner-prototype/sdk/core/` (36 files) |
@@ -164,7 +164,7 @@ Active product focus: **M2.6** (Avatar identity + hotkey execution USP). M0.5 re
 |---|---|---|---|
 | M0.5 | Security + Anchor unblock | 🟡 audit workstream | ongoing |
 | M1 | Tokenomics + fiat onramp | 🔵 next | 0/13; $CHART design fully committed 2026-05-26 |
-| M2 | Coach AI v2 | 🔵 queued | 7/11; endpoint/cost/prompt/eval rounds 1-2 done; 2026-05-30 Coach summon/window surface fixed, LLM integration still open |
+| M2 | Coach AI v2 | 🟡 partial | 7/11; endpoint/cost/prompt/eval rounds 1-2 done; v1.0.190 adds bounded `cr.quant.v1` context, local/BYO provider routing, deterministic fallback, and the Coach-vs-Bot-Terminal authority boundary; production hosted/eval path still open |
 | M2.5 | SDK extraction (Phase 1) | 🟡 partial | in flight; 4/12 Ready done, builds at `chartrunner-prototype/sdk/core/` |
 | M2.6 | Avatar identity + hotkey execution USP | 🟢 active | first-minute USP focus from 2026-05-30 |
 | M3 | Build apps (Workbench rebuild) | 🟡 partial | 6/16; Bot Terminal desktop entry accessible locally and live-Labs accessible v1.0.187; default public `/play` still archives it; app chrome/interiors source remains; real Workbench restores/bridges pending |
@@ -208,6 +208,22 @@ Two parallel OHLC scrapers exist on Umbrel — intentional experiment, winding d
 ---
 
 ## 9. Recent session deliverables
+
+### 2026-05-31 — COACH.llm context advisor boundary
+
+| Deliverable | Path | Status |
+|---|---|---|
+| **Coach context pack** | `ChartRunner_Prototype.html` | v1.0.190: `window.crCoachProviders.buildCoachSnapshot()` emits bounded `cr.quant.v1` state with market, setup, wallet, open primitives, candles, ChartRunner knowledge, and a trading playbook |
+| **Provider + fallback split** | `window.crCoachProviders`, `crCoach.reply()` | Optional local/BYO model routing can answer from the context pack, while the browser fallback now covers ChartRunner, brackets, risk, timeframes, signals, and Bot Terminal boundaries |
+| **Authority boundary** | Coach vs Bot Terminal | COACH.llm is advice-only and cannot execute, sign, route orders, or connect agents; Bot Terminal remains the external bots/agents interface and all trading/wallet-like work stays approval-gated |
+
+### 2026-05-31 — Pine Adapter signal bridge
+
+| Deliverable | Path | Status |
+|---|---|---|
+| **Signal event store** | `ChartRunner_Prototype.html` | v1.0.188: `window.crPineAdapter` imports TradingView alerts, TradingView exported trades, and generic webhook payloads as `cr-signal-event-v1` records persisted to `cr_signal_events_v1` |
+| **Signal replay lane** | `ChartRunner_Prototype.html` | Signal events convert to Journal-style trades and replay through the existing `cr-replay-dataset-v1` loader, producing `cr-backtest-run-v1` records with `signalId` / `signalHash` proof fields |
+| **Pine subset compiler** | `ChartRunner_Prototype.html` | `compilePineSubset()` emits non-executable `cr-strategy-spec-v1` JSON for the supported Pine-like subset (`ta.sma`, `ta.ema`, `ta.rsi`, `ta.atr`, crosses, `strategy.entry`, `strategy.exit`) and records unsupported Pine as metadata instead of running it |
 
 ### 2026-05-31 — Bot Terminal Labs live gate
 
