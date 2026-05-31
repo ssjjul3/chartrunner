@@ -1,4 +1,4 @@
-# ChartRunner — Playable Prototype (v1.0.155)
+# ChartRunner — Playable Prototype (v1.0.187)
 
 > **Fortnite meets Space Invaders meets a trading chart.** Every ability is a real SDK primitive. Every trade is a game move.
 
@@ -60,7 +60,7 @@ Direct-launch from the **Campaign** tab in the Run window. Each chapter loads a 
 | **Tools** | Ch. 1–9 | Trendline, ray, channel, rectangle, fib retrace, fib extension — the drawing primitives |
 | **Primitives** | Ch. 10–19 | Bracket, OCO, ladder, market, scale-out, TWAP, iceberg, limit/stop placement |
 | **Indicators** | Ch. 20–27 | RSI, MACD, Bollinger Bands, ATR, SMA(50/200), reference levels, multi-timeframe analysis |
-| **Bots** | Ch. 28–33 | Equip + orbit Pine bots, watch them fire setups in real time |
+| **Bots** | Ch. 28–33 | Equip + orbit detector bots, watch them fire setups in real time |
 | **Foundation** | Ch. 34–38 | Risk management, score thresholds, Champions Channel, CCV composite, the quant.pdf spine |
 | **Live** | Ch. 39 | Wallet connect → save a real run on-chain via `chartrunner_registry::record_run` |
 
@@ -135,11 +135,23 @@ Several Workbench tabs and OS surfaces are hidden behind CSS `display:none !impo
 | AI Coach v2 (real model endpoint) | M2 |
 | Real-time PvP via MagicBlock ER · Pyth-verified scores | M0.5 → M2 |
 
-Live Workbench surfaces today: **Tools** + **Primitives** + **Bots** + **Terminal**. Bot equip + orbital orb render path stays alive (driven by `playerLoadout`), and the Terminal tab now ships **Terminal Presets** for CEX / DEX / Solana overview plus a read-only **Execution Cockpit** pinned widget.
+Live `/play` Workbench surfaces today: **Tools** + **Primitives**. As of v1.0.179, live `chartrunner.xyz/play/` still hides and blocks **Bots** + **Terminal** tabs/panels, while local/private builds keep those source paths available.
 
-**Bot Terminal today (v1.0.163 source; v1.0.162 gate):** the M14 Agent Command Center stays accessible from the local file and localhost. On live `chartrunner.xyz/play/`, the runtime live-game gate hides the Bot Terminal window, desktop icon, and dock launchers and guards direct `osOpenWindow*('bot')` calls. The underlying `window.crAgentBus`, local session records (`cr_bot_session_records_v1`), repaired pinned-widget plumbing, and BotBacktestRecord proof path remain in source.
+**Live theme archive (v1.0.183):** public `chartrunner.xyz/play/` rotates Platinum, Solana, Liquid Glass, Black & White, and Monochrome. ASCII and Frontier stay in the local/private source for restoration and testing, but live Theme clicks, legacy Theme cards, and persisted theme state normalize those two away.
 
-**Configure Run → Broker** (v1.0.123) is visible now: a CEX/DEX segment toggle plus an infinite scroll wheel to pick the venue (DEX: Jupiter / Phoenix / Raydium / Orca / Drift / Meteora / Lifinity · CEX: Binance / Coinbase / Kraken / Bybit / OKX / Bitget / KuCoin). The choice persists (`cr_broker_v1` / `game.broker`) and is read by Terminal Presets, the Execution Cockpit, and Blue Laser route panels. SDK order settlement is still paper/mock until the Phase 2 broker driver (`mock` → `binance-paper` → `phoenix`) lands.
+**Liquid Glass in-game chrome (v1.0.186):** Liquid Glass keeps the shared compact OS metrics, but its in-game headbar and TradingView toolbar use a dedicated frosted blue-white strip, non-overlapping toolbar spacing, glass control wells, and blue/mint active states.
+
+**Workbench → Bots / Bot Forge (v1.0.178 local/private):** Bots is restored locally as a no-code **Bot Forge** for **Price Action Toolkit** and **SFP Hunter**. The flow is Sensor → Gate → Behavior/Name/Color → preview → **Forge & Equip**. Forge submits through `window.crBots.load`, persists specs to `cr_bot_specs_v1`, equips via `wb.equipped`, and then runs through the normal `ChartRunnerSDK` detector-bot/orb path. Pine is metadata-only here; local forged rows stay browser-local and skip on-chain / Marketplace bot-artifact actions until that flow is explicitly shipped.
+
+**In-game chart terminal feed (v1.0.177):** the live chart overlay feed shown by `window.crNotify` now has a small arrow control. Arrow-down folds the feed to the most recent command, and the full run tape persists to `cr_ingame_terminal_session_v1`. Journal · Sessions mirrors that in-game tape first, exports JSON, and evaluates whether the trace is ready to become an on-chain / marketplace proof candidate.
+
+**Desktop Terminal sessions (v1.0.175):** the Terminal window keeps a visible command-session pane, persists the command tape to `cr_terminal_session_v1`, and has its own arrow control for latest-command mode. Journal · Sessions keeps this as a secondary trace source. Neither flow signs, anchors, lists, or sells anything without an explicit wallet handoff.
+
+**Journal alert bus + ReplayDataset loader (v1.0.185):** `window.crAlertBus` is the shared browser-local notification/event model for alert-like events. It persists normalized events to `cr_alert_events_v1`, renders them in Journal · Alerts, and lets each event become a Journal note or seed a replay. Paper journal rows keep the same **Replay** action, but the engine now builds `cr-replay-dataset-v1` records from the loaded chart candle source, persists them to `cr_backtest_datasets_v1`, and stores `cr-backtest-run-v1` results in `cr_backtest_replays_v1` with candle hashes, gap reports, and proof hashes.
+
+**Bot Terminal Labs (v1.0.187):** live `chartrunner.xyz/play/` still hides Bot Terminal by default, but `?crLabsBotTerminal=1` or `?crLabs=bot-terminal` exposes the M14 Agent Command Center as a clear LABS surface. Players can connect agents, point the QVAC bridge at a hosted proxy with `?crAgentBridgeUrl=...&crAgentBridgeEngine=bridge` or `/bridge <url>`, see connection/error state, run `/build <template> <name>` to create propose-mode Bot Forge specs, and use `/run headless [steps]`, `/step [n]`, and `/monitor` for headless-safe runs. Trading, wallet, signing, and order-like agent tools stay player-approval gated; BotBacktestRecord anchoring still routes through the explicit wallet handoff.
+
+**Configure Run → Broker** (v1.0.180) is visible now: a CEX/DEX segment toggle plus a compact game-native wheel to pick the venue (DEX: Jupiter / Phoenix / Raydium / Orca / Drift / Meteora / Lifinity · CEX: Binance / Coinbase / Kraken / Bybit / OKX / Bitget / KuCoin). The choice persists (`cr_broker_v1` / `game.broker`) and is read by Terminal Presets, the Execution Cockpit, and Blue Laser route panels. SDK order settlement is still paper/mock until the Phase 2 broker driver (`mock` → `binance-paper` → `phoenix`) lands.
 
 For the full M0.5 → M10 roadmap, see [`README.md` § Post-Frontier roadmap](README.md#post-frontier-roadmap).
 

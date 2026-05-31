@@ -56789,16 +56789,21 @@ window.crQvac = (function(){
     }
     _setStatus({ engine:'bridge', bridgeUrl:url, ok:false, error:'' });
     try {
+      const messages = (history || []).slice(-10).map(m => ({
+        role: m.from === 'you' ? 'user' : 'assistant',
+        content: m.text,
+      }));
+      const lastMsg = messages[messages.length - 1];
+      if(!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== prompt){
+        messages.push({ role:'user', content:prompt });
+      }
       const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           agentId,
           system: SYSTEM_PROMPTS[agentId] || '',
-          messages: (history || []).slice(-10).map(m => ({
-            role: m.from === 'you' ? 'user' : 'assistant',
-            content: m.text,
-          })).concat([{ role: 'user', content: prompt }]),
+          messages,
           max_tokens: 120,
           temperature: 0.7,
         }),
@@ -56856,12 +56861,15 @@ window.crQvac = (function(){
     try {
       const engine = await _ensureWebLLM();
       if(!engine) return null;
-      const messages = [{ role: 'system', content: SYSTEM_PROMPTS[agentId] || '' }]
-        .concat((history || []).slice(-10).map(m => ({
+      const historyMessages = (history || []).slice(-10).map(m => ({
           role: m.from === 'you' ? 'user' : 'assistant',
           content: m.text,
-        })))
-        .concat([{ role: 'user', content: prompt }]);
+        }));
+      const lastMsg = historyMessages[historyMessages.length - 1];
+      if(!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== prompt){
+        historyMessages.push({ role: 'user', content: prompt });
+      }
+      const messages = [{ role: 'system', content: SYSTEM_PROMPTS[agentId] || '' }].concat(historyMessages);
       const out = await engine.chat.completions.create({
         messages,
         max_tokens: 120,

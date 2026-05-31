@@ -1,7 +1,7 @@
 # ChartRunner System Map — canonical
 
 > **Status:** 🟢 canonical · always-current
-> **Last refreshed:** 2026-05-31 (v1.0.170 current source; Frontier / Liquid Glass scrollbars updated; Weather Station remains private/local-only and archived from live `/play`)
+> **Last refreshed:** 2026-05-31 (v1.0.187 current source; Bot Terminal Labs is query-gated on live with hosted bridge config, visible status/errors, safe build/headless commands, and approval-gated wallet/trading tools while Liquid Glass in-game headbar/toolbar chrome stays repaired, public `/play` keeps Platinum / Solana / Liquid Glass / Black & White / Monochrome themes and archives only ASCII + Frontier, and local/private builds keep the full theme workshop)
 > **Update protocol:** [`docs/SYSTEM_MAP_UPDATE_PROTOCOL.md`](docs/SYSTEM_MAP_UPDATE_PROTOCOL.md) — what triggers an update, file conventions, who-edits-what
 > **Snapshots:** dated files (e.g. `SYSTEM_MAP_2026-05-28.md`) are point-in-time archives, only created on major rebuilds. This file is the always-current one.
 
@@ -12,7 +12,7 @@ deliverable that crosses ≥2 layers. See the protocol doc for the full
 trigger list.
 
 Sister docs:
-- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the game source** (editing source v1.0.170; deploy via ship script): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
+- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the game source** (editing source v1.0.187; deploy via ship script): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
 - [`MILESTONE_AUDIT.md`](MILESTONE_AUDIT.md) — milestone state-of-play
 - [`BRAINSTORM_VS_SHIP_2026-05-28.md`](BRAINSTORM_VS_SHIP_2026-05-28.md) — founding-doc cross-reference
 - [`DRIVE_AND_VAULT_MAP_2026-05-28.md`](DRIVE_AND_VAULT_MAP_2026-05-28.md) — Drive-vs-vault comparison + migration verdict (Drive officially non-ChartRunner)
@@ -27,7 +27,7 @@ Sister docs:
 
 | Product | Where it ships | Stage | Source path |
 |---|---|---|---|
-| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Editing source v1.0.170; deploy via ship script | `ChartRunner_Prototype.html` (single file, 3.1 MB) |
+| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Editing source v1.0.187; deploy via ship script | `ChartRunner_Prototype.html` (single file, 3.1 MB) |
 | **ChartRunner Mobile (Telegram Mini-App)** | `chartrunner.xyz/telegram/` | Live | `telegram/` in repo + `chartrunner-mobile-bot-built/` in vault |
 | **ChartRunner-as-tool (M11)** | `/opt/data/chartrunner/` on Umbrel | In dev (4/13 done) | Hermes container; not yet user-facing |
 | **Phase 1 SDK** | `chartrunner.xyz/sdk/` (built) | In progress (M2.5 in-flight) | `chartrunner-prototype/sdk/core/` (36 files) |
@@ -167,10 +167,10 @@ Active product focus: **M2.6** (Avatar identity + hotkey execution USP). M0.5 re
 | M2 | Coach AI v2 | 🔵 queued | 7/11; endpoint/cost/prompt/eval rounds 1-2 done; 2026-05-30 Coach summon/window surface fixed, LLM integration still open |
 | M2.5 | SDK extraction (Phase 1) | 🟡 partial | in flight; 4/12 Ready done, builds at `chartrunner-prototype/sdk/core/` |
 | M2.6 | Avatar identity + hotkey execution USP | 🟢 active | first-minute USP focus from 2026-05-30 |
-| M3 | Build apps (Workbench rebuild) | 🟡 partial | 6/16; Bot Terminal desktop entry accessible locally, live `/play` archived v1.0.162; app chrome/interiors source remains; real Workbench restores/bridges pending |
+| M3 | Build apps (Workbench rebuild) | 🟡 partial | 6/16; Bot Terminal desktop entry accessible locally and live-Labs accessible v1.0.187; default public `/play` still archives it; app chrome/interiors source remains; real Workbench restores/bridges pending |
 | M4 | P2P Marketplace | 🟢 effective-done | UI wired + resale royalty live 2026-05-27 |
 | M5 | Hyperliquid + Helius RPC | 🔵 queued | 4/11; spec + pricing + hackathon decision done |
-| M6 | AI · Telegram bot integration | 🔵 queued | 4/10; bridge research + Bot Terminal source done; UI accessible locally and archived on live `/play` v1.0.162; real external bridges still M14/M6 work |
+| M6 | AI · Telegram bot integration | 🔵 queued | 4/10; bridge research + Bot Terminal source done; UI accessible locally and live-Labs accessible with hosted proxy config; production Telegram/external bridges still M14/M6 work |
 | M7 | Streaming widget | 🟡 partial | 2/9; RUN-tube + Display shipped early (v0.9.27) |
 | M8 | Token launch tournaments | 🔵 queued | 4/11; World ID + CASH + bracket UX + MagicBlock audit done |
 | M9 | Solana Mobile / RN | 🔵 queued | 0/12; Telegram Mini-App built separately |
@@ -178,7 +178,7 @@ Active product focus: **M2.6** (Avatar identity + hotkey execution USP). M0.5 re
 | **M11** | **Umbrel-native quant toolset (Scanner · Chart · Strategy · Backtest)** | **🟡 partial** | **5/13; Pine/spec real-OHLC lane wired 2026-05-30; frontend pending** |
 | **M12** | **Umbrel stack adoption (observability + scraper + dev accelerators)** | **🟢 bonus** | **0/8; added 2026-05-28 — infra sidequest, Julian-hands installs on `umbrel.local`** |
 | **M13** | **Runner Wallet (Chrome ext — wallet + LLM + payments + /play injection)** | **🟢 bonus** | **0/9; added 2026-05-28 — replaces `/solana-connect/` URL-bounce** |
-| **M14** | **Bot-first runtime + Agent Command Center** | **🟡 bonus · source-wired / live UI archived / deploy-gated** | **Bot Terminal slice remains accessible locally; live `/play` launch surface archived v1.0.162; `crAgentBus` + `BotBacktestRecord` path preserved; registry deploy + transports pending** |
+| **M14** | **Bot-first runtime + Agent Command Center** | **🟡 bonus · source-wired / live Labs-gated / deploy-gated** | **Bot Terminal remains hidden by default on live `/play`, but v1.0.187 exposes it behind `?crLabsBotTerminal=1` / `?crLabs=bot-terminal` with hosted bridge config, status/errors, safe build/headless commands, `crAgentBus`, and approval-gated wallet/trading tools; registry deploy + production transports pending** |
 | **M15** | **Lightweight Charts hybrid + bloat reduction** | **🟢 bonus** | **0/8; added 2026-05-28 — pairs with M2.5; modular `src/core/` + LWC price engine + transparent game overlay** |
 | **M16** | **Complete market-data coverage** | **🔵 queued** | **P1 reuse proof landed 2026-05-30** |
 
@@ -209,6 +209,32 @@ Two parallel OHLC scrapers exist on Umbrel — intentional experiment, winding d
 
 ## 9. Recent session deliverables
 
+### 2026-05-31 — Bot Terminal Labs live gate
+
+| Deliverable | Path | Status |
+|---|---|---|
+| **Live Labs gate** | `ChartRunner_Prototype.html` | v1.0.187: default public `/play` still hides Bot Terminal, while `?crLabsBotTerminal=1` / `?crLabs=bot-terminal` exposes it with a clear LABS banner and direct-open guard relaxed only for the flag |
+| **Hosted bridge/proxy path** | `window.crQvac`, Bot Terminal | Reads `?crAgentBridgeUrl` / `?crAgentBridgeEngine`, offers `/bridge status\|stub\|<url>`, and reports last success/error in the player-visible bridge panel and agent rows |
+| **Safe build/headless commands** | `window.crAgentBus` | Adds `/build`, `/run headless`, `/step`, and `/monitor` over local `bot_forge_build` / `headless_*` tools; Bot Forge output is force-propose mode and headless runs stay browser-local |
+| **Approval boundary** | `ChartRunner_Prototype.html` | Trading, wallet, signing, order-routing, on-chain, and registry-like agent tools require explicit player approval; BotBacktestRecord anchoring keeps the wallet handoff path |
+
+### 2026-05-31 — TerminalRunTrace proof candidates
+
+| Deliverable | Path | Status |
+|---|---|---|
+| **In-game chart terminal tape** | `ChartRunner_Prototype.html` | v1.0.177: the live `crNotify` chart feed persists run messages to `cr_ingame_terminal_session_v1`, folds to the latest command with the down-arrow toggle, and exposes `window.crInGameTerminalSession` for local proof export/evaluation |
+| **Desktop Terminal command tape** | `ChartRunner_Prototype.html` | v1.0.175: Terminal app command groups persist to `cr_terminal_session_v1`, fold Engine to the latest command with the arrow toggle, and expose `window.crTerminalSession` for local proof export/evaluation |
+| **Journal proof review** | `ChartRunner_Prototype.html` | Journal · Sessions renders both in-game and desktop command history, exports JSON, and evaluates on-chain / marketplace readiness without signing or listing automatically |
+| **Marketplace boundary** | `ChartRunner_Prototype.html`, `GAME_MAP.md` | Trace can be hashed as `cr-terminal-run-trace-v1`; sale still requires wallet signature, performance lock, owner/license metadata, and explicit listing transaction |
+
+### 2026-05-31 — Journal alert bus + local replay seeds
+
+| Deliverable | Path | Status |
+|---|---|---|
+| **Shared alert event model** | `ChartRunner_Prototype.html` | v1.0.185: `window.crAlertBus` normalizes alert-like events and persists them to `cr_alert_events_v1`; alarm save/fire paths mirror into the bus without adding hidden signing or live execution |
+| **Journal alert actions** | `ChartRunner_Prototype.html` | Journal · Alerts renders bus events plus alarm-laser entries with Note / Replay / Ack actions; Note appends to `cr_journal_notes_v1` |
+| **ReplayDataset loader** | `ChartRunner_Prototype.html` | v1.0.185: Alert and Paper Replay actions now load `cr-replay-dataset-v1` records from the current chart candle source, persist datasets to `cr_backtest_datasets_v1`, and store `cr-backtest-run-v1` records in `cr_backtest_replays_v1` with candle hashes, gap reports, and proof hashes |
+
 ### 2026-05-31 — ChartRunner skill routing + modular orchestration map
 
 | Deliverable | Path | Status |
@@ -223,7 +249,7 @@ Two parallel OHLC scrapers exist on Umbrel — intentional experiment, winding d
 |---|---|---|
 | **Dedicated bot backtest PDA path** | `anchor/programs/chartrunner-registry/src/lib.rs` | Source-wired: `record_bot_backtest`, `RecordBotBacktest`, `BotBacktestRecord`, `BotBacktestRecorded`, `PDA_BOT_RUN` |
 | **Wallet bridge action** | `solana-connect/src/lib/cr-registry-program.ts`, `solana-connect/src/App.tsx` | Source-wired: `buildRecordBotBacktestIx`, `findBotBacktestPda`, `action=record-bot-backtest` |
-| **Game handoff** | `ChartRunner_Prototype.html` | v1.0.150: `crRegistry.recordBotBacktest`; v1.0.162 archives the Bot Terminal UI on live `/play` only while preserving local access, the dedicated proof path, and generic Backtest fallback in source |
+| **Game handoff** | `ChartRunner_Prototype.html` | v1.0.150: `crRegistry.recordBotBacktest`; v1.0.187 keeps Bot Terminal hidden by default on live `/play` but exposes the Labs surface on query flag while preserving local access, the dedicated proof path, and generic Backtest fallback in source |
 | **Verification + plan** | `docs/superpowers/plans/2026-05-30-m14-bot-backtest-record.md`, `scripts/check_m14_bot_backtest_wiring.mjs` | Static/browser/Rust checks passed; Anchor/IDL build + Squads deploy remain |
 | **Session handover** | `SESSION_HANDOVER_2026-05-30_M14_BOT_BACKTEST_RECORD.md` | Added at wrap |
 
