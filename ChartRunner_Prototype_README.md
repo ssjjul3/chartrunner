@@ -33,7 +33,7 @@ Three pillars: **gamification · education · on-chain.** The hard rule: abiliti
 
 **Hotkeys.** `C` = Coach popover. `Tab` = cycle Workbench tabs. `Shift+M` = legacy menu drawer (mostly archived).
 
-**Weather Station app.** Open **Weather** from the desktop or dock for the Jupiter Perps competition cockpit. It is an offline prototype surface today: BTC/ETH/SOL weather cards, Daily→1s timeframe ladder, liquidity hotspots, Catalyst Tape, Execution Queue, replayable snapshots through `window.crWeatherStation`, and Qualifier/Final account buttons wired into the bracket risk deck.
+**Weather Station app.** Weather is private/local-only as of v1.0.169. Open it from the local file or localhost for the Jupiter Perps competition cockpit; live `chartrunner.xyz/play/` hides the launcher/window and guards direct opens. It remains an offline prototype surface in source: BTC/ETH/SOL weather cards, Daily→1s timeframe ladder, liquidity hotspots, Catalyst Tape, Execution Queue, replayable snapshots through `window.crWeatherStation`, and Qualifier/Final account buttons wired into the bracket risk deck.
 
 ---
 
