@@ -4,8 +4,10 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.180
-     LAST UPDATED:    2026-05-31  ·  Configure Run broker wheel integration pass. The Broker picker now sits in a compact dark ChartRunner rail with tighter spacing, a smaller game-native wheel, and Solana/venue accent selection chrome.
+     CURRENT VERSION: v1.0.182
+     LAST UPDATED:    2026-05-31  ·  Token Terminal Settings archive pass. Token Terminal no longer surfaces the floating SETTINGS launcher or settings panel; saved settings still apply as a restore stub, but the UI is archived.
+     (v1.0.182 = Token Terminal Settings archive pass. The Token Terminal SETTINGS button/panel is hidden across themes and no longer created on boot. Existing cr_tokterm_settings_v1 state can still apply to data adapters as a restore/compat path, but the user-facing settings surface is archived.)
+     (v1.0.181 = Live theme archive pass. On chartrunner.xyz/play (or ?crLiveGame=1), Platinum, ASCII, Frontier, and Black & White are removed from the Theme cycle, legacy Theme window cards, and persisted theme application; archived stored themes normalize to Solana. Local file/localhost/private builds keep the full theme set.)
      (v1.0.180 = Configure Run broker wheel integration pass. The CEX/DEX segmented control and venue wheel now share a compact dark ChartRunner rail; the wheel drops the off-theme gray mask, uses a tighter game-native selector frame, and reduces the Configure Run dead space before Start Run.)
      (v1.0.179 = Workbench live archive pass. The live-game gate now hides Workbench Bots and Terminal tabs/panels on chartrunner.xyz/play (or ?crLiveGame=1) and blocks direct tab activation, while local/private builds keep the Bot Forge and Terminal Widget Builder source paths intact.)
      (v1.0.178 = Workbench Bot Forge prototype. Workbench -> Bots is restored as a local-only no-code forge for Price Action Toolkit and SFP Hunter bots: Sensor -> Gate -> Build Action -> Preview -> Forge & Equip. The flow writes specs through window.crBots.load, saves/equips locally, hides Pine as metadata, and keeps on-chain/Marketplace paths deferred.)
@@ -4694,6 +4696,22 @@
     background:rgba(255,91,127,.08) !important;color:#ff8aa5 !important}
   .os-window .os-wbody button:disabled{
     opacity:.48 !important;cursor:not-allowed !important;filter:grayscale(.25) !important}
+  /* v1.0.180 — Broker picker opts out of the global command-button wash so the
+     Configure Run venue rail keeps its own DEX/CEX + wheel hierarchy. */
+  #win-configs .os-wbody .cfg-brokerSeg button{
+    border:0 !important;border-radius:0 !important;background:transparent !important;
+    color:#9bff9b !important;padding:0 10px !important;font:800 11px ui-monospace,Menlo,monospace !important;
+    letter-spacing:.5px !important;text-transform:uppercase !important;box-shadow:none !important;text-shadow:none !important}
+  #win-configs .os-wbody .cfg-brokerSeg button.on[data-bk="dex"]{
+    background:linear-gradient(180deg,rgba(153,69,255,.22),rgba(20,241,149,.08)) !important;
+    color:#bff7df !important;text-shadow:0 0 10px rgba(20,241,149,.26) !important}
+  #win-configs .os-wbody .cfg-brokerSeg button.on[data-bk="cex"]{
+    background:linear-gradient(180deg,rgba(240,185,11,.18),rgba(240,185,11,.07)) !important;
+    color:#ffd166 !important;text-shadow:0 0 10px rgba(240,185,11,.24) !important}
+  #win-configs #cfgBrokerWheel.bk-dex .cfg-wheel-item.sel{
+    color:#bff7df !important;text-shadow:0 0 12px rgba(20,241,149,.38) !important}
+  #win-configs #cfgBrokerWheel.bk-cex .cfg-wheel-item.sel{
+    color:#ffd166 !important;text-shadow:0 0 12px rgba(240,185,11,.34) !important}
   :is(
     #win-run .modecard,
     #win-run #crArenaSubModes .modecard,
@@ -4793,6 +4811,13 @@
   #win-tokenterm #crTokList > div:hover,
   #win-maps .cr-mapCard:hover{
     background:var(--cr-app-panel-2) !important;border-color:rgba(106,203,58,.74) !important}
+  /* v1.0.182 — Token Terminal Settings archived. Keep the old state/apply
+     code as a restore stub, but do not surface the floating settings UI. */
+  #win-tokenterm #crTokTermGear,
+  #win-tokenterm #crTokTermSettings{
+    display:none !important;
+    pointer-events:none !important;
+  }
   #win-run .modecard .modeTag,
   #win-run #crArenaSubModes .modecard .modeTag{
     border-color:rgba(106,203,58,.42) !important;color:#7aa878 !important;
@@ -6579,6 +6604,17 @@
   html[data-cr-live-game="1"] [data-cr-wb-live-archive="term"],
   html[data-cr-live-game="1"] #crWBViewBots,
   html[data-cr-live-game="1"] #crWBViewTerm { display: none !important; }
+
+  /* v1.0.181 — Live /play theme archive. Local/private builds keep these
+       themes; public live only cycles the mature Solana / Liquid / Mono set. */
+  html[data-cr-live-game="1"] [data-preset="platinum"],
+  html[data-cr-live-game="1"] [data-preset="ascii"],
+  html[data-cr-live-game="1"] [data-preset="frontier"],
+  html[data-cr-live-game="1"] [data-preset="bw"],
+  html[data-cr-live-game="1"] #crThemeWin [data-theme="platinum"],
+  html[data-cr-live-game="1"] #crThemeWin [data-theme="ascii"],
+  html[data-cr-live-game="1"] #crThemeWin [data-theme="frontier"],
+  html[data-cr-live-game="1"] #crThemeWin [data-theme="bw"] { display: none !important; }
 
 
   /* — Workbench tabs: Bots restored as the local-only Bot Forge (v1.0.178).
@@ -31997,12 +32033,16 @@ function _seedDetectorBots(){
   try {
     DETECTOR_BOTS.forEach(d => {
       if (!wb.bots.some(b => b.id === d.id)) {
-        wb.bots.push({
+        const row = {
           id: d.id, name: d.name, role: d.role, color: d.color,
           icon: d.icon, detectorId: d.detectorId, isDetectorBot: true,
           cooldownMs: d.cooldownMs, created: Date.now(),
           category: 'in-game', // v0.9.44
-        });
+        };
+        if(d.fromSpec) row.fromSpec = true;
+        if(d.spec) row.spec = d.spec;
+        if(d.spec && d.spec.source) row.source = d.spec.source;
+        wb.bots.push(row);
       } else {
         // Refresh the in-memory record with the latest fire/detect refs
         // (those don't survive JSON serialization but the persisted
@@ -32013,6 +32053,9 @@ function _seedDetectorBots(){
         existing.isDetectorBot = true;
         existing.cooldownMs = d.cooldownMs;
         existing.category = 'in-game'; // v0.9.44 — backfill
+        if(d.fromSpec) existing.fromSpec = true;
+        if(d.spec) existing.spec = d.spec;
+        if(d.spec && d.spec.source) existing.source = d.spec.source;
       }
     });
     try { if (typeof _wbSave === 'function') _wbSave(); } catch(_){}
@@ -32137,6 +32180,9 @@ function _crWriteBotSpecs(arr){ try { localStorage.setItem(CR_BOT_SPECS_KEY, JSO
 function crLoadBotSpec(spec, opts){
   opts = opts || {};
   if(typeof spec === 'string'){ try { spec = JSON.parse(spec); } catch(_){ return { ok:false, error:'invalid JSON' }; } }
+  if(spec && typeof spec.id === 'string' && DETECTOR_BOTS.some(d => d.id === spec.id && !d.fromSpec)){
+    return { ok:false, error:'spec id collides with built-in bot: ' + spec.id };
+  }
   const built = _specToDetectorBot(spec);
   if(built.error) return { ok:false, error: built.error };
   const i = DETECTOR_BOTS.findIndex(d => d.id === built.bot.id); // dedupe by id → re-load updates
@@ -32150,6 +32196,8 @@ function crLoadBotSpec(spec, opts){
 }
 function crListBotSpecs(){ return _crReadBotSpecs(); }
 function crRemoveBotSpec(id){
+  const live = DETECTOR_BOTS.find(d => d.id === id);
+  if(live && !live.fromSpec) return { ok:false, error:'built-in bots cannot be removed' };
   _crWriteBotSpecs(_crReadBotSpecs().filter(s => s && s.id !== id));
   const i = DETECTOR_BOTS.findIndex(d => d.id === id && d.fromSpec);
   if(i >= 0) DETECTOR_BOTS.splice(i, 1);
@@ -33039,10 +33087,22 @@ function _wbAddChainActions(row, entityType, entity){
     if (unanchorBtn) row.appendChild(unanchorBtn);
   }
 }
+function _wbEsc(v){
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+function _wbColor(v, fallback){
+  const s = String(v || '').trim();
+  return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(s) ? s : (fallback || '#3ddc97');
+}
 function _wbRenderBots(){
   const list = document.getElementById('wbBotList');
   const cnt  = document.getElementById('wbBotCount');
-  if(cnt) cnt.textContent = '(' + wb.bots.length + ')';
+  const botTotal = wb.bots.length;
+  if(cnt) cnt.textContent = botTotal + (botTotal === 1 ? ' bot' : ' bots');
   if(!list) return;
   // v0.9.44 — subcategory filter strip rendered above the row list.
   const filtered = _wbFilterByCategory(wb.bots, 'bots');
@@ -33062,16 +33122,20 @@ function _wbRenderBots(){
   }
   filtered.forEach(b => {
     const equipped = wb.equipped.includes(b.id);
-    const role = WB_BOT_ROLES[b.role] || { ic:'▣', desc:b.role };
+    const role = Object.prototype.hasOwnProperty.call(WB_BOT_ROLES, b.role) ? WB_BOT_ROLES[b.role] : { ic:'▣', desc:b.role };
+    const color = _wbColor(b.color);
+    const isLocalForge = !!(b.fromSpec || (b.source && b.source.kind === 'workbench-forge') || (b.spec && b.spec.source && b.spec.source.kind === 'workbench-forge'));
+    const localBadge = isLocalForge ? ' · Local forge' : '';
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid ' + (equipped ? b.color : 'var(--line)') + ';border-radius:6px;background:rgba(10,15,28,.6);cursor:pointer;transition:border-color .15s';
+    row.className = 'wb-row' + (isLocalForge ? ' local-forge' : '');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid ' + (equipped ? color : 'var(--line)') + ';border-radius:6px;background:rgba(10,15,28,.6);cursor:pointer;transition:border-color .15s';
     row.innerHTML =
-      '<div style="font-size:18px;width:24px;text-align:center">' + role.ic + '</div>' +
+      '<div style="font-size:18px;width:24px;text-align:center">' + _wbEsc(role.ic) + '</div>' +
       '<div style="flex:1;min-width:0">' +
-        '<div style="font-size:12px;font-weight:700;color:' + b.color + '">' + b.name + '</div>' +
-        '<div style="font-size:10px;color:var(--dim)">' + b.role + ' · ' + role.desc + '</div>' +
+        '<div style="font-size:12px;font-weight:700;color:' + color + '">' + _wbEsc(b.name) + '</div>' +
+        '<div style="font-size:10px;color:var(--dim)">' + _wbEsc(b.role) + ' · ' + _wbEsc(role.desc) + _wbEsc(localBadge) + '</div>' +
       '</div>' +
-      '<button class="cr-go" type="button" style="padding:4px 10px;font-size:10px;background:' + (equipped ? b.color : 'transparent') + ';border:1px solid ' + b.color + ';color:' + (equipped ? '#0c0c14' : b.color) + '">' + (equipped ? '● Equipped' : 'Equip') + '</button>' +
+      '<button class="cr-go" type="button" style="padding:4px 10px;font-size:10px;background:' + (equipped ? color : 'transparent') + ';border:1px solid ' + color + ';color:' + (equipped ? '#0c0c14' : color) + '">' + (equipped ? '● Equipped' : 'Equip') + '</button>' +
       '<button class="cr-go" type="button" data-del style="padding:4px 8px;font-size:10px;background:transparent;border:1px solid var(--line);color:var(--dim)">×</button>';
     row.querySelector('button:not([data-del])').addEventListener('click', e => {
       e.stopPropagation();
@@ -33083,9 +33147,17 @@ function _wbRenderBots(){
       // re-seeded on next page load anyway, and the built-in fire actions
       // live in DETECTOR_BOTS, not in the saved row). Player can still
       // unequip them — that's the intended off switch.
-      if(b.isDetectorBot){
+      if(b.isDetectorBot && !isLocalForge){
         if(typeof toast === 'function') toast('Built-in bot — unequip instead of delete');
         return;
+      }
+      if(isLocalForge && window.crBots && typeof window.crBots.remove === 'function'){
+        const removed = window.crBots.remove(b.id);
+        if(removed && removed.ok !== false){
+          try { _wbRenderBots(); _wbRebuildBacktestTargets(); } catch(_){}
+          if(typeof toast === 'function') toast('Bot deleted');
+          return;
+        }
       }
       wb.bots = wb.bots.filter(x => x.id !== b.id);
       wb.equipped = wb.equipped.filter(x => x !== b.id);
@@ -33093,7 +33165,7 @@ function _wbRenderBots(){
       if(typeof toast === 'function') toast('Bot deleted');
     });
     // v0.9.6 — splice in ◎ Save on-chain + ↥ List buttons
-    try { _wbAddChainActions(row, 2 /* Bot */, b); } catch(_){}
+    try { if(!isLocalForge) _wbAddChainActions(row, 2 /* Bot */, b); } catch(_){}
     list.appendChild(row);
   });
 }
@@ -44909,6 +44981,9 @@ function log(msg){
   // v1.0.156 — Added Liquid Glass as a mature translucent cockpit theme.
   // v1.0.158 — Added Black & White and Monochrome mature cockpit themes.
   const THEMES = ['platinum','solana','ascii','frontier','liquid','bw','mono'];
+  // v1.0.181 — Public /play archives older/experimental themes while local
+  // builds keep the full workshop set available.
+  const LIVE_THEME_ARCHIVE = new Set(['platinum','ascii','frontier','bw']);
   const THEME_LABELS = {
     platinum: 'Platinum (Mac OS 9)',
     solana:   'Solana (Cypherpunk)',
@@ -44918,8 +44993,28 @@ function log(msg){
     bw:       'Black & White',
     mono:     'Monochrome',
   };
+  function _crLiveThemeArchived(name){
+    try {
+      return !!(window.cr && window.cr.isLiveGameSurface && LIVE_THEME_ARCHIVE.has(name));
+    } catch(_){ return false; }
+  }
+  function _crThemeList(){
+    const list = THEMES.filter(t => !_crLiveThemeArchived(t));
+    return list.length ? list : ['solana'];
+  }
+  function _crThemeFallback(){
+    return (window.cr && window.cr.isLiveGameSurface) ? 'solana' : 'platinum';
+  }
+  function _crNormalizeThemeForSurface(name){
+    let t = THEMES.includes(name) ? name : _crThemeFallback();
+    if(_crLiveThemeArchived(t)) t = _crThemeFallback();
+    if(!THEMES.includes(t) || _crLiveThemeArchived(t)) t = 'solana';
+    return t;
+  }
   let themeIdx = 0;
   function applyTheme(name){
+    name = _crNormalizeThemeForSurface(name);
+    themeIdx = Math.max(0, THEMES.indexOf(name));
     const splash = document.getElementById('splash');
     if(!splash) return;
     if(name === 'platinum'){
@@ -44930,7 +45025,9 @@ function log(msg){
     // Reflect on the menu label so it shows the *next* theme on hover.
     const menu = document.getElementById('crMenuTheme');
     if(menu){
-      const next = THEMES[(themeIdx + 1) % THEMES.length];
+      const activeThemes = _crThemeList();
+      const pos = Math.max(0, activeThemes.indexOf(name));
+      const next = activeThemes[(pos + 1) % activeThemes.length] || name;
       menu.textContent = 'Theme';
       menu.title = 'Current: ' + THEME_LABELS[name] + ' · click for ' + THEME_LABELS[next];
     }
@@ -44939,11 +45036,19 @@ function log(msg){
   // v1.0.157 — Theme menubar cycles directly again. The old Theme & Desktop
   // modal is archived; clicking Theme must be a quick rotate, not a window.
   function cycleTheme(){
-    themeIdx = (themeIdx + 1) % THEMES.length;
-    applyTheme(THEMES[themeIdx]);
-    return THEMES[themeIdx];
+    const activeThemes = _crThemeList();
+    const current = _crNormalizeThemeForSurface(THEMES[themeIdx]);
+    const pos = activeThemes.indexOf(current);
+    const next = activeThemes[(pos + 1) % activeThemes.length] || current;
+    applyTheme(next);
+    return next;
   }
-  try { window.crCycleTheme = cycleTheme; } catch(_){}
+  try {
+    window.crCycleTheme = cycleTheme;
+    window.crThemeAvailableThemes = () => _crThemeList().slice();
+    window.crThemeIsArchivedOnLive = _crLiveThemeArchived;
+    window.crNormalizeThemeForSurface = _crNormalizeThemeForSurface;
+  } catch(_){}
   bindMenu('crMenuTheme', () => {
     cycleTheme();
   });
@@ -44957,7 +45062,7 @@ function log(msg){
   // along with the Grid menu button. Existing localStorage entry
   // 'cr_desktop_grid_v1' is left in place — harmless on next load.
   // Set initial title hint on load.
-  applyTheme(THEMES[themeIdx]);
+  applyTheme(_crNormalizeThemeForSurface(THEMES[themeIdx]));
   // The applyTheme above also fires a toast — suppress for the initial load
   // by clearing the toast text on next tick.
   setTimeout(() => {
@@ -44990,8 +45095,9 @@ function log(msg){
       // 1) Preset → splash data-theme. Reuse applyTheme() so the menubar
       // hint label / toast / themeIdx all stay in sync.
       if(state.preset && VALID.has(state.preset)){
-        const idx = THEMES.indexOf(state.preset);
-        if(idx >= 0){ themeIdx = idx; applyTheme(state.preset); }
+        const preset = _crNormalizeThemeForSurface(state.preset);
+        const idx = THEMES.indexOf(preset);
+        if(idx >= 0){ themeIdx = idx; applyTheme(preset); }
       }
       // 2) Font override on the body (defeats per-theme font rules cleanly).
       try { document.body.style.fontFamily = state.font || ''; } catch(_){}
@@ -45039,7 +45145,7 @@ function log(msg){
       const fontSel = document.getElementById('wbThemeFont');
       const accent = document.getElementById('wbThemeAccent');
       return {
-        preset: (card && card.dataset.preset) || (THEMES[themeIdx] || 'platinum'),
+        preset: _crNormalizeThemeForSurface((card && card.dataset.preset) || (THEMES[themeIdx] || 'platinum')),
         font:   (fontSel && fontSel.value) || '',
         accent: (accent && accent.value) || '#14f195',
       };
@@ -45057,10 +45163,17 @@ function log(msg){
       const applyBtn= document.getElementById('wbThemeApply');
       const resetBtn= document.getElementById('wbThemeReset');
       if(!cards.length || !applyBtn) return false; // markup not in DOM yet
+      cards.forEach(c => {
+        const archived = _crLiveThemeArchived(c.dataset.preset);
+        c.hidden = archived;
+        c.disabled = archived;
+        c.setAttribute('aria-hidden', archived ? 'true' : 'false');
+      });
       // Hydrate from saved state (or fall back to current splash theme).
       const saved = load();
+      const savedPreset = saved && saved.preset ? _crNormalizeThemeForSurface(saved.preset) : null;
       const initial = {
-        preset: (saved && saved.preset) || THEMES[themeIdx] || 'platinum',
+        preset: savedPreset || _crNormalizeThemeForSurface(THEMES[themeIdx] || 'platinum'),
         font:   (saved && saved.font)   || '',
         accent: (saved && saved.accent) || '#14f195',
       };
@@ -45071,6 +45184,7 @@ function log(msg){
       syncPreview(initial);
       // Card click — toggle active + live preview (does NOT save until Apply).
       cards.forEach(c => {
+        if(c.disabled || c.hidden) return;
         c.addEventListener('click', () => {
           setActiveCard(c.dataset.preset);
           syncPreview(collectFromForm());
@@ -45108,7 +45222,7 @@ function log(msg){
         if(fontSel) fontSel.value = '';
         if(accent)  accent.value  = '#14f195';
         if(accentH) accentH.value = '#14f195';
-        syncPreview({ preset: THEMES[themeIdx] || 'platinum', accent:'#14f195' });
+        syncPreview({ preset: _crNormalizeThemeForSurface(THEMES[themeIdx] || 'platinum'), accent:'#14f195' });
         try { toast('Theme overrides cleared'); } catch(_){}
       });
       return true;
@@ -46674,8 +46788,17 @@ function log(msg){
   const splashEl = document.getElementById('splash');
   function syncOsTheme(){
     if(!splashEl) return;
-    const t = splashEl.getAttribute('data-theme');
-    if(t) document.body.setAttribute('data-os-theme', t);
+    const raw = splashEl.getAttribute('data-theme') || 'platinum';
+    let t = raw;
+    try {
+      if(window.crNormalizeThemeForSurface) t = window.crNormalizeThemeForSurface(raw);
+    } catch(_){}
+    if(t !== raw){
+      if(t === 'platinum') splashEl.removeAttribute('data-theme');
+      else splashEl.setAttribute('data-theme', t);
+      return;
+    }
+    if(t && t !== 'platinum') document.body.setAttribute('data-os-theme', t);
     else  document.body.removeAttribute('data-os-theme');
   }
   if(splashEl && typeof MutationObserver !== 'undefined'){
@@ -52555,6 +52678,16 @@ const crL3 = (function(){
     { id:'bw',       name:'Black & White', sub:'High contrast · ink cockpit' },
     { id:'mono',     name:'Monochrome', sub:'Soft grayscale · single-ink cockpit' },
   ];
+  function _themeArchivedOnLive(id){
+    try { return !!(window.crThemeIsArchivedOnLive && window.crThemeIsArchivedOnLive(id)); }
+    catch(_){ return false; }
+  }
+  function _normalizeTheme(id){
+    try {
+      if(window.crNormalizeThemeForSurface) return window.crNormalizeThemeForSurface(id);
+    } catch(_){}
+    return id;
+  }
 
   // Per-wallet storage. The crWallet IIFE patches Storage.prototype so
   // any key in its NS_KEYS map (which now includes 'cr_desktop_bg_v1')
@@ -52661,7 +52794,7 @@ const crL3 = (function(){
 
     // Theme cards.
     const grid = win.querySelector('#crTwGrid');
-    THEME_META.forEach(t => {
+    THEME_META.filter(t => !_themeArchivedOnLive(t.id)).forEach(t => {
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'tw-themecard';
@@ -52671,6 +52804,7 @@ const crL3 = (function(){
         + '<div class="tw-name">' + t.name + '</div>'
         + '<div class="tw-sub">'  + t.sub  + '</div>';
       card.addEventListener('click', () => {
+        if(_themeArchivedOnLive(t.id)) return;
         // v1.0.37 — Inline theme switch. applyTheme() is private to the
         // ChartRunnerOSExt IIFE (line ~34685) so it's not callable from
         // here. We just flip splash[data-theme]; a MutationObserver in
@@ -52792,7 +52926,7 @@ const crL3 = (function(){
     const win = document.getElementById('crThemeWin');
     if(!win) return;
     const splash = document.getElementById('splash');
-    const cur = (splash && splash.getAttribute('data-theme')) || 'platinum';
+    const cur = _normalizeTheme((splash && splash.getAttribute('data-theme')) || 'platinum');
     win.querySelectorAll('.tw-themecard').forEach(c => {
       c.classList.toggle('active', c.dataset.theme === cur);
     });
@@ -55681,7 +55815,7 @@ window.crQvac = (function(){
 })();
 
 /* ──────────────────────────────────────────────────────────────────
-   v1.0.61 — Token Terminal: GoldRush Top-10 enricher + Settings panel
+	   v1.0.61 — Token Terminal: GoldRush Top-10 enricher + Settings stub
    ──────────────────────────────────────────────────────────────────
    PART A — GoldRush Top-10 enricher
    Polls the active token's tokenHolders(mint, pageSize:10) every 90s,
@@ -55689,11 +55823,10 @@ window.crQvac = (function(){
    entry as live.top10pct so _tokSnapshot reads it as real data.
    Falls back silently when GoldRush has no key configured.
 
-   PART B — Settings panel (⊛)
-   New ⊛ button slides into the Token Terminal window header. Click
-   opens a panel with: default timeframe, refresh interval, Birdeye
-   API key, GoldRush API key, "show synth tokens" toggle. All saved
-   to cr_tokterm_settings_v1 localStorage.
+	   PART B — archived Settings panel (⊛)
+	   v1.0.182 archives the user-facing settings launcher/panel. Existing
+	   cr_tokterm_settings_v1 state is still read as a compatibility path
+	   for local/private restores, but no button or panel is surfaced.
    ──────────────────────────────────────────────────────────────────*/
 (function(){
   'use strict';
@@ -55743,8 +55876,11 @@ window.crQvac = (function(){
     }, 2000);
   }
 
-  // ── PART B — Settings panel ─────────────────────────────────────
-  const SETTINGS_KEY = 'cr_tokterm_settings_v1';
+	  // ── PART B — archived Settings panel ─────────────────────────────
+	  const SETTINGS_KEY = 'cr_tokterm_settings_v1';
+	  // v1.0.182 — User-facing Settings UI archived. Persisted settings still
+	  // apply below so old local API-key/filter state remains compatible.
+	  const SETTINGS_UI_ARCHIVED = true;
 
   function _loadSettings(){
     try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; }
@@ -55762,8 +55898,9 @@ window.crQvac = (function(){
     // Default timeframe applies on next token selection via _tokTF lookup.
   }
 
-  function _buildPanel(){
-    if(document.getElementById('crTokTermSettings')) return;
+	  function _buildPanel(){
+	    if(SETTINGS_UI_ARCHIVED) return;
+	    if(document.getElementById('crTokTermSettings')) return;
     const panel = document.createElement('div');
     panel.id = 'crTokTermSettings';
     // v1.0.62 — Panel sits below the floating gear button (top:34px to
@@ -55853,20 +55990,30 @@ window.crQvac = (function(){
     });
   }
 
-  function _toggleSettings(){
-    _buildPanel();
+	  function _toggleSettings(){
+	    if(SETTINGS_UI_ARCHIVED){
+	      const p = document.getElementById('crTokTermSettings');
+	      if(p) p.style.display = 'none';
+	      return;
+	    }
+	    _buildPanel();
     const p = document.getElementById('crTokTermSettings');
     if(!p) return;
     p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
   }
 
-  // v1.0.62 — Gear button hardened. Previously the button was hidden
-  // when the wbar's order was reversed by splash CSS (close on the
-  // left of the title). Now we put the gear in the body's top-right
-  // corner as a floating overlay — independent of wbar layout, always
-  // visible, never overlaps the title or close button.
-  function _addGear(){
-    const win = document.getElementById('win-tokenterm');
+	  // v1.0.62 created a hardened floating gear; v1.0.182 archives it.
+	  // Keep the old creation branch below as a restore path, but default to
+	  // removing any pre-existing gear/panel from the live DOM.
+	  function _addGear(){
+	    if(SETTINGS_UI_ARCHIVED){
+	      const gear = document.getElementById('crTokTermGear');
+	      if(gear) gear.remove();
+	      const panel = document.getElementById('crTokTermSettings');
+	      if(panel) panel.style.display = 'none';
+	      return;
+	    }
+	    const win = document.getElementById('win-tokenterm');
     if(!win){ setTimeout(_addGear, 500); return; }
     const body = win.querySelector('.os-wbody');
     if(!body){ setTimeout(_addGear, 500); return; }
