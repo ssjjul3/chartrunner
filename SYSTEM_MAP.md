@@ -1,7 +1,7 @@
 # ChartRunner System Map — canonical
 
 > **Status:** 🟢 canonical · always-current
-> **Last refreshed:** 2026-05-31 (v1.0.190 current source; COACH.llm now owns ChartRunner/trading guidance via a bounded context pack plus optional local/BYO provider and deterministic fallback, Bot Terminal remains the external bots/agents interface, Pine Adapter signal imports remain source-wired, Bot Terminal Labs is query-gated on live with hosted bridge config, and public `/play` keeps Platinum / Solana / Liquid Glass / Black & White / Monochrome themes while archiving only ASCII + Frontier)
+> **Last refreshed:** 2026-05-31 (v1.0.193 current source; SDK OI host-data detector now carries ChartHost open-interest samples into `detectOIConfirm` without adding broker/trading execution; ReplayDataset v2 adds OHLCV + volume resources, manifest/proof hashes, and explicit planned slots for true CVD/perps; COACH.llm provider cockpit remains advice-only; Bot Terminal remains the external bots/agents interface)
 > **Update protocol:** [`docs/SYSTEM_MAP_UPDATE_PROTOCOL.md`](docs/SYSTEM_MAP_UPDATE_PROTOCOL.md) — what triggers an update, file conventions, who-edits-what
 > **Snapshots:** dated files (e.g. `SYSTEM_MAP_2026-05-28.md`) are point-in-time archives, only created on major rebuilds. This file is the always-current one.
 
@@ -12,7 +12,7 @@ deliverable that crosses ≥2 layers. See the protocol doc for the full
 trigger list.
 
 Sister docs:
-- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the game source** (editing source v1.0.190; deploy via ship script): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
+- [`GAME_MAP.md`](GAME_MAP.md) — **canonical map of the game source** (editing source v1.0.193; deploy via ship script): modes, abilities, tools, on-chain wiring, automation surface, archived/parked
 - [`MILESTONE_AUDIT.md`](MILESTONE_AUDIT.md) — milestone state-of-play
 - [`BRAINSTORM_VS_SHIP_2026-05-28.md`](BRAINSTORM_VS_SHIP_2026-05-28.md) — founding-doc cross-reference
 - [`DRIVE_AND_VAULT_MAP_2026-05-28.md`](DRIVE_AND_VAULT_MAP_2026-05-28.md) — Drive-vs-vault comparison + migration verdict (Drive officially non-ChartRunner)
@@ -27,7 +27,7 @@ Sister docs:
 
 | Product | Where it ships | Stage | Source path |
 |---|---|---|---|
-| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Editing source v1.0.190; deploy via ship script | `ChartRunner_Prototype.html` (single file, 3.7 MB) |
+| **ChartRunner-the-game** | `chartrunner.xyz/play/` | Editing source v1.0.193; deploy via ship script | `ChartRunner_Prototype.html` (single file, 3.5 MB) |
 | **ChartRunner Mobile (Telegram Mini-App)** | `chartrunner.xyz/telegram/` | Live | `telegram/` in repo + `chartrunner-mobile-bot-built/` in vault |
 | **ChartRunner-as-tool (M11)** | `/opt/data/chartrunner/` on Umbrel | In dev (4/13 done) | Hermes container; not yet user-facing |
 | **Phase 1 SDK** | `chartrunner.xyz/sdk/` (built) | In progress (M2.5 in-flight) | `chartrunner-prototype/sdk/core/` (36 files) |
@@ -164,7 +164,7 @@ Active product focus: **M2.6** (Avatar identity + hotkey execution USP). M0.5 re
 |---|---|---|---|
 | M0.5 | Security + Anchor unblock | 🟡 audit workstream | ongoing |
 | M1 | Tokenomics + fiat onramp | 🔵 next | 0/13; $CHART design fully committed 2026-05-26 |
-| M2 | Coach AI v2 | 🟡 partial | 7/11; endpoint/cost/prompt/eval rounds 1-2 done; v1.0.190 adds bounded `cr.quant.v1` context, local/BYO provider routing, deterministic fallback, and the Coach-vs-Bot-Terminal authority boundary; production hosted/eval path still open |
+| M2 | Coach AI v2 | 🟡 partial | 7/11; endpoint/cost/prompt/eval rounds 1-2 done; v1.0.191 adds bounded `cr.quant.v1` context, local/BYO/Umbrel provider cockpit, deterministic fallback, local receipts, and Coach-vs-Bot-Terminal authority tests; production hosted/eval path still open |
 | M2.5 | SDK extraction (Phase 1) | 🟡 partial | in flight; 4/12 Ready done, builds at `chartrunner-prototype/sdk/core/` |
 | M2.6 | Avatar identity + hotkey execution USP | 🟢 active | first-minute USP focus from 2026-05-30 |
 | M3 | Build apps (Workbench rebuild) | 🟡 partial | 6/16; Bot Terminal desktop entry accessible locally and live-Labs accessible v1.0.187; default public `/play` still archives it; app chrome/interiors source remains; real Workbench restores/bridges pending |
@@ -209,20 +209,39 @@ Two parallel OHLC scrapers exist on Umbrel — intentional experiment, winding d
 
 ## 9. Recent session deliverables
 
-### 2026-05-31 — COACH.llm context advisor boundary
+### 2026-05-31 — SDK OI host-data detector
+
+| Deliverable | Path | Status |
+|---|---|---|
+| **Open-interest host data** | `ChartRunner_Prototype.html` | v1.0.193: the inlined ChartRunnerCore bundle carries ChartHost `openInterest` samples into `detectOIConfirm` for supplied series |
+| **Quadrant classification** | `ChartRunner_Prototype.html` | Price up/OI up and price down/OI up classify as directional confirmations; contraction quadrants stay no-match and missing feeds remain pending |
+| **Execution boundary** | `ChartRunner_Prototype.html` | Detector reads supplied host data only; no broker, trading, wallet, or hidden execution path is added |
+
+### 2026-05-31 — ReplayDataset v2 proof frame
+
+| Deliverable | Path | Status |
+|---|---|---|
+| **ReplayDataset v2 loader** | `ChartRunner_Prototype.html` | v1.0.192: `crReplayLab.loadDataset()` emits `cr-replay-dataset-v2` with resources `ohlcv` + `volume`, keeps `candles` compatibility for existing Journal buttons, and persists datasets to `cr_backtest_datasets_v1` |
+| **Manifest + proof** | `ChartRunner_Prototype.html` | Adds `cr-dataset-manifest-v1` source/request/resource status and `cr-dataset-proof-v1` hashes (`rawChartHash`, `ohlcvHash`, `volumeHash`, `manifestHash`, `datasetHash`) |
+| **Resource boundary** | `ChartRunner_Prototype.html` | True CVD and perps are explicit planned resources in the manifest; current up/down volume is labeled `candle-close-proxy` so OHLCV-derived volume is not mistaken for trade-side flow |
+| **Regression smoke** | `scripts/check_replay_dataset_v2_browser.cjs` | Browser test covers direct dataset loading, Replay run embedding, Pine signal replay, resource status, manifest, and proof fields |
+
+### 2026-05-31 — COACH.llm provider cockpit + context boundary
 
 | Deliverable | Path | Status |
 |---|---|---|
 | **Coach context pack** | `ChartRunner_Prototype.html` | v1.0.190: `window.crCoachProviders.buildCoachSnapshot()` emits bounded `cr.quant.v1` state with market, setup, wallet, open primitives, candles, ChartRunner knowledge, and a trading playbook |
 | **Provider + fallback split** | `window.crCoachProviders`, `crCoach.reply()` | Optional local/BYO model routing can answer from the context pack, while the browser fallback now covers ChartRunner, brackets, risk, timeframes, signals, and Bot Terminal boundaries |
 | **Authority boundary** | Coach vs Bot Terminal | COACH.llm is advice-only and cannot execute, sign, route orders, or connect agents; Bot Terminal remains the external bots/agents interface and all trading/wallet-like work stays approval-gated |
+| **Provider cockpit** | `ChartRunner_Prototype.html` | v1.0.191: toolbar Coach exposes V1 fallback, local Ollama, OpenAI-compatible BYO, and Umbrel MCP provider settings with endpoint/model/auth/privacy controls, local-only default, test action, and live status |
+| **Security regression checks** | `scripts/check_coach_provider_security.mjs`, `scripts/check_coach_provider_browser.cjs` | Static and Playwright checks verify provider routing uses fallback/receipts, strips prompt-injected slash/tool responses, and does not trigger `confirm`, wallet signing, or `crAgentBus.execute` |
 
 ### 2026-05-31 — Pine Adapter signal bridge
 
 | Deliverable | Path | Status |
 |---|---|---|
 | **Signal event store** | `ChartRunner_Prototype.html` | v1.0.188: `window.crPineAdapter` imports TradingView alerts, TradingView exported trades, and generic webhook payloads as `cr-signal-event-v1` records persisted to `cr_signal_events_v1` |
-| **Signal replay lane** | `ChartRunner_Prototype.html` | Signal events convert to Journal-style trades and replay through the existing `cr-replay-dataset-v1` loader, producing `cr-backtest-run-v1` records with `signalId` / `signalHash` proof fields |
+| **Signal replay lane** | `ChartRunner_Prototype.html` | Signal events convert to Journal-style trades and replay through the `cr-replay-dataset-v2` loader, producing `cr-backtest-run-v1` records with `signalId` / `signalHash` proof fields plus dataset proof hashes |
 | **Pine subset compiler** | `ChartRunner_Prototype.html` | `compilePineSubset()` emits non-executable `cr-strategy-spec-v1` JSON for the supported Pine-like subset (`ta.sma`, `ta.ema`, `ta.rsi`, `ta.atr`, crosses, `strategy.entry`, `strategy.exit`) and records unsupported Pine as metadata instead of running it |
 
 ### 2026-05-31 — Bot Terminal Labs live gate
@@ -249,7 +268,7 @@ Two parallel OHLC scrapers exist on Umbrel — intentional experiment, winding d
 |---|---|---|
 | **Shared alert event model** | `ChartRunner_Prototype.html` | v1.0.185: `window.crAlertBus` normalizes alert-like events and persists them to `cr_alert_events_v1`; alarm save/fire paths mirror into the bus without adding hidden signing or live execution |
 | **Journal alert actions** | `ChartRunner_Prototype.html` | Journal · Alerts renders bus events plus alarm-laser entries with Note / Replay / Ack actions; Note appends to `cr_journal_notes_v1` |
-| **ReplayDataset loader** | `ChartRunner_Prototype.html` | v1.0.185: Alert and Paper Replay actions now load `cr-replay-dataset-v1` records from the current chart candle source, persist datasets to `cr_backtest_datasets_v1`, and store `cr-backtest-run-v1` records in `cr_backtest_replays_v1` with candle hashes, gap reports, and proof hashes |
+| **ReplayDataset loader** | `ChartRunner_Prototype.html` | v1.0.185 introduced browser-local ReplayDataset records; v1.0.192 upgrades Alert/Paper/Pine replay to `cr-replay-dataset-v2` with OHLCV + volume resources, source manifest, and dataset proof hashes |
 
 ### 2026-05-31 — ChartRunner skill routing + modular orchestration map
 

@@ -4,8 +4,11 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.190
-     LAST UPDATED:    2026-05-31  ·  COACH.llm context advisor boundary. COACH.llm now builds a bounded ChartRunner/trading context pack, can call an optional local/BYO provider, and falls back to richer in-browser guidance; Bot Terminal remains the external bots/agents interface and all execution stays approval-gated through SDK/wallet paths.
+     CURRENT VERSION: v1.0.193
+     LAST UPDATED:    2026-05-31  ·  SDK OI host-data detector. The inlined core bundle now carries ChartHost openInterest samples into detectOIConfirm, classifies price/OI quadrants, keeps missing feeds pending, and exposes an inline host OI accessor for supplied series.
+     (v1.0.193 = SDK OI host-data detector. The generated ChartRunnerCore bundle now carries ChartHost openInterest samples into detectOIConfirm, classifies price up/OI up and price down/OI up as directional confirmations, treats price/OI contraction quadrants as no-match, keeps missing feeds pending, and exposes an inline host OI accessor for supplied series without adding broker or trading execution.)
+     (v1.0.192 = ReplayDataset v2 proof frame. Upgrades Alert/Paper/Pine signal replay datasets to cr-replay-dataset-v2 with OHLCV + volume resources, cr-dataset-manifest-v1 source/resource status, cr-dataset-proof-v1 hashes, and explicit planned slots for true CVD/perps without claiming those resources yet.)
+     (v1.0.191 = COACH.llm provider cockpit. Adds player-visible provider status and configuration inside the toolbar Coach popover, with local-only default, explicit remote opt-in, endpoint/model/auth fields, test action, and live status updates from crCoachProviders.)
      (v1.0.190 = COACH.llm context advisor boundary. Expands crCoachProviders with ChartRunner/trading knowledge, explicit Coach-vs-Bot-Terminal authority split, richer fallback answers for brackets/risk/timeframes/signals, and player-visible copy that keeps external agents in Bot Terminal.)
      (v1.0.189 = COACH.llm toolbar anchor repair. Keeps #crTvCoachBtn inside the in-game #crTopBar as a normal tvIcon, removes the fixed floating launcher override, and positions the Coach popover below the toolbar with a Liquid Glass-specific offset.)
      (v1.0.188 = Pine Adapter signal bridge. Adds window.crPineAdapter as a non-runtime import layer: TradingView alerts, exported trades, and webhook payloads normalize into cr-signal-event-v1 records in cr_signal_events_v1, replay through cr-replay-dataset-v1 / cr-backtest-run-v1, and compile the supported Pine-like subset to cr-strategy-spec-v1 JSON without executing arbitrary Pine.)
@@ -7378,6 +7381,12 @@
     top:76px;
     max-height:min(380px,calc(100vh - 96px));
   }
+  body:not(.crSplashUp) .crTvCoachPop.provider-open{
+    max-height:min(560px,calc(100vh - 82px));
+  }
+  body[data-os-theme="liquid"]:not(.crSplashUp) .crTvCoachPop.provider-open{
+    max-height:min(560px,calc(100vh - 96px));
+  }
   body.crLiveCoachOpen #crTopBar{
     opacity:1!important;transform:none!important;pointer-events:auto!important;
   }
@@ -7387,6 +7396,51 @@
   }
   .crTvCoachTitle{font:700 10px ui-monospace,Menlo,monospace;letter-spacing:1px;color:#14f195}
   .crTvCoachSub{font:10px ui-monospace,Menlo,monospace;color:#7ee787;letter-spacing:.3px}
+  .crTvCoachMeta{margin-left:auto;display:flex;align-items:center;gap:6px}
+  .crTvCoachModelBtn{
+    min-width:44px;height:24px;padding:0 8px;border-radius:6px;
+    border:1px solid rgba(126,231,135,.42);background:rgba(20,241,149,.10);
+    color:#bff7df;font:800 10px ui-monospace,Menlo,monospace;
+    letter-spacing:.6px;cursor:pointer;text-transform:uppercase;
+  }
+  .crTvCoachModelBtn:hover{background:rgba(20,241,149,.18)}
+  .crTvCoachModelBtn.ok{border-color:rgba(20,241,149,.72);background:rgba(20,241,149,.18);color:#14f195}
+  .crTvCoachModelBtn.ask{border-color:rgba(255,209,102,.70);background:rgba(255,209,102,.12);color:#ffd166}
+  .crTvCoachModelBtn.warn{border-color:rgba(255,94,94,.55);background:rgba(255,94,94,.10);color:#ffb3b3}
+  .crTvCoachProviderPanel{
+    display:none;padding:8px 10px 9px;border-bottom:1px solid rgba(20,241,149,.26);
+    background:linear-gradient(180deg,#0c111d,#080a10);max-height:240px;overflow:auto;
+  }
+  .crTvCoachProviderPanel.on{display:block}
+  .crTvCoachProviderGrid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .crTvCoachProviderGrid label{
+    display:flex;flex-direction:column;gap:2px;color:#7ee787;
+    font:800 9px ui-monospace,Menlo,monospace;letter-spacing:.45px;text-transform:uppercase;
+  }
+  .crTvCoachProviderGrid input,.crTvCoachProviderGrid select{
+    width:100%;min-width:0;padding:5px 6px;border:1px solid rgba(20,241,149,.36);
+    border-radius:5px;background:#080a10;color:#dfffee;
+    font:10px ui-monospace,Menlo,monospace;outline:none;
+  }
+  .crTvCoachProviderGrid input:focus,.crTvCoachProviderGrid select:focus{border-color:rgba(126,231,135,.68)}
+  .crTvCoachProviderWide{grid-column:1/-1}
+  .crTvCoachProviderActions{display:flex;gap:6px;margin-top:8px;align-items:center}
+  .crTvCoachProviderActions button{
+    height:24px;padding:0 9px;border-radius:6px;border:1px solid rgba(126,231,135,.46);
+    background:rgba(20,241,149,.10);color:#bff7df;
+    font:800 9px ui-monospace,Menlo,monospace;letter-spacing:.55px;text-transform:uppercase;cursor:pointer;
+  }
+  .crTvCoachProviderActions button:hover{background:rgba(20,241,149,.18)}
+  .crTvCoachProviderActions .ghost{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#9fb3a8}
+  .crTvCoachProviderActions button:disabled{opacity:.55;cursor:wait}
+  .crTvCoachProviderStatus{margin-top:7px;color:#8ff5c8;font:10px ui-monospace,Menlo,monospace;min-height:14px;word-break:break-word}
+  .crTvCoachProviderStatus.warn{color:#ffd166}
+  .crTvCoachProviderStatus.err{color:#ffb3b3}
+  .crTvCoachPop.provider-open .crTvCoachLog{min-height:86px;max-height:170px}
+  @media (max-width:420px){
+    .crTvCoachProviderGrid{grid-template-columns:1fr}
+    .crTvCoachProviderWide{grid-column:auto}
+  }
   .crTvCoachLog{
     flex:1;min-height:120px;max-height:240px;overflow-y:auto;
     padding:10px 12px;display:block;
@@ -7746,8 +7800,50 @@
         <span class="cr-coach-asset-icon" aria-hidden="true"></span>
         <div>
           <div class="crTvCoachTitle">COACH.llm</div>
-          <div class="crTvCoachSub">profit-first trading LLM</div>
+          <div class="crTvCoachSub" id="crTvCoachSub">profit-first trading LLM</div>
         </div>
+        <div class="crTvCoachMeta">
+          <button class="crTvCoachModelBtn" id="crTvCoachModelBtn" type="button" title="Coach model settings">V1</button>
+        </div>
+      </div>
+      <div class="crTvCoachProviderPanel" id="crTvCoachProviderPanel" aria-hidden="true">
+        <div class="crTvCoachProviderGrid">
+          <label>Mode
+            <select id="crCoachProviderType">
+              <option value="v1">V1 fallback</option>
+              <option value="ollama">Ollama local</option>
+              <option value="openai_compatible">OpenAI-compatible</option>
+              <option value="umbrel_mcp">Umbrel MCP</option>
+            </select>
+          </label>
+          <label>Privacy
+            <select id="crCoachProviderPrivacy">
+              <option value="local_only">Local only</option>
+              <option value="allow_remote">Remote OK</option>
+            </select>
+          </label>
+          <label class="crTvCoachProviderWide">Endpoint
+            <input id="crCoachProviderBaseUrl" type="text" placeholder="http://127.0.0.1:11434/api/generate" autocomplete="off">
+          </label>
+          <label>Model
+            <input id="crCoachProviderModel" type="text" placeholder="llama3.1:8b" autocomplete="off">
+          </label>
+          <label>Auth
+            <select id="crCoachProviderAuth">
+              <option value="none">None</option>
+              <option value="bearer">Bearer</option>
+            </select>
+          </label>
+          <label class="crTvCoachProviderWide">Key
+            <input id="crCoachProviderApiKey" type="password" placeholder="optional" autocomplete="off">
+          </label>
+        </div>
+        <div class="crTvCoachProviderActions">
+          <button id="crCoachProviderSave" type="button">Save</button>
+          <button id="crCoachProviderTest" type="button">Test</button>
+          <button class="ghost" id="crCoachProviderFallback" type="button">V1</button>
+        </div>
+        <div class="crTvCoachProviderStatus" id="crCoachProviderStatus">V1 fallback · local browser guidance</div>
       </div>
       <div class="crTvCoachLog" id="crTvCoachLog"></div>
       <div class="crTvCoachIn">
@@ -12076,7 +12172,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.127",
+  VERSION: "1.0.193",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -14300,7 +14396,6 @@ var ChartRunnerCore = (() => {
     detectFailedAuction: () => detectFailedAuction,
     detectHeadShoulders: () => detectHeadShoulders,
     detectOIConfirm: () => detectOIConfirm,
-    detectPriceAction: () => detectPriceAction,
     detectSFP: () => detectSFP,
     findSwings: () => findSwings
   });
@@ -14572,81 +14667,83 @@ var ChartRunnerCore = (() => {
     }
     return { matched, side, kind, dOpen: lev.dOpen, pdVAH: lev.pdVAH, pdVAL: lev.pdVAL, price: last.c, idx: baseIdx + N - 1 };
   }
-  function detectOIConfirm(_ctx) {
-    return { matched: false, side: "buy", pending: true };
-  }
-  function detectPriceAction(ctx) {
+  var oiValue = (p) => {
+    const raw = p;
+    const v = raw?.value ?? raw?.oi ?? raw?.openInterest ?? raw?.sumOpenInterest;
+    return typeof v === "number" ? v : Number(v);
+  };
+  function detectOIConfirm(ctx) {
     const cs = ctx.candles ?? [];
+    const sideFilter = ctx.side;
+    const fallbackSide = sideFilter ?? "buy";
     const baseIdx = ctx.baseIdx ?? 0;
-    const P = ctx.params ?? {};
-    const num = (key, fallback) => {
-      const v = P[key];
-      if (typeof v === "number" && Number.isFinite(v)) return v;
-      return fallback;
-    };
-    const win = Math.max(4, Math.floor(num("window", 12)));
-    const contractThresh = Math.max(0.1, Math.min(2, num("contractThresh", 0.7)));
-    const proxAtr = Math.max(0.05, num("proxAtr", 0.6));
     const N = cs.length;
-    const last = N ? cs[N - 1] : null;
-    const price = last && typeof last.c === "number" && Number.isFinite(last.c) ? last.c : 0;
-    const idx = baseIdx + Math.max(0, N - 1);
-    let atr = 0;
-    const miss = (reason, extra = {}) => ({ matched: false, side: "buy", ref: null, atr, price, idx, reason, ...extra });
-    if (N < Math.max(15, win * 2)) return miss("not enough candles");
-    for (let i = Math.max(1, N - 14); i < N; i++) {
-      const c = cs[i], p = cs[i - 1];
-      const hi = typeof c.h === "number" ? c.h : c.c;
-      const lo = typeof c.l === "number" ? c.l : c.c;
-      const pc = typeof p.c === "number" ? p.c : price;
-      atr += Math.max(hi - lo, Math.abs(hi - pc), Math.abs(lo - pc));
+    if (N < 2) {
+      return { matched: false, side: fallbackSide, pending: true, reason: "not-enough-candles" };
     }
-    atr /= Math.min(14, N - 1);
-    if (!(atr > 0)) return miss("no range");
-    const span = (a, b) => {
-      let hi = -Infinity, lo = Infinity;
-      for (let i = a; i <= b; i++) {
-        const c = cs[i];
-        const h = typeof c.h === "number" ? c.h : c.c;
-        const l = typeof c.l === "number" ? c.l : c.c;
-        if (h > hi) hi = h;
-        if (l < lo) lo = l;
-      }
-      return hi - lo;
-    };
-    const recentRange = span(N - win, N - 1);
-    const priorRange = span(N - win * 2, N - win - 1);
-    const contractRatio = priorRange > 0 ? recentRange / priorRange : Infinity;
-    const contracted = contractRatio <= contractThresh;
-    const lev = ctx.referenceLevels ?? null;
-    if (!lev) return miss("no levels", { contractRatio });
-    const keys = ["pdPOC", "pdVAH", "pdVAL", "dOpen", "pdHigh", "pdLow", "pdClose", "IBH", "IBL"];
-    let ref = null, refKey = null, refDist = Infinity;
-    for (const k of keys) {
-      const px = lev[k];
-      if (typeof px !== "number" || !Number.isFinite(px)) continue;
-      const d = Math.abs(price - px);
-      if (d < refDist) {
-        refDist = d;
-        ref = px;
-        refKey = k;
-      }
+    const oi = ctx.openInterest;
+    if (oi == null) {
+      return { matched: false, side: fallbackSide, pending: true, reason: "oi-feed-missing" };
     }
-    if (ref == null) return miss("no numeric levels", { contractRatio });
-    const near = refDist <= Math.max(atr * proxAtr, Math.abs(price) * 5e-4);
-    const side = price <= ref ? "buy" : "sell";
-    if (!contracted || !near) return miss(contracted ? "away from value" : "not contracted", { side, ref, refKey, contractRatio, proximity: refDist });
-    return {
-      matched: true,
-      side,
-      ref,
-      refKey,
-      atr,
-      price,
-      idx,
-      contractRatio,
-      proximity: refDist
+    if (oi.length < 2) {
+      return { matched: false, side: fallbackSide, pending: false, reason: "no-oi-data" };
+    }
+    const P = ctx.params ?? {};
+    const maxLookback = Math.min(N - 1, oi.length - 1);
+    const requestedLookback = typeof P.oiLookback === "number" && Number.isFinite(P.oiLookback) ? Math.floor(P.oiLookback) : 20;
+    const lookback = Math.max(1, Math.min(Math.max(1, requestedLookback), maxLookback));
+    const prevC = cs[N - 1 - lookback];
+    const lastC = cs[N - 1];
+    const prevOI = oiValue(oi[oi.length - 1 - lookback]);
+    const lastOI = oiValue(oi[oi.length - 1]);
+    if (!Number.isFinite(prevOI) || !Number.isFinite(lastOI) || Math.abs(prevOI) < 1e-9) {
+      return { matched: false, side: fallbackSide, pending: false, reason: "invalid-oi-data" };
+    }
+    const priceChg = (lastC.c - prevC.c) / Math.max(Math.abs(prevC.c), 1e-9);
+    const oiChg = (lastOI - prevOI) / Math.max(Math.abs(prevOI), 1e-9);
+    const priceEps = typeof P.oiPriceEps === "number" ? Math.abs(P.oiPriceEps) : 0;
+    const oiEps = typeof P.oiEps === "number" ? Math.abs(P.oiEps) : 0;
+    const priceUp = priceChg > priceEps;
+    const priceDown = priceChg < -priceEps;
+    const oiUp = oiChg > oiEps;
+    const oiDown = oiChg < -oiEps;
+    const common = {
+      pending: false,
+      price: lastC.c,
+      idx: baseIdx + N - 1,
+      priceChg,
+      pChg: priceChg,
+      oiChg,
+      oi: lastOI,
+      oiNow: lastOI,
+      oiPrev: prevOI,
+      lookback
     };
+    if (!priceUp && !priceDown || !oiUp && !oiDown) {
+      return { matched: false, side: fallbackSide, kind: "flat-price-or-oi", reason: "flat-price-or-oi", ...common };
+    }
+    let side = "buy";
+    let kind = "price-up-oi-up";
+    let confirms = false;
+    if (priceUp && oiUp) {
+      side = "buy";
+      kind = "price-up-oi-up";
+      confirms = true;
+    } else if (priceDown && oiUp) {
+      side = "sell";
+      kind = "price-down-oi-up";
+      confirms = true;
+    } else if (priceUp && oiDown) {
+      side = "buy";
+      kind = "price-up-oi-down";
+    } else {
+      side = "sell";
+      kind = "price-down-oi-down";
+    }
+    const sideMatched = sideFilter == null || sideFilter === side;
+    const matched = confirms && sideMatched;
+    const reason = sideMatched ? confirms ? void 0 : "oi-contracts" : "side-mismatch";
+    return { matched, side, kind, ...reason ? { reason } : {}, ...common };
   }
 
   // src/ChartRunnerSDK.ts
@@ -14697,8 +14794,7 @@ var ChartRunnerCore = (() => {
         detectHeadShoulders: true,
         detectSFP: true,
         detectFailedAuction: true,
-        detectOIConfirm: true,
-        detectPriceAction: true
+        detectOIConfirm: "host-data"
       };
     }
     // ── lifecycle / events (HTML 10529-10548) ─────────────────────────────
@@ -15517,6 +15613,7 @@ var ChartRunnerCore = (() => {
     _detCtx() {
       return {
         candles: this.host?.getCandles() ?? [],
+        openInterest: this.host?.openInterest?.() ?? null,
         referenceLevels: this.host?.referenceLevels?.() ?? null,
         rsi: this.host?.rsi
       };
@@ -15538,9 +15635,6 @@ var ChartRunnerCore = (() => {
     }
     detectOIConfirm(o) {
       return detectOIConfirm({ ...this._detCtx(), side: o?.side });
-    }
-    detectPriceAction(opts) {
-      return detectPriceAction({ ...this._detCtx(), ...(opts || {}) });
     }
     // ── per-frame engine (HTML 11793) ─────────────────────────────────────
     // Advances ladder/oco/limit fills, bracket tp/sl + trailing/magnet ratchets,
@@ -15991,6 +16085,7 @@ var ChartRunnerCore = (() => {
   // src/RiskManager.ts
   var SandboxRiskManager = class {
     constructor() {
+      this.mode = "sandbox";
       // TODO(M2.5): port the Kelly / OI / IV logic verbatim from
       // hl/trade_executor.py::compute_position_size. Sandbox stays flat for now.
       this.KELLY_MULT = 0.25;
@@ -17385,6 +17480,15 @@ function createInlineChartRunnerHost(){
     timeToX: function(ts){ try { return (typeof sX === 'function') ? sX(ts / (typeof STEP !== 'undefined' ? STEP : 1)) : 0; } catch(_) { return 0; } },
     visibleRange: function(){ return { t0: 0, t1: 0, p0: 0, p1: 0 }; },
     getCandles: function(){ try { return (typeof candles !== 'undefined' && Array.isArray(candles)) ? candles : []; } catch(_) { return []; } },
+    openInterest: function(){
+      try {
+        var w = (typeof window !== 'undefined') ? window : null;
+        var series = w && (w.crOpenInterestSeries || w.CR_OI_SERIES || w.__CR_OI_SERIES__);
+        if(Array.isArray(series)) return series;
+        if(typeof game !== 'undefined' && Array.isArray(game.openInterestSeries)) return game.openInterestSeries;
+      } catch(_){}
+      return null;
+    },
     referenceLevels: function(){ try { return (typeof computeReferenceLevels === 'function') ? computeReferenceLevels() : null; } catch(_) { return null; } },
     rsi: function(idx, period){ try { return (typeof _computeRSI === 'function') ? _computeRSI(idx, period) : 50; } catch(_) { return 50; } },
     toggleIndicator: function(name, on){
@@ -29449,6 +29553,89 @@ function _crJrnReplayProviderLabel(){
   if(/offline|seed/i.test(srcText)) return { provider:'chart-seeded-fallback', sourceLabel:srcText || 'offline seeded chart candles' };
   return { provider:'chart-current', sourceLabel:srcText || 'current chart candles' };
 }
+function _crJrnReplayVolumeFrame(rows){
+  const data = Array.isArray(rows) ? rows : [];
+  let total = 0, upVolume = 0, downVolume = 0, flatVolume = 0, max = 0;
+  let zeroVolumeBars = 0, negativeVolumeBars = 0, missingVolumeBars = 0;
+  data.forEach(c => {
+    const hasVolume = c && c.v != null && Number.isFinite(Number(c.v));
+    const v = hasVolume ? Number(c.v) : 0;
+    if(!hasVolume) missingVolumeBars++;
+    if(v < 0) negativeVolumeBars++;
+    if(v === 0) zeroVolumeBars++;
+    const clean = Math.max(0, v);
+    total += clean;
+    if(clean > max) max = clean;
+    if(Number(c && c.c) > Number(c && c.o)) upVolume += clean;
+    else if(Number(c && c.c) < Number(c && c.o)) downVolume += clean;
+    else flatVolume += clean;
+  });
+  const avg = data.length ? total / data.length : 0;
+  const frameSeed = {
+    schema:'cr-volume-frame-v1',
+    classification:'candle-close-proxy',
+    rowCount:data.length,
+    total:+total.toFixed(6),
+    average:+avg.toFixed(6),
+    max:+max.toFixed(6),
+    upVolume:+upVolume.toFixed(6),
+    downVolume:+downVolume.toFixed(6),
+    flatVolume:+flatVolume.toFixed(6),
+    zeroVolumeBars,
+    missingVolumeBars,
+    negativeVolumeBars,
+    notes:'Volume is sourced from OHLCV candle volume. Up/down split is a candle-close proxy; true CVD requires trade-side/taker flow data.'
+  };
+  return Object.assign(frameSeed, { hash:_crJrnHashValue(frameSeed) });
+}
+function _crJrnReplaySourceManifest(opts){
+  const o = opts && typeof opts === 'object' ? opts : {};
+  const source = o.source || {};
+  let locationKind = 'unknown';
+  try { locationKind = location.protocol === 'file:' ? 'local-file' : (location.hostname || location.protocol || 'browser'); } catch(_){}
+  return {
+    schema:'cr-dataset-manifest-v1',
+    datasetVersion:2,
+    generatedAt:Date.now(),
+    source:{
+      provider:source.provider || 'chart-current',
+      label:source.sourceLabel || 'current chart candles',
+      loader:'browser-current-chart',
+      retrieval:'loaded-chart-memory',
+      locationKind,
+      chartRowCount:o.chartRowCount || 0
+    },
+    request:{
+      requestedAsset:o.requestedAsset,
+      requestedTimeframe:o.requestedTf,
+      resolvedAsset:o.chartAsset,
+      resolvedTimeframe:o.chartTf,
+      from:o.from,
+      to:o.to,
+      tradeHash:_crJrnHashValue(o.trade || {})
+    },
+    resources:['ohlcv','volume'],
+    resourceStatus:{
+      ohlcv:'complete',
+      volume:'complete',
+      cvd:'planned:true-cvd-requires-trade-side-or-taker-buy-sell-data',
+      perps:'planned:funding-open-interest-liquidations-mark-index-basis'
+    },
+    transforms:[
+      { id:'normalize-ohlcv', version:'1', columns:['t','o','h','l','c','v'] },
+      { id:'select-replay-slice', version:'1', maxRows:96 },
+      { id:'volume-frame', version:'1', classification:'candle-close-proxy' }
+    ],
+    invariants:{
+      minRows:20,
+      expectedStepMs:o.expectedStepMs || null,
+      invalidOhlc:o.invalidOhlc || 0,
+      gaps:o.gaps || 0,
+      duplicates:o.duplicates || 0,
+      negativeVolumeBars:o.negativeVolumeBars || 0
+    }
+  };
+}
 function _crJrnLoadReplayDataset(trade, spec){
   const requestedAsset = _crJrnAssetSymbol((trade && (trade.asset || trade.symbol)) || (spec && spec.asset) || 'BTC');
   const requestedTf = String((trade && (trade.tf || trade.timeframe)) || (spec && (spec.tf || spec.timeframe)) || '15m');
@@ -29468,12 +29655,51 @@ function _crJrnLoadReplayDataset(trade, spec){
   if(requestedTf !== chartTf) warnings.push('requested_timeframe_mismatch:' + requestedTf + '!=' + chartTf);
   if(Number.isFinite(entry) && picked.length && (entry < lo || entry > hi)) warnings.push('entry_outside_dataset_range');
   const source = _crJrnReplayProviderLabel();
-  const dataset = {
+  const ohlcvFrame = {
+    schema:'cr-ohlcv-frame-v1',
+    columns:['t','o','h','l','c','v'],
+    rowCount:picked.length,
+    timeframe:chartTf,
+    rows:picked,
+    hash:_crJrnHashValue(picked)
+  };
+  const volumeFrame = _crJrnReplayVolumeFrame(picked);
+  const manifest = _crJrnReplaySourceManifest({
+    source,
+    requestedAsset,
+    requestedTf,
+    chartAsset,
+    chartTf,
+    from:picked[0] ? picked[0].t : null,
+    to:picked.length ? picked[picked.length - 1].t : null,
+    chartRowCount:chartRows.length,
+    trade:trade || {},
+    expectedStepMs:gapReport.expectedStepMs,
+    invalidOhlc:gapReport.invalidOhlc,
+    gaps:gapReport.gaps,
+    duplicates:gapReport.duplicates,
+    negativeVolumeBars:volumeFrame.negativeVolumeBars
+  });
+  const quality = {
+    schema:'cr-dataset-quality-v1',
+    valid:picked.length >= 20 && gapReport.invalidOhlc === 0 && volumeFrame.negativeVolumeBars === 0,
+    warnings,
+    gapReport:Object.assign({}, gapReport, { warnings }),
+    volumeReport:{
+      zeroVolumeBars:volumeFrame.zeroVolumeBars,
+      missingVolumeBars:volumeFrame.missingVolumeBars,
+      negativeVolumeBars:volumeFrame.negativeVolumeBars
+    }
+  };
+  const datasetSeed = {
     id:_crJrnEventId('dataset'),
-    schema:'cr-replay-dataset-v1',
+    schema:'cr-replay-dataset-v2',
+    version:2,
     provider:source.provider,
     source:'chart-current',
     sourceLabel:source.sourceLabel,
+    resources:['ohlcv','volume'],
+    plannedResources:['cvd','perps'],
     requestedAsset,
     requestedTimeframe:requestedTf,
     asset:chartAsset,
@@ -29483,10 +29709,29 @@ function _crJrnLoadReplayDataset(trade, spec){
     fetchedAt:Date.now(),
     candleCount:picked.length,
     candles:picked,
-    candleHash:_crJrnHashValue(picked),
-    gapReport:Object.assign({}, gapReport, { warnings }),
-    valid:picked.length >= 20 && gapReport.invalidOhlc === 0
+    ohlcv:ohlcvFrame,
+    volume:volumeFrame,
+    manifest,
+    candleHash:ohlcvFrame.hash,
+    gapReport:quality.gapReport,
+    quality,
+    valid:quality.valid
   };
+  const proofSeed = {
+    schema:'cr-dataset-proof-v1',
+    hashAlgo:'fnv1a-stable-json',
+    generatedAt:Date.now(),
+    rawChartHash:_crJrnHashValue(chartRows),
+    ohlcvHash:ohlcvFrame.hash,
+    volumeHash:volumeFrame.hash,
+    manifestHash:_crJrnHashValue(manifest),
+    gapReportHash:_crJrnHashValue(quality.gapReport)
+  };
+  const dataset = Object.assign({}, datasetSeed, {
+    proof:Object.assign({}, proofSeed, {
+      datasetHash:_crJrnHashValue(Object.assign({}, datasetSeed, { proof:proofSeed }))
+    })
+  });
   const rows = _crJrnReadArray(CR_BACKTEST_DATASETS_KEY);
   rows.push(dataset);
   _crJrnWriteArray(CR_BACKTEST_DATASETS_KEY, rows, 80);
@@ -29609,16 +29854,20 @@ function _crJrnCreateReplay(opts){
     timeframe:String(trade.tf || trade.timeframe || '15m'),
     datasetId:replayDataset.id,
     dataset:replayDataset,
-    note:'ReplayDataset-backed run using the loaded chart candle source. Historical/server datasets can replace the loader without changing Journal buttons.',
+    note:'ReplayDataset v2-backed run using the loaded chart candle source, OHLCV + volume resources, manifest, and proof hashes. True CVD/perps resources are planned for the next data pass.',
     trade,
     candles:replayCandles,
     result,
     proof:{
       specHash:_crJrnHashValue(specProof),
       candleHash:replayDataset.candleHash,
+      ohlcvHash:replayDataset.proof && replayDataset.proof.ohlcvHash ? replayDataset.proof.ohlcvHash : replayDataset.candleHash,
+      volumeHash:replayDataset.proof && replayDataset.proof.volumeHash ? replayDataset.proof.volumeHash : null,
+      manifestHash:replayDataset.proof && replayDataset.proof.manifestHash ? replayDataset.proof.manifestHash : null,
+      datasetHash:replayDataset.proof && replayDataset.proof.datasetHash ? replayDataset.proof.datasetHash : null,
       signalHash,
       resultHash:_crJrnHashValue(result),
-      engineVersion:'journal-replay-v1.0.185'
+      engineVersion:'journal-replay-v1.0.192'
     }
   };
   const rows = _crJrnReadArray(CR_BACKTEST_REPLAYS_KEY);
@@ -49404,6 +49653,21 @@ window.crCoachProviders = (function(){
     return '';
   }
 
+  function isLocalProviderUrl(url){
+    try{
+      const u = new URL(url, window.location.href);
+      const host = String(u.hostname || '').toLowerCase();
+      return host === 'localhost'
+        || host === '127.0.0.1'
+        || host === '::1'
+        || host === '[::1]'
+        || host.endsWith('.local')
+        || host.endsWith('.localhost');
+    }catch(_){
+      return false;
+    }
+  }
+
   async function postWithTimeout(url, payload, cfg){
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), cfg.latencyBudgetMs);
@@ -49453,7 +49717,7 @@ window.crCoachProviders = (function(){
   }
 
   function isSlashCommand(text){
-    return /^\s*\/\w+/.test(String(text || ''));
+    return /(^|\s)\/\w+/.test(String(text || ''));
   }
 
   function fallbackResult(fallbackText, cfg, started, reason, playerMsg, snapshot){
@@ -49481,10 +49745,9 @@ window.crCoachProviders = (function(){
     const snapshot = buildCoachSnapshot();
     if(!msg) return fallbackResult(fallbackText, cfg, started, 'empty_player_message', playerMsg, snapshot);
     if(isSlashCommand(playerMsg)) return fallbackResult(fallbackText, cfg, started, 'slash_command_rejected', playerMsg, snapshot);
-    if(cfg.providerType === 'v1') return fallbackResult(fallbackText, cfg, started, 'provider_v1_fallback', playerMsg, snapshot);
-    if(cfg.privacyMode === 'local_only' && cfg.providerType !== 'ollama') return fallbackResult(fallbackText, cfg, started, 'local_only_blocks_remote', playerMsg, snapshot);
-
     const url = providerUrl(cfg);
+    if(cfg.providerType === 'v1') return fallbackResult(fallbackText, cfg, started, 'provider_v1_fallback', playerMsg, snapshot);
+    if(cfg.privacyMode === 'local_only' && !isLocalProviderUrl(url)) return fallbackResult(fallbackText, cfg, started, 'local_only_blocks_remote', playerMsg, snapshot);
     if(!url) return fallbackResult(fallbackText, cfg, started, 'missing_provider_url', playerMsg, snapshot);
 
     updateStatus({ state:'asking', providerType:cfg.providerType, model:cfg.model, latencyMs:0, privacyMode:cfg.privacyMode, fallbackUsed:false, fallbackReason:'', error:'' });
@@ -49670,7 +49933,7 @@ const crCoach = (function(){
       const fallback = reply(text);
       let answer = fallback;
       try{
-        if(window.cr && window.cr.flags && window.cr.flags.coachAI && window.crCoachProviders && typeof window.crCoachProviders.ask === 'function'){
+        if(window.crCoachProviders && typeof window.crCoachProviders.ask === 'function'){
           answer = await window.crCoachProviders.ask(text, history.slice(), fallback);
         }
       }catch(_){ answer = fallback; }
@@ -49707,6 +49970,166 @@ window.crCoach = crCoach;
 
   let lastSeen = Date.now();
   let isOpen = false;
+  let isProviderOpen = false;
+  const coachSub = document.getElementById('crTvCoachSub');
+  const modelBtn = document.getElementById('crTvCoachModelBtn');
+  const providerPanel = document.getElementById('crTvCoachProviderPanel');
+  const providerStatus = document.getElementById('crCoachProviderStatus');
+  const providerType = document.getElementById('crCoachProviderType');
+  const providerPrivacy = document.getElementById('crCoachProviderPrivacy');
+  const providerBaseUrl = document.getElementById('crCoachProviderBaseUrl');
+  const providerModel = document.getElementById('crCoachProviderModel');
+  const providerAuth = document.getElementById('crCoachProviderAuth');
+  const providerApiKey = document.getElementById('crCoachProviderApiKey');
+  const providerSave = document.getElementById('crCoachProviderSave');
+  const providerTest = document.getElementById('crCoachProviderTest');
+  const providerFallback = document.getElementById('crCoachProviderFallback');
+
+  function providerApi(){
+    return window.crCoachProviders || null;
+  }
+
+  function providerName(type){
+    if(type === 'ollama') return 'Ollama';
+    if(type === 'openai_compatible') return 'OpenAI-compatible';
+    if(type === 'umbrel_mcp') return 'Umbrel MCP';
+    return 'V1 fallback';
+  }
+
+  function defaultModel(type){
+    if(type === 'ollama') return 'llama3.1:8b';
+    if(type === 'openai_compatible') return 'local-coach';
+    if(type === 'umbrel_mcp') return 'umbrel-coach';
+    return 'llama3.1:8b';
+  }
+
+  function fillProviderForm(){
+    const api = providerApi();
+    if(!api) return;
+    const cfg = api.readConfig();
+    const privacy = (cfg.privacyMode === 'allow_remote' || cfg.privacyMode === 'local_only')
+      ? cfg.privacyMode
+      : ((cfg.providerType === 'v1' || cfg.providerType === 'ollama') ? 'local_only' : 'allow_remote');
+    if(providerType) providerType.value = cfg.providerType || 'v1';
+    if(providerPrivacy) providerPrivacy.value = privacy;
+    if(providerBaseUrl && document.activeElement !== providerBaseUrl) providerBaseUrl.value = cfg.baseUrl || '';
+    if(providerModel && document.activeElement !== providerModel) providerModel.value = cfg.model || defaultModel(cfg.providerType);
+    if(providerAuth) providerAuth.value = cfg.authMode || 'none';
+    if(providerApiKey && document.activeElement !== providerApiKey){
+      providerApiKey.value = '';
+      providerApiKey.placeholder = cfg.apiKey ? 'stored bearer key' : 'optional';
+      providerApiKey.dataset.hasKey = cfg.apiKey ? '1' : '0';
+    }
+  }
+
+  function readProviderForm(){
+    const api = providerApi();
+    const cfg = api ? api.readConfig() : {};
+    const type = providerType ? providerType.value : (cfg.providerType || 'v1');
+    const keyText = providerApiKey ? providerApiKey.value.trim() : '';
+    const keepStoredKey = providerApiKey && providerApiKey.dataset.hasKey === '1' && !keyText;
+    return {
+      providerType: type,
+      baseUrl: providerBaseUrl ? providerBaseUrl.value.trim() : '',
+      model: (providerModel ? providerModel.value.trim() : '') || defaultModel(type),
+      privacyMode: providerPrivacy ? providerPrivacy.value : (type === 'ollama' || type === 'v1' ? 'local_only' : 'allow_remote'),
+      authMode: providerAuth ? providerAuth.value : 'none',
+      apiKey: keepStoredKey ? (cfg.apiKey || '') : keyText
+    };
+  }
+
+  function statusClass(st, cfg){
+    if(st && st.state === 'asking') return 'ask';
+    if(cfg && cfg.providerType === 'v1') return '';
+    if(st && st.state === 'ok' && !st.fallbackUsed) return 'ok';
+    if(st && st.fallbackUsed) return 'warn';
+    return '';
+  }
+
+  function statusLine(st, cfg){
+    const type = (st && st.providerType) || (cfg && cfg.providerType) || 'v1';
+    if(type === 'v1') return 'V1 fallback · local browser guidance';
+    if(st && st.state === 'asking') return providerName(type) + ' · asking ' + (cfg.model || '');
+    if(st && st.state === 'ok' && !st.fallbackUsed) return providerName(type) + ' · ok · ' + (st.latencyMs || 0) + 'ms';
+    if(st && st.fallbackUsed) return providerName(type) + ' · fallback · ' + (st.fallbackReason || st.error || 'provider unavailable');
+    return providerName(type) + ' · configured';
+  }
+
+  function renderProviderStatus(){
+    const api = providerApi();
+    if(!api) return;
+    const cfg = api.readConfig();
+    const st = api.getStatus();
+    const cls = statusClass(st, cfg);
+    const line = statusLine(st, cfg);
+    if(modelBtn){
+      modelBtn.classList.toggle('ok', cls === 'ok');
+      modelBtn.classList.toggle('ask', cls === 'ask');
+      modelBtn.classList.toggle('warn', cls === 'warn');
+      modelBtn.textContent = cls === 'ok' ? 'LLM' : (cls === 'ask' ? '...' : (cls === 'warn' ? 'FBK' : (cfg.providerType === 'v1' ? 'V1' : 'LLM')));
+      modelBtn.title = 'Coach model · ' + line;
+    }
+    if(coachSub) coachSub.textContent = line;
+    if(providerStatus){
+      providerStatus.classList.toggle('warn', cls === 'warn' || cls === 'ask');
+      providerStatus.classList.toggle('err', !!(st && st.error && cls !== 'ok' && cfg.providerType !== 'v1'));
+      providerStatus.textContent = line;
+    }
+    if(isProviderOpen) fillProviderForm();
+  }
+
+  function toggleProviderPanel(force){
+    if(!providerPanel) return;
+    isProviderOpen = force == null ? !isProviderOpen : !!force;
+    providerPanel.classList.toggle('on', isProviderOpen);
+    providerPanel.setAttribute('aria-hidden', isProviderOpen ? 'false' : 'true');
+    pop.classList.toggle('provider-open', isProviderOpen);
+    if(isProviderOpen) fillProviderForm();
+    renderProviderStatus();
+  }
+
+  function saveProviderConfig(){
+    const api = providerApi();
+    if(!api) return;
+    api.writeConfig(readProviderForm());
+    fillProviderForm();
+    renderProviderStatus();
+  }
+
+  async function testProviderConfig(){
+    const api = providerApi();
+    if(!api || !providerTest) return;
+    saveProviderConfig();
+    providerTest.disabled = true;
+    const prior = providerTest.textContent;
+    providerTest.textContent = '...';
+    try{
+      const ans = await api.ask('Provider health check. Reply with one short Coach status line.', [], 'V1 fallback answered locally.');
+      if(providerStatus) providerStatus.textContent = 'Test · ' + ans;
+    }catch(_){}
+    providerTest.disabled = false;
+    providerTest.textContent = prior;
+    renderProviderStatus();
+  }
+
+  if(modelBtn) modelBtn.addEventListener('click', e => { e.stopPropagation(); toggleProviderPanel(); });
+  if(providerSave) providerSave.addEventListener('click', saveProviderConfig);
+  if(providerTest) providerTest.addEventListener('click', testProviderConfig);
+  if(providerFallback) providerFallback.addEventListener('click', () => {
+    const api = providerApi();
+    if(!api) return;
+    api.writeConfig({ providerType:'v1', baseUrl:'', model:'llama3.1:8b', privacyMode:'local_only', authMode:'none', apiKey:'' });
+    fillProviderForm();
+    renderProviderStatus();
+  });
+  if(providerType) providerType.addEventListener('change', () => {
+    const type = providerType.value;
+    if(providerPrivacy && (type === 'v1' || type === 'ollama')) providerPrivacy.value = 'local_only';
+    if(providerModel && !providerModel.value.trim()) providerModel.value = defaultModel(type);
+  });
+  try { if(providerApi()) providerApi().subscribe(renderProviderStatus); } catch(_){}
+  fillProviderForm();
+  renderProviderStatus();
 
   function escapeHtml(s){
     return String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
@@ -49735,6 +50158,7 @@ window.crCoach = crCoach;
     } else {
       if(log.innerHTML !== html){ log.innerHTML = html; log.scrollTop = log.scrollHeight; }
     }
+    renderProviderStatus();
     refreshUnread();
   }
 
@@ -49804,7 +50228,7 @@ window.crCoach = crCoach;
     if(e.key !== 'c' && e.key !== 'C') return;
     if(e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = (e.target && e.target.tagName) || '';
-    const isText = (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable));
+    const isText = (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable));
     if(isText) return;
     e.preventDefault();
     toggle();
