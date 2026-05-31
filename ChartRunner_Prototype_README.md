@@ -1,4 +1,4 @@
-# ChartRunner — Playable Prototype (v1.0.105)
+# ChartRunner — Playable Prototype (v1.0.155)
 
 > **Fortnite meets Space Invaders meets a trading chart.** Every ability is a real SDK primitive. Every trade is a game move.
 
@@ -29,9 +29,11 @@ Three pillars: **gamification · education · on-chain.** The hard rule: abiliti
 | **3** | 🟢 Primitives | SDK orders — bracket, OCO, ladder, limit, stopLoss, takeProfit, trailingTP, scaleOut, magnet, perpFlip, borrowShort, liqGuard, TWAP, iceberg |
 | **4** | 🔵 Blue | Modal / trade activator — electrifies placed tools into live trade routes |
 
-**Mouse.** Click on the chart to place an anchor. Two-anchor primitives (bracket, channel, fib) want a second click. Right-click to cancel an in-progress placement.
+**Mouse.** Click on the chart to place an anchor. Two-anchor primitives (channel, fib) want a second click. Bracket opens a risk/reward picker with an embedded competition-risk deck: funded account, max loss, liquidation watch, fee estimate, notional, and execution verdict. Right-click to cancel an in-progress placement.
 
 **Hotkeys.** `C` = Coach popover. `Tab` = cycle Workbench tabs. `Shift+M` = legacy menu drawer (mostly archived).
+
+**Weather Station app.** Open **Weather** from the desktop or dock for the Jupiter Perps competition cockpit. It is an offline prototype surface today: BTC/ETH/SOL weather cards, Daily→1s timeframe ladder, liquidity hotspots, Catalyst Tape, Execution Queue, replayable snapshots through `window.crWeatherStation`, and Qualifier/Final account buttons wired into the bracket risk deck.
 
 ---
 
@@ -125,8 +127,7 @@ Several Workbench tabs and OS surfaces are hidden behind CSS `display:none !impo
 
 | Gated surface | Returns at |
 |---|---|
-| Workbench: Bots / Strategies / Indicators / Terminal / Backtest / App Builder / Theme | M3 |
-| Bot Terminal dock icon | M6 |
+| Workbench: Strategies / Indicators / Backtest / App Builder / Theme | M3 |
 | Marketplace dock icon + windows | M4 |
 | Token UI ($CHART / $RUN balances on desktop, swap, Missions tab) | M1 |
 | Real Helius DAS NFT detection (offline picker ships now) | M2.6 |
@@ -134,9 +135,11 @@ Several Workbench tabs and OS surfaces are hidden behind CSS `display:none !impo
 | AI Coach v2 (real model endpoint) | M2 |
 | Real-time PvP via MagicBlock ER · Pyth-verified scores | M0.5 → M2 |
 
-Live Workbench surfaces today: **Tools** + **Primitives** only. Bot equip + orbital orb render path stays alive (driven by `playerLoadout`) — only the Workbench tab for editing bots is gated.
+Live Workbench surfaces today: **Tools** + **Primitives** + **Bots** + **Terminal**. Bot equip + orbital orb render path stays alive (driven by `playerLoadout`), and the Terminal tab now ships **Terminal Presets** for CEX / DEX / Solana overview plus a read-only **Execution Cockpit** pinned widget.
 
-**Configure Run → Broker** (v1.0.123) is visible now: a CEX/DEX segment toggle plus an infinite scroll wheel to pick the venue (DEX: Jupiter / Phoenix / Raydium / Orca / Drift / Meteora / Lifinity · CEX: Binance / Coinbase / Kraken / Bybit / OKX / Bitget / KuCoin). It's **cosmetic** — the choice persists (`cr_broker_v1` / `game.broker`) but does not yet route orders. Real venue routing arrives with the Phase 2 broker driver (`mock` → `binance-paper` → `phoenix`).
+**Bot Terminal today (v1.0.163 source; v1.0.162 gate):** the M14 Agent Command Center stays accessible from the local file and localhost. On live `chartrunner.xyz/play/`, the runtime live-game gate hides the Bot Terminal window, desktop icon, and dock launchers and guards direct `osOpenWindow*('bot')` calls. The underlying `window.crAgentBus`, local session records (`cr_bot_session_records_v1`), repaired pinned-widget plumbing, and BotBacktestRecord proof path remain in source.
+
+**Configure Run → Broker** (v1.0.123) is visible now: a CEX/DEX segment toggle plus an infinite scroll wheel to pick the venue (DEX: Jupiter / Phoenix / Raydium / Orca / Drift / Meteora / Lifinity · CEX: Binance / Coinbase / Kraken / Bybit / OKX / Bitget / KuCoin). The choice persists (`cr_broker_v1` / `game.broker`) and is read by Terminal Presets, the Execution Cockpit, and Blue Laser route panels. SDK order settlement is still paper/mock until the Phase 2 broker driver (`mock` → `binance-paper` → `phoenix`) lands.
 
 For the full M0.5 → M10 roadmap, see [`README.md` § Post-Frontier roadmap](README.md#post-frontier-roadmap).
 
