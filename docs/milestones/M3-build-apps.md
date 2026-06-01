@@ -1,9 +1,17 @@
 # M3 — Build apps (Workbench rebuild + Bot Terminal back online)
 
-**Status:** 🟡 PARTIAL · 6/16
+**Status:** 🟡 PARTIAL · 10/16
 **Theme:** Restore the seven archived Workbench tabs (Bots, Strategies, Indicators, Terminal, Backtest, App Builder, Theme) + bring Bot Terminal icon back to Voll-OS dock. Metaplex Agent Kit registers Workbench bots as on-chain agents; Coinbase x402 for paid API access on premium bots / advanced indicators.
 
 > **Update 2026-05-26** ([CONSOLIDATED_STATUS_2026-05-26.md](../../CONSOLIDATED_STATUS_2026-05-26.md)): **x402 scaffolded.** Scope WIDENED beyond the original one-time-unlock framing to **bidirectional** (bots also *pay* external x402 APIs as agents) + **multi-rail** (the x402 V2 `accepts[]` lets the end-user pick Solana / Base / …), with **no silent auto-spend** (explicit wallet authorization, opt-in capped budget). Implementation plan + 5 build-safe scaffold files shipped — `docs/architecture/x402-integration-plan.md` (reconciled with the `M3-x402.md` research below). The `[ ] Coinbase x402 integration` condition is now **scaffolded, not just researched** — **live integration still BLOCKED** on M1 pricing + a production facilitator + `npm i @x402/*` + a deployed gate on the bot host (Phase 2).
+
+> **Update 2026-05-31 — live UX polish shipped, Workbench rebuild still open.** Public `/play` commit `b8aeb9d` shipped `v1.0.198`: first-load Connect Wallet / Continue as Guest is now a compact native ChartRunnerOS login window over a softly blurred desktop, and the Terminal surface mode repair keeps desktop Terminal broad while in-game Terminal is scoped to chart/run state. This improves the app shell and first-run experience, but it does not restore the seven archived Workbench tabs or real external Bot Terminal bridges.
+
+> **Final wrap 2026-05-31 — app chrome polish logged, no M3 status change.** The same UI-polish lane now records the `COACH.llm` toolbar anchor repair (`v1.0.189`) alongside Liquid Glass chrome repair (`v1.0.186`), live theme allowlist (`v1.0.183`), Configure Run broker wheel integration (`v1.0.180`), and Terminal feed/session polish (`v1.0.177`). These improve the live/app shell, but M3 remains partial because the seven Workbench tab restores and real bridge integrations are still open.
+
+> **Session wrap 2026-06-01 — Configure Run polish shipped; no M3 status change.** Public `/play` and the vault source are aligned at `v1.0.203` after deploy commit `62f30f4`. The recent repair lane restores Start Run hitboxes/local launch auth (`v1.0.202`) and Configure Run broker names, compact DEX/CEX buttons, chart widget spawn/close behavior, and Back/Start visual feedback (`v1.0.203`). This is app-shell UX polish, not a Workbench-tab restore.
+
+> **Live update 2026-06-01 — M3 Ready campaign repairs shipped.** Public `/play` deploy commit `9258e11` restores the four previously archived campaign routes: SDK-first MACD, Bollinger Bands, and ATR helpers are inlined and rendered in the prototype, `parChannel` is live as a 3-anchor Parallel Channel laser tool, and Campaign Ch.8/25/26/27 are unarchived with the 1-39 numbering intact.
 
 ## Completion condition (all required)
 
@@ -19,7 +27,7 @@
 
 ### Ready bucket
 
-> **All 5 Ready-bucket research/audit items done 2026-05-20** (auto-resolve sweep). The 4 indicator/tool *code builds* below stay open — they modify the prototype + need a playtest.
+> **All 5 Ready-bucket research/audit items done 2026-05-20** (auto-resolve sweep). The 4 indicator/tool *code builds* shipped live in v1.0.204 and are tracked below.
 
 - [x] 2026-05-20 — `[D]` Workbench restoration plan per-tab — `docs/architecture/M3-workbench-tabs.md`. Visibility is one CSS flip per tab; functional gaps vary (Backtest needs a real Binance-candle simulator; App Builder needs the gallery rewrite).
 - [x] 2026-05-20 — `[D]` Metaplex Agent Kit research — `docs/architecture/M3-metaplex-agents.md`. `crRegistry` is already a private analogue; new work = mint a Core asset + attach the agent plugin per bot. Includes a `chartrunner.agent.v1` schema.
@@ -54,19 +62,23 @@
 
 ### Ready bucket (added v1.0.105 — restore archived Campaign chapters)
 
-- [ ] `[D]` Implement MACD indicator — add `{ id:'macd' }` to INDICATORS catalog (line ~33014), implement the chart render (EMA(12)−EMA(26) + signal line + histogram). Flip Campaign Ch.25 `archived` off. Save spec to `docs/architecture/M3-indicator-macd.md`.
-- [ ] `[D]` Implement Bollinger Bands indicator — add `{ id:'bb' }` to INDICATORS, render SMA(20) ± 2·stdev as overlay bands. Flip Campaign Ch.26 `archived` off. Save to `docs/architecture/M3-indicator-bb.md`.
-- [ ] `[D]` Implement ATR indicator — add `{ id:'atr' }` to INDICATORS, render as a badge (14-period average true range). Flip Campaign Ch.27 `archived` off. Save to `docs/architecture/M3-indicator-atr.md`.
-- [ ] `[D]` Implement parChannel (parallel channel) tool — flip `live:true` in WB_LASER_TOOLS, add the 3-anchor draw routine to the laser handler. Flip Campaign Ch.8 `archived` off. Save to `docs/architecture/M3-tool-parchannel.md`.
+- [x] 2026-06-01 — `[D]` Implement MACD indicator — SDK-first helper + prototype render (MACD line, signal line, histogram), INDICATORS catalog entry, quick-chip wiring, and Campaign Ch.25 restored. Spec: `docs/architecture/M3-indicator-macd.md`.
+- [x] 2026-06-01 — `[D]` Implement Bollinger Bands indicator — SDK-first SMA/stdev helper + overlay bands/fill, INDICATORS catalog entry, quick-chip wiring, and Campaign Ch.26 restored. Spec: `docs/architecture/M3-indicator-bb.md`.
+- [x] 2026-06-01 — `[D]` Implement ATR indicator — SDK-first ATR helper + top-left badge, destructible reset/kill wiring, INDICATORS catalog entry, quick-chip wiring, and Campaign Ch.27 restored. Spec: `docs/architecture/M3-indicator-atr.md`.
+- [x] 2026-06-01 — `[D]` Implement parChannel (parallel channel) tool — `live:true` in `WB_LASER_TOOLS`, 3-anchor laser state/preview/commit path, persistent two-rail overlay, and Campaign Ch.8 restored. Spec: `docs/architecture/M3-tool-parchannel.md`.
 
 ### Done bucket
 
+- [x] 2026-05-31 — Non-counting app-shell polish logged in maps/docs: Terminal session fold/log (`v1.0.177`), Configure Run broker wheel integration (`v1.0.180`), live theme allowlist (`v1.0.183`), Liquid Glass in-game chrome repair (`v1.0.186`), and `COACH.llm` toolbar anchor repair (`v1.0.189`). These do not restore a Workbench tab.
+- [x] 2026-06-01 — M3 Ready campaign code builds shipped live in `v1.0.204`: MACD, Bollinger Bands, ATR, and Parallel Channel now make Ch.8/25/26/27 playable in the main campaign.
+- [x] 2026-06-01 — Public `/play` Configure Run polish: broker name label, compact DEX/CEX picker, chart Terminal widgets hidden before run/closable during run, Back/Start feedback, and Start Run full-hitbox repair carried forward. Non-counting for Workbench-tab completion; counted as app-shell polish.
+- [x] 2026-05-31 — Public `/play` UX closeout: windowed blurred boot login (`v1.0.196`/`v1.0.198`) and Terminal chart/run mode repair (`v1.0.197`) shipped in commit `b8aeb9d`. Non-counting for Workbench-tab completion; counted as app-shell polish.
 - [x] 2026-05-30 — Bot Terminal desktop entry + live Coach summon path are back. Application tab strips and app interiors now inherit Bot Terminal visual language (green tabs, dark terminal panels, mono form fields/buttons) across Run, Workbench, Journal, Token, Maps/Profile surfaces. Real bridge work stays in M6/M14.
 - [x] 2026-05-13 — v1.0.105 archived Ch.8/25/26/27 so no broken routes ship while M3 indicators are pending.
 
 ## State
 
-- Progress: 6/16 done — all 5 Ready-bucket research/audit items written 2026-05-20, plus the 2026-05-30 Bot Terminal desktop/surface restoration. Remaining: 10 Blocked-bucket restores (gated on the plans now written) + the 4 indicator/tool code builds (MACD/BB/ATR/parChannel — not auto-resolvable, they touch the prototype + need a playtest) + the remaining 6 completion conditions.
+- Progress: 10/16 milestone ledger items done — all 5 Ready-bucket research/audit items written 2026-05-20, the 2026-05-30 Bot Terminal desktop/surface restoration, and the 2026-06-01 live M3 Ready code builds (MACD/BB/ATR/parChannel). The 2026-05-31 login/Terminal polish and 2026-06-01 Configure Run polish are app-shell work but do not close a Workbench restore condition. Remaining on the 16-item count: 6 completion conditions. Blocked implementation tracks still active: 10.
 - Blockers active: 10
 - Scheduled today: 0
 
