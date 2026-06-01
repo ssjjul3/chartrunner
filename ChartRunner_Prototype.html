@@ -4,8 +4,10 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.204
-     LAST UPDATED:    2026-06-01  ·  M3 indicators + Parallel Channel playable locally. SDK-first MACD, Bollinger Bands, and ATR helpers are inlined, the prototype renders/toggles them, Parallel Channel is a live 3-anchor laser tool, and Campaign Ch.8/25/26/27 are restored with proper numbering.
+     CURRENT VERSION: v1.0.206
+     LAST UPDATED:    2026-06-01  ·  Live chart-object parity pass. Trend Angle, Regression, Flat/Disjoint/Fib Channels, Fib Time Zone/Circles, Gann Box/Fan, Bar Pattern, Anchored Volume Profile, and Triangle now share hit/select metadata, drag handles, settings controls, derived refreshes, and Blue Laser hotkey-4 arming/halos.
+     (v1.0.206 = Live chart-object parity pass. Gives the v1.0.205 chart-tool cohort shared hit/select metadata, p1/p2/p3/anchor dragging, settings-dialog controls, derived-field refreshes, and hotkey-4 Blue Laser arming/halo support.)
+     (v1.0.205 = Remaining chart-tool cohort playable locally. Enables trendAngle, regression, flatChannel, disjoint, fibChannel, fibTimeZone, fibCircles, gannBox, gannFan, barPattern, avp, and triangle as live Tools overlays without adding broker, signing, on-chain, or SDK-order routing.)
      (v1.0.204 = M3 indicators + Parallel Channel playable locally. Adds generated SDK MACD / Bollinger Bands / ATR helpers, wires MACD/BB/ATR into the Indicators catalog and render paths, enables `parChannel` as a 3-anchor Tools laser overlay, and unarchives Campaign Ch.8/25/26/27.)
      (v1.0.203 = Configure Run polish repair. Adds a persistent broker-name label to the DEX/CEX picker, reduces the DEX/CEX segment footprint, hides persisted chart Terminal widgets while the desktop/config surface is open, strengthens widget close hitboxes, and adds Back/Start Run feedback for overlay-relayed clicks.)
      (v1.0.202 = Live Terminal + Start Run repair. Restores Configure Run picker controls and full-hitbox Start Run behavior, seeds local guest auth for file/localhost runs, restores desktop Terminal to the full Darkflow widget board, keeps chart/floating Terminal scoped, and adds browser smokes for both surfaces.)
@@ -8557,7 +8559,7 @@
         <line x1="14" y1="55" x2="28" y2="55" stroke="#1a1a18" stroke-width="0.8"/>
       </svg>
       <div class="title" id="crBootTitle">Welcome to ChartRunnerOS</div>
-      <div class="ver">v1.0.204</div>
+          <div class="ver">v1.0.206</div>
       <!-- v1.0.102 — Two paths only:
            1. Whitelisted Solana wallet (allowlist of pubkeys)
            2. Continue as Guest — anonymous handle generated on click, persists
@@ -12388,7 +12390,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.204",
+  VERSION: "1.0.206",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -12733,8 +12735,10 @@ const Input = (function() {
       try {
         const r = canvas.getBoundingClientRect();
         const sx = e.clientX - r.left, sy = e.clientY - r.top;
-        // If the legacy hitOverlay would have caught it, let it; otherwise re-follow.
-        // Simple heuristic: if no special game state is active, re-follow.
+        // v1.0.206 — If the legacy hitOverlay would catch this, let the later
+        // overlay dblclick handler open the tool settings without camera snap.
+        if(typeof hitOverlay === 'function' && hitOverlay(sx, sy)) return;
+        // Otherwise re-follow for pure chart double-clicks.
         if (!game || (!game.laserAiming && !bracketEditor?.open && !ladderEditor?.open)) {
           ChartEngine.setCameraFollowMode(true);
           try { cv.style.cursor = ''; } catch(_){}
@@ -19497,11 +19501,77 @@ function closeTvSettingsDialog(){
   }
   _tvDlgEl = null;
 }
+const TV_CHART_OBJECT_META = {
+  trendAngle: { label:'Trend Angle', anchors:2, hit:'line',      handles:['p1','p2','body'],      color:'#7ad6ff', cfg:'line' },
+  regression: { label:'Regression Trend', anchors:2, hit:'band', handles:['p1','p2','body'],      color:'#22d3ee', cfg:'regression' },
+  flatChannel:{ label:'Flat Channel', anchors:2, hit:'box',      handles:['p1','p2','body'],      color:'#22d3ee', cfg:'box' },
+  disjoint:   { label:'Disjoint Channel', anchors:3, hit:'rail', handles:['p1','p2','p3','body'], color:'#22d3ee', cfg:'channel' },
+  fibChannel: { label:'Fib Channel', anchors:3, hit:'rail',      handles:['p1','p2','p3','body'], color:'#ffd166', cfg:'fibChannel' },
+  fibTimeZone:{ label:'Fib Time Zone', anchors:2, hit:'time',    handles:['p1','p2','body'],      color:'#ffd166', cfg:'fibTime' },
+  fibCircles: { label:'Fib Circles', anchors:2, hit:'circles',   handles:['p1','p2','body'],      color:'#ffd166', cfg:'fibCircles' },
+  gannBox:    { label:'Gann Box', anchors:2, hit:'box',          handles:['p1','p2','body'],      color:'#ffb86b', cfg:'gannBox' },
+  gannFan:    { label:'Gann Fan', anchors:1, hit:'fan',          handles:['anchor','body'],       color:'#ffb86b', cfg:'gannFan' },
+  barPattern: { label:'Bar Pattern', anchors:1, hit:'bars',      handles:['anchor','body'],       color:'#b58aff', cfg:'barPattern' },
+  avp:        { label:'Anchored Volume Profile', anchors:2, hit:'box', handles:['p1','p2','body'], color:'#ffd166', cfg:'volumeProfile' },
+  triangle:   { label:'Triangle', anchors:3, hit:'polygon',      handles:['p1','p2','p3','body'], color:'#a371f7', cfg:'shape' },
+};
+function tvChartObjectMeta(kind){
+  return (kind && TV_CHART_OBJECT_META[kind]) || null;
+}
+function _parseNumberList(raw, fallback){
+  const vals = String(raw || '')
+    .split(/[,\s]+/)
+    .map(v => parseFloat(v))
+    .filter(v => isFinite(v));
+  return vals.length ? vals : (fallback || []).slice();
+}
+function refreshTvOverlayDerivedFields(ov){
+  if(!ov || !ov.kind) return ov;
+  const k = ov.kind;
+  if(k === 'trendAngle'){
+    const p1 = +ov.py1, p2 = +ov.py2;
+    if(isFinite(p1) && isFinite(p2) && Math.abs(p1) > 1e-9){
+      ov.dPct = (p2 - p1) / p1 * 100;
+    }
+    ov.dBars = Math.abs(Math.round(((ov.wx2 || 0) - (ov.wx1 || 0)) / STEP));
+    try {
+      ov.angleDeg = Math.atan2(-(priceToY(ov.py2) - priceToY(ov.py1)), (sX(ov.wx2) - sX(ov.wx1)) || 1e-9) * 180 / Math.PI;
+    } catch(_){}
+  } else if(k === 'fibTimeZone'){
+    ov.dBars = Math.max(1, Math.abs(Math.round(((ov.wx2 || 0) - (ov.wx1 || 0)) / STEP)) || ov.dBars || 1);
+    ov.dir = (ov.wx2 || 0) >= (ov.wx1 || 0) ? 1 : -1;
+  } else if(k === 'regression'){
+    try {
+      if(typeof _makeRegressionOverlay === 'function'
+         && typeof ov.wx1 === 'number' && typeof ov.wx2 === 'number'
+         && typeof ov.py1 === 'number' && typeof ov.py2 === 'number'){
+        const next = _makeRegressionOverlay(
+          { wx:ov.wx1, price:ov.py1 },
+          { wx:ov.wx2, price:ov.py2 },
+          !!ov.upsideDown,
+          ov.id
+        );
+        ov.iStart = next.iStart; ov.iEnd = next.iEnd;
+        ov.slope = next.slope; ov.intercept = next.intercept; ov.dev = next.dev;
+        if(ov.cfg && typeof ov.cfg.devMult === 'number') ov.dev *= Math.max(0.1, ov.cfg.devMult) / 1.5;
+      }
+    } catch(_){}
+  } else if((k === 'avp' || k === 'frvp') && typeof _refreshVolumeProfileOverlay === 'function'){
+    try { _refreshVolumeProfileOverlay(ov); } catch(_){}
+  }
+  return ov;
+}
 function openTvSettingsDialog(overlay){
   closeTvSettingsDialog();
   if(!overlay) return;
-  const titleMap = { vwap:'Anchored VWAP', avwap:'Anchored VWAP', fibRetrace:'Fib retracement', fibExt:'Fib extension', frvp:'FRVP' };
-  const title = titleMap[overlay.kind] || (overlay.kind || 'Settings');
+  const titleMap = {
+    vwap:'Anchored VWAP', avwap:'Anchored VWAP', fibRetrace:'Fib retracement', fibExt:'Fib extension', frvp:'FRVP',
+    trendAngle:'Trend Angle', regression:'Regression Trend', flatChannel:'Flat Channel', disjoint:'Disjoint Channel',
+    fibChannel:'Fib Channel', fibTimeZone:'Fib Time Zone', fibCircles:'Fib Circles', gannBox:'Gann Box',
+    gannFan:'Gann Fan', barPattern:'Bar Pattern', avp:'Anchored Volume Profile', triangle:'Triangle'
+  };
+  const meta = tvChartObjectMeta(overlay.kind);
+  const title = (meta && meta.label) || titleMap[overlay.kind] || (overlay.kind || 'Settings');
   const backdrop = document.createElement('div');
   backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center';
   const dlg = document.createElement('div');
@@ -19584,6 +19654,75 @@ function openTvSettingsDialog(overlay){
       c.style.cssText = 'width:34px;height:24px;border:1px solid #2c2e36;border-radius:4px;background:transparent;cursor:pointer';
       c.onchange = () => fn(c.value);
       return c;
+    };
+    const syncLiveTool = () => { try { refreshTvOverlayDerivedFields(overlay); } catch(_){} };
+    const renderLiveToolInputs = (k) => {
+      const fallbackLevels = (k === 'fibChannel') ? [0,0.236,0.382,0.5,0.618,0.786,1,1.272,1.618]
+        : (k === 'fibTimeZone') ? [0,1,2,3,5,8,13,21,34,55,89]
+        : (k === 'fibCircles') ? [0.236,0.382,0.5,0.618,1,1.618,2.618]
+        : null;
+      if(k === 'regression'){
+        row('Channel deviation', mkInput(cfg.devMult ?? 1.5, v => { cfg.devMult = Math.max(0.1, parseFloat(v) || 1.5); if(typeof overlay.dev === 'number') overlay.dev *= cfg.devMult / 1.5; syncLiveTool(); }));
+        row('Auto-fit candles', mkChk(cfg.autoFit !== false, v => { cfg.autoFit = v; syncLiveTool(); }));
+      } else if(k === 'flatChannel'){
+        row('Top price', mkInput(Math.max(overlay.py1 || 0, overlay.py2 || 0), v => { overlay.py1 = parseFloat(v) || overlay.py1; syncLiveTool(); }));
+        row('Bottom price', mkInput(Math.min(overlay.py1 || 0, overlay.py2 || 0), v => { overlay.py2 = parseFloat(v) || overlay.py2; syncLiveTool(); }));
+        row('Fill opacity', mkInput(cfg.fillOpacity ?? 10, v => cfg.fillOpacity = Math.max(0, Math.min(100, parseInt(v,10) || 0))));
+      } else if(fallbackLevels){
+        row('Levels', mkInput((overlay.levels || fallbackLevels).join(', '), v => { overlay.levels = _parseNumberList(v, fallbackLevels); syncLiveTool(); }, '260px'));
+      } else if(k === 'gannFan'){
+        row('Ratios', mkInput((overlay.ratios || [1/8,1/4,1/3,1/2,1,2,3,4,8]).join(', '), v => { overlay.ratios = _parseNumberList(v, [1/8,1/4,1/3,1/2,1,2,3,4,8]); }, '260px'));
+      } else if(k === 'gannBox' || k === 'triangle' || k === 'disjoint'){
+        row('Fill opacity', mkInput(cfg.fillOpacity ?? (k === 'triangle' ? 11 : 8), v => cfg.fillOpacity = Math.max(0, Math.min(100, parseInt(v,10) || 0))));
+      } else if(k === 'barPattern'){
+        row('Projected bars', mkInput((overlay.bars && overlay.bars.length) || 24, v => { cfg.projectBars = Math.max(1, parseInt(v,10) || 24); }));
+        row('Ghost opacity', mkInput(cfg.opacity ?? 68, v => cfg.opacity = Math.max(5, Math.min(100, parseInt(v,10) || 68))));
+      } else if(k === 'avp'){
+        row('Rows Layout', mkSelect([
+          { v:'count', l:'Number of rows' },
+          { v:'tick',  l:'Tick size' }
+        ], cfg.rowsLayout || 'count', v => { cfg.rowsLayout = v; syncLiveTool(); }));
+        row('Row Size', mkInput(cfg.rowSize ?? overlay.rows ?? 24, v => { cfg.rowSize = Math.max(4, parseInt(v,10) || 24); overlay.rows = cfg.rowSize; syncLiveTool(); }));
+        row('Volume', mkSelect([
+          { v:'updown', l:'Up/Down' },
+          { v:'total',  l:'Total' },
+          { v:'delta',  l:'Delta' }
+        ], cfg.volume || 'updown', v => { cfg.volume = v; syncLiveTool(); }));
+        row('Value Area Volume', mkInput(cfg.vaPct || 70, v => { cfg.vaPct = Math.max(1, Math.min(99, parseInt(v,10) || 70)); syncLiveTool(); }));
+        row('Extend Right', mkChk(cfg.extendRight !== false, v => cfg.extendRight = v));
+      } else {
+        const note = document.createElement('div');
+        note.style.cssText = 'color:#9aa0aa;font-style:italic';
+        note.textContent = 'Use Style and Coordinates to tune this chart object.';
+        body.appendChild(note);
+      }
+    };
+    const renderLiveToolStyle = (k) => {
+      const meta = tvChartObjectMeta(k) || {};
+      row('Line color', mkColor(cfg.color || overlay.color || meta.color || '#ffd166', v => { cfg.color = v; overlay.color = v; }));
+      row('Line width', mkInput(cfg.lineWidth || 2, v => cfg.lineWidth = Math.max(1, parseInt(v,10) || 1)));
+      row('Style', mkSelect([
+        { v:'solid',  l:'Solid' },
+        { v:'dashed', l:'Dashed' },
+        { v:'dotted', l:'Dotted' }
+      ], cfg.style || 'solid', v => cfg.style = v));
+      if(k === 'flatChannel' || k === 'gannBox' || k === 'triangle' || k === 'disjoint' || k === 'fibChannel'){
+        row('Fill color', mkColor(cfg.fill || cfg.color || overlay.color || meta.color || '#22d3ee', v => cfg.fill = v));
+        row('Fill opacity', mkInput(cfg.fillOpacity ?? 10, v => cfg.fillOpacity = Math.max(0, Math.min(100, parseInt(v,10) || 0))));
+      }
+      if(k === 'avp'){
+        row('Width (% of the box)', mkInput(cfg.widthPct || 28, v => cfg.widthPct = Math.max(5, Math.min(95, parseInt(v,10) || 28))));
+        row('Placement', mkSelect([
+          { v:'left',  l:'Left' },
+          { v:'right', l:'Right' }
+        ], cfg.placement || 'right', v => cfg.placement = v));
+        row('Up Volume color', mkColor(cfg.upColor || '#3ddc97', v => cfg.upColor = v));
+        row('Down Volume color', mkColor(cfg.downColor || '#ff5b7f', v => cfg.downColor = v));
+        row('VAH', mkChk(cfg.showVAH !== false, v => cfg.showVAH = v));
+        row('VAL', mkChk(cfg.showVAL !== false, v => cfg.showVAL = v));
+        row('POC', mkChk(cfg.showPOC !== false, v => cfg.showPOC = v));
+      }
+      row('Show price label', mkChk(cfg.priceLabel !== false, v => cfg.priceLabel = v));
     };
     if(overlay.kind === 'vwap' || overlay.kind === 'avwap'){
       if(active === 'Inputs'){
@@ -19718,6 +19857,34 @@ function openTvSettingsDialog(overlay){
       // rest of the laser tools (longPos, shortPos, rect, ray, hline,
       // trendline, etc.) all have something the player can edit.
       const k = overlay.kind;
+      const liveMeta = tvChartObjectMeta(k);
+      if(liveMeta){
+        if(active === 'Inputs'){
+          renderLiveToolInputs(k);
+        } else if(active === 'Style'){
+          renderLiveToolStyle(k);
+        } else if(active === 'Coordinates'){
+          if(typeof overlay.wx1 === 'number'){
+            row('#1 (bar)', mkInput(Math.round((overlay.wx1||0)/STEP), v => { overlay.wx1 = (parseInt(v,10)||0) * STEP; syncLiveTool(); }));
+            row('#2 (bar)', mkInput(Math.round((overlay.wx2||0)/STEP), v => { overlay.wx2 = (parseInt(v,10)||0) * STEP; syncLiveTool(); }));
+            if(typeof overlay.wx3 === 'number') row('#3 (bar)', mkInput(Math.round((overlay.wx3||0)/STEP), v => { overlay.wx3 = (parseInt(v,10)||0) * STEP; syncLiveTool(); }));
+            if(typeof overlay.py1 === 'number') row('Price #1', mkInput(overlay.py1, v => { overlay.py1 = parseFloat(v) || 0; syncLiveTool(); }));
+            if(typeof overlay.py2 === 'number') row('Price #2', mkInput(overlay.py2, v => { overlay.py2 = parseFloat(v) || 0; syncLiveTool(); }));
+            if(typeof overlay.py3 === 'number') row('Price #3', mkInput(overlay.py3, v => { overlay.py3 = parseFloat(v) || 0; syncLiveTool(); }));
+          } else if(typeof overlay.wx === 'number'){
+            row('Bar', mkInput(Math.round((overlay.wx||0)/STEP), v => { overlay.wx = (parseInt(v,10)||0) * STEP; syncLiveTool(); }));
+            if(typeof overlay.py === 'number') row('Price', mkInput(overlay.py, v => { overlay.py = parseFloat(v) || 0; syncLiveTool(); }));
+          }
+        } else {
+          row('Ticks',   mkChk(cfg.vis_ticks   !== false, v => cfg.vis_ticks = v));
+          row('Seconds', mkChk(cfg.vis_sec     !== false, v => cfg.vis_sec   = v));
+          row('Minutes', mkChk(cfg.vis_min     !== false, v => cfg.vis_min   = v));
+          row('Hours',   mkChk(cfg.vis_hours   !== false, v => cfg.vis_hours = v));
+          row('Days',    mkChk(cfg.vis_days    !== false, v => cfg.vis_days  = v));
+          row('Weeks',   mkChk(cfg.vis_weeks   !== false, v => cfg.vis_weeks = v));
+        }
+        return;
+      }
       if(active === 'Inputs'){
         if(k === 'longPos' || k === 'shortPos'){
           row('Side', document.createElement('span')).lastChild.textContent = (k === 'longPos' ? 'Long' : 'Short');
@@ -27568,6 +27735,461 @@ function _drawParallelChannelOverlay(ov, preview){
   }
   ctx.restore();
 }
+function _clampCandleIndex(idx){
+  if(!candles || !candles.length) return 0;
+  return Math.max(0, Math.min(candles.length - 1, Math.round(idx)));
+}
+function _overlayDot(wx, py, color, preview){
+  const x = sX(wx), y = priceToY(py);
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, preview ? 3.5 : 4, 0, Math.PI*2); ctx.fill();
+}
+function _overlayLabel(text, x, y, color){
+  if(!text) return;
+  ctx.save();
+  ctx.font = 'bold 10px ui-monospace,monospace';
+  const w = Math.min(220, ctx.measureText(text).width + 10);
+  const px = Math.max(4, Math.min(W - w - 4, x));
+  const py = Math.max(14, Math.min(H - 8, y));
+  ctx.fillStyle = 'rgba(8,12,22,0.78)';
+  ctx.fillRect(px - 2, py - 11, w, 15);
+  ctx.fillStyle = color;
+  ctx.fillText(text, px + 3, py);
+  ctx.restore();
+}
+function _colorWithAlpha(color, alpha){
+  if(!color) return 'rgba(255,255,255,' + alpha + ')';
+  if(color[0] === '#' && (color.length === 7 || color.length === 4)){
+    let hex = color.slice(1);
+    if(hex.length === 3) hex = hex.split('').map(ch => ch + ch).join('');
+    const n = parseInt(hex, 16);
+    if(isFinite(n)){
+      return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')';
+    }
+  }
+  return color;
+}
+function _tvLineColor(ov, fallback, preview){
+  const cfg = (ov && ov.cfg) || {};
+  const c = cfg.color || ov.color || fallback;
+  return preview ? _colorWithAlpha(c, 0.62) : c;
+}
+function _tvFillColor(ov, fallback, alpha){
+  const cfg = (ov && ov.cfg) || {};
+  const pct = (typeof cfg.fillOpacity === 'number') ? cfg.fillOpacity : alpha * 100;
+  return _colorWithAlpha(cfg.fill || cfg.color || ov.color || fallback, Math.max(0, Math.min(1, pct / 100)));
+}
+function _tvApplyLineDash(ov, preview){
+  const style = ov && ov.cfg && ov.cfg.style;
+  if(preview) ctx.setLineDash([6,4]);
+  else if(style === 'dashed') ctx.setLineDash([6,4]);
+  else if(style === 'dotted') ctx.setLineDash([2,4]);
+  else ctx.setLineDash([]);
+}
+function _drawTrendAngleOverlay(ov, preview){
+  const x1 = sX(ov.wx1), y1 = priceToY(ov.py1);
+  const x2 = sX(ov.wx2), y2 = priceToY(ov.py2);
+  const color = _tvLineColor(ov, '#7ad6ff', preview);
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = preview ? 1.2 : ((ov.cfg && ov.cfg.lineWidth) || 1.6); _tvApplyLineDash(ov, preview);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.setLineDash([]);
+  _overlayDot(ov.wx1, ov.py1, color, preview);
+  _overlayDot(ov.wx2, ov.py2, color, preview);
+  const dx = x2 - x1, dy = y2 - y1;
+  const angle = (typeof ov.angleDeg === 'number') ? ov.angleDeg : Math.atan2(-dy, dx || 1e-9) * 180 / Math.PI;
+  const pct = (typeof ov.dPct === 'number') ? (ov.dPct >= 0 ? '+' : '') + ov.dPct.toFixed(2) + '%' : '';
+  const bars = (typeof ov.dBars === 'number') ? ov.dBars + ' bars' : '';
+  _overlayLabel(angle.toFixed(1) + ' deg' + (pct ? ' · ' + pct : '') + (bars ? ' · ' + bars : ''), (x1+x2)/2 + 8, (y1+y2)/2 - 7, color);
+  ctx.restore();
+}
+function _regressionPriceAt(ov, idx){
+  if(typeof ov.slope === 'number' && typeof ov.intercept === 'number') return ov.intercept + ov.slope * idx;
+  const span = Math.max(1e-9, (ov.iEnd || 1) - (ov.iStart || 0));
+  return ov.py1 + (ov.py2 - ov.py1) * ((idx - (ov.iStart || 0)) / span);
+}
+function _makeRegressionOverlay(a1, a2, originUp, idOverride){
+  const iStart = _clampCandleIndex(Math.min(a1.wx, a2.wx) / STEP);
+  const iEnd = _clampCandleIndex(Math.max(a1.wx, a2.wx) / STEP);
+  let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for(let i = iStart; i <= iEnd && candles && i < candles.length; i++){
+    const c = candles[i]; if(!c) continue;
+    const y = +c.c;
+    n++; sx += i; sy += y; sxx += i*i; sxy += i*y;
+  }
+  let slope = (a2.price - a1.price) / Math.max(1, iEnd - iStart);
+  let intercept = a1.price - slope * iStart;
+  if(n >= 2){
+    const denom = n * sxx - sx * sx;
+    if(Math.abs(denom) > 1e-9){
+      slope = (n * sxy - sx * sy) / denom;
+      intercept = (sy - slope * sx) / n;
+    }
+  }
+  let rss = 0, used = 0;
+  for(let i = iStart; i <= iEnd && candles && i < candles.length; i++){
+    const c = candles[i]; if(!c) continue;
+    const err = c.c - (intercept + slope * i);
+    rss += err * err; used++;
+  }
+  const dev = Math.max(Math.sqrt(rss / Math.max(1, used)) * 1.5, Math.abs(a2.price - a1.price) * 0.08, 1e-9);
+  return {
+    id: (typeof idOverride === 'number') ? idOverride : game.tvNextId++, kind:'regression',
+    wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price,
+    iStart, iEnd, slope, intercept, dev,
+    t:0, upsideDown: originUp
+  };
+}
+function _drawRegressionOverlay(ov, preview){
+  const iStart = typeof ov.iStart === 'number' ? ov.iStart : _clampCandleIndex(Math.min(ov.wx1, ov.wx2) / STEP);
+  const iEnd = typeof ov.iEnd === 'number' ? ov.iEnd : _clampCandleIndex(Math.max(ov.wx1, ov.wx2) / STEP);
+  const x1 = sX(iStart * STEP + STEP/2);
+  const x2 = sX(iEnd * STEP + STEP/2);
+  const y1 = priceToY(_regressionPriceAt(ov, iStart));
+  const y2 = priceToY(_regressionPriceAt(ov, iEnd));
+  const yU1 = priceToY(_regressionPriceAt(ov, iStart) + (ov.dev || 0));
+  const yU2 = priceToY(_regressionPriceAt(ov, iEnd) + (ov.dev || 0));
+  const yL1 = priceToY(_regressionPriceAt(ov, iStart) - (ov.dev || 0));
+  const yL2 = priceToY(_regressionPriceAt(ov, iEnd) - (ov.dev || 0));
+  const color = _tvLineColor(ov, '#22d3ee', preview);
+  ctx.save();
+  ctx.fillStyle = _tvFillColor(ov, '#22d3ee', preview ? 0.06 : 0.09);
+  ctx.beginPath(); ctx.moveTo(x1, yU1); ctx.lineTo(x2, yU2); ctx.lineTo(x2, yL2); ctx.lineTo(x1, yL1); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = color; ctx.lineWidth = preview ? 1 : ((ov.cfg && ov.cfg.lineWidth) || 1.4); _tvApplyLineDash(ov, preview);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(34,211,238,0.45)';
+  ctx.beginPath(); ctx.moveTo(x1, yU1); ctx.lineTo(x2, yU2); ctx.moveTo(x1, yL1); ctx.lineTo(x2, yL2); ctx.stroke();
+  ctx.setLineDash([]);
+  _overlayLabel('REG · ' + Math.max(0, iEnd - iStart + 1) + ' candles', Math.min(x1,x2) + 8, Math.min(yU1,yU2,yL1,yL2) - 5, color);
+  ctx.restore();
+}
+function _drawFlatChannelOverlay(ov, preview){
+  const x1 = sX(ov.wx1), x2 = sX(ov.wx2);
+  const xL = Math.min(x1, x2), xR = Math.max(x1, x2);
+  const pTop = Math.max(ov.py1, ov.py2), pBot = Math.min(ov.py1, ov.py2);
+  const yTop = priceToY(pTop), yBot = priceToY(pBot);
+  const color = _tvLineColor(ov, '#22d3ee', preview);
+  ctx.save();
+  ctx.fillStyle = _tvFillColor(ov, '#22d3ee', preview ? 0.06 : 0.08);
+  ctx.fillRect(xL, Math.min(yTop,yBot), Math.max(1, xR-xL), Math.abs(yBot-yTop));
+  ctx.strokeStyle = color; ctx.lineWidth = preview ? 1.1 : ((ov.cfg && ov.cfg.lineWidth) || 1.5); _tvApplyLineDash(ov, preview);
+  ctx.beginPath(); ctx.moveTo(xL, yTop); ctx.lineTo(xR, yTop); ctx.moveTo(xL, yBot); ctx.lineTo(xR, yBot); ctx.stroke();
+  ctx.setLineDash([]);
+  _overlayLabel('FLAT CHANNEL · ' + fmtPrice(pBot) + ' - ' + fmtPrice(pTop), xL + 8, Math.min(yTop,yBot) - 5, color);
+  ctx.restore();
+}
+function _drawDisjointChannelOverlay(ov, preview){
+  const rail = _parallelChannelRail(ov);
+  if(!rail) return;
+  const dx = (ov.wx2 - ov.wx1) || STEP;
+  const x1 = sX(ov.wx1), y1 = priceToY(ov.py1);
+  const x2 = sX(ov.wx2), y2 = priceToY(ov.py2);
+  const x3 = sX(ov.wx3), y3 = priceToY(ov.py3);
+  const x4 = sX(ov.wx3 + dx), y4 = priceToY(rail.baseAt(ov.wx3 + dx) + rail.offset);
+  const color = _tvLineColor(ov, '#22d3ee', preview);
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = preview ? 1.2 : ((ov.cfg && ov.cfg.lineWidth) || 1.5); _tvApplyLineDash(ov, preview);
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.moveTo(x3,y3); ctx.lineTo(x4,y4); ctx.stroke();
+  ctx.setLineDash([3,4]);
+  ctx.strokeStyle = 'rgba(34,211,238,0.42)';
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x3,y3); ctx.moveTo(x2,y2); ctx.lineTo(x4,y4); ctx.stroke();
+  ctx.setLineDash([]);
+  _overlayDot(ov.wx1, ov.py1, color, preview);
+  _overlayDot(ov.wx2, ov.py2, color, preview);
+  _overlayDot(ov.wx3, ov.py3, color, preview);
+  ctx.restore();
+}
+function _drawFibChannelOverlay(ov, preview){
+  const rail = _parallelChannelRail(ov);
+  if(!rail) return;
+  const levels = ov.levels || [0,0.236,0.382,0.5,0.618,0.786,1,1.272,1.618];
+  const leftWx = wXFromS(0), rightWx = wXFromS(W);
+  const color = _tvLineColor(ov, '#ffd166', preview);
+  ctx.save();
+  ctx.lineWidth = preview ? 1 : ((ov.cfg && ov.cfg.lineWidth) || 1.2);
+  for(const lv of levels){
+    const p0 = rail.baseAt(leftWx) + rail.offset * lv;
+    const p1 = rail.baseAt(rightWx) + rail.offset * lv;
+    const y0 = priceToY(p0), y1 = priceToY(p1);
+    ctx.strokeStyle = lv === 1 ? color : (lv === 0 ? 'rgba(233,239,255,0.65)' : 'rgba(255,209,102,0.58)');
+    ctx.setLineDash(preview ? [6,4] : (lv === 0 || lv === 1 ? [] : [4,4]));
+    ctx.beginPath(); ctx.moveTo(0, y0); ctx.lineTo(W, y1); ctx.stroke();
+    if(!preview && (lv === 0 || lv === 0.618 || lv === 1 || lv === 1.618)){
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.font = '10px ui-monospace,monospace';
+      ctx.fillText(String(lv), 6, y0 - 3);
+    }
+  }
+  ctx.setLineDash([]);
+  _overlayDot(ov.wx1, ov.py1, color, preview);
+  _overlayDot(ov.wx2, ov.py2, color, preview);
+  _overlayDot(ov.wx3, ov.py3, color, preview);
+  ctx.restore();
+}
+function _drawTriangleOverlay(ov, preview){
+  const pts = [[ov.wx1, ov.py1], [ov.wx2, ov.py2], [ov.wx3, ov.py3]];
+  const color = _tvLineColor(ov, '#a371f7', preview);
+  ctx.save();
+  ctx.fillStyle = _tvFillColor(ov, '#a371f7', preview ? 0.07 : 0.11);
+  ctx.strokeStyle = color; ctx.lineWidth = preview ? 1.2 : ((ov.cfg && ov.cfg.lineWidth) || 1.5); _tvApplyLineDash(ov, preview);
+  ctx.beginPath();
+  ctx.moveTo(sX(pts[0][0]), priceToY(pts[0][1]));
+  ctx.lineTo(sX(pts[1][0]), priceToY(pts[1][1]));
+  ctx.lineTo(sX(pts[2][0]), priceToY(pts[2][1]));
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.setLineDash([]);
+  for(const p of pts) _overlayDot(p[0], p[1], color, preview);
+  ctx.restore();
+}
+function _drawFibTimeZoneOverlay(ov, preview){
+  const dir = ov.dir || (ov.wx2 >= ov.wx1 ? 1 : -1);
+  const bars = Math.max(1, Math.abs(ov.dBars || Math.round((ov.wx2 - ov.wx1) / STEP) || 1));
+  const fibs = ov.levels || [0,1,2,3,5,8,13,21,34,55,89];
+  const color = _tvLineColor(ov, '#ffd166', preview);
+  ctx.save();
+  ctx.lineWidth = preview ? 1 : ((ov.cfg && ov.cfg.lineWidth) || 1.2);
+  ctx.font = '10px ui-monospace,monospace';
+  for(const f of fibs){
+    const wx = ov.wx1 + dir * bars * STEP * f;
+    const x = sX(wx);
+    if(x < -80 || x > W + 80) continue;
+    ctx.strokeStyle = f === 0 ? 'rgba(233,239,255,0.6)' : color;
+    ctx.setLineDash(f === 0 ? [] : [4,5]);
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    if(!preview){
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillText(String(f), x + 4, 18 + (f % 5) * 10);
+    }
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+function _drawFibCirclesOverlay(ov, preview){
+  const x1 = sX(ov.wx1), y1 = priceToY(ov.py1);
+  const x2 = sX(ov.wx2), y2 = priceToY(ov.py2);
+  const base = Math.max(4, Math.hypot(x2 - x1, y2 - y1));
+  const levels = ov.levels || [0.236,0.382,0.5,0.618,1,1.618,2.618];
+  const color = _tvLineColor(ov, '#ffd166', preview);
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = preview ? 1 : ((ov.cfg && ov.cfg.lineWidth) || 1.2); _tvApplyLineDash(ov, preview);
+  for(const lv of levels){
+    const r = base * lv;
+    if(r < 2 || r > Math.max(W,H) * 2) continue;
+    ctx.beginPath(); ctx.arc(x1, y1, r, 0, Math.PI*2); ctx.stroke();
+    if(!preview && (lv === 0.618 || lv === 1 || lv === 1.618)){
+      ctx.fillStyle = color; ctx.font = '10px ui-monospace,monospace';
+      ctx.fillText(String(lv), x1 + r + 4, y1 - 3);
+    }
+  }
+  ctx.setLineDash([]);
+  _overlayDot(ov.wx1, ov.py1, color, preview);
+  _overlayDot(ov.wx2, ov.py2, color, preview);
+  ctx.restore();
+}
+function _drawGannBoxOverlay(ov, preview){
+  const x1 = sX(ov.wx1), y1 = priceToY(ov.py1);
+  const x2 = sX(ov.wx2), y2 = priceToY(ov.py2);
+  const x = Math.min(x1,x2), y = Math.min(y1,y2);
+  const w = Math.abs(x2-x1), h = Math.abs(y2-y1);
+  const color = _tvLineColor(ov, '#ffb86b', preview);
+  ctx.save();
+  ctx.fillStyle = _tvFillColor(ov, '#ffb86b', preview ? 0.05 : 0.08);
+  ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle = color; ctx.lineWidth = preview ? 1 : ((ov.cfg && ov.cfg.lineWidth) || 1.2); _tvApplyLineDash(ov, preview);
+  ctx.strokeRect(x,y,w,h);
+  ctx.setLineDash([]);
+  ctx.strokeStyle = 'rgba(255,184,107,0.42)';
+  for(let i=1;i<8;i++){
+    const xx = x + w*i/8, yy = y + h*i/8;
+    ctx.beginPath(); ctx.moveTo(xx,y); ctx.lineTo(xx,y+h); ctx.moveTo(x,yy); ctx.lineTo(x+w,yy); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,184,107,0.7)';
+  ctx.beginPath();
+  ctx.moveTo(x,y+h); ctx.lineTo(x+w,y);
+  ctx.moveTo(x,y); ctx.lineTo(x+w,y+h);
+  ctx.moveTo(x,y+h); ctx.lineTo(x+w,y+h/2);
+  ctx.moveTo(x,y+h); ctx.lineTo(x+w/2,y);
+  ctx.stroke();
+  ctx.restore();
+}
+function _drawGannFanOverlay(ov, preview){
+  const x0 = sX(ov.wx), y0 = priceToY(ov.py);
+  const ratios = ov.ratios || [1/8,1/4,1/3,1/2,1,2,3,4,8];
+  const color = _tvLineColor(ov, '#ffb86b', preview);
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = preview ? 1 : ((ov.cfg && ov.cfg.lineWidth) || 1.2); _tvApplyLineDash(ov, preview);
+  for(const r of ratios){
+    const dx = Math.max(80, W - x0);
+    const x1 = Math.min(W + 40, x0 + dx);
+    const yUp = y0 - dx * r * 0.18;
+    const yDn = y0 + dx * r * 0.18;
+    ctx.globalAlpha = r === 1 ? 0.95 : 0.55;
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,yUp); ctx.stroke();
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,yDn); ctx.stroke();
+  }
+  ctx.globalAlpha = 1; ctx.setLineDash([]);
+  _overlayDot(ov.wx, ov.py, color, preview);
+  _overlayLabel('GANN FAN', x0 + 8, y0 - 10, color);
+  ctx.restore();
+}
+function _drawBarPatternOverlay(ov, preview){
+  const bars = ov.bars || [];
+  if(!bars.length) return;
+  const x0 = sX(ov.wx);
+  const base = ov.py;
+  const bodyW = Math.max(3, CANDLE_W * camera.zoomX * 0.72);
+  ctx.save();
+  ctx.globalAlpha = preview ? 0.45 : Math.max(0.05, Math.min(1, ((ov.cfg && ov.cfg.opacity) || 68) / 100));
+  for(let i=0;i<bars.length;i++){
+    const b = bars[i];
+    const x = x0 + (i+1) * STEP * camera.zoomX;
+    if(x < -20 || x > W + 40) continue;
+    const o = base + b.o, h = base + b.h, l = base + b.l, c = base + b.c;
+    const yO = priceToY(o), yH = priceToY(h), yL = priceToY(l), yC = priceToY(c);
+    const up = c >= o;
+    ctx.strokeStyle = up ? ((ov.cfg && ov.cfg.upColor) || 'rgba(61,220,151,0.9)') : ((ov.cfg && ov.cfg.downColor) || 'rgba(255,91,127,0.9)');
+    ctx.fillStyle = up ? _colorWithAlpha((ov.cfg && ov.cfg.upColor) || '#3ddc97', 0.24) : _colorWithAlpha((ov.cfg && ov.cfg.downColor) || '#ff5b7f', 0.24);
+    ctx.beginPath(); ctx.moveTo(x, yH); ctx.lineTo(x, yL); ctx.stroke();
+    const yB = Math.min(yO,yC), hB = Math.max(2, Math.abs(yC-yO));
+    ctx.fillRect(x - bodyW/2, yB, bodyW, hB);
+    ctx.strokeRect(x - bodyW/2, yB, bodyW, hB);
+  }
+  ctx.globalAlpha = 1;
+  _overlayLabel('BAR PATTERN · ' + bars.length, x0 + 8, priceToY(base) - 8, 'rgba(181,138,255,0.95)');
+  ctx.restore();
+}
+function _makeVolumeProfileOverlay(kind, iStart, iEnd, wx1, wx2, pLo, pHi, originUp, opts){
+  const rows = (opts && opts.rows) || 24;
+  const buckets = new Array(rows).fill(0);
+  const upBuckets = new Array(rows).fill(0), dnBuckets = new Array(rows).fill(0);
+  const minP = Math.min(pLo, pHi), maxP = Math.max(pLo, pHi);
+  for(let i = iStart; i <= iEnd && candles && i < candles.length; i++){
+    const c = candles[i]; if(!c) continue;
+    const mid = (c.h + c.l) * 0.5;
+    const k = Math.max(0, Math.min(rows-1, Math.floor((mid - minP) / Math.max(1e-9, maxP - minP) * rows)));
+    const v = c.v || 1;
+    buckets[k] += v;
+    if(c.c >= c.o) upBuckets[k] += v; else dnBuckets[k] += v;
+  }
+  const maxV = Math.max(1, Math.max.apply(null, buckets));
+  let pocIdx = 0; for(let k=0;k<rows;k++){ if(buckets[k] > buckets[pocIdx]) pocIdx = k; }
+  const total = buckets.reduce((s,x)=>s+x,0);
+  const target = total * 0.70;
+  let valIdx = pocIdx, vahIdx = pocIdx, acc = buckets[pocIdx];
+  while(acc < target && (valIdx > 0 || vahIdx < rows-1)){
+    const left = valIdx > 0 ? buckets[valIdx-1] : -1;
+    const right = vahIdx < rows-1 ? buckets[vahIdx+1] : -1;
+    if(left >= right){ valIdx--; acc += Math.max(0,left); }
+    else { vahIdx++; acc += Math.max(0,right); }
+  }
+  return {
+    id: game.tvNextId++, kind,
+    wx1, py1:minP, wx2, py2:maxP,
+    rows, buckets, upBuckets, dnBuckets, maxV, pocIdx, valIdx, vahIdx,
+    cfg: { rowSize:rows, volume:'updown', vaPct:70, widthPct:(opts && opts.widthPct) || 24, placement:(opts && opts.placement) || 'left', extendRight:kind === 'avp', showVAH:true, showVAL:true, showPOC:true },
+    t:0, upsideDown: originUp
+  };
+}
+function _refreshVolumeProfileOverlay(ov){
+  if(!ov || typeof ov.wx1 !== 'number' || typeof ov.wx2 !== 'number') return ov;
+  const cfg = ov.cfg = ov.cfg || {};
+  const rows = Math.max(4, Math.min(120, parseInt(cfg.rowSize || ov.rows || 24, 10) || 24));
+  const i1 = _clampCandleIndex(Math.min(ov.wx1, ov.wx2) / STEP);
+  const i2 = _clampCandleIndex(Math.max(ov.wx1, ov.wx2) / STEP);
+  let minP = Math.min(ov.py1 || 0, ov.py2 || 0);
+  let maxP = Math.max(ov.py1 || 0, ov.py2 || 0);
+  if(!(maxP > minP)){
+    const c = (typeof candleAtWX === 'function') ? candleAtWX(ov.wx1).c : null;
+    const p = c && isFinite(c.c) ? c.c : (ov.py1 || currentPrice());
+    minP = p * 0.995; maxP = p * 1.005;
+  }
+  const buckets = new Array(rows).fill(0);
+  const upBuckets = new Array(rows).fill(0), dnBuckets = new Array(rows).fill(0);
+  for(let i = i1; i <= i2 && candles && i < candles.length; i++){
+    const c = candles[i]; if(!c) continue;
+    const mid = (c.h + c.l) * 0.5;
+    const idx = Math.max(0, Math.min(rows-1, Math.floor((mid - minP) / Math.max(1e-9, maxP - minP) * rows)));
+    const v = c.v || 1;
+    buckets[idx] += v;
+    if(c.c >= c.o) upBuckets[idx] += v; else dnBuckets[idx] += v;
+  }
+  const maxV = Math.max(1, Math.max.apply(null, buckets));
+  let pocIdx = 0;
+  for(let k=0;k<rows;k++){ if(buckets[k] > buckets[pocIdx]) pocIdx = k; }
+  const total = buckets.reduce((s,x)=>s+x,0);
+  const target = total * Math.max(0.01, Math.min(0.99, (cfg.vaPct || 70) / 100));
+  let valIdx = pocIdx, vahIdx = pocIdx, acc = buckets[pocIdx] || 0;
+  while(acc < target && (valIdx > 0 || vahIdx < rows-1)){
+    const left = valIdx > 0 ? buckets[valIdx-1] : -1;
+    const right = vahIdx < rows-1 ? buckets[vahIdx+1] : -1;
+    if(left >= right){ valIdx--; acc += Math.max(0,left); }
+    else { vahIdx++; acc += Math.max(0,right); }
+  }
+  ov.py1 = minP; ov.py2 = maxP; ov.rows = rows;
+  ov.buckets = buckets; ov.upBuckets = upBuckets; ov.dnBuckets = dnBuckets;
+  ov.maxV = maxV; ov.pocIdx = pocIdx; ov.valIdx = valIdx; ov.vahIdx = vahIdx;
+  return ov;
+}
+function _drawVolumeProfileOverlay(ov, preview){
+  const x1 = sX(ov.wx1), x2 = sX(ov.wx2);
+  const xL = Math.min(x1,x2), xR = Math.max(x1,x2);
+  const yLo = Math.min(priceToY(ov.py1), priceToY(ov.py2));
+  const yHi = Math.max(priceToY(ov.py1), priceToY(ov.py2));
+  const boxW = Math.max(40, xR - xL);
+  const boxH = Math.max(40, yHi - yLo);
+  const rows = ov.rows || 24;
+  const rowH = boxH / rows;
+  const widthPct = (ov.cfg && ov.cfg.widthPct ? ov.cfg.widthPct : 20) / 100;
+  const maxBarW = boxW * widthPct;
+  const fromRight = ov.kind === 'avp' || (ov.cfg && ov.cfg.placement === 'right');
+  ctx.save();
+  ctx.globalAlpha = preview ? 0.62 : 1;
+  ctx.strokeStyle = _colorWithAlpha((ov.cfg && ov.cfg.color) || (ov.kind === 'avp' ? '#ffd166' : '#6a6e78'), 0.62);
+  ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+  ctx.strokeRect(xL, yLo, boxW, boxH); ctx.setLineDash([]);
+  for(let kk = 0; kk < rows; kk++){
+    const v = ov.buckets[kk] || 0;
+    const up = ov.upBuckets[kk] || 0;
+    const dn = ov.dnBuckets[kk] || 0;
+    if(v <= 0) continue;
+    const yRow = yLo + (rows - 1 - kk) * rowH;
+    const upW = (up / ov.maxV) * maxBarW;
+    const dnW = (dn / ov.maxV) * maxBarW;
+    const xBase = fromRight ? xR - 1 - upW - dnW : xL + 1;
+    ctx.fillStyle = _colorWithAlpha((ov.cfg && ov.cfg.upColor) || '#3ddc97', 0.55);
+    ctx.fillRect(xBase, yRow + 1, upW, rowH - 2);
+    ctx.fillStyle = _colorWithAlpha((ov.cfg && ov.cfg.downColor) || '#ff5b7f', 0.55);
+    ctx.fillRect(xBase + upW, yRow + 1, dnW, rowH - 2);
+  }
+  if(ov.cfg && ov.cfg.showPOC !== false){
+    const yPoc = yLo + (rows - 1 - ov.pocIdx) * rowH + rowH/2;
+    ctx.strokeStyle = 'rgba(239,83,80,0.95)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(xL, yPoc); ctx.lineTo(xR, yPoc); ctx.stroke();
+    ctx.fillStyle = 'rgba(239,83,80,0.95)'; ctx.font = 'bold 10px ui-monospace,monospace';
+    ctx.fillText('POC', xR + 4, yPoc + 4);
+  }
+  if(ov.cfg && ov.cfg.showVAH !== false){
+    const yVah = yLo + (rows - 1 - ov.vahIdx) * rowH;
+    ctx.strokeStyle = 'rgba(50,120,255,0.85)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(xL, yVah); ctx.lineTo(xR, yVah); ctx.stroke();
+  }
+  if(ov.cfg && ov.cfg.showVAL !== false){
+    const yVal = yLo + (rows - 1 - ov.valIdx) * rowH + rowH;
+    ctx.strokeStyle = 'rgba(50,120,255,0.85)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(xL, yVal); ctx.lineTo(xR, yVal); ctx.stroke();
+  }
+  if(ov.kind === 'avp') _overlayLabel('AVP · ' + rows + ' rows', xL + 8, yLo - 5, 'rgba(255,209,102,0.95)');
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+function _drawThreeAnchorOverlay(ov, preview){
+  if(!ov || !ov.kind) return;
+  if(ov.kind === 'parChannel') _drawParallelChannelOverlay(ov, preview);
+  else if(ov.kind === 'disjoint') _drawDisjointChannelOverlay(ov, preview);
+  else if(ov.kind === 'fibChannel') _drawFibChannelOverlay(ov, preview);
+  else if(ov.kind === 'triangle') _drawTriangleOverlay(ov, preview);
+}
 function drawTvOverlays(){
   if(!game.tvOverlays || !game.tvOverlays.length) return;
   ctx.save();
@@ -27596,6 +28218,12 @@ function drawTvOverlays(){
       ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI*2); ctx.fill();
     } else if(k === 'parChannel'){
       _drawParallelChannelOverlay(ov, false);
+    } else if(k === 'disjoint'){
+      _drawDisjointChannelOverlay(ov, false);
+    } else if(k === 'fibChannel'){
+      _drawFibChannelOverlay(ov, false);
+    } else if(k === 'triangle'){
+      _drawTriangleOverlay(ov, false);
     } else if(k === 'ray' || k === 'extLine' || k === 'infoLine'){
       const x1 = sX(ov.wx1), y1 = priceToY(ov.py1);
       const x2 = sX(ov.wx2), y2 = priceToY(ov.py2);
@@ -27626,6 +28254,12 @@ function drawTvOverlays(){
         ctx.fillStyle = ov.dPct>=0 ? 'rgba(61,220,151,0.95)' : 'rgba(255,91,127,0.95)';
         ctx.fillText(pct, (x1+x2)/2 + 6, (y1+y2)/2 - 4);
       }
+    } else if(k === 'trendAngle'){
+      _drawTrendAngleOverlay(ov, false);
+    } else if(k === 'regression'){
+      _drawRegressionOverlay(ov, false);
+    } else if(k === 'flatChannel'){
+      _drawFlatChannelOverlay(ov, false);
     } else if(k === 'rect'){
       const x1 = sX(ov.wx1), y1 = priceToY(ov.py1);
       const x2 = sX(ov.wx2), y2 = priceToY(ov.py2);
@@ -27826,6 +28460,18 @@ function drawTvOverlays(){
         ctx.fillText(lv.lvl + ' (' + fmtPrice(py) + ')', xR + 4, y + 4);
       }
       ctx.lineWidth = 1.2;
+    } else if(k === 'fibTimeZone'){
+      _drawFibTimeZoneOverlay(ov, false);
+    } else if(k === 'fibCircles'){
+      _drawFibCirclesOverlay(ov, false);
+    } else if(k === 'gannBox'){
+      _drawGannBoxOverlay(ov, false);
+    } else if(k === 'gannFan'){
+      _drawGannFanOverlay(ov, false);
+    } else if(k === 'barPattern'){
+      _drawBarPatternOverlay(ov, false);
+    } else if(k === 'avp'){
+      _drawVolumeProfileOverlay(ov, false);
     } else if(k === 'frvp'){
       // Volume profile bars on the LEFT of the box (matches Style.Placement = Left).
       const x1 = sX(ov.wx1), x2 = sX(ov.wx2);
@@ -27956,8 +28602,17 @@ const TOOL_VISUAL_STYLES = {
   fibRetrace: { color:'#ffd166', glow:'rgba(255,209,102,0.45)',name:'Fib Retracement',  icon:'☰' },
   fibExt:     { color:'#1976d2', glow:'rgba(25,118,210,0.45)', name:'Fib Extension',    icon:'⌖' },
   trendline:  { color:'#7ad6ff', glow:'rgba(122,214,255,0.45)',name:'Trendline',        icon:'╱' },
+  trendAngle: { color:'#7ad6ff', glow:'rgba(122,214,255,0.45)',name:'Trend Angle',       icon:'∠' },
   ray:        { color:'#7ad6ff', glow:'rgba(122,214,255,0.45)',name:'Ray',              icon:'➚' },
   parChannel: { color:'#22d3ee', glow:'rgba(34,211,238,0.45)', name:'Parallel Channel', icon:'∥' },
+  regression: { color:'#22d3ee', glow:'rgba(34,211,238,0.45)', name:'Regression Trend', icon:'/' },
+  flatChannel:{ color:'#22d3ee', glow:'rgba(34,211,238,0.45)', name:'Flat Channel',     icon:'═' },
+  disjoint:   { color:'#22d3ee', glow:'rgba(34,211,238,0.45)', name:'Disjoint Channel', icon:'⊥' },
+  fibChannel: { color:'#ffd166', glow:'rgba(255,209,102,0.45)',name:'Fib Channel',      icon:'╲' },
+  fibTimeZone:{ color:'#ffd166', glow:'rgba(255,209,102,0.45)',name:'Fib Time Zone',    icon:'┊' },
+  fibCircles: { color:'#ffd166', glow:'rgba(255,209,102,0.45)',name:'Fib Circles',      icon:'◎' },
+  gannBox:    { color:'#ffb86b', glow:'rgba(255,184,107,0.45)',name:'Gann Box',         icon:'▦' },
+  gannFan:    { color:'#ffb86b', glow:'rgba(255,184,107,0.45)',name:'Gann Fan',         icon:'⌇' },
   extLine:    { color:'#7ad6ff', glow:'rgba(122,214,255,0.45)',name:'Extended Line',    icon:'⇿' },
   hLine:      { color:'#a371f7', glow:'rgba(163,113,247,0.45)',name:'Horizontal Line',  icon:'━' },
   vline:      { color:'#a371f7', glow:'rgba(163,113,247,0.45)',name:'Vertical Line',    icon:'│' },
@@ -27965,7 +28620,10 @@ const TOOL_VISUAL_STYLES = {
   longPos:    { color:'#3ddc97', glow:'rgba(61,220,151,0.45)', name:'Long Position',    icon:'↗' },
   shortPos:   { color:'#ff5b7f', glow:'rgba(255,91,127,0.45)', name:'Short Position',   icon:'↘' },
   rect:       { color:'#a371f7', glow:'rgba(163,113,247,0.45)',name:'Rectangle',        icon:'▭' },
+  triangle:   { color:'#a371f7', glow:'rgba(163,113,247,0.45)',name:'Triangle',         icon:'△' },
   frvp:       { color:'#ffd166', glow:'rgba(255,209,102,0.45)',name:'Fixed Range VP',   icon:'▥' },
+  avp:        { color:'#ffd166', glow:'rgba(255,209,102,0.45)',name:'Anchored VP',      icon:'▭' },
+  barPattern: { color:'#b58aff', glow:'rgba(181,138,255,0.45)',name:'Bar Pattern',      icon:'┊┊' },
   rune:       { color:'#7ee787', glow:'rgba(126,231,135,0.45)',name:'Rune Mark',        icon:'⛧' },
   // v0.9.22 — Tier 1-4 SDK primitive placements.
   limit:           { color:'#7be3f3', glow:'rgba(123,227,243,0.45)', name:'Limit Order',         icon:'◇' },
@@ -28011,13 +28669,25 @@ const TOOL_SETUP_GUIDES = {
   fibExt:     { kind:'two-anchor',  steps:['Click impulse start (anchor 1)',     'Click impulse end (anchor 2)'],           hint:'Levels >1.0 projected as TP targets · 1.618 Golden Extension band' },
   oco:        { kind:'two-anchor',  steps:['Click upper trigger (sell)',         'Click lower trigger (buy)'],              hint:'One-cancels-other · whichever fires first cancels the other' },
   trendline:  { kind:'two-anchor',  steps:['Click anchor 1',                     'Click anchor 2'],                          hint:'Diagonal line · ridable rail · monster wall in Monster Mode' },
+  trendAngle: { kind:'two-anchor',  steps:['Click anchor 1',                     'Click anchor 2'],                          hint:'Trendline with angle, bar count, and percent change label' },
   ray:        { kind:'two-anchor',  steps:['Click anchor 1',                     'Click anchor 2 (extends right)'],          hint:'Half-line through both anchors, extends to right edge' },
   parChannel: { kind:'three-anchor',steps:['Click anchor 1 (base rail)',         'Click anchor 2 (base angle)',              'Click anchor 3 (channel width)'], hint:'Two parallel rails with a shaded trading range' },
+  regression: { kind:'two-anchor',  steps:['Click range start',                  'Click range end'],                         hint:'Least-squares centerline plus residual channel over selected candles' },
+  flatChannel:{ kind:'two-anchor',  steps:['Click channel top/bottom',           'Click opposite rail'],                      hint:'Horizontal support/resistance band between two prices' },
+  disjoint:   { kind:'three-anchor',steps:['Click anchor 1 (base rail)',         'Click anchor 2 (base angle)',              'Click anchor 3 (offset rail)'],    hint:'Offset rail uses the base slope but starts from the third anchor' },
+  fibChannel: { kind:'three-anchor',steps:['Click anchor 1 (base rail)',         'Click anchor 2 (base angle)',              'Click anchor 3 (1.0 width)'],      hint:'Fibonacci parallel rails from 0 to 1.618 channel width' },
+  fibTimeZone:{ kind:'two-anchor',  steps:['Click time anchor 1',                'Click time anchor 2'],                     hint:'Vertical lines spaced by Fibonacci bar intervals' },
+  fibCircles: { kind:'two-anchor',  steps:['Click center anchor',                'Click radius anchor'],                     hint:'Concentric Fibonacci radius circles from the first anchor' },
+  gannBox:    { kind:'two-anchor',  steps:['Click box corner 1',                 'Click box corner 2'],                      hint:'1/8 Gann grid with diagonal fans inside the selected box' },
+  gannFan:    { kind:'single-click',steps:['Click fan origin'],                                                         hint:'Standard Gann ratio rays project from the clicked price/time' },
   extLine:    { kind:'two-anchor',  steps:['Click anchor 1',                     'Click anchor 2'],                          hint:'Full line through both anchors, extends both directions' },
   longPos:    { kind:'two-anchor',  steps:['Click entry price',                  'Click stop loss price'],                   hint:'Long position visualizer · TP auto-projects at 1:2 RR' },
   shortPos:   { kind:'two-anchor',  steps:['Click entry price',                  'Click stop loss price'],                   hint:'Short position visualizer · TP auto-projects at 1:2 RR' },
   rect:       { kind:'two-anchor',  steps:['Click anchor 1 (one corner)',        'Click anchor 2 (opposite corner)'],        hint:'Rectangle · highlight a price + time region' },
+  triangle:   { kind:'three-anchor',steps:['Click triangle point 1',             'Click triangle point 2',                   'Click triangle point 3'],          hint:'Three-point polygon for wedges, pennants, and chart zones' },
   frvp:       { kind:'two-anchor',  steps:['Click time anchor 1',                'Click time anchor 2'],                     hint:'Fixed Range Volume Profile between two timestamps' },
+  avp:        { kind:'single-click',steps:['Click anchor candle'],                                                       hint:'Volume profile buckets from anchor candle to the visible right edge' },
+  barPattern: { kind:'single-click',steps:['Click projection start'],                                                    hint:'Copies the prior 24 candles as ghost bars projected forward' },
   // v0.9.22 — Tier 1-4 SDK primitive setup guides.
   limit:           { kind:'single-click', steps:['Click chart to place a limit order at that price'], hint:'Side inferred from click position vs current price' },
   stopLossAt:      { kind:'single-click', steps:['Click chart to set the stop-loss for the most-recent open bracket'], hint:'Needs an active bracket · TIER 1' },
@@ -28367,6 +29037,38 @@ function commitLaserSingleClick(toolId, sx, sy, wxAt, priceAt, originUp, exitFn)
       try { spawnFloat(sx, sy-14, 'VWAP ANCHORED', '#9b8cff'); } catch(_){}
       toast('VWAP anchored');
     }
+    else if(toolId === 'gannFan'){
+      game.tvOverlays.push({ id: game.tvNextId++, kind:'gannFan', wx: wxAt, py: priceAt, ratios:[1/8,1/4,1/3,1/2,1,2,3,4,8], t:0, upsideDown: originUp });
+      try { spawnFloat(sx, sy-14, 'GANN FAN', '#ffb86b'); } catch(_){}
+      toast('Gann fan placed');
+    }
+    else if(toolId === 'barPattern'){
+      const idx = _clampCandleIndex(wxAt / STEP);
+      const count = 24;
+      const start = Math.max(0, idx - count);
+      const end = Math.max(start, idx - 1);
+      const src = (candles || []).slice(start, end + 1);
+      const base = (src[0] && isFinite(src[0].o)) ? src[0].o : priceAt;
+      const bars = src.map(c => ({ o:c.o - base, h:c.h - base, l:c.l - base, c:c.c - base }));
+      game.tvOverlays.push({ id: game.tvNextId++, kind:'barPattern', wx: wxAt, py: priceAt, bars, t:0, upsideDown: originUp });
+      try { spawnFloat(sx, sy-14, 'BAR PATTERN', '#b58aff'); } catch(_){}
+      toast('Bar pattern projected · ' + bars.length + ' bars');
+    }
+    else if(toolId === 'avp'){
+      const iStart = _clampCandleIndex(wxAt / STEP);
+      const iEnd = _clampCandleIndex(Math.max(iStart + 12, wXFromS(W) / STEP));
+      let lo = priceAt, hi = priceAt;
+      for(let i = iStart; i <= iEnd && candles && i < candles.length; i++){
+        const c = candles[i]; if(!c) continue;
+        lo = Math.min(lo, c.l); hi = Math.max(hi, c.h);
+      }
+      if(lo === hi){ lo = priceAt * 0.995; hi = priceAt * 1.005; }
+      const wx2 = (iEnd + 1) * STEP + STEP/2;
+      const ov = _makeVolumeProfileOverlay('avp', iStart, iEnd, wxAt, wx2, lo, hi, originUp, { rows:24, widthPct:28, placement:'right' });
+      if(ov) game.tvOverlays.push({ ...ov, kind:'avp' });
+      try { spawnFloat(sx, sy-14, 'AVP', '#ffd166'); } catch(_){}
+      toast('Anchored volume profile · ' + (iEnd - iStart + 1) + ' candles');
+    }
     else if(toolId === 'arrowUp' || toolId === 'arrowDown'){
       const dir = toolId === 'arrowUp' ? 'up' : 'down';
       game.tvOverlays.push({ id: game.tvNextId++, kind:'arrow1', dir, wx: wxAt, py: priceAt, t:0, upsideDown: originUp });
@@ -28507,6 +29209,46 @@ function commitLaserThreeAnchor(tool, a1, a2, a3){
       toast('Parallel channel placed');
       return;
     }
+    if(tool === 'disjoint'){
+      game.tvOverlays.push({
+        id: game.tvNextId++,
+        kind:'disjoint',
+        wx1:a1.wx, py1:a1.price,
+        wx2:a2.wx, py2:a2.price,
+        wx3:a3.wx, py3:a3.price,
+        t:0, upsideDown: originUp,
+      });
+      try { spawnFloat(sxMid, syMid-14, 'DISJOINT CHANNEL', '#22d3ee'); } catch(_){}
+      toast('Disjoint channel placed');
+      return;
+    }
+    if(tool === 'fibChannel'){
+      game.tvOverlays.push({
+        id: game.tvNextId++,
+        kind:'fibChannel',
+        wx1:a1.wx, py1:a1.price,
+        wx2:a2.wx, py2:a2.price,
+        wx3:a3.wx, py3:a3.price,
+        levels:[0,0.236,0.382,0.5,0.618,0.786,1,1.272,1.618],
+        t:0, upsideDown: originUp,
+      });
+      try { spawnFloat(sxMid, syMid-14, 'FIB CHANNEL', '#ffd166'); } catch(_){}
+      toast('Fib channel placed');
+      return;
+    }
+    if(tool === 'triangle'){
+      game.tvOverlays.push({
+        id: game.tvNextId++,
+        kind:'triangle',
+        wx1:a1.wx, py1:a1.price,
+        wx2:a2.wx, py2:a2.price,
+        wx3:a3.wx, py3:a3.price,
+        t:0, upsideDown: originUp,
+      });
+      try { spawnFloat(sxMid, syMid-14, 'TRIANGLE', '#a371f7'); } catch(_){}
+      toast('Triangle placed');
+      return;
+    }
     toast(tool + ' · 3-anchor handled');
   } catch(err){ toast('Tool error · ' + (err.message||err)); }
 }
@@ -28604,6 +29346,26 @@ function commitLaserTwoAnchor(tool, a1, a2){
       game.tvOverlays.push({ id: game.tvNextId++, kind:'infoLine', wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price, dPct, t:0, upsideDown: originUp });
       try { spawnFloat(sxMid, syMid-14, dPct.toFixed(2)+'%', dPct>=0?'#3ddc97':'#ff5b7f'); } catch(_){}
       toast('Info line · ' + (dPct>=0?'+':'') + dPct.toFixed(2) + '%');
+    }
+    else if(tool === 'trendAngle'){
+      const dPct = (p2 - p1) / p1 * 100;
+      const dBars = Math.abs(Math.round((a2.wx - a1.wx) / STEP));
+      const angleDeg = Math.atan2(-(a2.sy - a1.sy), (a2.sx - a1.sx) || 1e-9) * 180 / Math.PI;
+      game.tvOverlays.push({ id: game.tvNextId++, kind:'trendAngle', wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price, dPct, dBars, angleDeg, t:0, upsideDown: originUp });
+      try { spawnFloat(sxMid, syMid-14, angleDeg.toFixed(1)+' deg', '#7ad6ff'); } catch(_){}
+      toast('Trend angle · ' + angleDeg.toFixed(1) + ' deg · ' + dBars + ' bars');
+    }
+    else if(tool === 'regression'){
+      const ov = _makeRegressionOverlay(a1, a2, originUp);
+      game.tvOverlays.push({ ...ov, kind:'regression' });
+      try { spawnFloat(sxMid, syMid-14, 'REGRESSION', '#22d3ee'); } catch(_){}
+      toast('Regression trend · ' + Math.max(0, ov.iEnd - ov.iStart + 1) + ' candles');
+    }
+    else if(tool === 'flatChannel'){
+      const top = Math.max(p1, p2), bottom = Math.min(p1, p2);
+      game.tvOverlays.push({ id: game.tvNextId++, kind:'flatChannel', wx1:a1.wx, py1:top, wx2:a2.wx, py2:bottom, t:0, upsideDown: originUp });
+      try { spawnFloat(sxMid, syMid-14, 'FLAT CHANNEL', '#22d3ee'); } catch(_){}
+      toast('Flat channel · ' + fmtPrice(bottom) + ' - ' + fmtPrice(top));
     }
     else if(tool === 'rect'){
       game.tvOverlays.push({ id: game.tvNextId++, kind:'rect', wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price, t:0, upsideDown: originUp, color:'rgba(122,214,255,0.85)' });
@@ -28712,6 +29474,23 @@ function commitLaserTwoAnchor(tool, a1, a2){
       try { spawnFloat(sxMid, syMid-14, 'FIB EXT · TP TARGETS', '#1976d2'); } catch(_){}
       toast('Fib extension · 9 levels · 1.618 golden extension shaded');
     }
+    else if(tool === 'fibTimeZone'){
+      const dBars = Math.max(1, Math.abs(Math.round((a2.wx - a1.wx) / STEP)));
+      const dir = a2.wx >= a1.wx ? 1 : -1;
+      game.tvOverlays.push({ id: game.tvNextId++, kind:'fibTimeZone', wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price, dBars, dir, levels:[0,1,2,3,5,8,13,21,34,55,89], t:0, upsideDown: originUp });
+      try { spawnFloat(sxMid, syMid-14, 'FIB TIME', '#ffd166'); } catch(_){}
+      toast('Fib time zone · base ' + dBars + ' bars');
+    }
+    else if(tool === 'fibCircles'){
+      game.tvOverlays.push({ id: game.tvNextId++, kind:'fibCircles', wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price, levels:[0.236,0.382,0.5,0.618,1,1.618,2.618], t:0, upsideDown: originUp });
+      try { spawnFloat(sxMid, syMid-14, 'FIB CIRCLES', '#ffd166'); } catch(_){}
+      toast('Fib circles placed');
+    }
+    else if(tool === 'gannBox'){
+      game.tvOverlays.push({ id: game.tvNextId++, kind:'gannBox', wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price, t:0, upsideDown: originUp });
+      try { spawnFloat(sxMid, syMid-14, 'GANN BOX', '#ffb86b'); } catch(_){}
+      toast('Gann box placed');
+    }
     else if(tool === 'frvp'){
       // Fixed Range Volume Profile — compute histogram of volume across price
       // bins between candle indices for the bar range. Drawn as horizontal
@@ -28812,11 +29591,23 @@ function drawLaserAnchorsAndPreview(){
     bracket:   'BRACKET',
     oco:       'OCO',
     trendline: 'TRENDLINE',
+    trendAngle:'TREND ANGLE',
     ray:       'RAY',
     parChannel:'PARALLEL CHANNEL',
+    regression:'REGRESSION',
+    flatChannel:'FLAT CHANNEL',
+    disjoint:  'DISJOINT CHANNEL',
+    fibChannel:'FIB CHANNEL',
+    fibTimeZone:'FIB TIME ZONE',
+    fibCircles:'FIB CIRCLES',
+    gannBox:   'GANN BOX',
+    gannFan:   'GANN FAN',
+    barPattern:'BAR PATTERN',
+    avp:       'AVP',
     extLine:   'EXT LINE',
     infoLine:  'INFO LINE',
     rect:      'RECTANGLE',
+    triangle:  'TRIANGLE',
     circle:    'CIRCLE',
     arrowMark: 'ARROW',
     longPos:   'LONG POSITION',
@@ -28837,7 +29628,9 @@ function drawLaserAnchorsAndPreview(){
   const _phaseKey = tool + ':' + phase;
   if(game._lastLaserPhaseKey !== _phaseKey){
     game._lastLaserPhaseKey = _phaseKey;
-    const step = phase === 'anchor1' ? '① click first anchor' : (phase === 'anchor2' ? '② click second anchor' : '③ click channel width');
+    const guide = (typeof TOOL_SETUP_GUIDES !== 'undefined') ? TOOL_SETUP_GUIDES[tool] : null;
+    const idx = phase === 'anchor1' ? 0 : (phase === 'anchor2' ? 1 : 2);
+    const step = guide && guide.steps && guide.steps[idx] ? guide.steps[idx] : (phase === 'anchor1' ? '① click first anchor' : (phase === 'anchor2' ? '② click second anchor' : '③ click third anchor'));
     try { crNotify(label + ' · ' + step + ' · Esc cancels'); } catch(_){}
   }
   // Anchor1 dot (persistent once placed).
@@ -28905,6 +29698,25 @@ function drawLaserAnchorsAndPreview(){
       ctx.beginPath(); ctx.moveTo(0, ay); ctx.lineTo(W, ay); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(0, by2); ctx.lineTo(W, by2); ctx.stroke();
     }
+    else if(game.laserTool === 'trendAngle'){
+      _drawTrendAngleOverlay({ kind:'trendAngle', wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price }, true);
+    }
+    else if(game.laserTool === 'regression'){
+      _drawRegressionOverlay(_makeRegressionOverlay(a1, a2, true, 0), true);
+    }
+    else if(game.laserTool === 'flatChannel'){
+      _drawFlatChannelOverlay({ kind:'flatChannel', wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price }, true);
+    }
+    else if(game.laserTool === 'fibTimeZone'){
+      const dBars = Math.max(1, Math.abs(Math.round((a2.wx - a1.wx) / STEP)));
+      _drawFibTimeZoneOverlay({ kind:'fibTimeZone', wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price, dBars, dir:a2.wx >= a1.wx ? 1 : -1 }, true);
+    }
+    else if(game.laserTool === 'fibCircles'){
+      _drawFibCirclesOverlay({ kind:'fibCircles', wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price }, true);
+    }
+    else if(game.laserTool === 'gannBox'){
+      _drawGannBoxOverlay({ kind:'gannBox', wx1:a1.wx, py1:a1.price, wx2:a2.wx, py2:a2.price }, true);
+    }
     ctx.setLineDash([]);
     // Direct anchor-to-anchor connector (thin)
     ctx.strokeStyle = 'rgba(255,91,127,0.6)';
@@ -28925,8 +29737,8 @@ function drawLaserAnchorsAndPreview(){
   if(phase === 'anchor3' && a1 && game.laserAnchor2){
     const a2 = game.laserAnchor2;
     const a3 = game.laserAnchor3Preview || { wx: wXFromS(game.laserDot.sx), price: yToPrice(game.laserDot.sy), kind: 'free', sx: game.laserDot.sx, sy: game.laserDot.sy };
-    _drawParallelChannelOverlay({
-      kind:'parChannel',
+    _drawThreeAnchorOverlay({
+      kind:game.laserTool,
       wx1:a1.wx, py1:a1.price,
       wx2:a2.wx, py2:a2.price,
       wx3:a3.wx, py3:a3.price,
@@ -35086,25 +35898,25 @@ const WB_LASER_TOOLS = [
   { id:'vline',        ic:'│',  label:'Vertical line', cat:'lines',     cls:'1-click',  desc:'Vertical time line at clicked candle.', live:true,  star:true },
   { id:'xline',        ic:'✚',  label:'Cross line',    cat:'lines',     cls:'1-click',  desc:'Horizontal + vertical cross at clicked point.', live:true },
   { id:'infoLine',     ic:'ℹ',  label:'Info line',     cat:'lines',     cls:'2-anchor', desc:'Trendline + price/% delta label.', live:true },
-  { id:'trendAngle',   ic:'∠',  label:'Trend angle',   cat:'lines',     cls:'2-anchor', desc:'Trendline showing angle vs horizontal.', live:false },
+  { id:'trendAngle',   ic:'∠',  label:'Trend angle',   cat:'lines',     cls:'2-anchor', desc:'Trendline showing angle vs horizontal.', live:true },
   // — CHANNELS —
   { id:'parChannel',   ic:'∥',  label:'Parallel channel', cat:'channels', cls:'3-anchor', desc:'Two parallel trendlines from three anchors.', live:true, star:true },
-  { id:'regression',   ic:'/',  label:'Regression trend', cat:'channels', cls:'2-anchor', desc:'Linear regression channel between anchors.', live:false },
-  { id:'flatChannel',  ic:'═',  label:'Flat top/bottom',  cat:'channels', cls:'2-anchor', desc:'Horizontal channel between anchors.', live:false },
-  { id:'disjoint',     ic:'⊥',  label:'Disjoint channel', cat:'channels', cls:'3-anchor', desc:'Channel with offset rails.', live:false },
+  { id:'regression',   ic:'/',  label:'Regression trend', cat:'channels', cls:'2-anchor', desc:'Linear regression channel between anchors.', live:true },
+  { id:'flatChannel',  ic:'═',  label:'Flat top/bottom',  cat:'channels', cls:'2-anchor', desc:'Horizontal channel between anchors.', live:true },
+  { id:'disjoint',     ic:'⊥',  label:'Disjoint channel', cat:'channels', cls:'3-anchor', desc:'Channel with offset rails.', live:true },
   // — FIBONACCI —
   { id:'fibRetrace',   ic:'☰', label:'Fib retracement',  cat:'fib',      cls:'2-anchor', desc:'Fibonacci retracement levels between two anchors. 0 / 0.236 / 0.382 / 0.5 / 0.618 / 0.66 / 0.786 / 1 by default. Champion Zone 0.618–0.66 shaded.', live:true,  star:true },
   { id:'fibExt',       ic:'⌖', label:'Fib extension',    cat:'fib',      cls:'2-anchor', desc:'Fibonacci extension levels (1.272 / 1.414 / 1.618 / 2 / 2.272 / 2.618 / 3.618 / 4.236) projected beyond the impulse leg. Golden 1.618 band shaded — primary TP target.', live:true,  star:true },
   // v0.9.14 — Old 3-anchor 'Trend-based fib extension' stub retired (id collided
   // with the new live 2-anchor fibExt). Re-add later under id 'fibExt3' if a
   // proper TradingView trend-based projection is needed.
-  { id:'fibChannel',   ic:'╲',  label:'Fib channel',      cat:'fib',      cls:'3-anchor', desc:'Diagonal Fib channel.', live:false, star:true },
-  { id:'fibTimeZone',  ic:'┊',  label:'Fib time zone',    cat:'fib',      cls:'2-anchor', desc:'Vertical Fib time spacing.', live:false },
+  { id:'fibChannel',   ic:'╲',  label:'Fib channel',      cat:'fibStudy', cls:'3-anchor', desc:'Diagonal Fib channel.', live:true, star:true },
+  { id:'fibTimeZone',  ic:'┊',  label:'Fib time zone',    cat:'fibStudy', cls:'2-anchor', desc:'Vertical Fib time spacing.', live:true },
   { id:'fibLadder',    ic:'≣', label:'Fib ladder (orders)', cat:'fib',   cls:'2-anchor', desc:'Fibonacci-spaced order ladder between two anchors.', live:true },
-  { id:'fibCircles',   ic:'◎',  label:'Fib circles',      cat:'fib',      cls:'2-anchor', desc:'Concentric Fib radius circles.', live:false },
+  { id:'fibCircles',   ic:'◎',  label:'Fib circles',      cat:'fibStudy', cls:'2-anchor', desc:'Concentric Fib radius circles.', live:true },
   // — GANN —
-  { id:'gannBox',      ic:'▦',  label:'Gann box',         cat:'gann',     cls:'2-anchor', desc:'Gann box between two anchors.', live:false },
-  { id:'gannFan',      ic:'⌇',  label:'Gann fan',         cat:'gann',     cls:'1-click',  desc:'Gann fan rays from a single anchor.', live:false },
+  { id:'gannBox',      ic:'▦',  label:'Gann box',         cat:'gann',     cls:'2-anchor', desc:'Gann box between two anchors.', live:true },
+  { id:'gannFan',      ic:'⌇',  label:'Gann fan',         cat:'gann',     cls:'1-click',  desc:'Gann fan rays from a single anchor.', live:true },
   // — FORECASTING / TRADING —
   // v0.9.27 — longPos/shortPos retired from the laser menu. They were visual-only
   // R:R planners that overlapped with bracket (which fires a REAL SDK order with
@@ -35115,11 +35927,11 @@ const WB_LASER_TOOLS = [
   { id:'bracket',      ic:'⌖', label:'Bracket (live order)', cat:'forecast', cls:'2-anchor', desc:'Entry + stop-loss bracket trade — fires through the SDK. Phase-0 core primitive.', live:true },
   { id:'ladder',       ic:'≡',  label:'Order ladder',     cat:'forecast', cls:'2-anchor', desc:'Linear order ladder between two anchors — fires through the SDK.', live:true },
   { id:'oco',          ic:'⇅',  label:'OCO',              cat:'forecast', cls:'2-anchor', desc:'One-cancels-other upper + lower — fires through the SDK.', live:true },
-  { id:'barPattern',   ic:'┊┊', label:'Bar pattern',      cat:'forecast', cls:'1-click',  desc:'Project a bar pattern forward.', live:false, star:true },
+  { id:'barPattern',   ic:'┊┊', label:'Bar pattern',      cat:'forecastStudy', cls:'1-click',  desc:'Project a bar pattern forward.', live:true, star:true },
   // — VOLUME-BASED —
   { id:'avwap',        ic:'∿',  label:'Anchored VWAP',    cat:'volume',   cls:'1-click',  desc:'Anchored VWAP from clicked candle forward. Right-click to open settings (bands, source).', live:true,  star:true, settings:true },
   { id:'frvp',         ic:'▮',  label:'Fixed range volume profile', cat:'volume', cls:'2-anchor', desc:'Volume distribution histogram between two anchors. POC / VAH / VAL.', live:true,  star:true, settings:true },
-  { id:'avp',          ic:'▭',  label:'Anchored volume profile',     cat:'volume', cls:'1-click', desc:'Volume profile from anchor candle to right edge.', live:false },
+  { id:'avp',          ic:'▭',  label:'Anchored volume profile',     cat:'volume', cls:'1-click', desc:'Volume profile from anchor candle to right edge.', live:true },
   // — MEASURERS —
   { id:'priceRange',   ic:'⇕',  label:'Price range',      cat:'measure',  cls:'2-anchor', desc:'Measure absolute price + % delta between anchors.', live:true,  star:true },
   { id:'dateRange',    ic:'⇔',  label:'Date range',       cat:'measure',  cls:'2-anchor', desc:'Measure time delta between anchors.', live:true,  star:true },
@@ -35127,7 +35939,7 @@ const WB_LASER_TOOLS = [
   // — SHAPES —
   { id:'rect',         ic:'▭',  label:'Rectangle',        cat:'shapes',   cls:'2-anchor', desc:'Rectangle between two anchors.', live:true,  star:true },
   { id:'circle',       ic:'○',  label:'Circle',           cat:'shapes',   cls:'2-anchor', desc:'Circle between two anchors.', live:true },
-  { id:'triangle',     ic:'△',  label:'Triangle',         cat:'shapes',   cls:'3-anchor', desc:'Triangle from three anchors.', live:false, star:true },
+  { id:'triangle',     ic:'△',  label:'Triangle',         cat:'shapes',   cls:'3-anchor', desc:'Triangle from three anchors.', live:true, star:true },
   { id:'arrowMark',    ic:'➜',  label:'Arrow marker',     cat:'shapes',   cls:'2-anchor', desc:'Arrow from anchor1 to anchor2.', live:true },
   { id:'arrowUp',      ic:'↑',  label:'Arrow up',         cat:'shapes',   cls:'1-click',  desc:'Up arrow marker at clicked point.', live:true },
   { id:'arrowDown',    ic:'↓',  label:'Arrow down',       cat:'shapes',   cls:'1-click',  desc:'Down arrow marker at clicked point.', live:true },
@@ -35154,8 +35966,10 @@ const WB_TOOL_CATEGORIES = [
   { id:'lines',    label:'Lines',         ic:'╱' },
   { id:'channels', label:'Channels',      ic:'∥' },
   { id:'fib',      label:'Fibonacci',     ic:'☰' },
+  { id:'fibStudy', label:'Fib studies',   ic:'☰' },
   { id:'gann',     label:'Gann',          ic:'▦' },
   { id:'forecast', label:'Forecasting',   ic:'⌖' },
+  { id:'forecastStudy', label:'Forecasting studies', ic:'⌖' },
   { id:'orders',   label:'Orders',        ic:'◇' },   // v0.9.22 — Tier 1-4 SDK primitive placements
   { id:'volume',   label:'Volume-based',  ic:'∿' },
   { id:'measure',  label:'Measurers',     ic:'⇕' },
@@ -46191,6 +47005,121 @@ function hitOverlay(sx, sy){
   // Trendline: endpoint (with pointIdx, takes priority) | line (segment fallback).
   // Priority: unresolved brackets > OCO > ladder rung-endpoints > trendline endpoints
   // > ladder (line) > trendline segment — finest grab wins.
+  function hitTvChartObject(ov, k){
+    const meta = tvChartObjectMeta(k);
+    if(!meta) return null;
+    const ret = (handle) => {
+      if(handle === 'p3') return { kind:'tv:'+k, overlay:ov, handle:'p3' };
+      return { kind:'tv:'+k, overlay:ov, handle };
+    };
+    const point = (wx, py, handle) => {
+      if(typeof wx !== 'number' || typeof py !== 'number') return null;
+      const x = sX(wx), y = priceToY(py);
+      return Math.hypot(sx - x, sy - y) <= HIT_END_PX ? ret(handle) : null;
+    };
+    const seg = (wx1, py1, wx2, py2, handle) => {
+      if([wx1,py1,wx2,py2].some(v => typeof v !== 'number')) return null;
+      const x1 = sX(wx1), y1 = priceToY(py1);
+      const x2 = sX(wx2), y2 = priceToY(py2);
+      if(sx < Math.min(x1,x2)-HIT_PX || sx > Math.max(x1,x2)+HIT_PX ||
+         sy < Math.min(y1,y2)-HIT_PX || sy > Math.max(y1,y2)+HIT_PX) return null;
+      const vx = x2-x1, vy = y2-y1, len2 = vx*vx + vy*vy;
+      if(len2 < 1e-6) return null;
+      const t = Math.max(0, Math.min(1, ((sx-x1)*vx + (sy-y1)*vy) / len2));
+      const px = x1 + t*vx, py = y1 + t*vy;
+      return Math.hypot(sx-px, sy-py) <= HIT_PX ? ret(handle || 'body') : null;
+    };
+    const box = (handle) => {
+      if(typeof ov.wx1 !== 'number' || typeof ov.wx2 !== 'number') return null;
+      const x1 = sX(ov.wx1), x2 = sX(ov.wx2);
+      const y1 = (typeof ov.py1 === 'number') ? priceToY(ov.py1) : 0;
+      const y2 = (typeof ov.py2 === 'number') ? priceToY(ov.py2) : H;
+      const xL = Math.min(x1,x2), xR = Math.max(x1,x2);
+      const yT = Math.min(y1,y2), yB = Math.max(y1,y2);
+      if(sx < xL - HIT_PX || sx > xR + HIT_PX || sy < yT - HIT_PX || sy > yB + HIT_PX) return null;
+      const nearLeft = Math.abs(sx-xL) <= HIT_PX, nearRight = Math.abs(sx-xR) <= HIT_PX;
+      const nearTop = Math.abs(sy-yT) <= HIT_PX, nearBot = Math.abs(sy-yB) <= HIT_PX;
+      if((nearLeft && nearTop) || (nearLeft && nearBot)) return ret('p1');
+      if((nearRight && nearTop) || (nearRight && nearBot)) return ret('p2');
+      return ret(handle || 'body');
+    };
+    const inTri = () => {
+      if([ov.wx1,ov.py1,ov.wx2,ov.py2,ov.wx3,ov.py3].some(v => typeof v !== 'number')) return false;
+      const ax = sX(ov.wx1), ay = priceToY(ov.py1);
+      const bx = sX(ov.wx2), by = priceToY(ov.py2);
+      const cx = sX(ov.wx3), cy = priceToY(ov.py3);
+      const area = (bx-ax)*(cy-ay) - (by-ay)*(cx-ax);
+      if(Math.abs(area) < 1e-6) return false;
+      const s = ((ay-cy)*(sx-cx) + (cx-ax)*(sy-cy)) / area;
+      const t = ((cy-by)*(sx-cx) + (bx-cx)*(sy-cy)) / area;
+      const u = 1 - s - t;
+      return s >= -0.02 && t >= -0.02 && u >= -0.02;
+    };
+    let h = point(ov.wx1, ov.py1, 'p1') || point(ov.wx2, ov.py2, 'p2') || point(ov.wx3, ov.py3, 'p3') || point(ov.wx, ov.py, 'anchor');
+    if(h) return h;
+    if(meta.hit === 'box' || meta.hit === 'band') return box('body');
+    if(meta.hit === 'line') return seg(ov.wx1, ov.py1, ov.wx2, ov.py2, 'body');
+    if(meta.hit === 'rail'){
+      const rail = _parallelChannelRail(ov);
+      if(rail){
+        const leftWx = wXFromS(0), rightWx = wXFromS(W);
+        h = seg(leftWx, rail.baseAt(leftWx), rightWx, rail.baseAt(rightWx), 'body')
+         || seg(leftWx, rail.baseAt(leftWx) + rail.offset, rightWx, rail.baseAt(rightWx) + rail.offset, 'body');
+        if(h) return h;
+      }
+      return null;
+    }
+    if(meta.hit === 'time'){
+      const dir = ov.dir || ((ov.wx2 || 0) >= (ov.wx1 || 0) ? 1 : -1);
+      const bars = Math.max(1, Math.abs(ov.dBars || Math.round(((ov.wx2 || 0) - (ov.wx1 || 0)) / STEP) || 1));
+      for(const f of (ov.levels || [0,1,2,3,5,8,13,21,34,55,89])){
+        const x = sX((ov.wx1 || 0) + dir * bars * STEP * f);
+        if(Math.abs(sx - x) <= HIT_PX) return ret('body');
+      }
+      return null;
+    }
+    if(meta.hit === 'circles'){
+      if(typeof ov.wx1 !== 'number' || typeof ov.py1 !== 'number' || typeof ov.wx2 !== 'number' || typeof ov.py2 !== 'number') return null;
+      const x1 = sX(ov.wx1), y1 = priceToY(ov.py1);
+      const x2 = sX(ov.wx2), y2 = priceToY(ov.py2);
+      const base = Math.max(4, Math.hypot(x2-x1, y2-y1));
+      const d = Math.hypot(sx-x1, sy-y1);
+      for(const lv of (ov.levels || [0.236,0.382,0.5,0.618,1,1.618,2.618])){
+        if(Math.abs(d - base * lv) <= HIT_PX) return ret('body');
+      }
+      return null;
+    }
+    if(meta.hit === 'fan'){
+      if(typeof ov.wx !== 'number' || typeof ov.py !== 'number') return null;
+      const x0 = sX(ov.wx), y0 = priceToY(ov.py);
+      for(const r of (ov.ratios || [1/8,1/4,1/3,1/2,1,2,3,4,8])){
+        const dx = Math.max(80, W - x0);
+        const x1 = Math.min(W + 40, x0 + dx);
+        if(seg(ov.wx, ov.py, wXFromS(x1), yToPrice(y0 - dx * r * 0.18), 'body')) return ret('body');
+        if(seg(ov.wx, ov.py, wXFromS(x1), yToPrice(y0 + dx * r * 0.18), 'body')) return ret('body');
+      }
+      return Math.hypot(sx-x0, sy-y0) <= HIT_END_PX * 2 ? ret('body') : null;
+    }
+    if(meta.hit === 'bars'){
+      if(typeof ov.wx !== 'number' || typeof ov.py !== 'number') return null;
+      const bars = ov.bars || [];
+      const x0 = sX(ov.wx), y0 = priceToY(ov.py);
+      let minY = y0, maxY = y0;
+      for(const b of bars){
+        minY = Math.min(minY, priceToY(ov.py + (b.h || 0)));
+        maxY = Math.max(maxY, priceToY(ov.py + (b.l || 0)));
+      }
+      const xR = x0 + Math.max(24, bars.length || 24) * STEP * camera.zoomX;
+      return (sx >= x0 - HIT_PX && sx <= xR + HIT_PX && sy >= minY - HIT_PX && sy <= maxY + HIT_PX) ? ret('body') : null;
+    }
+    if(meta.hit === 'polygon'){
+      return seg(ov.wx1, ov.py1, ov.wx2, ov.py2, 'body')
+          || seg(ov.wx2, ov.py2, ov.wx3, ov.py3, 'body')
+          || seg(ov.wx3, ov.py3, ov.wx1, ov.py1, 'body')
+          || (inTri() ? ret('body') : null);
+    }
+    return null;
+  }
   for(const b of game.visualBrackets){
     if(b.outcome) continue; // resolved brackets are immutable
     const bx = sX(b.wx);
@@ -46318,6 +47247,12 @@ function hitOverlay(sx, sy){
     for(let i = game.tvOverlays.length - 1; i >= 0; i--){
       const ov = game.tvOverlays[i];
       const k = ov.kind;
+      const meta = tvChartObjectMeta(k);
+      if(meta){
+        const liveHit = hitTvChartObject(ov, k);
+        if(liveHit) return liveHit;
+        continue;
+      }
       // 1-anchor tools (single grab point at wx/py).
       if(k === 'hray' || k === 'vline' || k === 'xline' || k === 'arrow1' ||
          k === 'flag' || k === 'pricelabel' || k === 'text'){
@@ -46603,7 +47538,7 @@ cv.addEventListener('mousedown', e=>{
       startWx:    wXFromS(sx),
       snap
     };
-    cv.style.cursor = (hit.handle === 'endpoint' || hit.handle === 'p1' || hit.handle === 'p2') ? 'move' : 'ns-resize';
+    cv.style.cursor = (hit.handle === 'endpoint' || hit.handle === 'p1' || hit.handle === 'p2' || hit.handle === 'p3' || hit.handle === 'anchor') ? 'move' : 'ns-resize';
     e.stopPropagation();
     return;
   }
@@ -47128,6 +48063,12 @@ window.addEventListener('mousemove', e=>{
       } else if(overlayDrag.handle === 'p2'){
         ov.wx2 = snap.wx2 + dWx;
         if(typeof snap.py2 === 'number') ov.py2 = snap.py2 + dPrice;
+      } else if(overlayDrag.handle === 'p3'){
+        ov.wx3 = snap.wx3 + dWx;
+        if(typeof snap.py3 === 'number') ov.py3 = snap.py3 + dPrice;
+      } else if(overlayDrag.handle === 'anchor'){
+        ov.wx = snap.wx + dWx;
+        if(typeof snap.py === 'number') ov.py = snap.py + dPrice;
       } else if(overlayDrag.handle === 'tp'){
         // Take-profit drag preserves the entry pivot; risk:reward stays user-set.
         ov.tp = snap.tp + dPrice;
@@ -47158,6 +48099,7 @@ window.addEventListener('mousemove', e=>{
           if(typeof snap.py === 'number') ov.py = snap.py + dPrice;
         }
       }
+      refreshTvOverlayDerivedFields(ov);
     }
     return;
   }
@@ -57618,6 +58560,11 @@ const crL3 = (function(){
 
   // ── Helpers ─────────────────────────────────────────────────────────
   function _kindLabel(k){
+    if(typeof k === 'string' && k.indexOf('tv:') === 0){
+      const sub = k.slice(3);
+      const meta = (typeof tvChartObjectMeta === 'function') ? tvChartObjectMeta(sub) : null;
+      return (meta && meta.label) || sub;
+    }
     return ({ bracket:'Bracket', oco:'OCO', ladder:'Ladder', hline:'HLine', vwap:'VWAP', trendline:'Trendline' })[k] || k;
   }
   function _brokerState(){
@@ -57640,6 +58587,14 @@ const crL3 = (function(){
     if(hit.kind === 'ladder')  return o.p || (o.prices && o.prices[0]) || null;
     if(hit.kind === 'hline')   return o.py;
     if(hit.kind === 'vwap')    return (o.poly && o.poly[0] && o.poly[0].py) || null;
+    if(typeof hit.kind === 'string' && hit.kind.indexOf('tv:') === 0) return _tvRefPrice(o);
+    return null;
+  }
+  function _tvRefPrice(o){
+    if(!o) return null;
+    if(typeof o.py === 'number') return o.py;
+    const vals = [o.py1, o.py2, o.py3, o.entry, o.stop, o.tp].filter(v => typeof v === 'number' && isFinite(v));
+    if(vals.length) return vals.reduce((s,v)=>s+v,0) / vals.length;
     return null;
   }
   function _fmt(p){ return (typeof p === 'number' && isFinite(p)) ? ('$' + p.toFixed(2)) : '—'; }
@@ -57892,6 +58847,63 @@ const crL3 = (function(){
     ctx.restore();
   };
 
+  function tvBlueLaserHaloPoints(o, k){
+    if(!o) return [];
+    const toPt = (wx, py) => {
+      if(typeof wx !== 'number' || typeof py !== 'number') return null;
+      return { x:sX(wx), y:priceToY(py) };
+    };
+    const p1 = toPt(o.wx1, o.py1), p2 = toPt(o.wx2, o.py2), p3 = toPt(o.wx3, o.py3);
+    if(k === 'triangle' && p1 && p2 && p3) return [[p1,p2,p3,p1]];
+    if((k === 'gannBox' || k === 'flatChannel' || k === 'avp') && p1 && p2){
+      const xL = Math.min(p1.x,p2.x), xR = Math.max(p1.x,p2.x);
+      const yT = Math.min(p1.y,p2.y), yB = Math.max(p1.y,p2.y);
+      return [[{x:xL,y:yT},{x:xR,y:yT},{x:xR,y:yB},{x:xL,y:yB},{x:xL,y:yT}]];
+    }
+    if((k === 'disjoint' || k === 'fibChannel') && p1 && p2 && p3){
+      try {
+        const rail = _parallelChannelRail(o);
+        if(rail){
+          const leftWx = wXFromS(0), rightWx = wXFromS(W);
+          return [
+            [{x:0, y:priceToY(rail.baseAt(leftWx))}, {x:W, y:priceToY(rail.baseAt(rightWx))}],
+            [{x:0, y:priceToY(rail.baseAt(leftWx) + rail.offset)}, {x:W, y:priceToY(rail.baseAt(rightWx) + rail.offset)}],
+            [p1,p2,p3],
+          ];
+        }
+      } catch(_){}
+      return [[p1,p2,p3]];
+    }
+    if(k === 'fibTimeZone' && typeof o.wx1 === 'number'){
+      const dir = o.dir || ((o.wx2 || 0) >= (o.wx1 || 0) ? 1 : -1);
+      const bars = Math.max(1, Math.abs(o.dBars || Math.round(((o.wx2 || 0) - (o.wx1 || 0)) / STEP) || 1));
+      return (o.levels || [0,1,2,3,5,8,13,21]).slice(0, 8).map(f => {
+        const x = sX(o.wx1 + dir * bars * STEP * f);
+        return [{x, y:0}, {x, y:H}];
+      });
+    }
+    if(k === 'fibCircles' && p1 && p2){
+      return [[p1,p2]];
+    }
+    if(k === 'gannFan'){
+      const origin = toPt(o.wx, o.py);
+      if(!origin) return [];
+      return (o.ratios || [1/8,1/4,1/2,1,2,4,8]).slice(0, 7).map(r => {
+        const dx = Math.max(80, W - origin.x);
+        return [origin, { x:Math.min(W + 40, origin.x + dx), y:origin.y - dx * r * 0.18 }];
+      });
+    }
+    if(k === 'barPattern'){
+      const origin = toPt(o.wx, o.py);
+      if(!origin) return [];
+      const bars = (o.bars && o.bars.length) || 24;
+      return [[origin, { x:origin.x + bars * STEP * camera.zoomX, y:origin.y }]];
+    }
+    if(p1 && p2) return [[p1,p2]];
+    const p = toPt(o.wx, o.py);
+    return p ? [[{x:p.x-16,y:p.y},{x:p.x+16,y:p.y}],[{x:p.x,y:p.y-16},{x:p.x,y:p.y+16}]] : [];
+  }
+
   // ── Electrify armed tools (v1.0.8) ───────────────────────────────────
   // Called from the main render() loop AFTER drawVisualOverlays. For each
   // armed entry we re-paint the tool's actual geometry with a 3-stack
@@ -57954,6 +58966,12 @@ const crL3 = (function(){
         if(o.points && o.points.length >= 2){
           const pts = o.points.map(p => ({ x: sX(p.wx), y: priceToY(p.py) }));
           _shimmerCurve(pts, cGlow, cStrong, cWhite, tNow + seed);
+        }
+      } else if(typeof a.kind === 'string' && a.kind.indexOf('tv:') === 0){
+        const subKind = a.kind.slice(3);
+        const groups = tvBlueLaserHaloPoints(o, subKind);
+        for(let gi = 0; gi < groups.length; gi++){
+          _shimmerCurve(groups[gi], cGlow, cStrong, cWhite, tNow + seed + gi * 0.12);
         }
       }
     }

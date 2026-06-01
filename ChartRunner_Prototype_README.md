@@ -1,10 +1,12 @@
-# ChartRunner — Playable Prototype (v1.0.204)
+# ChartRunner — Playable Prototype (v1.0.206)
 
 > **Fortnite meets Space Invaders meets a trading chart.** Every ability is a real SDK primitive. Every trade is a game move.
 
 Single-file canvas game. Real Binance candles. Phase 0 + Phase 0.5 (devnet on-chain) shipped — Phase 1 (SDK pull-over) and Phase 2 (mainnet) on the post-Frontier roadmap.
 
-**Version note 2026-06-01:** v1.0.204 is live on public `/play` after deploy commit `9258e11`. The M3 Ready campaign repairs are playable: SDK-first MACD, Bollinger Bands, and ATR helpers are inlined into the prototype, the indicators render/toggle in-game, Parallel Channel is a live 3-anchor Tools laser, and Campaign Ch.8/25/26/27 are restored with proper numbering.
+**Version note 2026-06-01:** v1.0.206 is the chart-object parity release for public `/play`. The v1.0.205 Tools cohort now shares selection, drag handles, double-click settings, derived-field refreshes, and hotkey-4 Blue Laser arming/halos: Trend Angle, Regression Trend, Flat Channel, Disjoint Channel, Fib Channel, Fib Time Zone, Fib Circles, Gann Box, Gann Fan, Bar Pattern, Anchored Volume Profile, and Triangle.
+
+**Live note 2026-06-01:** v1.0.206 supersedes v1.0.204 on public `/play`. The M3 Ready campaign repairs remain playable: SDK-first MACD, Bollinger Bands, and ATR helpers are inlined into the prototype, the indicators render/toggle in-game, Parallel Channel is a live 3-anchor Tools laser, and Campaign Ch.8/25/26/27 are restored with proper numbering.
 
 **Session closeout 2026-06-01:** live docs/maps now reflect the M3 indicators + Parallel Channel release. No wallet signing, broker route, on-chain write, or production Bot Terminal transport was added.
 
@@ -33,7 +35,7 @@ Three pillars: **gamification · education · on-chain.** The hard rule: abiliti
 | **3** | 🟢 Primitives | SDK orders — bracket, OCO, ladder, limit, stopLoss, takeProfit, trailingTP, scaleOut, magnet, perpFlip, borrowShort, liqGuard, TWAP, iceberg |
 | **4** | 🔵 Blue | Modal / trade activator — electrifies placed tools into live trade routes |
 
-**Mouse.** Click on the chart to place an anchor. Two-anchor tools want a second click; Parallel Channel wants a third click for width. Bracket opens a risk/reward picker with an embedded competition-risk deck: funded account, max loss, liquidation watch, fee estimate, notional, and execution verdict. Right-click to cancel an in-progress placement.
+**Mouse.** Click on the chart to place an anchor. Two-anchor tools want a second click; three-anchor tools want a third click for width/shape. Placed Tools can be selected and dragged by their anchor handles or body; double-click opens the settings dialog. Bracket opens a risk/reward picker with an embedded competition-risk deck: funded account, max loss, liquidation watch, fee estimate, notional, and execution verdict. Right-click to cancel an in-progress placement.
 
 **Hotkeys.** `C` = Coach popover. `Tab` = cycle Workbench tabs. `Shift+M` = legacy menu drawer (mostly archived).
 
