@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.203
-     LAST UPDATED:    2026-05-31  ·  Configure Run polish repair. Broker picker shows selected DEX/CEX venue names, DEX/CEX buttons are compact again, chart Terminal widgets stay hidden until a run, and Back/Start provide visible press feedback.
+     CURRENT VERSION: v1.0.204
+     LAST UPDATED:    2026-06-01  ·  M3 indicators + Parallel Channel playable locally. SDK-first MACD, Bollinger Bands, and ATR helpers are inlined, the prototype renders/toggles them, Parallel Channel is a live 3-anchor laser tool, and Campaign Ch.8/25/26/27 are restored with proper numbering.
+     (v1.0.204 = M3 indicators + Parallel Channel playable locally. Adds generated SDK MACD / Bollinger Bands / ATR helpers, wires MACD/BB/ATR into the Indicators catalog and render paths, enables `parChannel` as a 3-anchor Tools laser overlay, and unarchives Campaign Ch.8/25/26/27.)
      (v1.0.203 = Configure Run polish repair. Adds a persistent broker-name label to the DEX/CEX picker, reduces the DEX/CEX segment footprint, hides persisted chart Terminal widgets while the desktop/config surface is open, strengthens widget close hitboxes, and adds Back/Start Run feedback for overlay-relayed clicks.)
      (v1.0.202 = Live Terminal + Start Run repair. Restores Configure Run picker controls and full-hitbox Start Run behavior, seeds local guest auth for file/localhost runs, restores desktop Terminal to the full Darkflow widget board, keeps chart/floating Terminal scoped, and adds browser smokes for both surfaces.)
      (v1.0.201 = Bot Terminal hosted event poller. Adds window.crAgentEvents for Labs-only polling of hosted /events queues, exposes crAgentBus.ingest(agentId, evt) for visible inbound agent work, and keeps inbound events as session/proof tape entries rather than hidden execution.)
@@ -8556,7 +8557,7 @@
         <line x1="14" y1="55" x2="28" y2="55" stroke="#1a1a18" stroke-width="0.8"/>
       </svg>
       <div class="title" id="crBootTitle">Welcome to ChartRunnerOS</div>
-      <div class="ver">v1.0.203</div>
+      <div class="ver">v1.0.204</div>
       <!-- v1.0.102 — Two paths only:
            1. Whitelisted Solana wallet (allowlist of pubkeys)
            2. Continue as Guest — anonymous handle generated on click, persists
@@ -9618,7 +9619,7 @@
                   <line x1="3" y1="6"  x2="21" y2="14" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round"/>
                   <line x1="3" y1="14" x2="21" y2="22" stroke="var(--accent2)" stroke-width="1.8" stroke-linecap="round"/>
                 </svg></div>
-                <div class="modeName">Ch.8 · Channel</div>
+                <div class="modeName">Ch.8 · Parallel Channel</div>
                 <div class="modeDesc">Parallel trendlines — bound a trending range.</div>
                 <div class="modeTag on">New</div>
               </button>
@@ -12387,7 +12388,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.203",
+  VERSION: "1.0.204",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -14602,17 +14603,49 @@ var ChartRunnerCore = (() => {
   var src_exports = {};
   __export(src_exports, {
     AbilityRegistry: () => AbilityRegistry,
+    BinancePerpMarketData: () => BinancePerpMarketData,
+    BybitPerpMarketData: () => BybitPerpMarketData,
     ChartRunnerSDK: () => ChartRunnerSDK,
+    DEFAULT_MARKET_SYMBOL_ROUTES: () => DEFAULT_MARKET_SYMBOL_ROUTES,
+    DexScreenerSpotMarketData: () => DexScreenerSpotMarketData,
+    DriftPerpMarketData: () => DriftPerpMarketData,
+    MARKET_DATA_VERSION: () => MARKET_DATA_VERSION,
+    MarketDataCache: () => MarketDataCache,
+    MarketDataPoller: () => MarketDataPoller,
+    OkxPerpMarketData: () => OkxPerpMarketData,
+    ProductionRiskManager: () => ProductionRiskManager,
     SandboxBroker: () => SandboxBroker,
     SandboxRiskManager: () => SandboxRiskManager,
     SandboxSignalFeed: () => SandboxSignalFeed,
+    ServerRiskManager: () => ServerRiskManager,
+    SymbolRouter: () => SymbolRouter,
+    atr: () => atr,
+    bollingerBands: () => bollingerBands,
+    createDefaultMarketDataProviders: () => createDefaultMarketDataProviders,
     detectBumpAndRun: () => detectBumpAndRun,
     detectCCV: () => detectCCV,
     detectFailedAuction: () => detectFailedAuction,
     detectHeadShoulders: () => detectHeadShoulders,
     detectOIConfirm: () => detectOIConfirm,
     detectSFP: () => detectSFP,
-    findSwings: () => findSwings
+    emaSeries: () => emaSeries,
+    findSwings: () => findSwings,
+    macd: () => macd,
+    marketDataReplayRecordFromOpenInterest: () => marketDataReplayRecordFromOpenInterest,
+    marketDataReplayRecordFromSpotPressure: () => marketDataReplayRecordFromSpotPressure,
+    marketDataUiState: () => marketDataUiState,
+    normalizeBinanceOpenInterestHistory: () => normalizeBinanceOpenInterestHistory,
+    normalizeBybitOpenInterestHistory: () => normalizeBybitOpenInterestHistory,
+    normalizeDexScreenerPair: () => normalizeDexScreenerPair,
+    normalizeDexScreenerPairs: () => normalizeDexScreenerPairs,
+    normalizeDriftMarketStats: () => normalizeDriftMarketStats,
+    normalizeOkxOpenInterest: () => normalizeOkxOpenInterest,
+    openInterestPointsFromPerpSamples: () => openInterestPointsFromPerpSamples,
+    smaSeries: () => smaSeries,
+    stdevSeries: () => stdevSeries,
+    timeframeToBinanceOiPeriod: () => timeframeToBinanceOiPeriod,
+    timeframeToBybitOiInterval: () => timeframeToBybitOiInterval,
+    withMarketDataOpenInterest: () => withMarketDataOpenInterest
   });
 
   // src/events.ts
@@ -14709,13 +14742,13 @@ var ChartRunnerCore = (() => {
       }
       const lev = ctx.referenceLevels ?? null;
       if (lev && typeof lev.pdPOC === "number") {
-        let atr = 0;
+        let atr2 = 0;
         for (let i = N - 14; i < N; i++) {
           const c = cs[i], p = cs[i - 1];
-          atr += Math.max(c.h - c.l, Math.abs(c.h - p.c), Math.abs(c.l - p.c));
+          atr2 += Math.max(c.h - c.l, Math.abs(c.h - p.c), Math.abs(c.l - p.c));
         }
-        atr /= 14;
-        if (Math.abs(price - lev.pdPOC) < atr * 0.5) {
+        atr2 /= 14;
+        if (Math.abs(price - lev.pdPOC) < atr2 * 0.5) {
           atPOC = true;
           volConfirm = true;
         }
@@ -14961,6 +14994,157 @@ var ChartRunnerCore = (() => {
     return { matched, side, kind, ...reason ? { reason } : {}, ...common };
   }
 
+  // src/indicators.ts
+  function safePeriod(n, fallback, min = 1) {
+    const value = Math.floor(Number(n));
+    return Number.isFinite(value) ? Math.max(min, value) : fallback;
+  }
+  function closeValues(candles) {
+    return candles.map((c) => Number.isFinite(c.c) ? c.c : null);
+  }
+  function smaSeries(values, period = 20) {
+    const p = safePeriod(period, 20, 1);
+    const out = new Array(values.length).fill(null);
+    let sum = 0;
+    let count = 0;
+    const q = [];
+    for (let i = 0; i < values.length; i++) {
+      const raw = values[i];
+      if (raw == null || !Number.isFinite(raw)) {
+        q.length = 0;
+        sum = 0;
+        count = 0;
+        continue;
+      }
+      q.push(raw);
+      sum += raw;
+      count++;
+      if (q.length > p) {
+        const shifted = q.shift();
+        if (shifted != null) {
+          sum -= shifted;
+          count--;
+        }
+      }
+      if (count === p) out[i] = sum / p;
+    }
+    return out;
+  }
+  function stdevSeries(values, period = 20) {
+    const p = safePeriod(period, 20, 1);
+    const out = new Array(values.length).fill(null);
+    const q = [];
+    for (let i = 0; i < values.length; i++) {
+      const raw = values[i];
+      if (raw == null || !Number.isFinite(raw)) {
+        q.length = 0;
+        continue;
+      }
+      q.push(raw);
+      if (q.length > p) q.shift();
+      if (q.length === p) {
+        const mean = q.reduce((s, v) => s + v, 0) / p;
+        const variance = q.reduce((s, v) => s + (v - mean) ** 2, 0) / p;
+        out[i] = Math.sqrt(variance);
+      }
+    }
+    return out;
+  }
+  function emaSeries(values, period = 20) {
+    const p = safePeriod(period, 20, 1);
+    const out = new Array(values.length).fill(null);
+    const k = 2 / (p + 1);
+    const seed = [];
+    let ema = null;
+    for (let i = 0; i < values.length; i++) {
+      const raw = values[i];
+      if (raw == null || !Number.isFinite(raw)) {
+        seed.length = 0;
+        ema = null;
+        continue;
+      }
+      if (ema == null) {
+        seed.push(raw);
+        if (seed.length > p) seed.shift();
+        if (seed.length === p) {
+          ema = seed.reduce((s, v) => s + v, 0) / p;
+          out[i] = ema;
+        }
+        continue;
+      }
+      ema = raw * k + ema * (1 - k);
+      out[i] = ema;
+    }
+    return out;
+  }
+  function macd(candles, opts = {}) {
+    const fast = safePeriod(opts.fast, 12, 1);
+    const slow = safePeriod(opts.slow, 26, fast + 1);
+    const signal = safePeriod(opts.signal, 9, 1);
+    const closes = closeValues(candles);
+    const fastEma = emaSeries(closes, fast);
+    const slowEma = emaSeries(closes, slow);
+    const macdValues = closes.map((_, i) => {
+      const fastValue = fastEma[i];
+      const slowValue = slowEma[i];
+      return fastValue == null || slowValue == null ? null : fastValue - slowValue;
+    });
+    const signalValues = emaSeries(macdValues, signal);
+    return candles.map((c, idx) => {
+      const line = macdValues[idx] ?? null;
+      const sig = signalValues[idx] ?? null;
+      return {
+        idx,
+        t: c.t,
+        macd: line,
+        signal: sig,
+        hist: line == null || sig == null ? null : line - sig
+      };
+    });
+  }
+  function bollingerBands(candles, opts = {}) {
+    const period = safePeriod(opts.period, 20, 1);
+    const mult = Number.isFinite(Number(opts.mult)) ? Number(opts.mult) : 2;
+    const closes = closeValues(candles);
+    const middle = smaSeries(closes, period);
+    const sigma = stdevSeries(closes, period);
+    return candles.map((c, idx) => {
+      const mid = middle[idx] ?? null;
+      const sd = sigma[idx] ?? null;
+      return {
+        idx,
+        t: c.t,
+        middle: mid,
+        upper: mid == null || sd == null ? null : mid + mult * sd,
+        lower: mid == null || sd == null ? null : mid - mult * sd
+      };
+    });
+  }
+  function atr(candles, opts = {}) {
+    const period = safePeriod(opts.period, 14, 1);
+    const out = candles.map((c, idx) => ({ idx, t: c.t, value: null }));
+    if (candles.length <= period) return out;
+    let sum = 0;
+    let prevAtr = null;
+    for (let i = 1; i < candles.length; i++) {
+      const c = candles[i];
+      const prev = candles[i - 1];
+      if (!c || !prev) continue;
+      const tr = Math.max(c.h - c.l, Math.abs(c.h - prev.c), Math.abs(c.l - prev.c));
+      if (i <= period) {
+        sum += tr;
+        if (i === period) {
+          prevAtr = sum / period;
+          out[i] = { idx: i, t: c.t, value: prevAtr };
+        }
+        continue;
+      }
+      prevAtr = prevAtr == null ? tr : (prevAtr * (period - 1) + tr) / period;
+      out[i] = { idx: i, t: c.t, value: prevAtr };
+    }
+    return out;
+  }
+
   // src/ChartRunnerSDK.ts
   var ChartRunnerSDK = class {
     // ChartHost is optional so the inline-bundler build (shared scope) and the
@@ -15009,8 +15193,21 @@ var ChartRunnerCore = (() => {
         detectHeadShoulders: true,
         detectSFP: true,
         detectFailedAuction: true,
-        detectOIConfirm: "host-data"
+        detectOIConfirm: "host-data",
+        indicatorMACD: "host-data",
+        indicatorBollingerBands: "host-data",
+        indicatorATR: "host-data"
       };
+    }
+    // ── read-only indicators (M3 SDK-first indicator surface) ────────────────
+    indicatorMACD(opts = {}) {
+      return macd(this.host?.getCandles?.() ?? [], opts);
+    }
+    indicatorBollingerBands(opts = {}) {
+      return bollingerBands(this.host?.getCandles?.() ?? [], opts);
+    }
+    indicatorATR(opts = {}) {
+      return atr(this.host?.getCandles?.() ?? [], opts);
     }
     // ── lifecycle / events (HTML 10529-10548) ─────────────────────────────
     setHostMode(mode) {
@@ -15604,16 +15801,16 @@ var ChartRunnerCore = (() => {
       const w = (id, def) => typeof weights[id] === "number" ? weights[id] : def;
       const components = [];
       if (!N) return { score: 0, max: 17, components: [], recommendation: "NO DATA" };
-      let atr = 0;
+      let atr2 = 0;
       if (N >= 15) {
         let sum = 0;
         for (let i = N - 14; i < N; i++) {
           const c = candles[i], p = candles[i - 1];
           sum += Math.max(c.h - c.l, Math.abs(c.h - p.c), Math.abs(c.l - p.c));
         }
-        atr = sum / 14;
+        atr2 = sum / 14;
       }
-      const tol = Math.max(atr * 0.25, price * 5e-4);
+      const tol = Math.max(atr2 * 0.25, price * 5e-4);
       if (N >= 50) {
         const sma = (n) => {
           let s = 0;
@@ -15656,7 +15853,7 @@ var ChartRunnerCore = (() => {
           const b = swings[swings.length - 1];
           const rsiA = this.host.rsi(a.idx, 14);
           const rsiB = this.host.rsi(b.idx, 14);
-          const eqPx = atr * 0.2;
+          const eqPx = atr2 * 0.2;
           const eqRSI = 2;
           const priceCmp = b.price - a.price;
           const rsiCmp = rsiB - rsiA;
@@ -15760,7 +15957,7 @@ var ChartRunnerCore = (() => {
         for (const id of Object.keys(this._scoreComponents)) {
           try {
             const def = this._scoreComponents[id];
-            const out = def.fn({ side, price, candles, levels: lev, atr, tol });
+            const out = def.fn({ side, price, candles, levels: lev, atr: atr2, tol });
             if (out && out.matched) {
               components.push({
                 id,
@@ -15999,6 +16196,998 @@ var ChartRunnerCore = (() => {
       }
     }
   };
+
+  // src/marketData.ts
+  var MARKET_DATA_VERSION = "0.1.0-market-data";
+  var BINANCE_BASE_URL = "https://fapi.binance.com";
+  var BYBIT_BASE_URL = "https://api.bybit.com";
+  var OKX_BASE_URL = "https://www.okx.com";
+  var DRIFT_DATA_BASE_URL = "https://data.api.drift.trade";
+  var DEXSCREENER_BASE_URL = "https://api.dexscreener.com";
+  var isRecord = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+  var asRecord = (v) => isRecord(v) ? v : null;
+  var toNumber = (v) => {
+    if (typeof v === "number") return Number.isFinite(v) ? v : void 0;
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : void 0;
+    }
+    return void 0;
+  };
+  var toStringValue = (v) => {
+    if (typeof v === "string" && v.length > 0) return v;
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+    return void 0;
+  };
+  var toTimestampMs = (v) => {
+    const n = toNumber(v);
+    if (n === void 0) return void 0;
+    return n > 0 && n < 1e10 ? Math.round(n * 1e3) : Math.round(n);
+  };
+  var firstNumber = (record, keys) => {
+    for (const key of keys) {
+      const n = toNumber(record[key]);
+      if (n !== void 0) return n;
+    }
+    return void 0;
+  };
+  var firstString = (record, keys) => {
+    for (const key of keys) {
+      const s = toStringValue(record[key]);
+      if (s !== void 0) return s;
+    }
+    return void 0;
+  };
+  var firstTimestamp = (record, keys) => {
+    for (const key of keys) {
+      const t = toTimestampMs(record[key]);
+      if (t !== void 0) return t;
+    }
+    return void 0;
+  };
+  var recordsFrom = (payload, arrayKeys = []) => {
+    if (Array.isArray(payload)) return payload.filter(isRecord);
+    const root = asRecord(payload);
+    if (!root) return [];
+    for (const key of arrayKeys) {
+      const value = root[key];
+      if (Array.isArray(value)) return value.filter(isRecord);
+    }
+    return [root];
+  };
+  var buildUrl = (baseUrl, path, params = {}) => {
+    const url = new URL(path, baseUrl);
+    for (const [key, value] of Object.entries(params)) {
+      if (value === void 0 || value === null || value === "") continue;
+      url.searchParams.set(key, String(value));
+    }
+    return url.toString();
+  };
+  var resolveFetch = (fetchLike) => {
+    if (fetchLike) return fetchLike;
+    const maybeFetch = globalThis.fetch;
+    if (typeof maybeFetch === "function") return maybeFetch;
+    throw new Error("No fetch implementation available for ChartRunner market data provider.");
+  };
+  var fetchJson = async (url, fetchLike, init) => {
+    const response = await resolveFetch(fetchLike)(url, init);
+    if (response.ok === false) {
+      let body = "";
+      try {
+        body = response.text ? await response.text() : "";
+      } catch {
+        body = "";
+      }
+      const status = response.status ? ` ${response.status}` : "";
+      const statusText = response.statusText ? ` ${response.statusText}` : "";
+      throw new Error(`Market data fetch failed${status}${statusText}${body ? `: ${body}` : ""}`);
+    }
+    return response.json();
+  };
+  var normalizeCexSymbol = (symbol) => symbol.replace(/[-/:\s]/g, "").toUpperCase();
+  var normalizeOkxInstId = (symbol) => {
+    const s = symbol.trim().toUpperCase();
+    if (s.includes("-")) return s;
+    if (s.endsWith("USDT")) return `${s.slice(0, -4)}-USDT-SWAP`;
+    if (s.endsWith("USD")) return `${s.slice(0, -3)}-USD-SWAP`;
+    return `${s}-USDT-SWAP`;
+  };
+  var clampLimit = (limit, min, max) => {
+    const n = Number.isFinite(limit) ? Math.floor(limit) : min;
+    return Math.max(min, Math.min(max, n));
+  };
+  function timeframeToBinanceOiPeriod(tf) {
+    switch (tf) {
+      case "15m":
+        return "15m";
+      case "30m":
+        return "30m";
+      case "1h":
+        return "1h";
+      case "2h":
+        return "2h";
+      case "4h":
+        return "4h";
+      case "6h":
+        return "6h";
+      case "8h":
+        return "6h";
+      case "12h":
+        return "12h";
+      case "1d":
+        return "1d";
+      case "3d":
+      case "1w":
+      case "1M":
+        return "1d";
+      default:
+        return "5m";
+    }
+  }
+  function timeframeToBybitOiInterval(tf) {
+    switch (tf) {
+      case "15m":
+        return "15min";
+      case "30m":
+        return "30min";
+      case "1h":
+      case "2h":
+        return "1h";
+      case "4h":
+      case "6h":
+      case "8h":
+      case "12h":
+        return "4h";
+      case "1d":
+      case "3d":
+      case "1w":
+      case "1M":
+        return "1d";
+      default:
+        return "5min";
+    }
+  }
+  var BinancePerpMarketData = class {
+    constructor(options = {}) {
+      this.venue = "binance";
+      this.marketType = "perp";
+      this.baseUrl = options.baseUrl ?? BINANCE_BASE_URL;
+      this.fetchLike = options.fetch;
+    }
+    openInterestHistoryUrl(symbol, timeframe = "15m", limit = 30, range = {}) {
+      return buildUrl(this.baseUrl, "/futures/data/openInterestHist", {
+        symbol: normalizeCexSymbol(symbol),
+        period: timeframeToBinanceOiPeriod(timeframe),
+        limit: clampLimit(limit, 1, 500),
+        startTime: range.startTime,
+        endTime: range.endTime
+      });
+    }
+    currentOpenInterestUrl(symbol) {
+      return buildUrl(this.baseUrl, "/fapi/v1/openInterest", { symbol: normalizeCexSymbol(symbol) });
+    }
+    premiumIndexUrl(symbol) {
+      return buildUrl(this.baseUrl, "/fapi/v1/premiumIndex", { symbol: normalizeCexSymbol(symbol) });
+    }
+    async openInterestHistory(symbol, timeframe = "15m", limit = 30, range = {}) {
+      const payload = await fetchJson(this.openInterestHistoryUrl(symbol, timeframe, limit, range), this.fetchLike);
+      return normalizeBinanceOpenInterestHistory(payload, { symbol: normalizeCexSymbol(symbol) });
+    }
+  };
+  function normalizeBinanceOpenInterestHistory(payload, options = {}) {
+    const opts = typeof options === "string" ? { symbol: options } : options;
+    const out = [];
+    for (const row of recordsFrom(payload)) {
+      const value = firstNumber(row, ["sumOpenInterest", "openInterest", "oi", "value"]);
+      if (value === void 0) continue;
+      const symbol = firstString(row, ["symbol"]) ?? opts.symbol ?? "";
+      const notionalUsd = firstNumber(row, ["sumOpenInterestValue", "notionalUsd", "oiUsd"]);
+      out.push({
+        venue: "binance",
+        marketType: "perp",
+        symbol: normalizeCexSymbol(symbol),
+        value,
+        t: firstTimestamp(row, ["timestamp", "time", "t", "ts"]),
+        notionalUsd,
+        fundingRate: firstNumber(row, ["fundingRate", "lastFundingRate"]),
+        markPrice: firstNumber(row, ["markPrice"]),
+        raw: row
+      });
+    }
+    return out.sort((a, b) => (a.t ?? 0) - (b.t ?? 0));
+  }
+  var BybitPerpMarketData = class {
+    constructor(options = {}) {
+      this.venue = "bybit";
+      this.marketType = "perp";
+      this.baseUrl = options.baseUrl ?? BYBIT_BASE_URL;
+      this.fetchLike = options.fetch;
+      this.category = options.category ?? "linear";
+    }
+    openInterestHistoryUrl(symbol, timeframe = "15m", limit = 50, range = {}) {
+      return buildUrl(this.baseUrl, "/v5/market/open-interest", {
+        category: this.category,
+        symbol: normalizeCexSymbol(symbol),
+        intervalTime: timeframeToBybitOiInterval(timeframe),
+        limit: clampLimit(limit, 1, 200),
+        startTime: range.startTime,
+        endTime: range.endTime,
+        cursor: range.cursor
+      });
+    }
+    async openInterestHistory(symbol, timeframe = "15m", limit = 50, range = {}) {
+      const payload = await fetchJson(this.openInterestHistoryUrl(symbol, timeframe, limit, range), this.fetchLike);
+      return normalizeBybitOpenInterestHistory(payload, { symbol: normalizeCexSymbol(symbol), category: this.category });
+    }
+  };
+  function normalizeBybitOpenInterestHistory(payload, options = {}) {
+    const root = asRecord(payload);
+    const result = asRecord(root?.result);
+    const source = result?.list ?? root?.list ?? payload;
+    const symbol = firstString(result ?? {}, ["symbol"]) ?? options.symbol ?? "";
+    const out = [];
+    for (const row of recordsFrom(source)) {
+      const value = firstNumber(row, ["openInterest", "oi", "value"]);
+      if (value === void 0) continue;
+      out.push({
+        venue: "bybit",
+        marketType: "perp",
+        symbol: normalizeCexSymbol(firstString(row, ["symbol"]) ?? symbol),
+        value,
+        t: firstTimestamp(row, ["timestamp", "time", "t", "ts"]),
+        category: options.category ?? firstString(result ?? {}, ["category"]),
+        raw: row
+      });
+    }
+    return out.sort((a, b) => (a.t ?? 0) - (b.t ?? 0));
+  }
+  var OkxPerpMarketData = class {
+    constructor(options = {}) {
+      this.venue = "okx";
+      this.marketType = "perp";
+      this.baseUrl = options.baseUrl ?? OKX_BASE_URL;
+      this.fetchLike = options.fetch;
+    }
+    openInterestUrl(symbol, instType = "SWAP") {
+      return buildUrl(this.baseUrl, "/api/v5/public/open-interest", {
+        instType,
+        instId: normalizeOkxInstId(symbol)
+      });
+    }
+    async openInterest(symbol, instType = "SWAP") {
+      const payload = await fetchJson(this.openInterestUrl(symbol, instType), this.fetchLike);
+      return normalizeOkxOpenInterest(payload, { symbol: normalizeOkxInstId(symbol) });
+    }
+  };
+  function normalizeOkxOpenInterest(payload, options = {}) {
+    const out = [];
+    for (const row of recordsFrom(payload, ["data"])) {
+      const value = firstNumber(row, ["oiCcy", "openInterest", "oi", "value"]);
+      if (value === void 0) continue;
+      const symbol = firstString(row, ["instId", "symbol"]) ?? options.symbol ?? "";
+      out.push({
+        venue: "okx",
+        marketType: "perp",
+        symbol: normalizeOkxInstId(symbol),
+        value,
+        t: firstTimestamp(row, ["ts", "timestamp", "time", "t"]),
+        contracts: firstNumber(row, ["oi"]),
+        notionalUsd: firstNumber(row, ["oiUsd", "notionalUsd"]),
+        raw: row
+      });
+    }
+    return out.sort((a, b) => (a.t ?? 0) - (b.t ?? 0));
+  }
+  var DriftPerpMarketData = class {
+    constructor(options = {}) {
+      this.venue = "drift";
+      this.marketType = "perp";
+      this.baseUrl = options.baseUrl ?? DRIFT_DATA_BASE_URL;
+      this.fetchLike = options.fetch;
+    }
+    marketStatsUrl() {
+      return buildUrl(this.baseUrl, "/stats/markets");
+    }
+    async marketStats() {
+      const payload = await fetchJson(this.marketStatsUrl(), this.fetchLike);
+      return normalizeDriftMarketStats(payload);
+    }
+  };
+  function normalizeDriftMarketStats(payload) {
+    const out = [];
+    for (const row of recordsFrom(payload, ["data", "markets"])) {
+      const rawMarketType = firstString(row, ["marketType", "type"]);
+      const symbol = firstString(row, ["symbol", "marketName", "name"]) ?? "";
+      const looksPerp = rawMarketType === "perp" || symbol.toUpperCase().endsWith("-PERP");
+      if (!looksPerp) continue;
+      const value = firstNumber(row, ["openInterest", "open_interest", "oi", "value"]);
+      if (value === void 0) continue;
+      out.push({
+        venue: "drift",
+        marketType: "perp",
+        chainId: "solana",
+        symbol,
+        value,
+        t: firstTimestamp(row, ["ts", "timestamp", "time", "t"]),
+        notionalUsd: firstNumber(row, ["openInterestUsd", "notionalUsd"]) ?? value,
+        fundingRate: firstNumber(row, ["fundingRate", "funding_rate"]),
+        markPrice: firstNumber(row, ["markPrice", "oraclePrice", "price"]),
+        marketIndex: firstNumber(row, ["marketIndex", "market_index"]),
+        status: firstString(row, ["status"]),
+        raw: row
+      });
+    }
+    return out.sort((a, b) => (a.t ?? 0) - (b.t ?? 0));
+  }
+  var DexScreenerSpotMarketData = class {
+    constructor(options = {}) {
+      this.venue = "dexscreener";
+      this.marketType = "spot";
+      this.baseUrl = options.baseUrl ?? DEXSCREENER_BASE_URL;
+      this.fetchLike = options.fetch;
+    }
+    pairUrl(chainId, pairAddress) {
+      return buildUrl(this.baseUrl, `/latest/dex/pairs/${encodeURIComponent(chainId)}/${encodeURIComponent(pairAddress)}`);
+    }
+    tokenPairsUrl(chainId, tokenAddress) {
+      return buildUrl(this.baseUrl, `/token-pairs/v1/${encodeURIComponent(chainId)}/${encodeURIComponent(tokenAddress)}`);
+    }
+    searchUrl(query) {
+      return buildUrl(this.baseUrl, "/latest/dex/search", { q: query });
+    }
+    async pair(chainId, pairAddress) {
+      const payload = await fetchJson(this.pairUrl(chainId, pairAddress), this.fetchLike);
+      return normalizeDexScreenerPair(payload);
+    }
+  };
+  function normalizeDexScreenerPairs(payload) {
+    const root = asRecord(payload);
+    const source = Array.isArray(payload) ? payload : Array.isArray(root?.pairs) ? root.pairs : root?.pair ? [root.pair] : root?.pairAddress ? [root] : [];
+    const out = [];
+    for (const item of source) {
+      const row = asRecord(item);
+      if (!row) continue;
+      const normalized = normalizeDexScreenerPairRecord(row);
+      if (normalized) out.push(normalized);
+    }
+    return out;
+  }
+  function normalizeDexScreenerPair(payload) {
+    return normalizeDexScreenerPairs(payload)[0] ?? null;
+  }
+  function normalizeDexScreenerPairRecord(row) {
+    const baseToken = asRecord(row.baseToken);
+    const quoteToken = asRecord(row.quoteToken);
+    const baseSymbol = firstString(baseToken ?? {}, ["symbol", "name"]);
+    const quoteSymbol = firstString(quoteToken ?? {}, ["symbol", "name"]);
+    const pairAddress = firstString(row, ["pairAddress", "pairId"]);
+    const symbol = baseSymbol && quoteSymbol ? `${baseSymbol}/${quoteSymbol}` : firstString(row, ["symbol"]) ?? pairAddress ?? "";
+    if (!symbol) return null;
+    const liquidity = asRecord(row.liquidity);
+    const volume = asRecord(row.volume);
+    const txns = asRecord(row.txns);
+    const txns24h = asRecord(txns?.h24);
+    const buys = firstNumber(txns24h ?? {}, ["buys"]);
+    const sells = firstNumber(txns24h ?? {}, ["sells"]);
+    const totalTxns = (buys ?? 0) + (sells ?? 0);
+    return {
+      venue: "dexscreener",
+      marketType: "spot",
+      chainId: firstString(row, ["chainId"]),
+      dexId: firstString(row, ["dexId"]),
+      pairAddress,
+      symbol,
+      price: firstNumber(row, ["priceUsd", "priceNative", "price"]),
+      liquidityUsd: firstNumber(liquidity ?? {}, ["usd"]),
+      volume24h: firstNumber(volume ?? {}, ["h24"]),
+      buyTxns24h: buys,
+      sellTxns24h: sells,
+      buyPressure: totalTxns > 0 && buys !== void 0 ? buys / totalTxns : void 0,
+      t: firstTimestamp(row, ["ts", "timestamp", "time", "t"]),
+      raw: row
+    };
+  }
+  function openInterestPointsFromPerpSamples(samples) {
+    return samples.filter((sample) => sample.marketType === "perp" && Number.isFinite(sample.value)).map((sample) => ({
+      t: sample.t,
+      value: sample.value,
+      venue: sample.venue,
+      symbol: sample.symbol,
+      marketType: sample.marketType,
+      notionalUsd: sample.notionalUsd,
+      fundingRate: sample.fundingRate,
+      markPrice: sample.markPrice,
+      chainId: sample.chainId
+    }));
+  }
+  var DEFAULT_MARKET_SYMBOL_ROUTES = [
+    {
+      asset: "BTC",
+      quote: "USDT",
+      venues: {
+        binance: "BTCUSDT",
+        bybit: "BTCUSDT",
+        okx: "BTC-USDT-SWAP"
+      }
+    },
+    {
+      asset: "ETH",
+      quote: "USDT",
+      venues: {
+        binance: "ETHUSDT",
+        bybit: "ETHUSDT",
+        okx: "ETH-USDT-SWAP"
+      }
+    },
+    {
+      asset: "SOL",
+      aliases: ["SOL/USDC"],
+      quote: "USDT",
+      venues: {
+        binance: "SOLUSDT",
+        bybit: "SOLUSDT",
+        okx: "SOL-USDT-SWAP",
+        drift: "SOL-PERP"
+      }
+    }
+  ];
+  var SymbolRouter = class _SymbolRouter {
+    constructor(routes = DEFAULT_MARKET_SYMBOL_ROUTES) {
+      this.routesByAsset = /* @__PURE__ */ new Map();
+      this.routesByKey = /* @__PURE__ */ new Map();
+      for (const route of routes) this.upsert(route);
+    }
+    static key(value) {
+      return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+    list() {
+      return [...this.routesByAsset.values()].map((route) => this.cloneRoute(route));
+    }
+    resolve(assetOrSymbol) {
+      return this.routesByKey.get(_SymbolRouter.key(assetOrSymbol)) ?? null;
+    }
+    resolvePerpSymbol(assetOrSymbol, venue) {
+      const route = this.resolve(assetOrSymbol);
+      return route?.venues?.[venue] ?? null;
+    }
+    resolveDexScreenerPair(assetOrSymbol) {
+      return this.resolve(assetOrSymbol)?.spot?.dexscreener ?? null;
+    }
+    upsert(route) {
+      const asset = route.asset.toUpperCase();
+      const next = {
+        ...route,
+        asset,
+        aliases: route.aliases ? [...route.aliases] : void 0,
+        venues: route.venues ? { ...route.venues } : void 0,
+        spot: route.spot?.dexscreener ? { dexscreener: { ...route.spot.dexscreener } } : route.spot
+      };
+      this.routesByAsset.set(asset, next);
+      this.rebuildIndex();
+      return this.cloneRoute(next);
+    }
+    rebuildIndex() {
+      this.routesByKey.clear();
+      for (const route of this.routesByAsset.values()) {
+        for (const key of this.keysForRoute(route)) {
+          this.routesByKey.set(_SymbolRouter.key(key), route);
+        }
+      }
+    }
+    keysForRoute(route) {
+      const keys = [route.asset, ...route.aliases ?? []];
+      if (route.quote) {
+        keys.push(`${route.asset}${route.quote}`, `${route.asset}/${route.quote}`);
+      }
+      for (const symbol of Object.values(route.venues ?? {})) {
+        if (symbol) keys.push(symbol);
+      }
+      const pair = route.spot?.dexscreener;
+      if (pair) keys.push(pair.pairAddress);
+      return keys;
+    }
+    cloneRoute(route) {
+      return {
+        ...route,
+        aliases: route.aliases ? [...route.aliases] : void 0,
+        venues: route.venues ? { ...route.venues } : void 0,
+        spot: route.spot?.dexscreener ? { dexscreener: { ...route.spot.dexscreener } } : route.spot
+      };
+    }
+  };
+  var MarketDataCache = class {
+    constructor(options = {}) {
+      this.openInterest = /* @__PURE__ */ new Map();
+      this.spotPressure = /* @__PURE__ */ new Map();
+      this.router = options.router ?? new SymbolRouter();
+      this.providers = options.providers ?? createDefaultMarketDataProviders();
+      this.ttlMs = options.ttlMs ?? 3e4;
+      this.clock = options.clock ?? (() => Date.now());
+      this.preferredVenues = options.preferredVenues ?? ["binance", "bybit", "okx", "drift"];
+    }
+    async refreshOpenInterest(assetOrSymbol, timeframe = "15m", options = {}) {
+      const venue = this.resolveVenue(assetOrSymbol, options);
+      const route = this.router.resolve(assetOrSymbol);
+      if (!route || !venue) {
+        return this.unsupportedOpenInterest(assetOrSymbol, timeframe, venue ?? "unknown", "no-symbol-route");
+      }
+      const symbol = route.venues?.[venue];
+      if (!symbol) {
+        return this.unsupportedOpenInterest(route.asset, timeframe, venue, "no-venue-symbol");
+      }
+      const provider = this.providerFor(venue);
+      if (!provider || provider.marketType !== "perp") {
+        return this.unsupportedOpenInterest(route.asset, timeframe, venue, "no-perp-provider");
+      }
+      const key = this.oiKey(route.asset, timeframe, venue);
+      const source = this.source(route.asset, venue, "perp", symbol, timeframe);
+      const previous = this.openInterest.get(key);
+      const checkedAt = this.clock();
+      try {
+        const samples = await this.fetchOpenInterest(provider, symbol, timeframe, options.limit, options.range);
+        const entry = {
+          status: "ok",
+          samples,
+          source,
+          checkedAt,
+          updatedAt: checkedAt,
+          staleAt: checkedAt + this.ttlMs
+        };
+        this.openInterest.set(key, entry);
+        return entry;
+      } catch (err) {
+        const entry = {
+          status: previous && previous.samples.length > 0 ? "stale" : "error",
+          samples: previous?.samples ?? [],
+          source,
+          checkedAt,
+          updatedAt: previous?.updatedAt,
+          staleAt: previous?.staleAt,
+          error: err instanceof Error ? err.message : String(err)
+        };
+        this.openInterest.set(key, entry);
+        return entry;
+      }
+    }
+    setOpenInterestSamples(assetOrSymbol, timeframe, venue, samples) {
+      const route = this.router.resolve(assetOrSymbol);
+      const asset = route?.asset ?? assetOrSymbol.toUpperCase();
+      const symbol = route?.venues?.[venue] ?? samples[0]?.symbol ?? asset;
+      const checkedAt = this.clock();
+      const entry = {
+        status: "ok",
+        samples: [...samples],
+        source: this.source(asset, venue, "perp", symbol, timeframe),
+        checkedAt,
+        updatedAt: checkedAt,
+        staleAt: checkedAt + this.ttlMs
+      };
+      this.openInterest.set(this.oiKey(asset, timeframe, venue), entry);
+      return entry;
+    }
+    openInterestEntry(assetOrSymbol, timeframe = "15m", options = {}) {
+      const entry = this.openInterestStatusEntry(assetOrSymbol, timeframe, options);
+      return entry && entry.samples.length > 0 ? entry : null;
+    }
+    openInterestStatusEntry(assetOrSymbol, timeframe = "15m", options = {}) {
+      const route = this.router.resolve(assetOrSymbol);
+      if (!route) return null;
+      for (const venue of this.readVenues(options)) {
+        const entry = this.openInterest.get(this.oiKey(route.asset, timeframe, venue));
+        if (entry) return this.withCurrentStatus(entry);
+      }
+      return null;
+    }
+    openInterestPoints(assetOrSymbol, timeframe = "15m", options = {}) {
+      const entry = this.openInterestEntry(assetOrSymbol, timeframe, options);
+      if (!entry || entry.status !== "ok" && entry.status !== "stale") return [];
+      return openInterestPointsFromPerpSamples(entry.samples);
+    }
+    async refreshSpotPressure(assetOrSymbol) {
+      const route = this.router.resolve(assetOrSymbol);
+      const pair = route?.spot?.dexscreener;
+      if (!route || !pair) {
+        return this.unsupportedSpotPressure(assetOrSymbol, "no-dexscreener-route");
+      }
+      const provider = this.providerFor("dexscreener");
+      if (!(provider instanceof DexScreenerSpotMarketData)) {
+        return this.unsupportedSpotPressure(route.asset, "no-dexscreener-provider");
+      }
+      const key = this.spotKey(route.asset);
+      const previous = this.spotPressure.get(key);
+      const source = this.source(route.asset, "dexscreener", "spot", pair.pairAddress, void 0, pair.chainId);
+      const checkedAt = this.clock();
+      try {
+        const sample = await provider.pair(pair.chainId, pair.pairAddress);
+        if (!sample) throw new Error("no-spot-data");
+        const entry = {
+          status: "ok",
+          sample,
+          source,
+          checkedAt,
+          updatedAt: checkedAt,
+          staleAt: checkedAt + this.ttlMs
+        };
+        this.spotPressure.set(key, entry);
+        return entry;
+      } catch (err) {
+        const entry = {
+          status: previous?.sample ? "stale" : "error",
+          sample: previous?.sample ?? null,
+          source,
+          checkedAt,
+          updatedAt: previous?.updatedAt,
+          staleAt: previous?.staleAt,
+          error: err instanceof Error ? err.message : String(err)
+        };
+        this.spotPressure.set(key, entry);
+        return entry;
+      }
+    }
+    spotPressureEntry(assetOrSymbol) {
+      const route = this.router.resolve(assetOrSymbol);
+      if (!route) return null;
+      const entry = this.spotPressure.get(this.spotKey(route.asset));
+      return entry ? this.withCurrentSpotStatus(entry) : null;
+    }
+    spotPressureSample(assetOrSymbol) {
+      const entry = this.spotPressureEntry(assetOrSymbol);
+      return entry && (entry.status === "ok" || entry.status === "stale") ? entry.sample : null;
+    }
+    async fetchOpenInterest(provider, symbol, timeframe, limit = 30, range = {}) {
+      if (provider instanceof BinancePerpMarketData) {
+        return provider.openInterestHistory(symbol, timeframe, limit, range);
+      }
+      if (provider instanceof BybitPerpMarketData) {
+        return provider.openInterestHistory(symbol, timeframe, limit, range);
+      }
+      if (provider instanceof OkxPerpMarketData) {
+        return provider.openInterest(symbol);
+      }
+      if (provider instanceof DriftPerpMarketData) {
+        const target = symbol.toUpperCase();
+        return (await provider.marketStats()).filter((sample) => sample.symbol.toUpperCase() === target);
+      }
+      throw new Error(`Unsupported Open Interest provider: ${provider.venue}`);
+    }
+    resolveVenue(assetOrSymbol, options) {
+      const route = this.router.resolve(assetOrSymbol);
+      if (!route) return options.venue ?? options.venues?.[0] ?? null;
+      for (const venue of this.readVenues(options)) {
+        if (route.venues?.[venue]) return venue;
+      }
+      return null;
+    }
+    readVenues(options) {
+      if (options.venue) return [options.venue];
+      if (options.venues && options.venues.length > 0) return options.venues;
+      return this.preferredVenues;
+    }
+    providerFor(venue) {
+      return this.providers.find((provider) => provider.venue === venue) ?? null;
+    }
+    unsupportedOpenInterest(assetOrSymbol, timeframe, venue, reason) {
+      return {
+        status: "unsupported",
+        samples: [],
+        source: this.source(assetOrSymbol.toUpperCase(), venue, "perp", assetOrSymbol.toUpperCase(), timeframe),
+        checkedAt: this.clock(),
+        error: reason
+      };
+    }
+    unsupportedSpotPressure(assetOrSymbol, reason) {
+      return {
+        status: "unsupported",
+        sample: null,
+        source: this.source(assetOrSymbol.toUpperCase(), "dexscreener", "spot", assetOrSymbol.toUpperCase()),
+        checkedAt: this.clock(),
+        error: reason
+      };
+    }
+    withCurrentStatus(entry) {
+      if (entry.status === "ok" && entry.staleAt !== void 0 && this.clock() > entry.staleAt) {
+        return { ...entry, status: "stale" };
+      }
+      return entry;
+    }
+    withCurrentSpotStatus(entry) {
+      if (entry.status === "ok" && entry.staleAt !== void 0 && this.clock() > entry.staleAt) {
+        return { ...entry, status: "stale" };
+      }
+      return entry;
+    }
+    source(asset, venue, marketType, symbol, timeframe, chainId) {
+      return { asset, venue, marketType, symbol, timeframe, chainId };
+    }
+    oiKey(asset, timeframe, venue) {
+      return `${asset.toUpperCase()}:${String(timeframe)}:${venue}`;
+    }
+    spotKey(asset) {
+      return `${asset.toUpperCase()}:dexscreener`;
+    }
+  };
+  function withMarketDataOpenInterest(host, cache, assetOrSymbol, options = {}) {
+    const fallback = host.openInterest?.bind(host);
+    const bridged = Object.assign(Object.create(Object.getPrototypeOf(host)), host);
+    bridged.openInterest = (tf) => {
+      const points = cache.openInterestPoints(assetOrSymbol, tf ?? "15m", options);
+      if (points.length > 0) return points;
+      return fallback ? fallback(tf) : null;
+    };
+    return bridged;
+  }
+  var defaultMarketDataScheduler = () => {
+    const root = globalThis;
+    if (typeof root.setInterval !== "function" || typeof root.clearInterval !== "function") {
+      throw new Error("No interval scheduler available for ChartRunner market data poller.");
+    }
+    return {
+      setInterval: (cb, intervalMs) => root.setInterval(() => {
+        void cb();
+      }, intervalMs),
+      clearInterval: (handle) => root.clearInterval(handle)
+    };
+  };
+  var statusRank = (status) => {
+    switch (status) {
+      case "error":
+        return 4;
+      case "stale":
+        return 3;
+      case "unsupported":
+        return 2;
+      case "ok":
+        return 1;
+      case "idle":
+        return 0;
+    }
+  };
+  var toUiSeverity = (status) => status;
+  var aggregateMarketDataStatus = (feeds) => {
+    if (feeds.length === 0) return "idle";
+    let best = "idle";
+    for (const feed of feeds) {
+      const severity = toUiSeverity(feed.status);
+      if (statusRank(severity) > statusRank(best)) best = severity;
+    }
+    return best;
+  };
+  var marketDataMessage = (status, source, error) => {
+    const base = `${source.asset} ${source.venue} ${source.marketType}`;
+    if (status === "ok") return `${base} ok`;
+    if (status === "stale") return `${base} stale${error ? `: ${error}` : ""}`;
+    if (status === "error") return `${base} error${error ? `: ${error}` : ""}`;
+    return `${base} unsupported${error ? `: ${error}` : ""}`;
+  };
+  var openInterestStatusFromEntry = (feed, entry) => ({
+    id: `openInterest:${feed.asset}:${entry.source.venue}:${String(entry.source.timeframe ?? feed.timeframe ?? "15m")}`,
+    kind: "openInterest",
+    asset: entry.source.asset,
+    venue: entry.source.venue,
+    marketType: entry.source.marketType,
+    symbol: entry.source.symbol,
+    timeframe: entry.source.timeframe ? String(entry.source.timeframe) : void 0,
+    status: entry.status,
+    sampleCount: entry.samples.length,
+    checkedAt: entry.checkedAt,
+    updatedAt: entry.updatedAt,
+    staleAt: entry.staleAt,
+    error: entry.error,
+    message: marketDataMessage(entry.status, entry.source, entry.error)
+  });
+  var spotPressureStatusFromEntry = (feed, entry) => ({
+    id: `spotPressure:${feed.asset}:${entry.source.venue}`,
+    kind: "spotPressure",
+    asset: entry.source.asset,
+    venue: entry.source.venue,
+    marketType: entry.source.marketType,
+    symbol: entry.source.symbol,
+    timeframe: void 0,
+    status: entry.status,
+    sampleCount: entry.sample ? 1 : 0,
+    checkedAt: entry.checkedAt,
+    updatedAt: entry.updatedAt,
+    staleAt: entry.staleAt,
+    error: entry.error,
+    message: marketDataMessage(entry.status, entry.source, entry.error)
+  });
+  var noCacheOpenInterestStatus = (feed, checkedAt) => {
+    const venue = feed.venue ?? "unknown";
+    const source = {
+      asset: feed.asset.toUpperCase(),
+      venue,
+      marketType: "perp",
+      symbol: feed.asset.toUpperCase(),
+      timeframe: feed.timeframe ?? "15m"
+    };
+    return {
+      id: `openInterest:${feed.asset}:${venue}:${String(source.timeframe)}`,
+      kind: "openInterest",
+      asset: source.asset,
+      venue,
+      marketType: "perp",
+      symbol: source.symbol,
+      timeframe: String(source.timeframe),
+      status: "unsupported",
+      sampleCount: 0,
+      checkedAt,
+      error: "no-cache-entry",
+      message: marketDataMessage("unsupported", source, "no-cache-entry")
+    };
+  };
+  var noCacheSpotStatus = (feed, checkedAt) => {
+    const source = {
+      asset: feed.asset.toUpperCase(),
+      venue: "dexscreener",
+      marketType: "spot",
+      symbol: feed.asset.toUpperCase()
+    };
+    return {
+      id: `spotPressure:${feed.asset}:dexscreener`,
+      kind: "spotPressure",
+      asset: source.asset,
+      venue: source.venue,
+      marketType: "spot",
+      symbol: source.symbol,
+      status: "unsupported",
+      sampleCount: 0,
+      checkedAt,
+      error: "no-cache-entry",
+      message: marketDataMessage("unsupported", source, "no-cache-entry")
+    };
+  };
+  function marketDataReplayRecordFromOpenInterest(entry) {
+    const first = entry.samples[0];
+    const last = entry.samples[entry.samples.length - 1];
+    return {
+      schema: "chartrunner.market-data-replay.v1",
+      kind: "openInterest",
+      source: entry.source,
+      status: entry.status,
+      checkedAt: entry.checkedAt,
+      updatedAt: entry.updatedAt,
+      staleAt: entry.staleAt,
+      sampleCount: entry.samples.length,
+      firstSampleT: first?.t,
+      lastSampleT: last?.t,
+      lastValue: last?.value,
+      error: entry.error
+    };
+  }
+  function marketDataReplayRecordFromSpotPressure(entry) {
+    return {
+      schema: "chartrunner.market-data-replay.v1",
+      kind: "spotPressure",
+      source: entry.source,
+      status: entry.status,
+      checkedAt: entry.checkedAt,
+      updatedAt: entry.updatedAt,
+      staleAt: entry.staleAt,
+      sampleCount: entry.sample ? 1 : 0,
+      firstSampleT: entry.sample?.t,
+      lastSampleT: entry.sample?.t,
+      lastValue: entry.sample?.price ?? entry.sample?.liquidityUsd,
+      error: entry.error
+    };
+  }
+  var MarketDataPoller = class {
+    constructor(options) {
+      this.timer = null;
+      this.last = null;
+      this.cache = options.cache;
+      this.feeds = [...options.feeds];
+      this.intervalMs = options.intervalMs ?? 3e4;
+      this.clock = options.clock ?? (() => Date.now());
+      this.scheduler = options.scheduler ?? defaultMarketDataScheduler();
+      this.onSnapshot = options.onSnapshot;
+      this.onReplayRecord = options.onReplayRecord;
+    }
+    isRunning() {
+      return this.timer !== null;
+    }
+    start() {
+      if (this.timer !== null) return;
+      this.timer = this.scheduler.setInterval(async () => {
+        await this.tick("interval");
+      }, this.intervalMs);
+    }
+    stop() {
+      if (this.timer === null) return;
+      this.scheduler.clearInterval(this.timer);
+      this.timer = null;
+    }
+    async tick(reason = "manual") {
+      const statuses = [];
+      const replayRecords = [];
+      for (const feed of this.feeds) {
+        if (feed.kind === "openInterest") {
+          const entry = await this.cache.refreshOpenInterest(feed.asset, feed.timeframe ?? "15m", {
+            venue: feed.venue,
+            limit: feed.limit,
+            range: feed.range
+          });
+          statuses.push(openInterestStatusFromEntry(feed, entry));
+          replayRecords.push(marketDataReplayRecordFromOpenInterest(entry));
+        } else {
+          const entry = await this.cache.refreshSpotPressure(feed.asset);
+          statuses.push(spotPressureStatusFromEntry(feed, entry));
+          replayRecords.push(marketDataReplayRecordFromSpotPressure(entry));
+        }
+      }
+      return this.publishSnapshot(reason, statuses, replayRecords);
+    }
+    snapshot(reason = "snapshot") {
+      const checkedAt = this.clock();
+      const statuses = [];
+      const replayRecords = [];
+      for (const feed of this.feeds) {
+        if (feed.kind === "openInterest") {
+          const entry = this.cache.openInterestStatusEntry(feed.asset, feed.timeframe ?? "15m", { venue: feed.venue });
+          if (entry) {
+            statuses.push(openInterestStatusFromEntry(feed, entry));
+            replayRecords.push(marketDataReplayRecordFromOpenInterest(entry));
+          } else {
+            statuses.push(noCacheOpenInterestStatus(feed, checkedAt));
+          }
+        } else {
+          const entry = this.cache.spotPressureEntry(feed.asset);
+          if (entry) {
+            statuses.push(spotPressureStatusFromEntry(feed, entry));
+            replayRecords.push(marketDataReplayRecordFromSpotPressure(entry));
+          } else {
+            statuses.push(noCacheSpotStatus(feed, checkedAt));
+          }
+        }
+      }
+      return this.publishSnapshot(reason, statuses, replayRecords);
+    }
+    lastSnapshot() {
+      return this.last;
+    }
+    publishSnapshot(reason, feeds, replayRecords) {
+      const snapshot = {
+        status: aggregateMarketDataStatus(feeds),
+        checkedAt: this.clock(),
+        reason,
+        feeds,
+        replayRecords
+      };
+      this.last = snapshot;
+      for (const record of replayRecords) this.onReplayRecord?.(record);
+      this.onSnapshot?.(snapshot);
+      return snapshot;
+    }
+  };
+  function marketDataUiState(snapshot) {
+    const feeds = snapshot.feeds.map((feed) => {
+      const severity = toUiSeverity(feed.status);
+      const tone = severity === "ok" ? "good" : severity === "error" ? "bad" : severity === "stale" ? "warn" : "neutral";
+      return { ...feed, badge: severity.toUpperCase(), tone };
+    });
+    const label = snapshot.status.toUpperCase();
+    const total = feeds.length;
+    const ok = feeds.filter((feed) => feed.status === "ok").length;
+    const stale = feeds.filter((feed) => feed.status === "stale").length;
+    const errors = feeds.filter((feed) => feed.status === "error").length;
+    const unsupported = feeds.filter((feed) => feed.status === "unsupported").length;
+    const summary = total === 0 ? "Market data idle" : `Market data ${snapshot.status}: ${ok}/${total} ok, ${stale} stale, ${errors} error, ${unsupported} unsupported`;
+    return {
+      severity: snapshot.status,
+      label,
+      summary,
+      checkedAt: snapshot.checkedAt,
+      feeds
+    };
+  }
+  function createDefaultMarketDataProviders(options = {}) {
+    return [
+      new BinancePerpMarketData(options),
+      new BybitPerpMarketData(options),
+      new OkxPerpMarketData(options),
+      new DriftPerpMarketData(options),
+      new DexScreenerSpotMarketData(options)
+    ];
+  }
 
   // src/AbilityRegistry.ts
   var AbilityRegistry = class _AbilityRegistry {
@@ -16312,6 +17501,212 @@ var ChartRunnerCore = (() => {
     }
     async checkGate(_ability, _ctx) {
       return { approved: true, reason: "sandbox: gate bypassed" };
+    }
+  };
+  var DEFAULT_PRODUCTION_RISK_POLICY = {
+    riskPerTradePct: 0.02,
+    oiConfirmationMultiplier: 1.1,
+    kellyMultCap: 2,
+    minNotionalUsd: 11,
+    defaultMaxLeverage: 3
+  };
+  var isRecord2 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+  var toNumber2 = (v) => {
+    if (typeof v === "number") return Number.isFinite(v) ? v : void 0;
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : void 0;
+    }
+    return void 0;
+  };
+  var firstNumber2 = (record, keys) => {
+    for (const key of keys) {
+      const n = toNumber2(record[key]);
+      if (n !== void 0) return n;
+    }
+    return void 0;
+  };
+  var firstBoolean = (record, keys) => {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "boolean") return value;
+    }
+    return false;
+  };
+  var firstString2 = (record, keys) => {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "string" && value.length > 0) return value;
+    }
+    return void 0;
+  };
+  var positiveOr = (value, fallback) => value !== void 0 && value > 0 ? value : fallback;
+  var roundUsd = (value) => Math.round(value * 1e6) / 1e6;
+  var ProductionRiskManager = class {
+    constructor(policy = {}) {
+      this.mode = "production";
+      this.policy = { ...DEFAULT_PRODUCTION_RISK_POLICY, ...policy };
+    }
+    sizeFor(ability, ctx) {
+      return this.evaluateSize(ability, ctx).sizeUsd;
+    }
+    evaluateSize(_ability, ctx) {
+      const params = ctx.params ?? {};
+      const riskState = this.riskState(params);
+      const signal = this.signal(params);
+      const equity = firstNumber2(params, ["equity"]) ?? firstNumber2(riskState, ["equity"]);
+      const effectiveSl = firstNumber2(params, ["effectiveSl", "effective_sl", "slPct", "sl_pct"]);
+      if (equity === void 0 || equity <= 0) {
+        return this.emptySizing("missing-equity", equity ?? 0, effectiveSl ?? 0);
+      }
+      if (effectiveSl === void 0 || effectiveSl <= 0) {
+        return this.emptySizing("missing-effective-sl", equity, effectiveSl ?? 0);
+      }
+      let kellyMultiplier = firstNumber2(riskState, ["hlKellyMultiplier", "hl_kelly_multiplier"]) ?? 1;
+      const signalBoost = firstNumber2(signal, ["signalBoost", "signal_boost"]) ?? 0;
+      if (signalBoost > 0) kellyMultiplier *= 1 + signalBoost;
+      if (firstBoolean(signal, ["oiConfirmed", "oi_confirmed"])) {
+        kellyMultiplier *= this.policy.oiConfirmationMultiplier;
+      } else if (firstBoolean(signal, ["oiDivergent", "oi_divergent"])) {
+        kellyMultiplier *= 0.8;
+      }
+      if (firstBoolean(signal, ["cvdDivergent", "cvd_divergent"])) {
+        kellyMultiplier *= 0.75;
+      }
+      if (kellyMultiplier > this.policy.kellyMultCap) {
+        kellyMultiplier = this.policy.kellyMultCap;
+      }
+      const ivMultiplier = firstNumber2(riskState, ["arbIvMult", "arb_iv_mult"]) ?? 1;
+      const riskUsd = equity * this.policy.riskPerTradePct * kellyMultiplier;
+      const rawSizeUsd = riskUsd / effectiveSl * ivMultiplier;
+      const maxNotionalUsd = equity * this.maxLeverage(signal);
+      const cappedSizeUsd = Math.min(rawSizeUsd, maxNotionalUsd);
+      const sizeUsd = cappedSizeUsd < this.policy.minNotionalUsd ? 0 : roundUsd(cappedSizeUsd);
+      const reason = sizeUsd <= 0 ? "size-below-minimum" : "ok";
+      return {
+        approved: sizeUsd > 0,
+        reason,
+        sizeUsd,
+        equity,
+        effectiveSl,
+        kellyMultiplier: roundUsd(kellyMultiplier),
+        ivMultiplier,
+        riskUsd: roundUsd(riskUsd),
+        maxNotionalUsd: roundUsd(maxNotionalUsd),
+        minNotionalUsd: this.policy.minNotionalUsd
+      };
+    }
+    async checkGate(ability, ctx) {
+      const mode = ctx.state?.riskMode;
+      if (mode === "live" || mode === "signed-testnet") {
+        return { approved: false, reason: "server-risk-gate-required" };
+      }
+      const sizing = this.evaluateSize(ability, ctx);
+      if (!sizing.approved) {
+        return { approved: false, reason: sizing.reason };
+      }
+      return {
+        approved: true,
+        reason: `${mode ?? "paper"}: approved size=${sizing.sizeUsd.toFixed(2)} risk=${sizing.riskUsd.toFixed(2)}`
+      };
+    }
+    riskState(params) {
+      const camel = params.riskState;
+      if (isRecord2(camel)) return camel;
+      const snake = params.risk_state;
+      if (isRecord2(snake)) return snake;
+      return params;
+    }
+    signal(params) {
+      const signal = params.signal;
+      return isRecord2(signal) ? signal : params;
+    }
+    maxLeverage(signal) {
+      const asset = isRecord2(signal.asset) ? signal.asset : {};
+      return positiveOr(
+        firstNumber2(signal, ["maxLeverage", "max_leverage"]) ?? firstNumber2(asset, ["maxLeverage", "max_leverage"]),
+        this.policy.defaultMaxLeverage
+      );
+    }
+    emptySizing(reason, equity, effectiveSl) {
+      return {
+        approved: false,
+        reason,
+        sizeUsd: 0,
+        equity,
+        effectiveSl,
+        kellyMultiplier: 0,
+        ivMultiplier: 0,
+        riskUsd: 0,
+        maxNotionalUsd: 0,
+        minNotionalUsd: this.policy.minNotionalUsd
+      };
+    }
+  };
+  var ServerRiskManager = class extends ProductionRiskManager {
+    constructor(options = {}) {
+      super(options.policy);
+      this.gateClient = options.gateClient;
+      this.timeoutMs = options.timeoutMs ?? 1e4;
+    }
+    async checkGate(ability, ctx) {
+      const mode = ctx.state?.riskMode;
+      if (mode !== "live" && mode !== "signed-testnet") {
+        return super.checkGate(ability, ctx);
+      }
+      if (!this.gateClient) {
+        return { approved: false, reason: "server-risk-gate-required" };
+      }
+      const sizing = this.evaluateSize(ability, ctx);
+      if (!sizing.approved) {
+        return { approved: false, reason: sizing.reason };
+      }
+      try {
+        return await this.withTimeout(this.gateClient.check(this.requestFor(ability, ctx, sizing)));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message === "server-risk-gate-timeout") {
+          return { approved: false, reason: message };
+        }
+        return { approved: false, reason: `server-risk-gate-error: ${message.slice(0, 80)}` };
+      }
+    }
+    requestFor(ability, ctx, sizing) {
+      const params = ctx.params ?? {};
+      const rawSignal = isRecord2(params.signal) ? params.signal : void 0;
+      const sizingSignal = this.signal(params);
+      const side = firstString2(params, ["side"]) ?? firstString2(sizingSignal, ["side", "direction"]);
+      return {
+        schema: "chartrunner.risk-gate-request.v1",
+        abilityId: ability.id,
+        asset: ctx.state?.asset ?? firstString2(sizingSignal, ["symbol", "coin", "asset"]) ?? "",
+        timeframe: String(ctx.state?.timeframe ?? ""),
+        riskMode: ctx.state?.riskMode ?? "paper",
+        side,
+        runMs: ctx.state?.runMs,
+        equity: sizing.equity,
+        effectiveSl: sizing.effectiveSl,
+        sizeUsd: sizing.sizeUsd,
+        riskUsd: sizing.riskUsd,
+        maxNotionalUsd: sizing.maxNotionalUsd,
+        kellyMultiplier: sizing.kellyMultiplier,
+        ivMultiplier: sizing.ivMultiplier,
+        signal: rawSignal ? { ...rawSignal } : void 0
+      };
+    }
+    async withTimeout(promise) {
+      if (!(this.timeoutMs > 0)) return promise;
+      let timer;
+      try {
+        return await Promise.race([
+          promise,
+          new Promise((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error("server-risk-gate-timeout")), this.timeoutMs);
+          })
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
     }
   };
 
@@ -16795,11 +18190,13 @@ window.addEventListener('keydown', e=>{
     // instead of exiting laser entirely. Only an already-idle laser is toggled
     // off by ESC — so two-anchor placement has a free "undo" without losing aim.
     if(game.laserAiming){
-      if(game.laserPhase === 'anchor1' || game.laserPhase === 'anchor2'){
+      if(game.laserPhase === 'anchor1' || game.laserPhase === 'anchor2' || game.laserPhase === 'anchor3'){
         game.laserPhase = 'idle';
         game.laserTool = null;
         game.laserAnchor1 = null;
+        game.laserAnchor2 = null;
         game.laserAnchor2Preview = null;
+        game.laserAnchor3Preview = null;
         toast('Placement cancelled');
       } else {
         game.laserAiming = false;
@@ -17870,7 +19267,9 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
     game.laserPhase = 'idle';
     game.laserTool = null;
     game.laserAnchor1 = null;
+    game.laserAnchor2 = null;
     game.laserAnchor2Preview = null;
+    game.laserAnchor3Preview = null;
   };
   // v0.8k#24bb — Filter through wb.equippedTools, then group by category
   // and render TV-style: rail (left) + categorized list (right).
@@ -17879,15 +19278,19 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
     game.laserPhase  = 'anchor1';
     game.laserTool   = tool;
     game.laserAnchor1 = null;
+    game.laserAnchor2 = null;
     game.laserAnchor2Preview = null;
+    game.laserAnchor3Preview = null;
     toast(labelFor + ' · click two candles to place');
   };
   const armThreeAnchor = (tool, labelFor) => {
     game.laserPhase  = 'anchor1';
     game.laserTool   = tool;
     game.laserAnchor1 = null;
+    game.laserAnchor2 = null;
     game.laserAnchor2Preview = null;
-    toast(labelFor + ' · click two candles to place');
+    game.laserAnchor3Preview = null;
+    toast(labelFor + ' · click three candles to place');
   };
   // Single-click tool dispatcher. Returns the click handler that commits the
   // tool at (sx, sy, wxAt, priceAt). Two-anchor tools delegate to armTwoAnchor.
@@ -17902,6 +19305,7 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
       return () => commitLaserSingleClick(id, sx, sy, wxAt, priceAt, originUp, _exitLaserAfterCommit);
     }
     // 2-anchor / 3-anchor tools arm the multi-step placement flow.
+    if(def.cls === '3-anchor') return () => armThreeAnchor(id, def.label);
     return () => armTwoAnchor(id, def.label);
   };
   // Build per-category tool lists, intersected with the equipped set.
@@ -18449,7 +19853,9 @@ const ABILITIES = [
       game.laserTool = null;
       game.laserPalette = null;
       game.laserAnchor1 = null;
+      game.laserAnchor2 = null;
       game.laserAnchor2Preview = null;
+      game.laserAnchor3Preview = null;
       try { closeLaserSpawnMenu(); } catch(_){}
       // v0.8k#24k — Restore the OS cursor on exit (cursor:none was set during aim).
       try { cv.style.cursor = ''; } catch(_){}
@@ -18461,7 +19867,9 @@ const ABILITIES = [
     game.laserTool = null;
     game.laserPalette = 'tools';   // v0.9.19 — distinguishes from green primitives laser on slot 3
     game.laserAnchor1 = null;
+    game.laserAnchor2 = null;
     game.laserAnchor2Preview = null;
+    game.laserAnchor3Preview = null;
     const dirX = (player.facing === -1) ? -1 : 1;
     game.laserDot.sx = sX(player.wx) + dirX * 280;
     game.laserDot.sy = priceToY(player.py);
@@ -18485,7 +19893,9 @@ const ABILITIES = [
       game.laserTool = null;
       game.laserPalette = null;
       game.laserAnchor1 = null;
+      game.laserAnchor2 = null;
       game.laserAnchor2Preview = null;
+      game.laserAnchor3Preview = null;
       try { closeLaserSpawnMenu(); } catch(_){}
       try { cv.style.cursor = ''; } catch(_){}
       toast('Primitives laser off');
@@ -18497,7 +19907,9 @@ const ABILITIES = [
     game.laserTool = null;
     game.laserPalette = 'primitives';
     game.laserAnchor1 = null;
+    game.laserAnchor2 = null;
     game.laserAnchor2Preview = null;
+    game.laserAnchor3Preview = null;
     const dirX = (player.facing === -1) ? -1 : 1;
     game.laserDot.sx = sX(player.wx) + dirX * 280;
     game.laserDot.sy = priceToY(player.py);
@@ -20989,6 +22401,7 @@ const game = {
   destroyedVRVPBuckets: new Set(),// bucket idx k for the VR Vol Profile
   destroyedStratSignals: new Set(),// v0.8k#24p — strategy marker candle indices i
   fgDestroyed: false,             // Fear/Greed gauge — single-shot kill
+  atrDestroyed: false,            // ATR badge — single-shot kill
   // v0.8N#4 — Background NPCs walking on candle tops (cosmetic only)
   chartNpcs: [],
   // v0.8N#8 — Cursor-control mode (toggled by phone keypad-7). When true,
@@ -21036,11 +22449,14 @@ const game = {
   // HLine / VWAP stay single-click (they're one-price primitives). Phase
   // 'idle' = menu-driven (original behavior), 'anchor1' = waiting for first
   // anchor, 'anchor2' = waiting for second anchor with a live ghost preview
-  // driven by the mouse-move handler.
-  laserPhase: 'idle',           // 'idle' | 'anchor1' | 'anchor2'
+  // driven by the mouse-move handler. Three-anchor tools add 'anchor3' for
+  // the offset/width click.
+  laserPhase: 'idle',           // 'idle' | 'anchor1' | 'anchor2' | 'anchor3'
   laserTool: null,              // 'ladder' | 'fibLadder' | 'bracket' | 'oco' | null
   laserAnchor1: null,           // {wx, price, kind, sx, sy} once anchor1 is placed
+  laserAnchor2: null,           // {wx, price, kind, sx, sy} once anchor2 is placed for 3-anchor tools
   laserAnchor2Preview: null,    // {wx, price, kind, sx, sy} — live mouse snap during 'anchor2'
+  laserAnchor3Preview: null,    // {wx, price, kind, sx, sy} — live mouse snap during 'anchor3'
   // v0.8k#22 — targetMarkers replaced by vwapAnchors. Kept as empty list so the
   // reset block + any legacy reference still compiles.
   targetMarkers: [],
@@ -21891,6 +23307,23 @@ function updateWeapons(dt){
       }
     }
 
+    if(b.life > 0 && !game.atrDestroyed
+       && typeof INDICATOR_STATE !== 'undefined'
+       && INDICATOR_STATE.active && INDICATOR_STATE.active.has('atr')
+       && game._atrBadgeRect){
+      const r = game._atrBadgeRect;
+      if(b.sx >= r.x - HIT_PX && b.sx <= r.x + r.w + HIT_PX
+         && b.sy >= r.y - HIT_PX && b.sy <= r.y + r.h + HIT_PX){
+        const key = 'atr';
+        if(!b.hits.has(key)){
+          b.hits.add(key);
+          game.atrDestroyed = true;
+          consume('ATR', INDICATOR_BY_ID.atr ? INDICATOR_BY_ID.atr.color : '#ffa94d');
+          try { _autoDisableIfFullyDestroyed('atr'); } catch(_){}
+        }
+      }
+    }
+
     // 11) v0.8k#24p — Strategy markers (visualized Pine Script). Geometry was
     // stashed by drawStrategy() this frame in game._strategySigGeom. Each entry
     // is { i, x, y }. A hit removes that marker by candle index — the polyline
@@ -22575,7 +24008,9 @@ function restart(){
   game.laserPhase = 'idle';
   game.laserTool = null;
   game.laserAnchor1 = null;
+  game.laserAnchor2 = null;
   game.laserAnchor2Preview = null;
+  game.laserAnchor3Preview = null;
   try { closeLaserSpawnMenu(); } catch(_){}
   // v0.8k#24k — Restore the OS cursor in case restart hits during laser aim.
   try { cv.style.cursor = ''; } catch(_){}
@@ -24693,7 +26128,7 @@ function drawIndicators(){
   // Overlays first (behind badges). Respect a deterministic order so the
   // stacking is stable regardless of toggle order.
   const active = new Set(INDICATOR_STATE.active);
-  const orderedOverlays = ['vol','vrvp','ichi','sma','ema','reflevels'].filter(id=>active.has(id));
+  const orderedOverlays = ['vol','vrvp','ichi','bb','sma','ema','reflevels'].filter(id=>active.has(id));
   for(const id of orderedOverlays){
     const meta = INDICATOR_BY_ID[id]; if(!meta) continue;
     try {
@@ -24702,6 +26137,7 @@ function drawIndicators(){
       else if(id === 'vol')  _drawVolumeBars(startIdx, endIdx, meta);
       else if(id === 'ichi') _drawIchimoku(startIdx, endIdx, meta);
       else if(id === 'vrvp') _drawVRVP(startIdx, endIdx, meta);
+      else if(id === 'bb') _drawBollingerBands(startIdx, endIdx, meta);
       else if(id === 'reflevels') _drawRefLevels(startIdx, endIdx, meta);
     } catch(e){ /* never let one bad frame brick render */ }
   }
@@ -24936,9 +26372,11 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
   // zone itself (background strip + 30/70 guide lines + legend) also goes
   // away. Filter excludes both inactive and destroyed entries so the panel
   // only renders if at least one live line will draw inside it.
-  const panelIds = ['rsi','srsi','obv'].filter(id =>
-    active.has(id) && !(game.destroyedIndLines && game.destroyedIndLines.has(id))
-  );
+  const panelIds = ['rsi','srsi','obv','macd'].filter(id => {
+    if(!active.has(id)) return false;
+    if(id === 'macd') return !_isIndicatorFullyDestroyed('macd');
+    return !(game.destroyedIndLines && game.destroyedIndLines.has(id));
+  });
   if(panelIds.length){
     const volActive = active.has('vol');
     const volPct    = Math.max(5, Math.min(60, +_getIndParam('vol','heightPct') || 15));
@@ -25054,6 +26492,60 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
       _pushIndicatorPoly('obv', ridePts);
     }
 
+    if(active.has('macd')){
+      const fast = Math.max(2, (_getIndParam('macd','fast')|0) || 12);
+      const slow = Math.max(fast + 1, (_getIndParam('macd','slow')|0) || 26);
+      const sigP = Math.max(2, (_getIndParam('macd','signal')|0) || 9);
+      const series = _sdkMACD({ fast, slow, signal:sigP });
+      let peak = 0;
+      for(let i=startIdx; i<=endIdx; i++){
+        const p = series[i]; if(!p) continue;
+        if(typeof p.macd === 'number') peak = Math.max(peak, Math.abs(p.macd));
+        if(typeof p.signal === 'number') peak = Math.max(peak, Math.abs(p.signal));
+        if(typeof p.hist === 'number') peak = Math.max(peak, Math.abs(p.hist));
+      }
+      peak = Math.max(peak, 1e-9);
+      const midY = panelBottomY - panelH * 0.5;
+      const scaleY = (panelH * 0.42) / peak;
+      ctx.strokeStyle = 'rgba(180,200,230,0.18)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(W, midY); ctx.stroke();
+      if(!game.destroyedIndLines.has('macd')){
+        for(let i=startIdx; i<=endIdx; i++){
+          const p = series[i]; if(!p || typeof p.hist !== 'number') continue;
+          const wx = i*STEP + STEP/2;
+          const x = sX(wx);
+          const h = p.hist * scaleY;
+          const barW = Math.max(2, CANDLE_W * camera.zoomX * 0.6);
+          ctx.fillStyle = p.hist >= 0 ? 'rgba(61,220,151,0.50)' : 'rgba(255,91,127,0.50)';
+          ctx.fillRect(x - barW/2, midY - h, barW, h || (p.hist >= 0 ? -1 : 1));
+        }
+      }
+      const drawMacdLine = (key, id, color)=>{
+        if(game.destroyedIndLines.has(id)) return;
+        const ridePts = [];
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.95;
+        ctx.beginPath();
+        let first = true;
+        for(let i=startIdx; i<=endIdx; i++){
+          const p = series[i];
+          const v = p && p[key];
+          if(typeof v !== 'number') continue;
+          const wx = i*STEP + STEP/2;
+          const x = sX(wx);
+          const y = midY - v * scaleY;
+          ridePts.push({ wx, py: yToPrice(y) });
+          if(first){ ctx.moveTo(x,y); first = false; } else ctx.lineTo(x,y);
+        }
+        ctx.stroke(); ctx.globalAlpha = 1;
+        _pushIndicatorPoly(id, ridePts);
+      };
+      drawMacdLine('macd', 'macd', INDICATOR_BY_ID.macd.color);
+      drawMacdLine('signal', 'macd-signal', '#ffd166');
+    }
+
     // Legend — indicator + current value, stacked top-left of the panel.
     ctx.font = 'bold 11px ui-monospace, Menlo, monospace';
     let lx = 10, ly = panelTopY + 14;
@@ -25073,6 +26565,13 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
     }
     if(active.has('obv')){
       pushLegend(INDICATOR_BY_ID.obv.color, 'OBV', fmtCareer(_computeOBV(startIdx, endIdx)|0));
+    }
+    if(active.has('macd')){
+      const fast = Math.max(2, (_getIndParam('macd','fast')|0) || 12);
+      const slow = Math.max(fast + 1, (_getIndParam('macd','slow')|0) || 26);
+      const sigP = Math.max(2, (_getIndParam('macd','signal')|0) || 9);
+      const last = _lastIndicatorValue(_sdkMACD({ fast, slow, signal:sigP }), 'hist');
+      pushLegend(INDICATOR_BY_ID.macd.color, 'MACD('+fast+','+slow+','+sigP+')', last == null ? 'warming' : last.toFixed(2));
     }
     ctx.restore();
   }
@@ -25136,6 +26635,35 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
     ctx.fillStyle = col;
     ctx.fillRect(barX, barY, (raw/100)*barW, barH);
     ctx.restore();
+  }
+
+  if(active.has('atr') && !game.atrDestroyed){
+    const p = Math.max(2, (_getIndParam('atr','period')|0) || 14);
+    const series = _sdkATR({ period:p });
+    const latest = _lastIndicatorValue(series, 'value');
+    const val = latest == null ? 0 : latest;
+    const pxNow = (typeof currentPrice === 'function') ? currentPrice() : (candles[candles.length-1]?.c || 1);
+    const pct = pxNow ? (val / pxNow) : 0;
+    const col = pct > 0.02 ? '#ff5b7f' : pct > 0.008 ? '#ffd166' : INDICATOR_BY_ID.atr.color;
+    const bx = 14, by = active.has('fg') ? 136 : 76, bw = 176, bh = 28;
+    ctx.save();
+    ctx.fillStyle = 'rgba(10,15,28,0.88)';
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    if(ctx.roundRect){ ctx.roundRect(bx, by, bw, bh, 7); }
+    else ctx.rect(bx, by, bw, bh);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(bx + 13, by + bh/2, 4, 0, Math.PI*2); ctx.fill();
+    ctx.font = 'bold 11px ui-monospace, Menlo, monospace';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#e6e9f0';
+    const txt = latest == null ? 'ATR('+p+') warming' : 'ATR('+p+') ' + (typeof fmtPrice === 'function' ? fmtPrice(val) : val.toFixed(2));
+    ctx.fillText(txt, bx + 24, by + bh/2 + 0.5);
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+    game._atrBadgeRect = { x: bx, y: by, w: bw, h: bh };
   }
 }
 
@@ -25205,6 +26733,26 @@ function _computeFearGreed(){
   return 'F&G '+raw.toFixed(0)+' · '+label;
 }
 
+function _sdkIndicatorCall(fnName, opts){
+  try {
+    const core = (typeof ChartRunnerCore !== 'undefined') ? ChartRunnerCore : null;
+    const fn = core && core[fnName];
+    if(typeof fn !== 'function') return [];
+    return fn(candles || [], opts || {}) || [];
+  } catch(_){ return []; }
+}
+function _sdkMACD(opts){ return _sdkIndicatorCall('macd', opts || {}); }
+function _sdkBollingerBands(opts){ return _sdkIndicatorCall('bollingerBands', opts || {}); }
+function _sdkATR(opts){ return _sdkIndicatorCall('atr', opts || {}); }
+function _lastIndicatorValue(series, key){
+  if(!series || !series.length) return null;
+  for(let i=series.length-1; i>=0; i--){
+    const row = series[i];
+    if(row && typeof row[key] === 'number' && isFinite(row[key])) return row[key];
+  }
+  return null;
+}
+
 // ── Indicator draw helpers ──────────────────────────────────────
 // v0.8k#24 — Each helper pulls its tunable periods via _getIndParam(). Defaults
 // match the previous hardcoded values so legacy behavior is preserved when no
@@ -25250,6 +26798,46 @@ function _drawEMA(startIdx, endIdx, meta){
   }
   ctx.stroke(); ctx.globalAlpha = 1;
   _pushIndicatorPoly('ema', ridePts);
+}
+function _drawBollingerBands(startIdx, endIdx, meta){
+  if(game.destroyedIndLines && game.destroyedIndLines.has('bb')) return;
+  const N = Math.max(2, (_getIndParam('bb','period')|0) || 20);
+  const mult = Math.max(0.1, +_getIndParam('bb','mult') || 2);
+  const series = _sdkBollingerBands({ period:N, mult });
+  if(!series || !series.length) return;
+  const upper = [], middle = [], lower = [];
+  for(let i=startIdx; i<=endIdx; i++){
+    const p = series[i];
+    if(!p || typeof p.middle !== 'number' || typeof p.upper !== 'number' || typeof p.lower !== 'number') continue;
+    const wx = i*STEP + STEP/2;
+    upper.push({ wx, py:p.upper });
+    middle.push({ wx, py:p.middle });
+    lower.push({ wx, py:p.lower });
+  }
+  if(upper.length < 2 || lower.length < 2) return;
+  ctx.save();
+  ctx.fillStyle = meta.color;
+  ctx.globalAlpha = 0.06;
+  ctx.beginPath();
+  upper.forEach((pt,k)=>{ const x=sX(pt.wx), y=priceToY(pt.py); k ? ctx.lineTo(x,y) : ctx.moveTo(x,y); });
+  for(let k=lower.length-1; k>=0; k--){ const x=sX(lower[k].wx), y=priceToY(lower[k].py); ctx.lineTo(x,y); }
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  const strokeLine = (pts, alpha, w) => {
+    ctx.strokeStyle = meta.color;
+    ctx.lineWidth = w;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    pts.forEach((pt,k)=>{ const x=sX(pt.wx), y=priceToY(pt.py); k ? ctx.lineTo(x,y) : ctx.moveTo(x,y); });
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  };
+  strokeLine(upper, 0.85, 1.2);
+  strokeLine(middle, 0.45, 1.0);
+  strokeLine(lower, 0.85, 1.2);
+  ctx.restore();
+  _pushIndicatorPoly('bb', middle.concat(upper).concat(lower));
 }
 function _drawVolumeBars(startIdx, endIdx, meta){
   // v0.8k#24 — height + opacity are tunable.
@@ -25932,6 +27520,54 @@ function drawMinigame(){
   }
   // v0.8k#24mz — pacman + pong draw branches retired.
 }
+function _parallelChannelRail(ov){
+  if(!ov || typeof ov.wx1 !== 'number' || typeof ov.wx2 !== 'number'
+     || typeof ov.py1 !== 'number' || typeof ov.py2 !== 'number') return null;
+  const dwx = (ov.wx2 - ov.wx1) || 1e-9;
+  const slope = (ov.py2 - ov.py1) / dwx;
+  const baseAt = (wx) => ov.py1 + slope * (wx - ov.wx1);
+  const wx3 = (typeof ov.wx3 === 'number') ? ov.wx3 : ov.wx2;
+  const py3 = (typeof ov.py3 === 'number') ? ov.py3 : ov.py2;
+  const offset = py3 - baseAt(wx3);
+  return { baseAt, offset };
+}
+function _drawParallelChannelOverlay(ov, preview){
+  const rail = _parallelChannelRail(ov);
+  if(!rail) return;
+  const leftWx = wXFromS(0);
+  const rightWx = wXFromS(W);
+  const yA0 = priceToY(rail.baseAt(leftWx));
+  const yA1 = priceToY(rail.baseAt(rightWx));
+  const yB0 = priceToY(rail.baseAt(leftWx) + rail.offset);
+  const yB1 = priceToY(rail.baseAt(rightWx) + rail.offset);
+  ctx.save();
+  ctx.fillStyle = preview ? 'rgba(34,211,238,0.08)' : 'rgba(34,211,238,0.06)';
+  ctx.beginPath();
+  ctx.moveTo(0, yA0);
+  ctx.lineTo(W, yA1);
+  ctx.lineTo(W, yB1);
+  ctx.lineTo(0, yB0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = preview ? 'rgba(34,211,238,0.72)' : 'rgba(34,211,238,0.95)';
+  ctx.lineWidth = preview ? 1.2 : 1.5;
+  ctx.setLineDash(preview ? [6,4] : []);
+  ctx.beginPath(); ctx.moveTo(0, yA0); ctx.lineTo(W, yA1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, yB0); ctx.lineTo(W, yB1); ctx.stroke();
+  ctx.setLineDash([]);
+  const dots = [
+    [ov.wx1, ov.py1],
+    [ov.wx2, ov.py2],
+    [ov.wx3, ov.py3],
+  ];
+  ctx.fillStyle = preview ? 'rgba(34,211,238,0.75)' : 'rgba(34,211,238,0.95)';
+  for(const d of dots){
+    if(typeof d[0] !== 'number' || typeof d[1] !== 'number') continue;
+    const x = sX(d[0]), y = priceToY(d[1]);
+    ctx.beginPath(); ctx.arc(x, y, preview ? 3.5 : 4, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
 function drawTvOverlays(){
   if(!game.tvOverlays || !game.tvOverlays.length) return;
   ctx.save();
@@ -25958,6 +27594,8 @@ function drawTvOverlays(){
       ctx.setLineDash([]);
       ctx.fillStyle = 'rgba(122,214,255,0.95)';
       ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI*2); ctx.fill();
+    } else if(k === 'parChannel'){
+      _drawParallelChannelOverlay(ov, false);
     } else if(k === 'ray' || k === 'extLine' || k === 'infoLine'){
       const x1 = sX(ov.wx1), y1 = priceToY(ov.py1);
       const x2 = sX(ov.wx2), y2 = priceToY(ov.py2);
@@ -26319,6 +27957,7 @@ const TOOL_VISUAL_STYLES = {
   fibExt:     { color:'#1976d2', glow:'rgba(25,118,210,0.45)', name:'Fib Extension',    icon:'⌖' },
   trendline:  { color:'#7ad6ff', glow:'rgba(122,214,255,0.45)',name:'Trendline',        icon:'╱' },
   ray:        { color:'#7ad6ff', glow:'rgba(122,214,255,0.45)',name:'Ray',              icon:'➚' },
+  parChannel: { color:'#22d3ee', glow:'rgba(34,211,238,0.45)', name:'Parallel Channel', icon:'∥' },
   extLine:    { color:'#7ad6ff', glow:'rgba(122,214,255,0.45)',name:'Extended Line',    icon:'⇿' },
   hLine:      { color:'#a371f7', glow:'rgba(163,113,247,0.45)',name:'Horizontal Line',  icon:'━' },
   vline:      { color:'#a371f7', glow:'rgba(163,113,247,0.45)',name:'Vertical Line',    icon:'│' },
@@ -26373,6 +28012,7 @@ const TOOL_SETUP_GUIDES = {
   oco:        { kind:'two-anchor',  steps:['Click upper trigger (sell)',         'Click lower trigger (buy)'],              hint:'One-cancels-other · whichever fires first cancels the other' },
   trendline:  { kind:'two-anchor',  steps:['Click anchor 1',                     'Click anchor 2'],                          hint:'Diagonal line · ridable rail · monster wall in Monster Mode' },
   ray:        { kind:'two-anchor',  steps:['Click anchor 1',                     'Click anchor 2 (extends right)'],          hint:'Half-line through both anchors, extends to right edge' },
+  parChannel: { kind:'three-anchor',steps:['Click anchor 1 (base rail)',         'Click anchor 2 (base angle)',              'Click anchor 3 (channel width)'], hint:'Two parallel rails with a shaded trading range' },
   extLine:    { kind:'two-anchor',  steps:['Click anchor 1',                     'Click anchor 2'],                          hint:'Full line through both anchors, extends both directions' },
   longPos:    { kind:'two-anchor',  steps:['Click entry price',                  'Click stop loss price'],                   hint:'Long position visualizer · TP auto-projects at 1:2 RR' },
   shortPos:   { kind:'two-anchor',  steps:['Click entry price',                  'Click stop loss price'],                   hint:'Short position visualizer · TP auto-projects at 1:2 RR' },
@@ -26527,6 +28167,7 @@ function drawSetupGuide(){
   // Step index based on phase: anchor1 → 0, anchor2 → 1, idle/single-click → 0.
   let stepIdx = 0;
   if(game.laserPhase === 'anchor2') stepIdx = 1;
+  if(game.laserPhase === 'anchor3') stepIdx = 2;
   if(stepIdx >= guide.steps.length) stepIdx = guide.steps.length - 1;
 
   ctx.save();
@@ -26847,6 +28488,28 @@ function commitLaserSingleClick(toolId, sx, sy, wxAt, priceAt, originUp, exitFn)
   } catch(err){ toast('Tool error · ' + (err.message||err)); }
   if(typeof exitFn === 'function') exitFn();
 }
+function commitLaserThreeAnchor(tool, a1, a2, a3){
+  if(!a1 || !a2 || !a3){ toast('Three anchors required'); return; }
+  const sxMid = (a1.sx + a2.sx + a3.sx) / 3;
+  const syMid = (a1.sy + a2.sy + a3.sy) / 3;
+  const originUp = !!(player && player.upsideDown);
+  try {
+    if(tool === 'parChannel'){
+      game.tvOverlays.push({
+        id: game.tvNextId++,
+        kind:'parChannel',
+        wx1:a1.wx, py1:a1.price,
+        wx2:a2.wx, py2:a2.price,
+        wx3:a3.wx, py3:a3.price,
+        t:0, upsideDown: originUp,
+      });
+      try { spawnFloat(sxMid, syMid-14, 'PARALLEL CHANNEL', '#22d3ee'); } catch(_){}
+      toast('Parallel channel placed');
+      return;
+    }
+    toast(tool + ' · 3-anchor handled');
+  } catch(err){ toast('Tool error · ' + (err.message||err)); }
+}
 function commitLaserTwoAnchor(tool, a1, a2){
   if(!a1 || !a2) return;
   const originUp = !!(player && player.upsideDown);
@@ -27138,7 +28801,7 @@ function drawLaserAnchorsAndPreview(){
   if(!game.laserAiming) return;
   if(!game.running) return;
   const phase = game.laserPhase;
-  if(phase !== 'anchor1' && phase !== 'anchor2') return;
+  if(phase !== 'anchor1' && phase !== 'anchor2' && phase !== 'anchor3') return;
   const tool = game.laserTool;
   if(!tool) return;
   ctx.save();
@@ -27150,6 +28813,7 @@ function drawLaserAnchorsAndPreview(){
     oco:       'OCO',
     trendline: 'TRENDLINE',
     ray:       'RAY',
+    parChannel:'PARALLEL CHANNEL',
     extLine:   'EXT LINE',
     infoLine:  'INFO LINE',
     rect:      'RECTANGLE',
@@ -27173,7 +28837,7 @@ function drawLaserAnchorsAndPreview(){
   const _phaseKey = tool + ':' + phase;
   if(game._lastLaserPhaseKey !== _phaseKey){
     game._lastLaserPhaseKey = _phaseKey;
-    const step = phase === 'anchor1' ? '① click first anchor' : '② click second anchor';
+    const step = phase === 'anchor1' ? '① click first anchor' : (phase === 'anchor2' ? '② click second anchor' : '③ click channel width');
     try { crNotify(label + ' · ' + step + ' · Esc cancels'); } catch(_){}
   }
   // Anchor1 dot (persistent once placed).
@@ -27257,6 +28921,32 @@ function drawLaserAnchorsAndPreview(){
     ctx.fillStyle = 'rgba(255,91,127,0.95)';
     ctx.font = '10px ui-monospace,monospace';
     try { ctx.fillText('② '+fmtPrice(a2.price)+(a2.kind!=='free'?' · '+a2.kind:''), bx2+14, by2-6); } catch(_){}
+  }
+  if(phase === 'anchor3' && a1 && game.laserAnchor2){
+    const a2 = game.laserAnchor2;
+    const a3 = game.laserAnchor3Preview || { wx: wXFromS(game.laserDot.sx), price: yToPrice(game.laserDot.sy), kind: 'free', sx: game.laserDot.sx, sy: game.laserDot.sy };
+    _drawParallelChannelOverlay({
+      kind:'parChannel',
+      wx1:a1.wx, py1:a1.price,
+      wx2:a2.wx, py2:a2.price,
+      wx3:a3.wx, py3:a3.price,
+    }, true);
+    const bx2 = sX(a2.wx), by2 = priceToY(a2.price);
+    ctx.fillStyle = 'rgba(255,91,127,1)';
+    ctx.strokeStyle = 'rgba(255,91,127,0.6)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(bx2, by2, 5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(bx2, by2, 10, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,91,127,0.95)';
+    ctx.font = '10px ui-monospace,monospace';
+    try { ctx.fillText('② '+fmtPrice(a2.price)+(a2.kind!=='free'?' · '+a2.kind:''), bx2+14, by2-6); } catch(_){}
+    const cx3 = sX(a3.wx), cy3 = priceToY(a3.price);
+    ctx.fillStyle = 'rgba(34,211,238,1)';
+    ctx.strokeStyle = 'rgba(34,211,238,0.6)';
+    ctx.beginPath(); ctx.arc(cx3, cy3, 5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx3, cy3, 10, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = 'rgba(34,211,238,0.95)';
+    try { ctx.fillText('③ '+fmtPrice(a3.price)+(a3.kind!=='free'?' · '+a3.kind:''), cx3+14, cy3-6); } catch(_){}
   }
   ctx.restore();
 }
@@ -27765,7 +29455,7 @@ function pickMode(mode){
     const SCRIPTS = {
       // v0.9.67 — Sequential renumbering. Sections + chapter ranges:
       //   Tools       Ch.1–9   (Trendline, HLine, AVWAP, FibR, FibE, FRVP,
-      //                         Ray, Channel, Rectangle)
+      //                         Ray, Parallel Channel, Rectangle)
       //   Primitives  Ch.10–19 (Bracket, OCO, Limit, Ladder, SL-At, TP-At,
       //                         Trailing TP, Market, Scale-Out, TWAP)
       //   Indicators  Ch.20–27 (REF, RSI, EMA, Vol, Ichimoku, MACD,
@@ -27853,16 +29543,16 @@ function pickMode(mode){
         { kind:'execute', text:'Click anchor 2 — defines the angle. The ray extends past anchor 2 forever.',
           complete:(b)=> { try { return (game.tvOverlays||[]).filter(o => o.tool === 'ray' || o.kind === 'ray').length > (b.rays||0); } catch(_){ return false; } } },
       ],
-      // Ch.8 — Channel (NEW — parallel trendlines).
+      // Ch.8 — Parallel Channel (3-anchor parallel trendlines).
       8: [
-        { kind:'explain', text:'A Channel is a pair of parallel trendlines that bound a trending range. Lower line = dynamic support; upper line = dynamic resistance. Price oscillates between them.' },
-        { kind:'explain', text:'Buy the lower channel + sell the upper channel = the canonical "trade the channel" play. A break OUT of the channel signals trend acceleration; a break BACK in signals exhaustion.' },
-        { kind:'choose',  text:'Press hotkey 2 → Channel.',
-          complete:()=> { try { return game && (game.laserTool === 'channel'); } catch(_){ return false; } } },
-        { kind:'execute', text:'Click anchor 1 — first point of the lower line.',
+        { kind:'explain', text:'A Parallel Channel is a pair of parallel trendlines that bound a trending range. Lower rail = dynamic support; upper rail = dynamic resistance. Price oscillates between them.' },
+        { kind:'explain', text:'Buy the lower rail + sell the upper rail is the canonical channel trade. A break OUT signals trend acceleration; a break BACK in signals exhaustion.' },
+        { kind:'choose',  text:'Press hotkey 2 → Parallel Channel.',
+          complete:()=> { try { return game && (game.laserTool === 'parChannel'); } catch(_){ return false; } } },
+        { kind:'execute', text:'Click anchor 1 — first point of the base rail.',
           complete:(b)=> { try { return !!(game && game.laserAnchor1); } catch(_){ return false; } } },
-        { kind:'execute', text:'Click anchor 2 (second point of lower line), then anchor 3 (sets the channel width).',
-          complete:(b)=> { try { return (game.tvOverlays||[]).filter(o => o.tool === 'channel' || o.kind === 'channel').length > (b.channels||0); } catch(_){ return false; } } },
+        { kind:'execute', text:'Click anchor 2 for the base angle, then anchor 3 to set the parallel width.',
+          complete:(b)=> { try { return (game.tvOverlays||[]).filter(o => o.tool === 'parChannel' || o.kind === 'parChannel').length > (b.channels||0); } catch(_){ return false; } } },
       ],
       // Ch.9 — Rectangle (NEW — zone tool).
       9: [
@@ -28354,6 +30044,7 @@ function pickMode(mode){
           bots:        (typeof wb !== 'undefined' && wb.equipped ? wb.equipped.slice() : []),
           trendlines:  (typeof game !== 'undefined' && game.tvOverlays ? game.tvOverlays.filter(o => o.tool === 'trendline' || o.kind === 'trendline').length : 0),
           vwaps:       (typeof game !== 'undefined' && game.tvOverlays ? game.tvOverlays.filter(o => o.tool === 'avwap' || o.tool === 'anchoredVwap' || o.kind === 'avwap' || o.kind === 'vwap').length : 0),
+          channels:    (typeof game !== 'undefined' && game.tvOverlays ? game.tvOverlays.filter(o => o.tool === 'parChannel' || o.kind === 'parChannel').length : 0),
           hlines:      (typeof game !== 'undefined' && game.anchorLines ? game.anchorLines.filter(l => l.tradeKind === 'hline' || l.kind === 'hline').length : 0),
           ocos:        (typeof game !== 'undefined' && game.visualOCO ? game.visualOCO.length : 0),
         };
@@ -28598,7 +30289,7 @@ function pickMode(mode){
   //
   // v0.9.67 — SEQUENTIAL RENUMBERING. Sections + chapter ranges:
   //   Tools       Ch.1–9   (Trendline, HLine, AVWAP, FibR, FibE, FRVP,
-  //                         Ray, Channel, Rectangle)
+  //                         Ray, Parallel Channel, Rectangle)
   //   Primitives  Ch.10–19 (Bracket, OCO, Limit, Ladder, SL-At, TP-At,
   //                         Trailing TP, Market, Scale-Out, TWAP)
   //   Indicators  Ch.20–27 (REF, RSI, EMA, Vol, Ichimoku, MACD,
@@ -28618,11 +30309,8 @@ function pickMode(mode){
     5:  { goal:'Place a Fib Extension on BTC 4h.',                  tip:'Hotkey 3 → Fib Extension → 3 anchor points (start, retracement low, end).',                    asset:'btc', tf:'4h',  indicators:['reflevels'],         loadout:['fibExt'],      probes:[] },
     6:  { goal:'Drop an FRVP (Fixed-Range Volume Profile) on BTC 1h.', tip:'Hotkey 2 → FRVP → click range start, click range end. POC + VAH/VAL paint inside.',         asset:'btc', tf:'1h',  indicators:['reflevels','vrvp'], loadout:['frvp'],       probes:[] },
     7:  { goal:'Place a Ray — 1-anchor extending line.',             tip:'Hotkey 2 → Ray → click anchor 1 (start), click anchor 2 (sets angle). Ray extends past anchor 2 forever.', asset:'btc', tf:'15m', indicators:[],                   loadout:['ray'],         probes:[] },
-    // v1.0.105 — Ch.8 archived: loadout `'channel'` is not a real tool id
-    // (the catalog has `parChannel` / `disjoint`, both currently live:false
-    // and now filtered from the menus). Restore by implementing a live
-    // channel tool + flipping `archived` off.
-    8:  { archived:true, goal:'Draw a Channel — parallel trendlines.',              tip:'Hotkey 2 → Channel → click anchor 1, anchor 2 (lower line), then anchor 3 (sets channel width).', asset:'btc', tf:'1h',  indicators:[],                   loadout:['channel'],     probes:[] },
+    // v1.0.204 — Ch.8 restored: `parChannel` is now a live 3-anchor tool.
+    8:  { goal:'Draw a Parallel Channel — parallel trendlines.',       tip:'Hotkey 2 → Parallel Channel → click base anchor 1, base anchor 2, then anchor 3 (sets channel width).', asset:'btc', tf:'1h',  indicators:[],                   loadout:['parChannel'],  probes:[] },
     9:  { goal:'Draw a Rectangle — mark a price zone.',              tip:'Hotkey 2 → Rectangle → click corner 1, click corner 2 (opposite corner).',                    asset:'btc', tf:'15m', indicators:[],                   loadout:['rect'],        probes:[] },
     // ── PRIMITIVES ─────────────────────────────────────────────────────
     10: { goal:'Place a bracket, then drag the stop or target to edit it before fill.', tip:'Hotkey 3 → Bracket → click entry, click stop, click target. Hover any line to drag-edit.', asset:'btc', tf:'15m', indicators:[],                   loadout:['bracket'],     probes:[] },
@@ -28641,16 +30329,11 @@ function pickMode(mode){
     22: { goal:'Toggle the EMA(20) on the BTC 1h chart.',             tip:'Top-bar → Indicators dropdown → EMA. Read trend direction off the slope.',                  asset:'btc', tf:'1h',  indicators:['ema'],              loadout:[],              probes:[] },
     23: { goal:'Toggle the Volume indicator on BTC 15m.',             tip:'Top-bar → Indicators dropdown → VOL. Breakout WITH volume = real; breakout WITHOUT = bait.', asset:'btc', tf:'15m', indicators:['vol'],              loadout:[],              probes:[] },
     24: { goal:'Toggle the Ichimoku Cloud on ETH 4h.',                tip:'Top-bar → Indicators dropdown → ICHI. Price above green cloud = bull; below red = bear.',   asset:'eth', tf:'4h',  indicators:['ichi'],             loadout:[],              probes:[] },
-    // v1.0.105 — Ch.25/26/27 archived: their indicator ids (`macd`, `bb`,
-    // `atr`) are not present in the INDICATORS catalog (only fg/sma/ema/
-    // vol/rsi/srsi/obv/ichi/vrvp/reflevels exist). Chapter goals were
-    // literally impossible to complete because the indicator never appeared
-    // in the dropdown. Restore by adding entries to INDICATORS + chart
-    // rendering hooks, then flipping `archived` off. Tracked as an M3
-    // imminent-solvable (Workbench Indicators rebuild).
-    25: { archived:true, goal:'Toggle MACD on BTC 1h. Watch for the cross-over.',    tip:'Top-bar → Indicators dropdown → MACD. Cross above signal line = bullish momentum shift.',    asset:'btc', tf:'1h',  indicators:['macd'],             loadout:[],              probes:[] },
-    26: { archived:true, goal:'Toggle Bollinger Bands on BTC 1h. Spot a squeeze.',   tip:'Top-bar → Indicators dropdown → BB. Bands narrow = volatility incoming; bands ride = strong trend.', asset:'btc', tf:'1h',  indicators:['bb'],               loadout:[],              probes:[] },
-    27: { archived:true, goal:'Toggle ATR on BTC 1h. Read it as your stop-distance ruler.', tip:'Top-bar → Indicators dropdown → ATR. Position size = (account × risk%) / (1.5 × ATR).', asset:'btc', tf:'1h',  indicators:['atr'],              loadout:[],              probes:[] },
+    // v1.0.204 — Ch.25/26/27 restored: MACD, Bollinger Bands, and ATR now
+    // exist in the SDK-backed indicator catalog and render in-game.
+    25: { goal:'Toggle MACD on BTC 1h. Watch for the cross-over.',    tip:'Top-bar → Indicators dropdown → MACD. Cross above signal line = bullish momentum shift.',    asset:'btc', tf:'1h',  indicators:['macd'],             loadout:[],              probes:[] },
+    26: { goal:'Toggle Bollinger Bands on BTC 1h. Spot a squeeze.',   tip:'Top-bar → Indicators dropdown → BB. Bands narrow = volatility incoming; bands ride = strong trend.', asset:'btc', tf:'1h',  indicators:['bb'],               loadout:[],              probes:[] },
+    27: { goal:'Toggle ATR on BTC 1h. Read it as your stop-distance ruler.', tip:'Top-bar → Indicators dropdown → ATR. Position size = (account × risk%) / (1.5 × ATR).', asset:'btc', tf:'1h',  indicators:['atr'],              loadout:[],              probes:[] },
     // ── BOTS ───────────────────────────────────────────────────────────
     // v0.9.66 — Each level meets ONE bot from the existing DETECTOR_BOTS
     // roster. Bots both highlight setups (visual ring) and build setups
@@ -33405,7 +35088,7 @@ const WB_LASER_TOOLS = [
   { id:'infoLine',     ic:'ℹ',  label:'Info line',     cat:'lines',     cls:'2-anchor', desc:'Trendline + price/% delta label.', live:true },
   { id:'trendAngle',   ic:'∠',  label:'Trend angle',   cat:'lines',     cls:'2-anchor', desc:'Trendline showing angle vs horizontal.', live:false },
   // — CHANNELS —
-  { id:'parChannel',   ic:'∥',  label:'Parallel channel', cat:'channels', cls:'3-anchor', desc:'Two parallel trendlines from three anchors.', live:false, star:true },
+  { id:'parChannel',   ic:'∥',  label:'Parallel channel', cat:'channels', cls:'3-anchor', desc:'Two parallel trendlines from three anchors.', live:true, star:true },
   { id:'regression',   ic:'/',  label:'Regression trend', cat:'channels', cls:'2-anchor', desc:'Linear regression channel between anchors.', live:false },
   { id:'flatChannel',  ic:'═',  label:'Flat top/bottom',  cat:'channels', cls:'2-anchor', desc:'Horizontal channel between anchors.', live:false },
   { id:'disjoint',     ic:'⊥',  label:'Disjoint channel', cat:'channels', cls:'3-anchor', desc:'Channel with offset rails.', live:false },
@@ -33966,6 +35649,7 @@ function _botEnableIndicator(id){
       if (id === 'vol'  && game.destroyedVolBars)     game.destroyedVolBars.clear();
       if (id === 'vrvp' && game.destroyedVRVPBuckets) game.destroyedVRVPBuckets.clear();
       if (id === 'fg')  game.fgDestroyed = false;
+      if (id === 'atr') game.atrDestroyed = false;
     }
     try { if (typeof _saveIndicators === 'function') _saveIndicators(); } catch(_){}
     return !already;
@@ -43920,6 +45604,12 @@ const INDICATORS = [
   { id:'sma',  nm:'SMA',           ic:'➖', cost:250,   kind:'overlay', color:'#7ad6ff',
     params:[{ key:'period', label:'Length', min:2, max:400, step:1, def:20 }],
     label:(p)=>'SMA ('+p.period+')' },
+  { id:'bb',   nm:'Bollinger Bands', ic:'⑃', cost:3000, kind:'overlay', color:'#a78bfa',
+    params:[
+      { key:'period', label:'Length',       min:2, max:200, step:1,   def:20 },
+      { key:'mult',   label:'Std-dev mult', min:1, max:4,   step:0.1, def:2  },
+    ],
+    label:(p)=>'BB ('+p.period+', '+p.mult+'σ)' },
   { id:'ema',  nm:'EMA',           ic:'〰', cost:500,   kind:'overlay', color:'#3ddc97',
     params:[{ key:'period', label:'Length', min:2, max:400, step:1, def:20 }],
     label:(p)=>'EMA ('+p.period+')' },
@@ -43931,6 +45621,16 @@ const INDICATORS = [
   { id:'rsi',  nm:'RSI',           ic:'⌖', cost:2000,  kind:'badge',   color:'#ff5b7f',
     params:[{ key:'period', label:'Length', min:2, max:50, step:1, def:14 }],
     label:(p)=>'RSI ('+p.period+')' },
+  { id:'atr',  nm:'ATR',           ic:'┃', cost:1500,  kind:'badge',   color:'#ffa94d',
+    params:[{ key:'period', label:'Length', min:2, max:50, step:1, def:14 }],
+    label:(p)=>'ATR ('+p.period+')' },
+  { id:'macd', nm:'MACD',          ic:'╫', cost:4000,  kind:'badge',   color:'#38bdf8',
+    params:[
+      { key:'fast',   label:'Fast EMA',   min:2, max:60,  step:1, def:12 },
+      { key:'slow',   label:'Slow EMA',   min:3, max:120, step:1, def:26 },
+      { key:'signal', label:'Signal EMA', min:2, max:40,  step:1, def:9  },
+    ],
+    label:(p)=>'MACD ('+p.fast+','+p.slow+','+p.signal+')' },
   { id:'srsi', nm:'Stoch RSI',     ic:'↯', cost:3500,  kind:'badge',   color:'#ffb86b',
     params:[
       { key:'period', label:'RSI length',   min:2, max:50, step:1, def:14 },
@@ -43986,12 +45686,18 @@ const INDICATOR_BY_ID = Object.fromEntries(INDICATORS.map(i=>[i.id, i]));
 // destroyed" rule:
 //   sma / ema / rsi / srsi / obv  → 1 line; in destroyedIndLines = done
 //   ichi                          → 4 sub-lines; all 4 must be in the set
-//   fg                            → fgDestroyed flag
+//   fg / atr                      → single-shot badge flags
+//   macd                          → macd + signal lines
 //   vol                           → all VISIBLE candle bars destroyed
 //   vrvp                          → all visible buckets destroyed
 function _isIndicatorFullyDestroyed(id){
   if(!id) return false;
   if(id === 'fg') return !!game.fgDestroyed;
+  if(id === 'atr') return !!game.atrDestroyed;
+  if(id === 'macd'){
+    const d = game.destroyedIndLines;
+    return !!d && d.has('macd') && d.has('macd-signal');
+  }
   if(id === 'ichi'){
     const d = game.destroyedIndLines;
     if(!d) return false;
@@ -44048,7 +45754,7 @@ function _isIndicatorFullyDestroyed(id){
 function getIndicatorPanelBounds(){
   if(typeof INDICATOR_STATE === 'undefined' || !INDICATOR_STATE.active) return null;
   const active = INDICATOR_STATE.active;
-  const hasBadge = active.has('rsi') || active.has('srsi') || active.has('obv');
+  const hasBadge = active.has('rsi') || active.has('srsi') || active.has('obv') || active.has('macd');
   if(!hasBadge) return null;
   const volActive = active.has('vol');
   const volPct    = Math.max(5, Math.min(60, +_getIndParam('vol','heightPct') || 15));
@@ -44180,6 +45886,7 @@ function _onIndicatorClick(ind){
       if(ind.id === 'vol' && game.destroyedVolBars) game.destroyedVolBars.clear();
       if(ind.id === 'vrvp' && game.destroyedVRVPBuckets) game.destroyedVRVPBuckets.clear();
       if(ind.id === 'fg') game.fgDestroyed = false;
+      if(ind.id === 'atr') game.atrDestroyed = false;
     }catch{}
     toast(ind.nm+' · ON');
   }
@@ -44797,6 +46504,16 @@ cv.addEventListener('mousedown', e=>{
         return;
       }
       try { spawnParticles(snap.sx, snap.sy, '#ff5b7f', 10, 110); } catch(_){}
+      const def = (typeof _wbToolDef === 'function') ? _wbToolDef(tool) : null;
+      if(def && def.cls === '3-anchor'){
+        game.laserAnchor2 = snap;
+        game.laserAnchor2Preview = snap;
+        game.laserAnchor3Preview = null;
+        game.laserPhase = 'anchor3';
+        toast('Anchor ② set · click channel width');
+        e.stopPropagation();
+        return;
+      }
       commitLaserTwoAnchor(tool, a1, snap);
       // v0.8M#24 — Laser exits ENTIRELY after committing a tool. Previously
       // it returned to 'idle' (aim mode still on), expecting the player to
@@ -44806,7 +46523,33 @@ cv.addEventListener('mousedown', e=>{
       game.laserPhase  = 'idle';
       game.laserTool   = null;
       game.laserAnchor1 = null;
+      game.laserAnchor2 = null;
       game.laserAnchor2Preview = null;
+      game.laserAnchor3Preview = null;
+      try { closeLaserSpawnMenu(); } catch(_){}
+      e.stopPropagation();
+      return;
+    }
+    if(game.laserPhase === 'anchor3'){
+      const snap = snapToCandle(sx, sy);
+      const a1 = game.laserAnchor1;
+      const a2 = game.laserAnchor2;
+      const tool = game.laserTool;
+      if(!a1 || !a2){
+        toast('Missing channel anchors — restart placement');
+        game.laserPhase = 'idle';
+        e.stopPropagation();
+        return;
+      }
+      try { spawnParticles(snap.sx, snap.sy, '#22d3ee', 12, 120); } catch(_){}
+      commitLaserThreeAnchor(tool, a1, a2, snap);
+      game.laserAiming = false;
+      game.laserPhase  = 'idle';
+      game.laserTool   = null;
+      game.laserAnchor1 = null;
+      game.laserAnchor2 = null;
+      game.laserAnchor2Preview = null;
+      game.laserAnchor3Preview = null;
       try { closeLaserSpawnMenu(); } catch(_){}
       e.stopPropagation();
       return;
@@ -44850,6 +46593,7 @@ cv.addEventListener('mousedown', e=>{
       snap.wx = ov.wx; snap.py = ov.py;
       snap.wx1 = ov.wx1; snap.py1 = ov.py1;
       snap.wx2 = ov.wx2; snap.py2 = ov.py2;
+      snap.wx3 = ov.wx3; snap.py3 = ov.py3;
       snap.entry = ov.entry; snap.stop = ov.stop; snap.tp = ov.tp;
     }
     overlayDrag = {
@@ -45180,6 +46924,9 @@ window.addEventListener('mousemove', e=>{
     if(game.laserPhase === 'anchor2'){
       try { game.laserAnchor2Preview = snapToCandle(cx, cy); } catch(_){}
     }
+    if(game.laserPhase === 'anchor3'){
+      try { game.laserAnchor3Preview = snapToCandle(cx, cy); } catch(_){}
+    }
     // v0.8k#24k — Hide the OS cursor during laser aim. The game already draws
     // its own crosshair (drawLaserSight) and snap dots (drawLaserAnchorsAndPreview),
     // so the system arrow / crosshair on top was visual double-vision.
@@ -45402,8 +47149,10 @@ window.addEventListener('mousemove', e=>{
         } else if(typeof snap.wx1 === 'number'){
           ov.wx1 = snap.wx1 + dWx;
           ov.wx2 = snap.wx2 + dWx;
+          if(typeof snap.wx3 === 'number') ov.wx3 = snap.wx3 + dWx;
           if(typeof snap.py1 === 'number') ov.py1 = snap.py1 + dPrice;
           if(typeof snap.py2 === 'number') ov.py2 = snap.py2 + dPrice;
+          if(typeof snap.py3 === 'number') ov.py3 = snap.py3 + dPrice;
         } else if(typeof snap.wx === 'number'){
           ov.wx = snap.wx + dWx;
           if(typeof snap.py === 'number') ov.py = snap.py + dPrice;
@@ -48295,7 +50044,7 @@ function log(msg){
     // ── 5 · TOOLS LASER · HOTKEY 2 ────────────────────────────────
     { prog:null, inGame:true, icon:'⌖', name:'TOOLS LASER · HOTKEY 2', kind:'PLACEMENT',
       line:"Press 2 to aim the Tools Laser. Click a candle to open the spawn menu.",
-      hint:"Trendline, HLine, Anchored VWAP, Channel, Fib Retracement — all on hotkey 2.",
+      hint:"Trendline, HLine, Anchored VWAP, Parallel Channel, Fib Retracement — all on hotkey 2.",
       enter:(snap)=> { snap.sawLaser = false; snap.sawMenu = false; },
       gate:(snap)=> {
         const laserOn = document.body.classList.contains('crLaserAim') || !!document.querySelector('.cr-laser-on, [data-laser-on]');
@@ -50632,10 +52381,10 @@ function log(msg){
   // IBH / IBL) is one click away alongside the other indicators. The
   // INDICATORS registry already had `reflevels` as a full entry; it just
   // wasn't surfaced in this quick-toggle array.
-  const QUICK_INDICATORS = ['ema','sma','vol','rsi','srsi','obv','ichi','vrvp','fg','reflevels'];
+  const QUICK_INDICATORS = ['ema','sma','bb','vol','rsi','atr','macd','srsi','obv','ichi','vrvp','fg','reflevels'];
   const QUICK_LABELS = {
     ema:'EMA', sma:'SMA', vol:'VOL', rsi:'RSI', srsi:'SRSI',
-    obv:'OBV', ichi:'ICHI', vrvp:'VRVP', fg:'F/G', reflevels:'REF',
+    bb:'BB', atr:'ATR', macd:'MACD', obv:'OBV', ichi:'ICHI', vrvp:'VRVP', fg:'F/G', reflevels:'REF',
   };
   const chipHost = document.getElementById('crTvIndChips');
   function buildIndChips(){
@@ -53384,7 +55133,9 @@ const crL3 = (function(){
             game.laserPhase  = 'idle';
             game.laserTool   = null;
             game.laserAnchor1 = null;
+            game.laserAnchor2 = null;
             game.laserAnchor2Preview = null;
+            game.laserAnchor3Preview = null;
             try { closeLaserSpawnMenu(); } catch(_){}
             game.selectedOverlay = null;
             game.avatarGrab = null;
