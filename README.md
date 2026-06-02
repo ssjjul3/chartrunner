@@ -12,7 +12,7 @@
 | Surface | URL | Public role |
 |---|---|---|
 | Landing | https://chartrunner.xyz/ | Public project overview |
-| Game | https://chartrunner.xyz/play/ | Playable browser prototype |
+| Game | https://chartrunner.xyz/play/ | Playable browser prototype with adaptive desktop, phone, and tablet controls |
 | Wallet bridge | https://chartrunner.xyz/solana-connect/ | Explicit wallet/devnet handoff |
 | Docs | https://chartrunner.xyz/docs/ | Public SDK boundary and devnet reference |
 
@@ -33,6 +33,7 @@ The public repo demonstrates the playable game, the SDK call shape, public devne
 Public:
 
 - The browser-playable prototype in `ChartRunner_Prototype.html` and `/play`.
+- Adaptive `/play/` mobile/tablet controls: chart-only mode rail, collapsible HOT tray, bottom-right runner controls, mobile app sheets, tap-to-run, and two-finger chart movement.
 - Paper/sandbox trading primitives and explicit wallet/devnet handoff.
 - Public Anchor source under `anchor/programs`.
 - Devnet program IDs and Explorer links.
@@ -94,4 +95,5 @@ node /Users/julianroy/.agents/skills/chartrunner-playtest-verifier/scripts/check
 | `solana-connect/` | Wallet/devnet bridge |
 | `anchor/` | Public Anchor source, IDLs, and tests |
 | `docs/` | Public docs only |
+| `docs/milestones/` | Public milestone notes |
 | `scripts/check_public_leakage.mjs` | CI guard for private/public boundary |

@@ -4,7 +4,7 @@ This public roadmap keeps product direction visible without exposing private ope
 
 | Area | Public Status |
 |---|---|
-| Playable chart game | Live prototype |
+| Playable chart game | Live prototype with adaptive `/play/` mobile/tablet shell |
 | Core SDK | Public TypeScript source, npm publish gated |
 | Solana devnet programs | Public source and devnet-oriented |
 | Wallet bridge | Public devnet prototype |
@@ -13,5 +13,9 @@ This public roadmap keeps product direction visible without exposing private ope
 | Premium bots and hosted transports | Gated/private |
 | Live broker adapters | Gated/private |
 | Mainnet deployment | Future |
+
+## Public Milestones
+
+- [2026-06-02 - `/play/` mobile shell](2026-06-02-play-mobile-shell.md): regular browser game gains adaptive phone/tablet controls, then trims duplicate mobile buttons into a chart-mode rail plus collapsible HOT tray.
 
 Private milestone work is maintained outside this public repository.

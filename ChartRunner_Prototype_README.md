@@ -2,6 +2,8 @@
 
 ChartRunner is a playable browser prototype for a gamified trading SDK. The public build focuses on game mechanics, paper/sandbox primitives, wallet handoff, and devnet-verifiable on-chain source.
 
+Current public prototype version: `v1.0.215`.
+
 ## Public Surfaces
 
 - `ChartRunner_Prototype.html` - playable single-file game prototype
@@ -21,3 +23,9 @@ Open `ChartRunner_Prototype.html` in a browser, or use the live public build at 
 ## Mobile / Tablet Play
 
 `/play/` includes an adaptive mobile shell for phones and tablets: portrait uses compact top-bar commands, a bottom-left collapsible HOT tray for hotkeys, bottom-right runner controls, mobile app sheets, tap-to-run movement, two-finger chart movement, and one-active-laser routing. Landscape phone and tablet layouts keep more desktop chrome while preserving the touch controls.
+
+Mobile regression smoke:
+
+```sh
+node scripts/check_play_mobile_adaptive_shell_browser.cjs
+```

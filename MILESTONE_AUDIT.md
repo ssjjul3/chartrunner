@@ -5,6 +5,7 @@ This public roadmap summarizes product direction without exposing private operat
 ## Current Public State
 
 - Playable browser prototype is live.
+- `/play/` mobile/tablet shell is live with chart-only mode rail, collapsible HOT tray, tap-to-run, two-finger chart movement, runner controls, and mobile app sheets.
 - Solana devnet wallet bridge is live.
 - Anchor program source is public.
 - Standalone SDK package source and generated `/sdk/` artifacts are gated until publish-ready.
@@ -14,7 +15,7 @@ This public roadmap summarizes product direction without exposing private operat
 
 | Area | Status |
 |---|---|
-| Playable chart game | Live prototype |
+| Playable chart game | Live prototype; adaptive `/play/` mobile/tablet controls shipped |
 | SDK extraction | Prototype runtime bundled; standalone package gated |
 | Solana devnet programs | Public source, devnet deployment |
 | Wallet identity | Prototype/devnet path |
@@ -27,3 +28,7 @@ This public roadmap summarizes product direction without exposing private operat
 ## Boundary
 
 Private operations, hosted bridges, data pipelines, bot tuning, competition playbooks, and monetization details are maintained outside the public repository.
+
+## Latest Public Milestone
+
+- `2026-06-02`: `/play/` mobile shell release (`v1.0.214`) and control cleanup (`v1.0.215`) shipped. See [docs/milestones/2026-06-02-play-mobile-shell.md](docs/milestones/2026-06-02-play-mobile-shell.md).

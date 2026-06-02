@@ -5,7 +5,7 @@ ChartRunner is a playable chart game and gamified trading SDK. The public system
 ## Public Surfaces
 
 - `chartrunner.xyz/` - landing page
-- `chartrunner.xyz/play/` - playable browser prototype
+- `chartrunner.xyz/play/` - playable browser prototype with adaptive desktop, phone, and tablet controls
 - `chartrunner.xyz/solana-connect/` - Solana devnet wallet bridge
 - `chartrunner.xyz/telegram/` - Telegram/mobile prototype
 - `anchor/` - public Solana devnet program source
@@ -21,6 +21,7 @@ Standalone SDK package source, generated SDK browser artifacts, live broker exec
 
 - Playable prototype: live
 - `/play/` mobile/tablet shell: adaptive portrait/landscape/tablet controls with chart-only mode rail and collapsible HOT tray live in `ChartRunner_Prototype.html`
+- Latest public milestone: `2026-06-02` `/play/` mobile shell and control cleanup
 - Solana devnet maps/registry/oracle/match programs: public source and devnet-oriented
 - SDK package: gated until publish-ready
 - Mainnet/live trading: gated
