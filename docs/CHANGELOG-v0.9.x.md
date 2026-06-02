@@ -2,7 +2,7 @@
 
 Full sweep from v0.9.9 → v0.9.21, all in `ChartRunner_Prototype.html` unless noted. Every version listed is parse-checked green via `node --check` on the extracted inline script body. Some UI changes require the player to reload the deployed page to see them.
 
-The driving theme is **landing all of quant.pdf Tier 1** — a 39-page institutional trading methodology document that lays out an 11-component confluence weighting table, reference-level templates, and pattern detectors. By v0.9.12 the entire Tier 1 set is implementable in standalone (Binance OHLCV only — no live trade tape needed). v0.9.13–v0.9.21 are the polish layer that makes everything discoverable.
+The driving theme is **landing all of quant.pdf Tier 1** — a 39-page institutional trading methodology document that lays out an 11-component confluence weighting table, reference-level templates, and pattern detectors. By v0.9.12 the entire Tier 1 set is implementable in standalone using public OHLCV inputs only. v0.9.13–v0.9.21 are the polish layer that makes everything discoverable.
 
 ---
 
@@ -143,7 +143,7 @@ Quick Builder slider (`oi`, default weight 1, max 2). Probe ability "∮ OI Chec
 
 ### Tier 1 status
 
-All 10 quant.pdf Tier 1 detectors are now live and side-aware in `scoreSetup`. The whole Tier 1 set was implementable in standalone — no live trade tape needed.
+All 10 quant.pdf Tier 1 detectors are now live and side-aware in `scoreSetup`. The whole Tier 1 set was implementable in standalone with public candle inputs only.
 
 ---
 
@@ -424,7 +424,7 @@ These primitives don't have a meaningful "click here" semantics so they stayed i
 
 - **Solana Playground deploy** — single highest-ROI deferred item per `AUDIT-v0.9.8.md`. ~20 minutes paste-and-deploy unblocks ~10 separate "tx fails: program not found" gaps + populates leaderboard + makes License PDAs real.
 - **Campaign mode loadout lock** — chapters should only equip tools/primitives explained in that chapter (v0.9.x backlog item).
-- **Tier 2 (Phase 1 ChartHost adapter)** — CVD divergence, footprint breakout, TPO/Market Profile. Need live trade-tape feed.
+- **Tier 2 (Phase 1 ChartHost adapter)** — CVD divergence, footprint breakout, TPO/Market Profile. Requires a gated trade-tape data feed.
 - **Tier 3 (Phase 2 / research library)** — regime detector (Lévy-driven OU), LOB feature predictors, HFT Copula Pairs Trading, order flow imbalance signals.
 
 ---
@@ -505,4 +505,3 @@ Bold = new in v0.9.41. Star system archived (CSS hide on `.crChStar::after`) sin
 - **Lite profile lingering after run-end** fixed via `showSplash()` cleanup of `#crLightProfile` + `_lpTimer`.
 - **Token profile cleanup** — Significant backtest results section removed (synthetic numbers were misleading), drag hint footer removed.
 - **App icon click radius** tightened to content-only — no halo around. `.os-icon` button sizes to `width:fit-content` instead of stretching to fill the grid cell.
-

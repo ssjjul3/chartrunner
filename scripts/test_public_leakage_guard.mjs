@@ -54,6 +54,19 @@ function cleanup(root) {
 
 {
   const root = makeRepo({
+    'docs/TRACTION.md': '# Private traction plan\n',
+  });
+  try {
+    const result = runLeakageCheck(root);
+    assert.equal(result.ok, false);
+    assert.match(result.messages.join('\n'), /TRACTION\.md/);
+  } finally {
+    cleanup(root);
+  }
+}
+
+{
+  const root = makeRepo({
     'docs/leak.md': 'Do not let crAgentBridgeUrl return to public docs.\n',
   });
   try {

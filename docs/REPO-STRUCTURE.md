@@ -119,7 +119,7 @@ chartrunner/
 ### Workspaces (pnpm or yarn)
 - `sdk/`, `adapters/*`, `chart-host/`, `workbench/` are independent packages
 - `pnpm install` once, all internal deps resolve via workspace links
-- Adapters can be published to npm independently — partners can `npm install @chartrunner/solana-devnet-adapter`
+- Adapters can be published independently once the package boundary is intentionally released.
 
 ### The constitutional rule shows up in directories
 - `sdk/` knows nothing about rendering
