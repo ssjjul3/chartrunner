@@ -21,6 +21,19 @@ live in the page, with `cr-telegram-init.js` as the small Telegram boot bridge.
 - Bottom-right runner control acts like a movement stick.
 - Quick `F` and `S` buttons map to fly and shoot.
 
+## v1.0.127 Adaptive Mobile Shell
+
+- The adaptive shell is shared by Telegram, phone browsers, and tablets:
+  portrait is icon-first quick-play, landscape is the full mobile cockpit, and
+  tablet can dock app/widget panels.
+- Mobile chart modes are explicit: Move, Inspect, Tool, Laser, Blue Laser, and
+  Widget. Two-finger gestures always pan/zoom the chart.
+- Only one laser family can be active: normal tool laser and Blue Laser cancel
+  each other before arming.
+- Terminal panes support touch-native widgets: doubletap a pane to spawn/delete
+  its chart widget, doubletap a widget to delete it, and hold a widget title to
+  drag.
+
 ## Files
 
 - `index.html` - canonical live Telegram route and full game surface
