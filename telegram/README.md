@@ -1,53 +1,41 @@
-# ChartRunner Telegram dApp
+# ChartRunner Telegram Mini App
 
-Static Telegram Mini App prototype for a ChartRunner training run with TON wallet connect.
+Static live route for `https://chartrunner.xyz/telegram/`.
 
 ## What It Is
 
-ChartRunner mobile treats the chart as the level: live candles move through liquidity,
-bears pressure the setup, and the player uses Run, Long, Short, Bracket, and Rescue
-abilities from the thumb zone.
+`index.html` is the full ChartRunner game and charting prototype adapted for
+Telegram/mobile. It is intentionally single-file for the deployed route: chart
+engine, game loop, terminal widgets, wallet surfaces, and mobile controls all
+live in the page, with `cr-telegram-init.js` as the small Telegram boot bridge.
 
-The app has no build step. It includes Telegram's Mini App SDK and otherwise stays static/offline-friendly. Wallet connection is a no-crash prototype handoff using Telegram Wallet/Tonkeeper links plus a clearly labeled local demo connect state.
+## v1.0.126 Phone-First Controls
 
-## Telegram + Wallet Behavior
-
-- Detects `window.Telegram.WebApp` safely.
-- Calls `ready()`, `expand()`, `setHeaderColor()`, and `setBackgroundColor()` when available.
-- Shows Telegram Mini App status and user info from `initDataUnsafe.user` when present.
-- Shows browser fallback copy outside Telegram.
-- Opens Telegram Wallet inside Telegram, or a Tonkeeper universal handoff link in browser fallback.
-- Stores disconnected, pending, and demo-connected wallet states in `localStorage`.
-- Keeps chart gameplay usable without a wallet while annotating abilities as browser demo or wallet mode.
+- One-finger chart taps move the runner immediately.
+- Two-finger chart gestures pan and zoom the market view.
+- Placed chart tools/primitives keep using the existing drag/edit pipeline via
+  touch-to-mouse adaptation.
+- Pinned terminal/chart widgets can be dragged from their title bars and resized
+  from their grips on touch screens.
+- Bottom-left transparent hotkeys expose `1`, `2`, `3`, `4`, and `5`.
+- Bottom-right runner control acts like a movement stick.
+- Quick `F` and `S` buttons map to fly and shoot.
 
 ## Files
 
-- `index.html` - Telegram SDK include, app shell, wallet panel, chart viewport, action deck, and Mission/Abilities/Stats sheets
-- `styles.css` - safe-area mobile layout, chart-first UI, bottom sheet, desktop phone frame
-- `app.js` - Telegram WebApp setup, wallet handoff/demo state, canvas drawing, live candle loop, trading ability feedback, sheet navigation
-- `MOBILE_PLAN.md` - implementation plan and verification checklist
-- `scripts/smoke-test.js` - static smoke test and JavaScript syntax check
-- `tonconnect-manifest.json` - placeholder manifest for a future production TON Connect setup
+- `index.html` - canonical live Telegram route and full game surface
+- `cr-telegram-init.js` - Telegram WebApp boot helpers
+- `tonconnect-manifest.json` - placeholder manifest for future production TON Connect setup
+- `icon.svg` - Telegram manifest/app icon
+- `README.md` - this route note
 
 ## Verify
 
-```bash
-node scripts/smoke-test.js
-```
-
-## Run
-
-Open `index.html` directly in a browser, or serve the folder locally:
+Use the ChartRunner inline-script verifier from the project workspace:
 
 ```bash
-python3 -m http.server 4173
+node /Users/julianroy/.agents/skills/chartrunner-playtest-verifier/scripts/check-prototype-js.mjs telegram/index.html
+node scripts/check_public_leakage.mjs
 ```
 
-Then open `http://localhost:4173`.
-
-## Deploy as a Telegram Mini App
-
-1. Host the folder on an HTTPS URL.
-2. Configure that URL in BotFather as a Web App button or menu button.
-3. Replace `tonconnect-manifest.json` with production HTTPS `url` and `iconUrl` values.
-4. Add a real TON Connect bridge/SDK flow if ChartRunner needs signed wallet proofs or transactions.
+The older split-file smoke test is not the source of truth for this live route.
