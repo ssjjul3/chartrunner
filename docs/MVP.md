@@ -57,7 +57,7 @@ All six route through `ChartRunnerSDK`. Abilities never touch the canvas. The SD
 - **Token Terminal** — categorized token research dashboard with tabs: ★ **Winners** (default) · Losers · Volume Spike · Social Buzz · Signals · New · All. Each row is a draggable token profile card (price · onchain · holders · volume · signal · backtest · social).
 - **Workbench** — six tabs: Tools (manual ★-starring of laser tools) · Bots · Strategies · Indicators · **Terminal** (custom widget builder with row composer) · Backtest · App Builder
 - **Maps** — save chart setups (asset, TF, indicators, tools, strategy, destruction state) with thumbnail; load drops you into the game. **Save button in the in-game topbar** captures the current run with a custom name.
-- **Bot Terminal** — three tabs: Agents / Console / Chat — connect Claude / Telegram / Lobster / OpenClaw / Hermes
+- **Bot Terminal** — public demo agent console with gated hosted transports
 - **Configs** — opens after mode pick (asset / strategy / perspective / TF) → Start Run
 
 ### Tutorials (context-driven)

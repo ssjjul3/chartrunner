@@ -6,7 +6,7 @@
      ============================================================
      CURRENT VERSION: v1.0.125
      LAST UPDATED:    2026-05-28
-     Umbrel sovereign OHLC + $CHART visual lock + optimizations (synced from main)
+     local data sovereign OHLC + $CHART visual lock + optimizations (synced from main)
 
      Bump this banner on EVERY version commit. The surface-health daily
      task greps for `v1\.0\.\d+` in `head -80` of this file to detect
@@ -34,7 +34,7 @@
                          wiring. ~18KB / ~390 lines removed. (Scheduled
                          task originally named v1.0.105; bumped to .107
                          because .105 and .106 already shipped.)
-       v1.0.125          (Synced) Sovereign data source (?localdata=1 Umbrel),
+       v1.0.125          (Synced) Sovereign data source (?localdata=1 local data),
                          finalizeCandleLoad DRY helper, full $CHART visual lock.
      ============================================================ -->
 <meta charset="utf-8" />
@@ -6514,8 +6514,8 @@
           <div class="lbl">Maps</div>
           <div class="kbd">Save · Load</div>
         </button>
-        <!-- v0.8k#24n — Bot Terminal: connects to Claude / Telegram / Lobster / OpenClaw. -->
-        <button class="os-icon" data-prog="bot" title="Bot Terminal — connect agents (Claude · Telegram · Lobster · OpenClaw)">
+        <!-- v0.8k#24n — Bot Terminal: connects to public demo agents. -->
+        <button class="os-icon" data-prog="bot" title="Bot Terminal — connect agents (Claude · Telegram · Lobster · demo agent)">
           <div class="ico"><svg class="cr-svg-ico" style="--accent:#4ecdc4;--accent2:#7ee787" viewBox="0 0 32 32" aria-hidden="true">
             <!-- robot head with antenna + glowing eyes -->
             <line x1="16" y1="3" x2="16" y2="7" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/>
@@ -8478,7 +8478,7 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
       </div>
 
       <!-- v0.8k#24n — Bot Terminal: dock-side hub for connecting external
-           trading agents (Claude / Telegram / Lobster / OpenClaw). The
+           trading agents (public demo agents). The
            connections are mock surfaces in Phase 0 — clicking Connect flips
            the row's status pill from "—" to a paper-mode "ONLINE" indicator
            and unlocks the per-agent command pane. Real key/credentials wiring
@@ -12009,17 +12009,17 @@ async function loadCandles(tf){
   const interval = BINANCE_INTERVALS.includes(tf) ? tf : '15m';
   const asset = currentAssetObj();
 
-  // Sovereign data integration (Umbrel + n8n refined OHLC pipelines)
-  // Activate with ?localdata=1  (or set window.USE_UMBREL_DATA = true before boot)
+  // Sovereign data integration (local data + n8n refined OHLC pipelines)
+  // Activate with ?localdata=1  (or set window.USE_LOCAL_DATA = true before boot)
   // The n8n webhook (or tiny code-server static server) must return either:
   //   - raw Binance kline shape: [[t,o,h,l,c,v], ...]
   //   - or already mapped objects: [{t,o,h,l,c,v}, ...]
-  // Point this at your Tailscale IP + the webhook you expose from Umbrel.
-  const USE_LOCAL_UMBREL = (window.USE_UMBREL_DATA === true) ||
+  // Point this at your Tailscale IP + the webhook you expose from local data.
+  const USE_LOCAL_DATA = (window.USE_LOCAL_DATA === true) ||
                            /[?&]localdata=1/.test(location.search);
-  if (USE_LOCAL_UMBREL) {
+  if (USE_LOCAL_DATA) {
     try {
-      // EDIT: replace with your actual Umbrel Tailscale hostname/IP + port/path
+      // EDIT: replace with your actual local data Tailscale hostname/IP + port/path
       const localEndpoint = 'http://100.67.XXX.XXX:5678/webhook/ohlc';
       const url = `${localEndpoint}?symbol=${asset.sym}&interval=${interval}&limit=1000&tf=${tf}`;
       const resp = await fetch(url, { mode: 'cors' });
@@ -12029,11 +12029,11 @@ async function loadCandles(tf){
       candles = arr.map(k => Array.isArray(k)
         ? {t:k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], v:+k[5]}
         : {t:k.t||k[0], o:+k.o, h:+k.h, l:+k.l, c:+k.c, v:+k.v||0});
-      document.getElementById('src').textContent = 'refined · Umbrel';
+      document.getElementById('src').textContent = 'refined · local data';
       finalizeCandleLoad();
       return;
     } catch (err) {
-      console.warn('[Umbrel] localdata fetch failed — falling back to Binance', err);
+      console.warn('[local data] localdata fetch failed — falling back to Binance', err);
       // fall through to live Binance below
     }
   }
@@ -12055,7 +12055,7 @@ async function loadCandles(tf){
 }
 
 function finalizeCandleLoad(){
-  // Common post-processing after any candle source (Binance / Umbrel / fallback)
+  // Common post-processing after any candle source (Binance / local data / fallback)
   // set price scale so the full range fits nicely
   let hi=-Infinity, lo=Infinity;
   for(const c of candles){ if(c.h>hi)hi=c.h; if(c.l<lo)lo=c.l; }
@@ -12087,17 +12087,17 @@ function finalizeCandleLoad(){
 
 // Dev helper for the new sovereign data path (console or bookmarklet)
 try {
-  window.enableUmbrelData = function(on = true) {
-    window.USE_UMBREL_DATA = !!on;
-    console.log('%c[Umbrel] USE_UMBREL_DATA =', 'color:#9b8cff', window.USE_UMBREL_DATA,
-      '— reload + append ?localdata=1 (or call loadCandles again) to use refined data from your Umbrel instance.');
+  window.enableLocalData = function(on = true) {
+    window.USE_LOCAL_DATA = !!on;
+    console.log('%c[local data] USE_LOCAL_DATA =', 'color:#9b8cff', window.USE_LOCAL_DATA,
+      '— reload + append ?localdata=1 (or call loadCandles again) to use refined data from your local data instance.');
   };
-  window.disableUmbrelData = () => window.enableUmbrelData(false);
+  window.disableLocalData = () => window.enableLocalData(false);
 } catch(_) {}
 
 // One-time tip on first load in dev
 if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-  console.log('%c[ChartRunner] Sovereign data ready — window.enableUmbrelData() then hard-reload with ?localdata=1', 'color:#ffd166');
+  console.log('%c[ChartRunner] Sovereign data ready — window.enableLocalData() then hard-reload with ?localdata=1', 'color:#ffd166');
 }
 
 function generateFallbackCandles(tf, n){
@@ -12313,7 +12313,7 @@ window.addEventListener('keydown', e=>{
     try { toast('Bracket placed · ' + rrDisplay(rr)); } catch(_){}
     return;
   }
-  // v1.0.108 — Runroom step 6: SIFT ability (key 7).
+  // v1.0.108 — Runroom step 6: v3 ability (key 7).
   // Tap 7 → score the current symbol via crScoring → toast result + float
   // the state badge + spawn particles when state is PRIME. Cooldown 5s after
   // the first free tap of the session. Gated by RUNROOM_ENABLED — when off,
@@ -26873,7 +26873,7 @@ function _crTermPickerDocsHtml(){
     + '<div class="api-row"><div class="sig">window.crBirdeye.setApiKey(key)</div><div class="desc">Set the Birdeye API key + clear cache. Persists to <code>localStorage.cr_birdeye_key_v1</code>.</div></div>'
     + '<div class="api-row"><div class="sig">window.crGoldRush.setApiKey(key)</div><div class="desc">Set the GoldRush key. Persists to <code>localStorage.cr_goldrush_key_v1</code>.</div></div>'
     + '<div class="api-row"><div class="sig">window.crBrokers.setQuoteAsset(id)</div><div class="desc">Switch the broker chassis settle asset across all 5 drivers (mock · binance-paper · phoenix · jupiter · jito). <code>id</code> ∈ {<code>usdc</code>, <code>usdt</code>, …}.</div></div>'
-    + '<div class="api-row"><div class="sig">window.crQvac.ask(agentId, prompt, history)</div><div class="desc">Route a bot agent reply through the 3-engine local-AI adapter (QVAC bridge → Web-LLM → scripted stub). Returns Promise&lt;string&gt;. See <code>SUBMISSION-QVAC.md</code>.</div></div>'
+    + '<div class="api-row"><div class="sig">window.crQvac.ask(agentId, prompt, history)</div><div class="desc">Route a bot agent reply through the 3-engine local-AI adapter (QVAC bridge → Web-LLM → scripted stub). Returns Promise&lt;string&gt;. See the public Agent Bus notes.</div></div>'
     + '<div class="api-row"><div class="sig">window.crQvac.configure(opts)</div><div class="desc">Set <code>{ bridgeUrl, model, engine }</code>. Engine ∈ <code>stub | bridge | auto | auto-with-webllm | webllm</code>. Default <code>stub</code>.</div></div>'
     + '<div class="api-row"><div class="sig">window.crGuestOpen(tab)</div><div class="desc">Open the Continue-as-Guest modal. <code>tab</code> ∈ <code>login | register</code>.</div></div>'
     + '<div class="api-row"><div class="sig">window.crGuestSession()</div><div class="desc">Read current guest session: <code>{ username, email, expiresAt }</code> or <code>null</code>.</div></div>'
@@ -37181,7 +37181,7 @@ function log(msg){
     { prog:'maps',      icon:'🗺', name:'MAPS',         kind:'DESKTOP',    line:"Saved chart setups — every tool, indicator, overlay preserved.",                                       hint:"Drag a map onto the desktop to pin a live read-only widget. Double-click loads it back." },
     { prog:'terminal',  icon:'⌨',  name:'TERMINAL',     kind:'DESKTOP',    line:"Trading console: Engine · HyperTracker · SolanaTracker · CEXTracker · Strategies.",                   hint:"+ spawns custom widgets built in Workbench → Terminal. Drag any pane to desktop or chart." },
     { prog:'tokenterm', icon:'🪙', name:'TOKEN TERMINAL',kind:'DESKTOP',   line:"Live Binance data per token. ★ Winners default. Pick a TF (15m/1h/4h/1D/1W) per coin.",                hint:"Drag any row to pin its profile + sparkline as a desktop or chart widget." },
-    { archived:true, prog:'bot',   icon:'🤖', name:'BOT TERMINAL', kind:'DESKTOP', line:"Wire agents: Claude · Telegram · Lobster · OpenClaw. And me — Coach.", hint:"Drag an agent row onto the desktop to keep that chat one click away." },
+    { archived:true, prog:'bot',   icon:'🤖', name:'BOT TERMINAL', kind:'DESKTOP', line:"Wire agents: Claude · Telegram · Lobster · demo agent. And me — Coach.", hint:"Drag an agent row onto the desktop to keep that chat one click away." },
     { prog:'journal',   icon:'📓', name:'JOURNAL',      kind:'DESKTOP',    line:"Auto-logs every order: score · side · entry · SL · TP · ref levels · checklist snapshot.",            hint:"4 tabs: Manual (auto from SDK) · Paper (discretionary) · Bot (bot-fired) · Stats." },
     { archived:true, prog:'sdk',   icon:'⫘',  name:'SDK',          kind:'DESKTOP', line:"Every order routes through ChartRunnerSDK: bracket · ladder · oco · hedge · radar · rescue.", hint:"Same call shape drops onto Dexscreener / TradingView in Phase 1, Solana in Phase 2." },
     { prog:null,        icon:'🎯', name:'PLAYER AVATAR',kind:'DESKTOP',    line:"Click 'Player' in the menubar to spawn your avatar on the desktop. Press SPACE to shoot widgets/windows.",hint:"Apps stay immune. Drag the avatar to reposition. Player menu again to dismiss." },
@@ -41219,7 +41219,7 @@ const crL3 = (function(){
     { id:'claude',   nm:'Claude',    ic:'🧠', desc:'Anthropic LLM · thesis + signal review' },
     { id:'telegram', nm:'Telegram',  ic:'✈',  desc:'Bot · trade alerts + mandate flow' },
     { id:'lobster',  nm:'Lobster',   ic:'🦞', desc:'Whale-flow tracker · on-chain feed' },
-    { id:'openclaw', nm:'OpenClaw',  ic:'🦅', desc:'Open-source trading agent' },
+    { id:'openclaw', nm:'demo agent',  ic:'🦅', desc:'Open-source trading agent' },
     { id:'hermes',   nm:'Hermes',    ic:'⚡', desc:'Low-latency execution router · cross-venue' },
   ];
   const botState = { online: new Set() };
@@ -41253,7 +41253,7 @@ const crL3 = (function(){
               claude:   '< Claude: ready. Send a thesis or "review last 10 trades".',
               telegram: '< Telegram: bot online. /grant <wallet> to delegate.',
               lobster:  '< Lobster: streaming whale-flow events.',
-              openclaw: '< OpenClaw: agent loop initialized.',
+              openclaw: '< demo agent: agent loop initialized.',
               hermes:   '< Hermes: routing online · 7 venues · 12ms median.',
             }[a.id] || '< agent online';
             _botLog(hi);
@@ -45872,7 +45872,7 @@ window.crGoldRush = (function(){
      3. Scripted stub fallback   — Original v0.9.x one-line replies.
 
    Each agent has its own SYSTEM_PROMPTS entry so Claude / Lobster /
-   Hermes / Telegram / OpenClaw answer in-character.
+   Hermes / Telegram / demo agent answer in-character.
 
    Config (persisted in localStorage):
      · cr_qvac_bridge_url   — HTTP endpoint
@@ -45894,7 +45894,7 @@ window.crQvac = (function(){
     claude:   "You are Claude — a sharp tape-reading AI advisor inside ChartRunner. Style: terse, analytical, 1-2 sentences. You review trade ideas, surface confluence, and call out risk. Speak in plain trader vernacular.",
     telegram: "You are a Telegram trade-alert bot inside ChartRunner. Style: clipped Telegram-style messages, 1 sentence + relevant emoji. You forward signals, confirm orders, and announce fills.",
     lobster:  "You are Lobster — a whale-flow specialist inside ChartRunner. Style: dry, on-chain-pilled, references mints + wallet sizes. 1-2 sentences. You flag whale buys/sells and unusual flow.",
-    openclaw: "You are OpenClaw — an open-source trading agent inside ChartRunner. Style: scrappy, hacker-adjacent, references pull-requests + git refs occasionally. 1-2 sentences.",
+    openclaw: "You are demo agent — an open-source trading agent inside ChartRunner. Style: scrappy, hacker-adjacent, references pull-requests + git refs occasionally. 1-2 sentences.",
     hermes:   "You are Hermes — a low-latency execution router inside ChartRunner. Style: extremely terse, 1 sentence max, references venues + bps + ms latency. You route orders cross-venue.",
   };
 
