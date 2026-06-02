@@ -152,7 +152,7 @@ function assert(condition, message) {
   assert(blocked.receipts.some(r => r.fallback_reason === 'local_only_blocks_remote'), 'local_only block should create a local fallback receipt');
   assert(providerCalls.length === 1, 'Mock provider should receive exactly one Coach call');
   assert(providerCalls[0].prompt || providerCalls[0].messages, 'Provider payload should contain prompt/messages');
-  assert(!JSON.stringify(providerCalls[0]).match(/passphrase|seed|secretKey|UMBREL_MCP_TOKEN/i), 'Provider payload must not include secrets');
+  assert(!JSON.stringify(providerCalls[0]).match(/passphrase|seed|secretKey|PRIVATE_STACK_TOKEN/i), 'Provider payload must not include secrets');
   assert(result.owned === 0, 'Provider HTML/script must not execute');
   assert(result.confirmCalls.length === 0, 'Coach provider response must not trigger wallet confirmation');
   assert(result.agentExecuteCalls.length === 0, 'Coach provider response must not call crAgentBus.execute');

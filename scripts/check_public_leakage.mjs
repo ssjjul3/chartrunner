@@ -39,7 +39,7 @@ const FORBIDDEN_TEXT = [
   ['private FlareSolverr patch', /openclaw-flaresolverr/],
   ['sidetrack submissions marker', /SIDETRACK-SUBMISSIONS/],
   ['private agent codename', /OpenClaw/],
-  ['private local stack marker', /Umbrel/],
+  ['private local stack marker', /umbrel/i],
   ['private labs flag', /crLabs/],
   ['public agent bridge URL knob', /crAgentBridgeUrl/],
   ['public agent events URL knob', /crAgentEventsUrl/],

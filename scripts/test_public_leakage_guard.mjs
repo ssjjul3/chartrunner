@@ -78,4 +78,17 @@ function cleanup(root) {
   }
 }
 
+{
+  const root = makeRepo({
+    'docs/leak.md': 'Do not let umbrel.local return to public docs.\n',
+  });
+  try {
+    const result = runLeakageCheck(root);
+    assert.equal(result.ok, false);
+    assert.match(result.messages.join('\n'), /umbrel/);
+  } finally {
+    cleanup(root);
+  }
+}
+
 console.log('Public leakage guard self-test passed.');
