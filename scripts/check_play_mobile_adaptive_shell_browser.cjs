@@ -40,30 +40,62 @@ function assert(ok, msg){
       const state = api.getState();
       const orb = document.getElementById('crMobileRunnerOrb')?.getBoundingClientRect();
       const hotkeys = document.querySelector('.crMobileHotkeys')?.getBoundingClientRect();
+      const hotToggle = document.getElementById('crMobileHotToggle')?.getBoundingClientRect();
+      const modeLabels = Array.from(document.querySelectorAll('#crMobileModeDock [data-cr-mobile-mode]'))
+        .map(el => el.getAttribute('data-cr-mobile-mode'));
+      const visibleHotkeyCount = Array.from(document.querySelectorAll('[data-cr-mobile-key]'))
+        .filter(el => {
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden';
+        }).length;
       return {
         version: api.version,
         layout: document.body.getAttribute('data-cr-mobile-layout'),
         mode: state.mode,
         shellReady: document.body.classList.contains('crMobileShellReady'),
-        modeCount: document.querySelectorAll('[data-cr-mobile-mode]').length,
+        modeCount: modeLabels.length,
+        modeLabels,
         hotkeyCount: document.querySelectorAll('[data-cr-mobile-key]').length,
+        visibleHotkeyCount,
         quickCount: document.querySelectorAll('[data-cr-mobile-action]').length,
+        hotTogglePresent: !!hotToggle,
+        hotToggleBottomLeft: !!hotToggle && hotToggle.left < 72 && hotToggle.bottom > window.innerHeight - 120,
+        hotkeysCollapsed: !document.querySelector('.crMobileHotkeys')?.classList.contains('open'),
         topLabelsHidden: Array.from(document.querySelectorAll('#crOSBar .cr-bar-btn .lbl'))
           .every(el => getComputedStyle(el).display === 'none'),
         orbBottomRight: !!orb && orb.right > window.innerWidth - 128 && orb.bottom > window.innerHeight - 132,
         hotkeysBottomLeft: !!hotkeys && hotkeys.left < 72 && hotkeys.bottom > window.innerHeight - 120,
       };
     });
-    assert(portrait.version === '1.0.214', 'play mobile API version should be 1.0.214');
     assert(portrait.layout === 'portrait-phone', 'portrait viewport should be classified as portrait-phone');
     assert(portrait.mode === 'move', 'default mobile mode should be move');
     assert(portrait.shellReady, 'body should expose crMobileShellReady');
-    assert(portrait.modeCount >= 6, 'mobile mode dock should expose Move/Inspect/Tool/Laser/Blue/Widget');
+    assert(portrait.modeCount === 4, 'mobile mode dock should expose exactly Move/Inspect/Tool/Widget');
+    assert(!portrait.modeLabels.includes('laser') && !portrait.modeLabels.includes('blue'), 'laser buttons should not duplicate hotkeys in the mode dock');
+    assert(portrait.version === '1.0.215', 'play mobile API version should be 1.0.215');
     assert(portrait.hotkeyCount === 5, 'bottom-left transparent hotkeys 1-5 should be present');
+    assert(portrait.visibleHotkeyCount === 0, 'hotkey numbers should be collapsed by default');
+    assert(portrait.hotTogglePresent, 'bottom-left HOT toggle should be present');
+    assert(portrait.hotToggleBottomLeft, 'HOT toggle should be anchored bottom-left');
+    assert(portrait.hotkeysCollapsed, 'hotkey tray should start collapsed');
     assert(portrait.quickCount >= 2, 'fly/shoot quick buttons should be present');
     assert(portrait.topLabelsHidden, 'portrait topbar command labels should be icon-first');
     assert(portrait.orbBottomRight, 'runner movement orb should be anchored bottom-right');
     assert(portrait.hotkeysBottomLeft, 'hotkeys should be anchored bottom-left');
+
+    await page.click('#crMobileHotToggle');
+    const hotTrayOpen = await page.evaluate(() => ({
+      expanded: document.getElementById('crMobileHotToggle')?.getAttribute('aria-expanded'),
+      visibleHotkeyCount: Array.from(document.querySelectorAll('[data-cr-mobile-key]'))
+        .filter(el => {
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden';
+        }).length,
+    }));
+    assert(hotTrayOpen.expanded === 'true', 'HOT toggle should expose expanded state');
+    assert(hotTrayOpen.visibleHotkeyCount === 5, 'HOT tray should expand to hotkeys 1-5');
 
     const modeResult = await page.evaluate(() => {
       const api = window.crMobilePhoneFirst;
@@ -129,7 +161,7 @@ function assert(ok, msg){
         if(theme === 'platinum') document.body.removeAttribute('data-os-theme');
         else document.body.setAttribute('data-os-theme', theme);
         const mode = document.querySelector('.crMobileModeBtn');
-        const key = document.querySelector('.crMobileKey');
+        const key = document.getElementById('crMobileHotToggle');
         const orb = document.getElementById('crMobileRunnerOrb');
         const modeStyle = mode ? getComputedStyle(mode) : null;
         const keyRect = key ? key.getBoundingClientRect() : null;
@@ -154,10 +186,19 @@ function assert(ok, msg){
   await withPage({ width: 844, height: 390 }, async page => {
     const landscape = await page.evaluate(() => ({
       layout: document.body.getAttribute('data-cr-mobile-layout'),
+      modeCount: document.querySelectorAll('#crMobileModeDock [data-cr-mobile-mode]').length,
+      visibleHotkeyCount: Array.from(document.querySelectorAll('[data-cr-mobile-key]'))
+        .filter(el => {
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden';
+        }).length,
       topLabelsVisible: Array.from(document.querySelectorAll('#crOSBar .cr-bar-btn .lbl'))
         .some(el => getComputedStyle(el).display !== 'none'),
     }));
     assert(landscape.layout === 'landscape-phone', 'landscape viewport should be classified as landscape-phone');
+    assert(landscape.modeCount === 4, 'landscape mode dock should not duplicate laser hotkeys');
+    assert(landscape.visibleHotkeyCount === 0, 'landscape hotkey tray should stay collapsed by default');
     assert(landscape.topLabelsVisible, 'landscape should allow compact topbar labels');
   });
 

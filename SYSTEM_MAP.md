@@ -20,7 +20,7 @@ Standalone SDK package source, generated SDK browser artifacts, live broker exec
 ## Public Status
 
 - Playable prototype: live
-- `/play/` mobile/tablet shell: adaptive portrait/landscape/tablet controls live in `ChartRunner_Prototype.html`
+- `/play/` mobile/tablet shell: adaptive portrait/landscape/tablet controls with chart-only mode rail and collapsible HOT tray live in `ChartRunner_Prototype.html`
 - Solana devnet maps/registry/oracle/match programs: public source and devnet-oriented
 - SDK package: gated until publish-ready
 - Mainnet/live trading: gated
