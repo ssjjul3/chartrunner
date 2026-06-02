@@ -7,8 +7,7 @@ This public roadmap summarizes product direction without exposing private operat
 - Playable browser prototype is live.
 - Solana devnet wallet bridge is live.
 - Anchor program source is public.
-- Core SDK source is public in `sdk-m1-scaffold/sdk/core`.
-- Public SDK package publication is still gated.
+- Standalone SDK package source and generated `/sdk/` artifacts are gated until publish-ready.
 - Mainnet and live broker execution are not shipped.
 
 ## Public Roadmap
@@ -16,7 +15,7 @@ This public roadmap summarizes product direction without exposing private operat
 | Area | Status |
 |---|---|
 | Playable chart game | Live prototype |
-| SDK extraction | Runtime-ready source, npm publish gated |
+| SDK extraction | Prototype runtime bundled; standalone package gated |
 | Solana devnet programs | Public source, devnet deployment |
 | Wallet identity | Prototype/devnet path |
 | Marketplace | Devnet/prototype path |
