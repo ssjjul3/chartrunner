@@ -17,3 +17,7 @@ ChartRunnerSDK is the only order-like action path. Public builds expose paper/sa
 ## Local Use
 
 Open `ChartRunner_Prototype.html` in a browser, or use the live public build at `https://chartrunner.xyz/play/`.
+
+## Mobile / Tablet Play
+
+`/play/` includes an adaptive mobile shell for phones and tablets: portrait uses compact top-bar commands, bottom-left transparent hotkeys, bottom-right runner controls, mobile app sheets, tap-to-run movement, two-finger chart movement, and one-active-laser routing. Landscape phone and tablet layouts keep more desktop chrome while preserving the touch controls.
