@@ -36,15 +36,30 @@ const FORBIDDEN_TEXT = [
   ['private Umbrel milestone', /M12-umbrel/],
   ['private bot milestone', /M14-bot/],
   ['private market data milestone', /M16-complete/],
-  ['private FlareSolverr patch', /openclaw-flaresolverr/],
+  ['private FlareSolverr patch', /openclaw-flaresolverr/i],
   ['sidetrack submissions marker', /SIDETRACK-SUBMISSIONS/],
-  ['private agent codename', /OpenClaw/],
+  ['private agent codename', /openclaw/i],
   ['private local stack marker', /umbrel/i],
   ['private labs flag', /crLabs/],
+  ['private labs query flag', /crPrivateLabs/],
+  ['private Bot Terminal query flag', /crPrivateBotTerminal/],
+  ['private local app query flag', /crLocalPrivateApps/],
+  ['private Bot Terminal localStorage flag', /cr_labs_bot_terminal_v1/],
+  ['private labs DOM flag', /data-cr-labs-bot-terminal/],
+  ['private QVAC marker', /\b(?:QVAC|qvac)\b/],
+  ['private QVAC API', /crQvac/],
+  ['private QVAC storage marker', /cr_qvac/i],
+  ['private bot bridge panel', /crBotBridge/],
+  ['private bot bridge marker', /BotBridge/],
   ['public agent bridge URL knob', /crAgentBridgeUrl/],
   ['public agent events URL knob', /crAgentEventsUrl/],
   ['private agent bridge URL knob', /crPrivateAgentBridgeUrl/],
   ['private agent events URL knob', /crPrivateAgentEventsUrl/],
+  ['private agent events runtime', /crAgentEvents/],
+  ['private agent events storage marker', /cr_agent_events/i],
+  ['private agent bridge storage marker', /cr_agent_bridge/i],
+  ['private dev bridge flag', /__CR_DEV__/],
+  ['private persona byline', /0xLobster/],
   ['legacy Umbrel data flag', /USE_UMBREL_DATA/],
   ['defunct SDK scaffold path', /sdk-m1-scaffold/],
   ['served generated SDK path', /chartrunner-prototype\/sdk/],
@@ -64,6 +79,17 @@ const BINARY_EXTENSIONS = new Set([
   '.pdf', '.png', '.ppt', '.pptx', '.tar', '.tgz', '.webp', '.woff', '.woff2',
   '.zip',
 ]);
+
+const HERMES_LOCKFILE_ALLOWLIST = new Set([
+  'solana-connect/package-lock.json',
+]);
+
+const PYTH_HERMES_FILE_ALLOWLIST = new Set([
+  'anchor/programs/chartrunner-oracle/src/lib.rs',
+  'solana-connect/src/lib/pyth-feeds.ts',
+]);
+
+const PYTH_HERMES_LINE_ALLOWLIST = /Pyth|pythnetwork|hermes\.pyth\.network|HERMES_|VAA|verified feed|price update|price-update|price service|price feed|price snapshot|REST snapshot|WebSocket stream|benchmark endpoint|fetchLatestPrice|streamPyth/i;
 
 function trackedFiles(root) {
   try {
@@ -104,6 +130,19 @@ function lineForOffset(text, offset) {
   return line;
 }
 
+function checkHermesText(file, text, messages) {
+  if (HERMES_LOCKFILE_ALLOWLIST.has(file)) return;
+  if (PYTH_HERMES_FILE_ALLOWLIST.has(file)) return;
+
+  const lines = text.split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!/hermes/i.test(line)) continue;
+    if (PYTH_HERMES_LINE_ALLOWLIST.test(line)) continue;
+    messages.push(`forbidden text [private Hermes marker]: ${file}:${index + 1} contains ${line.trim().slice(0, 120)}`);
+  }
+}
+
 export function runLeakageCheck(root = process.cwd()) {
   const repoRoot = path.resolve(root);
   const files = trackedFiles(repoRoot);
@@ -135,6 +174,8 @@ export function runLeakageCheck(root = process.cwd()) {
         messages.push(`forbidden text [${label}]: ${file}:${line} contains ${match[0]}`);
       }
     }
+
+    checkHermesText(file, text, messages);
   }
 
   return { ok: messages.length === 0, messages, scannedFiles: files.length };

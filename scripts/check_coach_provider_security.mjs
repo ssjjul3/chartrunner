@@ -25,7 +25,7 @@ assert(/local_only_blocks_remote/.test(html), 'Router must block remote provider
 assert(/Coach LLM is an untrusted narrator/.test(html), 'Source must document the untrusted narrator invariant');
 assert(/Coach reads context[^]*connected agent\/tool proposes[^]*SDK\/wallet executes/.test(html), 'Source must document the authority split');
 assert(/function coachKnowledge\(\)/.test(providerModule), 'Provider must include a bounded ChartRunner/trading knowledge pack');
-assert(/Bot Terminal[^]*external bots and agents/i.test(providerModule), 'Provider prompt must identify Bot Terminal as the external agent interface');
+assert(/Bot Terminal[^]*(public local demo agent surface|local demo agents?)/i.test(providerModule), 'Provider prompt must identify Bot Terminal as the public local demo agent surface');
 assert(/in_game_context_advisor|in-game context advisor/i.test(providerModule), 'Provider snapshot must identify Coach as the in-game context advisor');
 assert(/tradingPlaybook/.test(providerModule), 'Provider snapshot must include general trading guidance, not only game state');
 assert(providerModule && providerModule.length > 1000, 'Coach provider module slice must be detectable');

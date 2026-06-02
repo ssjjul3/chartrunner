@@ -80,6 +80,73 @@ function cleanup(root) {
 
 {
   const root = makeRepo({
+    'docs/leak.md': 'Do not let window.crQvac.ask() return to public docs.\n',
+  });
+  try {
+    const result = runLeakageCheck(root);
+    assert.equal(result.ok, false);
+    assert.match(result.messages.join('\n'), /crQvac/);
+  } finally {
+    cleanup(root);
+  }
+}
+
+{
+  const root = makeRepo({
+    'docs/leak.md': 'Do not let ?crPrivateBotTerminal=1 return as a public gate.\n',
+  });
+  try {
+    const result = runLeakageCheck(root);
+    assert.equal(result.ok, false);
+    assert.match(result.messages.join('\n'), /crPrivateBotTerminal/);
+  } finally {
+    cleanup(root);
+  }
+}
+
+{
+  const root = makeRepo({
+    'docs/leak.md': 'Hermes execution router stays private.\n',
+  });
+  try {
+    const result = runLeakageCheck(root);
+    assert.equal(result.ok, false);
+    assert.match(result.messages.join('\n'), /Hermes/);
+  } finally {
+    cleanup(root);
+  }
+}
+
+{
+  const root = makeRepo({
+    'docs/pyth.md': [
+      'Pyth Hermes snapshot remains public market-data plumbing.\n',
+      'https://hermes.pyth.network/v2/updates/price/latest\n',
+    ].join(''),
+  });
+  try {
+    const result = runLeakageCheck(root);
+    assert.equal(result.ok, true, result.messages.join('\n'));
+  } finally {
+    cleanup(root);
+  }
+}
+
+{
+  const root = makeRepo({
+    'docs/leak.md': 'Do not let 0xLobster persona details return to public docs.\n',
+  });
+  try {
+    const result = runLeakageCheck(root);
+    assert.equal(result.ok, false);
+    assert.match(result.messages.join('\n'), /0xLobster/);
+  } finally {
+    cleanup(root);
+  }
+}
+
+{
+  const root = makeRepo({
     'docs/leak.md': 'Do not let umbrel.local return to public docs.\n',
   });
   try {
