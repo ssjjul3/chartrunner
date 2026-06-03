@@ -57,7 +57,7 @@ All six route through `ChartRunnerSDK`. Abilities never touch the canvas. The SD
 - **Token Terminal** — categorized token research dashboard with tabs: ★ **Winners** (default) · Losers · Volume Spike · Social Buzz · Signals · New · All. Each row is a draggable token profile card (price · onchain · holders · volume · signal · backtest · social).
 - **Workbench** — six tabs: Tools (manual ★-starring of laser tools) · Bots · Strategies · Indicators · **Terminal** (custom widget builder with row composer) · Backtest · App Builder
 - **Maps** — save chart setups (asset, TF, indicators, tools, strategy, destruction state) with thumbnail; load drops you into the game. **Save button in the in-game topbar** captures the current run with a custom name.
-- **Bot Terminal** — public demo agent console with gated hosted transports
+- **Bot Terminal** — archived/private ops surface; live public `/play/` hides its launchers/window
 - **Configs** — opens after mode pick (asset / strategy / perspective / TF) → Start Run
 
 ### Tutorials (context-driven)
@@ -113,7 +113,7 @@ Two Anchor programs ship code-complete; deployment via Solana Playground is the 
 - **Live pulse dot** in the panel corner signals on-chain polling activity
 
 ### Phone OS overlay
-- Full mirror of the desktop OS: Coach (retired), Marketplace, Profile, Intel (retired), Maps, Terminal, Bot Terminal
+- Phone shell mirrors public desktop OS surfaces; private/retired apps such as Coach (retired), Intel (retired), and Bot Terminal stay outside live public `/play/`
 - Profile tabs: Balances · Stats · Missions
 
 ### Desktop widgets
@@ -181,7 +181,7 @@ These rules are why Phase 1 (drop the game UI on top of Dexscreener / TradingVie
 | **On-chain entity types in registry** | 9 (Map · Strategy · Bot · Indicator · Backtest · App · TokenProfile · Widget · Tool) |
 | **Trading primitives wired to SDK** | 6 (bracket / ladder / OCO / hedge / radar / rescue) |
 | **Indicators implemented** | 9 |
-| **OS apps shipping** | 9+ (Run · Marketplace · Profile · Workbench · Maps · Terminal · Bot Terminal · Token Terminal · Configs · custom-built apps) |
+| **OS apps shipping** | 8+ public/live (Run · Marketplace · Profile · Workbench · Maps · Terminal · Token Terminal · Configs · custom-built apps); Bot Terminal archived/private |
 | **P2P Marketplace categories** | 6 (Bots · Maps · Strategies · Backtests · Indicators · Apps) |
 | **Tracker views** | 5 (Engine / HyperTracker / SolanaTracker / CEXTracker / Strategies) |
 | **Themes** | 3 (Platinum / Solana / Ascii) |
