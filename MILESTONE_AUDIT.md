@@ -32,3 +32,4 @@ Private operations, hosted bridges, data pipelines, bot tuning, competition play
 ## Latest Public Milestone
 
 - `2026-06-02`: `/play/` mobile shell release (`v1.0.214`) and control cleanup (`v1.0.215`) shipped. See [docs/milestones/2026-06-02-play-mobile-shell.md](docs/milestones/2026-06-02-play-mobile-shell.md).
+- `2026-06-03`: `/play/` boot overlay hitbox hotfix (`v1.0.216`) shipped so dismissed guest/login chrome no longer intercepts terminal pane widget close/delete clicks.

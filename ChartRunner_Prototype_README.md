@@ -2,7 +2,7 @@
 
 ChartRunner is a playable browser prototype for a gamified trading SDK. The public build focuses on game mechanics, paper/sandbox primitives, wallet handoff, and devnet-verifiable on-chain source.
 
-Current public prototype version: `v1.0.215`.
+Current public prototype version: `v1.0.216`.
 
 ## Public Surfaces
 
