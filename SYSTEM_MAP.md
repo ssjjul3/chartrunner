@@ -21,7 +21,7 @@ Standalone SDK package source, generated SDK browser artifacts, live broker exec
 
 - Playable prototype: live
 - `/play/` mobile/tablet shell: adaptive portrait/landscape/tablet controls with chart-only mode rail and collapsible HOT tray live in `ChartRunner_Prototype.html`
-- Latest public milestone: `2026-06-05` Configure Run sleek UI pass live as `v1.0.218`; live `/play/` keeps Bot Terminal archived from public launchers/window
+- Latest public milestone: `2026-06-05` RUN-tube window-design pass live as `v1.0.219`; live `/play/` keeps Bot Terminal archived from public launchers/window
 - Solana devnet maps/registry/oracle/match programs: public source and devnet-oriented
 - SDK package: gated until publish-ready
 - Mainnet/live trading: gated
