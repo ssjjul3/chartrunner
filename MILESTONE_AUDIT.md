@@ -34,3 +34,5 @@ Private operations, hosted bridges, data pipelines, bot tuning, competition play
 - `2026-06-02`: `/play/` mobile shell release (`v1.0.214`) and control cleanup (`v1.0.215`) shipped. See [docs/milestones/2026-06-02-play-mobile-shell.md](docs/milestones/2026-06-02-play-mobile-shell.md).
 - `2026-06-03`: `/play/` boot overlay hitbox hotfix (`v1.0.216`) shipped so dismissed guest/login chrome no longer intercepts terminal pane widget close/delete clicks.
 - `2026-06-03`: Bot Terminal public demo archived to `chartrunner-private-ops` (`v1.0.217`); live `/play/` hides Bot Terminal launchers/window and keeps agent transports private.
+- `2026-06-05`: Run-window UI polish shipped (`v1.0.218` Configure Run and `v1.0.219` RUN-tube). See [docs/milestones/2026-06-05-run-window-ui-polish.md](docs/milestones/2026-06-05-run-window-ui-polish.md).
+- `2026-06-05`: Solana token chart adapter shipped (`v1.0.222`); pasted public Solana mints discover GeckoTerminal pools and load live OHLCV candles with visible fallback. See [docs/milestones/2026-06-05-solana-token-chart-adapter.md](docs/milestones/2026-06-05-solana-token-chart-adapter.md).
