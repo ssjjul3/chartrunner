@@ -19,5 +19,6 @@ This public roadmap keeps product direction visible without exposing private ope
 - [2026-06-02 - `/play/` mobile shell](2026-06-02-play-mobile-shell.md): regular browser game gains adaptive phone/tablet controls, then trims duplicate mobile buttons into a chart-mode rail plus collapsible HOT tray.
 - [2026-06-05 - Run window UI polish](2026-06-05-run-window-ui-polish.md): Configure Run and RUN-tube adopt the active window design language while keeping run-start and PIP camera behavior intact.
 - [2026-06-05 - Solana token chart adapter](2026-06-05-solana-token-chart-adapter.md): Configure Run accepts pasted Solana mints, discovers a GeckoTerminal pool, and loads public OHLCV candles with visible fallback.
+- [2026-06-06 - Chart interaction and guidance sync](2026-06-06-chart-interaction-guidance.md): chart objects and active indicator surfaces keep shoot/drag/config parity, while Support, Coach, and Campaign explain the safe public interaction model.
 
 Private milestone work is maintained outside this public repository.
