@@ -4,9 +4,10 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.247
+     CURRENT VERSION: v1.0.248
      LAST UPDATED:    2026-06-08  ·  Bracket shootability restore. Brackets stay shootable and consume shots, while the old bullet-removal particles/floats and damage-style bracket flash remain archived.
-     (v1.0.247 = Bracket shootability restore. Brackets remain shot targets and consume bullets after Long/Short inversion, but shots do not remove visual Brackets or spawn minus-Bracket particles/floats; bracket-generated boss kills still avoid the damage-style screen flash.)
+     (v1.0.248 = Bracket shootability restore. Brackets remain shot targets and consume bullets after Long/Short inversion, but shots do not remove visual Brackets or spawn minus-Bracket particles/floats; bracket-generated boss kills still avoid the damage-style screen flash.)
+     (v1.0.247 = Bot setup terminal approval. Detector bots create a visible setup plan first; Terminal asks Build? Y/N; Build runs a setup recipe without broker, signing, or live-route changes.)
      (v1.0.246 = Scroller/headbar chrome pass. Runner is now one mode in the Scroller toolbar cycle, paints the actual avatar sprite only while Runner is selected, turns the local run gate off when another scroller is chosen, and hides the in-game COACH.llm toolbar launcher while preserving the headbar Coach route and no broker/signing/live-execution changes.)
      (v1.0.245 = Under-curve coin stream. Dynamic tick/$CHART pickups now maintain independent above-curve and below-curve live targets, placing the below band under candle lows across the loaded map while preserving toggles, campaign suppression, expiry, and seeded RNG.)
      (v1.0.244 = Timeframe launch pass. Adds 1m and 5m quick-pick candles to Configure Run plus in-game timeframe rows, and starts Time Is Money 15 candles before the final loaded candle.)
@@ -9296,7 +9297,7 @@
         <line x1="14" y1="55" x2="28" y2="55" stroke="#1a1a18" stroke-width="0.8"/>
       </svg>
       <div class="title" id="crBootTitle">Welcome to ChartRunnerOS</div>
-          <div class="ver">v1.0.247</div>
+          <div class="ver">v1.0.248</div>
       <!-- v1.0.102 — Two paths only:
            1. Whitelisted Solana wallet (allowlist of pubkeys)
            2. Continue as Guest — anonymous handle generated on click, persists
@@ -13256,7 +13257,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.247",
+  VERSION: "1.0.248",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -42988,7 +42989,11 @@ function _crBotSetupRenderTerminalCard(){
         return wrap.firstElementChild;
       })());
     }
-    try { if(typeof _crTermRenderChartRunViews === 'function') _crTermRenderChartRunViews(); } catch(_){}
+    try {
+      const win = document.getElementById('win-terminal');
+      if(p && win && win.getAttribute('data-cr-terminal-surface') === 'chart' && typeof _crTermSetMainView === 'function') _crTermSetMainView('setups');
+      else if(typeof _crTermRenderChartRunViews === 'function') _crTermRenderChartRunViews();
+    } catch(_){}
     try { if(window.crTerminalSession && typeof window.crTerminalSession.render === 'function') window.crTerminalSession.render(); } catch(_){}
     try { if(typeof _softRefreshRunSessionWidgets === 'function') _softRefreshRunSessionWidgets(); } catch(_){}
   } catch(_){}
@@ -48503,20 +48508,27 @@ const _BOT_BUILD_DURATION_MS = 1200; // scan-ring grow + label dwell
  * ============================================================ */
 let BOT_COPILOT_STATE = (function(){
   const KEY = 'cr_bot_copilot_v1';
-  let s = { gateEnabled:false, minScore:6, mode:'auto' };
+  const TERMINAL_PROPOSE_VERSION = 247;
+  let s = { gateEnabled:false, minScore:6, mode:'propose', terminalProposeVersion:TERMINAL_PROPOSE_VERSION };
   try {
     const raw = localStorage.getItem(KEY);
     if(raw){ const p = JSON.parse(raw); if(p && typeof p === 'object'){
       s = {
         gateEnabled: !!p.gateEnabled,
         minScore: Math.max(0, Math.min(20, +p.minScore || 6)),
-        mode: (p.mode === 'propose') ? 'propose' : 'auto',
+        mode: (p.mode === 'auto') ? 'auto' : 'propose',
+        terminalProposeVersion: Math.max(0, Number(p.terminalProposeVersion) || 0),
       };
+      if(s.terminalProposeVersion < TERMINAL_PROPOSE_VERSION){
+        s.mode = 'propose';
+        s.terminalProposeVersion = TERMINAL_PROPOSE_VERSION;
+      }
     }}
   } catch(_){}
   return s;
 })();
 function _saveBotCopilot(){ try { localStorage.setItem('cr_bot_copilot_v1', JSON.stringify(BOT_COPILOT_STATE)); } catch(_){} }
+_saveBotCopilot();
 // Console/UI surface for flipping the co-pilot settings.
 window.crBotCopilot = {
   state: BOT_COPILOT_STATE,
@@ -48571,36 +48583,24 @@ function _crBotProposalConfirm(){
   const p = window._crBotProposal;
   if(!p) return false;
   if(p.expires < performance.now()){ window._crBotProposal = null; return false; }
-  let fired = false;
   try {
-    const reg = _detectorRegistry(p.botId);
-    if(reg && typeof reg.buildAction === 'function'){
-      fired = reg.buildAction(p.result, { price: p.price, risk: _botRisk(p.side) });
-    }
+    if(window.crBotSetups && typeof window.crBotSetups.build === 'function') return window.crBotSetups.build();
   } catch(_){}
-  try {
-    if(typeof showBanner === 'function'){
-      showBanner((fired ? '✓ ' : '⚠ ') + p.name + (fired ? ' · BUILT' : ' · build failed'),
-        (p.side || '').toUpperCase() + (fired ? ' · you confirmed' : ''));
-    }
-  } catch(_){}
-  try {
-    if(fired && typeof spawnParticles === 'function' && typeof sX === 'function' && typeof priceToY === 'function'){
-      spawnParticles(sX(p.wx), priceToY(p.price), p.color || '#7ee787', 24);
-    }
-  } catch(_){}
-  window._crBotProposal = null;
-  return fired;
+  return false;
 }
 // B confirms a pending proposal (ignored while typing in a field).
 window.addEventListener('keydown', (e) => {
   if(e.repeat) return;
-  if(e.key !== 'b' && e.key !== 'B') return;
   if(!window._crBotProposal) return;
   const el = e.target, tag = (el && el.tagName || '').toLowerCase();
   if(tag === 'input' || tag === 'textarea' || (el && el.isContentEditable)) return;
-  e.preventDefault();
-  _crBotProposalConfirm();
+  if(e.key === 'b' || e.key === 'B' || e.key === 'y' || e.key === 'Y'){
+    e.preventDefault();
+    _crBotProposalConfirm();
+  } else if(e.key === 'n' || e.key === 'N'){
+    e.preventDefault();
+    try { if(window.crBotSetups && typeof window.crBotSetups.reject === 'function') window.crBotSetups.reject(); } catch(_){}
+  }
 }, true);
 
 let _wbBotTickT = 0;
@@ -48714,26 +48714,31 @@ function drawBotOrbs(){
             // Don't clobber it — back off briefly and re-offer once it clears.
             _cool = 1500;
           } else {
-            // Co-pilot: stash the proposal, ask the player to confirm with B.
-            // Don't fire — this is "build WITH the player."
-            window._crBotProposal = {
-              botId: b.id, name: b.name, color: b.color,
-              result: st.target.result, price: st.target.price, wx: st.target.wx,
-              side: _side, expires: tNow + 8000,
-            };
-            try {
-              if(typeof showBanner === 'function'){
-                showBanner('▣ ' + b.name + ' proposes ' + _side.toUpperCase(),
-                  'Press B to build · ' + (typeof fmtPrice==='function' ? fmtPrice(st.target.price) : st.target.price.toFixed(2)));
-              }
-            } catch(_){}
-            try { if(typeof spawnParticles === 'function') spawnParticles(drawX, drawY, b.color, 12); } catch(_){}
+            const offered = !!(window.crBotSetups && typeof window.crBotSetups.propose === 'function' && window.crBotSetups.propose({
+              botId:b.id, name:b.name, color:b.color,
+              result:st.target.result, price:st.target.price, wx:st.target.wx,
+              side:_side, ttlMs:15000,
+            }));
+            if(offered){
+              try { if(typeof spawnParticles === 'function') spawnParticles(drawX, drawY, b.color, 12); } catch(_){}
+            } else {
+              _cool = 1500;
+            }
           }
         } else {
-          // Auto: fire the trade with collaborative sizing.
+          // Auto: use the same setup executor, just without waiting for Terminal approval.
           let fired = false;
           if(reg && typeof reg.buildAction === 'function'){
-            fired = reg.buildAction(st.target.result, { price: st.target.price, risk: _botRisk(_side) });
+            try {
+              const plan = (typeof _crBotSetupPlan === 'function') ? _crBotSetupPlan({
+                botId:b.id, name:b.name, color:b.color,
+                result:st.target.result, price:st.target.price, wx:st.target.wx,
+                side:_side,
+              }) : null;
+              fired = plan ? _crBotSetupExecute(plan) : reg.buildAction(st.target.result, { price: st.target.price, risk: _botRisk(_side) });
+            } catch(_){
+              fired = reg.buildAction(st.target.result, { price: st.target.price, risk: _botRisk(_side) });
+            }
           }
           try {
             if(typeof showBanner === 'function'){
@@ -55939,6 +55944,8 @@ function _crInGameTerminalAppend(msg, kind){
   });
   _crInGameTerminalTrim();
   _crInGameTerminalSave();
+  try { if(window.crTerminalSession && typeof window.crTerminalSession.render === 'function') window.crTerminalSession.render(); } catch(_){}
+  try { if(typeof _crTermRenderChartRunViews === 'function') _crTermRenderChartRunViews(); } catch(_){}
 }
 function _crInGameTerminalStableJson(value){
   if(value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -56068,8 +56075,13 @@ function _crInGameTerminalEndRun(reason){
 function _crInGameTerminalPaneBodyHTML(){
   const s = crInGameTerminalSession || {};
   const lines = Array.isArray(s.events) ? s.events.slice(-28) : [];
-  if(!lines.length) return '<div class="dim">No active run terminal events yet.</div>';
-  return lines.map(e => '<span class="dim">' + new Date(Number(e.t) || Date.now()).toLocaleTimeString() + '</span>  ' + _crExecEsc(e.line || '')).join('\n');
+  const body = lines.length
+    ? lines.map(e => '<span class="dim">' + new Date(Number(e.t) || Date.now()).toLocaleTimeString() + '</span>  ' + _crExecEsc(e.line || '')).join('\n')
+    : '<div class="dim">No active run terminal events yet.</div>';
+  const setupCard = (window._crBotProposal && typeof _crBotSetupTerminalCardHTML === 'function')
+    ? '\n' + _crBotSetupTerminalCardHTML(window._crBotProposal, 'pane')
+    : '';
+  return body + setupCard;
 }
 function _crInGameTerminalPaneHTML(){
   const s = crInGameTerminalSession || {};
