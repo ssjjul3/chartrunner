@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner - public version banner
      ============================================================
-     CURRENT VERSION: v1.0.227
+     CURRENT VERSION: v1.0.228
      LAST UPDATED:    2026-06-08
+     v1.0.228 = Public full-map/under-curve coin backport: dynamic tick/$CHART pickups now refill across the loaded chart map and maintain an independent below-curve stream under candle lows; no broker route, signing, or live execution.
      v1.0.227 = Public timeframe launch backport: Configure Run and in-game timeframe rows expose 1m and 5m candles, and Time Is Money starts 15 candles before the final loaded candle; no broker route, signing, or live execution.
      v1.0.226 = Configure Run broker wheel keyboard/top-5 pass: wheel now shows top-5 CEX/Solana DEX venues, focuses on click/tap, and ArrowUp/ArrowDown roll venues only while focused; no broker route, signing, or live execution.
      v1.0.225 = Support / Coach / Campaign guidance sync: Support copy describes laser placement, COACH.llm explains indicator canvas tuning plus Blue Laser route intent, and Campaign indicator lessons teach tunable, armable indicator surfaces without changing formula math.
@@ -9191,7 +9192,7 @@
         <line x1="14" y1="55" x2="28" y2="55" stroke="#1a1a18" stroke-width="0.8"/>
       </svg>
       <div class="title" id="crBootTitle">Welcome to ChartRunnerOS</div>
-          <div class="ver">v1.0.227</div>
+          <div class="ver">v1.0.228</div>
       <!-- v1.0.102 — Two paths only:
            1. Whitelisted Solana wallet (allowlist of pubkeys)
            2. Continue as Guest — anonymous handle generated on click, persists
@@ -13055,7 +13056,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.227",
+  VERSION: "1.0.228",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -24796,7 +24797,7 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a
    DYNAMIC COIN SPAWNER — living coin economy (default in normal play)
    v1.0.124 — Promoted from opt-in (?coinspawn=1) to always-on for regular runs.
 
-   Coins now spawn ahead of the player on a controlled cadence and expire if
+   Coins now spawn across the loaded map on a controlled cadence and expire if
    not collected. This creates real timing + density gameplay instead of a
    static field of pickups.
 
@@ -24807,23 +24808,25 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a
    completely disabled during Campaign chapters (lesson focus only).
 
    Design notes:
-     - targetLive   = desired concurrent live coins near the player
+     - targetLive   = desired concurrent live coins across the loaded map
+     - belowTargetLive = desired concurrent live coins below the chart curve
      - lifeMin/Max  = lifetime before a coin despawns (creates urgency)
      - maxPerPulse  = max new coins per spawn tick (smooth, no bursts)
-     - aheadMin/Max = spawn window in candles ahead of the runner
+     - mapEdgePaddingCandles = avoids sentinel first/last candles
    ─────────────────────────────────────────────────────────────────────────── */
 const COIN_SPAWN_CFG = {
-  targetLive: 6,        // density target: how many live coins to keep near the player
+  targetLive: 6,        // density target: how many above-curve live coins to keep across the map
+  belowTargetLive: 6,   // separate density target for coins below the chart curve
   lifeMin: 3.0,         // seconds a coin lives before it despawns
   lifeMax: 6.0,
   fadeIn: 0.30,         // seconds to fade + scale in
   fadeOut: 0.80,        // seconds of remaining life over which it fades out
   spawnEvery: 0.45,     // min seconds between spawn pulses
   maxPerPulse: 2,       // bounded step per pulse (smooth ramp, not a burst)
-  aheadMinCandles: 4,   // spawn from this many candles ahead of the player ...
-  aheadMaxCandles: 26,  // ... out to here (the reaction window)
+  belowMaxPerPulse: 2,  // bounded under-curve refill per pulse
+  mapEdgePaddingCandles: 1, // keep dynamic spawns off the sentinel first/last candles
   credsFrac: 0.18,      // 18% 'creds' kind (purple $CHART) / 82% tick (gold) — internal kind kept for compat
-  heightMin: 70,        // screen px above the candle high (÷priceScale → world)
+  heightMin: 70,        // screen px away from candle high/low (÷priceScale → world)
   heightMax: 230
 };
 // Seeded RNG hook for determinism (window.ChartRunner.setSeed). Falls back to Math.random.
@@ -24835,34 +24838,47 @@ function updateCoinSpawner(dt){
   if(!candles || !candles.length || !isFinite(player.wx)) return;
   const cfg = COIN_SPAWN_CFG;
   // 1) age + despawn spawned coins; count the live ones for the controller.
-  let live = 0;
+  let live = 0, liveAbove = 0, liveBelow = 0;
   for(let i = game.pickups.length - 1; i >= 0; i--){
     const pk = game.pickups[i];
     if(!pk._spawned) continue;
     if(pk.taken){ game.pickups.splice(i,1); game._coinTaken = (game._coinTaken||0)+1; continue; }
     pk.life -= dt;
     if(pk.life <= 0){ game.pickups.splice(i,1); game._coinExpired = (game._coinExpired||0)+1; continue; }
+    if(pk._coinBand === 'below') liveBelow++;
+    else liveAbove++;
     live++;
   }
   game._coinLive = live;
+  game._coinLiveAbove = liveAbove;
+  game._coinLiveBelow = liveBelow;
   // 2) difficulty retarget — refill toward the density target, bounded per pulse.
   game._coinAcc = (game._coinAcc||0) + dt;
   if(game._coinAcc < cfg.spawnEvery) return;
   game._coinAcc = 0;
-  const deficit = cfg.targetLive - live;
-  if(deficit <= 0) return;
-  const n = Math.min(deficit, cfg.maxPerPulse);
-  const pIdx = Math.floor(player.wx / STEP);
-  for(let k = 0; k < n; k++){
-    const span = Math.max(1, cfg.aheadMaxCandles - cfg.aheadMinCandles);
-    const idx = pIdx + cfg.aheadMinCandles + Math.floor(crRand()*span);
-    if(idx < 1 || idx >= candles.length - 1) continue;
-    const wx = idx*STEP + STEP/2;
-    const py = candles[idx].h + (cfg.heightMin + crRand()*(cfg.heightMax - cfg.heightMin))/priceScale;
-    const maxLife = cfg.lifeMin + crRand()*(cfg.lifeMax - cfg.lifeMin);
-    const kind = crRand() < cfg.credsFrac ? 'creds' : 'tick';
-    game.pickups.push({ wx, py, kind, taken:false, _spawned:true, life:maxLife, maxLife });
-    game._coinSpawned = (game._coinSpawned||0)+1;
+  const pad = Math.max(1, Math.floor(Number(cfg.mapEdgePaddingCandles) || 1));
+  const minIdx = Math.min(candles.length - 2, pad);
+  const maxIdx = Math.max(minIdx, candles.length - 1 - pad);
+  const span = Math.max(1, maxIdx - minIdx + 1);
+  const targets = [
+    { band:'above', target:Math.max(0, Math.floor(Number(cfg.targetLive) || 0)), live:liveAbove, maxPerPulse:Math.max(0, Math.floor(Number(cfg.maxPerPulse) || 0)) },
+    { band:'below', target:Math.max(0, Math.floor(Number(cfg.belowTargetLive) || 0)), live:liveBelow, maxPerPulse:Math.max(0, Math.floor(Number(cfg.belowMaxPerPulse) || 0)) }
+  ];
+  for(const t of targets){
+    const deficit = t.target - t.live;
+    if(deficit <= 0 || t.maxPerPulse <= 0) continue;
+    const n = Math.min(deficit, t.maxPerPulse);
+    for(let k = 0; k < n; k++){
+      const idx = minIdx + Math.floor(crRand()*span);
+      if(idx < 1 || idx >= candles.length - 1) continue;
+      const wx = idx*STEP + STEP/2;
+      const offset = (cfg.heightMin + crRand()*(cfg.heightMax - cfg.heightMin))/priceScale;
+      const py = t.band === 'below' ? candles[idx].l - offset : candles[idx].h + offset;
+      const maxLife = cfg.lifeMin + crRand()*(cfg.lifeMax - cfg.lifeMin);
+      const kind = crRand() < cfg.credsFrac ? 'creds' : 'tick';
+      game.pickups.push({ wx, py, kind, taken:false, _spawned:true, _coinBand:t.band, life:maxLife, maxLife });
+      game._coinSpawned = (game._coinSpawned||0)+1;
+    }
   }
 }
 // Per-coin alpha for spawned coins: fade (and scale) in, then fade out near death.
@@ -24886,15 +24902,18 @@ const crCoinSpawn = {
   stats(){
     return {
       live: game._coinLive || 0,
+      liveAbove: game._coinLiveAbove || 0,
+      liveBelow: game._coinLiveBelow || 0,
       spawned: game._coinSpawned || 0,
       expired: game._coinExpired || 0,
       taken: game._coinTaken || 0,
-      target: COIN_SPAWN_CFG.targetLive
+      target: COIN_SPAWN_CFG.targetLive,
+      belowTarget: COIN_SPAWN_CFG.belowTargetLive
     };
   },
   resetCounters(){
     game._coinSpawned = game._coinExpired = game._coinTaken = game._coinAcc = 0;
-    game._coinLive = 0;
+    game._coinLive = game._coinLiveAbove = game._coinLiveBelow = 0;
   }
 };
 try { window.crCoinSpawn = crCoinSpawn; } catch(_){}
