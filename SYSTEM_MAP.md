@@ -21,7 +21,7 @@ Standalone SDK package source, generated SDK browser artifacts, live broker exec
 
 - Playable prototype: live
 - `/play/` mobile/tablet shell: adaptive portrait/landscape/tablet controls with chart-only mode rail and collapsible HOT tray live in `ChartRunner_Prototype.html`
-- Latest public milestone: `2026-06-06` chart interaction and guidance sync live as `v1.0.225`; advanced chart objects and active indicator surfaces keep shoot/drag/config parity, and Support, Coach, and Campaign explain the safe public interaction model. Bot Terminal remains archived from public launchers/window. See `docs/milestones/2026-06-06-chart-interaction-guidance.md`.
+- Latest public milestone: `2026-06-09` unified laser dotted-guide backport live as `v1.0.229`; Tools, Primitives, Blue Laser, and Alarm modes share the same `crLaserCursor` dotted source-to-cursor guide while preserving existing placement and arming behavior. `v1.0.223`-`v1.0.225` chart interaction/guidance parity and the v1.0.226-v1.0.228 broker-wheel/timeframe/coin backports remain included. Bot Terminal remains archived from public launchers/window.
 - Solana devnet maps/registry/oracle/match programs: public source and devnet-oriented
 - SDK package: gated until publish-ready
 - Mainnet/live trading: gated

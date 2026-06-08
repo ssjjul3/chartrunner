@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner - public version banner
      ============================================================
-     CURRENT VERSION: v1.0.228
-     LAST UPDATED:    2026-06-08
+     CURRENT VERSION: v1.0.229
+     LAST UPDATED:    2026-06-09
+     v1.0.229 = Public unified laser dotted-guide backport: Tools, Primitives, Blue Laser, and Alarm cursor modes publish through one shared cursor renderer and draw the same dotted source-to-cursor guide line; no broker route, signing, or live execution.
      v1.0.228 = Public full-map/under-curve coin backport: dynamic tick/$CHART pickups now refill across the loaded chart map and maintain an independent below-curve stream under candle lows; no broker route, signing, or live execution.
      v1.0.227 = Public timeframe launch backport: Configure Run and in-game timeframe rows expose 1m and 5m candles, and Time Is Money starts 15 candles before the final loaded candle; no broker route, signing, or live execution.
      v1.0.226 = Configure Run broker wheel keyboard/top-5 pass: wheel now shows top-5 CEX/Solana DEX venues, focuses on click/tap, and ArrowUp/ArrowDown roll venues only while focused; no broker route, signing, or live execution.
@@ -9192,7 +9193,7 @@
         <line x1="14" y1="55" x2="28" y2="55" stroke="#1a1a18" stroke-width="0.8"/>
       </svg>
       <div class="title" id="crBootTitle">Welcome to ChartRunnerOS</div>
-          <div class="ver">v1.0.228</div>
+          <div class="ver">v1.0.229</div>
       <!-- v1.0.102 — Two paths only:
            1. Whitelisted Solana wallet (allowlist of pubkeys)
            2. Continue as Guest — anonymous handle generated on click, persists
@@ -13056,7 +13057,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.228",
+  VERSION: "1.0.229",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -19129,6 +19130,7 @@ window.addEventListener('keydown', e=>{
         try{closeLaserSpawnMenu();}catch(_){ }
         // v0.8k#24k — Restore the OS cursor on exit (cursor:none was set during aim).
         try { cv.style.cursor = ''; } catch(_){}
+        try { if(window.crLaserCursor) window.crLaserCursor.disarm('escape'); } catch(_){}
         toast('Laser off');
       }
       consumed = true;
@@ -20947,6 +20949,7 @@ const ABILITIES = [
       try { closeLaserSpawnMenu(); } catch(_){}
       // v0.8k#24k — Restore the OS cursor on exit (cursor:none was set during aim).
       try { cv.style.cursor = ''; } catch(_){}
+      try { if(window.crLaserCursor) window.crLaserCursor.disarm('hotkey-2-toggle'); } catch(_){}
       toast('Laser off');
       return;
     }
@@ -20961,6 +20964,7 @@ const ABILITIES = [
     const dirX = (player.facing === -1) ? -1 : 1;
     game.laserDot.sx = sX(player.wx) + dirX * 280;
     game.laserDot.sy = priceToY(player.py);
+    try { if(window.crLaserCursor) window.crLaserCursor.arm('tools', { source:'hotkey-2', exclusive:true }); } catch(_){}
     crNotify('Laser aim · move mouse · press 2 or Esc to exit');
   }},
   // v0.9.19 — Slot 3 = GREEN LASER · Primitives palette. Same aim flow as the
@@ -20986,6 +20990,7 @@ const ABILITIES = [
       game.laserAnchor3Preview = null;
       try { closeLaserSpawnMenu(); } catch(_){}
       try { cv.style.cursor = ''; } catch(_){}
+      try { if(window.crLaserCursor) window.crLaserCursor.disarm('hotkey-3-toggle'); } catch(_){}
       toast('Primitives laser off');
       return;
     }
@@ -21001,6 +21006,7 @@ const ABILITIES = [
     const dirX = (player.facing === -1) ? -1 : 1;
     game.laserDot.sx = sX(player.wx) + dirX * 280;
     game.laserDot.sy = priceToY(player.py);
+    try { if(window.crLaserCursor) window.crLaserCursor.arm('primitives', { source:'hotkey-3', exclusive:true }); } catch(_){}
     toast('● Primitives laser — pick a primitive · press 3 or Esc to exit');
   }},
 ];
@@ -26613,6 +26619,8 @@ function render(){
   try { if(window.crLiveDraw) window.crLiveDraw(); } catch(_){}
   // v1.0.5 — Blue laser sight (mirrors drawLaserSight chrome, blue palette).
   try { if(typeof drawBlueLaserSight === 'function') drawBlueLaserSight(); } catch(_){}
+  // v1.0.229 — Shared dotted guide renders after mode-specific beams so it stays visible.
+  try { if(window.crLaserCursor && typeof window.crLaserCursor.draw === 'function') window.crLaserCursor.draw(ctx); } catch(_){}
   drawSetupGuide();   // v0.9.16 — Per-tool setup instruction card
   drawLaserAnchorsAndPreview();
   drawPickups();
@@ -29649,6 +29657,285 @@ const TOOL_SETUP_GUIDES = {
   twap:            { kind:'two-anchor',  steps:['Click time anchor 1', 'Click time anchor 2'], hint:'Splits 20 size into 5 slices between the two prices · TIER 2' },
   iceberg:         { kind:'two-anchor',  steps:['Click upper price', 'Click lower price'], hint:'Hidden-size order · 4 visible / 20 total · TIER 2' },
 };
+
+// v1.0.229 public backport — Unified laser cursor guide. Hotkeys 2/3/4/5
+// keep their existing placement/arming logic, while this shared renderer
+// gives every laser cursor family the same dotted source-to-cursor guide.
+(function(){
+  if(window.crLaserCursor && window.crLaserCursor.version === '1.0.229') return;
+  const MODES = {
+    tools:      { key:'2', glyph:'⊚', color:'#ff5b7f', glow:'rgba(255,91,127,0.38)' },
+    primitives: { key:'3', glyph:'↯', color:'#14f195', glow:'rgba(20,241,149,0.34)' },
+    blue:       { key:'4', glyph:'◇', color:'#3a86ff', glow:'rgba(58,134,255,0.42)' },
+    alarm:      { key:'5', glyph:'◉', color:'#ffb300', glow:'rgba(255,179,0,0.34)' },
+  };
+  const state = {
+    active:false,
+    mode:null,
+    source:null,
+    armedAt:0,
+    disarmedAt:0,
+    lastReason:null,
+    targetKind:null,
+  };
+  const sparks = [];
+
+  function now(){ try { return performance.now(); } catch(_){ return Date.now(); } }
+  function modeDef(mode){ return MODES[mode] || MODES.tools; }
+  function canvasEl(){ try { return (typeof cv !== 'undefined' && cv) ? cv : document.getElementById('cv'); } catch(_){ return null; } }
+  function ensureCss(){
+    try {
+      if(document.getElementById('crLaserCursorCss')) return;
+      const css = document.createElement('style');
+      css.id = 'crLaserCursorCss';
+      css.textContent = [
+        'body.cr-laser-cursor-on canvas{cursor:none!important}',
+        'body.cr-laser-cursor-on #cv{cursor:none!important}'
+      ].join('\n');
+      (document.head || document.documentElement).appendChild(css);
+    } catch(_){}
+  }
+  function applyDom(on){
+    try {
+      document.body.classList.toggle('cr-laser-cursor-on', !!on);
+      if(on && state.mode) document.body.setAttribute('data-cr-laser-cursor', state.mode);
+      else document.body.removeAttribute('data-cr-laser-cursor');
+    } catch(_){}
+    try {
+      const c = canvasEl();
+      if(c) c.style.cursor = on ? 'none' : '';
+    } catch(_){}
+  }
+  function resetPlacementLaser(){
+    try {
+      if(typeof game !== 'undefined' && game){
+        game.laserAiming = false;
+        game.laserPhase = 'idle';
+        game.laserTool = null;
+        game.laserPalette = null;
+        game.laserAnchor1 = null;
+        game.laserAnchor2 = null;
+        game.laserAnchor2Preview = null;
+        game.laserAnchor3Preview = null;
+        game._lastLaserPhaseKey = null;
+      }
+    } catch(_){}
+    try { if(typeof closeLaserSpawnMenu === 'function') closeLaserSpawnMenu(); } catch(_){}
+  }
+  function arm(mode, opts){
+    opts = opts || {};
+    if(!MODES[mode]) mode = 'tools';
+    ensureCss();
+    if(opts.exclusive){
+      try { if(mode !== 'blue' && window.cr && window.cr.blueLaser && window.cr.blueLaser.active) window.cr.blueLaser.toggle(); } catch(_){}
+      try { if(mode !== 'alarm' && window.crAlarm && window.crAlarm.aiming) window.crAlarm.disarm(); } catch(_){}
+      if(mode !== 'tools' && mode !== 'primitives') resetPlacementLaser();
+    }
+    state.active = true;
+    state.mode = mode;
+    state.source = opts.source || state.source || ('hotkey-' + modeDef(mode).key);
+    state.armedAt = now();
+    state.lastReason = opts.reason || null;
+    state.targetKind = null;
+    applyDom(true);
+    return snapshot();
+  }
+  function disarm(reason){
+    if(state.active || reason){
+      state.disarmedAt = now();
+      state.lastReason = reason || null;
+    }
+    state.active = false;
+    state.mode = null;
+    state.source = null;
+    state.targetKind = null;
+    sparks.length = 0;
+    applyDom(false);
+    return snapshot();
+  }
+  function cancelAll(reason){
+    resetPlacementLaser();
+    try { if(window.cr && window.cr.blueLaser && window.cr.blueLaser.active) window.cr.blueLaser.toggle(); } catch(_){}
+    try { if(window.crAlarm && window.crAlarm.aiming) window.crAlarm.disarm(); } catch(_){}
+    return disarm(reason || 'cancel-all');
+  }
+  function expectedMode(){
+    try {
+      if(typeof game !== 'undefined' && game && game.laserAiming){
+        return game.laserPalette === 'primitives' ? 'primitives' : 'tools';
+      }
+    } catch(_){}
+    try { if(window.cr && window.cr.blueLaser && window.cr.blueLaser.active) return 'blue'; } catch(_){}
+    try { if(window.crAlarm && window.crAlarm.aiming) return 'alarm'; } catch(_){}
+    return null;
+  }
+  function sync(){
+    const exp = expectedMode();
+    if(exp){
+      if(!state.active || state.mode !== exp) arm(exp, { source:'sync', reason:'sync' });
+      else applyDom(true);
+    } else if(state.active){
+      disarm('sync');
+    }
+    return snapshot();
+  }
+  function cursorPoint(){
+    let x = 0, y = 0;
+    try {
+      if((state.mode === 'tools' || state.mode === 'primitives') && typeof game !== 'undefined' && game && game.laserDot){
+        x = Number(game.laserDot.sx); y = Number(game.laserDot.sy);
+      } else if(typeof game !== 'undefined' && game && game.mouse){
+        x = Number(game.mouse.sx); y = Number(game.mouse.sy);
+      }
+    } catch(_){}
+    try {
+      const w = (typeof W !== 'undefined') ? W : 1280;
+      const h = (typeof H !== 'undefined') ? H : 720;
+      if(!isFinite(x)) x = w * 0.5;
+      if(!isFinite(y)) y = h * 0.5;
+      return { x:Math.max(0, Math.min(w, x)), y:Math.max(0, Math.min(h, y)) };
+    } catch(_){
+      return { x:isFinite(x) ? x : 0, y:isFinite(y) ? y : 0 };
+    }
+  }
+  function sourcePoint(target){
+    try {
+      if(typeof game !== 'undefined' && game && game.running && typeof player !== 'undefined' && typeof sX === 'function' && typeof priceToY === 'function'){
+        return { x:sX(player.wx), y:priceToY(player.py) };
+      }
+    } catch(_){}
+    return { x:target.x, y:target.y + 44 };
+  }
+  function spawnSpark(a, b, color){
+    const t = Math.random();
+    sparks.push({
+      x:a.x + (b.x - a.x) * t,
+      y:a.y + (b.y - a.y) * t,
+      vx:(b.x - a.x) * 0.01 + (Math.random() - 0.5) * 0.55,
+      vy:(b.y - a.y) * 0.01 + (Math.random() - 0.5) * 0.55,
+      life:1,
+      color,
+    });
+  }
+  function targetLockAt(p){
+    let hit = null;
+    try {
+      if(state.mode === 'blue') hit = (typeof hitOverlay === 'function' ? hitOverlay(p.x, p.y) : null)
+        || (typeof hitIndicatorAt === 'function' ? hitIndicatorAt(p.x, p.y) : null);
+      else if(state.mode === 'alarm' && window.crAlarm && typeof window.crAlarm.hitTest === 'function') hit = window.crAlarm.hitTest(p.x, p.y);
+    } catch(_){}
+    state.targetKind = hit && (hit.kind || hit.label || hit.target) ? String(hit.kind || hit.label || hit.target) : null;
+    return !!hit;
+  }
+  function drawDottedGuide(c, src, p, def, locked, charge, t){
+    const dx = p.x - src.x, dy = p.y - src.y;
+    if(Math.hypot(dx, dy) < 10) return;
+    c.save();
+    c.lineCap = 'round';
+    c.lineWidth = locked ? 1.5 : 1.15;
+    c.globalAlpha = Math.min(0.88, (locked ? 0.68 : 0.48) + charge * 0.18);
+    c.strokeStyle = locked ? '#ffffff' : def.color;
+    try { c.setLineDash([2, 6]); c.lineDashOffset = -((t || 0) * 0.035); } catch(_){}
+    c.beginPath();
+    c.moveTo(src.x, src.y);
+    c.lineTo(p.x, p.y);
+    c.stroke();
+    try { c.setLineDash([]); c.lineDashOffset = 0; } catch(_){}
+    c.restore();
+  }
+  function draw(c){
+    sync();
+    if(!state.active || !c) return;
+    const def = modeDef(state.mode);
+    const p = cursorPoint();
+    const src = sourcePoint(p);
+    const t = now();
+    const age = Math.max(0, t - (state.armedAt || t));
+    const charge = Math.max(0, 1 - age / 260);
+    const locked = targetLockAt(p);
+    const needsBeam = state.mode === 'alarm';
+    c.save();
+    drawDottedGuide(c, src, p, def, locked, charge, t);
+    if(needsBeam){
+      const dist = Math.hypot(p.x - src.x, p.y - src.y);
+      c.lineCap = 'round';
+      c.strokeStyle = def.glow;
+      c.lineWidth = 8;
+      c.beginPath(); c.moveTo(src.x, src.y); c.lineTo(p.x, p.y); c.stroke();
+      c.strokeStyle = def.color;
+      c.lineWidth = 2.2;
+      c.globalAlpha = 0.82;
+      c.beginPath(); c.moveTo(src.x, src.y); c.lineTo(p.x, p.y); c.stroke();
+      c.strokeStyle = '#ffffff';
+      c.lineWidth = 0.8;
+      c.globalAlpha = 0.9;
+      c.beginPath(); c.moveTo(src.x, src.y); c.lineTo(p.x, p.y); c.stroke();
+      c.globalAlpha = 1;
+      if(dist > 28){
+        spawnSpark(src, p, def.color);
+        if(Math.random() < 0.28) spawnSpark(src, p, def.color);
+      }
+    }
+    for(let i = sparks.length - 1; i >= 0; i--){
+      const s = sparks[i];
+      s.x += s.vx; s.y += s.vy; s.life -= 0.045;
+      if(s.life <= 0){ sparks.splice(i, 1); continue; }
+      c.globalAlpha = Math.max(0, Math.min(1, s.life));
+      c.fillStyle = s.color;
+      c.beginPath(); c.arc(s.x, s.y, 1.5, 0, Math.PI * 2); c.fill();
+    }
+    c.globalAlpha = 1;
+    const pulse = 1 + 0.16 * Math.sin(t * 0.009);
+    const r = (locked ? 13 : 10) * pulse + charge * 16;
+    c.strokeStyle = locked ? '#ffffff' : def.color;
+    c.lineWidth = locked ? 2.2 : 1.8;
+    c.globalAlpha = 0.92;
+    c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2); c.stroke();
+    c.strokeStyle = def.color;
+    c.lineWidth = 1.3;
+    c.globalAlpha = 0.95;
+    c.beginPath();
+    c.moveTo(p.x - 17, p.y); c.lineTo(p.x - 6, p.y);
+    c.moveTo(p.x + 6, p.y); c.lineTo(p.x + 17, p.y);
+    c.moveTo(p.x, p.y - 17); c.lineTo(p.x, p.y - 6);
+    c.moveTo(p.x, p.y + 6); c.lineTo(p.x, p.y + 17);
+    c.stroke();
+    c.fillStyle = '#ffffff';
+    c.globalAlpha = 0.96;
+    c.beginPath(); c.arc(p.x, p.y, 2.5, 0, Math.PI * 2); c.fill();
+    c.fillStyle = def.color;
+    c.font = '900 11px ui-monospace,Menlo,monospace';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.globalAlpha = 0.92;
+    c.fillText(def.glyph, p.x, p.y - 28);
+    c.restore();
+  }
+  function snapshot(){
+    const def = state.mode ? modeDef(state.mode) : null;
+    return {
+      version:'1.0.229',
+      active:!!state.active,
+      mode:state.mode,
+      source:state.source,
+      key:def ? def.key : null,
+      color:def ? def.color : null,
+      targetKind:state.targetKind,
+      ageMs:state.active ? Math.max(0, Math.round(now() - (state.armedAt || now()))) : 0,
+      lastReason:state.lastReason,
+    };
+  }
+  window.crLaserCursor = {
+    version:'1.0.229',
+    arm,
+    disarm,
+    cancelAll,
+    sync,
+    draw,
+    snapshot,
+  };
+  ensureCss();
+})();
 
 // Spark particles trailing along the laser beam toward target.
 let _laserSparks = [];
@@ -59434,8 +59721,10 @@ const crL3 = (function(){
     STATE.active = !STATE.active;
     document.body.classList.toggle('cr-blue-laser-on', STATE.active);
     if(STATE.active){
+      try { if(window.crLaserCursor) window.crLaserCursor.arm('blue', { source:'hotkey-4', exclusive:true }); } catch(_){}
       try { toast('● Blue laser ON · click a placed tool'); } catch(_){}
     } else {
+      try { if(window.crLaserCursor) window.crLaserCursor.disarm('hotkey-4-toggle'); } catch(_){}
       try { toast('Blue laser OFF'); } catch(_){}
       _closeCard();
     }
@@ -65345,9 +65634,11 @@ window.crLocalAgentBus = (function(){
     alarms:[], aiming:false, draft:null, _lastEval:0,
     arm:function(){ if(!inRun()){ note('Start a run first to set alarms'); return; }
       this.aiming=true; this.draft={ id:uid(), name:'', conditions:[], confluence:false }; freePan(true);
+      try { if(window.crLaserCursor) window.crLaserCursor.arm('alarm', { source:'hotkey-5', exclusive:true }); } catch(_){}
       note('◉ Alarm laser ON — click candles / lines / primitives to add triggers · multiple = confluence · Enter to save · Esc to cancel'); },
     disarm:function(){ this.aiming=false; this.draft=null;
       try { crCursor.set(crCursor.mode, true); } catch(_){}
+      try { if(window.crLaserCursor) window.crLaserCursor.disarm('alarm-disarm'); } catch(_){}
       note('Alarm laser off'); },
     // Hit-test the click against live overlays, else snap to the clicked candle's price.
     hitTest:function(sx, sy){
@@ -65374,6 +65665,7 @@ window.crLocalAgentBus = (function(){
       var d=this.draft; d.name = d.name || ((d.confluence?'Confluence ':'')+'Alarm · '+d.conditions.length+' trigger'+(d.conditions.length>1?'s':''));
       d.enabled=true; d.triggered=false; d.anchorMapId=null; d.createdAt=Date.now();
       this.alarms.push(d); note('✅ Saved: '+d.name+(d.confluence?' (fires when ALL align)':'')); this.aiming=false; this.draft=null;
+      try { if(window.crLaserCursor) window.crLaserCursor.disarm('alarm-save'); } catch(_){}
       try { if(window.crAlertBus && typeof window.crAlertBus.publish === 'function') window.crAlertBus.publish({
         type:d.confluence?'confluence':'price-alert',
         severity:'info',
