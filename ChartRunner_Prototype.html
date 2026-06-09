@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner - public version banner
      ============================================================
-     CURRENT VERSION: v1.0.230
-     LAST UPDATED:    2026-06-09
+     CURRENT VERSION: v1.0.255
+     LAST UPDATED:    2026-06-09 - Public object alarms and bracket tools release.
+     v1.0.255 = Public object alarms/settings/bracket release: per-object Alarm setup for tools, primitives, and indicators; Journal Alert V2 progression; uniform object settings tabs; Fib Extension interaction repair; Bracket setup/access/shootability fixes; and integrated Bracket trade-size calculator. No broker route, signing, on-chain write, hosted-agent deploy, private-data change, or live execution.
      v1.0.230 = Public unified cursor/scroller backport: Runner is part of the Scroller cycle with avatar sprite display only while selected, non-runner scrollers holster Runner/laser input, COACH.llm stays headbar-routed, and the shared dotted laser cursor remains active for Tools, Primitives, Blue Laser, and Alarm; no broker route, signing, or live execution.
      v1.0.229 = Public unified laser dotted-guide backport: Tools, Primitives, Blue Laser, and Alarm cursor modes publish through one shared cursor renderer and draw the same dotted source-to-cursor guide line; no broker route, signing, or live execution.
      v1.0.228 = Public full-map/under-curve coin backport: dynamic tick/$CHART pickups now refill across the loaded chart map and maintain an independent below-curve stream under candle lows; no broker route, signing, or live execution.
@@ -9204,7 +9205,7 @@
         <line x1="14" y1="55" x2="28" y2="55" stroke="#1a1a18" stroke-width="0.8"/>
       </svg>
       <div class="title" id="crBootTitle">Welcome to ChartRunnerOS</div>
-          <div class="ver">v1.0.230</div>
+          <div class="ver">v1.0.255</div>
       <!-- v1.0.102 — Two paths only:
            1. Whitelisted Solana wallet (allowlist of pubkeys)
            2. Continue as Guest — anonymous handle generated on click, persists
@@ -9885,7 +9886,11 @@
   <!-- v0.8k#24 — per-indicator parameter editor (TradingView-style). Body + buttons populated by openIndicatorEditor(ind). -->
   <div class="brEditor" id="indEditor">
     <h3>Indicator · <span id="indEdName">—</span></h3>
-    <div class="brPrecise on" style="display:block">
+    <div class="crEditorTabs" id="indEdTabs">
+      <button class="on" data-ind-ed-tab="params" type="button">Params</button>
+      <button data-ind-ed-tab="alarm" type="button">Alarm</button>
+    </div>
+    <div class="brPrecise on" id="indEdParamsPane" style="display:block">
       <div class="grid" id="indEdGrid"><!-- populated at open-time --></div>
       <div class="brBtnRow">
         <button class="brBtn ghost" id="indEdReset">Reset defaults</button>
@@ -9894,6 +9899,7 @@
       </div>
       <div class="hint" style="color:var(--dim);font-size:11px;margin-top:8px">Changes take effect on the next frame. Values are persisted across reloads.</div>
     </div>
+    <div class="brPrecise" id="indEdAlarmPane" style="display:none"></div>
   </div>
 
   <div class="drawer" id="drawer">
@@ -12703,6 +12709,7 @@ plot(out, color=color.orange, linewidth=2)</textarea>
             <button class="crTerm-tab" data-jrntab="bot" type="button">BOT</button>
             <button class="crTerm-tab" data-jrntab="sessions" type="button">SESSIONS</button>
             <button class="crTerm-tab" data-jrntab="alerts" type="button">ALERTS</button>
+            <button class="crTerm-tab" data-jrntab="alertv2" type="button">ALERT V2</button>
             <button class="crTerm-tab" data-jrntab="notes" type="button">NOTES</button>
             <button class="crTerm-tab" data-jrntab="pnl" type="button">P&amp;L</button>
             <button class="crTerm-tab" data-jrntab="stats" type="button">STATS</button>
@@ -12870,6 +12877,19 @@ plot(out, color=color.orange, linewidth=2)</textarea>
             </div>
             <div id="crJrnAlertsSummary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px"></div>
             <div id="crJrnAlertsList" style="border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.4);max-height:400px;overflow:auto"></div>
+          </div>
+
+          <!-- ── ALERT V2 TAB ────────────────────────────────────────────── -->
+          <div class="crTerm-view hidden" id="crJournalViewAlertV2">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 8px">
+              <div id="crJrnAlertV2Scope" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"></div>
+              <div style="display:flex;gap:6px;flex:0 0 auto">
+                <button class="cr-go" id="crJrnAlertV2New" type="button" style="font-size:10px;padding:5px 11px">New alarm</button>
+                <button class="cr-go" id="crJrnAlertV2Refresh" type="button" style="font-size:10px;padding:5px 11px;background:transparent;border:1px solid var(--line);color:var(--dim)">Refresh</button>
+              </div>
+            </div>
+            <div id="crJrnAlertV2Summary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px"></div>
+            <div id="crJrnAlertV2List" style="border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.4);max-height:430px;overflow:auto"></div>
           </div>
 
           <!-- ── STATS TAB ─────────────────────────────────────────────── -->
@@ -13068,7 +13088,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.230",
+  VERSION: "1.0.255",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -20208,6 +20228,7 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
     game.laserAnchor2 = null;
     game.laserAnchor2Preview = null;
     game.laserAnchor3Preview = null;
+    try { if(window.crLaserCursor) window.crLaserCursor.disarm('laser-commit'); } catch(_){}
   };
   // v0.8k#24bb — Filter through wb.equippedTools, then group by category
   // and render TV-style: rail (left) + categorized list (right).
@@ -20435,8 +20456,400 @@ function closeTvSettingsDialog(){
   }
   _tvDlgEl = null;
 }
+// v1.0.237 — Shared per-object alarm setup. Settings panels for tools,
+// primitives, and indicators all use this adapter so Journal Alert V2 receives
+// the same structured level/progression payload regardless of where an alarm
+// was configured.
+(function(){
+  function esc(v){
+    return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+  }
+  function num(v){
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  function fmtPrice(v){
+    const n = num(v);
+    return n == null ? '--' : '$' + n.toFixed(2);
+  }
+  function currentPriceSafe(){
+    try { if(typeof lastPrice === 'function'){ const p = lastPrice(); if(Number.isFinite(Number(p))) return Number(p); } } catch(_){}
+    try {
+      if(typeof candles !== 'undefined' && candles && candles.length){
+        const c = candles[candles.length - 1];
+        if(c && Number.isFinite(Number(c.c))) return Number(c.c);
+      }
+    } catch(_){}
+    return null;
+  }
+  function refIdFor(kind, overlay){
+    if(!overlay) return kind + '-local';
+    const ids = [overlay._alarmRefId, overlay.alarmRefId, overlay._execRefId, overlay.execRefId, overlay.id, overlay.upperId, overlay.lowerId];
+    if(Array.isArray(overlay.orderIds)) ids.push.apply(ids, overlay.orderIds);
+    const found = ids.find(id => id != null && id !== '');
+    if(found != null) return String(found);
+    const id = kind + '_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 10000).toString(36);
+    try { overlay._alarmRefId = id; } catch(_){}
+    return id;
+  }
+  function labelForKind(kind, overlay){
+    if(kind === 'indicator'){
+      return (overlay && overlay.label) || (overlay && overlay.indicatorId) || 'Indicator';
+    }
+    if(typeof kind === 'string' && kind.indexOf('tv:') === 0) kind = kind.slice(3);
+    const meta = (typeof tvChartObjectMeta === 'function') ? tvChartObjectMeta(kind) : null;
+    return (meta && meta.label) || ({
+      bracket:'Bracket',
+      ladder:'Ladder',
+      oco:'OCO',
+      hline:'HLine',
+      vwap:'VWAP',
+      trendline:'Trendline',
+      fibRetrace:'Fib retracement',
+      fibExt:'Fib extension',
+      fibChannel:'Fib Channel',
+      flatChannel:'Flat Channel',
+      parChannel:'Parallel Channel',
+      disjoint:'Disjoint Channel',
+      avp:'Anchored Volume Profile',
+      frvp:'FRVP',
+      longPos:'Long position',
+      shortPos:'Short position'
+    })[kind] || kind || 'Object';
+  }
+  function fibLevelLabel(v){
+    const n = Number(v);
+    if(!Number.isFinite(n)) return String(v);
+    return String(+n.toFixed(3));
+  }
+  function fibLevelPrice(overlay, lvl){
+    const p1 = num(overlay && overlay.py1);
+    const p2 = num(overlay && overlay.py2);
+    const f = num(lvl);
+    if(p1 == null || p2 == null || f == null) return null;
+    return p2 + (p1 - p2) * f;
+  }
+  function pushLevel(out, id, label, price, opts){
+    opts = opts || {};
+    if(!id || !label) return;
+    out.push({
+      id:String(id),
+      label:String(label),
+      displayLabel:String(opts.displayLabel || label),
+      price:num(price),
+      family:opts.family || '',
+      defaultOn:opts.defaultOn !== false
+    });
+  }
+  function ladderLevels(overlay){
+    const levels = [];
+    const fibLabels = [0.236, 0.382, 0.5, 0.618, 0.786];
+    if(overlay && Array.isArray(overlay.prices) && overlay.prices.length){
+      overlay.prices.forEach((p, i) => {
+        const label = fibLabels[i] != null ? fibLevelLabel(fibLabels[i]) : ('Rung ' + (i + 1));
+        pushLevel(levels, label, label, p, { displayLabel:label, family:'fib-ladder' });
+      });
+      return levels;
+    }
+    const p0 = num(overlay && overlay.p);
+    const spacing = num(overlay && overlay.spacing);
+    const total = Math.max(1, Number(overlay && overlay.rungs) || 0);
+    const dir = overlay && overlay.side === 'sell' ? 1 : -1;
+    if(p0 != null && spacing != null){
+      for(let i = 1; i <= total; i++){
+        pushLevel(levels, 'rung-' + i, 'Rung ' + i, p0 + dir * spacing * i, { family:'ladder' });
+      }
+    }
+    return levels;
+  }
+  function bracketLevels(overlay){
+    const levels = [];
+    const entry = num(overlay && overlay.entry);
+    const tp = num(overlay && overlay.tp);
+    const sl = num(overlay && overlay.sl);
+    pushLevel(levels, 'entry', 'Entry', entry, { family:'bracket' });
+    const tps = Array.isArray(overlay && overlay.tpLevels) ? overlay.tpLevels : [];
+    if(tps.length && entry != null){
+      const risk = sl != null ? Math.max(0.000001, Math.abs(entry - sl)) : (tp != null ? Math.max(0.000001, Math.abs(tp - entry) / 2) : 1);
+      const dir = overlay && overlay.side === 'sell' ? -1 : 1;
+      tps.forEach((t, i) => {
+        const price = num(t.price);
+        const r = Math.max(0.05, Number(t.r) || (i + 1));
+        pushLevel(levels, t.id || ('tp' + (i + 1)), t.label || ('TP' + (i + 1)), price == null ? entry + dir * risk * r : price, { family:'bracket' });
+      });
+    } else {
+      if(entry != null && tp != null) pushLevel(levels, 'tp1', 'TP1', entry + (tp - entry) * 0.5, { family:'bracket' });
+      pushLevel(levels, 'tp2', 'TP2', tp, { family:'bracket' });
+    }
+    pushLevel(levels, 'sl', 'SL', sl, { family:'bracket' });
+    return levels.filter(l => l.price != null);
+  }
+  function ocoLevels(overlay){
+    const levels = [];
+    const upper = num(overlay && overlay.upper);
+    const lower = num(overlay && overlay.lower);
+    pushLevel(levels, 'upper', 'Upper trigger', upper, { displayLabel:'Upper trigger', family:'oco' });
+    pushLevel(levels, 'lower', 'Lower trigger', lower, { displayLabel:'Lower trigger', family:'oco' });
+    return levels.filter(l => l.price != null);
+  }
+  function vwapLevels(overlay){
+    const levels = [];
+    const poly = overlay && Array.isArray(overlay.poly) ? overlay.poly : [];
+    const last = poly.length ? poly[poly.length - 1] : null;
+    const first = poly.length ? poly[0] : null;
+    const price = num((last && last.py) != null ? last.py : ((first && first.py) != null ? first.py : (overlay && (overlay.py || overlay.refPrice))));
+    pushLevel(levels, 'vwap-reclaim', 'VWAP reclaim', price, { displayLabel:'VWAP reclaim', family:'vwap' });
+    return levels;
+  }
+  function channelLevels(overlay, kind){
+    const levels = [];
+    if(kind === 'fibChannel'){
+      const vals = (Array.isArray(overlay && overlay.levels) && overlay.levels.length ? overlay.levels : [0, 0.382, 0.5, 0.618, 1]);
+      const p1 = num(overlay && overlay.py1), p2 = num(overlay && overlay.py2), p3 = num(overlay && overlay.py3);
+      const base = p1 != null && p2 != null ? (p1 + p2) / 2 : null;
+      const offset = base != null && p3 != null ? (p3 - base) : null;
+      vals.forEach(v => {
+        const label = fibLevelLabel(v);
+        pushLevel(levels, label, label, base != null && offset != null ? base + offset * Number(v) : null, { displayLabel:'Band ' + label, family:'channel' });
+      });
+      return levels;
+    }
+    const vals = [overlay && overlay.py1, overlay && overlay.py2, overlay && overlay.py3, overlay && overlay.py, overlay && overlay.entry, overlay && overlay.stop, overlay && overlay.tp].map(num).filter(v => v != null);
+    if(vals.length){
+      const low = Math.min.apply(null, vals), high = Math.max.apply(null, vals), mid = (low + high) / 2;
+      pushLevel(levels, 'lower-band', 'lower band', low, { displayLabel:'Lower band', family:'channel' });
+      pushLevel(levels, 'midline', 'midline', mid, { displayLabel:'Midline', family:'channel' });
+      pushLevel(levels, 'upper-band', 'upper band', high, { displayLabel:'Upper band', family:'channel' });
+    }
+    return levels;
+  }
+  function fibLevels(overlay, kind){
+    const raw = Array.isArray(overlay && overlay.levels) && overlay.levels.length
+      ? overlay.levels
+      : [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1].map(lvl => ({ lvl, on:true }));
+    const levels = [];
+    raw.forEach(lv => {
+      const value = lv && typeof lv === 'object' ? lv.lvl : lv;
+      if(lv && typeof lv === 'object' && lv.on === false) return;
+      const label = fibLevelLabel(value);
+      pushLevel(levels, label, label, fibLevelPrice(overlay, value), { displayLabel:'Fib ' + label, family:kind || 'fib' });
+    });
+    return levels;
+  }
+  function indicatorLevels(overlay){
+    const levels = [];
+    const name = (overlay && overlay.label) || (overlay && overlay.indicatorId) || 'Indicator';
+    const price = num(overlay && (overlay.refPrice != null ? overlay.refPrice : overlay.py));
+    const px = price == null ? currentPriceSafe() : price;
+    pushLevel(levels, 'indicator-line', name + ' line', px, { displayLabel:name + ' line', family:'indicator' });
+    pushLevel(levels, 'indicator-reclaim', name + ' reclaim', px, { displayLabel:name + ' reclaim pending', family:'indicator' });
+    return levels;
+  }
+  function normalizeHit(hit){
+    const overlay = hit && hit.overlay ? hit.overlay : hit;
+    let kind = hit && hit.overlay ? hit.kind : (overlay && overlay.kind);
+    if(!kind && overlay && overlay.poly && overlay.anchorIdx != null) kind = 'vwap';
+    if(typeof kind === 'string' && kind.indexOf('tv:') === 0) kind = kind.slice(3);
+    if(!kind && overlay && overlay.indicatorId) kind = 'indicator';
+    return { kind:kind || 'object', overlay:overlay || {} };
+  }
+  function describeHit(hit){
+    const norm = normalizeHit(hit);
+    const kind = norm.kind;
+    const overlay = norm.overlay;
+    let levels = [];
+    if(kind === 'ladder') levels = ladderLevels(overlay);
+    else if(kind === 'bracket') levels = bracketLevels(overlay);
+    else if(kind === 'oco') levels = ocoLevels(overlay);
+    else if(kind === 'vwap' || kind === 'avwap') levels = vwapLevels(overlay);
+    else if(kind === 'fibRetrace' || kind === 'fibExt') levels = fibLevels(overlay, kind);
+    else if(kind === 'fibChannel' || /channel/i.test(kind) || kind === 'flatChannel' || kind === 'parChannel' || kind === 'disjoint') levels = channelLevels(overlay, kind);
+    else if(kind === 'indicator') levels = indicatorLevels(overlay);
+    else if(kind === 'longPos' || kind === 'shortPos') levels = bracketLevels({ entry:overlay.entry, tp:overlay.tp, sl:overlay.stop, side:kind === 'shortPos' ? 'sell' : 'buy' });
+    else {
+      const price = num(overlay.py != null ? overlay.py : (overlay.price != null ? overlay.price : overlay.refPrice));
+      if(price != null) pushLevel(levels, 'level', labelForKind(kind, overlay) + ' level', price, { family:kind });
+    }
+    return {
+      kind,
+      label:labelForKind(kind, overlay),
+      refId:refIdFor(kind, overlay),
+      overlay,
+      levels:levels.filter(l => l && l.id)
+    };
+  }
+  function progressFor(desc, selected){
+    const current = currentPriceSafe();
+    const levels = selected.map(l => ({ label:l.label, state:'armed', price:l.price }));
+    const progress = { type:'multi-level', levels };
+    if(desc.kind === 'bracket' || desc.kind === 'longPos' || desc.kind === 'shortPos'){
+      const by = {};
+      selected.forEach(l => { by[l.label.toLowerCase()] = l; });
+      const entry = by.entry || selected.find(l => /entry/i.test(l.label));
+      const tp1 = by.tp1 || selected.find(l => /tp1/i.test(l.label));
+      const tp2 = by.tp2 || selected.find(l => /tp2|tp/i.test(l.label));
+      const sl = by.sl || selected.find(l => /^sl$/i.test(l.label));
+      progress.bracket = {
+        entryTouched:false,
+        tp1Pct:distancePct(current, tp1 && tp1.price, entry && entry.price),
+        tp2Pct:distancePct(current, tp2 && tp2.price, entry && entry.price),
+        slRiskPct:distancePct(current, sl && sl.price, entry && entry.price)
+      };
+    }
+    if(desc.kind === 'ladder') progress.ladder = { tapped:0, total:selected.length || desc.levels.length || 1 };
+    if(desc.kind === 'vwap' || desc.kind === 'avwap'){
+      const target = selected[0] && selected[0].price;
+      progress.vwap = {
+        relation:current != null && target != null && current >= target ? 'price above VWAP' : 'price below VWAP',
+        status:'reclaim pending'
+      };
+    }
+    if(/channel/i.test(desc.kind) || desc.kind === 'fibChannel' || desc.kind === 'flatChannel' || desc.kind === 'parChannel' || desc.kind === 'disjoint'){
+      progress.channel = { midlineTapped:false, upperBandPct:distancePct(current, (selected.find(l => /upper/i.test(l.label)) || selected[selected.length - 1] || {}).price, null) };
+    }
+    return progress;
+  }
+  function distancePct(current, target, origin){
+    current = num(current); target = num(target); origin = num(origin);
+    if(current == null || target == null) return 0;
+    const denom = origin != null && Math.abs(target - origin) > 0.000001 ? Math.abs(target - origin) : Math.max(0.000001, Math.abs(target));
+    return Math.max(0, Math.min(100, 100 - Math.abs(target - current) / denom * 100));
+  }
+  function saveFromHit(hit, opts){
+    opts = opts || {};
+    const desc = describeHit(hit);
+    const ids = Array.isArray(opts.selectedLevelIds) && opts.selectedLevelIds.length ? opts.selectedLevelIds.map(String) : desc.levels.filter(l => l.defaultOn).map(l => l.id);
+    const selected = desc.levels.filter(l => ids.includes(l.id));
+    if(!selected.length) return null;
+    const current = currentPriceSafe();
+    const conditions = selected.map(l => ({
+      label:l.label,
+      displayLabel:l.displayLabel,
+      op:(current != null && l.price != null && current > l.price) ? '<=' : '>=',
+      price:l.price,
+      kind:desc.kind,
+      target:{ refId:desc.refId, kind:desc.kind, levelId:l.id },
+      objectAlarm:true
+    }));
+    const mode = opts.mode || 'touch';
+    let progress = progressFor(desc, selected);
+    if(mode === 'tap-count'){
+      progress = {
+        type:'tap-count',
+        current:0,
+        required:Math.max(1, Number(opts.taps) || 1),
+        remaining:Math.max(1, Number(opts.taps) || 1),
+        zonePct:Number(opts.zonePct) || 0.25,
+        resetRule:'resets if price closes beyond selected level'
+      };
+    } else if(mode === 'time-in-zone'){
+      progress = {
+        type:'time-in-zone',
+        totalLabel:'watching selected zone',
+        elapsedSeconds:0,
+        requiredSeconds:Math.max(60, Number(opts.requiredSeconds) || 28800),
+        candlesInside:0,
+        candlesRequired:Math.max(1, Number(opts.candlesRequired) || 24),
+        zoneIntegrity:100,
+        breaks:0
+      };
+    }
+    const alarm = {
+      id:'obj_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 10000).toString(36),
+      name:opts.name || (desc.label + ' alarm · ' + selected.map(l => l.label).join(', ')),
+      enabled:true,
+      triggered:false,
+      confluence:false,
+      source:'object-settings',
+      objectAlarm:true,
+      objectRef:{ kind:desc.kind, refId:desc.refId, label:desc.label },
+      selectedLevels:selected.map(l => ({ id:l.id, label:l.label, price:l.price })),
+      conditions,
+      createdAt:Date.now(),
+      lifecycle:'Watching',
+      triggerMode:mode,
+      progress
+    };
+    const alarmApi = (typeof window !== 'undefined') ? window.crAlarm : null;
+    if(alarmApi && typeof alarmApi.saveObjectAlarm === 'function') return alarmApi.saveObjectAlarm(alarm);
+    if(alarmApi && Array.isArray(alarmApi.alarms)) alarmApi.alarms.push(alarm);
+    try {
+      if(window.crAlertBus && typeof window.crAlertBus.publish === 'function') window.crAlertBus.publish({
+        type:'object-alarm',
+        severity:'info',
+        source:'object-settings',
+        alarmId:alarm.id,
+        asset:(typeof currentAsset === 'string' ? currentAsset.toUpperCase() : 'BTC'),
+        timeframe:(typeof timeframe === 'string' ? timeframe : '15m'),
+        price:conditions[0] && conditions[0].price,
+        message:'Saved object alarm: ' + alarm.name,
+        context:{ objectRef:alarm.objectRef, progress:alarm.progress, conditions:alarm.conditions },
+        notify:false
+      });
+    } catch(_){}
+    try { if(typeof window.crJrnRenderAlerts === 'function') window.crJrnRenderAlerts(); } catch(_){}
+    try { if(typeof window.crJrnRenderAlertV2 === 'function') window.crJrnRenderAlertV2(); } catch(_){}
+    return alarm;
+  }
+  function renderPanel(root, hit, opts){
+    if(!root) return null;
+    opts = opts || {};
+    const surface = opts.surface || 'object-settings';
+    const desc = describeHit(hit);
+    root.setAttribute('data-cr-object-alarm-panel', surface);
+    if(!desc.levels.length){
+      root.innerHTML = '<div style="color:#9aa0aa;font-style:italic">No alarmable levels found for this object yet.</div>';
+      return desc;
+    }
+    const selected = new Set((opts.selectedLevelIds || desc.levels.filter(l => l.defaultOn).map(l => l.id)).map(String));
+    const rows = desc.levels.map(l =>
+      '<label data-cr-object-alarm-level="'+esc(l.id)+'" style="display:grid;grid-template-columns:18px 1fr auto;gap:9px;align-items:center;padding:7px 0;border-top:1px solid rgba(255,255,255,.06);cursor:pointer">' +
+        '<input type="checkbox" data-cr-object-alarm-pick="'+esc(l.id)+'" '+(selected.has(l.id) ? 'checked' : '')+' style="width:16px;height:16px;accent-color:#ffd166">' +
+        '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(l.displayLabel || l.label)+'</span>' +
+        '<b style="font:700 11px ui-monospace,Menlo,monospace;color:#e9efff">'+esc(fmtPrice(l.price))+'</b>' +
+      '</label>'
+    ).join('');
+    root.innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">' +
+        '<b style="font-size:11px;letter-spacing:.45px;text-transform:uppercase;color:#ffd166">Alarm setup</b>' +
+        '<span style="margin-left:auto;font:700 9px ui-monospace,Menlo,monospace;color:#9aa0aa">'+esc(desc.label)+'</span>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 96px 96px;gap:8px;margin-bottom:10px">' +
+        '<label style="display:block;font-size:10px;color:#9aa0aa;text-transform:uppercase">Trigger<select data-cr-object-alarm-mode style="width:100%;margin-top:4px;background:#0f0f12;border:1px solid #2c2e36;border-radius:6px;color:#e9efff;padding:7px 8px"><option value="touch">Touch / cross</option><option value="tap-count">Tap count</option><option value="time-in-zone">Time in zone</option></select></label>' +
+        '<label style="display:block;font-size:10px;color:#9aa0aa;text-transform:uppercase">Zone %<input data-cr-object-alarm-zone type="number" min="0" step="0.05" value="0.25" style="width:100%;margin-top:4px;background:#0f0f12;border:1px solid #2c2e36;border-radius:6px;color:#e9efff;padding:7px 8px"></label>' +
+        '<label style="display:block;font-size:10px;color:#9aa0aa;text-transform:uppercase">Taps<input data-cr-object-alarm-taps type="number" min="1" step="1" value="1" style="width:100%;margin-top:4px;background:#0f0f12;border:1px solid #2c2e36;border-radius:6px;color:#e9efff;padding:7px 8px"></label>' +
+      '</div>' +
+      '<div style="border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:2px 10px 4px;background:rgba(255,255,255,.025);font-size:12px;color:#cfd3da">' + rows + '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">' +
+        '<span data-cr-object-alarm-status style="font-size:10px;color:#9aa0aa;min-width:0;flex:1">Individual checked levels are saved as separate conditions on one local alarm.</span>' +
+        '<button type="button" data-cr-object-alarm-save style="background:#ffd166;border:0;border-radius:7px;color:#111827;padding:8px 12px;font:800 11px ui-monospace,Menlo,monospace;cursor:pointer">Save alarm</button>' +
+      '</div>';
+    const save = root.querySelector('[data-cr-object-alarm-save]');
+    if(save){
+      save.addEventListener('click', () => {
+        const picked = Array.from(root.querySelectorAll('[data-cr-object-alarm-pick]:checked')).map(input => input.getAttribute('data-cr-object-alarm-pick'));
+        const modeEl = root.querySelector('[data-cr-object-alarm-mode]');
+        const zoneEl = root.querySelector('[data-cr-object-alarm-zone]');
+        const tapsEl = root.querySelector('[data-cr-object-alarm-taps]');
+        const record = saveFromHit(hit, {
+          selectedLevelIds:picked,
+          source:surface,
+          mode:modeEl ? modeEl.value : 'touch',
+          zonePct:zoneEl ? Number(zoneEl.value) : 0.25,
+          taps:tapsEl ? Number(tapsEl.value) : 1
+        });
+        const status = root.querySelector('[data-cr-object-alarm-status]');
+        if(status) status.textContent = record ? ('Saved ' + picked.length + ' level alarm') : 'Pick at least one level';
+        try { if(record && typeof toast === 'function') toast('Alarm saved · ' + desc.label); } catch(_){}
+      });
+    }
+    return desc;
+  }
+  window.crObjectAlarm = { describeHit, saveFromHit, renderPanel };
+})();
 const TV_CHART_OBJECT_META = {
   trendAngle: { label:'Trend Angle', anchors:2, hit:'line',      handles:['p1','p2','body'],      color:'#7ad6ff', cfg:'line' },
+  parChannel: { label:'Parallel Channel', anchors:3, hit:'rail', handles:['p1','p2','p3','body'], color:'#22d3ee', cfg:'channel' },
   regression: { label:'Regression Trend', anchors:2, hit:'band', handles:['p1','p2','body'],      color:'#22d3ee', cfg:'regression' },
   flatChannel:{ label:'Flat Channel', anchors:2, hit:'box',      handles:['p1','p2','body'],      color:'#22d3ee', cfg:'box' },
   disjoint:   { label:'Disjoint Channel', anchors:3, hit:'rail', handles:['p1','p2','p3','body'], color:'#22d3ee', cfg:'channel' },
@@ -20498,9 +20911,11 @@ function refreshTvOverlayDerivedFields(ov){
 function openTvSettingsDialog(overlay){
   closeTvSettingsDialog();
   if(!overlay) return;
+  if(!overlay.kind && overlay.poly && overlay.anchorIdx != null) overlay.kind = 'vwap';
   const titleMap = {
+    bracket:'Bracket', ladder:'Order Ladder', oco:'OCO', hline:'HLine', trendline:'Trendline',
     vwap:'Anchored VWAP', avwap:'Anchored VWAP', fibRetrace:'Fib retracement', fibExt:'Fib extension', frvp:'FRVP',
-    trendAngle:'Trend Angle', regression:'Regression Trend', flatChannel:'Flat Channel', disjoint:'Disjoint Channel',
+    trendAngle:'Trend Angle', parChannel:'Parallel Channel', regression:'Regression Trend', flatChannel:'Flat Channel', disjoint:'Disjoint Channel',
     fibChannel:'Fib Channel', fibTimeZone:'Fib Time Zone', fibCircles:'Fib Circles', gannBox:'Gann Box',
     gannFan:'Gann Fan', barPattern:'Bar Pattern', avp:'Anchored Volume Profile', triangle:'Triangle'
   };
@@ -20513,7 +20928,7 @@ function openTvSettingsDialog(overlay){
   // Header
   const head = document.createElement('div');
   head.style.cssText = 'display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid #2c2e36';
-  const titleEl = document.createElement('div'); titleEl.textContent = title; titleEl.style.cssText = 'font-size:18px;font-weight:600';
+  const titleEl = document.createElement('div'); titleEl.textContent = title; titleEl.setAttribute('data-cr-tv-settings-title', ''); titleEl.style.cssText = 'font-size:18px;font-weight:600';
   const editPen = document.createElement('span'); editPen.textContent = '✏'; editPen.style.cssText = 'font-size:14px;color:#9aa0aa;cursor:pointer';
   const spacer = document.createElement('div'); spacer.style.cssText = 'flex:1';
   const closeX = document.createElement('button'); closeX.textContent = '✕'; closeX.style.cssText = 'background:transparent;border:0;color:#9aa0aa;font-size:18px;cursor:pointer;padding:4px 8px';
@@ -20523,12 +20938,13 @@ function openTvSettingsDialog(overlay){
   // Tabs
   const tabsBar = document.createElement('div');
   tabsBar.style.cssText = 'display:flex;gap:24px;padding:10px 18px 0;border-bottom:1px solid #2c2e36;position:relative';
-  const tabs = ['Inputs','Style','Coordinates','Visibility'];
+  const tabs = ['Inputs','Style','Alarm','Coordinates','Visibility'];
   let active = (overlay.kind === 'fibRetrace' || overlay.kind === 'fibExt') ? 'Style' : 'Inputs';
   const tabBtns = {};
   tabs.forEach(t => {
     const b = document.createElement('button');
     b.textContent = t;
+    b.setAttribute('data-cr-tv-tab', t);
     b.style.cssText = 'background:transparent;border:0;color:'+(t===active?'#e9efff':'#9aa0aa')+';font-size:14px;font-weight:'+(t===active?'600':'400')+';padding:8px 0 12px;cursor:pointer;border-bottom:2px solid '+(t===active?'#e9efff':'transparent')+';margin-bottom:-1px';
     b.onclick = () => {
       active = t;
@@ -20546,6 +20962,7 @@ function openTvSettingsDialog(overlay){
   dlg.appendChild(tabsBar);
   // Body
   const body = document.createElement('div');
+  body.setAttribute('data-cr-tv-settings-body', '');
   body.style.cssText = 'padding:18px;overflow-y:auto;flex:1';
   dlg.appendChild(body);
   const renderBody = () => {
@@ -20590,6 +21007,497 @@ function openTvSettingsDialog(overlay){
       return c;
     };
     const syncLiveTool = () => { try { refreshTvOverlayDerivedFields(overlay); } catch(_){} };
+    const syncPrimitiveOrder = () => {
+      try {
+        if(!overlay || typeof sdk === 'undefined') return;
+        if(overlay.kind === 'bracket' && overlay.id != null && sdk.editOrder){
+          sdk.editOrder(overlay.id, { entry:overlay.entry, tp:overlay.tp, sl:overlay.sl, side:overlay.side });
+        } else if(overlay.kind === 'ladder' && Array.isArray(overlay.orderIds) && sdk.editOrder){
+          const dir = overlay.side === 'sell' ? 1 : -1;
+          const prices = Array.isArray(overlay.prices) && overlay.prices.length === overlay.orderIds.length
+            ? overlay.prices
+            : overlay.orderIds.map((_, i) => (Number(overlay.p) || 0) + dir * (Number(overlay.spacing) || 0) * (i + 1));
+          overlay.orderIds.forEach((oid, i) => sdk.editOrder(oid, { price:prices[i] }));
+        } else if(overlay.kind === 'oco' && sdk.editOrder){
+          if(overlay.upperId != null) sdk.editOrder(overlay.upperId, { price:overlay.upper });
+          if(overlay.lowerId != null) sdk.editOrder(overlay.lowerId, { price:overlay.lower });
+        } else if(overlay.kind === 'hline' && overlay.tradeOrderId != null && sdk.openOrders){
+          const linked = sdk.openOrders.find(o => o.id === overlay.tradeOrderId);
+          if(linked){
+            const px = overlay.py;
+            if(overlay.tradeKind === 'limit') linked.price = px;
+            else if(overlay.tradeKind === 'stopLossAt') linked.sl = px;
+            else if(overlay.tradeKind === 'takeProfitAt') linked.tp = px;
+            else if(overlay.tradeKind === 'trailingTpAt'){ if(linked.trailing) linked.trailing.activatePrice = px; else linked.trail = px; }
+            else if(overlay.tradeKind === 'scaleOutAt') linked.scaleOutPrice = px;
+            else if(overlay.tradeKind === 'magnetAt'){ if(linked.magnet) linked.magnet.target = px; else linked.magnet = px; }
+            else if(overlay.tradeKind === 'perpFlipAt') linked.flipPrice = px;
+            else if(overlay.tradeKind === 'borrowShortAt') linked.price = px;
+            else if(overlay.tradeKind === 'liqGuardAt') linked.guardPrice = px;
+            else if(overlay.tradeKind === 'twap'){
+              if(overlay.tradeAnchor === 'a1') linked.fromPrice = linked.priceA1 = px;
+              else if(overlay.tradeAnchor === 'a2') linked.toPrice = linked.priceA2 = px;
+            } else if(overlay.tradeKind === 'iceberg'){
+              if(overlay.tradeAnchor === 'hi') linked.fromPrice = px;
+              else if(overlay.tradeAnchor === 'lo') linked.toPrice = px;
+            }
+          }
+        }
+      } catch(_){}
+    };
+    const bracketNum = (v, fallback) => {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : fallback;
+    };
+    const bracketClean = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Number(n.toFixed(8)) : 0;
+    };
+    const bracketNumText = (v) => {
+      const n = Number(v);
+      if(!Number.isFinite(n)) return '0';
+      return String(Number(n.toFixed(8)));
+    };
+    const bracketPriceText = (v) => {
+      try { return typeof fmtPrice === 'function' ? fmtPrice(v) : '$' + Number(v).toFixed(2); }
+      catch(_) { return '$' + (Number(v) || 0).toFixed(2); }
+    };
+    const bracketSideValue = () => overlay.side === 'sell' ? 'sell' : 'buy';
+    const bracketStopDistanceValue = () => {
+      const entry = bracketNum(overlay.entry, 0);
+      const sl = bracketNum(overlay.sl, bracketNum(overlay.stop, entry));
+      const dist = Math.abs(entry - sl);
+      if(Number.isFinite(dist) && dist > 1e-9) return dist;
+      return Math.max(1, Math.abs(entry) * 0.01 || 60);
+    };
+    const bracketRRValue = () => {
+      const entry = bracketNum(overlay.entry, 0);
+      const tp = bracketNum(overlay.tp, entry);
+      const stopDistance = bracketStopDistanceValue();
+      const reward = Math.abs(tp - entry);
+      if(stopDistance > 1e-9 && reward > 1e-9) return Math.max(0.1, reward / stopDistance);
+      return Math.max(0.1, bracketNum(overlay.rr, 2));
+    };
+    const renderBracketSetup = () => {
+      if(overlay.outcome){
+        const wrap = document.createElement('div');
+        wrap.setAttribute('data-cr-bracket-resolved', '');
+        wrap.style.cssText = 'display:grid;gap:14px';
+        const card = document.createElement('div');
+        card.style.cssText = 'border:1px solid #2c2e36;border-radius:8px;background:#101116;padding:14px;display:grid;gap:10px';
+        const title = document.createElement('div');
+        title.textContent = 'Resolved bracket';
+        title.style.cssText = 'font-size:13px;font-weight:800;color:#e9efff;text-transform:uppercase;letter-spacing:.45px';
+        const status = document.createElement('div');
+        const outcomeLabel = String(overlay.outcome).toUpperCase();
+        status.textContent = 'Outcome: ' + outcomeLabel + ' · setup is locked, but the object remains selectable for inspection, alarms, style, and deletion.';
+        status.style.cssText = 'color:#cfd3da;line-height:1.45';
+        const levels = document.createElement('div');
+        levels.style.cssText = 'display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;font:12px ui-monospace,monospace';
+        [
+          { k:'Entry', v:overlay.entry, c:'#e9efff' },
+          { k:'TP', v:overlay.tp, c:'#3ddc97' },
+          { k:'SL', v:overlay.sl, c:'#ff5b7f' },
+        ].forEach(item => {
+          const cell = document.createElement('div');
+          cell.style.cssText = 'border:1px solid rgba(255,255,255,.08);border-radius:6px;background:rgba(255,255,255,.035);padding:8px;display:grid;gap:4px;min-width:0';
+          const lab = document.createElement('span');
+          lab.textContent = item.k;
+          lab.style.cssText = 'color:#7f8795;font-size:10px;text-transform:uppercase;letter-spacing:.35px';
+          const val = document.createElement('strong');
+          val.textContent = bracketPriceText(item.v);
+          val.style.cssText = 'color:' + item.c + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+          cell.appendChild(lab);
+          cell.appendChild(val);
+          levels.appendChild(cell);
+        });
+        card.appendChild(title);
+        card.appendChild(status);
+        card.appendChild(levels);
+        wrap.appendChild(card);
+        body.appendChild(wrap);
+        return;
+      }
+      const startEntry = bracketNum(overlay.entry, 0);
+      const startStopDistance = bracketStopDistanceValue();
+      const startRR = bracketRRValue();
+      const startRisk = Math.max(0, bracketNum(overlay.size ?? overlay.risk, 20));
+      const wrap = document.createElement('div');
+      wrap.setAttribute('data-cr-bracket-setup', '');
+      wrap.style.cssText = 'display:grid;gap:14px';
+
+      const picker = document.createElement('div');
+      picker.style.cssText = 'display:grid;gap:8px';
+      const pickerTitle = document.createElement('div');
+      pickerTitle.textContent = 'R:R picker';
+      pickerTitle.style.cssText = 'font-size:11px;color:#9aa0aa;letter-spacing:.6px;text-transform:uppercase';
+      const rrGrid = document.createElement('div');
+      rrGrid.style.cssText = 'display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px';
+      [
+        { label:'1:1', rr:1 },
+        { label:'1:1.5', rr:1.5 },
+        { label:'1:2', rr:2 },
+        { label:'1:3', rr:3 },
+        { label:'Custom', rr:null },
+      ].forEach(p => {
+        const b = document.createElement('button');
+        b.textContent = p.label;
+        b.setAttribute('data-cr-bracket-rr', p.rr == null ? 'custom' : String(p.rr));
+        b.style.cssText = 'background:#101923;border:1px solid #303844;border-radius:6px;color:#e9efff;padding:10px 8px;cursor:pointer;font:700 13px ui-monospace,monospace;min-height:40px';
+        b.onmouseenter = () => { b.style.borderColor = '#14f195'; };
+        b.onmouseleave = () => { b.style.borderColor = '#303844'; };
+        rrGrid.appendChild(b);
+      });
+      picker.appendChild(pickerTitle);
+      picker.appendChild(rrGrid);
+      wrap.appendChild(picker);
+
+      const fieldGrid = document.createElement('div');
+      fieldGrid.style.cssText = 'display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px';
+      const makeField = (label, control) => {
+        const box = document.createElement('label');
+        box.style.cssText = 'display:grid;gap:5px;color:#9aa0aa;font-size:11px;letter-spacing:.4px;text-transform:uppercase';
+        const txt = document.createElement('span');
+        txt.textContent = label;
+        box.appendChild(txt);
+        box.appendChild(control);
+        fieldGrid.appendChild(box);
+      };
+      const controlStyle = 'width:100%;box-sizing:border-box;background:#0f0f12;border:1px solid #2c2e36;border-radius:6px;color:#e9efff;padding:8px 10px;font:13px ui-monospace,monospace';
+      const sideInput = document.createElement('select');
+      sideInput.setAttribute('data-cr-bracket-field', 'side');
+      sideInput.style.cssText = controlStyle;
+      [{ v:'buy', l:'Buy / Long' }, { v:'sell', l:'Sell / Short' }].forEach(o => {
+        const op = document.createElement('option');
+        op.value = o.v; op.textContent = o.l; if(o.v === bracketSideValue()) op.selected = true;
+        sideInput.appendChild(op);
+      });
+      const rrInput = document.createElement('input');
+      rrInput.setAttribute('data-cr-bracket-field', 'rr');
+      rrInput.type = 'number'; rrInput.step = '0.1'; rrInput.min = '0.1'; rrInput.value = bracketNumText(startRR); rrInput.style.cssText = controlStyle;
+      const entryInput = document.createElement('input');
+      entryInput.setAttribute('data-cr-bracket-field', 'entry');
+      entryInput.type = 'number'; entryInput.step = '0.01'; entryInput.value = bracketNumText(startEntry); entryInput.style.cssText = controlStyle;
+      const stopInput = document.createElement('input');
+      stopInput.setAttribute('data-cr-bracket-field', 'stopDistance');
+      stopInput.type = 'number'; stopInput.step = '0.01'; stopInput.min = '0.000001'; stopInput.value = bracketNumText(startStopDistance); stopInput.style.cssText = controlStyle;
+      const riskInput = document.createElement('input');
+      riskInput.setAttribute('data-cr-bracket-field', 'risk');
+      riskInput.type = 'number'; riskInput.step = '1'; riskInput.min = '0'; riskInput.value = bracketNumText(startRisk); riskInput.style.cssText = controlStyle;
+      const tpAuto = document.createElement('input');
+      tpAuto.setAttribute('data-cr-bracket-field', 'tpAuto');
+      tpAuto.readOnly = true; tpAuto.value = bracketPriceText(overlay.tp); tpAuto.style.cssText = controlStyle + ';color:#3ddc97';
+      const calcState = (typeof CR_COMPETITION_BRACKET !== 'undefined') ? CR_COMPETITION_BRACKET : { accountBalance:100, leverage:10, roundTripFeeRate:0.0012 };
+      const accountCalcInput = document.createElement('input');
+      accountCalcInput.setAttribute('data-cr-bracket-field', 'account');
+      accountCalcInput.type = 'number'; accountCalcInput.step = '1'; accountCalcInput.min = '1'; accountCalcInput.value = bracketNumText(calcState.accountBalance); accountCalcInput.style.cssText = controlStyle;
+      const leverageCalcInput = document.createElement('input');
+      leverageCalcInput.setAttribute('data-cr-bracket-field', 'leverage');
+      leverageCalcInput.type = 'number'; leverageCalcInput.step = '1'; leverageCalcInput.min = '1'; leverageCalcInput.value = bracketNumText(calcState.leverage); leverageCalcInput.style.cssText = controlStyle;
+      const feeCalcInput = document.createElement('input');
+      feeCalcInput.setAttribute('data-cr-bracket-field', 'roundTripFee');
+      feeCalcInput.type = 'number'; feeCalcInput.step = '0.001'; feeCalcInput.min = '0'; feeCalcInput.value = bracketNumText((calcState.roundTripFeeRate || 0) * 100); feeCalcInput.style.cssText = controlStyle;
+      makeField('Side', sideInput);
+      makeField('R:R ratio', rrInput);
+      makeField('Entry price', entryInput);
+      makeField('Stop distance', stopInput);
+      makeField('Risk ($)', riskInput);
+      makeField('Take profit (auto)', tpAuto);
+      makeField('Trade size (USDC)', accountCalcInput);
+      makeField('Leverage (x)', leverageCalcInput);
+      makeField('Round-trip fee (%)', feeCalcInput);
+      wrap.appendChild(fieldGrid);
+
+      const riskDeck = document.createElement('div');
+      riskDeck.setAttribute('data-cr-bracket-risk', '');
+      riskDeck.style.cssText = 'border:1px solid rgba(20,241,149,.28);background:linear-gradient(180deg,rgba(5,13,22,.96),rgba(7,10,19,.98));border-radius:8px;padding:10px 11px;font-family:ui-monospace,monospace;display:grid;gap:9px';
+      const riskHead = document.createElement('div');
+      riskHead.style.cssText = 'display:flex;align-items:center;gap:8px;color:#cfd3da';
+      const riskTitle = document.createElement('strong');
+      riskTitle.textContent = 'Competition risk';
+      riskTitle.style.cssText = 'font-size:12px';
+      const riskMeta = document.createElement('span');
+      riskMeta.style.cssText = 'margin-left:auto;color:#7f8795;font-size:11px';
+      riskHead.appendChild(riskTitle);
+      riskHead.appendChild(riskMeta);
+      const riskCells = document.createElement('div');
+      riskCells.style.cssText = 'display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px';
+      const verdict = document.createElement('div');
+      verdict.style.cssText = 'color:#aab2bf;font-size:11px;line-height:1.35';
+      riskDeck.appendChild(riskHead);
+      riskDeck.appendChild(riskCells);
+      riskDeck.appendChild(verdict);
+      wrap.appendChild(riskDeck);
+
+      const feeHurdle = document.createElement('div');
+      feeHurdle.setAttribute('data-cr-bracket-calculator', 'fee-hurdle');
+      feeHurdle.style.cssText = 'border:1px solid rgba(91,111,150,.48);background:#10141c;border-radius:8px;padding:9px 10px;display:grid;gap:8px;font-family:ui-monospace,monospace';
+      const hurdleHead = document.createElement('div');
+      hurdleHead.style.cssText = 'display:flex;align-items:center;gap:10px';
+      const hurdleTitle = document.createElement('strong');
+      hurdleTitle.textContent = 'Fee hurdle';
+      hurdleTitle.style.cssText = 'color:#e9efff;font-size:12px;text-transform:uppercase;letter-spacing:.35px';
+      const hurdleNote = document.createElement('span');
+      hurdleNote.textContent = 'auto-updates from Trade size, Leverage, Fee, Risk, Entry, and Stop';
+      hurdleNote.style.cssText = 'margin-left:auto;color:#7f8795;font-size:10.5px;text-align:right;line-height:1.25';
+      hurdleHead.appendChild(hurdleTitle);
+      hurdleHead.appendChild(hurdleNote);
+      feeHurdle.appendChild(hurdleHead);
+      const riskMetricGrid = document.createElement('div');
+      riskMetricGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px';
+      const makeMetric = (label, tone) => {
+        const card = document.createElement('div');
+        card.style.cssText = 'border:1px solid rgba(255,255,255,.07);background:rgba(11,14,19,.78);border-radius:7px;padding:8px;display:grid;gap:5px;min-width:0';
+        const lab = document.createElement('span');
+        lab.textContent = label;
+        lab.style.cssText = 'color:#9aa0aa;font-size:10px;text-transform:uppercase;letter-spacing:.35px;line-height:1.2';
+        const big = document.createElement('strong');
+        big.style.cssText = 'color:' + (tone || '#3ddc97') + ';font-size:18px;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+        const sub = document.createElement('span');
+        sub.style.cssText = 'color:#aab2bf;font-size:10.5px;line-height:1.3;overflow-wrap:anywhere';
+        card.appendChild(lab);
+        card.appendChild(big);
+        card.appendChild(sub);
+        riskMetricGrid.appendChild(card);
+        return { big, sub };
+      };
+      const breakEvenMetric = makeMetric('Break-even move', '#3ddc97');
+      const totalCostMetric = makeMetric('Total round-trip cost', '#e9efff');
+      const accountCostMetric = makeMetric('Cost as % of trade size', '#ffd166');
+      feeHurdle.appendChild(riskMetricGrid);
+      wrap.appendChild(feeHurdle);
+
+      const tpCard = document.createElement('div');
+      tpCard.setAttribute('data-cr-bracket-calculator', 'tp-profit');
+      tpCard.style.cssText = 'border:1px solid rgba(20,241,149,.24);background:linear-gradient(180deg,rgba(6,16,18,.96),rgba(8,11,18,.98));border-radius:8px;padding:11px;display:grid;gap:9px;font-family:ui-monospace,monospace';
+      const tpHead = document.createElement('div');
+      tpHead.style.cssText = 'display:flex;align-items:center;gap:10px';
+      const tpTitle = document.createElement('strong');
+      tpTitle.textContent = 'TP profit calculator';
+      tpTitle.style.cssText = 'color:#e9efff;font-size:12px;text-transform:uppercase;letter-spacing:.35px';
+      const tpHint = document.createElement('span');
+      tpHint.textContent = 'gross vs fees per take-profit level';
+      tpHint.style.cssText = 'margin-left:auto;color:#7f8795;font-size:11px;text-align:right';
+      tpHead.appendChild(tpTitle);
+      tpHead.appendChild(tpHint);
+      const tpRows = document.createElement('div');
+      tpRows.style.cssText = 'display:grid;gap:7px';
+      tpCard.appendChild(tpHead);
+      tpCard.appendChild(tpRows);
+      wrap.appendChild(tpCard);
+
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px';
+      const flip = document.createElement('button');
+      flip.textContent = 'Flip side';
+      flip.setAttribute('data-cr-bracket-action', 'flip');
+      flip.style.cssText = 'background:transparent;border:1px solid #2c2e36;border-radius:6px;color:#e9efff;padding:8px 14px;cursor:pointer;font:700 12px -apple-system,system-ui,sans-serif';
+      const apply = document.createElement('button');
+      apply.textContent = 'Apply setup';
+      apply.setAttribute('data-cr-bracket-action', 'apply');
+      apply.style.cssText = 'background:#14f195;border:0;border-radius:6px;color:#04130d;padding:8px 14px;cursor:pointer;font:800 12px -apple-system,system-ui,sans-serif';
+      actions.appendChild(flip);
+      actions.appendChild(apply);
+      wrap.appendChild(actions);
+
+      const readSetup = () => ({
+        side: sideInput.value === 'sell' ? 'sell' : 'buy',
+        rr: Math.max(0.1, bracketNum(rrInput.value, startRR)),
+        entry: bracketNum(entryInput.value, startEntry),
+        stopDistance: Math.max(0.000001, Math.abs(bracketNum(stopInput.value, startStopDistance))),
+        risk: Math.max(0, bracketNum(riskInput.value, startRisk)),
+      });
+      const moneyText = (n) => {
+        try { return typeof _brMoney === 'function' ? _brMoney(n) : '$' + Number(n || 0).toFixed(2); }
+        catch(_) { return '$' + Number(n || 0).toFixed(2); }
+      };
+      const pctText = (n) => {
+        try { return typeof _brPct === 'function' ? _brPct(n) : Number(n || 0).toFixed(2) + '%'; }
+        catch(_) { return Number(n || 0).toFixed(2) + '%'; }
+      };
+      const readCalcConfig = () => {
+        const accountBalance = Math.max(1, bracketNum(accountCalcInput.value, calcState.accountBalance || 100));
+        const leverage = Math.max(1, bracketNum(leverageCalcInput.value, calcState.leverage || 10));
+        const roundTripFeeRate = Math.max(0, bracketNum(feeCalcInput.value, (calcState.roundTripFeeRate || 0.0012) * 100)) / 100;
+        try {
+          if(typeof CR_COMPETITION_BRACKET !== 'undefined'){
+            CR_COMPETITION_BRACKET.accountBalance = accountBalance;
+            CR_COMPETITION_BRACKET.leverage = leverage;
+            CR_COMPETITION_BRACKET.roundTripFeeRate = roundTripFeeRate;
+          }
+        } catch(_){}
+        return { accountBalance, leverage, roundTripFeeRate };
+      };
+      const drawTpCalculator = (setup, est) => {
+        tpRows.innerHTML = '';
+        if(!est){
+          const empty = document.createElement('div');
+          empty.textContent = 'Enter bracket values to calculate TP profit.';
+          empty.style.cssText = 'color:#9aa0aa;font-size:11px';
+          tpRows.appendChild(empty);
+          return;
+        }
+        const rawLevels = Array.isArray(overlay.tpLevels) && overlay.tpLevels.length
+          ? overlay.tpLevels
+          : [
+              { label:'TP1', r:1, allocationPct:50 },
+              { label:'TP2', r:setup.rr, allocationPct:50 },
+            ];
+        const dir = setup.side === 'buy' ? 1 : -1;
+        const units = setup.stopDistance > 1e-9 ? setup.risk / setup.stopDistance : 0;
+        const fallbackAllocation = rawLevels.length ? 100 / rawLevels.length : 100;
+        rawLevels.forEach((level, idx) => {
+          const label = String(level && level.label ? level.label : ('TP' + (idx + 1)));
+          const explicitPrice = level && Number.isFinite(Number(level.price)) ? Number(level.price) : null;
+          const r = explicitPrice == null
+            ? Math.max(0, bracketNum(level && (level.r ?? level.rr), idx === rawLevels.length - 1 ? setup.rr : idx + 1))
+            : Math.abs(explicitPrice - setup.entry) / setup.stopDistance;
+          const target = explicitPrice == null ? setup.entry + dir * setup.stopDistance * r : explicitPrice;
+          const allocationPct = Math.max(0, Math.min(100, bracketNum(level && level.allocationPct, fallbackAllocation)));
+          const allocation = allocationPct / 100;
+          const gross = Math.abs(target - setup.entry) * Math.abs(units) * allocation;
+          const feeShare = est.feeEstimate * allocation;
+          const net = gross - feeShare;
+          const netPct = est.accountBalance > 0 ? net / est.accountBalance * 100 : 0;
+          const rowEl = document.createElement('div');
+          rowEl.style.cssText = 'display:grid;grid-template-columns:minmax(86px,.75fr) repeat(3,minmax(92px,1fr));gap:8px;align-items:center;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.035);border-radius:7px;padding:8px;min-width:0';
+          [
+            { k:label, v:bracketPriceText(target), c:'#e9efff' },
+            { k:'Gross profit', v:moneyText(gross), c:'#3ddc97' },
+            { k:'Fee share', v:moneyText(feeShare), c:'#ffd166' },
+            { k:'Net after fees', v:moneyText(net) + ' / ' + pctText(netPct), c:net >= 0 ? '#14f195' : '#ff5b7f' },
+          ].forEach(item => {
+            const cell = document.createElement('div');
+            cell.style.cssText = 'display:grid;gap:3px;min-width:0';
+            const k = document.createElement('span');
+            k.textContent = item.k;
+            k.style.cssText = 'color:#7f8795;font-size:10px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+            const v = document.createElement('strong');
+            v.textContent = item.v;
+            v.style.cssText = 'color:' + item.c + ';font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+            cell.appendChild(k);
+            cell.appendChild(v);
+            rowEl.appendChild(cell);
+          });
+          tpRows.appendChild(rowEl);
+        });
+      };
+      const cellTone = (tone) => tone === 'bad' ? '#ff5b7f' : tone === 'hot' ? '#ffd166' : '#3ddc97';
+      const drawRiskDeck = () => {
+        const setup = readSetup();
+        const calc = readCalcConfig();
+        const est = (typeof competitionBracketEstimate === 'function')
+          ? competitionBracketEstimate({ entry:setup.entry, slDistance:setup.stopDistance, rr:setup.rr, side:setup.side, size:setup.risk, accountBalance:calc.accountBalance, leverage:calc.leverage, roundTripFeeRate:calc.roundTripFeeRate })
+          : null;
+        riskCells.innerHTML = '';
+        const rows = est ? [
+          { k:'Max loss', v:moneyText(est.risk) + ' / ' + pctText(est.riskPct), tone:est.riskPct > 20 ? 'bad' : est.riskPct > 10 ? 'hot' : 'good' },
+          { k:'Liq watch', v:bracketPriceText(est.liq) + ' / ' + pctText(est.liqGapPct), tone:est.slToLiqPct < 0.6 ? 'bad' : est.slToLiqPct < 1.2 ? 'hot' : 'good' },
+          { k:'Fees est', v:moneyText(est.feeEstimate), tone:est.feePctOfRisk > 25 ? 'bad' : est.feePctOfRisk > 12 ? 'hot' : 'good' },
+          { k:'Notional', v:moneyText(est.notional), tone:est.notional > est.accountBalance * est.leverage ? 'bad' : est.notional > est.accountBalance * est.leverage * 0.6 ? 'hot' : 'good' },
+        ] : [
+          { k:'Max loss', v:'$0 / 0%', tone:'good' },
+          { k:'Liq watch', v:'--', tone:'hot' },
+          { k:'Fees est', v:'--', tone:'hot' },
+          { k:'Notional', v:'--', tone:'hot' },
+        ];
+        rows.forEach(r => {
+          const cell = document.createElement('div');
+          cell.style.cssText = 'background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);border-radius:6px;padding:8px;display:grid;gap:3px;min-width:0';
+          const key = document.createElement('span');
+          key.textContent = r.k;
+          key.style.cssText = 'color:#7f8795;font-size:10px;text-transform:uppercase;letter-spacing:.35px';
+          const val = document.createElement('strong');
+          val.textContent = r.v;
+          val.style.cssText = 'color:' + cellTone(r.tone) + ';font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+          cell.appendChild(key);
+          cell.appendChild(val);
+          riskCells.appendChild(cell);
+        });
+        riskMeta.textContent = est ? (moneyText(est.accountBalance).replace('$','') + ' trade size · ' + est.leverage.toFixed(0) + 'x') : 'local paper';
+        verdict.textContent = est ? est.verdict : 'Risk framed. Trade must clear fee + slippage before the bracket is worth firing.';
+        if(est){
+          const moveWord = setup.side === 'buy' ? 'up' : 'down';
+          breakEvenMetric.big.textContent = pctText(est.breakEvenPct);
+          breakEvenMetric.sub.textContent = 'price must move ' + moneyText(est.breakEvenMove) + ' ' + moveWord + ' -> target ' + bracketPriceText(est.breakEvenTarget);
+          totalCostMetric.big.textContent = moneyText(est.feeEstimate);
+          totalCostMetric.sub.textContent = 'notional ' + moneyText(est.notional) + ' at ' + pctText(calc.roundTripFeeRate * 100) + ' round-trip';
+          accountCostMetric.big.textContent = pctText(est.costPctOfAccount);
+          accountCostMetric.sub.textContent = 'this is what compounds against you';
+        } else {
+          breakEvenMetric.big.textContent = '0%';
+          breakEvenMetric.sub.textContent = 'enter bracket values';
+          totalCostMetric.big.textContent = '$0';
+          totalCostMetric.sub.textContent = 'no notional yet';
+          accountCostMetric.big.textContent = '0%';
+          accountCostMetric.sub.textContent = 'waiting for setup';
+        }
+        drawTpCalculator(setup, est);
+      };
+      const applySetup = (patch) => {
+        const next = readSetup();
+        if(patch && patch.rr != null) next.rr = Math.max(0.1, bracketNum(patch.rr, next.rr));
+        if(patch && patch.side) next.side = patch.side === 'sell' ? 'sell' : 'buy';
+        sideInput.value = next.side;
+        rrInput.value = bracketNumText(next.rr);
+        entryInput.value = bracketNumText(next.entry);
+        stopInput.value = bracketNumText(next.stopDistance);
+        riskInput.value = bracketNumText(next.risk);
+        const dir = next.side === 'buy' ? 1 : -1;
+        overlay.side = next.side;
+        overlay.entry = bracketClean(next.entry);
+        overlay.sl = bracketClean(next.entry - dir * next.stopDistance);
+        overlay.tp = bracketClean(next.entry + dir * next.stopDistance * next.rr);
+        overlay.size = next.risk;
+        overlay.risk = next.risk;
+        overlay.rr = next.rr;
+        overlay.slDistance = next.stopDistance;
+        tpAuto.value = bracketPriceText(overlay.tp);
+        drawRiskDeck();
+        syncPrimitiveOrder();
+      };
+      rrGrid.querySelectorAll('[data-cr-bracket-rr]').forEach(btn => {
+        btn.onclick = () => {
+          const rr = btn.getAttribute('data-cr-bracket-rr');
+          if(rr === 'custom'){
+            rrInput.focus();
+            try { rrInput.select(); } catch(_){}
+            drawRiskDeck();
+          } else {
+            applySetup({ rr });
+          }
+        };
+      });
+      sideInput.onchange = () => applySetup();
+      rrInput.oninput = () => applySetup();
+      entryInput.oninput = () => applySetup();
+      stopInput.oninput = () => applySetup();
+      riskInput.oninput = () => applySetup();
+      accountCalcInput.oninput = () => drawRiskDeck();
+      leverageCalcInput.oninput = () => drawRiskDeck();
+      feeCalcInput.oninput = () => drawRiskDeck();
+      flip.onclick = () => {
+        const side = readSetup().side === 'buy' ? 'sell' : 'buy';
+        applySetup({ side });
+      };
+      apply.onclick = () => {
+        applySetup();
+        try { if(typeof toast === 'function') toast('Bracket setup applied'); } catch(_){}
+      };
+      drawRiskDeck();
+      body.appendChild(wrap);
+    };
+    if(active === 'Alarm'){
+      if(window.crObjectAlarm && typeof window.crObjectAlarm.renderPanel === 'function'){
+        window.crObjectAlarm.renderPanel(body, { kind:overlay.kind || 'object', overlay }, { surface:'tv-settings' });
+      } else {
+        const note = document.createElement('div');
+        note.style.cssText = 'color:#9aa0aa;font-style:italic';
+        note.textContent = 'Alarm setup is still loading.';
+        body.appendChild(note);
+      }
+      return;
+    }
     const renderLiveToolInputs = (k) => {
       const fallbackLevels = (k === 'fibChannel') ? [0,0.236,0.382,0.5,0.618,0.786,1,1.272,1.618]
         : (k === 'fibTimeZone') ? [0,1,2,3,5,8,13,21,34,55,89]
@@ -20606,7 +21514,7 @@ function openTvSettingsDialog(overlay){
         row('Levels', mkInput((overlay.levels || fallbackLevels).join(', '), v => { overlay.levels = _parseNumberList(v, fallbackLevels); syncLiveTool(); }, '260px'));
       } else if(k === 'gannFan'){
         row('Ratios', mkInput((overlay.ratios || [1/8,1/4,1/3,1/2,1,2,3,4,8]).join(', '), v => { overlay.ratios = _parseNumberList(v, [1/8,1/4,1/3,1/2,1,2,3,4,8]); }, '260px'));
-      } else if(k === 'gannBox' || k === 'triangle' || k === 'disjoint'){
+      } else if(k === 'gannBox' || k === 'triangle' || k === 'parChannel' || k === 'disjoint'){
         row('Fill opacity', mkInput(cfg.fillOpacity ?? (k === 'triangle' ? 11 : 8), v => cfg.fillOpacity = Math.max(0, Math.min(100, parseInt(v,10) || 0))));
       } else if(k === 'barPattern'){
         row('Projected bars', mkInput((overlay.bars && overlay.bars.length) || 24, v => { cfg.projectBars = Math.max(1, parseInt(v,10) || 24); }));
@@ -20640,7 +21548,7 @@ function openTvSettingsDialog(overlay){
         { v:'dashed', l:'Dashed' },
         { v:'dotted', l:'Dotted' }
       ], cfg.style || 'solid', v => cfg.style = v));
-      if(k === 'flatChannel' || k === 'gannBox' || k === 'triangle' || k === 'disjoint' || k === 'fibChannel'){
+      if(k === 'flatChannel' || k === 'gannBox' || k === 'triangle' || k === 'parChannel' || k === 'disjoint' || k === 'fibChannel'){
         row('Fill color', mkColor(cfg.fill || cfg.color || overlay.color || meta.color || '#22d3ee', v => cfg.fill = v));
         row('Fill opacity', mkInput(cfg.fillOpacity ?? 10, v => cfg.fillOpacity = Math.max(0, Math.min(100, parseInt(v,10) || 0))));
       }
@@ -20820,7 +21728,36 @@ function openTvSettingsDialog(overlay){
         return;
       }
       if(active === 'Inputs'){
-        if(k === 'longPos' || k === 'shortPos'){
+        if(k === 'bracket'){
+          renderBracketSetup();
+        } else if(k === 'ladder'){
+          row('Side', mkSelect([
+            { v:'buy',  l:'Buy / Long' },
+            { v:'sell', l:'Sell / Short' }
+          ], overlay.side || 'buy', v => { overlay.side = v; syncPrimitiveOrder(); }));
+          if(Array.isArray(overlay.prices) && overlay.prices.length){
+            overlay.prices.forEach((p, i) => {
+              row('Rung ' + (i + 1), mkInput(p, v => { overlay.prices[i] = parseFloat(v) || overlay.prices[i]; syncPrimitiveOrder(); }));
+            });
+          } else {
+            row('Rungs', mkInput(overlay.rungs || 5, v => { overlay.rungs = Math.max(1, Math.min(20, Math.round(parseFloat(v) || 1))); syncPrimitiveOrder(); }));
+            row('Spacing', mkInput(overlay.spacing || 30, v => { overlay.spacing = Math.max(0.000001, parseFloat(v) || 0); syncPrimitiveOrder(); }));
+            row('Anchor price', mkInput(overlay.p, v => { overlay.p = parseFloat(v) || 0; syncPrimitiveOrder(); }));
+          }
+          row('Size per rung', mkInput(overlay.size || 4, v => { overlay.size = Math.max(1, parseFloat(v) || 1); }));
+        } else if(k === 'oco'){
+          row('Upper trigger', mkInput(overlay.upper, v => { overlay.upper = parseFloat(v) || 0; syncPrimitiveOrder(); }));
+          row('Lower trigger', mkInput(overlay.lower, v => { overlay.lower = parseFloat(v) || 0; syncPrimitiveOrder(); }));
+          const r = row('Midpoint');
+          const span = document.createElement('span'); span.textContent = fmtPrice(((Number(overlay.upper) || 0) + (Number(overlay.lower) || 0)) / 2); span.style.cssText = 'color:#cfd3da';
+          r.appendChild(span);
+        } else if(k === 'hline'){
+          const tradeLabel = overlay.tradeKind ? String(overlay.tradeKind).replace(/([A-Z])/g, ' $1') : 'Horizontal level';
+          const r = row('Primitive');
+          const span = document.createElement('span'); span.textContent = tradeLabel + (overlay.tradeAnchor ? ' · ' + overlay.tradeAnchor : ''); span.style.cssText = 'color:#cfd3da;text-transform:none';
+          r.appendChild(span);
+          row('Price', mkInput(overlay.py, v => { overlay.py = parseFloat(v) || 0; syncPrimitiveOrder(); }));
+        } else if(k === 'longPos' || k === 'shortPos'){
           row('Side', document.createElement('span')).lastChild.textContent = (k === 'longPos' ? 'Long' : 'Short');
           row('Entry', mkInput(overlay.entry, v => overlay.entry = parseFloat(v) || 0));
           row('Stop loss', mkInput(overlay.stop, v => overlay.stop = parseFloat(v) || 0));
@@ -20845,7 +21782,20 @@ function openTvSettingsDialog(overlay){
           body.appendChild(note);
         }
       } else if(active === 'Style'){
-        if(k === 'longPos' || k === 'shortPos'){
+        if(k === 'bracket'){
+          row('Profit zone color', mkColor(cfg.tpColor || '#3ddc97', v => cfg.tpColor = v));
+          row('Loss zone color', mkColor(cfg.slColor || '#ff5b7f', v => cfg.slColor = v));
+          row('Entry line', mkColor(cfg.entryColor || '#e9efff', v => cfg.entryColor = v));
+          row('Show price labels', mkChk(cfg.priceLabel !== false, v => cfg.priceLabel = v));
+        } else if(k === 'ladder'){
+          row('Rung color', mkColor(cfg.color || '#3ddc97', v => cfg.color = v));
+          row('Line width', mkInput(cfg.lineWidth || 1, v => cfg.lineWidth = Math.max(1, parseInt(v,10) || 1)));
+          row('Show rung labels', mkChk(cfg.priceLabel !== false, v => cfg.priceLabel = v));
+        } else if(k === 'oco'){
+          row('Trigger color', mkColor(cfg.color || '#9b8cff', v => cfg.color = v));
+          row('Fill opacity', mkInput(cfg.fillOpacity ?? 8, v => cfg.fillOpacity = Math.max(0, Math.min(100, parseInt(v,10) || 0))));
+          row('Show price labels', mkChk(cfg.priceLabel !== false, v => cfg.priceLabel = v));
+        } else if(k === 'longPos' || k === 'shortPos'){
           row('Profit zone color', mkColor(cfg.tpColor    || '#3ddc97', v => cfg.tpColor = v));
           row('Loss zone color',   mkColor(cfg.stopColor  || '#ff5b7f', v => cfg.stopColor = v));
           row('Entry line',        mkColor(cfg.entryColor || '#e9efff', v => cfg.entryColor = v));
@@ -20868,7 +21818,28 @@ function openTvSettingsDialog(overlay){
         }
         row('Show price label', mkChk(cfg.priceLabel !== false, v => cfg.priceLabel = v));
       } else if(active === 'Coordinates'){
-        if(typeof overlay.wx1 === 'number'){
+        if(k === 'bracket'){
+          row('Bar', mkInput(Math.round((overlay.wx||0)/STEP), v => { overlay.wx = (parseInt(v,10)||0) * STEP; }));
+          row('Entry', mkInput(overlay.entry, v => { overlay.entry = parseFloat(v) || 0; syncPrimitiveOrder(); }));
+          row('Stop',  mkInput(overlay.sl,    v => { overlay.sl    = parseFloat(v) || 0; syncPrimitiveOrder(); }));
+          row('TP',    mkInput(overlay.tp,    v => { overlay.tp    = parseFloat(v) || 0; syncPrimitiveOrder(); }));
+        } else if(k === 'ladder'){
+          row('Bar', mkInput(Math.round((overlay.wx||0)/STEP), v => { overlay.wx = (parseInt(v,10)||0) * STEP; }));
+          if(Array.isArray(overlay.prices) && overlay.prices.length){
+            overlay.prices.forEach((p, i) => {
+              row('Rung ' + (i + 1), mkInput(p, v => { overlay.prices[i] = parseFloat(v) || overlay.prices[i]; syncPrimitiveOrder(); }));
+            });
+          } else {
+            row('Anchor price', mkInput(overlay.p, v => { overlay.p = parseFloat(v) || 0; syncPrimitiveOrder(); }));
+          }
+        } else if(k === 'oco'){
+          row('Bar', mkInput(Math.round((overlay.wx||0)/STEP), v => { overlay.wx = (parseInt(v,10)||0) * STEP; }));
+          row('Upper', mkInput(overlay.upper, v => { overlay.upper = parseFloat(v) || 0; syncPrimitiveOrder(); }));
+          row('Lower', mkInput(overlay.lower, v => { overlay.lower = parseFloat(v) || 0; syncPrimitiveOrder(); }));
+        } else if(k === 'hline'){
+          if(typeof overlay.wx === 'number') row('Bar', mkInput(Math.round((overlay.wx||0)/STEP), v => { overlay.wx = (parseInt(v,10)||0) * STEP; }));
+          row('Price', mkInput(overlay.py, v => { overlay.py = parseFloat(v) || 0; syncPrimitiveOrder(); }));
+        } else if(typeof overlay.wx1 === 'number'){
           row('#1 (bar)',   mkInput(Math.round((overlay.wx1||0)/STEP), v => { overlay.wx1 = (parseInt(v,10)||0) * STEP; }));
           row('#2 (bar)',   mkInput(Math.round((overlay.wx2||0)/STEP), v => { overlay.wx2 = (parseInt(v,10)||0) * STEP; }));
           if(typeof overlay.py1 === 'number') row('Price #1', mkInput(overlay.py1, v => overlay.py1 = parseFloat(v) || 0));
@@ -23188,6 +24159,10 @@ function competitionBracketEstimate(opts){
   const feeEstimate = notional * feeRate;
   const riskPct = risk / accountBalance * 100;
   const feePctOfRisk = risk > 0 ? feeEstimate / risk * 100 : 0;
+  const breakEvenMove = Math.abs(units) > 1e-9 ? feeEstimate / Math.abs(units) : 0;
+  const breakEvenPct = entry > 0 ? breakEvenMove / entry * 100 : 0;
+  const breakEvenTarget = entry + dir * breakEvenMove;
+  const costPctOfAccount = feeEstimate / accountBalance * 100;
   const liqMove = entry / leverage;
   const liq = entry - dir * liqMove;
   const liqGapPct = Math.abs(entry - liq) / entry * 100;
@@ -23202,7 +24177,7 @@ function competitionBracketEstimate(opts){
   } else if(riskPct <= 8){
     verdict = 'GREEN: account loss is contained; execute only if hotspot + trigger agree.';
   }
-  return { entry, tp, sl, side, risk, accountBalance, leverage, notional, feeEstimate, riskPct, feePctOfRisk, liq, liqGapPct, slToLiqPct, verdict };
+  return { entry, tp, sl, side, risk, accountBalance, leverage, notional, feeEstimate, riskPct, feePctOfRisk, breakEvenMove, breakEvenPct, breakEvenTarget, costPctOfAccount, liq, liqGapPct, slToLiqPct, verdict };
 }
 function _setBrRiskCell(cellId, valueId, text, tone){
   const cell = document.getElementById(cellId);
@@ -23218,7 +24193,7 @@ function renderCompetitionBracketRisk(opts){
   if(!deck) return null;
   const est = competitionBracketEstimate(opts);
   const account = document.getElementById('brRiskAccount');
-  if(account) account.textContent = _brMoney(est.accountBalance) + ' acct · ' + est.leverage.toFixed(0) + 'x';
+  if(account) account.textContent = _brMoney(est.accountBalance) + ' trade size · ' + est.leverage.toFixed(0) + 'x';
   _setBrRiskCell('brRiskMaxLossCell','brRiskMaxLoss', _brMoney(est.risk) + ' / ' + _brPct(est.riskPct), est.riskPct > 20 ? 'bad' : est.riskPct > 10 ? 'hot' : 'good');
   _setBrRiskCell('brRiskLiqCell','brRiskLiq', fmtPrice(est.liq) + ' · ' + _brPct(est.liqGapPct), est.slToLiqPct < 0.6 ? 'bad' : est.slToLiqPct < 1.2 ? 'hot' : 'good');
   _setBrRiskCell('brRiskFeeCell','brRiskFee', _brMoney(est.feeEstimate) + ' · ' + _brPct(est.feePctOfRisk), est.feePctOfRisk > 25 ? 'bad' : est.feePctOfRisk > 12 ? 'hot' : 'good');
@@ -24059,7 +25034,12 @@ function updateWeapons(dt){
       if(b.pierce <= 0) b.life = 0;
     }
 
-    // 1) Brackets — entry / TP / SL are 3 horizontal price levels
+    // 1) Brackets — still shootable, with destructive removal archived.
+    // Older builds let any bullet crossing a Bracket price level remove the
+    // bracket and spawn red "− Bracket" feedback. That read like damage and
+    // could destroy a bracket right after Long/Short inversion moved TP/SL.
+    // Shots now register/consume on Brackets, but the visual stays managed by
+    // selection/settings/Delete instead of bullet destruction.
     if(b.life > 0 && game.visualBrackets && game.visualBrackets.length){
       for(let i = game.visualBrackets.length - 1; i >= 0 && b.life > 0; i--){
         const o = game.visualBrackets[i];
@@ -24072,10 +25052,9 @@ function updateWeapons(dt){
         }
         if(hit){
           b.hits.add(key);
-          // v1.0.12 — If armed via blue laser, cancel trade + disarm.
           try { if(window.cr && window.cr.blueLaser && window.cr.blueLaser.onOverlayShot) window.cr.blueLaser.onOverlayShot(o); } catch(_){}
-          game.visualBrackets.splice(i, 1);
-          consume('Bracket');
+          b.pierce = (b.pierce|0) - 1;
+          if(b.pierce <= 0) b.life = 0;
         }
       }
     }
@@ -24651,7 +25630,8 @@ function updateCombat(dt){
           try { spawnParticles(sxh, syh, '#14f195', 22, 300); } catch(_){}
           try { spawnFloat(sxh, syh-22, '+1 $RUN · bracket kill', '#ffd166'); } catch(_){}
           try { hitStop(120); } catch(_){}
-          try { screenFlash(); } catch(_){}
+          // Archived v1.0.242: bracket-generated boss kills no longer use the
+          // global damage flash. The reward float/particles carry the event.
         } else {
           game.chart += 2; game.score += 25;
           try { log('kill ' + m.kind + ' via bracket (+2 $CHART)'); } catch(_){}
@@ -33041,7 +34021,7 @@ function osOpenWindow(prog){
   if(prog==='configs')   osRefreshConfigs();
   if(prog==='run')       osRefreshRun();
   if(prog==='workbench') { try { try{_wbRenderTools();}catch(e){console.warn('wbTools',e)} try{_wbRenderPrimitives();}catch(e){console.warn('wbPrim',e)} try{_wbRenderBots();}catch(e){console.warn('wbBots',e)} try{_wbRenderStrats();}catch(e){console.warn('wbStrats',e)} try{_wbRenderInds();}catch(e){console.warn('wbInds',e)} try{_wbRenderTerms();}catch(e){console.warn('wbTerms',e)} try{_wbRenderApps();}catch(e){console.warn('wbApps',e)} try{_wbRebuildBacktestTargets();}catch(e){console.warn('wbBack',e)} try{_wbRenderBackHistory();}catch(e){console.warn('wbHist',e)} } catch(_){} }
-  if(prog==='journal')   { try { _crJrnRenderManual(); _crJrnRenderBot(); _crJrnRenderAlerts(); _crJrnRenderStats(); _crJrnPrefillFromRun(); } catch(_){} }
+  if(prog==='journal')   { try { _crJrnRenderManual(); _crJrnRenderBot(); _crJrnRenderAlerts(); _crJrnRenderAlertV2(); _crJrnRenderStats(); _crJrnPrefillFromRun(); } catch(_){} }
   osStatus.textContent = prog;
 }
 function osCloseAllWindows(){
@@ -33143,6 +34123,8 @@ function _crAlertBusSave(events){
   try {
     const view = document.getElementById('crJournalViewAlerts');
     if(view && !view.classList.contains('hidden') && typeof _crJrnRenderAlerts === 'function') _crJrnRenderAlerts();
+    const view2 = document.getElementById('crJournalViewAlertV2');
+    if(view2 && !view2.classList.contains('hidden') && typeof _crJrnRenderAlertV2 === 'function') _crJrnRenderAlertV2();
   } catch(_){}
   return saved;
 }
@@ -34542,6 +35524,125 @@ function _crJrnRenderBot(){
     });
   });
 }
+function _crJrnProgressLastPrice(){
+  try {
+    if(typeof currentPrice === 'function'){
+      const px = Number(currentPrice());
+      if(Number.isFinite(px)) return px;
+    }
+  } catch(_){}
+  try {
+    if(typeof candles !== 'undefined' && Array.isArray(candles) && candles.length){
+      const px = Number(candles[candles.length - 1].c);
+      if(Number.isFinite(px)) return px;
+    }
+  } catch(_){}
+  try {
+    const text = document.getElementById('lastPx')?.textContent || '';
+    const px = Number(String(text).replace(/[^\d.-]/g, ''));
+    if(Number.isFinite(px)) return px;
+  } catch(_){}
+  return null;
+}
+function _crJrnProgressPct(n){
+  const v = Number(n);
+  if(!Number.isFinite(v)) return '0.00%';
+  return v.toFixed(2) + '%';
+}
+function _crJrnProgressMoney(n){
+  const v = Math.abs(Number(n) || 0);
+  return '$' + v.toFixed(2);
+}
+function _crJrnProgressDuration(seconds){
+  const s = Math.max(0, Number(seconds) || 0);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if(d >= 1) return d + 'd';
+  if(h >= 1) return h + 'h ' + m + 'm';
+  return Math.max(1, m) + 'm';
+}
+function _crJrnProgressBar(pct, color){
+  const w = Math.max(0, Math.min(100, Number(pct) || 0));
+  return '<div style="height:5px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin-top:6px">' +
+    '<div style="height:100%;width:'+w.toFixed(1)+'%;background:'+color+';border-radius:999px"></div>' +
+  '</div>';
+}
+function _crJrnAlertProgressSpec(item){
+  if(!item) return null;
+  const ctx = item.context && typeof item.context === 'object' ? item.context : {};
+  const p = item.progress || item.progression || ctx.progress || ctx.progression || null;
+  if(p && typeof p === 'object') return p;
+  if(item.confluence || (Array.isArray(item.conditions) && item.conditions.length > 1) || ctx.confluence){
+    const source = Array.isArray(item.conditions) ? item.conditions : (Array.isArray(ctx.conditions) ? ctx.conditions : []);
+    return {
+      type:'confluence',
+      items:source.map(c => ({ label:c.label || c.kind || 'Condition', ok:!!c.met }))
+    };
+  }
+  const source = Array.isArray(item.conditions) ? item.conditions : (Array.isArray(ctx.conditions) ? ctx.conditions : []);
+  const first = source[0] || {};
+  if(first && first.price != null) return { type:'distance', targetPrice:first.price, mode:first.op === '<=' ? 'below' : 'above' };
+  if(item.price != null) return { type:'distance', targetPrice:item.price };
+  return null;
+}
+function _crJrnRenderAlertProgress(item){
+  const spec = _crJrnAlertProgressSpec(item);
+  if(!spec || !spec.type) return '';
+  const type = String(spec.type);
+  const esc = _crJrnEsc;
+  const card = (label, body, pct, color) =>
+    '<div data-alert-progress-type="'+esc(type)+'" style="margin:8px 0 7px;padding:8px 9px;border:1px solid rgba(123,227,243,.22);border-radius:7px;background:rgba(123,227,243,.045)">' +
+      '<div style="display:flex;align-items:center;gap:8px;font-size:9.5px;color:#7be3f3;text-transform:uppercase;letter-spacing:.5px;font-weight:800">' +
+        '<span>'+esc(label)+'</span><span style="margin-left:auto;color:var(--dim);font-weight:600">'+(pct != null ? _crJrnProgressPct(pct) : '')+'</span>' +
+      '</div>' +
+      '<div style="font-size:10.5px;color:#cfd2db;line-height:1.45;margin-top:5px">'+body+'</div>' +
+      (pct != null ? _crJrnProgressBar(pct, color || '#7be3f3') : '') +
+    '</div>';
+  if(type === 'distance'){
+    const current = Number.isFinite(Number(spec.currentPrice)) ? Number(spec.currentPrice) : _crJrnProgressLastPrice();
+    const target = Number(spec.targetPrice != null ? spec.targetPrice : spec.price);
+    if(!Number.isFinite(target)) return '';
+    const dist = Number.isFinite(current) ? Math.abs(target - current) : 0;
+    const pctAway = Number.isFinite(current) && current !== 0 ? Math.abs(dist / current * 100) : 0;
+    const label = spec.label || (spec.mode === 'below' ? 'Distance below' : 'Distance');
+    const toward = Number.isFinite(current) ? (current < target ? 'above' : (current > target ? 'below' : 'at level')) : 'level';
+    const body = '<b style="color:#fff">'+_crJrnProgressMoney(dist)+'</b> / <b style="color:#fff">'+_crJrnProgressPct(pctAway)+'</b> until ' +
+      esc(spec.levelLabel || spec.targetLabel || 'alarm level') + ' · target ' + (Number.isFinite(target) ? target.toFixed(2) : 'local') + ' · ' + esc(toward);
+    return card(label, body, Math.max(0, Math.min(100, 100 - pctAway)), '#ffd166');
+  }
+  if(type === 'multi-level'){
+    const levels = Array.isArray(spec.levels) ? spec.levels : [];
+    if(!levels.length) return '';
+    const hit = levels.filter(l => String(l.state || '').toLowerCase() === 'hit').length;
+    const body = levels.map(l => '<span style="display:inline-block;margin:0 8px 4px 0;color:'+(String(l.state).toLowerCase()==='hit'?'#3ddc97':(String(l.state).toLowerCase()==='armed'?'#ffd166':'#cfd2db'))+'">' +
+      esc(l.label || 'Level') + ' ' + esc(l.state || 'watch') + '</span>').join('');
+    return card('Multi-level', body, levels.length ? hit / levels.length * 100 : 0, '#3ddc97');
+  }
+  if(type === 'tap-count'){
+    const cur = Math.max(0, Number(spec.current != null ? spec.current : spec.taps) || 0);
+    const req = Math.max(1, Number(spec.required != null ? spec.required : spec.requiredTaps) || 1);
+    const body = '<b style="color:#fff">'+cur+' / '+req+'</b> taps' + (spec.window ? ' · window ' + esc(spec.window) : '') + (spec.expires ? ' · expires ' + esc(spec.expires) : '');
+    return card('Taps', body, cur / req * 100, '#7ee787');
+  }
+  if(type === 'time-in-zone'){
+    const elapsed = Math.max(0, Number(spec.elapsedSeconds != null ? spec.elapsedSeconds : spec.zoneSeconds) || 0);
+    const required = Math.max(1, Number(spec.requiredSeconds != null ? spec.requiredSeconds : spec.requiredZoneSeconds) || 1);
+    const body = '<b style="color:#fff">'+_crJrnProgressDuration(elapsed)+' / '+_crJrnProgressDuration(required)+'</b>' +
+      (spec.inside === false ? ' · outside zone' : ' · inside zone');
+    return card('Time in zone', body, elapsed / required * 100, '#9b8cff');
+  }
+  if(type === 'confluence'){
+    const items = Array.isArray(spec.items) ? spec.items : [];
+    if(!items.length) return '';
+    const ready = items.filter(x => !!x.ok || !!x.met || String(x.state || '').toLowerCase() === 'ready').length;
+    const body = '<b style="color:#fff">'+ready+' / '+items.length+' ready</b> · ' + items.map(x =>
+      '<span style="display:inline-block;margin:0 8px 4px 0;color:'+(x.ok || x.met ? '#3ddc97':'var(--dim)')+'">'+esc(x.label || 'Condition')+'</span>'
+    ).join('');
+    return card('Confluence', body, ready / items.length * 100, '#ffb300');
+  }
+  return '';
+}
 function _crJrnRenderAlerts(){
   const summary = document.getElementById('crJrnAlertsSummary');
   const list = document.getElementById('crJrnAlertsList');
@@ -34567,7 +35668,8 @@ function _crJrnRenderAlerts(){
         confluence:!!a.confluence,
         triggered:!!a.triggered,
         enabled:!!a.enabled,
-        conditions:(a.conditions || []).map(c => ({ label:c.label, kind:c.kind, op:c.op, price:c.price, target:c.target }))
+        conditions:(a.conditions || []).map(c => ({ label:c.label, kind:c.kind, op:c.op, price:c.price, target:c.target, met:!!c.met })),
+        progress:a.progress || a.progression || null
       },
       notify:false
     });
@@ -34634,6 +35736,7 @@ function _crJrnRenderAlerts(){
     html += '<span style="text-align:right">'+esc(e.source || 'chart')+'</span>';
     html += '</div>';
     html += '<div style="font-size:10.5px;color:#cfd2db;line-height:1.45">'+esc(e.type || 'event')+(e.replayId ? ' · replay '+esc(e.replayId) : '')+(e.noteAt ? ' · noted' : '')+'</div>';
+    html += _crJrnRenderAlertProgress(e);
     html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
     if(canNote) html += '<button class="cr-go" type="button" data-jrn-alert-note="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid var(--line);color:var(--dim)">Note</button>';
     if(canReplay) html += '<button class="cr-go" type="button" data-jrn-alert-replay="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid rgba(20,241,149,.35);color:#14f195">Replay</button>';
@@ -34664,6 +35767,7 @@ function _crJrnRenderAlerts(){
     html += '<span>'+(a.confluence?'all triggers must align':'any trigger can fire')+'</span>';
     html += '<span style="text-align:right;color:'+(a.anchorMapId?'#14f195':'var(--dim)')+'">'+(a.anchorMapId?'anchored':'local only')+'</span>';
     html += '</div>';
+    html += _crJrnRenderAlertProgress(a);
     html += '<div style="font-size:10.5px;font-family:ui-monospace,Menlo,monospace">'+conditions+'</div>';
     html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
     html += '<button class="cr-go" type="button" data-jrn-alarm-toggle="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid var(--line);color:var(--dim)">'+(a.enabled?'Pause':'Arm')+'</button>';
@@ -34714,7 +35818,303 @@ function _crJrnRenderAlerts(){
     btn.addEventListener('click', () => { try { alarm.remove(btn.getAttribute('data-jrn-alarm-del')); } catch(_){} _crJrnRenderAlerts(); });
   });
 }
+function _crJrnV2FmtNum(n, digits){
+  const v = Number(n);
+  if(!Number.isFinite(v)) return '--';
+  return v.toFixed(digits == null ? 2 : digits);
+}
+function _crJrnV2Duration(seconds){
+  const s = Math.max(0, Number(seconds) || 0);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if(d >= 1) return d + 'd' + (h ? ' ' + h + 'h' : '');
+  if(h >= 1) return h + 'h' + (m ? ' ' + m + 'm' : '');
+  return Math.max(1, m) + 'm';
+}
+function _crJrnV2Badge(text, color){
+  if(!text) return '';
+  return '<span style="display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border:1px solid rgba(255,255,255,.14);border-radius:5px;color:'+(color || '#cfd2db')+';background:rgba(255,255,255,.035);font-size:9px;font-weight:800;letter-spacing:.25px">'+_crJrnEsc(text)+'</span>';
+}
+function _crJrnAlertV2Lifecycle(row){
+  const item = row && row.item ? row.item : {};
+  const ctx = item.context && typeof item.context === 'object' ? item.context : {};
+  const spec = _crJrnAlertProgressSpec(item) || {};
+  let state = item.lifecycle || ctx.lifecycle || item.alertState || ctx.alertState || spec.lifecycle || '';
+  if(!state){
+    if(item.invalidated) state = 'Invalidated';
+    else if(item.cooldownUntil || item.coolingDown) state = 'Cooling down';
+    else if(item.triggered) state = 'Triggered';
+    else if(item.rearmedAt) state = 'Re-armed';
+    else if(row && row.status && !/ARMED|OFF|INFO|WARN|CRITICAL|ACK/i.test(row.status)) state = row.status;
+    else state = 'Watching';
+  }
+  const colorMap = {
+    'Watching':'#7be3f3',
+    'Approaching':'#ffd166',
+    'Testing':'#ffb300',
+    'Triggered':'#ff5b7f',
+    'Cooling down':'#9b8cff',
+    'Stale':'#aab2c5',
+    'Invalidated':'#ff8aa3',
+    'Re-armed':'#3ddc97'
+  };
+  let html = '<div data-alert-v2-lifecycle="'+_crJrnEsc(state)+'" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:7px 0 6px">';
+  html += '<span style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.45px;font-weight:800">Lifecycle</span>';
+  html += _crJrnV2Badge(state, colorMap[state] || '#cfd2db');
+  if(item.triggered && state !== 'Triggered') html += _crJrnV2Badge('Triggered', colorMap.Triggered);
+  if(item.invalidated && state !== 'Invalidated') html += _crJrnV2Badge('Invalidated', colorMap.Invalidated);
+  if(item.rearmedAt && state !== 'Re-armed') html += _crJrnV2Badge('Re-armed', colorMap['Re-armed']);
+  html += '</div>';
+  return html;
+}
+function _crJrnRenderAlertV2ProgressDetail(item){
+  const spec = _crJrnAlertProgressSpec(item);
+  if(!spec || !spec.type) return '';
+  const type = String(spec.type);
+  const esc = _crJrnEsc;
+  const shell = (title, body, pct, color) =>
+    '<div data-alert-v2-progress-detail="'+esc(type)+'" data-alert-progress-type="'+esc(type)+'" style="margin:8px 0 8px;padding:9px 10px;border:1px solid rgba(123,227,243,.24);border-radius:7px;background:rgba(123,227,243,.055)">' +
+      '<div style="display:flex;align-items:center;gap:8px;font-size:9.5px;color:#7be3f3;text-transform:uppercase;letter-spacing:.5px;font-weight:900">' +
+        '<span>'+esc(title)+'</span>' +
+        (pct != null ? '<span style="margin-left:auto;color:var(--dim);font-weight:700">'+_crJrnProgressPct(pct)+'</span>' : '') +
+      '</div>' +
+      '<div style="font-size:10.5px;color:#cfd2db;line-height:1.55;margin-top:6px">'+body+'</div>' +
+      (pct != null ? _crJrnProgressBar(pct, color || '#7be3f3') : '') +
+    '</div>';
+  const line = text => text ? '<div>'+text+'</div>' : '';
+
+  if(type === 'distance'){
+    const current = Number.isFinite(Number(spec.currentPrice)) ? Number(spec.currentPrice) : _crJrnProgressLastPrice();
+    const target = Number(spec.targetPrice != null ? spec.targetPrice : spec.price);
+    if(!Number.isFinite(target)) return '';
+    const dist = Number.isFinite(Number(spec.moneyAway)) ? Math.abs(Number(spec.moneyAway)) : (Number.isFinite(current) ? Math.abs(target - current) : 0);
+    const pctAway = Number.isFinite(Number(spec.pctAway)) ? Math.abs(Number(spec.pctAway)) : (Number.isFinite(current) && current !== 0 ? Math.abs(dist / current * 100) : 0);
+    const progressPct = Math.max(0, Math.min(100, 100 - pctAway));
+    const direction = spec.direction || (Number.isFinite(current) ? (current < target ? 'above' : (current > target ? 'below' : 'inside zone')) : 'level');
+    let body = '';
+    body += '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:7px">';
+    [
+      _crJrnProgressMoney(dist) + ' until alarm',
+      _crJrnProgressPct(pctAway) + ' away',
+      (spec.atrAway != null ? _crJrnV2FmtNum(spec.atrAway, 1) + ' ATR away' : ''),
+      (spec.ticksAway != null ? Math.round(Number(spec.ticksAway) || 0) + ' ticks away' : '')
+    ].forEach(v => { if(v) body += '<div style="padding:6px 7px;border:1px solid rgba(255,255,255,.08);border-radius:6px;background:rgba(255,255,255,.025);font-weight:800;color:#fff">'+esc(v)+'</div>'; });
+    body += '</div>';
+    body += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">' + _crJrnV2Badge(direction, '#ffd166') + _crJrnV2Badge(spec.directionDetail, '#9b8cff') + '</div>';
+    body += line('Progress bar from current price to target level.');
+    if(spec.closingSpeed != null || spec.etaCandles != null || spec.candlesToward != null || spec.velocity || spec.nearMissPct != null){
+      body += '<div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,255,255,.07)">';
+      body += '<div style="font-size:9px;color:#ffd166;text-transform:uppercase;letter-spacing:.45px;font-weight:900;margin-bottom:4px">Momentum Toward Alert</div>';
+      if(spec.closingSpeed != null) body += line('closing speed: ' + (Number(spec.closingSpeed) >= 0 ? '+' : '-') + _crJrnProgressMoney(spec.closingSpeed) + '/candle');
+      if(spec.etaCandles != null) body += line('ETA: ~' + Math.round(Number(spec.etaCandles) || 0) + ' candles');
+      if(spec.candlesToward != null) body += line(Math.round(Number(spec.candlesToward) || 0) + ' candles moving toward level');
+      if(spec.velocity) body += line('velocity ' + esc(spec.velocity));
+      if(spec.nearMissPct != null) body += line('near miss: ' + _crJrnProgressPct(spec.nearMissPct) + ' away');
+      body += '</div>';
+    }
+    return shell('Distance Progress', body, progressPct, '#ffd166');
+  }
+
+  if(type === 'multi-level'){
+    const levels = Array.isArray(spec.levels) ? spec.levels : [];
+    const hit = levels.filter(l => String(l.state || '').toLowerCase() === 'hit').length;
+    let body = levels.length ? line(levels.map(l => esc(l.label || 'Level') + ' ' + esc(l.state || 'watch')).join(' · ')) : '';
+    if(spec.bracket && typeof spec.bracket === 'object'){
+      const b = spec.bracket;
+      body += line((b.entryTouched ? 'Entry touched' : 'Entry pending') + ' · TP1 ' + _crJrnV2FmtNum(b.tp1Pct, 0) + '% · TP2 ' + _crJrnV2FmtNum(b.tp2Pct, 0) + '% · SL ' + _crJrnV2FmtNum(b.slRiskPct, 0) + '% risk proximity');
+    }
+    if(spec.ladder && typeof spec.ladder === 'object') body += line(Math.round(Number(spec.ladder.tapped) || 0) + ' / ' + Math.max(1, Math.round(Number(spec.ladder.total) || 1)) + ' rungs tapped');
+    if(spec.channel && typeof spec.channel === 'object') body += line((spec.channel.midlineTapped ? 'midline tapped' : 'midline pending') + ' · upper band ' + _crJrnV2FmtNum(spec.channel.upperBandPct, 0) + '% away');
+    if(spec.vwap && typeof spec.vwap === 'object') body += line(esc(spec.vwap.relation || 'VWAP pending') + ' · ' + esc(spec.vwap.status || 'reclaim pending'));
+    return shell('Multi-Level Tool Progress', body, levels.length ? hit / levels.length * 100 : null, '#3ddc97');
+  }
+
+  if(type === 'tap-count'){
+    const cur = Math.max(0, Number(spec.current != null ? spec.current : spec.taps) || 0);
+    const req = Math.max(1, Number(spec.required != null ? spec.required : spec.requiredTaps) || 1);
+    const remaining = spec.remaining != null ? Math.max(0, Number(spec.remaining) || 0) : Math.max(0, req - cur);
+    let body = line(cur + ' / ' + req + ' taps');
+    if(spec.lastTapAgo) body += line('last tap ' + esc(spec.lastTapAgo));
+    if(spec.expiresIn) body += line('tap expires in ' + esc(spec.expiresIn));
+    if(spec.zonePct != null) body += line('needs ' + remaining + ' more touches inside ' + _crJrnProgressPct(spec.zonePct) + ' zone');
+    if(spec.resetRule) body += line('Reset rule visible: ' + esc(spec.resetRule));
+    return shell('Tap / Touch Progress', body, cur / req * 100, '#7ee787');
+  }
+
+  if(type === 'time-in-zone'){
+    const elapsed = Math.max(0, Number(spec.elapsedSeconds != null ? spec.elapsedSeconds : spec.zoneSeconds) || 0);
+    const required = Math.max(1, Number(spec.requiredSeconds != null ? spec.requiredSeconds : spec.requiredZoneSeconds) || 1);
+    let body = '';
+    if(spec.totalLabel) body += line(esc(spec.totalLabel));
+    body += line(_crJrnV2Duration(elapsed) + ' / ' + _crJrnV2Duration(required) + ' required');
+    if(spec.candlesInside != null || spec.candlesRequired != null) body += line(Math.round(Number(spec.candlesInside) || 0) + ' / ' + Math.max(1, Math.round(Number(spec.candlesRequired) || 1)) + ' candles closed inside range');
+    if(spec.zoneIntegrity != null) body += line('zone integrity: ' + _crJrnV2FmtNum(spec.zoneIntegrity, 0) + '%');
+    if(spec.breaks != null){
+      const br = Math.round(Number(spec.breaks) || 0);
+      body += line('broke zone ' + (br === 1 ? 'once' : (br === 2 ? 'twice' : br + ' times')));
+    }
+    return shell('Time-In-Zone Progress', body, elapsed / required * 100, '#9b8cff');
+  }
+
+  if(type === 'confluence'){
+    const items = Array.isArray(spec.items) ? spec.items : [];
+    const ready = items.filter(x => !!x.ok || !!x.met || String(x.state || '').toLowerCase() === 'ready').length;
+    let body = line(ready + ' / ' + items.length + ' conditions ready');
+    body += items.map(x => line(esc(x.label || 'Condition') + ' ' + esc(x.state || (x.ok || x.met ? 'ready' : 'pending')))).join('');
+    if(spec.formedPct != null) body += line('Overall progress: setup ' + _crJrnV2FmtNum(spec.formedPct, 0) + '% formed');
+    return shell('Confluence Progress', body, items.length ? ready / items.length * 100 : null, '#ffb300');
+  }
+
+  if(type === 'zone-quality'){
+    let body = '';
+    body += line(esc(spec.state || 'inside zone'));
+    if(spec.ageCandles != null) body += line('zone age: ' + Math.round(Number(spec.ageCandles) || 0) + ' candles');
+    if(spec.touches != null) body += line('touches: ' + Math.round(Number(spec.touches) || 0));
+    if(spec.failedBreaks != null) body += line('failed breaks: ' + Math.round(Number(spec.failedBreaks) || 0));
+    if(spec.acceptanceScore != null) body += line('acceptance score: ' + _crJrnV2FmtNum(spec.acceptanceScore, 0));
+    return shell('Zone Quality', body, spec.acceptanceScore != null ? Number(spec.acceptanceScore) : null, '#14f195');
+  }
+
+  return _crJrnRenderAlertProgress(item);
+}
+function _crJrnRenderAlertV2(){
+  const scope = document.getElementById('crJrnAlertV2Scope');
+  const summary = document.getElementById('crJrnAlertV2Summary');
+  const list = document.getElementById('crJrnAlertV2List');
+  if(!scope || !summary || !list) return;
+  const alarm = (typeof window !== 'undefined') ? window.crAlarm : null;
+  const bus = (typeof window !== 'undefined') ? window.crAlertBus : null;
+  const alarms = (alarm && Array.isArray(alarm.alarms)) ? alarm.alarms.filter(Boolean) : [];
+  const events = (bus && typeof bus.list === 'function') ? bus.list().filter(Boolean) : [];
+  const esc = _crJrnEsc;
+  const fmtDate = ts => ts ? new Date(ts).toLocaleString() : '--';
+  const rows = [];
+  events.forEach(e => {
+    rows.push({
+      source:'bus',
+      id:e.id,
+      ts:Number(e.ts) || 0,
+      item:e,
+      title:e.message || 'Alert event',
+      type:e.type || 'event',
+      status:e.ackAt ? 'ACK' : String(e.severity || 'INFO').toUpperCase(),
+      statusColor:e.severity === 'critical' ? '#ff5b7f' : (e.severity === 'warn' ? '#ffd166' : '#7be3f3'),
+      asset:e.asset || 'BTC',
+      timeframe:e.timeframe || '15m',
+      price:e.price,
+      meta:e.source || 'alert-bus'
+    });
+  });
+  alarms.forEach(a => {
+    const first = (a.conditions || [])[0] || {};
+    rows.push({
+      source:'alarm',
+      id:a.id,
+      ts:Number(a.lastFiredAt || a.createdAt) || 0,
+      item:a,
+      title:a.name || 'Alarm',
+      type:a.confluence ? 'confluence' : 'price-alert',
+      status:a.triggered ? 'FIRED' : (a.enabled ? 'ARMED' : 'OFF'),
+      statusColor:a.triggered ? '#ff5b7f' : (a.enabled ? '#3ddc97' : 'var(--dim)'),
+      asset:(typeof currentAsset === 'string' ? currentAsset.toUpperCase() : 'BTC'),
+      timeframe:(typeof timeframe === 'string' ? timeframe : '15m'),
+      price:first.price,
+      meta:a.anchorMapId ? 'anchored' : 'local alarm'
+    });
+  });
+  rows.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+  const armed = alarms.filter(a => a.enabled && !a.triggered).length;
+  const fired = alarms.filter(a => a.triggered).length;
+  const progressCount = rows.filter(r => _crJrnAlertProgressSpec(r.item)).length;
+  scope.innerHTML =
+    '<span data-alert-v2-scope="all" style="display:inline-flex;align-items:center;height:24px;padding:0 10px;border:1px solid rgba(123,227,243,.5);border-radius:6px;background:rgba(123,227,243,.10);color:#7be3f3;font-size:10px;font-weight:800;letter-spacing:.5px">ALL</span>' +
+    '<span style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.45px">'+rows.length+' mixed rows</span>' +
+    '<span style="font-size:10px;color:var(--dim)">alarm laser + alert bus</span>';
+  const cards = [
+    { k:'Total', v:rows.length, sub:'all alert rows' },
+    { k:'Alarms', v:alarms.length, sub:armed + ' armed · ' + fired + ' fired' },
+    { k:'Bus', v:events.length, sub:'normalized events' },
+    { k:'Progress', v:progressCount, sub:'rows with cards' },
+  ];
+  summary.innerHTML = cards.map(c =>
+    '<div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:rgba(10,15,28,.4)">' +
+      '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px">' + esc(c.k) + '</div>' +
+      '<div style="font-size:20px;font-weight:700;margin-top:4px">' + esc(c.v) + '</div>' +
+      '<div style="font-size:10px;color:var(--dim);margin-top:2px">' + esc(c.sub) + '</div>' +
+    '</div>'
+  ).join('');
+
+  const refreshBtn = document.getElementById('crJrnAlertV2Refresh');
+  const newBtn = document.getElementById('crJrnAlertV2New');
+  if(refreshBtn) refreshBtn.onclick = _crJrnRenderAlertV2;
+  if(newBtn) newBtn.onclick = () => {
+    try {
+      if(alarm && typeof alarm.arm === 'function') alarm.arm();
+      else if(typeof toast === 'function') toast('Alerts module is still booting');
+    } catch(_){}
+    _crJrnRenderAlertV2();
+  };
+
+  if((!alarm || !Array.isArray(alarm.alarms)) && !events.length){
+    list.innerHTML = '<div style="padding:14px;font-size:11px;color:var(--dim);font-style:italic;text-align:center">Alert V2 is waiting for the alarm module.</div>';
+    return;
+  }
+  if(!rows.length){
+    list.innerHTML = '<div style="padding:14px;font-size:11px;color:var(--dim);font-style:italic;text-align:center">No alert rows yet.</div>';
+    return;
+  }
+
+  let html = '';
+  rows.forEach(row => {
+    const id = esc(row.id);
+    const srcColor = row.source === 'alarm' ? '#ffd166' : '#7be3f3';
+    html += '<div data-alert-v2-row-source="'+esc(row.source)+'" style="border:1px solid rgba(123,227,243,.24);border-radius:8px;padding:9px 10px;margin:0 0 7px;background:rgba(10,15,28,.34);border-bottom:1px solid rgba(255,255,255,.06)">';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;min-width:0">';
+    html += '<span style="flex:0 0 auto;border:1px solid rgba(255,255,255,.12);border-radius:5px;padding:2px 6px;color:'+srcColor+';font-size:9px;font-weight:800;letter-spacing:.45px">'+(row.source === 'alarm' ? 'ALARM' : 'BUS')+'</span>';
+    html += '<b style="color:#f7f9ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(row.title)+'</b>';
+    html += '<span style="margin-left:auto;font-size:10px;font-weight:800;color:'+row.statusColor+'">'+esc(row.status)+'</span>';
+    html += '</div>';
+    html += '<div style="display:grid;grid-template-columns:130px 88px 90px 1fr;gap:8px;font-size:10px;color:var(--dim);margin-bottom:6px">';
+    html += '<span>'+esc(fmtDate(row.ts))+'</span>';
+    html += '<span>'+esc(row.asset)+' '+esc(row.timeframe)+'</span>';
+    html += '<span>'+(row.price != null && isFinite(row.price) ? Number(row.price).toFixed(2) : 'local')+'</span>';
+    html += '<span style="text-align:right">'+esc(row.meta)+'</span>';
+    html += '</div>';
+    html += '<div style="font-size:10.5px;color:#cfd2db;line-height:1.45">'+esc(row.type)+'</div>';
+    html += _crJrnAlertV2Lifecycle(row);
+    html += _crJrnRenderAlertV2ProgressDetail(row.item);
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
+    if(row.source === 'bus'){
+      html += '<button class="cr-go" type="button" data-alert-v2-note="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid var(--line);color:var(--dim)">Note</button>';
+      html += '<button class="cr-go" type="button" data-alert-v2-replay="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid rgba(20,241,149,.35);color:#14f195">Replay</button>';
+      if(!row.item.ackAt) html += '<button class="cr-go" type="button" data-alert-v2-ack="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid var(--line);color:var(--dim)">Ack</button>';
+    } else {
+      html += '<button class="cr-go" type="button" data-alert-v2-alarm-toggle="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid var(--line);color:var(--dim)">'+(row.item.enabled?'Pause':'Arm')+'</button>';
+      if(row.item.triggered) html += '<button class="cr-go" type="button" data-alert-v2-alarm-rearm="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid var(--line);color:#ffd166">Re-arm</button>';
+    }
+    html += '</div></div>';
+  });
+  list.innerHTML = html;
+  list.querySelectorAll('[data-alert-v2-note]').forEach(btn => {
+    btn.addEventListener('click', () => { try { if(bus) bus.toJournalNote(btn.getAttribute('data-alert-v2-note')); } catch(_){} _crJrnRenderAlertV2(); });
+  });
+  list.querySelectorAll('[data-alert-v2-replay]').forEach(btn => {
+    btn.addEventListener('click', () => { try { if(bus) bus.replay(btn.getAttribute('data-alert-v2-replay')); } catch(_){} _crJrnRenderAlertV2(); });
+  });
+  list.querySelectorAll('[data-alert-v2-ack]').forEach(btn => {
+    btn.addEventListener('click', () => { try { if(bus) bus.ack(btn.getAttribute('data-alert-v2-ack')); } catch(_){} _crJrnRenderAlertV2(); });
+  });
+  list.querySelectorAll('[data-alert-v2-alarm-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => { try { if(alarm) alarm.toggle(btn.getAttribute('data-alert-v2-alarm-toggle')); } catch(_){} _crJrnRenderAlertV2(); });
+  });
+  list.querySelectorAll('[data-alert-v2-alarm-rearm]').forEach(btn => {
+    btn.addEventListener('click', () => { try { if(alarm) alarm.rearm(btn.getAttribute('data-alert-v2-alarm-rearm')); } catch(_){} _crJrnRenderAlertV2(); });
+  });
+}
 window.crJrnRenderAlerts = _crJrnRenderAlerts;
+window.crJrnRenderAlertV2 = _crJrnRenderAlertV2;
 function _crJrnRenderStats(){
   const host = document.getElementById('crJrnStats');
   if(!host) return;
@@ -35074,7 +36474,7 @@ setTimeout(() => {
     tabs.forEach(x => x.classList.toggle('active', x === b));
     // v0.9.15 — Tab map extended with Notes + P&L (folded in from the
     // standalone Trade Notes / P&L Tracker apps).
-    [['manual','crJournalViewManual'],['paper','crJournalViewPaper'],['bot','crJournalViewBot'],['sessions','crJournalViewSessions'],['alerts','crJournalViewAlerts'],['stats','crJournalViewStats'],['notes','crJournalViewNotes'],['pnl','crJournalViewPnl']].forEach(([k,id]) => {
+    [['manual','crJournalViewManual'],['paper','crJournalViewPaper'],['bot','crJournalViewBot'],['sessions','crJournalViewSessions'],['alerts','crJournalViewAlerts'],['alertv2','crJournalViewAlertV2'],['stats','crJournalViewStats'],['notes','crJournalViewNotes'],['pnl','crJournalViewPnl']].forEach(([k,id]) => {
       const el = document.getElementById(id);
       if(el) el.classList.toggle('hidden', cat !== k);
     });
@@ -35083,6 +36483,7 @@ setTimeout(() => {
     if(cat === 'bot')    _crJrnRenderBot();
     if(cat === 'sessions') _crJrnRenderTermSessions();
     if(cat === 'alerts') _crJrnRenderAlerts();
+    if(cat === 'alertv2') _crJrnRenderAlertV2();
     if(cat === 'stats')  _crJrnRenderStats();
     if(cat === 'notes')  _crJrnRenderNotes();
     if(cat === 'pnl')    _crJrnRenderPnl();
@@ -48081,6 +49482,46 @@ function _onIndicatorClick(ind){
 // writes back into INDICATOR_STATE.params[id]. Single-file + no framework, so
 // we attach listeners fresh each open and clean up on close.
 const indEditor = { open:false, ind:null };
+function _indicatorAlarmHit(ind){
+  if(!ind) return null;
+  let ref = null;
+  try { if(typeof lastPrice === 'function') ref = lastPrice(); } catch(_){}
+  return {
+    kind:'indicator',
+    overlay:{
+      id:'ind:' + ind.id,
+      indicatorId:ind.id,
+      parentId:ind.id,
+      label:_indicatorDisplayName(ind),
+      refPrice:(typeof ref === 'number' && isFinite(ref)) ? ref : null
+    }
+  };
+}
+function _renderIndicatorEditorAlarm(){
+  const ind = indEditor.ind;
+  const pane = document.getElementById('indEdAlarmPane');
+  if(!pane || !ind) return;
+  if(window.crObjectAlarm && typeof window.crObjectAlarm.renderPanel === 'function'){
+    window.crObjectAlarm.renderPanel(pane, _indicatorAlarmHit(ind), { surface:'indicator-settings' });
+  } else {
+    pane.innerHTML = '<div class="hint" style="color:var(--dim);font-size:11px">Alarm setup is still loading.</div>';
+  }
+}
+function _setIndicatorEditorTab(tab){
+  const paramsPane = document.getElementById('indEdParamsPane');
+  const alarmPane = document.getElementById('indEdAlarmPane');
+  const tabs = document.querySelectorAll('#indEditor [data-ind-ed-tab]');
+  tabs.forEach(btn => btn.classList.toggle('on', btn.getAttribute('data-ind-ed-tab') === tab));
+  if(paramsPane){
+    paramsPane.classList.toggle('on', tab === 'params');
+    paramsPane.style.display = tab === 'params' ? 'block' : 'none';
+  }
+  if(alarmPane){
+    alarmPane.classList.toggle('on', tab === 'alarm');
+    alarmPane.style.display = tab === 'alarm' ? 'block' : 'none';
+  }
+  if(tab === 'alarm') _renderIndicatorEditorAlarm();
+}
 function openIndicatorEditor(ind){
   if(!ind || !ind.params || !ind.params.length){
     toast((ind && ind.nm || 'Indicator') + ' · no tunable params');
@@ -48102,6 +49543,7 @@ function openIndicatorEditor(ind){
     cell.innerHTML = `<label>${p.label}</label><input id="${inputId}" type="number" step="${p.step}" min="${p.min}" max="${p.max}" value="${current[p.key]}" />`;
     grid.appendChild(cell);
   }
+  _setIndicatorEditorTab('params');
   wrap.classList.add('on');
   // Focus the first field for keyboard-first users.
   const first = grid.querySelector('input'); if(first){ try { first.focus(); first.select(); } catch(_){} }
@@ -48160,14 +49602,22 @@ function resetIndicatorEditor(){
   const cancel = document.getElementById('indEdCancel');
   const apply  = document.getElementById('indEdConfirm');
   const reset  = document.getElementById('indEdReset');
+  const paramsTab = document.querySelector('#indEditor [data-ind-ed-tab="params"]');
+  const alarmTab = document.querySelector('#indEditor [data-ind-ed-tab="alarm"]');
   if(cancel) cancel.onclick = () => { closeIndicatorEditor(); };
   if(apply)  apply.onclick  = applyIndicatorEditor;
   if(reset)  reset.onclick  = resetIndicatorEditor;
+  if(paramsTab) paramsTab.onclick = () => _setIndicatorEditorTab('params');
+  if(alarmTab)  alarmTab.onclick  = () => _setIndicatorEditorTab('alarm');
   // Enter/Esc while editor is open. Capture-phase so we win over other handlers.
   document.addEventListener('keydown', (e)=>{
     if(!indEditor.open) return;
     if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); closeIndicatorEditor(); }
-    else if(e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); applyIndicatorEditor(); }
+    else if(e.key === 'Enter'){
+      const alarmPane = document.getElementById('indEdAlarmPane');
+      if(alarmPane && alarmPane.style.display !== 'none') return;
+      e.preventDefault(); e.stopPropagation(); applyIndicatorEditor();
+    }
   }, true);
 })();
 
@@ -48367,6 +49817,257 @@ _updateStrategyStatus();
 const HIT_PX = 6;       // vertical tolerance for line-hit (screen px)
 const HIT_END_PX = 10;  // v0.8i — endpoint/rung circle tolerance (larger than line)
 const OVERLAY_W = 260;  // horizontal extent of a placed bracket/ladder/OCO
+function hitTvChartObjectAt(ov, k, sx, sy, opts){
+  opts = opts || {};
+  const meta = tvChartObjectMeta(k);
+  if(!meta) return null;
+  const hitPx = Math.max(1, +opts.hitPx || HIT_PX);
+  const hitEndPx = Math.max(hitPx, +opts.hitEndPx || HIT_END_PX);
+  const edgeOnlyBox = !!opts.edgeOnlyBox;
+  const ret = (handle) => ({ kind:'tv:'+k, overlay:ov, handle });
+  const point = (wx, py, handle) => {
+    if(typeof wx !== 'number' || typeof py !== 'number') return null;
+    const x = sX(wx), y = priceToY(py);
+    return Math.hypot(sx - x, sy - y) <= hitEndPx ? ret(handle) : null;
+  };
+  const seg = (wx1, py1, wx2, py2, handle) => {
+    if([wx1,py1,wx2,py2].some(v => typeof v !== 'number')) return null;
+    const x1 = sX(wx1), y1 = priceToY(py1);
+    const x2 = sX(wx2), y2 = priceToY(py2);
+    if(sx < Math.min(x1,x2)-hitPx || sx > Math.max(x1,x2)+hitPx ||
+       sy < Math.min(y1,y2)-hitPx || sy > Math.max(y1,y2)+hitPx) return null;
+    const vx = x2-x1, vy = y2-y1, len2 = vx*vx + vy*vy;
+    if(len2 < 1e-6) return null;
+    const t = Math.max(0, Math.min(1, ((sx-x1)*vx + (sy-y1)*vy) / len2));
+    const px = x1 + t*vx, py = y1 + t*vy;
+    return Math.hypot(sx-px, sy-py) <= hitPx ? ret(handle || 'body') : null;
+  };
+  const box = (handle) => {
+    if(typeof ov.wx1 !== 'number' || typeof ov.wx2 !== 'number') return null;
+    const x1 = sX(ov.wx1), x2 = sX(ov.wx2);
+    const y1 = (typeof ov.py1 === 'number') ? priceToY(ov.py1) : 0;
+    const y2 = (typeof ov.py2 === 'number') ? priceToY(ov.py2) : H;
+    const xL = Math.min(x1,x2), xR = Math.max(x1,x2);
+    const yT = Math.min(y1,y2), yB = Math.max(y1,y2);
+    if(sx < xL - hitPx || sx > xR + hitPx || sy < yT - hitPx || sy > yB + hitPx) return null;
+    const nearLeft = Math.abs(sx-xL) <= hitPx, nearRight = Math.abs(sx-xR) <= hitPx;
+    const nearTop = Math.abs(sy-yT) <= hitPx, nearBot = Math.abs(sy-yB) <= hitPx;
+    if((nearLeft && nearTop) || (nearLeft && nearBot)) return ret('p1');
+    if((nearRight && nearTop) || (nearRight && nearBot)) return ret('p2');
+    if(edgeOnlyBox && !(nearLeft || nearRight || nearTop || nearBot)) return null;
+    return ret(handle || 'body');
+  };
+  const inTri = () => {
+    if([ov.wx1,ov.py1,ov.wx2,ov.py2,ov.wx3,ov.py3].some(v => typeof v !== 'number')) return false;
+    const ax = sX(ov.wx1), ay = priceToY(ov.py1);
+    const bx = sX(ov.wx2), by = priceToY(ov.py2);
+    const cx = sX(ov.wx3), cy = priceToY(ov.py3);
+    const area = (bx-ax)*(cy-ay) - (by-ay)*(cx-ax);
+    if(Math.abs(area) < 1e-6) return false;
+    const s = ((ay-cy)*(sx-cx) + (cx-ax)*(sy-cy)) / area;
+    const t = ((cy-by)*(sx-cx) + (bx-cx)*(sy-cy)) / area;
+    const u = 1 - s - t;
+    return s >= -0.02 && t >= -0.02 && u >= -0.02;
+  };
+  let h = point(ov.wx1, ov.py1, 'p1') || point(ov.wx2, ov.py2, 'p2') || point(ov.wx3, ov.py3, 'p3') || point(ov.wx, ov.py, 'anchor');
+  if(h) return h;
+  if(meta.hit === 'box') return box('body');
+  if(meta.hit === 'band') return box('body');
+  if(meta.hit === 'line') return seg(ov.wx1, ov.py1, ov.wx2, ov.py2, 'body');
+  if(meta.hit === 'rail'){
+    const rail = _parallelChannelRail(ov);
+    if(rail){
+      const leftWx = wXFromS(0), rightWx = wXFromS(W);
+      h = seg(leftWx, rail.baseAt(leftWx), rightWx, rail.baseAt(rightWx), 'body')
+       || seg(leftWx, rail.baseAt(leftWx) + rail.offset, rightWx, rail.baseAt(rightWx) + rail.offset, 'body');
+      if(h) return h;
+    }
+    return null;
+  }
+  if(meta.hit === 'time'){
+    const dir = ov.dir || ((ov.wx2 || 0) >= (ov.wx1 || 0) ? 1 : -1);
+    const bars = Math.max(1, Math.abs(ov.dBars || Math.round(((ov.wx2 || 0) - (ov.wx1 || 0)) / STEP) || 1));
+    for(const f of (ov.levels || [0,1,2,3,5,8,13,21,34,55,89])){
+      const x = sX((ov.wx1 || 0) + dir * bars * STEP * f);
+      if(Math.abs(sx - x) <= hitPx) return ret('body');
+    }
+    return null;
+  }
+  if(meta.hit === 'circles'){
+    if(typeof ov.wx1 !== 'number' || typeof ov.py1 !== 'number' || typeof ov.wx2 !== 'number' || typeof ov.py2 !== 'number') return null;
+    const x1 = sX(ov.wx1), y1 = priceToY(ov.py1);
+    const x2 = sX(ov.wx2), y2 = priceToY(ov.py2);
+    const base = Math.max(4, Math.hypot(x2-x1, y2-y1));
+    const d = Math.hypot(sx-x1, sy-y1);
+    for(const lv of (ov.levels || [0.236,0.382,0.5,0.618,1,1.618,2.618])){
+      if(Math.abs(d - base * lv) <= hitPx) return ret('body');
+    }
+    return null;
+  }
+  if(meta.hit === 'fan'){
+    if(typeof ov.wx !== 'number' || typeof ov.py !== 'number') return null;
+    const x0 = sX(ov.wx), y0 = priceToY(ov.py);
+    for(const r of (ov.ratios || [1/8,1/4,1/3,1/2,1,2,3,4,8])){
+      const dx = Math.max(80, W - x0);
+      const x1 = Math.min(W + 40, x0 + dx);
+      if(seg(ov.wx, ov.py, wXFromS(x1), yToPrice(y0 - dx * r * 0.18), 'body')) return ret('body');
+      if(seg(ov.wx, ov.py, wXFromS(x1), yToPrice(y0 + dx * r * 0.18), 'body')) return ret('body');
+    }
+    return Math.hypot(sx-x0, sy-y0) <= hitEndPx * 2 ? ret('body') : null;
+  }
+  if(meta.hit === 'bars'){
+    if(typeof ov.wx !== 'number' || typeof ov.py !== 'number') return null;
+    const bars = ov.bars || [];
+    const x0 = sX(ov.wx), y0 = priceToY(ov.py);
+    let minY = y0, maxY = y0;
+    for(const b of bars){
+      minY = Math.min(minY, priceToY(ov.py + (b.h || 0)));
+      maxY = Math.max(maxY, priceToY(ov.py + (b.l || 0)));
+    }
+    const xR = x0 + Math.max(24, bars.length || 24) * STEP * camera.zoomX;
+    return (sx >= x0 - hitPx && sx <= xR + hitPx && sy >= minY - hitPx && sy <= maxY + hitPx) ? ret('body') : null;
+  }
+  if(meta.hit === 'polygon'){
+    return seg(ov.wx1, ov.py1, ov.wx2, ov.py2, 'body')
+        || seg(ov.wx2, ov.py2, ov.wx3, ov.py3, 'body')
+        || seg(ov.wx3, ov.py3, ov.wx1, ov.py1, 'body')
+        || (inTri() ? ret('body') : null);
+  }
+  return null;
+}
+function crIndicatorParentId(id){
+  id = String(id || '');
+  if(!id) return null;
+  if(id.indexOf('strat:') === 0) return null;
+  if(id.indexOf('ref-') === 0) return 'reflevels';
+  if(id.indexOf('ichi-') === 0) return 'ichi';
+  if(id.indexOf('macd-') === 0) return 'macd';
+  return id;
+}
+function crIndicatorDisplayLabel(id){
+  const parentId = crIndicatorParentId(id);
+  const ind = parentId && typeof INDICATOR_BY_ID !== 'undefined' ? INDICATOR_BY_ID[parentId] : null;
+  if(ind && typeof _indicatorDisplayName === 'function'){
+    try { return _indicatorDisplayName(ind); } catch(_){}
+  }
+  if(ind && ind.nm) return ind.nm;
+  return String(id || 'Indicator').toUpperCase();
+}
+function _indicatorHitResult(id, sx, sy, py, distancePx, handle){
+  const parentId = crIndicatorParentId(id);
+  return {
+    kind:'indicator',
+    overlay:{
+      id:'ind:' + String(id || 'unknown'),
+      indicatorId:String(id || 'unknown'),
+      parentId,
+      label:crIndicatorDisplayLabel(id),
+      wx:(typeof wXFromS === 'function') ? wXFromS(sx) : null,
+      py,
+      refPrice:py
+    },
+    handle:handle || 'line',
+    distancePx:distancePx || 0
+  };
+}
+function hitIndicatorAt(sx, sy, opts){
+  opts = opts || {};
+  const hitPx = Math.max(4, +opts.hitPx || HIT_PX * 1.8);
+  const best = { hit:null, d:Infinity };
+  function consider(id, dist, py, handle){
+    if(!id || dist > hitPx || dist >= best.d) return;
+    best.d = dist;
+    best.hit = _indicatorHitResult(id, sx, sy, py, dist, handle);
+  }
+  function distPtSeg(px, py, ax, ay, bx, by){
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx*dx + dy*dy || 1;
+    const t = Math.max(0, Math.min(1, ((px - ax)*dx + (py - ay)*dy) / len2));
+    const cx = ax + t*dx, cy = ay + t*dy;
+    return { d:Math.hypot(px - cx, py - cy), y:cy };
+  }
+  if(game.indicatorPolys && game.indicatorPolys.length){
+    for(const ip of game.indicatorPolys){
+      if(!ip || !ip.id || !ip.pts || ip.pts.length < 2) continue;
+      for(let i = 0; i < ip.pts.length - 1; i++){
+        const a = ip.pts[i], b = ip.pts[i+1];
+        const ax = sX(a.wx), ay = priceToY(a.py);
+        const bx = sX(b.wx), by = priceToY(b.py);
+        if(sx < Math.min(ax,bx)-hitPx || sx > Math.max(ax,bx)+hitPx ||
+           sy < Math.min(ay,by)-hitPx || sy > Math.max(ay,by)+hitPx) continue;
+        const r = distPtSeg(sx, sy, ax, ay, bx, by);
+        consider(ip.id, r.d, yToPrice(r.y), 'line');
+      }
+    }
+  }
+  try {
+    if(typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active && INDICATOR_STATE.active.has('vol')){
+      const heightPct = Math.max(5, Math.min(60, +_getIndParam('vol','heightPct') || 15));
+      const baseY = H - 20, maxH = H * (heightPct/100);
+      let maxVol = 0;
+      const leftWx = wXFromS(0), rightWx = wXFromS(W);
+      const sIdx = Math.max(0, Math.floor(leftWx/STEP) - 5);
+      const eIdx = Math.min(candles.length-1, Math.ceil(rightWx/STEP) + 5);
+      for(let i=sIdx; i<=eIdx; i++){
+        const v = candles[i].v || (candles[i].h - candles[i].l) || 0;
+        if(v > maxVol) maxVol = v;
+      }
+      if(maxVol > 0){
+        const w = Math.max(1, CANDLE_W * camera.zoomX);
+        for(let i=sIdx; i<=eIdx; i++){
+          if(game.destroyedVolBars && game.destroyedVolBars.has(i)) continue;
+          const v = candles[i].v || (candles[i].h - candles[i].l) || 0;
+          if(!v) continue;
+          const h = (v/maxVol) * maxH;
+          const x = sX(i*STEP);
+          if(sx >= x - hitPx && sx <= x + w + hitPx && sy >= baseY - h - hitPx && sy <= baseY + hitPx){
+            consider('vol', 0, yToPrice(sy), 'bar');
+          }
+        }
+      }
+    }
+  } catch(_){}
+  try {
+    if(game._vrvpGeom && typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active && INDICATOR_STATE.active.has('vrvp')){
+      const g = game._vrvpGeom;
+      for(let k = 0; k < g.BUCKETS; k++){
+        if(game.destroyedVRVPBuckets && game.destroyedVRVPBuckets.has(k)) continue;
+        const y = g.topY + (g.BUCKETS - 1 - k) * g.bucketH;
+        const w = (g.buckets[k] / g.maxB) * g.profileW;
+        if(w <= 0) continue;
+        if(sx >= g.baseX - w - hitPx && sx <= g.baseX + hitPx && sy >= y - hitPx && sy <= y + g.bucketH + hitPx){
+          consider('vrvp', 0, yToPrice(sy), 'bucket');
+        }
+      }
+    }
+  } catch(_){}
+  try {
+    if(typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active && INDICATOR_STATE.active.has('fg') && !game.fgDestroyed){
+      const gx = 14, gy = 76, gw = 176, gh = 52;
+      if(sx >= gx - hitPx && sx <= gx + gw + hitPx && sy >= gy - hitPx && sy <= gy + gh + hitPx){
+        consider('fg', 0, yToPrice(sy), 'badge');
+      }
+    }
+    if(typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active && INDICATOR_STATE.active.has('atr') && !game.atrDestroyed && game._atrBadgeRect){
+      const r = game._atrBadgeRect;
+      if(sx >= r.x - hitPx && sx <= r.x + r.w + hitPx && sy >= r.y - hitPx && sy <= r.y + r.h + hitPx){
+        consider('atr', 0, yToPrice(sy), 'badge');
+      }
+    }
+  } catch(_){}
+  return best.hit;
+}
+function openIndicatorConfigFromHit(hit){
+  const target = hit && hit.overlay;
+  const parentId = target && (target.parentId || crIndicatorParentId(target.indicatorId));
+  const ind = parentId && typeof INDICATOR_BY_ID !== 'undefined' ? INDICATOR_BY_ID[parentId] : null;
+  if(ind && ind.params && ind.params.length && typeof openIndicatorEditor === 'function'){
+    openIndicatorEditor(ind);
+    return true;
+  }
+  try { toast((target && target.label || 'Indicator') + ' · no tunable params'); } catch(_){}
+  return false;
+}
 function hitOverlay(sx, sy){
   // Returns { kind, overlay, handle, [rungIdx|pointIdx] } | null.
   // Bracket handles: entry|tp|sl · OCO: upper|lower · Ladder: rung (with rungIdx)
@@ -48374,122 +50075,11 @@ function hitOverlay(sx, sy){
   // Priority: unresolved brackets > OCO > ladder rung-endpoints > trendline endpoints
   // > ladder (line) > trendline segment — finest grab wins.
   function hitTvChartObject(ov, k){
-    const meta = tvChartObjectMeta(k);
-    if(!meta) return null;
-    const ret = (handle) => {
-      if(handle === 'p3') return { kind:'tv:'+k, overlay:ov, handle:'p3' };
-      return { kind:'tv:'+k, overlay:ov, handle };
-    };
-    const point = (wx, py, handle) => {
-      if(typeof wx !== 'number' || typeof py !== 'number') return null;
-      const x = sX(wx), y = priceToY(py);
-      return Math.hypot(sx - x, sy - y) <= HIT_END_PX ? ret(handle) : null;
-    };
-    const seg = (wx1, py1, wx2, py2, handle) => {
-      if([wx1,py1,wx2,py2].some(v => typeof v !== 'number')) return null;
-      const x1 = sX(wx1), y1 = priceToY(py1);
-      const x2 = sX(wx2), y2 = priceToY(py2);
-      if(sx < Math.min(x1,x2)-HIT_PX || sx > Math.max(x1,x2)+HIT_PX ||
-         sy < Math.min(y1,y2)-HIT_PX || sy > Math.max(y1,y2)+HIT_PX) return null;
-      const vx = x2-x1, vy = y2-y1, len2 = vx*vx + vy*vy;
-      if(len2 < 1e-6) return null;
-      const t = Math.max(0, Math.min(1, ((sx-x1)*vx + (sy-y1)*vy) / len2));
-      const px = x1 + t*vx, py = y1 + t*vy;
-      return Math.hypot(sx-px, sy-py) <= HIT_PX ? ret(handle || 'body') : null;
-    };
-    const box = (handle) => {
-      if(typeof ov.wx1 !== 'number' || typeof ov.wx2 !== 'number') return null;
-      const x1 = sX(ov.wx1), x2 = sX(ov.wx2);
-      const y1 = (typeof ov.py1 === 'number') ? priceToY(ov.py1) : 0;
-      const y2 = (typeof ov.py2 === 'number') ? priceToY(ov.py2) : H;
-      const xL = Math.min(x1,x2), xR = Math.max(x1,x2);
-      const yT = Math.min(y1,y2), yB = Math.max(y1,y2);
-      if(sx < xL - HIT_PX || sx > xR + HIT_PX || sy < yT - HIT_PX || sy > yB + HIT_PX) return null;
-      const nearLeft = Math.abs(sx-xL) <= HIT_PX, nearRight = Math.abs(sx-xR) <= HIT_PX;
-      const nearTop = Math.abs(sy-yT) <= HIT_PX, nearBot = Math.abs(sy-yB) <= HIT_PX;
-      if((nearLeft && nearTop) || (nearLeft && nearBot)) return ret('p1');
-      if((nearRight && nearTop) || (nearRight && nearBot)) return ret('p2');
-      return ret(handle || 'body');
-    };
-    const inTri = () => {
-      if([ov.wx1,ov.py1,ov.wx2,ov.py2,ov.wx3,ov.py3].some(v => typeof v !== 'number')) return false;
-      const ax = sX(ov.wx1), ay = priceToY(ov.py1);
-      const bx = sX(ov.wx2), by = priceToY(ov.py2);
-      const cx = sX(ov.wx3), cy = priceToY(ov.py3);
-      const area = (bx-ax)*(cy-ay) - (by-ay)*(cx-ax);
-      if(Math.abs(area) < 1e-6) return false;
-      const s = ((ay-cy)*(sx-cx) + (cx-ax)*(sy-cy)) / area;
-      const t = ((cy-by)*(sx-cx) + (bx-cx)*(sy-cy)) / area;
-      const u = 1 - s - t;
-      return s >= -0.02 && t >= -0.02 && u >= -0.02;
-    };
-    let h = point(ov.wx1, ov.py1, 'p1') || point(ov.wx2, ov.py2, 'p2') || point(ov.wx3, ov.py3, 'p3') || point(ov.wx, ov.py, 'anchor');
-    if(h) return h;
-    if(meta.hit === 'box' || meta.hit === 'band') return box('body');
-    if(meta.hit === 'line') return seg(ov.wx1, ov.py1, ov.wx2, ov.py2, 'body');
-    if(meta.hit === 'rail'){
-      const rail = _parallelChannelRail(ov);
-      if(rail){
-        const leftWx = wXFromS(0), rightWx = wXFromS(W);
-        h = seg(leftWx, rail.baseAt(leftWx), rightWx, rail.baseAt(rightWx), 'body')
-         || seg(leftWx, rail.baseAt(leftWx) + rail.offset, rightWx, rail.baseAt(rightWx) + rail.offset, 'body');
-        if(h) return h;
-      }
-      return null;
-    }
-    if(meta.hit === 'time'){
-      const dir = ov.dir || ((ov.wx2 || 0) >= (ov.wx1 || 0) ? 1 : -1);
-      const bars = Math.max(1, Math.abs(ov.dBars || Math.round(((ov.wx2 || 0) - (ov.wx1 || 0)) / STEP) || 1));
-      for(const f of (ov.levels || [0,1,2,3,5,8,13,21,34,55,89])){
-        const x = sX((ov.wx1 || 0) + dir * bars * STEP * f);
-        if(Math.abs(sx - x) <= HIT_PX) return ret('body');
-      }
-      return null;
-    }
-    if(meta.hit === 'circles'){
-      if(typeof ov.wx1 !== 'number' || typeof ov.py1 !== 'number' || typeof ov.wx2 !== 'number' || typeof ov.py2 !== 'number') return null;
-      const x1 = sX(ov.wx1), y1 = priceToY(ov.py1);
-      const x2 = sX(ov.wx2), y2 = priceToY(ov.py2);
-      const base = Math.max(4, Math.hypot(x2-x1, y2-y1));
-      const d = Math.hypot(sx-x1, sy-y1);
-      for(const lv of (ov.levels || [0.236,0.382,0.5,0.618,1,1.618,2.618])){
-        if(Math.abs(d - base * lv) <= HIT_PX) return ret('body');
-      }
-      return null;
-    }
-    if(meta.hit === 'fan'){
-      if(typeof ov.wx !== 'number' || typeof ov.py !== 'number') return null;
-      const x0 = sX(ov.wx), y0 = priceToY(ov.py);
-      for(const r of (ov.ratios || [1/8,1/4,1/3,1/2,1,2,3,4,8])){
-        const dx = Math.max(80, W - x0);
-        const x1 = Math.min(W + 40, x0 + dx);
-        if(seg(ov.wx, ov.py, wXFromS(x1), yToPrice(y0 - dx * r * 0.18), 'body')) return ret('body');
-        if(seg(ov.wx, ov.py, wXFromS(x1), yToPrice(y0 + dx * r * 0.18), 'body')) return ret('body');
-      }
-      return Math.hypot(sx-x0, sy-y0) <= HIT_END_PX * 2 ? ret('body') : null;
-    }
-    if(meta.hit === 'bars'){
-      if(typeof ov.wx !== 'number' || typeof ov.py !== 'number') return null;
-      const bars = ov.bars || [];
-      const x0 = sX(ov.wx), y0 = priceToY(ov.py);
-      let minY = y0, maxY = y0;
-      for(const b of bars){
-        minY = Math.min(minY, priceToY(ov.py + (b.h || 0)));
-        maxY = Math.max(maxY, priceToY(ov.py + (b.l || 0)));
-      }
-      const xR = x0 + Math.max(24, bars.length || 24) * STEP * camera.zoomX;
-      return (sx >= x0 - HIT_PX && sx <= xR + HIT_PX && sy >= minY - HIT_PX && sy <= maxY + HIT_PX) ? ret('body') : null;
-    }
-    if(meta.hit === 'polygon'){
-      return seg(ov.wx1, ov.py1, ov.wx2, ov.py2, 'body')
-          || seg(ov.wx2, ov.py2, ov.wx3, ov.py3, 'body')
-          || seg(ov.wx3, ov.py3, ov.wx1, ov.py1, 'body')
-          || (inTri() ? ret('body') : null);
-    }
-    return null;
+    return hitTvChartObjectAt(ov, k, sx, sy, { hitPx:HIT_PX, hitEndPx:HIT_END_PX });
   }
   for(const b of game.visualBrackets){
-    if(b.outcome) continue; // resolved brackets are immutable
+    // Resolved brackets are immutable, but they remain selectable so players
+    // can inspect, delete, or configure non-order settings after TP/SL closes.
     const bx = sX(b.wx);
     if(sx < bx - 10 || sx > bx + OVERLAY_W) continue;
     const yE = priceToY(b.entry), yT = priceToY(b.tp), yS = priceToY(b.sl);
@@ -48678,14 +50268,25 @@ function hitOverlay(sx, sy){
           }
           continue;
         }
-        // Fib retracement — hit-test each visible level line.
-        if(k === 'fibRetrace'){
+        // Fib retracement / extension — hit-test each visible level line.
+        // Fib Extension renders its projected levels beyond the impulse leg,
+        // so its horizontal hit corridor must match the renderer's extend
+        // math instead of only checking the anchor-to-anchor span.
+        if(k === 'fibRetrace' || k === 'fibExt'){
           const xL = Math.min(x1,x2), xR = Math.max(x1,x2);
+          let hitXL = xL, hitXR = xR;
+          if(k === 'fibRetrace'){
+            hitXR = (ov.extend === 'right' || ov.extend === 'both') ? W : xR;
+            hitXL = (ov.extend === 'left'  || ov.extend === 'both') ? 0 : xL;
+          } else {
+            hitXR = (ov.extend === 'left') ? xR : W;
+            hitXL = (ov.extend === 'right') ? xL : ((ov.extend === 'both') ? 0 : xL);
+          }
           for(const lv of (ov.levels || [])){
             if(!lv.on) continue;
             const py = ov.py2 + (ov.py1 - ov.py2) * lv.lvl;
             const y = priceToY(py);
-            if(Math.abs(sy - y) <= HIT_PX && sx >= xL - HIT_PX && sx <= xR + HIT_PX){
+            if(Math.abs(sy - y) <= HIT_PX && sx >= hitXL - HIT_PX && sx <= hitXR + HIT_PX){
               return { kind:'tv:'+k, overlay:ov, handle:'body' };
             }
           }
@@ -48727,89 +50328,6 @@ let cursorDropCandidate = null;
 let axisZoom = null;
 const PRICE_AXIS_W = 64;  // matches drawPriceAxis right margin
 const TIME_AXIS_H  = 22;  // matches drawPriceAxis bottom timestamp band
-function handleLaserCanvasMouseDown(e, sx, sy){
-  // v1.0.211 — Regular tools/primitives lasers must own the very next chart
-  // click, including clicks over the price/time axis bands. The axis-zoom
-  // handler used to run first, so edge clicks felt like the laser ignored
-  // the player until they clicked again inside the chart body.
-  if(!game.laserAiming) return false;
-  if(game.laserPhase === 'anchor1'){
-    const snap = snapToCandle(sx, sy);
-    game.laserAnchor1 = snap;
-    game.laserPhase   = 'anchor2';
-    try { spawnParticles(snap.sx, snap.sy, '#3ddc97', 8, 90); } catch(_){}
-    toast('Anchor ① set · click second anchor');
-    e.stopPropagation();
-    return true;
-  }
-  if(game.laserPhase === 'anchor2'){
-    const snap = snapToCandle(sx, sy);
-    const a1 = game.laserAnchor1;
-    const tool = game.laserTool;
-    // Guard: if anchors collapse onto the same price, keep the phase open.
-    if(a1 && Math.abs(snap.price - a1.price) < 1e-9){
-      toast('Anchors too close — pick another candle');
-      e.stopPropagation();
-      return true;
-    }
-    try { spawnParticles(snap.sx, snap.sy, '#ff5b7f', 10, 110); } catch(_){}
-    const def = (typeof _wbToolDef === 'function') ? _wbToolDef(tool) : null;
-    if(def && def.cls === '3-anchor'){
-      game.laserAnchor2 = snap;
-      game.laserAnchor2Preview = snap;
-      game.laserAnchor3Preview = null;
-      game.laserPhase = 'anchor3';
-      toast('Anchor ② set · click channel width');
-      e.stopPropagation();
-      return true;
-    }
-    commitLaserTwoAnchor(tool, a1, snap);
-    // v0.8M#24 — Laser exits ENTIRELY after committing a tool. Previously
-    // it returned to 'idle' (aim mode still on), expecting the player to
-    // press 2 to leave. New behavior: drop tool → laser off, player back
-    // to walking. Press 2 again to re-arm.
-    game.laserAiming = false;
-    game.laserPhase  = 'idle';
-    game.laserTool   = null;
-    game.laserAnchor1 = null;
-    game.laserAnchor2 = null;
-    game.laserAnchor2Preview = null;
-    game.laserAnchor3Preview = null;
-    try { closeLaserSpawnMenu(); } catch(_){}
-    e.stopPropagation();
-    return true;
-  }
-  if(game.laserPhase === 'anchor3'){
-    const snap = snapToCandle(sx, sy);
-    const a1 = game.laserAnchor1;
-    const a2 = game.laserAnchor2;
-    const tool = game.laserTool;
-    if(!a1 || !a2){
-      toast('Missing channel anchors — restart placement');
-      game.laserPhase = 'idle';
-      e.stopPropagation();
-      return true;
-    }
-    try { spawnParticles(snap.sx, snap.sy, '#22d3ee', 12, 120); } catch(_){}
-    commitLaserThreeAnchor(tool, a1, a2, snap);
-    game.laserAiming = false;
-    game.laserPhase  = 'idle';
-    game.laserTool   = null;
-    game.laserAnchor1 = null;
-    game.laserAnchor2 = null;
-    game.laserAnchor2Preview = null;
-    game.laserAnchor3Preview = null;
-    try { closeLaserSpawnMenu(); } catch(_){}
-    e.stopPropagation();
-    return true;
-  }
-  // Default (idle): open the spawn menu at this price/wx.
-  const priceAtClick = yToPrice(sy);
-  const wxAtClick = wXFromS(sx);
-  openLaserSpawnMenu(sx, sy, wxAtClick, priceAtClick);
-  e.stopPropagation();
-  return true;
-}
 cv.addEventListener('mousedown', e=>{
   if(e.button !== 0) return;
   if(bracketEditor.open || ladderEditor.open) return;
@@ -48821,28 +50339,27 @@ cv.addEventListener('mousedown', e=>{
   // arm-flow (config pane). Misses do nothing (no fall-through to drag).
   if(window.cr && window.cr.blueLaser && window.cr.blueLaser.active){
     try {
-      const hit = (typeof hitOverlay === 'function') ? hitOverlay(sx, sy) : null;
+      const hit = ((typeof hitOverlay === 'function') ? hitOverlay(sx, sy) : null)
+        || ((typeof hitIndicatorAt === 'function') ? hitIndicatorAt(sx, sy) : null);
       if(hit){
         window.cr.blueLaser.armFromHit(hit, sx, sy);
         e.stopPropagation();
         e.preventDefault();
       } else {
         // Click on empty chart while laser is on — flash a hint, don't fall through.
-        try { toast('Blue laser · click a placed tool to arm'); } catch(_){}
+        try { toast('Blue laser · click a placed tool or indicator to arm'); } catch(_){}
         e.stopPropagation();
       }
     } catch(_){}
     return;
   }
 
-  if(handleLaserCanvasMouseDown(e, sx, sy)) return;
-
   // v0.8k#24k — Axis hit zones first (before any other drag): price ladder on
   // the right, time strip on the bottom. Dragging stretches/compresses the
   // chart on that axis instead of panning. Vertical drag in the price band:
   // up = stretch (zoom in), down = compress. Horizontal drag in the time band:
   // right = stretch, left = compress. Each starts a session in `axisZoom`.
-  if(sx > W - PRICE_AXIS_W){
+  if(!game.laserAiming && sx > W - PRICE_AXIS_W){
     axisZoom = {
       kind: 'price',
       startSy: sy,
@@ -48854,7 +50371,7 @@ cv.addEventListener('mousedown', e=>{
     e.stopPropagation();
     return;
   }
-  if(sy > H - TIME_AXIS_H){
+  if(!game.laserAiming && sy > H - TIME_AXIS_H){
     axisZoom = {
       kind: 'time',
       startSx: sx,
@@ -48866,10 +50383,101 @@ cv.addEventListener('mousedown', e=>{
     return;
   }
 
+  // v0.8k#22 — While laser-aiming, a click on the chart advances the laser
+  // state machine. v0.8k#24j — Phase 'idle' opens the spawn menu; 'anchor1'
+  // drops the first anchor and transitions to 'anchor2'; 'anchor2' drops the
+  // second anchor, fires the tool, and returns to 'idle'. Candle wick highs /
+  // lows and body tops / bottoms are snap targets (snapToCandle).
+  if(game.laserAiming){
+    if(game.laserPhase === 'anchor1'){
+      const snap = snapToCandle(sx, sy);
+      game.laserAnchor1 = snap;
+      game.laserPhase   = 'anchor2';
+      try { spawnParticles(snap.sx, snap.sy, '#3ddc97', 8, 90); } catch(_){}
+      toast('Anchor ① set · click second anchor');
+      e.stopPropagation();
+      return;
+    }
+    if(game.laserPhase === 'anchor2'){
+      const snap = snapToCandle(sx, sy);
+      const a1 = game.laserAnchor1;
+      const tool = game.laserTool;
+      // Guard: if anchors collapse onto the same price, keep the phase open.
+      if(a1 && Math.abs(snap.price - a1.price) < 1e-9){
+        toast('Anchors too close — pick another candle');
+        e.stopPropagation();
+        return;
+      }
+      try { spawnParticles(snap.sx, snap.sy, '#ff5b7f', 10, 110); } catch(_){}
+      const def = (typeof _wbToolDef === 'function') ? _wbToolDef(tool) : null;
+      if(def && def.cls === '3-anchor'){
+        game.laserAnchor2 = snap;
+        game.laserAnchor2Preview = snap;
+        game.laserAnchor3Preview = null;
+        game.laserPhase = 'anchor3';
+        toast('Anchor ② set · click channel width');
+        e.stopPropagation();
+        return;
+      }
+      commitLaserTwoAnchor(tool, a1, snap);
+      // v0.8M#24 — Laser exits ENTIRELY after committing a tool. Previously
+      // it returned to 'idle' (aim mode still on), expecting the player to
+      // press 2 to leave. New behavior: drop tool → laser off, player back
+      // to walking. Press 2 again to re-arm.
+      game.laserAiming = false;
+      game.laserPhase  = 'idle';
+      game.laserTool   = null;
+      game.laserAnchor1 = null;
+      game.laserAnchor2 = null;
+      game.laserAnchor2Preview = null;
+      game.laserAnchor3Preview = null;
+      try { closeLaserSpawnMenu(); } catch(_){}
+      try { if(window.crLaserCursor) window.crLaserCursor.disarm('laser-commit'); } catch(_){}
+      e.stopPropagation();
+      return;
+    }
+    if(game.laserPhase === 'anchor3'){
+      const snap = snapToCandle(sx, sy);
+      const a1 = game.laserAnchor1;
+      const a2 = game.laserAnchor2;
+      const tool = game.laserTool;
+      if(!a1 || !a2){
+        toast('Missing channel anchors — restart placement');
+        game.laserPhase = 'idle';
+        e.stopPropagation();
+        return;
+      }
+      try { spawnParticles(snap.sx, snap.sy, '#22d3ee', 12, 120); } catch(_){}
+      commitLaserThreeAnchor(tool, a1, a2, snap);
+      game.laserAiming = false;
+      game.laserPhase  = 'idle';
+      game.laserTool   = null;
+      game.laserAnchor1 = null;
+      game.laserAnchor2 = null;
+      game.laserAnchor2Preview = null;
+      game.laserAnchor3Preview = null;
+      try { closeLaserSpawnMenu(); } catch(_){}
+      try { if(window.crLaserCursor) window.crLaserCursor.disarm('laser-commit'); } catch(_){}
+      e.stopPropagation();
+      return;
+    }
+    // Default (idle): open the spawn menu at this price/wx.
+    const priceAtClick = yToPrice(sy);
+    const wxAtClick = wXFromS(sx);
+    openLaserSpawnMenu(sx, sy, wxAtClick, priceAtClick);
+    e.stopPropagation();
+    return;
+  }
+
   // v0.8b — overlay hit-test first; if hit, start an overlay-drag (not a camera-pan).
   const hit = hitOverlay(sx, sy);
   if(hit){
     game.selectedOverlay = hit;
+    if(hit.kind === 'bracket' && hit.overlay && hit.overlay.outcome){
+      cv.style.cursor = 'default';
+      e.stopPropagation();
+      return;
+    }
     const snap = {};
     if(hit.kind === 'bracket'){ snap.entry = hit.overlay.entry; snap.tp = hit.overlay.tp; snap.sl = hit.overlay.sl; }
     else if(hit.kind === 'oco'){ snap.upper = hit.overlay.upper; snap.lower = hit.overlay.lower; }
@@ -48981,6 +50589,18 @@ cv.addEventListener('mousedown', e=>{
   // v0.8k#24k — In cursor mode the system pointer stays hidden through the pan.
   cv.style.cursor = game.cursorMode ? 'none' : 'grabbing';
 });
+function openUniformObjectSettingsFromHit(hit){
+  if(!hit || !hit.overlay || typeof openTvSettingsDialog !== 'function') return false;
+  const o = hit.overlay;
+  let kind = hit.kind || o.kind || 'object';
+  if(typeof kind === 'string' && kind.indexOf('tv:') === 0) kind = kind.slice(3);
+  if(!o.kind || o.kind !== kind){
+    try { o.kind = kind; } catch(_){}
+  }
+  try { openTvSettingsDialog(o); return true; }
+  catch(_){ try { toast('Settings unavailable'); } catch(__){} }
+  return false;
+}
 // v0.8k#24f — Dbl-click a placed overlay to open its editor (tuner). Single-
 // click already selects + drags; this gives the player a keyboard-free tune
 // path after the laser menu closes. Bracket / Ladder have dedicated editors;
@@ -48992,7 +50612,7 @@ cv.addEventListener('dblclick', e=>{
   if(game.laserAiming) return;
   const r = cv.getBoundingClientRect();
   const sx = e.clientX - r.left, sy = e.clientY - r.top;
-  const hit = hitOverlay(sx, sy);
+  const hit = hitOverlay(sx, sy) || ((typeof hitIndicatorAt === 'function') ? hitIndicatorAt(sx, sy) : null);
   if(!hit) return;
   // v1.0.1 — If the double-clicked overlay is armed (blue laser), open
   // its panel card with full config + close-trade. Otherwise fall through
@@ -49006,142 +50626,28 @@ cv.addEventListener('dblclick', e=>{
     }
   } catch(_){}
   e.stopPropagation();
-  if(hit.kind === 'bracket' && !hit.overlay.outcome){
-    // v0.8M#25 — Seed bracketEditor with the placed bracket's values + flag
-    // it as an EDIT (editingId = overlay.id). confirmBracket() then ADAPTS
-    // the existing bracket in place instead of duplicating.
-    const b = hit.overlay;
-    const slDistance = Math.abs(b.entry - b.sl);
-    const rr = slDistance > 0 ? Math.abs(b.tp - b.entry) / slDistance : 2;
-    bracketEditor.entry = b.entry;
-    bracketEditor.slDistance = slDistance;
-    bracketEditor.side = b.side;
-    bracketEditor.size = 20;
-    bracketEditor.rr = rr;
-    openBracketEditor();
-    // openBracketEditor resets fields to defaults; re-apply the seeds AND
-    // mark as editing this specific overlay.
-    bracketEditor.entry = b.entry;
-    bracketEditor.slDistance = slDistance;
-    bracketEditor.side = b.side;
-    bracketEditor.rr = rr;
-    bracketEditor.editingId = b.id;
-    try { toast('Bracket · adapt mode'); } catch(_){}
-    log('edit bracket');
+  if(hit.kind === 'indicator'){
+    openIndicatorConfigFromHit(hit);
+    return;
+  }
+  if(hit.kind === 'bracket'){
+    openUniformObjectSettingsFromHit(hit);
+    log(hit.overlay && hit.overlay.outcome ? 'settings bracket resolved' : 'settings bracket');
     return;
   }
   if(hit.kind === 'ladder'){
-    const l = hit.overlay;
-    if(!(l.prices && l.prices.length)){
-      ladderEditor.entry = l.p;
-      ladderEditor.spacing = l.spacing;
-      ladderEditor.side = l.side;
-      ladderEditor.rungs = l.rungs;
-      ladderEditor.size = 4;
-    }
-    openLadderEditor();
-    if(!(l.prices && l.prices.length)){
-      const e1 = document.getElementById('ldEntry'); if(e1) e1.value = l.p.toFixed(2);
-      const e2 = document.getElementById('ldSpacing'); if(e2) e2.value = l.spacing;
-      const e3 = document.getElementById('ldSide'); if(e3) e3.value = l.side;
-      const e4 = document.getElementById('ldRungs'); if(e4) e4.value = l.rungs;
-      try { updateLadderHud(); } catch(_){}
-    }
-    try { toast('Ladder · editor seeded'); } catch(_){}
-    log('edit ladder');
+    openUniformObjectSettingsFromHit(hit);
+    log('settings ladder');
     return;
   }
   if(hit.kind === 'oco'){
-    try { toast('OCO · drag handles to adjust · Del to remove'); } catch(_){}
+    openUniformObjectSettingsFromHit(hit);
+    log('settings oco');
     return;
   }
   if(hit.kind === 'hline'){
-    // v0.9.24 — Tagged trade primitives (limit/stopLoss/takeProfit) open a
-    // mini-settings dialog instead of just the plain HLine drag toast.
-    const a = hit.overlay;
-    if(a && a.tradeKind){
-      // v0.9.25 — All 11 primitives have a label; 2-anchor primitives append
-      // the anchor suffix so the prompt reads "TWAP·a1 price ($78,500):".
-      const TRADE_LABEL = {
-        limit:'Limit', stopLossAt:'Stop Loss', takeProfitAt:'Take Profit',
-        trailingTpAt:'Trailing TP', scaleOutAt:'Scale Out', magnetAt:'Magnet',
-        perpFlipAt:'Perp Flip', borrowShortAt:'Borrow Short', liqGuardAt:'Liq Guard',
-        twap:'TWAP', iceberg:'Iceberg',
-      };
-      const baseLbl = TRADE_LABEL[a.tradeKind] || a.tradeKind;
-      const lbl = baseLbl + (a.tradeAnchor ? '·'+a.tradeAnchor : '');
-      const cur = (typeof fmtPrice === 'function') ? fmtPrice(a.py) : a.py;
-      // v0.9.94 — Coach-style prompt instead of native window.prompt.
-      // .then() chain so the surrounding click handler stays sync.
-      const _applyPx = (newPx) => {
-        if(newPx === null || newPx === undefined || newPx === '') return;
-        const px = parseFloat(newPx);
-        if(!isFinite(px) || px <= 0){ try { toast('Invalid price'); } catch(_){} return; }
-        a.py = px;
-        try {
-          const linkedOrder = sdk.openOrders.find(o => o.id === a.tradeOrderId);
-          if(linkedOrder){
-            if(a.tradeKind === 'limit') linkedOrder.price = px;
-            else if(a.tradeKind === 'stopLossAt') linkedOrder.sl = px;
-            else if(a.tradeKind === 'takeProfitAt') linkedOrder.tp = px;
-            else if(a.tradeKind === 'trailingTpAt') linkedOrder.trail = px;
-            else if(a.tradeKind === 'scaleOutAt') linkedOrder.scaleAt = px;
-            else if(a.tradeKind === 'magnetAt') linkedOrder.magnet = px;
-            else if(a.tradeKind === 'perpFlipAt') linkedOrder.flipAt = px;
-            else if(a.tradeKind === 'borrowShortAt') linkedOrder.borrowAt = px;
-            else if(a.tradeKind === 'liqGuardAt') linkedOrder.liqGuard = px;
-            else if(a.tradeKind === 'twap'){
-              if(a.tradeAnchor === 'a1') linkedOrder.priceA1 = px;
-              else if(a.tradeAnchor === 'a2') linkedOrder.priceA2 = px;
-            } else if(a.tradeKind === 'iceberg'){
-              if(a.tradeAnchor === 'hi') linkedOrder.priceHi = px;
-              else if(a.tradeAnchor === 'lo') linkedOrder.priceLo = px;
-            }
-          }
-        } catch(_){}
-        try { toast(lbl + ' · ' + (typeof fmtPrice === 'function' ? fmtPrice(px) : px)); } catch(_){}
-      };
-      if(typeof window.crPrompt === 'function'){
-        window.crPrompt({
-          title: lbl + ' price',
-          body:  'Current: ' + cur,
-          default: a.py.toFixed(2),
-        }).then(_applyPx);
-        return;
-      }
-      // Fallback to native prompt if the modal helper isn't available.
-      const newPx = (typeof prompt === 'function') ? prompt(lbl + ' price (current ' + cur + '):', String(a.py.toFixed(2))) : null;
-      if(newPx === null) return;
-      const px = parseFloat(newPx);
-      if(!isFinite(px) || px <= 0){ try { toast('Invalid price'); } catch(_){} return; }
-      a.py = px;
-      // Re-route to the SDK so the underlying order updates.
-      try {
-        const linkedOrder = sdk.openOrders.find(o => o.id === a.tradeOrderId);
-        if(linkedOrder){
-          if(a.tradeKind === 'limit') linkedOrder.price = px;
-          else if(a.tradeKind === 'stopLossAt') linkedOrder.sl = px;
-          else if(a.tradeKind === 'takeProfitAt') linkedOrder.tp = px;
-          else if(a.tradeKind === 'trailingTpAt'){ if(linkedOrder.trailing) linkedOrder.trailing.activatePrice = px; }
-          else if(a.tradeKind === 'scaleOutAt') linkedOrder.scaleOutPrice = px;
-          else if(a.tradeKind === 'magnetAt'){ if(linkedOrder.magnet) linkedOrder.magnet.target = px; }
-          else if(a.tradeKind === 'perpFlipAt') linkedOrder.flipPrice = px;
-          else if(a.tradeKind === 'borrowShortAt') linkedOrder.price = px;
-          else if(a.tradeKind === 'liqGuardAt') linkedOrder.guardPrice = px;
-          else if(a.tradeKind === 'twap'){
-            if(a.tradeAnchor === 'a1') linkedOrder.fromPrice = px;
-            else if(a.tradeAnchor === 'a2') linkedOrder.toPrice = px;
-          }
-          else if(a.tradeKind === 'iceberg'){
-            if(a.tradeAnchor === 'hi') linkedOrder.fromPrice = px;
-            else if(a.tradeAnchor === 'lo') linkedOrder.toPrice = px;
-          }
-        }
-      } catch(_){}
-      try { toast(lbl + ' → ' + fmtPrice(px)); } catch(_){}
-      return;
-    }
-    try { toast('HLine · drag to move · Del to remove'); } catch(_){}
+    openUniformObjectSettingsFromHit(hit);
+    log('settings hline');
     return;
   }
   if(hit.kind === 'vwap'){
@@ -59636,8 +61142,8 @@ const crL3 = (function(){
       '/* v1.0.29 — Top-right BLUE LASER status pill removed entirely.',
       '   Status is communicated through the bottom-right terminal stack',
       '   (toast() → crNotify()) which already logs "● Blue laser ON ·',
-      '   click a placed tool" / "Blue laser OFF" on every toggle. The',
-      '   blue cursor + electrified halo on armed tools provide the',
+      '   click a placed tool or indicator" / "Blue laser OFF" on every toggle. The',
+      '   blue cursor + electrified halo on armed tools/indicators provide the',
       '   continuous visual cue. One UI surface, no duplication. */',
       '#crBlueLaserDot{display:none !important}',
       '/* Config pane + panel card overlays */',
@@ -59669,6 +61175,10 @@ const crL3 = (function(){
       '#crBlCard .kvs{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font:500 11px ui-monospace,Menlo,monospace;color:var(--dim);margin-top:6px}',
       '#crBlCard .kvs .k{color:#7aa3d8}',
       '#crBlCard .kvs .v{color:var(--fg)}',
+      '#crBlCard .cr-bl-tabs{display:flex;gap:8px;margin:0 0 12px;border-bottom:1px solid rgba(255,255,255,.08)}',
+      '#crBlCard .cr-bl-tabs button{appearance:none;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--dim);padding:7px 2px 9px;font:800 10px ui-monospace,Menlo,monospace;letter-spacing:.55px;text-transform:uppercase;cursor:pointer}',
+      '#crBlCard .cr-bl-tabs button.on{color:#ffd166;border-bottom-color:#ffd166}',
+      '#crBlCard [data-cr-bl-pane][hidden]{display:none!important}',
     ].join('\n');
     document.head.appendChild(css);
   }
@@ -59677,7 +61187,7 @@ const crL3 = (function(){
     const dot = document.createElement('div');
     dot.id = 'crBlueLaserDot';
     // v1.0.27 — Match the terminal log line format ("> message").
-    dot.innerHTML = '<span class="pulse"></span>&gt; BLUE LASER · click a tool to arm · 4 to exit';
+    dot.innerHTML = '<span class="pulse"></span>&gt; BLUE LASER · click a tool or indicator to arm · 4 to exit';
     document.body.appendChild(dot);
     const ov = document.createElement('div');
     ov.id = 'crBlOverlay';
@@ -59687,7 +61197,23 @@ const crL3 = (function(){
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────
-  function _kindLabel(k){
+  function _indicatorIdOf(overlay){
+    if(!overlay) return null;
+    if(overlay.indicatorId) return String(overlay.indicatorId);
+    if(typeof overlay.id === 'string' && overlay.id.indexOf('ind:') === 0) return overlay.id.slice(4);
+    return null;
+  }
+  function _sameOverlay(a, b){
+    const ai = _indicatorIdOf(a), bi = _indicatorIdOf(b);
+    if(ai || bi) return !!ai && !!bi && ai === bi;
+    return a === b;
+  }
+  function _kindLabel(k, overlay){
+    if(k === 'indicator'){
+      if(overlay && overlay.label) return overlay.label;
+      const iid = _indicatorIdOf(overlay);
+      return iid && typeof crIndicatorDisplayLabel === 'function' ? crIndicatorDisplayLabel(iid) : 'Indicator';
+    }
     if(typeof k === 'string' && k.indexOf('tv:') === 0){
       const sub = k.slice(3);
       const meta = (typeof tvChartObjectMeta === 'function') ? tvChartObjectMeta(sub) : null;
@@ -59703,6 +61229,13 @@ const crL3 = (function(){
     const label = String(b.type || 'dex').toUpperCase() + ' · ' + (b.name || 'Jupiter');
     let conn = b.type === 'cex' ? 'paper connector' : 'wallet offline';
     try {
+      if(typeof window._crBrokerConnectionStatus === 'function'){
+        const rec = window._crBrokerConnectionStatus(b);
+        if(rec && rec.status === 'connected') conn = rec.mode === 'wallet' ? 'wallet connected' : 'paper connected';
+        else if(rec && rec.label) conn = rec.label;
+      }
+    } catch(_){}
+    try {
       if(b.type !== 'cex' && typeof crWallet !== 'undefined' && crWallet.isConnected && crWallet.isConnected()) conn = 'wallet connected';
     } catch(_){}
     return { type:b.type || 'dex', name:b.name || 'Jupiter', label, conn };
@@ -59715,6 +61248,7 @@ const crL3 = (function(){
     if(hit.kind === 'ladder')  return o.p || (o.prices && o.prices[0]) || null;
     if(hit.kind === 'hline')   return o.py;
     if(hit.kind === 'vwap')    return (o.poly && o.poly[0] && o.poly[0].py) || null;
+    if(hit.kind === 'indicator') return (typeof o.refPrice === 'number') ? o.refPrice : o.py;
     if(typeof hit.kind === 'string' && hit.kind.indexOf('tv:') === 0) return _tvRefPrice(o);
     return null;
   }
@@ -59726,6 +61260,29 @@ const crL3 = (function(){
     return null;
   }
   function _fmt(p){ return (typeof p === 'number' && isFinite(p)) ? ('$' + p.toFixed(2)) : '—'; }
+  function _showCardTab(card, tab){
+    if(!card) return;
+    card.querySelectorAll('[data-cr-bl-tab]').forEach(btn => btn.classList.toggle('on', btn.getAttribute('data-cr-bl-tab') === tab));
+    card.querySelectorAll('[data-cr-bl-pane]').forEach(pane => {
+      pane.hidden = pane.getAttribute('data-cr-bl-pane') !== tab;
+    });
+  }
+  function _wireCardTabs(card, initial){
+    if(!card) return;
+    card.querySelectorAll('[data-cr-bl-tab]').forEach(btn => {
+      btn.addEventListener('click', () => _showCardTab(card, btn.getAttribute('data-cr-bl-tab')));
+    });
+    _showCardTab(card, initial || 'route');
+  }
+  function _renderCardAlarm(card, hit){
+    const pane = card && card.querySelector('[data-cr-bl-pane="alarm"]');
+    if(!pane) return;
+    if(window.crObjectAlarm && typeof window.crObjectAlarm.renderPanel === 'function'){
+      window.crObjectAlarm.renderPanel(pane, hit, { surface:'blue-laser' });
+    } else {
+      pane.innerHTML = '<div class="info">Alarm setup is still loading.</div>';
+    }
+  }
 
   // ── Toggle ──────────────────────────────────────────────────────────
   STATE.toggle = function(){
@@ -59733,7 +61290,7 @@ const crL3 = (function(){
     document.body.classList.toggle('cr-blue-laser-on', STATE.active);
     if(STATE.active){
       try { if(window.crLaserCursor) window.crLaserCursor.arm('blue', { source:'hotkey-4', exclusive:true }); } catch(_){}
-      try { toast('● Blue laser ON · click a placed tool'); } catch(_){}
+      try { toast('● Blue laser ON · click a placed tool or indicator'); } catch(_){}
     } else {
       try { if(window.crLaserCursor) window.crLaserCursor.disarm('hotkey-4-toggle'); } catch(_){}
       try { toast('Blue laser OFF'); } catch(_){}
@@ -59741,7 +61298,7 @@ const crL3 = (function(){
     }
   };
 
-  // ── Arm flow (single click on a placed tool) ────────────────────────
+  // ── Arm flow (single click on a placed tool or indicator) ───────────
   STATE.armFromHit = function(hit, sx, sy){
     const card = document.getElementById('crBlCard');
     if(!card) return;
@@ -59749,22 +61306,35 @@ const crL3 = (function(){
     const isArmed = STATE.isArmed(hit.overlay);
     const broker = _brokerState();
     card.innerHTML =
-      '<h3>Arm ' + _kindLabel(hit.kind) + (px != null ? ' @ ' + _fmt(px) : '') + '</h3>' +
+      '<h3>Arm ' + _kindLabel(hit.kind, hit.overlay) + (px != null ? ' @ ' + _fmt(px) : '') + '</h3>' +
       '<div class="sub">Configured venue · ' + broker.label + ' · ' + broker.conn + '</div>' +
-      '<div class="grid">' +
-        '<button class="route buy"  data-side="buy"   data-mode="market"><span>BUY</span><span class="lb">market</span></button>' +
-        '<button class="route sell" data-side="sell"  data-mode="market"><span>SELL</span><span class="lb">market</span></button>' +
-        '<button class="route"      data-side="buy"   data-mode="twap"><span>TWAP</span><span class="lb">5 slices · 10s</span></button>' +
-        '<button class="route"      data-side="buy"   data-mode="ladder"><span>LADDER</span><span class="lb">3 rungs · 0.5%</span></button>' +
+      '<div class="cr-bl-tabs"><button class="on" data-cr-bl-tab="route" type="button">Route</button><button data-cr-bl-tab="alarm" type="button">Alarm</button></div>' +
+      '<div data-cr-bl-pane="route">' +
+        '<div class="grid">' +
+          '<button class="route buy"  data-side="buy"   data-mode="market"><span>BUY</span><span class="lb">market</span></button>' +
+          '<button class="route sell" data-side="sell"  data-mode="market"><span>SELL</span><span class="lb">market</span></button>' +
+          '<button class="route"      data-side="buy"   data-mode="twap"><span>TWAP</span><span class="lb">5 slices · 10s</span></button>' +
+          '<button class="route"      data-side="buy"   data-mode="ladder"><span>LADDER</span><span class="lb">3 rungs · 0.5%</span></button>' +
+          '<button class="route"      data-side="buy"   data-mode="chain"><span>CHAIN</span><span class="lb">if / then / else</span></button>' +
+        '</div>' +
+        '<div class="info">After arming, double-click this tool or indicator to open its panel card with the close-trade button.' +
+          (isArmed ? ' <b>Already armed — picking a new route updates the config.</b>' : '') + '</div>' +
       '</div>' +
-      '<div class="info">After arming, double-click this tool to open its panel card with the close-trade button.' +
-        (isArmed ? ' <b>Already armed — picking a new route updates the config.</b>' : '') + '</div>' +
+      '<div data-cr-bl-pane="alarm" hidden></div>' +
       '<div class="row"><button data-act="cancel">Cancel</button></div>';
     document.getElementById('crBlOverlay').classList.add('on');
+    _renderCardAlarm(card, hit);
+    _wireCardTabs(card, 'route');
     card.querySelectorAll('button.route').forEach(b => {
       b.addEventListener('click', () => {
         const side = b.getAttribute('data-side');
         const mode = b.getAttribute('data-mode');
+        if(mode === 'chain'){
+          const node = (typeof assignExecNode === 'function') ? assignExecNode(hit) : null;
+          _closeCard();
+          if(typeof openChainBuilder === 'function') openChainBuilder(node && node.id);
+          return;
+        }
         STATE._arm(hit, side, mode);
         _closeCard();
       });
@@ -59779,22 +61349,22 @@ const crL3 = (function(){
       hit.overlay._blueArmed = { side, mode, ts: Date.now() };
     }
     // Replace any prior entry for this same overlay.
-    STATE.armed = STATE.armed.filter(a => a.overlay !== hit.overlay);
+    STATE.armed = STATE.armed.filter(a => !_sameOverlay(a.overlay, hit.overlay));
     STATE.armed.push({ kind: hit.kind, overlay: hit.overlay, side, mode, size: 1, ts: Date.now() });
     STATE.armedCount = STATE.armed.length;
     try {
       const px = _refPrice(hit);
-      crNotify('● ' + _kindLabel(hit.kind) + ' armed · ' + side.toUpperCase() + ' ' + mode + (px != null ? ' @ ' + _fmt(px) : ''));
+      crNotify('● ' + _kindLabel(hit.kind, hit.overlay) + ' armed · ' + side.toUpperCase() + ' ' + mode + (px != null ? ' @ ' + _fmt(px) : ''));
     } catch(_){}
   };
 
   STATE.isArmed = function(overlay){
-    if(!overlay || !overlay._blueArmed) return false;
-    return STATE.armed.some(a => a.overlay === overlay);
+    if(!overlay) return false;
+    return STATE.armed.some(a => _sameOverlay(a.overlay, overlay));
   };
 
   STATE.disarm = function(overlay){
-    STATE.armed = STATE.armed.filter(a => a.overlay !== overlay);
+    STATE.armed = STATE.armed.filter(a => !_sameOverlay(a.overlay, overlay));
     if(overlay) delete overlay._blueArmed;
     STATE.armedCount = STATE.armed.length;
   };
@@ -59808,7 +61378,8 @@ const crL3 = (function(){
   STATE.onOverlayShot = function(overlay){
     if(!overlay || !STATE.isArmed(overlay)) return;
     try {
-      if(typeof sdk !== 'undefined' && sdk.cancelOrder){
+      const indicatorTarget = !!_indicatorIdOf(overlay);
+      if(!indicatorTarget && typeof sdk !== 'undefined' && sdk.cancelOrder){
         if(overlay.id != null)       sdk.cancelOrder(overlay.id);
         if(overlay.upperId != null)  sdk.cancelOrder(overlay.upperId);
         if(overlay.lowerId != null)  sdk.cancelOrder(overlay.lowerId);
@@ -59825,28 +61396,34 @@ const crL3 = (function(){
   STATE.openPanelCard = function(hit){
     const card = document.getElementById('crBlCard');
     if(!card) return;
-    const a = STATE.armed.find(x => x.overlay === hit.overlay);
+    const a = STATE.armed.find(x => _sameOverlay(x.overlay, hit.overlay));
     if(!a){ STATE.armFromHit(hit); return; }
     const px = _refPrice(hit);
     const sideColor = a.side === 'buy' ? '#26a69a' : '#ef5350';
     const broker = _brokerState();
     card.innerHTML =
-      '<h3 style="color:' + sideColor + '">' + a.side.toUpperCase() + ' · ' + _kindLabel(a.kind) + '</h3>' +
+      '<h3 style="color:' + sideColor + '">' + a.side.toUpperCase() + ' · ' + _kindLabel(a.kind, a.overlay) + '</h3>' +
       '<div class="sub">Armed ' + new Date(a.ts).toLocaleTimeString() + ' · ' + broker.label + '</div>' +
-      '<div class="kvs">' +
-        '<span class="k">route</span>   <span class="v">' + a.mode + '</span>' +
-        '<span class="k">price</span>   <span class="v">' + _fmt(px) + '</span>' +
-        '<span class="k">size</span>    <span class="v">' + a.size + ' contracts</span>' +
-        '<span class="k">venue</span>   <span class="v">' + broker.label + '</span>' +
-        '<span class="k">connection</span><span class="v">' + broker.conn + '</span>' +
+      '<div class="cr-bl-tabs"><button class="on" data-cr-bl-tab="route" type="button">Route</button><button data-cr-bl-tab="alarm" type="button">Alarm</button></div>' +
+      '<div data-cr-bl-pane="route">' +
+        '<div class="kvs">' +
+          '<span class="k">route</span>   <span class="v">' + a.mode + '</span>' +
+          '<span class="k">price</span>   <span class="v">' + _fmt(px) + '</span>' +
+          '<span class="k">size</span>    <span class="v">' + a.size + ' contracts</span>' +
+          '<span class="k">venue</span>   <span class="v">' + broker.label + '</span>' +
+          '<span class="k">connection</span><span class="v">' + broker.conn + '</span>' +
+        '</div>' +
+        '<div class="info">Blue Laser owns the trade route. Terminal cockpit surfaces mirror this state without firing orders.</div>' +
       '</div>' +
-      '<div class="info">Blue Laser owns the trade route. Terminal cockpit surfaces mirror this state without firing orders.</div>' +
+      '<div data-cr-bl-pane="alarm" hidden></div>' +
       '<div class="row">' +
         '<button data-act="reroute">Re-route</button>' +
         '<button data-act="close" class="danger">Close trade</button>' +
         '<button data-act="dismiss">Dismiss</button>' +
       '</div>';
     document.getElementById('crBlOverlay').classList.add('on');
+    _renderCardAlarm(card, hit);
+    _wireCardTabs(card, 'route');
     card.querySelector('[data-act="reroute"]').addEventListener('click', () => {
       _closeCard();
       STATE.armFromHit(hit);
@@ -59863,7 +61440,8 @@ const crL3 = (function(){
     if(!o) return;
     try {
       // Best-effort cancel via the SDK if there's an underlying order id.
-      if(typeof sdk !== 'undefined' && sdk.cancelOrder){
+      const indicatorTarget = !!_indicatorIdOf(o);
+      if(!indicatorTarget && typeof sdk !== 'undefined' && sdk.cancelOrder){
         if(o.id != null)       sdk.cancelOrder(o.id);
         if(o.upperId != null)  sdk.cancelOrder(o.upperId);
         if(o.lowerId != null)  sdk.cancelOrder(o.lowerId);
@@ -59871,7 +61449,7 @@ const crL3 = (function(){
       }
     } catch(_){}
     STATE.disarm(o);
-    try { crNotify('Trade closed · ' + _kindLabel(hit.kind), 'warn'); } catch(_){}
+    try { crNotify('Trade closed · ' + _kindLabel(hit.kind, hit.overlay), 'warn'); } catch(_){}
   }
 
   function _closeCard(){
@@ -60096,6 +61674,15 @@ const crL3 = (function(){
         if(o.points && o.points.length >= 2){
           const pts = o.points.map(p => ({ x: sX(p.wx), y: priceToY(p.py) }));
           _shimmerCurve(pts, cGlow, cStrong, cWhite, tNow + seed);
+        }
+      } else if(a.kind === 'indicator'){
+        const iid = _indicatorIdOf(o);
+        if(iid && game.indicatorPolys && game.indicatorPolys.length){
+          for(const ip of game.indicatorPolys){
+            if(!ip || ip.id !== iid || !ip.pts || ip.pts.length < 2) continue;
+            const pts = ip.pts.map(p => ({ x:sX(p.wx), y:priceToY(p.py) }));
+            _shimmerCurve(pts, cGlow, cStrong, cWhite, tNow + seed);
+          }
         }
       } else if(typeof a.kind === 'string' && a.kind.indexOf('tv:') === 0){
         const subKind = a.kind.slice(3);

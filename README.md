@@ -28,7 +28,7 @@ game input -> ChartRunnerSDK intent -> risk/wallet/broker boundary -> result
 
 The public repo demonstrates the playable game, the SDK call shape, public devnet proof, and the wallet approval boundary. Premium execution, hosted agents, private market data, replay corpora, bot tuning, and unpublished SDK packages stay gated until they are intentionally released.
 
-Current public prototype version: `v1.0.225`. The latest public release keeps chart objects and active indicator surfaces shootable, draggable, configurable, and Blue Laser-armable where appropriate, with Support, Coach, and Campaign copy aligned to that safe interaction model.
+Current public prototype version: `v1.0.255`. The latest public release adds per-object Alarm setup for tools, primitives, and indicators, a Journal Alert V2 progression view, uniform object settings tabs, Fib Extension interaction repair, and Bracket access/shootability plus trade-size calculator fixes. Public safety boundaries are unchanged: no live broker route, hidden order routing, signing, or production execution was added.
 
 ## Public Boundary
 

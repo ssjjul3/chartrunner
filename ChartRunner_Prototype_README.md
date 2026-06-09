@@ -2,7 +2,7 @@
 
 ChartRunner is a playable browser prototype for a gamified trading SDK. The public build focuses on game mechanics, paper/sandbox primitives, wallet handoff, and devnet-verifiable on-chain source.
 
-Current public prototype version: `v1.0.230`.
+Current public prototype version: `v1.0.255`.
 
 ## Public Surfaces
 
@@ -21,6 +21,8 @@ Bot Terminal public demo work has been archived to `chartrunner-private-ops`; li
 `v1.0.223`-`v1.0.225` keeps the same public boundary while tightening chart interaction parity: advanced chart objects and active indicator surfaces are shootable, draggable, configurable, and Blue Laser-armable where appropriate, and Support, Coach, and Campaign copy now explain that model without adding live broker execution, signing, or hidden order routing.
 
 `v1.0.230` is the public-safe unified cursor/scroller backport from the local v1.0.246-v1.0.251 cursor work. Hotkeys `2`, `3`, `4`, and `5` share one `crLaserCursor` renderer and draw the same dotted source-to-cursor guide for Tools, Primitives, Blue Laser, and Alarm modes. Runner is folded into the Scroller toolbar cycle, the button paints the avatar sprite only while Runner is selected, non-runner scrollers holster Runner/laser input, and in-game COACH.llm stays routed through the headbar while the toolbar launcher is hidden. No broker routing, signing, or live execution was added.
+
+`v1.0.255` is the public object alarms and bracket tools release. Tools, primitives, indicators, Blue Laser object cards, and TradingView-style settings can save local per-level alarms into Journal Alert V2 progression rows; Bracket, ladder, OCO, HLine, VWAP, Fib Retracement, Fib Extension, and indicator settings share Inputs / Style / Alarm / Coordinates / Visibility where applicable. Fib Extension projected levels are hittable/configurable again, Bracket remains accessible after resolution and shootable without destructive removal feedback, and Bracket Inputs now include trade size, leverage, round-trip fee, fee hurdle, and TP net-profit estimates. No broker routing, signing, or live execution was added.
 
 ## Local Use
 
