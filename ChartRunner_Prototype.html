@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.294
-     LAST UPDATED:    2026-06-12  ·  Top-10 live bot roster: only the 10 evaluation-proven bots show/equip/orbit; 19 archived (campaign chapters exempt, one-flag restore).
+     CURRENT VERSION: v1.0.295
+     LAST UPDATED:    2026-06-12  ·  Curated 16-bot live roster: the proven ten + one best-in-domain bot per missing trading domain (range, mean reversion, VWAP value, value-area, breakout, divergence); 13 stay archived.
+     (v1.0.295 = Domain-complete roster (Julian: "it's okay if it is more than 10, the selection should cover all and be best in practice for chartrunner"). CR_LIVE_BOT_IDS grows 10 → 16: + Range Rotation (range rotation domain), Mean Reversion Snapback (+12ΣR real), VWAP Reclaim (+14ΣR, positive all 3 TFs — value reclaim), Volume Profile Rejection (+9ΣR — auction/value-area), Breakout Retest (+6ΣR — breakout domain), Divergence Hunter (sole oscillator-divergence rep, not headless-evaluable — probation via Journal stats; also un-archives campaign Ch.33's teaching bot). Still archived (13): S/R Flip / Stop Run Trap / Momentum Ignition (domain overlaps), Price Action / RSI Failure / OCO Ranger / BARR (proven negative), H&S / FA / Gap Fill (dead detectors), Risk Officer (inert), OI Sentinel (no feed), Harmonic (sample too small). Equip toast retexted to "curated live roster"; CR_BOT_ROSTER_TOP10 flag name kept for compat. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.294 = Top-10 live bot roster (Julian: "only top 10 functioning bots should be in live game"; eval kit _patches/bot-eval-2026-06-12, real BTC 15m/1h/4h run by Julian 2026-06-12). New flag CR_BOT_ROSTER_TOP10 + CR_LIVE_BOT_IDS: live ten = the 8 consistent cross-TF earners (Session Open Drive +57ΣR, Order Block Retest +31, Fib Reaction +25, MTF Alignment +25, Volume Climax +20, SFP +17, Trend Pullback +17, Liquidity Sweep +14) + CCV Hunter (documented-edge flagship) + Confluence Judge (review multiplier) — structure Julian approved via the eval question. The other 19 built-ins get row.archived at seed time (user spec/Forge bots are never archived): hidden from the Bots roster UI (_wbRenderBots) and the Profile bot slots, blocked from player equip (_wbToggleEquip toast), and filtered out of the orbit resolver (_wbEquippedBots) — EXCEPT during campaign chapters, where force-equipped teaching bots (Ch.28–33: det_hs/det_barr/det_fa/det_div) still resolve and orbit. wb.bots rows stay seeded for saves + campaign + restore; H&S/FA/Gap Fill flagged as dead detectors (zero signals on every real TF — fix before restore). Restore = flip the flag. No SDK, broker, signing, on-chain, or live-execution change.)
      LAST UPDATED (prev v1.0.293):  Maps thumbnail repair: cards without a usable thumbnail (share-link imports strip thumbs; saves with no live canvas) no longer show the browser broken-image icon — placeholder glyph fallback in both card renderers, onerror guard for corrupt data URLs, and blank-black captures are dropped at save time.
      (v1.0.293 = Maps thumbnail repair (Julian: "maps looks buggy" — two cards showed the broken-image icon). Root cause: both map card templates rendered <img class="thumb" src="${m.thumb || ''}"> — an empty/missing thumb (share-link imports delete it by design, runner_wallet saves and saves made without a live #cv canvas never had one) produced src="" → the browser broken-image glyph. Fix: shared _crMapThumbHTML(m) renders the .thumb as a wrapper div with a centered dim ▦ glyph; a valid data:image thumb overlays it via an absolutely-positioned img with onerror display:none (corrupt data URLs fall back to the glyph instead of the broken icon). Used by BOTH the desktop Maps grid and the phone Maps list. PLUS snapshot() blank-capture guard: after drawing #cv into the 240×90 thumb canvas, 12 sample pixels are read — if all are near-black (≤8/255 on every channel) the capture is discarded (thumb:'') so splash/desktop saves get the placeholder instead of a black tile. No SDK, broker, signing, on-chain, or live-execution change.)
@@ -46619,10 +46620,27 @@ function _botEnableIndicator(id){
 // blocked from player equip, and filtered out of the orbit resolver outside
 // campaign. H&S / FA / Gap Fill produced ZERO signals on every real TF —
 // dead detectors, fix before any restore. Restore = flip the flag.
-const CR_BOT_ROSTER_TOP10 = true;
+const CR_BOT_ROSTER_TOP10 = true; // historical name — roster is the curated 16 since v1.0.295
+// v1.0.295 — domain-complete roster (Julian: "it's okay if it is more than 10,
+// the selection should cover all and be best in practice"). The proven ten
+// plus the best representative per missing trading domain: Range Rotation
+// (range rotation), Mean Reversion Snapback (+12ΣR real), VWAP Reclaim (+14,
+// positive on all 3 TFs — value reclaim), Volume Profile Rejection (+9,
+// auction/value-area), Breakout Retest (+6, breakout domain), Divergence
+// Hunter (sole oscillator-divergence rep, NOT headless-evaluated — on
+// probation via Journal stats). Still archived: domain overlaps (S/R Flip,
+// Stop Run Trap, Momentum Ignition), proven losers (Price Action −36ΣR,
+// RSI Failure −21, OCO Ranger −14, BARR), dead detectors (H&S/FA/Gap Fill —
+// zero signals on every real TF), inert (Risk Officer 0 reviews, OI Sentinel
+// no feed), Harmonic (sample too small).
 const CR_LIVE_BOT_IDS = new Set([
+  // proven earners (real BTC eval 2026-06-12)
   'det_opendrive', 'det_orderblock', 'det_fibreact', 'det_mtfalign', 'det_climax',
-  'det_sfp', 'det_pullback', 'det_liquidity', 'det_ccv', 'det_confluence',
+  'det_sfp', 'det_pullback', 'det_liquidity',
+  // flagship + meta
+  'det_ccv', 'det_confluence',
+  // domain-coverage additions (v1.0.295)
+  'det_rangerotation', 'det_meanrev', 'det_vwap', 'det_vpreject', 'det_retest', 'det_div',
 ]);
 function _crBotLive(id){
   if(typeof CR_BOT_ROSTER_TOP10 === 'undefined' || !CR_BOT_ROSTER_TOP10) return true;
@@ -47819,7 +47837,7 @@ function _wbToggleEquip(id){
     // v1.0.294 — archived (non-top-10) bots can't be player-equipped.
     const row = wb.bots.find(b => b.id === id);
     if(row && row.archived){
-      if(typeof toast === 'function') toast('Bot archived — outside the top-10 live roster');
+      if(typeof toast === 'function') toast('Bot archived — outside the curated live roster');
       return;
     }
     if(wb.equipped.length >= WB_MAX_EQUIP){
