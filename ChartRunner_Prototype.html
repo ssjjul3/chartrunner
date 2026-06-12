@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.292
-     LAST UPDATED:    2026-06-12  ·  Alerts merge P1: one ALERTS tab with a COMPACT/DETAILED density toggle (legacy Alerts renderer vs Alert V2 renderer), ALERT V2 button archived, and alarm-mirror bus events deduped out of both feeds. Journal slims to Manual · Paper · Alerts · P&L.
+     CURRENT VERSION: v1.0.293
+     LAST UPDATED:    2026-06-12  ·  Maps thumbnail repair: cards without a usable thumbnail (share-link imports strip thumbs; saves with no live canvas) no longer show the browser broken-image icon — placeholder glyph fallback in both card renderers, onerror guard for corrupt data URLs, and blank-black captures are dropped at save time.
+     (v1.0.293 = Maps thumbnail repair (Julian: "maps looks buggy" — two cards showed the broken-image icon). Root cause: both map card templates rendered <img class="thumb" src="${m.thumb || ''}"> — an empty/missing thumb (share-link imports delete it by design, runner_wallet saves and saves made without a live #cv canvas never had one) produced src="" → the browser broken-image glyph. Fix: shared _crMapThumbHTML(m) renders the .thumb as a wrapper div with a centered dim ▦ glyph; a valid data:image thumb overlays it via an absolutely-positioned img with onerror display:none (corrupt data URLs fall back to the glyph instead of the broken icon). Used by BOTH the desktop Maps grid and the phone Maps list. PLUS snapshot() blank-capture guard: after drawing #cv into the 240×90 thumb canvas, 12 sample pixels are read — if all are near-black (≤8/255 on every channel) the capture is discarded (thumb:'') so splash/desktop saves get the placeholder instead of a black tile. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.292 = Alerts merge P1 — density toggle (per docs/JOURNAL_ALERTS_MERGE_BRAINSTORM_2026-06-12.md option B, Julian-approved). The ALERT V2 tab button joins CR_JRN_TAB_ARCHIVE (alertv2:true); the ALERTS tab now serves BOTH existing views: density choice persists in cr_jrn_alert_density_v1 (default 'detailed' = Alert V2 progression cards; 'compact' = legacy Alerts rows), the tab-click handler maps cat 'alerts' → effective view, and COMPACT/DETAILED chips in both view headers (data-jrn-density) flip the preference and re-render. Both renderers stay verbatim — true renderer merge deferred to SDK extraction. PLUS fired-alarm double-count fix: new _crJrnDedupBusEvents (flag CR_JRN_ALERT_DEDUP, default true) folds bus events carrying an alarmId that still resolves to a live crAlarm row out of _crJrnRenderAlerts AND _crJrnRenderAlertV2 — the alarm row is canonical (one card per alarm instead of three: row + 'Saved alarm:' + 'Alarm fired:' mirrors); lifecycle events for DELETED alarms stay as history; compact-view 'Total alerts' count is now accurate. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.291 = Journal tab consolidation (Julian: archive bot/sessions/notes tabs, move stats content into P&L). New per-tab archive map window.CR_JRN_TAB_ARCHIVE = {bot:true, sessions:true, notes:true, stats:true} next to CR_JRN_KEY; the Journal tab wiring hides archived tab buttons at init (style.display='none') while every view div, renderer, event listener, and localStorage key stays in the DOM/code untouched — restore = flip one key. Notes content keeps persisting to cr_journal_notes_v1 and crAlertBus.toJournalNote keeps appending (storage-level, tab-independent); terminal session tapes keep recording for the hidden Sessions evaluators. Stats fold: _crJrnRenderStats targets a new #crJrnPnlStats grid inside the P&L view when the stats tab is archived (falls back to the archived #crJrnStats view otherwise), and _crJrnRenderPnl calls it so P&L now shows Session P&L / Realized / Win rate / Combined cards + the Total trades / Win rate / Total PnL / Avg R:R expectancy cards + Recent fills in one tab. Support-app JOURNAL hint retexted to the new tab roster. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.290 = Bot executability gate P2 — played-out history walk (Julian: "we only need running ones", screenshot showed a built setup that had already played out next to a running one). _botSetupExecutable(side, entry) gains an opts third arg {idx, uptoIdx}: when the detection anchor index is known, the gate walks candles from anchor+1 up to the player and kills the setup if favorable excursion already reached the default 2R target distance (move played out) or adverse excursion swept 1.5× the stop distance (invalidated) — catching the case the v1.0.289 proximity check misses, where price ran and came BACK near the entry level. Distances stay ATR-scaled (slDist = the 2×ATR reach tol, tpDist = 2R), so the rule holds on every timeframe; fresh anchors (idx == player) skip the walk. Wired at all three v1.0.289 gate points: detector scan accept (r.idx + playerIdx), build-animation completion (st.target.result.idx + playerIdx), and Y-confirm (plan.result.idx, upto derived from player.wx/STEP). Note: most simple detectors anchor at the latest candle (idx = baseIdx+N-1 → empty walk); the walk mainly guards historical-anchor detectors (harmonic D-point etc.). PLUS resolved-zone despawn: on sdk bracketClose, BOT-built visualBrackets (v.bot) are removed ~4s after their outcome lands instead of lingering as played-out chart clutter — player-placed brackets keep their outcome marker unchanged. Together: stale setups don't get built, and built ones leave the chart once they resolve — only RUNNING zones remain. No SDK, broker, signing, on-chain, or live-execution change.)
@@ -67740,7 +67741,18 @@ const crL3 = (function(){
           tmp.width = 240; tmp.height = 90;
           const tctx = tmp.getContext('2d');
           tctx.drawImage(cvOrig, 0, 0, 240, 90);
-          thumb = tmp.toDataURL('image/jpeg', 0.6);
+          // v1.0.293 — blank-capture guard: a save from the splash/desktop
+          // draws a black frame. Sample a 4×3 pixel grid; if every sample is
+          // near-black, drop the capture so the card shows the placeholder
+          // glyph instead of a black tile.
+          let allDark = true;
+          for(let sy = 0; sy < 3 && allDark; sy++){
+            for(let sx = 0; sx < 4 && allDark; sx++){
+              const p = tctx.getImageData(30 + sx * 60, 15 + sy * 30, 1, 1).data;
+              if(p[0] > 8 || p[1] > 8 || p[2] > 8) allDark = false;
+            }
+          }
+          if(!allDark) thumb = tmp.toDataURL('image/jpeg', 0.6);
         }
       }catch{}
       // v0.8k#24n — Capture in-game destruction state too. A map should
@@ -67943,6 +67955,17 @@ const crL3 = (function(){
   // an immediate refresh resolves the title + chart on first paint.
   try { if(typeof renderWidgets === 'function') renderWidgets(); } catch(_){}
 
+  // v1.0.293 — shared map-card thumbnail HTML. Empty / stripped / corrupt
+  // thumbs (share-link imports, no-canvas saves) render a dim glyph
+  // placeholder instead of the browser broken-image icon; a valid thumb
+  // overlays the glyph, and onerror falls back to it.
+  function _crMapThumbHTML(m){
+    const ok = m && typeof m.thumb === 'string' && m.thumb.indexOf('data:image') === 0;
+    return '<div class="thumb" style="position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden">'
+      + '<span style="font-size:20px;opacity:.30;line-height:1">▦</span>'
+      + (ok ? '<img src="' + m.thumb + '" alt="" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display=\'none\'">' : '')
+      + '</div>';
+  }
   // Render the desktop Maps grid + phone Maps list
   function renderMaps(){
     const list = crMaps.readAll();
@@ -67973,7 +67996,7 @@ const crL3 = (function(){
           const toolCount = (m.brackets||[]).length + (m.ladders||[]).length + (m.ocos||[]).length
                           + (m.hlines||[]).length + (m.trendlines||[]).length + (m.vwaps||[]).length;
           card.innerHTML = `
-            <img class="thumb" src="${m.thumb || ''}" alt="">
+            ${_crMapThumbHTML(m)}
             <div class="meta">
               <div class="nm">${escapeHtml(m.name)}</div>
               <div class="sub">${(m.asset||'?').toUpperCase()} · ${m.timeframe||'?'} · ${indCount} ind · ${toolCount} tools</div>
@@ -68072,7 +68095,7 @@ const crL3 = (function(){
           const row = document.createElement('div');
           row.className = 'ph-mapCard';
           row.innerHTML = `
-            <img class="thumb" src="${m.thumb || ''}" alt="">
+            ${_crMapThumbHTML(m)}
             <div class="body">
               <div class="nm">${escapeHtml(m.name)}</div>
               <div class="sub">${(m.asset||'?').toUpperCase()} · ${m.timeframe||'?'} · ${fmtAgo(m.t)}</div>
