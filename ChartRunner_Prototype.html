@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.287
-     LAST UPDATED:    2026-06-12  ·  Leverage ghost row ALWAYS starts closed: every Bracket settings open begins at "⚡ Leverage…" (spot), regardless of stored leverage.
+     CURRENT VERSION: v1.0.288
+     LAST UPDATED:    2026-06-12  ·  Workbench archived: the Tools (Red Laser Loadout) tab moves into the Profile app as a TOOLS tab; Workbench icon/dock hidden, opens redirect to Profile.
+     (v1.0.288 = Workbench archive + Tools→Profile move (Julian: "move tools tab into profile app / archive workbench"). The Red Laser Loadout grid moves verbatim (same wbTool* ids, so the existing equip wiring and _wbRenderTools() work unchanged) into a new Profile → TOOLS tab (data-profview="tools", renders on tab click). Workbench is archived behind window.CR_WORKBENCH_ARCHIVED: desktop icon + dock button hidden, every osOpenWindow('workbench') redirects to Profile with a toast; the window, its remaining tabs (Blue Orders/Strategies/Indicators/Backtest/App Builder/Theme), and all wb state stay in the DOM for one-flag restore. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.287 = Leverage default-closed (Julian: "by default leverage button should be closed like in picture"). The v1.0.277/279 expanded-if-stored-leverage>1 initial state is removed: leverageOn starts false on every settings open, so the Inputs tab always shows the dim dashed "⚡ Leverage…" ghost row and spot math (leverage 1) until the player expands it; the ghost click still re-seeds the input from the stored calcState.leverage. No math, SDK, broker, signing, or live-execution change.)
      (v1.0.286 = Bracket Risk-field archive (Julian: "archive risk field"). The Risk ($) input in the object-settings Bracket Inputs tab is archived: riskInput stays in the DOM inside a display:none wrapper (data-cr-archived="bracket-risk-field-v1.0.286") so readCalcConfig, projected-profit rows, and the apply path keep reading its default/last value — only the visible field is gone. The in-run Precise-input card and the calculator assumption field are untouched. No math, SDK, broker, signing, or live-execution change.)
      (v1.0.285 = Lite-profile mock swap + Open-positions archive (Julian: "archive open positions" / "swap should open a mock swap window chart -> run"). The in-game Profile Wallet Swap button no longer opens the LI.FI cross-chain iframe — it opens crMockSwap: a DEX-style mock window with amount input, MAX, locked 100:1 rate, live $CHART/$RUN balances, and a confirm that loops the existing exchangeChartToRun() (same mutation, HUD pills, shop, desktop card, floats; 100-swap safety cap). LI.FI module stays dormant. The Open-positions card (Brackets/Ladders/OCO) in the wallet tab is archived via display:none with ids intact. MOCK = local only: no network, wallet, signing, or on-chain anything.)
@@ -10184,6 +10185,8 @@
           <div class="lbl">Workbench</div>
           <div class="kbd">Bot · Forge</div>
         </button>
+        <!-- v1.0.288 — Workbench desktop icon hidden via the archive script
+             below (CR_WORKBENCH_ARCHIVED); osOpenWindow redirects to Profile. -->
         <!-- v0.9.26 — Trading Journal: documents and comments manual + bot trades.
              Columns mirror Igor's Trade Entry Checklist (asset, TF, side, entry,
              SL, TP, R:R, risk%, confluence pre-trade, setup type, ref levels,
@@ -11229,8 +11232,33 @@
           <div class="crTerm-tabs" style="margin-top:8px">
             <button class="crTerm-tab active" data-profview="player" type="button">PLAYER</button>
             <button class="crTerm-tab" data-profview="bal" type="button">WALLET</button>
+            <!-- v1.0.288 — TOOLS tab moved here from the archived Workbench app. -->
+            <button class="crTerm-tab" data-profview="tools" type="button">TOOLS</button>
             <button class="crTerm-tab" data-profview="stats" type="button" style="display:none">STATS</button>
             <button class="crTerm-tab" data-profview="missions" type="button" style="display:none">MISSIONS</button>
+          </div>
+          <!-- v1.0.288 — TOOLS view: Red Laser Loadout MOVED from the archived
+               Workbench (Julian: "move tools tab into profile app / archive
+               workbench"). Ids (wbTool*) unchanged so the existing equip
+               wiring + _wbRenderTools() work in the new home. -->
+          <div class="crTerm-view hidden" id="crProfileViewTools">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <h4 style="margin:0 0 6px">Red Laser Loadout</h4>
+                <p style="margin:0 0 8px;font-size:11px;color:var(--dim)">Press <b style="color:var(--fg)">2</b> in-run to aim the Red Laser, then click a candle to open the spawn menu. Only tools equipped here will appear in that menu — keeps the loadout focused.</p>
+                <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+                  <button class="cr-go" id="wbToolEquipStars" type="button" style="flex:1;min-width:90px">★ Stars only</button>
+                  <button class="cr-go" id="wbToolEquipAll" type="button" style="flex:1;min-width:90px;background:transparent;border:1px solid var(--line);color:var(--fg)">Equip All</button>
+                  <button class="cr-go" id="wbToolEquipNone" type="button" style="flex:1;min-width:90px;background:transparent;border:1px solid var(--line);color:var(--dim)">Equip None</button>
+                </div>
+                <div id="wbToolEquippedSummary" style="padding:10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.5);font-size:11px;color:var(--dim);font-style:italic">Loading…</div>
+              </div>
+              <div>
+                <h4 style="margin:0 0 6px">Available Tools <span id="wbToolEquipCount" style="color:var(--dim);font-weight:400">(0/0)</span></h4>
+                <p style="margin:0 0 8px;font-size:11px;color:var(--dim)">Click a tool to equip / unequip. Equipped tools glow green.</p>
+                <div id="wbToolList" style="display:flex;flex-direction:column;gap:6px;max-height:380px;overflow:auto"></div>
+              </div>
+            </div>
           </div>
           <!-- v0.8k#24bq — Player tab: choose Skin · Gear · Vehicle · Weapon ·
                Bots. Each sub-section renders a toggle grid using the same
@@ -12459,24 +12487,12 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                VWAP, Fib, Bracket, drawing tools) are equipped on the in-game Laser
                (key 2). Equipped tools appear in the laser spawn menu; unequipped
                ones are hidden. Persists across reloads via localStorage. -->
+          <!-- v1.0.288 — TOOLS view MOVED to the Profile app (#crProfileViewTools);
+               the whole Workbench app is ARCHIVED (icon hidden, osOpenWindow
+               redirects to Profile). The view shell stays so data-wbview="tools"
+               keeps a target if Workbench is ever un-archived. -->
           <div class="crTerm-view" id="crWBViewTools">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-              <div>
-                <h4 style="margin:0 0 6px">Red Laser Loadout</h4>
-                <p style="margin:0 0 8px;font-size:11px;color:var(--dim)">Press <b style="color:var(--fg)">2</b> in-run to aim the Red Laser, then click a candle to open the spawn menu. Only tools equipped here will appear in that menu — keeps the loadout focused.</p>
-                <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-                  <button class="cr-go" id="wbToolEquipStars" type="button" style="flex:1;min-width:90px">★ Stars only</button>
-                  <button class="cr-go" id="wbToolEquipAll" type="button" style="flex:1;min-width:90px;background:transparent;border:1px solid var(--line);color:var(--fg)">Equip All</button>
-                  <button class="cr-go" id="wbToolEquipNone" type="button" style="flex:1;min-width:90px;background:transparent;border:1px solid var(--line);color:var(--dim)">Equip None</button>
-                </div>
-                <div id="wbToolEquippedSummary" style="padding:10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.5);font-size:11px;color:var(--dim);font-style:italic">Loading…</div>
-              </div>
-              <div>
-                <h4 style="margin:0 0 6px">Available Tools <span id="wbToolEquipCount" style="color:var(--dim);font-weight:400">(0/0)</span></h4>
-                <p style="margin:0 0 8px;font-size:11px;color:var(--dim)">Click a tool to equip / unequip. Equipped tools glow green.</p>
-                <div id="wbToolList" style="display:flex;flex-direction:column;gap:6px;max-height:380px;overflow:auto"></div>
-              </div>
-            </div>
+            <div style="padding:14px;font-size:11px;color:var(--dim);font-style:italic">Tools loadout moved to Profile → TOOLS.</div>
           </div>
           <!-- v0.9.23 / v0.9.41 — BLUE ORDERS view: now mirrors Tools tab layout.
                Left: Laser Loadout (Stars / Equip All / Equip None + equipped
@@ -40057,6 +40073,13 @@ const OS_PROGRAMS = ['run','shop','configs','profile','stats','workbench','journ
 const osStatus = document.getElementById('osStatus');
 function osOpenWindow(prog){
   if(!OS_PROGRAMS.includes(prog)) return;
+  // v1.0.288 — Workbench app ARCHIVED (Julian: "archive workbench"). The
+  // Tools loadout lives in Profile → TOOLS; every Workbench open request
+  // redirects there. Un-archive: flip the flag (window + tabs stay in DOM).
+  if(prog === 'workbench' && window.CR_WORKBENCH_ARCHIVED !== false){
+    try { if(typeof toast === 'function') toast('Workbench archived · Tools live in Profile'); } catch(_){}
+    prog = 'profile';
+  }
   OS_PROGRAMS.forEach(p=>{
     const el = document.getElementById('win-'+p);
     if(!el) return;
@@ -40093,6 +40116,15 @@ document.querySelectorAll('#osGrid .os-icon').forEach(btn=>{
 document.querySelectorAll('.os-window [data-close]').forEach(btn=>{
   btn.addEventListener('click', osCloseAllWindows);
 });
+// v1.0.288 — Workbench ARCHIVED: hide its desktop icon + dock button. The
+// window/tab DOM stays; osOpenWindow('workbench') redirects to Profile where
+// the Tools loadout now lives (Profile → TOOLS). Un-archive = flip the flag.
+window.CR_WORKBENCH_ARCHIVED = true;
+try {
+  if(window.CR_WORKBENCH_ARCHIVED !== false){
+    document.querySelectorAll('.os-icon[data-prog="workbench"], .dockBtn[data-prog="workbench"]').forEach(b => { b.style.display = 'none'; });
+  }
+} catch(_){}
 
 /* ============================================================
  * v0.9.26 — Trading Journal IIFE
@@ -43237,6 +43269,8 @@ function osRefreshShop(){
   const balV    = document.getElementById('crProfileViewBal');
   const statsV  = document.getElementById('crProfileViewStats');
   const misV    = document.getElementById('crProfileViewMissions');
+  // v1.0.288 — TOOLS view (Red Laser Loadout, moved from archived Workbench).
+  const toolsV  = document.getElementById('crProfileViewTools');
   tabs.forEach(btn => {
     btn.addEventListener('click', () => {
       const view = btn.getAttribute('data-profview');
@@ -43245,8 +43279,10 @@ function osRefreshShop(){
       if(balV)    balV.classList.toggle('hidden',    view !== 'bal');
       if(statsV)  statsV.classList.toggle('hidden',  view !== 'stats');
       if(misV)    misV.classList.toggle('hidden',    view !== 'missions');
+      if(toolsV)  toolsV.classList.toggle('hidden',  view !== 'tools');
       if(view === 'player' && typeof _renderPlayerTab === 'function') _renderPlayerTab();
       if(view === 'bal' && typeof _crWalletRender === 'function') _crWalletRender();
+      if(view === 'tools'){ try { if(typeof _wbRenderTools === 'function') _wbRenderTools(); } catch(_){} }
     });
   });
 })();
