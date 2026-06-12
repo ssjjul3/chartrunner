@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.284
-     LAST UPDATED:    2026-06-12  ·  Terminal Pane Picker archived on ALL surfaces: desktop gear hidden too, picker never opens; spawning lives on per-pane + buttons and chart view tabs.
+     CURRENT VERSION: v1.0.285
+     LAST UPDATED:    2026-06-12  ·  Lite-profile wallet: Swap opens a mock $CHART→$RUN swap window (100:1 via exchangeChartToRun); Open-positions card archived.
+     (v1.0.285 = Lite-profile mock swap + Open-positions archive (Julian: "archive open positions" / "swap should open a mock swap window chart -> run"). The in-game Profile Wallet Swap button no longer opens the LI.FI cross-chain iframe — it opens crMockSwap: a DEX-style mock window with amount input, MAX, locked 100:1 rate, live $CHART/$RUN balances, and a confirm that loops the existing exchangeChartToRun() (same mutation, HUD pills, shop, desktop card, floats; 100-swap safety cap). LI.FI module stays dormant. The Open-positions card (Brackets/Ladders/OCO) in the wallet tab is archived via display:none with ids intact. MOCK = local only: no network, wallet, signing, or on-chain anything.)
      (v1.0.284 = Desktop Pane Picker archived (Julian: "archive this window" on the Terminal Presets · Pane Picker, one turn after the chart one). New flag CR_TERMINAL_PANE_PICKER_ARCHIVED (default true): _termSpawnPickerOpen now early-returns on EVERY surface and an all-surface #win-terminal #crTermNewBtn CSS hide removes the gear from the desktop Terminal too. Pane spawning stays on the per-pane + buttons in the Engine views and the v1.0.280 chart view tabs; the picker DOM builder, GLOBAL/SESSION/ENGINE preset cards, quick-config forms, and API-docs body stay intact as archive. Restore = flip the flag + delete the one CSS rule (chart-only v1.0.283 gate remains independently). No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.283 = Run Widgets picker re-archived (Julian: "archive this window"; reverts the v1.0.278 un-archive). New flag CR_CHART_RUNWIDGETS_PICKER_ARCHIVED (default true, beside CR_BLUE_SPAWN_MENU_ARCHIVED): on chart/run surfaces the gear button is CSS-hidden again (#crTermNewBtn display:none under [data-cr-terminal-surface="chart"]) and _termSpawnPickerOpen early-returns for in-game surfaces, covering any programmatic opener. In-game widget spawning stays in the v1.0.280 chart view tabs (Engine-style windows + drag-out). Desktop Terminal keeps its broad Pane Picker untouched. The picker DOM builder, chart-allowed filtering, and inGame branches stay intact as archive — restore = flip the flag + delete the one CSS rule. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.282 = Bracket Inputs layout reshape (Julian). (1) New read-only Stop loss (auto) field (#ff5b7f, data-cr-bracket-field=slAuto) beside Take profit (auto), kept in sync by applySetup from overlay.sl. (2) Trade size (USDC), Round-trip fee (%), and the Apply setup button move OUT of the always-visible field grid INTO the expanded ⚡ Leverage… section (they only feed the leveraged calculator deck) — spot trades now show just Side/R:R/Entry/Stop/Risk/TP/SL plus the ghost row. The expanded section renders a 2-col grid: Leverage (x)+× Spot, Trade size, Round-trip fee, Apply setup (bottom-right cell). (3) Flip side relocates from the bottom actions row to directly under the R:R picker; the bottom actions row is removed. Initial paintLeverageRow() call moved after feeCalcInput/apply creation (the rebuilt on-branch references both — TDZ guard). Same persistent input nodes re-appended on repaint; oninput wiring unchanged. No math, SDK, broker, signing, or live-execution change.)
@@ -9781,20 +9782,18 @@
         </div>
       </div>
     </div>
-    <!-- Wallet tab — $CHART · this run / $RUN · persisted / Open positions.
-         v1.0.58 — Button on the $CHART card opens the LI.FI cross-chain
-         swap widget (Jumper Exchange iframe). Lets the player route
-         ETH / BSC / Polygon → SOL or USDC straight to their connected
-         ChartRunner wallet. v1.0.126 — labelled "Swap" to match what
-         the underlying widget actually does (cross-chain swap, not just
-         a one-way fund). -->
+    <!-- Wallet tab — $CHART · this run / $RUN · persisted.
+         v1.0.58 — Swap button opened the LI.FI cross-chain widget.
+         v1.0.285 — Swap now opens the in-game MOCK $CHART→$RUN swap
+         window (crMockSwap, 100:1 via exchangeChartToRun); LI.FI module
+         stays dormant. Open-positions card archived (display:none). -->
     <div class="lp-tabpane" data-lp-pane="wallet" style="display:none">
       <div class="lp-walletcards">
         <div class="lp-wcard">
           <div class="lp-wcard-head">
             <span class="k">$CHART · this run</span>
             <button class="lp-fund" id="crLpFundBtn" type="button"
-                    title="Swap any-chain assets into SOL / USDC via LI.FI (Jumper Exchange)">
+                    title="Swap $CHART → $RUN (mock router · 100:1)">
               Swap
             </button>
           </div>
@@ -9833,7 +9832,11 @@
             </div>
           </div>
         </div>
-        <div class="lp-wcard">
+        <!-- v1.0.285 — Open positions card ARCHIVED (Julian: "in game in
+             profile archive open positions"). display:none keeps the ids
+             (crLpWBrackets/Ladders/Ocos) so the 1 Hz updaters stay no-op
+             safe. Restore = remove display:none. -->
+        <div class="lp-wcard" style="display:none" data-cr-archived="open-positions-v1.0.285">
           <div class="k">Open positions</div>
           <div class="lp-wpos">
             <div class="lp-wposrow"><span><span class="ic">B</span>Brackets</span><span class="v" id="crLpWBrackets">0</span></div>
@@ -29908,6 +29911,117 @@ try {
   _refreshProfileExchange();
 } catch(_){}
 if(shopExchangeBtn){ shopExchangeBtn.addEventListener('click', exchangeChartToRun); }
+// ─── v1.0.285 — Mock swap window $CHART → $RUN ──────────────────────────────
+// Julian: "in game in profile when player pushes swap it should open a mock
+// swap window chart -> run." The lite-profile Swap button no longer opens the
+// LI.FI cross-chain iframe; it opens this in-game mock DEX-style swap window.
+// Locked rate CHART_PER_RUN (100:1). Confirm executes through the existing
+// exchangeChartToRun() loop — same balance mutation, HUD pills, shop, desktop
+// profile card, and in-world floats. MOCK = local only: no network, no
+// wallet, no signing, no on-chain anything. The LI.FI module stays in the
+// file dormant (restore = rewire crLpFundBtn to its open()).
+window.crMockSwap = (function(){
+  'use strict';
+  const OVERLAY_ID = 'crMockSwapOverlay';
+  function chartBal(){ try { return (game && (game.chart | 0)) || 0; } catch(_){ return 0; } }
+  function runBal(){ try { return (game && (game.run | 0)) || 0; } catch(_){ return 0; } }
+  function swapsFor(amount){ return Math.floor(Math.max(0, amount | 0) / CHART_PER_RUN); }
+  function el(){ return document.getElementById(OVERLAY_ID); }
+  function build(){
+    if(el()) return el();
+    const ov = document.createElement('div');
+    ov.id = OVERLAY_ID;
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99600;display:none;align-items:center;justify-content:center;background:rgba(4,8,18,.72)';
+    ov.innerHTML =
+      '<div style="width:min(360px,calc(100% - 48px));background:linear-gradient(180deg,rgba(16,24,44,.98),rgba(8,12,24,.99));border:1px solid rgba(20,241,149,.35);border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.7);padding:18px;font-family:ui-monospace,Menlo,monospace;color:#e9efff">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+      +   '<b style="letter-spacing:.6px;color:#14f195">SWAP · $CHART → $RUN</b>'
+      +   '<button type="button" data-cr-mockswap-close style="background:none;border:0;color:#9fb3c8;font-size:16px;cursor:pointer" aria-label="Close">×</button>'
+      + '</div>'
+      + '<div style="font-size:10px;color:#9fb3c8;margin-bottom:10px">MOCK ROUTER · local only · rate locked ' + CHART_PER_RUN + ' $CHART = 1 $RUN</div>'
+      + '<div style="border:1px solid rgba(159,179,200,.18);border-radius:10px;padding:10px;margin-bottom:8px">'
+      +   '<div style="display:flex;justify-content:space-between;font-size:10px;color:#9fb3c8;margin-bottom:6px"><span>You pay</span><span>Balance: <span data-cr-mockswap-bal>0</span> $CHART</span></div>'
+      +   '<div style="display:flex;gap:8px;align-items:center">'
+      +     '<input type="number" inputmode="numeric" min="0" step="' + CHART_PER_RUN + '" data-cr-mockswap-amount style="flex:1;background:rgba(10,15,28,.6);border:1px solid rgba(155,140,255,.4);border-radius:8px;color:#9b8cff;font:inherit;font-size:18px;padding:8px 10px;outline:none" />'
+      +     '<span style="color:#9b8cff;font-weight:bold">$CHART</span>'
+      +     '<button type="button" data-cr-mockswap-max style="background:rgba(20,241,149,.12);border:1px solid rgba(20,241,149,.4);border-radius:8px;color:#14f195;font:inherit;font-size:10px;padding:6px 8px;cursor:pointer">MAX</button>'
+      +   '</div>'
+      + '</div>'
+      + '<div style="text-align:center;color:#9fb3c8;font-size:14px;margin:2px 0 8px">↓</div>'
+      + '<div style="border:1px solid rgba(159,179,200,.18);border-radius:10px;padding:10px;margin-bottom:12px">'
+      +   '<div style="display:flex;justify-content:space-between;font-size:10px;color:#9fb3c8;margin-bottom:6px"><span>You receive</span><span>Balance: <span data-cr-mockswap-runbal>0</span> $RUN</span></div>'
+      +   '<div style="display:flex;justify-content:space-between;align-items:center"><span data-cr-mockswap-out style="color:#ffd166;font-size:18px;font-weight:bold">0</span><span style="color:#ffd166;font-weight:bold">$RUN</span></div>'
+      + '</div>'
+      + '<button type="button" data-cr-mockswap-confirm style="width:100%;background:rgba(20,241,149,.14);border:1px solid #14f195;border-radius:10px;color:#14f195;font:inherit;font-size:13px;font-weight:bold;letter-spacing:.6px;padding:10px;cursor:pointer">SWAP</button>'
+      + '<div style="font-size:9px;color:#6f7686;margin-top:8px;text-align:center">Burns $CHART earned this run · mints persisted $RUN · on-chain router ships at TGE</div>'
+      + '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => {
+      if(e.target === ov || (e.target.closest && e.target.closest('[data-cr-mockswap-close]'))){ close(); return; }
+      if(e.target.closest && e.target.closest('[data-cr-mockswap-max]')){
+        const inp = ov.querySelector('[data-cr-mockswap-amount]');
+        if(inp) inp.value = String(swapsFor(chartBal()) * CHART_PER_RUN);
+        refresh();
+        return;
+      }
+      if(e.target.closest && e.target.closest('[data-cr-mockswap-confirm]')) confirm();
+    });
+    ov.addEventListener('input', e => {
+      if(e.target && e.target.matches && e.target.matches('[data-cr-mockswap-amount]')) refresh();
+    });
+    document.addEventListener('keydown', e => {
+      if(e.key === 'Escape' && el() && el().style.display !== 'none'){ e.stopPropagation(); close(); }
+    }, true);
+    return ov;
+  }
+  function refresh(){
+    const ov = el();
+    if(!ov) return;
+    const inp = ov.querySelector('[data-cr-mockswap-amount]');
+    const n = swapsFor(inp ? Number(inp.value) : 0);
+    const bal = ov.querySelector('[data-cr-mockswap-bal]');
+    const rbal = ov.querySelector('[data-cr-mockswap-runbal]');
+    const out = ov.querySelector('[data-cr-mockswap-out]');
+    const btn = ov.querySelector('[data-cr-mockswap-confirm]');
+    if(bal) bal.textContent = String(chartBal());
+    if(rbal) rbal.textContent = String(runBal());
+    if(out) out.textContent = String(n);
+    if(btn){
+      const ok = n > 0 && chartBal() >= n * CHART_PER_RUN;
+      btn.disabled = !ok;
+      btn.style.opacity = ok ? '1' : '.45';
+      btn.style.cursor = ok ? 'pointer' : 'not-allowed';
+      btn.textContent = ok ? ('SWAP ' + (n * CHART_PER_RUN) + ' $CHART → ' + n + ' $RUN') : ('NEED ' + CHART_PER_RUN + ' $CHART');
+    }
+  }
+  function confirm(){
+    const ov = el();
+    if(!ov) return;
+    const inp = ov.querySelector('[data-cr-mockswap-amount]');
+    let n = swapsFor(inp ? Number(inp.value) : 0);
+    n = Math.min(n, swapsFor(chartBal()), 100); // safety cap per confirm
+    if(n <= 0){ refresh(); return; }
+    for(let i = 0; i < n; i++){
+      try { exchangeChartToRun(); } catch(_){ break; }
+    }
+    try { toast && toast('Swapped ' + (n * CHART_PER_RUN) + ' $CHART → ' + n + ' $RUN'); } catch(_){}
+    if(inp) inp.value = String(swapsFor(chartBal()) * CHART_PER_RUN);
+    refresh();
+  }
+  function open(){
+    const ov = build();
+    const inp = ov.querySelector('[data-cr-mockswap-amount]');
+    if(inp) inp.value = String(Math.max(CHART_PER_RUN, swapsFor(chartBal()) * CHART_PER_RUN) || CHART_PER_RUN);
+    ov.style.display = 'flex';
+    refresh();
+    try { if(inp) inp.focus(); } catch(_){}
+  }
+  function close(){
+    const ov = el();
+    if(ov) ov.style.display = 'none';
+  }
+  return { open, close, refresh };
+})();
 // v1.0.134 — in-game wallet sidepanel swap (chart-field profile). Reuses
 // exchangeChartToRun(); a 1 Hz tick keeps the disabled state + label live so
 // the button greys out below the 100 $CHART threshold.
@@ -73723,6 +73837,9 @@ window.crLifiFunding = (function(){
     btn.addEventListener('click', function(e){
       e.preventDefault();
       e.stopPropagation();
+      // v1.0.285 — Swap opens the in-game mock $CHART→$RUN swap window.
+      // The LI.FI cross-chain iframe stays dormant (restore: call open()).
+      if(window.crMockSwap && typeof crMockSwap.open === 'function'){ crMockSwap.open(); return; }
       open();
     });
   }
