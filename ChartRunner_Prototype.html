@@ -4,8 +4,10 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.293
-     LAST UPDATED:    2026-06-12  ·  Maps thumbnail repair: cards without a usable thumbnail (share-link imports strip thumbs; saves with no live canvas) no longer show the browser broken-image icon — placeholder glyph fallback in both card renderers, onerror guard for corrupt data URLs, and blank-black captures are dropped at save time.
+     CURRENT VERSION: v1.0.294
+     LAST UPDATED:    2026-06-12  ·  Top-10 live bot roster: only the 10 evaluation-proven bots show/equip/orbit; 19 archived (campaign chapters exempt, one-flag restore).
+     (v1.0.294 = Top-10 live bot roster (Julian: "only top 10 functioning bots should be in live game"; eval kit _patches/bot-eval-2026-06-12, real BTC 15m/1h/4h run by Julian 2026-06-12). New flag CR_BOT_ROSTER_TOP10 + CR_LIVE_BOT_IDS: live ten = the 8 consistent cross-TF earners (Session Open Drive +57ΣR, Order Block Retest +31, Fib Reaction +25, MTF Alignment +25, Volume Climax +20, SFP +17, Trend Pullback +17, Liquidity Sweep +14) + CCV Hunter (documented-edge flagship) + Confluence Judge (review multiplier) — structure Julian approved via the eval question. The other 19 built-ins get row.archived at seed time (user spec/Forge bots are never archived): hidden from the Bots roster UI (_wbRenderBots) and the Profile bot slots, blocked from player equip (_wbToggleEquip toast), and filtered out of the orbit resolver (_wbEquippedBots) — EXCEPT during campaign chapters, where force-equipped teaching bots (Ch.28–33: det_hs/det_barr/det_fa/det_div) still resolve and orbit. wb.bots rows stay seeded for saves + campaign + restore; H&S/FA/Gap Fill flagged as dead detectors (zero signals on every real TF — fix before restore). Restore = flip the flag. No SDK, broker, signing, on-chain, or live-execution change.)
+     LAST UPDATED (prev v1.0.293):  Maps thumbnail repair: cards without a usable thumbnail (share-link imports strip thumbs; saves with no live canvas) no longer show the browser broken-image icon — placeholder glyph fallback in both card renderers, onerror guard for corrupt data URLs, and blank-black captures are dropped at save time.
      (v1.0.293 = Maps thumbnail repair (Julian: "maps looks buggy" — two cards showed the broken-image icon). Root cause: both map card templates rendered <img class="thumb" src="${m.thumb || ''}"> — an empty/missing thumb (share-link imports delete it by design, runner_wallet saves and saves made without a live #cv canvas never had one) produced src="" → the browser broken-image glyph. Fix: shared _crMapThumbHTML(m) renders the .thumb as a wrapper div with a centered dim ▦ glyph; a valid data:image thumb overlays it via an absolutely-positioned img with onerror display:none (corrupt data URLs fall back to the glyph instead of the broken icon). Used by BOTH the desktop Maps grid and the phone Maps list. PLUS snapshot() blank-capture guard: after drawing #cv into the 240×90 thumb canvas, 12 sample pixels are read — if all are near-black (≤8/255 on every channel) the capture is discarded (thumb:'') so splash/desktop saves get the placeholder instead of a black tile. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.292 = Alerts merge P1 — density toggle (per docs/JOURNAL_ALERTS_MERGE_BRAINSTORM_2026-06-12.md option B, Julian-approved). The ALERT V2 tab button joins CR_JRN_TAB_ARCHIVE (alertv2:true); the ALERTS tab now serves BOTH existing views: density choice persists in cr_jrn_alert_density_v1 (default 'detailed' = Alert V2 progression cards; 'compact' = legacy Alerts rows), the tab-click handler maps cat 'alerts' → effective view, and COMPACT/DETAILED chips in both view headers (data-jrn-density) flip the preference and re-render. Both renderers stay verbatim — true renderer merge deferred to SDK extraction. PLUS fired-alarm double-count fix: new _crJrnDedupBusEvents (flag CR_JRN_ALERT_DEDUP, default true) folds bus events carrying an alarmId that still resolves to a live crAlarm row out of _crJrnRenderAlerts AND _crJrnRenderAlertV2 — the alarm row is canonical (one card per alarm instead of three: row + 'Saved alarm:' + 'Alarm fired:' mirrors); lifecycle events for DELETED alarms stay as history; compact-view 'Total alerts' count is now accurate. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.291 = Journal tab consolidation (Julian: archive bot/sessions/notes tabs, move stats content into P&L). New per-tab archive map window.CR_JRN_TAB_ARCHIVE = {bot:true, sessions:true, notes:true, stats:true} next to CR_JRN_KEY; the Journal tab wiring hides archived tab buttons at init (style.display='none') while every view div, renderer, event listener, and localStorage key stays in the DOM/code untouched — restore = flip one key. Notes content keeps persisting to cr_journal_notes_v1 and crAlertBus.toJournalNote keeps appending (storage-level, tab-independent); terminal session tapes keep recording for the hidden Sessions evaluators. Stats fold: _crJrnRenderStats targets a new #crJrnPnlStats grid inside the P&L view when the stats tab is archived (falls back to the archived #crJrnStats view otherwise), and _crJrnRenderPnl calls it so P&L now shows Session P&L / Realized / Win rate / Combined cards + the Total trades / Win rate / Total PnL / Avg R:R expectancy cards + Recent fills in one tab. Support-app JOURNAL hint retexted to the new tab roster. No SDK, broker, signing, on-chain, or live-execution change.)
@@ -44493,7 +44495,8 @@ function _renderPlayerTab(){
   // Show first-3 equipped bots in the slot cards. Empty slots offer a
   // picker that lists every built bot for the user to pick.
   const eq = (typeof wb !== 'undefined' && Array.isArray(wb.equipped)) ? wb.equipped : [];
-  const allBots = (typeof wb !== 'undefined' && Array.isArray(wb.bots)) ? wb.bots : [];
+  const allBots = ((typeof wb !== 'undefined' && Array.isArray(wb.bots)) ? wb.bots : [])
+    .filter(b => !(b && b.archived)); // v1.0.294 — top-10 roster in the profile bot slots
   for(let i = 0; i < 3; i++){
     const card  = document.getElementById('crPlayerSlot-bot' + i);
     const ic    = document.getElementById('crPlayerSlotIc-bot' + i);
@@ -46604,6 +46607,27 @@ function _botEnableIndicator(id){
     return !already;
   } catch(_){ return false; }
 }
+// v1.0.294 — Top-10 live roster (Julian: "only top 10 functioning bots should
+// be in live game"; evaluation kit `_patches/bot-eval-2026-06-12/`, real BTC
+// 15m/1h/4h run 2026-06-12). The live ten = the 8 consistent cross-TF earners
+// (Session Open Drive +57ΣR, Order Block Retest +31, Fib Reaction +25, MTF
+// Alignment +25, Volume Climax +20, SFP +17, Trend Pullback +17, Liquidity
+// Sweep +14) + CCV Hunter (documented-edge flagship, campaign-taught) +
+// Confluence Judge (review multiplier). Everything else is ARCHIVED: still
+// seeded into wb.bots (campaign chapters 28–33 force-equip by id and stay
+// exempt; existing saves keep their rows) but hidden from the roster UI,
+// blocked from player equip, and filtered out of the orbit resolver outside
+// campaign. H&S / FA / Gap Fill produced ZERO signals on every real TF —
+// dead detectors, fix before any restore. Restore = flip the flag.
+const CR_BOT_ROSTER_TOP10 = true;
+const CR_LIVE_BOT_IDS = new Set([
+  'det_opendrive', 'det_orderblock', 'det_fibreact', 'det_mtfalign', 'det_climax',
+  'det_sfp', 'det_pullback', 'det_liquidity', 'det_ccv', 'det_confluence',
+]);
+function _crBotLive(id){
+  if(typeof CR_BOT_ROSTER_TOP10 === 'undefined' || !CR_BOT_ROSTER_TOP10) return true;
+  return CR_LIVE_BOT_IDS.has(String(id || ''));
+}
 // Seed detector bots into wb.bots if not already present. Idempotent — runs
 // after _wbLoad on every boot, so adding a new DETECTOR_BOTS entry in a
 // future version just appears in the next save without clobbering the
@@ -46622,6 +46646,7 @@ function _seedDetectorBots(){
         if(d.fromSpec) row.fromSpec = true;
         if(d.spec) row.spec = d.spec;
         if(d.spec && d.spec.source) row.source = d.spec.source;
+        row.archived = !d.fromSpec && !_crBotLive(d.id); // v1.0.294 top-10 roster (user spec bots never archived)
         wb.bots.push(row);
       } else {
         // Refresh the in-memory record with the latest fire/detect refs
@@ -46636,6 +46661,7 @@ function _seedDetectorBots(){
         if(d.fromSpec) existing.fromSpec = true;
         if(d.spec) existing.spec = d.spec;
         if(d.spec && d.spec.source) existing.source = d.spec.source;
+        existing.archived = !d.fromSpec && !_crBotLive(d.id); // v1.0.294 top-10 roster backfill
       }
     });
     try { if (typeof _wbSave === 'function') _wbSave(); } catch(_){}
@@ -47778,13 +47804,24 @@ if(Array.isArray(wb.equipped) && wb.equipped.length > WB_MAX_EQUIP){
   try { _wbSave(); } catch(_){}
 }
 // Equipped bots are the source of truth for the orb renderer.
-function _wbEquippedBots(){ return wb.equipped.map(id => wb.bots.find(b => b.id === id)).filter(Boolean); }
+function _wbEquippedBots(){
+  // v1.0.294 — archived (non-top-10) bots don't orbit outside campaign;
+  // campaign chapters force-equip teaching bots by id and stay exempt.
+  const inCampaign = !!(typeof game !== 'undefined' && game && game.campaignChapter);
+  return wb.equipped.map(id => wb.bots.find(b => b.id === id)).filter(b => b && (inCampaign || !b.archived));
+}
 function _wbToggleEquip(id){
   const i = wb.equipped.indexOf(id);
   if(i >= 0){
     wb.equipped.splice(i, 1);
     if(typeof toast === 'function') toast('Bot unequipped');
   } else {
+    // v1.0.294 — archived (non-top-10) bots can't be player-equipped.
+    const row = wb.bots.find(b => b.id === id);
+    if(row && row.archived){
+      if(typeof toast === 'function') toast('Bot archived — outside the top-10 live roster');
+      return;
+    }
     if(wb.equipped.length >= WB_MAX_EQUIP){
       if(typeof toast === 'function') toast('Max ' + WB_MAX_EQUIP + ' bots equipped — unequip one first');
       return;
@@ -48242,11 +48279,13 @@ function _wbColor(v, fallback){
 function _wbRenderBots(){
   const list = document.getElementById('wbBotList');
   const cnt  = document.getElementById('wbBotCount');
-  const botTotal = wb.bots.length;
+  // v1.0.294 — archived (non-top-10) bots are hidden from the roster UI.
+  const rosterBots = wb.bots.filter(b => !(b && b.archived));
+  const botTotal = rosterBots.length;
   if(cnt) cnt.textContent = botTotal + (botTotal === 1 ? ' bot' : ' bots');
   if(!list) return;
   // v0.9.44 — subcategory filter strip rendered above the row list.
-  const filtered = _wbFilterByCategory(wb.bots, 'bots');
+  const filtered = _wbFilterByCategory(rosterBots, 'bots');
   list.innerHTML = _wbSubTabsHTML('bots');
   _wbWireSubTabs(list, 'bots', _wbRenderBots);
   if(!filtered.length){
@@ -48835,7 +48874,7 @@ function _wbRebuildBacktestTargets(){
   if(!sel) return;
   sel.innerHTML = '<option value="">— Select a build —</option>';
   const groups = [
-    ['── Bots ──',       wb.bots],
+    ['── Bots ──',       wb.bots.filter(b => !(b && b.archived))], // v1.0.294 top-10 roster
     ['── Strategies ──', wb.strategies],
     ['── Indicators ──', wb.indicators],
   ];
