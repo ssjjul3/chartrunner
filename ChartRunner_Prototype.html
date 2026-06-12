@@ -4,8 +4,12 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.288
-     LAST UPDATED:    2026-06-12  ·  Workbench archived: the Tools (Red Laser Loadout) tab moves into the Profile app as a TOOLS tab; Workbench icon/dock hidden, opens redirect to Profile.
+     CURRENT VERSION: v1.0.292
+     LAST UPDATED:    2026-06-12  ·  Alerts merge P1: one ALERTS tab with a COMPACT/DETAILED density toggle (legacy Alerts renderer vs Alert V2 renderer), ALERT V2 button archived, and alarm-mirror bus events deduped out of both feeds. Journal slims to Manual · Paper · Alerts · P&L.
+     (v1.0.292 = Alerts merge P1 — density toggle (per docs/JOURNAL_ALERTS_MERGE_BRAINSTORM_2026-06-12.md option B, Julian-approved). The ALERT V2 tab button joins CR_JRN_TAB_ARCHIVE (alertv2:true); the ALERTS tab now serves BOTH existing views: density choice persists in cr_jrn_alert_density_v1 (default 'detailed' = Alert V2 progression cards; 'compact' = legacy Alerts rows), the tab-click handler maps cat 'alerts' → effective view, and COMPACT/DETAILED chips in both view headers (data-jrn-density) flip the preference and re-render. Both renderers stay verbatim — true renderer merge deferred to SDK extraction. PLUS fired-alarm double-count fix: new _crJrnDedupBusEvents (flag CR_JRN_ALERT_DEDUP, default true) folds bus events carrying an alarmId that still resolves to a live crAlarm row out of _crJrnRenderAlerts AND _crJrnRenderAlertV2 — the alarm row is canonical (one card per alarm instead of three: row + 'Saved alarm:' + 'Alarm fired:' mirrors); lifecycle events for DELETED alarms stay as history; compact-view 'Total alerts' count is now accurate. No SDK, broker, signing, on-chain, or live-execution change.)
+     (v1.0.291 = Journal tab consolidation (Julian: archive bot/sessions/notes tabs, move stats content into P&L). New per-tab archive map window.CR_JRN_TAB_ARCHIVE = {bot:true, sessions:true, notes:true, stats:true} next to CR_JRN_KEY; the Journal tab wiring hides archived tab buttons at init (style.display='none') while every view div, renderer, event listener, and localStorage key stays in the DOM/code untouched — restore = flip one key. Notes content keeps persisting to cr_journal_notes_v1 and crAlertBus.toJournalNote keeps appending (storage-level, tab-independent); terminal session tapes keep recording for the hidden Sessions evaluators. Stats fold: _crJrnRenderStats targets a new #crJrnPnlStats grid inside the P&L view when the stats tab is archived (falls back to the archived #crJrnStats view otherwise), and _crJrnRenderPnl calls it so P&L now shows Session P&L / Realized / Win rate / Combined cards + the Total trades / Win rate / Total PnL / Avg R:R expectancy cards + Recent fills in one tab. Support-app JOURNAL hint retexted to the new tab roster. No SDK, broker, signing, on-chain, or live-execution change.)
+     (v1.0.290 = Bot executability gate P2 — played-out history walk (Julian: "we only need running ones", screenshot showed a built setup that had already played out next to a running one). _botSetupExecutable(side, entry) gains an opts third arg {idx, uptoIdx}: when the detection anchor index is known, the gate walks candles from anchor+1 up to the player and kills the setup if favorable excursion already reached the default 2R target distance (move played out) or adverse excursion swept 1.5× the stop distance (invalidated) — catching the case the v1.0.289 proximity check misses, where price ran and came BACK near the entry level. Distances stay ATR-scaled (slDist = the 2×ATR reach tol, tpDist = 2R), so the rule holds on every timeframe; fresh anchors (idx == player) skip the walk. Wired at all three v1.0.289 gate points: detector scan accept (r.idx + playerIdx), build-animation completion (st.target.result.idx + playerIdx), and Y-confirm (plan.result.idx, upto derived from player.wx/STEP). Note: most simple detectors anchor at the latest candle (idx = baseIdx+N-1 → empty walk); the walk mainly guards historical-anchor detectors (harmonic D-point etc.). PLUS resolved-zone despawn: on sdk bracketClose, BOT-built visualBrackets (v.bot) are removed ~4s after their outcome lands instead of lingering as played-out chart clutter — player-placed brackets keep their outcome marker unchanged. Together: stale setups don't get built, and built ones leave the chart once they resolve — only RUNNING zones remain. No SDK, broker, signing, on-chain, or live-execution change.)
+     (v1.0.289 = Bot executability gate (Julian: "bots should only build trades when they are still valid and executionable"). New _botSetupExecutable(side, entry): a setup is dead when price has moved away from its entry level beyond 2× rolling ATR(14) (game.atr, 0.15% floor during warm-up) — covering both played-out (price already through the level in trade direction) and invalidated (price through the stop region). Gated at THREE points: (1) detector scan accept in drawBotOrbs — matched lookback patterns whose move already happened never start the fly (matchedLevel now computed before acceptance); (2) build-animation completion — price moving through the level mid-flight makes the orb stand down (toast + 2s cooldown) instead of building a dead bracket; (3) _crBotSetupBuild Y-confirm — a proposal that goes stale during its 15s window logs as 'expired' in CR_BOT_SETUP_RECENT and is skipped. ATR-based tolerance scales the gate across all timeframes. _crBotSetupExecute itself is untouched (bot-setup smoke + spec loader unaffected). No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.288 = Workbench archive + Tools→Profile move (Julian: "move tools tab into profile app / archive workbench"). The Red Laser Loadout grid moves verbatim (same wbTool* ids, so the existing equip wiring and _wbRenderTools() work unchanged) into a new Profile → TOOLS tab (data-profview="tools", renders on tab click). Workbench is archived behind window.CR_WORKBENCH_ARCHIVED: desktop icon + dock button hidden, every osOpenWindow('workbench') redirects to Profile with a toast; the window, its remaining tabs (Blue Orders/Strategies/Indicators/Backtest/App Builder/Theme), and all wb state stay in the DOM for one-flag restore. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.287 = Leverage default-closed (Julian: "by default leverage button should be closed like in picture"). The v1.0.277/279 expanded-if-stored-leverage>1 initial state is removed: leverageOn starts false on every settings open, so the Inputs tab always shows the dim dashed "⚡ Leverage…" ghost row and spot math (leverage 1) until the player expands it; the ghost click still re-seeds the input from the stored calcState.leverage. No math, SDK, broker, signing, or live-execution change.)
      (v1.0.286 = Bracket Risk-field archive (Julian: "archive risk field"). The Risk ($) input in the object-settings Bracket Inputs tab is archived: riskInput stays in the DOM inside a display:none wrapper (data-cr-archived="bracket-risk-field-v1.0.286") so readCalcConfig, projected-profit rows, and the apply path keep reading its default/last value — only the visible field is gone. The in-run Precise-input card and the calculator assumption field are untouched. No math, SDK, broker, signing, or live-execution change.)
@@ -13121,6 +13125,9 @@ plot(out, color=color.orange, linewidth=2)</textarea>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 8px">
               <p style="margin:0;font-size:11px;color:var(--dim)">Live chart alarms from the hotkey-4 alarm laser. Use this as the review log for watched prices, confluence triggers, and on-chain anchored alerts.</p>
               <div style="display:flex;gap:6px;flex:0 0 auto">
+                <!-- v1.0.292 — density toggle (merged ALERTS tab) -->
+                <button class="crTerm-tab" type="button" data-jrn-density="compact" title="Compact rows" style="font-size:10px;padding:5px 9px">COMPACT</button>
+                <button class="crTerm-tab" type="button" data-jrn-density="detailed" title="Detailed progression cards" style="font-size:10px;padding:5px 9px">DETAILED</button>
                 <button class="cr-go" id="crJrnAlertNew" type="button" style="font-size:10px;padding:5px 11px">⏰ New alarm</button>
                 <button class="cr-go" id="crJrnAlertRefresh" type="button" style="font-size:10px;padding:5px 11px;background:transparent;border:1px solid var(--line);color:var(--dim)">↻ Refresh</button>
               </div>
@@ -13134,6 +13141,9 @@ plot(out, color=color.orange, linewidth=2)</textarea>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 8px">
               <div id="crJrnAlertV2Scope" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"></div>
               <div style="display:flex;gap:6px;flex:0 0 auto">
+                <!-- v1.0.292 — density toggle (merged ALERTS tab) -->
+                <button class="crTerm-tab" type="button" data-jrn-density="compact" title="Compact rows" style="font-size:10px;padding:5px 9px">COMPACT</button>
+                <button class="crTerm-tab" type="button" data-jrn-density="detailed" title="Detailed progression cards" style="font-size:10px;padding:5px 9px">DETAILED</button>
                 <button class="cr-go" id="crJrnAlertV2New" type="button" style="font-size:10px;padding:5px 11px">New alarm</button>
                 <button class="cr-go" id="crJrnAlertV2Refresh" type="button" style="font-size:10px;padding:5px 11px;background:transparent;border:1px solid var(--line);color:var(--dim)">Refresh</button>
               </div>
@@ -13177,6 +13187,11 @@ plot(out, color=color.orange, linewidth=2)</textarea>
               <button class="cr-go" id="crJrnPnlExport" type="button" style="font-size:10px;padding:5px 11px;background:transparent;border:1px solid var(--line);color:var(--dim)">↓ Export CSV</button>
             </div>
             <div id="crJrnPnlSummary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px"></div>
+            <!-- v1.0.291 — Stats tab folded in: expectancy cards (Total trades /
+                 Win rate / Total PnL / Avg R:R) render here; the old STATS view
+                 div stays in the DOM as archive. -->
+            <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Performance stats</div>
+            <div id="crJrnPnlStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px"></div>
             <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Recent fills</div>
             <div id="crJrnPnlList" style="border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.4);max-height:280px;overflow:auto"></div>
           </div>
@@ -32740,7 +32755,21 @@ sdk.on('bracketClose', e=>{
   const o = e.order;
   game.pnl.realized += o.pnl;
   const v = game.visualBrackets.find(b=>b.id===o.id);
-  if(v){ v.outcome = o.outcome; }
+  if(v){
+    v.outcome = o.outcome;
+    // v1.0.290 — bot-built zones DESPAWN after resolving (Julian: "we only
+    // need running ones"): keep the outcome on screen ~4s for feedback,
+    // then drop the zone. Player-placed brackets keep their marker.
+    if(v.bot){
+      setTimeout(() => {
+        try {
+          if(typeof game !== 'undefined' && Array.isArray(game.visualBrackets)){
+            game.visualBrackets = game.visualBrackets.filter(b => b !== v);
+          }
+        } catch(_){}
+      }, 4000);
+    }
+  }
   if(o.outcome==='tp'){
     log('bracket TP @ '+o.exitPrice.toFixed(2)+'  +$'+o.pnl.toFixed(2));
   } else {
@@ -40136,6 +40165,28 @@ try {
  * Export to CSV via a Blob URL anchor click.
  * ============================================================ */
 const CR_JRN_KEY = 'cr_journal_v1';
+/* v1.0.291 — Journal tab archive map. Archived tabs keep their view divs,
+   renderers, listeners, and localStorage keys fully intact — only the tab
+   button is hidden at wiring time. Restore a tab = flip its key to false. */
+window.CR_JRN_TAB_ARCHIVE = window.CR_JRN_TAB_ARCHIVE || { bot:true, sessions:true, notes:true, stats:true, alertv2:true };
+/* v1.0.292 — Alerts merge P1. With alertv2 archived, the single ALERTS tab
+   serves both views via a density preference (cr_jrn_alert_density_v1:
+   'detailed' = Alert V2 progression cards (default), 'compact' = legacy rows).
+   Dedup: bus events that mirror a still-existing alarm (save/fire lifecycle
+   rows carrying alarmId) are folded out of both feeds — the live alarm row is
+   the canonical card. Events for deleted alarms remain as history. */
+window.CR_JRN_ALERT_DEDUP = (window.CR_JRN_ALERT_DEDUP !== false);
+const CR_JRN_ALERT_DENSITY_KEY = 'cr_jrn_alert_density_v1';
+function _crJrnAlertDensity(){
+  try { return localStorage.getItem(CR_JRN_ALERT_DENSITY_KEY) === 'compact' ? 'compact' : 'detailed'; } catch(_){ return 'detailed'; }
+}
+function _crJrnDedupBusEvents(events, alarms){
+  try {
+    if(!window.CR_JRN_ALERT_DEDUP) return events;
+    const live = new Set((alarms || []).filter(Boolean).map(a => a.id));
+    return (events || []).filter(e => !(e && e.alarmId && live.has(e.alarmId)));
+  } catch(_){ return events; }
+}
 const CR_ALERT_EVENTS_KEY = 'cr_alert_events_v1';
 const CR_SIGNAL_EVENTS_KEY = 'cr_signal_events_v1';
 const CR_BACKTEST_REPLAYS_KEY = 'cr_backtest_replays_v1';
@@ -41729,7 +41780,12 @@ function _crJrnRenderAlerts(){
   if(!summary || !list) return;
   const alarm = (typeof window !== 'undefined') ? window.crAlarm : null;
   const bus = (typeof window !== 'undefined') ? window.crAlertBus : null;
-  const events = (bus && typeof bus.list === 'function') ? bus.list() : [];
+  // v1.0.292 — alarm-mirror events (save/fire rows for alarms that still
+  // exist) are deduped out: the alarm row below is the canonical card.
+  const events = _crJrnDedupBusEvents(
+    (bus && typeof bus.list === 'function') ? bus.list() : [],
+    (alarm && Array.isArray(alarm.alarms)) ? alarm.alarms : []
+  );
   const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
   const fmtDate = ts => ts ? new Date(ts).toLocaleString() : '—';
   const alarmToEvent = (a, reason) => {
@@ -42066,7 +42122,11 @@ function _crJrnRenderAlertV2(){
   const alarm = (typeof window !== 'undefined') ? window.crAlarm : null;
   const bus = (typeof window !== 'undefined') ? window.crAlertBus : null;
   const alarms = (alarm && Array.isArray(alarm.alarms)) ? alarm.alarms.filter(Boolean) : [];
-  const events = (bus && typeof bus.list === 'function') ? bus.list().filter(Boolean) : [];
+  // v1.0.292 — dedup alarm-mirror bus events (see _crJrnDedupBusEvents).
+  const events = _crJrnDedupBusEvents(
+    (bus && typeof bus.list === 'function') ? bus.list().filter(Boolean) : [],
+    alarms
+  );
   const esc = _crJrnEsc;
   const fmtDate = ts => ts ? new Date(ts).toLocaleString() : '--';
   const rows = [];
@@ -42196,7 +42256,11 @@ function _crJrnRenderAlertV2(){
 window.crJrnRenderAlerts = _crJrnRenderAlerts;
 window.crJrnRenderAlertV2 = _crJrnRenderAlertV2;
 function _crJrnRenderStats(){
-  const host = document.getElementById('crJrnStats');
+  // v1.0.291 — Stats folded into P&L: when the stats tab is archived the
+  // cards render into #crJrnPnlStats inside the P&L view (fallback: the
+  // archived #crJrnStats view, which restores by flipping the flag).
+  const _statsArchived = !!((window.CR_JRN_TAB_ARCHIVE || {}).stats);
+  const host = (_statsArchived && document.getElementById('crJrnPnlStats')) || document.getElementById('crJrnStats');
   if(!host) return;
   const d = _crJrnLoad();
   const closed = d.manual.filter(t => t.result === 'win' || t.result === 'loss');
@@ -42267,6 +42331,8 @@ function _crJrnRenderPnl(){
   const sumHost  = document.getElementById('crJrnPnlSummary');
   const listHost = document.getElementById('crJrnPnlList');
   if(!sumHost || !listHost) return;
+  // v1.0.291 — Stats cards live in this tab now.
+  try { _crJrnRenderStats(); } catch(_){}
   const d = (typeof _crJrnLoad === 'function') ? _crJrnLoad() : { manual:[], paper:[], bot:[] };
   const all = ((d.manual || []).concat(d.paper || []).concat(d.bot || [])).sort((a,b) => (b.ts||0) - (a.ts||0));
   const realized   = all.filter(t => t.result === 'win' || t.result === 'loss');
@@ -42549,25 +42615,53 @@ try {
 // Wire form actions, tab switches, and keyboard.
 setTimeout(() => {
   const tabs = document.querySelectorAll('#crJournalTabs button');
+  // v1.0.291 — hide archived Journal tab buttons (Bot / Sessions / Notes /
+  // Stats-folded-into-P&L). Views + renderers stay live for one-flag restore.
+  try {
+    const _jrnArch = window.CR_JRN_TAB_ARCHIVE || {};
+    tabs.forEach(b => { if(_jrnArch[b.getAttribute('data-jrntab')]) b.style.display = 'none'; });
+  } catch(_){}
   tabs.forEach(b => b.addEventListener('click', () => {
     const cat = b.getAttribute('data-jrntab');
     tabs.forEach(x => x.classList.toggle('active', x === b));
     // v0.9.15 — Tab map extended with Notes + P&L (folded in from the
     // standalone Trade Notes / P&L Tracker apps).
+    // v1.0.292 — merged ALERTS tab: with the Alert V2 button archived, the
+    // ALERTS tab serves both views by density preference (compact = legacy
+    // Alerts renderer, detailed = Alert V2 renderer; default detailed).
+    let viewCat = cat;
+    if(cat === 'alerts' && (window.CR_JRN_TAB_ARCHIVE || {}).alertv2){
+      viewCat = (_crJrnAlertDensity() === 'compact') ? 'alerts' : 'alertv2';
+    }
     [['manual','crJournalViewManual'],['paper','crJournalViewPaper'],['bot','crJournalViewBot'],['sessions','crJournalViewSessions'],['alerts','crJournalViewAlerts'],['alertv2','crJournalViewAlertV2'],['stats','crJournalViewStats'],['notes','crJournalViewNotes'],['pnl','crJournalViewPnl']].forEach(([k,id]) => {
       const el = document.getElementById(id);
-      if(el) el.classList.toggle('hidden', cat !== k);
+      if(el) el.classList.toggle('hidden', viewCat !== k);
     });
     if(cat === 'manual') _crJrnRenderManual();
     if(cat === 'paper')  _crJrnRenderPaper();
     if(cat === 'bot')    _crJrnRenderBot();
     if(cat === 'sessions') _crJrnRenderTermSessions();
-    if(cat === 'alerts') _crJrnRenderAlerts();
+    if(cat === 'alerts') { if(viewCat === 'alertv2') _crJrnRenderAlertV2(); else _crJrnRenderAlerts(); _crJrnSyncDensityChips(); }
     if(cat === 'alertv2') _crJrnRenderAlertV2();
     if(cat === 'stats')  _crJrnRenderStats();
     if(cat === 'notes')  _crJrnRenderNotes();
     if(cat === 'pnl')    _crJrnRenderPnl();
   }));
+  // v1.0.292 — density chips (one COMPACT/DETAILED pair in each alert view
+  // header): clicking stores the preference and re-enters the ALERTS tab.
+  function _crJrnSyncDensityChips(){
+    const dens = _crJrnAlertDensity();
+    document.querySelectorAll('#win-journal [data-jrn-density]').forEach(b =>
+      b.classList.toggle('active', b.getAttribute('data-jrn-density') === dens));
+  }
+  document.querySelectorAll('#win-journal [data-jrn-density]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      try { localStorage.setItem(CR_JRN_ALERT_DENSITY_KEY, btn.getAttribute('data-jrn-density') === 'compact' ? 'compact' : 'detailed'); } catch(_){}
+      const alertsTab = document.querySelector('#crJournalTabs button[data-jrntab="alerts"]');
+      if(alertsTab) alertsTab.click(); else _crJrnSyncDensityChips();
+    });
+  });
+  _crJrnSyncDensityChips();
   const addBtn = document.getElementById('crJrnAdd');
   if(addBtn) addBtn.addEventListener('click', () => {
     const get = id => document.getElementById(id);
@@ -46969,6 +47063,19 @@ function _crBotSetupPropose(payload){
 function _crBotSetupBuild(){
   const plan = window._crBotProposal;
   if(!plan || plan.expires < _crBotSetupNow()){
+    window._crBotProposal = null;
+    _crBotSetupRenderTerminalCard();
+    return false;
+  }
+  // v1.0.289 — a proposal can sit up to 15s while price keeps running.
+  // Re-check executability at confirm time; a played-out setup is logged
+  // as 'expired' instead of being built as a dead bracket.
+  if(typeof _botSetupExecutable === 'function' && !_botSetupExecutable(plan.side, plan.price,
+      { idx:(plan.result && typeof plan.result.idx === 'number' && isFinite(plan.result.idx)) ? plan.result.idx : null })){
+    plan.status = 'expired';
+    CR_BOT_SETUP_RECENT.push({ id:plan.id, botId:plan.botId, name:plan.name, side:plan.side, price:plan.price, status:'expired', t:_crBotSetupWallNow() });
+    while(CR_BOT_SETUP_RECENT.length > 40) CR_BOT_SETUP_RECENT.shift();
+    try { if(typeof crNotify === 'function') crNotify(plan.name + ': setup no longer executable — skipped', 'warn'); } catch(_){}
     window._crBotProposal = null;
     _crBotSetupRenderTerminalCard();
     return false;
@@ -52829,6 +52936,61 @@ function _botConfluenceOk(side){
   } catch(_){}
   return true;
 }
+// v1.0.289 — Executability gate: bots only build setups that are still
+// LIVE at current price. A setup is dead when price has already moved
+// away from its entry level — either through it in the trade direction
+// (played out) or through where the stop would sit (invalidated). Both
+// reduce to one rule: the entry must still be within reach of price.
+// Tolerance = 2× rolling ATR(14) (game.atr, player-window), so the gate
+// scales with every timeframe; floor of 0.15% covers ATR warm-up.
+// v1.0.290 — history walk (Julian: "we only need running ones"): proximity
+// alone misses a setup whose move ALREADY RAN and came back near the level.
+// When the detection anchor index is known (opts.idx, global candles), walk
+// the candles since the anchor up to the player: if favorable excursion has
+// already reached the default 2R target distance, or the stop region was
+// swept, the setup has played out — dead even though price sits near entry
+// again. Fresh anchors (idx == player) skip the walk untouched.
+function _botSetupExecutable(side, entry, opts){
+  try {
+    if(entry == null || !isFinite(+entry)) return true; // no level → nothing to gate
+    const cur = (typeof currentPrice === 'function') ? currentPrice()
+              : (typeof player !== 'undefined' && player ? player.py : null);
+    if(cur == null || !isFinite(cur) || cur <= 0) return true;
+    let a = 0;
+    try { a = (typeof game !== 'undefined' && game && isFinite(game.atr)) ? game.atr : 0; } catch(_){}
+    const base = Math.max(a, cur * 0.0015);
+    const tol = base * 2;
+    if(Math.abs(cur - +entry) > tol) return false;
+    // ── played-out history walk ──
+    const idx = (opts && opts.idx != null && isFinite(+opts.idx)) ? Math.floor(+opts.idx) : null;
+    if(idx != null && typeof candles !== 'undefined' && Array.isArray(candles) && candles.length){
+      let upto = (opts && opts.uptoIdx != null && isFinite(+opts.uptoIdx)) ? Math.floor(+opts.uptoIdx) : null;
+      if(upto == null){
+        try {
+          if(typeof player !== 'undefined' && player && typeof STEP !== 'undefined' && STEP > 0){
+            upto = Math.floor(player.wx / STEP);
+          }
+        } catch(_){}
+      }
+      if(upto == null || !isFinite(upto)) upto = candles.length - 1;
+      upto = Math.max(0, Math.min(candles.length - 1, upto));
+      const slDist = tol;            // where the stop would sit (matches the reach gate)
+      const tpDist = slDist * 2;     // default 2R target distance
+      const dir = /^(sell|short)/i.test(String(side || '')) ? -1 : 1;
+      for(let i = Math.max(0, idx + 1); i <= upto; i++){
+        const c = candles[i];
+        if(!c) continue;
+        const hi = +c.h, lo = +c.l;
+        if(!isFinite(hi) || !isFinite(lo)) continue;
+        const fav = dir > 0 ? (hi - +entry) : (+entry - lo);  // move in trade direction
+        const adv = dir > 0 ? (+entry - lo) : (hi - +entry);  // move through the stop side
+        if(fav >= tpDist) return false;       // target distance already traveled — played out
+        if(adv >= slDist * 1.5) return false; // stop region already swept — invalidated
+      }
+    }
+    return true;
+  } catch(_){ return true; }
+}
 // Collaborative position sizing — base 20, scaled by an active OI confirm
 // (game.oiBoost, side-matched) and the live confluence tier.
 function _botRisk(side){
@@ -52923,13 +53085,16 @@ function drawBotOrbs(){
           } else if(b.detectorId && typeof sdk[b.detectorId] === 'function'){
             r = sdk[b.detectorId].call(sdk, _winOpts);
           }
-          if(r && r.matched && _botConfluenceOk(r.side)){
-              // Target Y = the matched level / neckline; target X = the matched
-              // candle column when the detector reports one (r.idx), else fall
-              // back to the player's column.
-              const matchedLevel = (r.level !== undefined) ? r.level
-                                 : (r.neckline !== undefined) ? r.neckline
-                                 : (r.price !== undefined) ? r.price : null;
+          // v1.0.289 — compute the matched level BEFORE acceptance so the
+          // executability gate can see it: a detector scanning the lookback
+          // window happily matches patterns whose move already happened.
+          // Those are skipped here — bots only fly to setups that are still
+          // executable at current price (on every timeframe).
+          const matchedLevel = (r && r.level !== undefined) ? r.level
+                             : (r && r.neckline !== undefined) ? r.neckline
+                             : (r && r.price !== undefined) ? r.price : null;
+          if(r && r.matched && _botConfluenceOk(r.side) && _botSetupExecutable(r.side, matchedLevel,
+              { idx:(typeof r.idx === 'number' && isFinite(r.idx)) ? r.idx : null, uptoIdx:playerIdx })){
               const targetIdx = (typeof r.idx === 'number' && isFinite(r.idx))
                 ? Math.max(0, Math.min(candles.length - 1, r.idx))
                 : playerIdx;
@@ -52979,7 +53144,14 @@ function drawBotOrbs(){
         const reg = _detectorRegistry(b.id);
         const _side = (st.target.result.side || '');
         let _cool = (b.cooldownMs || 8000);
-        if(_botMode(b) === 'propose'){
+        if(!_botSetupExecutable(_side, st.target.price,
+            { idx:(st.target.result && typeof st.target.result.idx === 'number' && isFinite(st.target.result.idx)) ? st.target.result.idx : null, uptoIdx:playerIdx })){
+          // v1.0.289 — price moved through the level while the orb was in
+          // transit: the setup played out mid-flight. Stand down instead of
+          // building a dead bracket.
+          try { if(typeof toast === 'function') toast('⊘ ' + b.name + ': setup no longer executable — standing down'); } catch(_){}
+          _cool = 2000;
+        } else if(_botMode(b) === 'propose'){
           if(window._crBotProposal && window._crBotProposal.expires > tNow){
             // A proposal is already pending (the slot is a single global).
             // Don't clobber it — back off briefly and re-offer once it clears.
@@ -62561,7 +62733,7 @@ function log(msg){
     { prog:'terminal',  icon:'⌨',  name:'TERMINAL',     kind:'DESKTOP',    line:"Trading console: Engine · HyperTracker · SolanaTracker · CEXTracker · Strategies.",                   hint:"+ spawns custom widgets built in Workbench → Terminal. Drag any pane to desktop or chart." },
     { prog:'tokenterm', icon:'◎', name:'TOKEN TERMINAL',kind:'DESKTOP',   line:"Live Binance data per token. ★ Winners default. Pick a TF (15m/1h/4h/1D/1W) per coin.",                hint:"Drag any row to pin its profile + sparkline as a desktop or chart widget." },
     { archived:true, prog:'bot',   icon:'▣', name:'BOT TERMINAL', kind:'DESKTOP', line:"Wire agents: Claude · Telegram · Lobster · OpenClaw.", hint:"Drag an agent row onto the desktop to keep that chat one click away. COACH.llm lives in the pinned widget / toolbar now." },
-    { prog:'journal',   icon:'❏', name:'JOURNAL',      kind:'DESKTOP',    line:"Auto-logs every order: score · side · entry · SL · TP · ref levels · checklist snapshot.",            hint:"4 tabs: Manual (auto from SDK) · Paper (discretionary) · Bot (bot-fired) · Stats." },
+    { prog:'journal',   icon:'❏', name:'JOURNAL',      kind:'DESKTOP',    line:"Auto-logs every order: score · side · entry · SL · TP · ref levels · checklist snapshot.",            hint:"Tabs: Manual (auto from SDK) · Paper (discretionary) · Alerts (COMPACT/DETAILED toggle) · P&L (incl. stats). Bot / Sessions / Notes / Alert V2 archived (v1.0.291-292)." },
     { archived:true, prog:'sdk',   icon:'⫘',  name:'SDK',          kind:'DESKTOP', line:"Every order routes through ChartRunnerSDK: bracket · ladder · oco · hedge · radar · rescue.", hint:"Same call shape drops onto Dexscreener / TradingView in Phase 1, Solana in Phase 2." },
     { prog:null,        icon:'⌖', name:'PLAYER AVATAR',kind:'DESKTOP',    line:"Click 'Player' in the menubar to spawn your avatar on the desktop. Press SPACE to shoot widgets/windows.",hint:"Apps stay immune. Drag the avatar to reposition. Player menu again to dismiss." },
     { prog:null,        icon:'⌅', name:'TO THE FLOOR', kind:'OUTRO',      line:"That's the desktop. Open Tutorial again and pick In-Game — I'll launch a run and gate each step on you doing the move.",hint:"Or just press ▶ Run on any mode card to start playing." },
