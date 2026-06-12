@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.297
-     LAST UPDATED:    2026-06-12  ·  Maps backfill + dedupe: thumbless map cards self-heal with a real mini candle chart fetched for the map's asset/timeframe, and identical-content saves no longer stack — canon-hash guard in save() plus a one-time boot cleanup of existing twins.
+     CURRENT VERSION: v1.0.298
+     LAST UPDATED:    2026-06-12  ·  Red Laser category merge: Shapes + Text & Notes, Fibonacci + Fib studies, Forecasting + Forecasting studies, and Volume-based + Gann each share one spawn-menu window with per-group section headers; rail badge sums, combined labels.
+     (v1.0.298 = Red Laser category merge (Julian: "move together following categories into one window but labeled properly: Shapes + text & notes, fibunacci & fib studies, forecasting + forecasting studies, volume based + gann"). Display-level merge in the laser spawn-menu builder ONLY — WB_LASER_TOOLS cat ids, Workbench/Profile TOOLS grids, and campaign loadouts untouched. New CR_RED_CAT_MERGE { text→shapes, fibStudy→fib, forecastStudy→forecast, gann→volume } + CR_RED_CAT_MERGED_LABELS ("Shapes · Text & Notes", "Fibonacci · Fib Studies", "Forecasting · Studies", "Volume · Gann"): activeCats drops the four source ids and relabels the four targets when merged content exists, the rail icon badge sums both groups (_crCatMergedTools), and renderPane renders one labeled section header per source group inside the shared window (target group first, then each merged group — e.g. SHAPES rows then TEXT & NOTES rows). Categories with no merged content keep their original label; blue palette unaffected (orders-only). No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.297 = Maps backfill + dedupe (Julian: "still buggy, should display map + there is a duplicate" — v1.0.293 replaced the broken-image icon with a ▦ glyph, but thumbless cards should show an actual chart, and TESTA existed twice). (1) Thumbnail backfill: _crMapThumbBackfill runs after every renderMaps — for each map without a valid data:image thumb (max 4/pass, one attempt per id per session, busy-guarded) it fetches 60 Binance klines for the map's asset/timeframe, draws a 240×90 dark mini candle chart (green/red wicks + bodies), persists via new crMaps.setThumb(id,url) with thumbAuto:true, and re-renders — share-link imports, runner_wallet saves, and old no-canvas saves all self-heal; offline/unknown-symbol keeps the v293 glyph. (2) Duplicate dedupe: new _canon(m) — stable sorted-key JSON excluding id/t/thumb/thumbAuto/onChain/sig/onChainAt (mirrors the share module's HASH_EXCLUDE) — backs two guards: save() updates + front-moves the existing record when an identical-content map exists (refreshes t, keeps the better thumb, preserves on-chain fields, toast "Map already saved — refreshed") instead of unshifting a twin, and crMaps.dedupeAll() runs once at boot keeping the best copy per canon group (anchored on-chain > valid thumb > newest) — clears the existing TESTA twin. Same-name maps with DIFFERENT content are untouched. crMaps API grows setThumb + dedupeAll. No SDK, broker, signing, on-chain write, or live-execution change.)
      (v1.0.296 = Configure Run canonical open size (Julian: "configure run should always open in this size so timeframes are aligned"). New #win-configs width rule min(1060px, calc(100% − 44px)) overrides the base .os-window min(680px,…) that wrapped the 10 timeframe pills onto two rows, and osRefreshConfigs — which runs on every open via both osOpenWindow and osOpenWindowMulti — clears inline width/height left by drag-resizes, so the window ALWAYS opens at the canonical size with the timeframe row aligned on one line. Small viewports fall back to calc(100% − 44px) where the tfbox flex-wrap still applies. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.295 = Domain-complete roster (Julian: "it's okay if it is more than 10, the selection should cover all and be best in practice for chartrunner"). CR_LIVE_BOT_IDS grows 10 → 16: + Range Rotation (range rotation domain), Mean Reversion Snapback (+12ΣR real), VWAP Reclaim (+14ΣR, positive all 3 TFs — value reclaim), Volume Profile Rejection (+9ΣR — auction/value-area), Breakout Retest (+6ΣR — breakout domain), Divergence Hunter (sole oscillator-divergence rep, not headless-evaluable — probation via Journal stats; also un-archives campaign Ch.33's teaching bot). Still archived (13): S/R Flip / Stop Run Trap / Momentum Ignition (domain overlaps), Price Action / RSI Failure / OCO Ranger / BARR (proven negative), H&S / FA / Gap Fill (dead detectors), Risk Officer (inert), OI Sentinel (no feed), Harmonic (sample too small). Equip toast retexted to "curated live roster"; CR_BOT_ROSTER_TOP10 flag name kept for compat. No SDK, broker, signing, on-chain, or live-execution change.)
@@ -25179,7 +25180,29 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
     if(!byCat[t.cat]) byCat[t.cat] = [];
     byCat[t.cat].push(t);
   });
-  const activeCats = WB_TOOL_CATEGORIES.filter(c => byCat[c.id].length > 0);
+  // v1.0.298 — merged display categories (Julian): Shapes + Text & Notes,
+  // Fibonacci + Fib studies, Forecasting + Forecasting studies, and
+  // Volume-based + Gann each share ONE window. Tool defs keep their raw
+  // `cat` ids; the merge is display-level only — the pane renders one
+  // labeled section per source group, the rail shows one icon + summed
+  // badge, and the rail tooltip / pane title carry the combined label.
+  const CR_RED_CAT_MERGE = { text:'shapes', fibStudy:'fib', forecastStudy:'forecast', gann:'volume' };
+  const CR_RED_CAT_MERGED_LABELS = {
+    shapes:   'Shapes · Text & Notes',
+    fib:      'Fibonacci · Fib Studies',
+    forecast: 'Forecasting · Studies',
+    volume:   'Volume · Gann',
+  };
+  const _crCatMergeSrcs = id => Object.keys(CR_RED_CAT_MERGE).filter(s => CR_RED_CAT_MERGE[s] === id);
+  const _crCatMergedTools = id => (byCat[id] || []).concat(..._crCatMergeSrcs(id).map(s => byCat[s] || []));
+  const activeCats = WB_TOOL_CATEGORIES
+    .filter(c => !CR_RED_CAT_MERGE[c.id] && _crCatMergedTools(c.id).length > 0)
+    .map(c => {
+      const hasMergedContent = _crCatMergeSrcs(c.id).some(s => (byCat[s] || []).length > 0);
+      return (hasMergedContent && CR_RED_CAT_MERGED_LABELS[c.id])
+        ? Object.assign({}, c, { label: CR_RED_CAT_MERGED_LABELS[c.id] })
+        : c;
+    });
   // RAIL — one icon per active category. Default to the first category.
   let activeCat = activeCats[0] ? activeCats[0].id : null;
   const railBtns = [];
@@ -25194,10 +25217,17 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
       pane.appendChild(empty);
       return;
     }
-    const tools = byCat[activeCat] || [];
     const catDef = WB_TOOL_CATEGORIES.find(c => c.id === activeCat);
+    // v1.0.298 — merged windows render one labeled section per source group
+    // (e.g. SHAPES rows, then a TEXT & NOTES header + its rows).
+    const sections = [[catDef ? catDef.label : activeCat, byCat[activeCat] || []]];
+    _crCatMergeSrcs(activeCat).forEach(s => {
+      const d = WB_TOOL_CATEGORIES.find(c => c.id === s);
+      sections.push([d ? d.label : s, byCat[s] || []]);
+    });
+    sections.filter(sec => sec[1].length > 0).forEach(([secLabel, tools]) => {
     const groupHd = document.createElement('div');
-    groupHd.textContent = (catDef ? catDef.label.toUpperCase() : activeCat);
+    groupHd.textContent = String(secLabel).toUpperCase();
     groupHd.style.cssText = 'padding:6px 14px 4px;font-size:10px;color:#9aa0aa;letter-spacing:.6px;text-transform:uppercase';
     pane.appendChild(groupHd);
     tools.forEach(t => {
@@ -25232,6 +25262,7 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
       };
       pane.appendChild(row);
     });
+    }); // v1.0.298 — end merged-sections loop
     // Footer separator + cancel.
     const sep = document.createElement('div');
     sep.style.cssText = 'border-top:1px solid rgba(106,110,120,0.3);margin:6px 0;';
@@ -25263,8 +25294,8 @@ function openLaserSpawnMenu(sx, sy, wxAt, priceAt){
         railBtns.forEach((b, j) => { b.style.background = activeCats[j].id === activeCat ? 'rgba(255,255,255,0.10)' : 'transparent'; });
         renderPane();
       };
-      // count badge
-      const count = byCat[c.id].length;
+      // count badge — v1.0.298: merged windows show the summed count
+      const count = _crCatMergedTools(c.id).length;
       if(count > 0){
         const badge = document.createElement('span');
         badge.textContent = count;
