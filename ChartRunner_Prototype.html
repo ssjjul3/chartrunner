@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.296
-     LAST UPDATED:    2026-06-12  ·  Configure Run canonical size: the window always opens at min(1060px,…) so the 10-pill timeframe row sits on one line; drag-resizes reset on every open.
+     CURRENT VERSION: v1.0.297
+     LAST UPDATED:    2026-06-12  ·  Maps backfill + dedupe: thumbless map cards self-heal with a real mini candle chart fetched for the map's asset/timeframe, and identical-content saves no longer stack — canon-hash guard in save() plus a one-time boot cleanup of existing twins.
+     (v1.0.297 = Maps backfill + dedupe (Julian: "still buggy, should display map + there is a duplicate" — v1.0.293 replaced the broken-image icon with a ▦ glyph, but thumbless cards should show an actual chart, and TESTA existed twice). (1) Thumbnail backfill: _crMapThumbBackfill runs after every renderMaps — for each map without a valid data:image thumb (max 4/pass, one attempt per id per session, busy-guarded) it fetches 60 Binance klines for the map's asset/timeframe, draws a 240×90 dark mini candle chart (green/red wicks + bodies), persists via new crMaps.setThumb(id,url) with thumbAuto:true, and re-renders — share-link imports, runner_wallet saves, and old no-canvas saves all self-heal; offline/unknown-symbol keeps the v293 glyph. (2) Duplicate dedupe: new _canon(m) — stable sorted-key JSON excluding id/t/thumb/thumbAuto/onChain/sig/onChainAt (mirrors the share module's HASH_EXCLUDE) — backs two guards: save() updates + front-moves the existing record when an identical-content map exists (refreshes t, keeps the better thumb, preserves on-chain fields, toast "Map already saved — refreshed") instead of unshifting a twin, and crMaps.dedupeAll() runs once at boot keeping the best copy per canon group (anchored on-chain > valid thumb > newest) — clears the existing TESTA twin. Same-name maps with DIFFERENT content are untouched. crMaps API grows setThumb + dedupeAll. No SDK, broker, signing, on-chain write, or live-execution change.)
      (v1.0.296 = Configure Run canonical open size (Julian: "configure run should always open in this size so timeframes are aligned"). New #win-configs width rule min(1060px, calc(100% − 44px)) overrides the base .os-window min(680px,…) that wrapped the 10 timeframe pills onto two rows, and osRefreshConfigs — which runs on every open via both osOpenWindow and osOpenWindowMulti — clears inline width/height left by drag-resizes, so the window ALWAYS opens at the canonical size with the timeframe row aligned on one line. Small viewports fall back to calc(100% − 44px) where the tfbox flex-wrap still applies. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.295 = Domain-complete roster (Julian: "it's okay if it is more than 10, the selection should cover all and be best in practice for chartrunner"). CR_LIVE_BOT_IDS grows 10 → 16: + Range Rotation (range rotation domain), Mean Reversion Snapback (+12ΣR real), VWAP Reclaim (+14ΣR, positive all 3 TFs — value reclaim), Volume Profile Rejection (+9ΣR — auction/value-area), Breakout Retest (+6ΣR — breakout domain), Divergence Hunter (sole oscillator-divergence rep, not headless-evaluable — probation via Journal stats; also un-archives campaign Ch.33's teaching bot). Still archived (13): S/R Flip / Stop Run Trap / Momentum Ignition (domain overlaps), Price Action / RSI Failure / OCO Ranger / BARR (proven negative), H&S / FA / Gap Fill (dead detectors), Risk Officer (inert), OI Sentinel (no feed), Harmonic (sample too small). Equip toast retexted to "curated live roster"; CR_BOT_ROSTER_TOP10 flag name kept for compat. No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.294 = Top-10 live bot roster (Julian: "only top 10 functioning bots should be in live game"; eval kit _patches/bot-eval-2026-06-12, real BTC 15m/1h/4h run by Julian 2026-06-12). New flag CR_BOT_ROSTER_TOP10 + CR_LIVE_BOT_IDS: live ten = the 8 consistent cross-TF earners (Session Open Drive +57ΣR, Order Block Retest +31, Fib Reaction +25, MTF Alignment +25, Volume Climax +20, SFP +17, Trend Pullback +17, Liquidity Sweep +14) + CCV Hunter (documented-edge flagship) + Confluence Judge (review multiplier) — structure Julian approved via the eval question. The other 19 built-ins get row.archived at seed time (user spec/Forge bots are never archived): hidden from the Bots roster UI (_wbRenderBots) and the Profile bot slots, blocked from player equip (_wbToggleEquip toast), and filtered out of the orbit resolver (_wbEquippedBots) — EXCEPT during campaign chapters, where force-equipped teaching bots (Ch.28–33: det_hs/det_barr/det_fa/det_div) still resolve and orbit. wb.bots rows stay seeded for saves + campaign + restore; H&S/FA/Gap Fill flagged as dead detectors (zero signals on every real TF — fix before restore). Restore = flip the flag. No SDK, broker, signing, on-chain, or live-execution change.)
@@ -67879,9 +67880,70 @@ const crL3 = (function(){
     }
     function cloneArr(a){ try{ return JSON.parse(JSON.stringify(a || [])); }catch{ return []; } }
     function cloneObj(o){ try{ return o ? JSON.parse(JSON.stringify(o)) : null; }catch{ return null; } }
+    // v1.0.297 — content canon for duplicate detection: stable sorted-key
+    // JSON excluding identity/volatile/on-chain fields (mirrors the share
+    // module's HASH_EXCLUDE). Two saves of the same chart setup canon equal.
+    const _CANON_EXCLUDE = { id:1, t:1, thumb:1, thumbAuto:1, onChain:1, sig:1, onChainAt:1 };
+    function _canon(m){
+      try {
+        const sort = v => {
+          if(Array.isArray(v)) return v.map(sort);
+          if(v && typeof v === 'object'){
+            const o = {};
+            Object.keys(v).sort().forEach(k => { o[k] = sort(v[k]); });
+            return o;
+          }
+          return v;
+        };
+        const slim = {};
+        Object.keys(m || {}).forEach(k => { if(!_CANON_EXCLUDE[k]) slim[k] = m[k]; });
+        return JSON.stringify(sort(slim));
+      } catch(_){ return Math.random().toString(36); } // never dedupe on error
+    }
+    function _thumbValid(m){ return m && typeof m.thumb === 'string' && m.thumb.indexOf('data:image') === 0; }
+    function setThumb(id, dataUrl){
+      const list = readAll();
+      const m = list.find(x => x.id === id);
+      if(!m) return false;
+      m.thumb = dataUrl; m.thumbAuto = true;
+      writeAll(list);
+      return true;
+    }
+    // v1.0.297 — one-time duplicate cleanup: group by canon, keep the best
+    // copy per group (anchored on-chain > valid thumb > newest), drop twins.
+    function dedupeAll(){
+      const list = readAll();
+      const best = new Map();
+      for(const m of list){
+        const c = _canon(m);
+        const cur = best.get(c);
+        if(!cur){ best.set(c, m); continue; }
+        const score = x => (x.onChain || x.sig ? 4 : 0) + (_thumbValid(x) ? 2 : 0) + ((x.t || 0) > (cur.t || 0) ? 1 : 0);
+        if(score(m) > score(cur)) best.set(c, m);
+      }
+      if(best.size === list.length) return 0;
+      const kept = list.filter(m => best.get(_canon(m)) === m);
+      writeAll(kept);
+      return list.length - kept.length;
+    }
     function save(name){
       const list = readAll();
-      list.unshift(snapshot(name));
+      const s = snapshot(name);
+      // v1.0.297 — identical-content save updates the existing card instead
+      // of stacking a twin: refresh t, keep the better thumb, preserve
+      // on-chain fields, move to front.
+      const c = _canon(s);
+      const i = list.findIndex(x => _canon(x) === c);
+      if(i !== -1){
+        const ex = list.splice(i, 1)[0];
+        ex.t = s.t;
+        if(_thumbValid(s) || !_thumbValid(ex)) { if(_thumbValid(s)) { ex.thumb = s.thumb; ex.thumbAuto = false; } }
+        list.unshift(ex);
+        writeAll(list);
+        try { if(typeof toast === 'function') toast('Map already saved — refreshed: ' + ex.name); } catch(_){}
+        return list[0];
+      }
+      list.unshift(s);
       while(list.length > 30) list.pop(); // cap
       writeAll(list);
       return list[0];
@@ -68013,7 +68075,7 @@ const crL3 = (function(){
       const list = readAll().filter(x => x.id !== id);
       writeAll(list);
     }
-    return { readAll, save, load, del };
+    return { readAll, save, load, del, setThumb, dedupeAll };
   })();
   // v0.8k#24be — Expose crMaps on window so the desktop-widget renderer
   // (_wBodyHTML / _wTitleFor at top-level scope) can resolve dragged map
@@ -68022,6 +68084,9 @@ const crL3 = (function(){
   // crMaps inside this IIFE so `typeof crMaps !== 'undefined'` was false
   // in the outer scope.
   try { window.crMaps = crMaps; } catch(_){}
+  // v1.0.297 — one-time duplicate cleanup at boot (identical-content twins
+  // from double-saves; keeps anchored/thumbed/newest copy per group).
+  try { const _dd = crMaps.dedupeAll(); if(_dd) console.log('[crMaps] removed ' + _dd + ' duplicate map(s)'); } catch(_){}
   // v0.8k#24be — Repaint widgets now that crMaps is reachable. If the
   // player landed on the splash before a map widget could render its body,
   // an immediate refresh resolves the title + chart on first paint.
@@ -68038,9 +68103,58 @@ const crL3 = (function(){
       + (ok ? '<img src="' + m.thumb + '" alt="" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display=\'none\'">' : '')
       + '</div>';
   }
+  // v1.0.297 — thumbnail backfill: thumbless maps self-heal with a real mini
+  // candle chart fetched for their asset/timeframe (60 klines, same Binance
+  // REST host the chart loader uses). One attempt per map id per session;
+  // persisted via crMaps.setThumb so the ▦ glyph is only a transient state.
+  const _crMapThumbTried = new Set();
+  let _crMapBackfillBusy = false;
+  async function _crMapThumbBackfill(){
+    if(_crMapBackfillBusy) return;
+    const list = crMaps.readAll();
+    const missing = list.filter(m =>
+      !(typeof m.thumb === 'string' && m.thumb.indexOf('data:image') === 0)
+      && !_crMapThumbTried.has(m.id)).slice(0, 4);
+    if(!missing.length) return;
+    _crMapBackfillBusy = true;
+    let healed = 0;
+    for(const m of missing){
+      _crMapThumbTried.add(m.id);
+      try {
+        const sym = String(m.asset || 'btc').toUpperCase().replace(/[^A-Z0-9]/g, '') + 'USDT';
+        const tf = String(m.timeframe || '15m').replace('H', 'h').replace('D', 'd').replace('W', 'w');
+        const r = await fetch('https://api.binance.com/api/v3/klines?symbol=' + sym + '&interval=' + tf + '&limit=60');
+        if(!r.ok) continue;
+        const k = await r.json();
+        if(!Array.isArray(k) || k.length < 5) continue;
+        const cs = k.map(row => ({ o:+row[1], h:+row[2], l:+row[3], c:+row[4] }));
+        let hi = -Infinity, lo = Infinity;
+        cs.forEach(c => { hi = Math.max(hi, c.h); lo = Math.min(lo, c.l); });
+        const cv = document.createElement('canvas'); cv.width = 240; cv.height = 90;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, 240, 90);
+        const pad = 6, cw = 240 / cs.length;
+        const y = v => pad + (hi - v) / ((hi - lo) || 1) * (90 - 2 * pad);
+        cs.forEach((c, i) => {
+          const x = i * cw + cw / 2;
+          const up = c.c >= c.o;
+          const col = up ? 'rgba(61,220,151,.92)' : 'rgba(255,91,127,.92)';
+          ctx.strokeStyle = col; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x, y(c.h)); ctx.lineTo(x, y(c.l)); ctx.stroke();
+          ctx.fillStyle = col;
+          const bt = y(Math.max(c.o, c.c)), bb = y(Math.min(c.o, c.c));
+          ctx.fillRect(x - Math.max(1, cw * 0.28), bt, Math.max(2, cw * 0.56), Math.max(1, bb - bt));
+        });
+        if(crMaps.setThumb(m.id, cv.toDataURL('image/jpeg', 0.6))) healed++;
+      } catch(_){ /* offline / unknown symbol → glyph stays */ }
+    }
+    _crMapBackfillBusy = false;
+    if(healed) try { renderMaps(); } catch(_){}
+  }
   // Render the desktop Maps grid + phone Maps list
   function renderMaps(){
     const list = crMaps.readAll();
+    try { setTimeout(_crMapThumbBackfill, 0); } catch(_){}
     const fmtAgo = (t) => {
       const d = (Date.now() - t) / 1000;
       if(d < 60) return Math.floor(d) + 's ago';
