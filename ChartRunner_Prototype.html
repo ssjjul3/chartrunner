@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.298
-     LAST UPDATED:    2026-06-12  ·  Red Laser category merge: Shapes + Text & Notes, Fibonacci + Fib studies, Forecasting + Forecasting studies, and Volume-based + Gann each share one spawn-menu window with per-group section headers; rail badge sums, combined labels.
+     CURRENT VERSION: v1.0.299
+     LAST UPDATED:    2026-06-16  ·  M-MP Live Map Rooms — co-presence multiplayer: window.crRoom presence client (?room= links, seat resolution, WebSocket join/15Hz pos, peer-avatar render hooked after crGhost), crMapsShare(map,{live:true}) + Shift-click room-link emission, on-chain-ref snapshot integrity verification, DEFAULT_RELAY → chartrunner-relay Funnel host. Dormant unless a room link is opened.
+     (v1.0.299 = M-MP Live Map Rooms (Julian: "multiplayer means multiple players run on one chart" — guests + wallets open a map link and see each other live; only the creator acts on the original on-chain, other wallets fork saves/trades to their own account). NEW window.crRoom IIFE (inserted before the frame loop): captures ?room/host/asset/tf synchronously, resolves seat (wallet==host→creator / wallet / guest), connects the off-chain presence relay, sends player.wx/py at 15 Hz, renders peers via own sX()/priceToY() with interpolation/TTL/cull; crRoom.render hooked after crGhost.render. crMapsShare gains {live:true} → builds the schema room link (roomId=base58(sha256(host|mapHash|asset|tf)), polymorphic map ref, snapshot fallback); maps-card Share = snapshot, Shift/Alt-click = LIVE room (needs wallet); window.crMapsShareLive convenience. sharedMap import verifies the snapshot's canonical hash against the h sidecar/roomId-bound hash (window.crRoomMapVerify). DEFAULT_RELAY = wss://chartrunner-relay.tail879ec.ts.net (dev override localStorage.cr_relay_url). Relay service in chartrunner-relay/ NOT yet deployed; presence dormant until then. Static trace 9/9; node --check clean. No SDK, broker, signing, on-chain write, or live-execution change — presence is off-chain and non-authoritative.)
      (v1.0.298 = Red Laser category merge (Julian: "move together following categories into one window but labeled properly: Shapes + text & notes, fibunacci & fib studies, forecasting + forecasting studies, volume based + gann"). Display-level merge in the laser spawn-menu builder ONLY — WB_LASER_TOOLS cat ids, Workbench/Profile TOOLS grids, and campaign loadouts untouched. New CR_RED_CAT_MERGE { text→shapes, fibStudy→fib, forecastStudy→forecast, gann→volume } + CR_RED_CAT_MERGED_LABELS ("Shapes · Text & Notes", "Fibonacci · Fib Studies", "Forecasting · Studies", "Volume · Gann"): activeCats drops the four source ids and relabels the four targets when merged content exists, the rail icon badge sums both groups (_crCatMergedTools), and renderPane renders one labeled section header per source group inside the shared window (target group first, then each merged group — e.g. SHAPES rows then TEXT & NOTES rows). Categories with no merged content keep their original label; blue palette unaffected (orders-only). No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.297 = Maps backfill + dedupe (Julian: "still buggy, should display map + there is a duplicate" — v1.0.293 replaced the broken-image icon with a ▦ glyph, but thumbless cards should show an actual chart, and TESTA existed twice). (1) Thumbnail backfill: _crMapThumbBackfill runs after every renderMaps — for each map without a valid data:image thumb (max 4/pass, one attempt per id per session, busy-guarded) it fetches 60 Binance klines for the map's asset/timeframe, draws a 240×90 dark mini candle chart (green/red wicks + bodies), persists via new crMaps.setThumb(id,url) with thumbAuto:true, and re-renders — share-link imports, runner_wallet saves, and old no-canvas saves all self-heal; offline/unknown-symbol keeps the v293 glyph. (2) Duplicate dedupe: new _canon(m) — stable sorted-key JSON excluding id/t/thumb/thumbAuto/onChain/sig/onChainAt (mirrors the share module's HASH_EXCLUDE) — backs two guards: save() updates + front-moves the existing record when an identical-content map exists (refreshes t, keeps the better thumb, preserves on-chain fields, toast "Map already saved — refreshed") instead of unshifting a twin, and crMaps.dedupeAll() runs once at boot keeping the best copy per canon group (anchored on-chain > valid thumb > newest) — clears the existing TESTA twin. Same-name maps with DIFFERENT content are untouched. crMaps API grows setThumb + dedupeAll. No SDK, broker, signing, on-chain write, or live-execution change.)
      (v1.0.296 = Configure Run canonical open size (Julian: "configure run should always open in this size so timeframes are aligned"). New #win-configs width rule min(1060px, calc(100% − 44px)) overrides the base .os-window min(680px,…) that wrapped the 10 timeframe pills onto two rows, and osRefreshConfigs — which runs on every open via both osOpenWindow and osOpenWindowMulti — clears inline width/height left by drag-resizes, so the window ALWAYS opens at the canonical size with the timeframe row aligned on one line. Small viewports fall back to calc(100% − 44px) where the tfbox flex-wrap still applies. No SDK, broker, signing, on-chain, or live-execution change.)
@@ -15812,6 +15813,23 @@ window.crChainSave = (function(){
           try {
             var json = await _ungzipB64(parts.m);
             var map  = JSON.parse(json);
+            // M-MP — on-chain-ref integrity: when the link carries a content hash
+            // (h sidecar, also the hash bound into a room's roomId), recompute the
+            // snapshot's canonical hash BEFORE mutating the map and compare. Match ⇒
+            // the snapshot is exactly the creator's anchored map; mismatch ⇒ drift
+            // (still importable, just flagged). Verdict stashed for the room badge.
+            try {
+              if (parts.h) {
+                var _expect = String(parts.h).toLowerCase();
+                var _actual = (await sha256Hex(canonicalJson(map))).toLowerCase();
+                var _ok = (_actual === _expect);
+                window.crRoomMapVerify = { name: map.name, verified: _ok, expected: _expect, actual: _actual, at: Date.now() };
+                if (typeof crNotify === 'function') {
+                  crNotify(_ok ? '✓ Map verified — matches the creator’s anchored hash'
+                               : '⚠ Map differs from the shared hash (content drift)');
+                }
+              }
+            } catch(_){}
             // Re-id locally so the recipient owns this copy.
             map.id = 'm_' + Date.now() + '_' + Math.floor(Math.random()*1000);
             map.t  = Date.now();
@@ -15855,8 +15873,45 @@ window.crChainSave = (function(){
     for (var i = 0; i < view.length; i++) bin += String.fromCharCode(view[i]);
     return btoa(bin);
   }
-  window.crMapsShare = async function(map){
+  // ── M-MP — Live Map Room helpers (see docs/architecture/M-MP-roomid-schema.md) ──
+  // base58 (Bitcoin alphabet) of a byte array — for the opaque roomId.
+  function _b58(bytes){
+    var A = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    var digits = [0];
+    for (var i = 0; i < bytes.length; i++){
+      var carry = bytes[i];
+      for (var j = 0; j < digits.length; j++){ carry += digits[j] << 8; digits[j] = carry % 58; carry = (carry / 58) | 0; }
+      while (carry > 0){ digits.push(carry % 58); carry = (carry / 58) | 0; }
+    }
+    var str = '';
+    for (var z = 0; z < bytes.length && bytes[z] === 0; z++) str += A[0];
+    for (var q = digits.length - 1; q >= 0; q--) str += A[digits[q]];
+    return str;
+  }
+  function _hexToBytes(hex){
+    var out = new Uint8Array((hex.length / 2) | 0);
+    for (var i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+    return out;
+  }
+  function _b64url(s){
+    try { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+    catch(_){ return ''; }
+  }
+  // roomId = base58( sha256( host | mapHash | asset | tf ) ). Matches the relay's
+  // opaque channel id; high-entropy ⇒ doubles as the v1 bearer capability.
+  async function _roomId(host, mapHash, asset, tf){
+    var d = await sha256Hex(host + '|' + mapHash + '|' + asset + '|' + tf);
+    return _b58(_hexToBytes(d));
+  }
+
+  // Build a share URL for a map.
+  //   crMapsShare(map)                 → snapshot link (unchanged, guest-openable)
+  //   crMapsShare(map, { live:true })  → LIVE room link (needs a connected wallet
+  //                                      to be the creator/host; others who open it
+  //                                      see each other live via the presence relay)
+  window.crMapsShare = async function(map, opts){
     if (!map) throw new Error('no map');
+    opts = opts || {};
     // Slim the payload — drop the thumbnail before serializing.
     var slim = Object.assign({}, map);
     delete slim.thumb;
@@ -15873,23 +15928,57 @@ window.crChainSave = (function(){
       if (anchored && anchored.contentHash) hash = anchored.contentHash;
     } catch(_){}
     var origin = window.location.origin + window.location.pathname;
-    var url    = origin + '?sharedMap=1#m=' + encodeURIComponent(b64) +
-                 (hash ? ('&h=' + encodeURIComponent(hash)) : '');
+    var frag   = '#m=' + encodeURIComponent(b64) + (hash ? ('&h=' + encodeURIComponent(hash)) : '');
+
+    var url, live = false, notice;
+    if (opts.live) {
+      var host = '';
+      try { host = (window.crWallet && crWallet.publicKey) ? String(crWallet.publicKey) : ''; } catch(_){}
+      if (!host) {
+        // Live rooms need a wallet (only a wallet can be the host). Fall back to a snapshot link.
+        url = origin + '?sharedMap=1' + frag;
+        notice = '∞ Snapshot link copied — connect a wallet to host a LIVE room';
+      } else {
+        var asset = map.asset || (typeof currentAsset !== 'undefined' ? currentAsset : 'BTCUSDT');
+        var tf    = map.timeframe || (typeof timeframe !== 'undefined' ? timeframe : '15m');
+        // roomId binds the canonical content hash; use the anchored hash when present,
+        // else compute it (works for local/unanchored maps too).
+        var mapHash = hash;
+        if (!mapHash) { try { mapHash = await sha256Hex(canonicalJson(map)); } catch(_){} }
+        var roomId = await _roomId(host, mapHash, asset, tf);
+        var ref = (map.onChain && map.name) ? ('&map=' + encodeURIComponent('e:0:' + host + ':' + _b64url(map.name))) : '';
+        url = origin + '?sharedMap=1'
+            + '&room='  + encodeURIComponent(roomId)
+            + '&host='  + encodeURIComponent(host)
+            + '&asset=' + encodeURIComponent(asset)
+            + '&tf='    + encodeURIComponent(tf)
+            + ref + frag;
+        live = true;
+        notice = '🛰 LIVE room link copied — anyone who opens it sees you on this chart';
+      }
+    } else {
+      url = origin + '?sharedMap=1' + frag;
+      notice = '∞ Share link copied · ' + (url.length / 1024).toFixed(1) + ' KB';
+    }
+
     // Copy to clipboard if available.
     try {
       if (navigator.clipboard && navigator.clipboard.writeText){
         await navigator.clipboard.writeText(url);
-        if (typeof crNotify === 'function') crNotify('∞ Share link copied · ' + (url.length/1024).toFixed(1) + ' KB');
-        else if (typeof toast === 'function') toast('∞ Share link copied');
+        if (typeof crNotify === 'function') crNotify(notice);
+        else if (typeof toast === 'function') toast(notice);
       } else {
         // Clipboard unavailable — surface the URL for manual copy.
-        try { window.prompt('Share link (copy):', url); } catch(_){}
+        try { window.prompt(live ? 'Live room link (copy):' : 'Share link (copy):', url); } catch(_){}
       }
     } catch(err){
-      try { window.prompt('Share link (copy):', url); } catch(_){}
+      try { window.prompt(live ? 'Live room link (copy):' : 'Share link (copy):', url); } catch(_){}
     }
     return url;
   };
+
+  // Convenience: force a live room link (used by Shift/Alt-click on the Share button).
+  window.crMapsShareLive = function(map){ return window.crMapsShare(map, { live: true }); };
 
   return {
     canonicalJson:  canonicalJson,
@@ -32862,6 +32951,201 @@ const l3 = { toggle(){}, open(){}, close(){}, isOpen(){ return false; } };
 // this pass too (#menuTutorial button, ESC-handler skip, first-play seen check,
 // frame-loop tick).
 
+/* =========================================================================
+ * crRoom — LIVE multiplayer co-presence (M-MP).
+ * v1.0.x — Live Map Rooms presence client. Opening a room link
+ *   (?sharedMap=1&room=<roomId>&host=<pubkey>&asset=&tf=#m=<snapshot>) joins an
+ *   off-chain WebSocket relay so everyone with the link open SEES EACH OTHER live
+ *   on the same chart. The map itself loads via the existing v0.9.63 sharedMap
+ *   handler; this IIFE only carries presence (avatar positions). It NEVER signs,
+ *   moves value, or gates writes — saves/trades stay the player's own wallet
+ *   actions, scoped to their own account.
+ *
+ * Coordinate model: peers broadcast chart-space (player.wx, player.py); each
+ *   viewer maps through its OWN sX()/priceToY(), so avatars land at the same
+ *   chart location regardless of each viewer's pan/zoom.
+ *
+ * Relay: docs/architecture/M-MP-relay-protocol-ops.md. Endpoint is the deployed
+ *   Tailscale-Funnel wss host; override for dev via localStorage.cr_relay_url
+ *   (e.g. "ws://127.0.0.1:8474"). Schema: docs/architecture/M-MP-roomid-schema.md.
+ * =======================================================================*/
+window.crRoom = (function(){
+  // Deployed chartrunner-relay (Tailscale Funnel, public WSS). Dev override:
+  // localStorage.cr_relay_url = 'ws://127.0.0.1:8474'
+  var DEFAULT_RELAY = 'wss://chartrunner-relay.tail879ec.ts.net';
+  function relayUrl(){ try { return localStorage.getItem('cr_relay_url') || DEFAULT_RELAY; } catch(_){ return DEFAULT_RELAY; } }
+
+  var POS_HZ      = 15;
+  var PEER_TTL_MS = 12000;
+  var SEAT_COLORS = { creator:'#f5a623', wallet:'#14f195', guest:'#7aa2ff' };
+
+  // Room params captured synchronously at load (before the sharedMap handler
+  // cleans the URL). null ⇒ not a room link ⇒ this whole module stays dormant.
+  var params = (function(){
+    try {
+      var u = new URL(window.location.href);
+      var room = u.searchParams.get('room');
+      if(!room) return null;
+      return {
+        room:   room,
+        host:   u.searchParams.get('host')  || null,
+        asset:  u.searchParams.get('asset') || null,
+        tf:     u.searchParams.get('tf')    || null,
+        mapRef: u.searchParams.get('map')   || null,
+      };
+    } catch(_){ return null; }
+  })();
+
+  var ws = null, mySid = null, spectator = false;
+  var peers = new Map();        // sid → {handle,seat,avatarClass,isWallet,wx,py,twx,tpy,vx,facing,last}
+  var posTimer = null, backoff = 1000;
+
+  function myWallet(){ try { return (window.crWallet && crWallet.publicKey) ? String(crWallet.publicKey) : ''; } catch(_){ return ''; } }
+  function mySeat(){
+    var w = myWallet();
+    if(w && params && params.host && w === params.host) return 'creator';
+    if(w) return 'wallet';
+    return 'guest';
+  }
+  function myHandle(){
+    // crLpName is the <div id="crLpName"> name element — read its text, not the node.
+    try {
+      var el = (typeof document!=='undefined') ? document.getElementById('crLpName') : null;
+      var t  = el && el.textContent ? el.textContent.trim() : '';
+      if (t) return t.slice(0,32);
+    } catch(_){}
+    var w = myWallet(); if(w) return w.slice(0,4)+'…'+w.slice(-4);
+    return 'guest';
+  }
+
+  function send(o){ try { if(ws && ws.readyState===1) ws.send(JSON.stringify(o)); } catch(_){} }
+
+  function connect(){
+    if(!params || typeof WebSocket==='undefined') return;
+    try { ws = new WebSocket(relayUrl()+'/?room='+encodeURIComponent(params.room)+'&v=1'); }
+    catch(_){ scheduleReconnect(); return; }
+    ws.onopen = function(){
+      backoff = 1000;
+      send({ t:'join', handle: myHandle(), seat: mySeat(), avatarClass:'runner', isWallet: !!myWallet(), host: params.host });
+      startPos();
+    };
+    ws.onmessage = function(ev){ try { onMsg(JSON.parse(ev.data)); } catch(_){} };
+    ws.onclose   = function(){ stopPos(); scheduleReconnect(); };
+    ws.onerror   = function(){ try { ws.close(); } catch(_){} };
+  }
+  function scheduleReconnect(){ backoff = Math.min(15000, Math.floor(backoff*1.6)); setTimeout(connect, backoff); }
+
+  function addPeer(o){
+    if(!o || !o.sessionId || o.sessionId===mySid) return;
+    var ex = peers.get(o.sessionId) || {};
+    peers.set(o.sessionId, {
+      handle: o.handle || ex.handle || 'player',
+      seat:   o.seat   || ex.seat   || 'guest',
+      avatarClass: o.avatarClass || ex.avatarClass || 'runner',
+      isWallet: !!(o.isWallet || ex.isWallet),
+      wx: ex.wx, py: ex.py,
+      twx: (o.x!=null ? o.x : ex.twx),
+      tpy: (o.y!=null ? o.y : ex.tpy),
+      vx: ex.vx || 0, facing: ex.facing || 1,
+      last: Date.now(),
+    });
+  }
+
+  function onMsg(m){
+    switch(m && m.t){
+      case 'welcome':
+        mySid = m.sessionId; spectator = !!m.spectator;
+        (m.occupants||[]).forEach(addPeer);
+        break;
+      case 'roster': {
+        var live = {}; (m.occupants||[]).forEach(function(o){ live[o.sessionId]=1; addPeer(o); });
+        peers.forEach(function(_v, sid){ if(!live[sid]) peers.delete(sid); });
+        break;
+      }
+      case 'peer_join':  addPeer(m); break;
+      case 'peer_leave': peers.delete(m.sessionId); break;
+      case 'peer_pos': {
+        var p = peers.get(m.sessionId); if(!p){ addPeer(m); p = peers.get(m.sessionId); }
+        if(p){ p.twx=m.x; p.tpy=m.y; p.vx=m.vx; p.facing=m.facing; p.last=Date.now(); if(p.wx==null){ p.wx=m.x; p.py=m.y; } }
+        break;
+      }
+      case 'peer_state': { var s = peers.get(m.sessionId); if(s){ s.runActive=m.runActive; s.score=m.score; } break; }
+      case 'peer_action': {
+        try {
+          var a = peers.get(m.sessionId);
+          if(typeof crNotify==='function') crNotify('◫ '+((a&&a.handle)||'player')+' '+(m.label||m.kind||''));
+        } catch(_){}
+        break;
+      }
+      case 'promoted': spectator = false; break;
+      case 'error': try { console.warn('[crRoom] relay error:', m.code, m.msg); } catch(_){}; break;
+    }
+  }
+
+  function startPos(){ if(!posTimer) posTimer = setInterval(sendPos, 1000/POS_HZ); }
+  function stopPos(){ if(posTimer){ clearInterval(posTimer); posTimer=null; } }
+  function sendPos(){
+    if(spectator) return;
+    try {
+      if(typeof player==='undefined' || player.wx==null || player.py==null) return;
+      send({ t:'pos', x: player.wx, y: player.py, vx: (player.vx||0), facing: (player.facing||1) });
+    } catch(_){}
+  }
+
+  function drawPeer(c, x, y, p){
+    var col = SEAT_COLORS[p.seat] || SEAT_COLORS.guest;
+    c.save();
+    c.globalAlpha = 0.92;
+    c.beginPath(); c.arc(x, y, 9, 0, Math.PI*2); c.fillStyle = col; c.fill();
+    c.lineWidth = 2; c.strokeStyle = 'rgba(0,0,0,0.55)'; c.stroke();
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x + (p.facing<0?-13:13), y-2);
+    c.strokeStyle = col; c.lineWidth = 2; c.stroke();
+    var label = (p.seat==='creator'?'★ ':'') + (p.handle||'player');
+    c.font = '11px ui-monospace, Menlo, monospace';
+    var tw = c.measureText(label).width;
+    c.globalAlpha = 0.78; c.fillStyle = 'rgba(10,12,20,0.82)';
+    c.fillRect(x - tw/2 - 4, y - 27, tw + 8, 15);
+    c.globalAlpha = 1; c.fillStyle = col;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(label, x, y - 19);
+    c.restore();
+  }
+
+  function render(c, vW, vH){
+    if(!params || !peers.size) return;
+    if(typeof sX!=='function' || typeof priceToY!=='function') return;
+    var now = Date.now();
+    peers.forEach(function(p, sid){
+      if(now - p.last > PEER_TTL_MS){ peers.delete(sid); return; }
+      if(p.twx!=null) p.wx = (p.wx==null ? p.twx : p.wx + (p.twx - p.wx)*0.25);
+      if(p.tpy!=null) p.py = (p.py==null ? p.tpy : p.py + (p.tpy - p.py)*0.25);
+      if(p.wx==null || p.py==null) return;
+      var x, y;
+      try { x = sX(p.wx); y = priceToY(p.py); } catch(_){ return; }
+      if(!isFinite(x) || !isFinite(y)) return;
+      if(x < -40 || x > (vW||0)+40) return;       // offscreen cull
+      drawPeer(c, x, y, p);
+    });
+  }
+
+  // Display-only event broadcast — call from save/trade flows for room flavor.
+  function action(kind, label){ send({ t:'action', kind:String(kind||'event'), label:String(label||'') }); }
+
+  if(params){ setTimeout(connect, 1400); }        // let auth + chart settle first
+
+  return {
+    active:       function(){ return !!params; },
+    params:       params,
+    render:       render,
+    sendPos:      sendPos,
+    action:       action,
+    seat:         mySeat,
+    isSpectator:  function(){ return spectator; },
+    peerCount:    function(){ return peers.size; },
+    _connect:     connect,
+  };
+})();
+
 // ======= Loop =======
 let last = performance.now();
 function frame(ts){
@@ -32886,6 +33170,9 @@ function frame(ts){
   // the panel is empty (no on-chain runs yet for this market) so it doesn't
   // clutter the chart for new players.
   try { if(typeof crGhost !== 'undefined') crGhost.render(ctx, W, H); } catch(_){}
+  // M-MP — LIVE co-presence: paint other occupants of this room link as avatars
+  // mapped through our own sX()/priceToY(). Dormant unless opened via a ?room= link.
+  try { if(typeof crRoom !== 'undefined') crRoom.render(ctx, W, H); } catch(_){}
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -68282,10 +68569,16 @@ const crL3 = (function(){
           // into a browser, the URL handler decodes + imports into their
           // own cr_maps_v1 with a fresh local id. Hash sidecar lets the
           // recipient verify the map matches what was anchored on chain.
-          card.querySelector('.share').addEventListener('click', async e => {
+          // M-MP — Click = share snapshot. Shift/Alt-click = create a LIVE room
+          // link (needs a connected wallet); others who open it see each other
+          // live on this chart via the presence relay.
+          const _shareBtn = card.querySelector('.share');
+          try { _shareBtn.title = 'Click: share snapshot · Shift-click: create LIVE room (wallet)'; } catch(_){}
+          _shareBtn.addEventListener('click', async e => {
             e.stopPropagation();
+            const _live = !!(e.shiftKey || e.altKey);
             try {
-              if(typeof crMapsShare === 'function') await crMapsShare(m);
+              if(typeof crMapsShare === 'function') await crMapsShare(m, { live: _live });
               else if(typeof toast === 'function') toast('Share unavailable');
             } catch(err){
               try { if(typeof toast === 'function') toast('Share failed: ' + (err && err.message || err)); } catch(_){}
