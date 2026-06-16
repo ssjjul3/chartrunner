@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.299
-     LAST UPDATED:    2026-06-16  ·  M-MP Live Map Rooms — co-presence multiplayer: window.crRoom presence client (?room= links, seat resolution, WebSocket join/15Hz pos, peer-avatar render hooked after crGhost), crMapsShare(map,{live:true}) + Shift-click room-link emission, on-chain-ref snapshot integrity verification, DEFAULT_RELAY → chartrunner-relay Funnel host. Dormant unless a room link is opened.
+     CURRENT VERSION: v1.0.300
+     LAST UPDATED:    2026-06-16  ·  M-MP room links auto-launch INTO the shared chart (not the OS desktop) + creator-only live-room hosting: opening a ?room= link imports the map, loads it (crMaps.load), dismisses the splash so every opener lands on the same running chart and sees all other runners; crMapsShare live-host gated to the map's creator (wallet + non-imported).
+     (v1.0.300 = M-MP room auto-launch + creator-only hosting (Julian: "link should direct directly to the chart … all runners should see all other runners moving live … only usable by maps creator"). The sharedMap import handler, when the URL carries ?room=, now calls crMaps.load(importedMapId) + hideSplash() right after import — dropping the opener straight into the shared chart (same path as clicking a map card) instead of the ChartRunnerOS desktop; every opener becomes a runner on the SAME map so crRoom presence shows all of them moving live. crMapsShare {live:true} hosting is now creator-only: blocked for guests (no wallet) AND imported copies (map.importedFrom set) — only the map's own creator mints a room link; non-creators get a snapshot link + notice. No SDK, broker, signing, on-chain write, or live-execution change.)
      (v1.0.299 = M-MP Live Map Rooms (Julian: "multiplayer means multiple players run on one chart" — guests + wallets open a map link and see each other live; only the creator acts on the original on-chain, other wallets fork saves/trades to their own account). NEW window.crRoom IIFE (inserted before the frame loop): captures ?room/host/asset/tf synchronously, resolves seat (wallet==host→creator / wallet / guest), connects the off-chain presence relay, sends player.wx/py at 15 Hz, renders peers via own sX()/priceToY() with interpolation/TTL/cull; crRoom.render hooked after crGhost.render. crMapsShare gains {live:true} → builds the schema room link (roomId=base58(sha256(host|mapHash|asset|tf)), polymorphic map ref, snapshot fallback); maps-card Share = snapshot, Shift/Alt-click = LIVE room (needs wallet); window.crMapsShareLive convenience. sharedMap import verifies the snapshot's canonical hash against the h sidecar/roomId-bound hash (window.crRoomMapVerify). DEFAULT_RELAY = wss://chartrunner-relay.tail879ec.ts.net (dev override localStorage.cr_relay_url). Relay service in chartrunner-relay/ NOT yet deployed; presence dormant until then. Static trace 9/9; node --check clean. No SDK, broker, signing, on-chain write, or live-execution change — presence is off-chain and non-authoritative.)
      (v1.0.298 = Red Laser category merge (Julian: "move together following categories into one window but labeled properly: Shapes + text & notes, fibunacci & fib studies, forecasting + forecasting studies, volume based + gann"). Display-level merge in the laser spawn-menu builder ONLY — WB_LASER_TOOLS cat ids, Workbench/Profile TOOLS grids, and campaign loadouts untouched. New CR_RED_CAT_MERGE { text→shapes, fibStudy→fib, forecastStudy→forecast, gann→volume } + CR_RED_CAT_MERGED_LABELS ("Shapes · Text & Notes", "Fibonacci · Fib Studies", "Forecasting · Studies", "Volume · Gann"): activeCats drops the four source ids and relabels the four targets when merged content exists, the rail icon badge sums both groups (_crCatMergedTools), and renderPane renders one labeled section header per source group inside the shared window (target group first, then each merged group — e.g. SHAPES rows then TEXT & NOTES rows). Categories with no merged content keep their original label; blue palette unaffected (orders-only). No SDK, broker, signing, on-chain, or live-execution change.)
      (v1.0.297 = Maps backfill + dedupe (Julian: "still buggy, should display map + there is a duplicate" — v1.0.293 replaced the broken-image icon with a ▦ glyph, but thumbless cards should show an actual chart, and TESTA existed twice). (1) Thumbnail backfill: _crMapThumbBackfill runs after every renderMaps — for each map without a valid data:image thumb (max 4/pass, one attempt per id per session, busy-guarded) it fetches 60 Binance klines for the map's asset/timeframe, draws a 240×90 dark mini candle chart (green/red wicks + bodies), persists via new crMaps.setThumb(id,url) with thumbAuto:true, and re-renders — share-link imports, runner_wallet saves, and old no-canvas saves all self-heal; offline/unknown-symbol keeps the v293 glyph. (2) Duplicate dedupe: new _canon(m) — stable sorted-key JSON excluding id/t/thumb/thumbAuto/onChain/sig/onChainAt (mirrors the share module's HASH_EXCLUDE) — backs two guards: save() updates + front-moves the existing record when an identical-content map exists (refreshes t, keeps the better thumb, preserves on-chain fields, toast "Map already saved — refreshed") instead of unshifting a twin, and crMaps.dedupeAll() runs once at boot keeping the best copy per canon group (anchored on-chain > valid thumb > newest) — clears the existing TESTA twin. Same-name maps with DIFFERENT content are untouched. crMaps API grows setThumb + dedupeAll. No SDK, broker, signing, on-chain write, or live-execution change.)
@@ -15843,6 +15844,17 @@ window.crChainSave = (function(){
             localStorage.setItem(MAPS_KEY, JSON.stringify(list));
             // Refresh maps UI if it's mounted.
             try { if (typeof renderMaps === 'function') renderMaps(); } catch(_){}
+            // M-MP — room link: drop straight INTO the shared chart, not the OS
+            // desktop. Load the just-imported map (sets asset/tf/tools/overlays)
+            // and dismiss the splash, exactly like clicking a map card — so every
+            // opener lands on the SAME chart as a runner and crRoom shows the rest.
+            try {
+              if (u2.searchParams.get('room')) {
+                if (typeof crMaps !== 'undefined' && crMaps.load) crMaps.load(map.id);
+                if (typeof hideSplash === 'function') hideSplash();
+                else { var _wm = document.getElementById('win-maps'); if (_wm) _wm.classList.remove('on'); }
+              }
+            } catch(_){}
             try {
               if (typeof crNotify === 'function') crNotify('↧ Imported ' + map.name + ' · ready in Maps');
               else toast && toast('↧ Imported ' + map.name);
@@ -15934,10 +15946,16 @@ window.crChainSave = (function(){
     if (opts.live) {
       var host = '';
       try { host = (window.crWallet && crWallet.publicKey) ? String(crWallet.publicKey) : ''; } catch(_){}
+      // Creator-only hosting: imported copies carry `importedFrom` — they can't be
+      // re-hosted as new rooms. Only the map's own creator (wallet) may host.
+      var _imported = !!(map && map.importedFrom);
       if (!host) {
         // Live rooms need a wallet (only a wallet can be the host). Fall back to a snapshot link.
         url = origin + '?sharedMap=1' + frag;
         notice = '∞ Snapshot link copied — connect a wallet to host a LIVE room';
+      } else if (_imported) {
+        url = origin + '?sharedMap=1' + frag;
+        notice = '∞ Snapshot link copied — only the map’s creator can host a live room';
       } else {
         var asset = map.asset || (typeof currentAsset !== 'undefined' ? currentAsset : 'BTCUSDT');
         var tf    = map.timeframe || (typeof timeframe !== 'undefined' ? timeframe : '15m');
