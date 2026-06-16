@@ -4,8 +4,10 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.302
-     LAST UPDATED:    2026-06-16  ·  M-MP Pass 2 — LIVE build-sync: crRoom now broadcasts the local player's placed tools/overlays (brackets, ladders, OCO, hlines, trendlines, VWAP, all TV overlays) on change (~1.25 Hz, FNV hash-diff) and renders every peer's builds as read-only ghosts (globalAlpha 0.42) by array-swapping them through the existing draw pipeline (drawVisualOverlays/drawTrendlines/drawAnchorLines/drawVwapAnchors/drawTvOverlays), restored in a finally. Indicators excluded v1 (global singleton + grind-poly cache). Relay: frame cap 2KB→64KB + new `builds`→`peer_builds` fan-out (needs relay redeploy).
+     CURRENT VERSION: v1.0.303
+     LAST UPDATED:    2026-06-16  ·  M-MP peers render as the REAL runner sprite (not a dot): crRoom.drawPeer now draws the runner avatar (drawInvader / _drawLoadoutAvatar) translated to the peer's chart position, seat-tinted (creator gold / wallet green / guest blue), with the handle label above. cNFT/Honeycomb future hook noted — when a peer broadcasts a selected NFT, drawImage it instead of the procedural sprite (mirrors _crNftAvatarImg).
+     (v1.0.303 = M-MP peer avatars = real runner sprite (Julian: "runner should be displayed as real runner with avatar — once cNFT is enabled with Honeycomb it should show selected NFT"). crRoom.drawPeer replaced the colored dot with the actual runner sprite: ctx.translate(peerScreenX,peerScreenY) then drawInvader(c,1.5,seatColor) (falls back to _drawLoadoutAvatar forceTint, then a dot). Seat color tints the sprite so peers stay distinguishable; handle label retained above. Forward path: peers will broadcast their chosen NFT (the join payload already carries avatarClass) and drawPeer will drawImage the loaded NFT in place of the procedural invader — same mechanism as the local player's _crNftAvatarImg override in _drawLoadoutAvatar. No SDK, broker, signing, on-chain write, or live-execution change.)
+     (v1.0.302 = M-MP Pass 2 — LIVE build-sync: crRoom now broadcasts the local player's placed tools/overlays (brackets, ladders, OCO, hlines, trendlines, VWAP, all TV overlays) on change (~1.25 Hz, FNV hash-diff) and renders every peer's builds as read-only ghosts (globalAlpha 0.42) by array-swapping them through the existing draw pipeline (drawVisualOverlays/drawTrendlines/drawAnchorLines/drawVwapAnchors/drawTvOverlays), restored in a finally. Indicators excluded v1 (global singleton + grind-poly cache). Relay: frame cap 2KB→64KB + new `builds`→`peer_builds` fan-out (needs relay redeploy).
      (v1.0.302 = M-MP live build-sync Pass 2 (Julian: "see each other moving live + their builds"). Sender: crRoom._buildsSnapshot() serializes game.visual{Brackets,Ladders,OCO}/anchorLines/visualTrendlines/vwapAnchors/tvOverlays, FNV-1a hash-diffed on an 800ms timer (startBuilds/stopBuilds, started in ws.onopen, stopped onclose), broadcast as {t:'builds',b:snap} only on change, skipped >60KB. Receiver: peer_builds stores b on peers.get(sid).builds. Render: a new pass at the top of crRoom.render array-swaps each peer's builds into game.* and calls the existing pure draw fns at 0.42 alpha with selectedOverlay nulled + shadowBrackets emptied, restoring all globals in a finally (a thrown draw can't strand them). Indicators deferred (INDICATOR_STATE is a global singleton that writes the rideable grind-poly cache — can't render a second layer). Relay (chartrunner-relay/src/relay.js): RELAY_MAX_FRAME default 2048→65536 so build frames fit; new 'builds' case fans out 'peer_builds' to active room occupants. Requires relay redeploy + .env RELAY_MAX_FRAME bump. No SDK, broker, signing, on-chain write, or live-execution change — presence + builds are off-chain, non-authoritative, read-only ghosts.)
      (v1.0.301 = M-MP audit fixes (Pass 1): (1) room links now ALSO dismiss the #crBoot login gate (auto-guest) — v1.0.300 only hid #splash so the chart loaded behind the boot overlay = "opens desktop"; (2) maps now persist + restore the broker/venue so a Binance map no longer opens as Coinbase/Jupiter (broker was never saved); (3) imported maps dedupe by content (importedFrom excluded from canon) so opening a link stops stacking duplicate cards.
      (v1.0.301 = M-MP audit fixes Pass 1 (Julian: "saved a map and it gave me another map (binance→coinbase) + it still opens desktop … audit the whole mapping and multiplayer system"). Root causes found + fixed: BOOT — room auto-launch called hideSplash() (hides #splash) but never dismissed the separate #crBoot login overlay, which re-shows for non-whitelisted users → chart loaded behind it; room path now auto-guests past the gate + adds .out to #crBoot. BROKER — crMaps.snapshot() never stored the venue, so crMaps.load re-fetched candles from the opener's own crBrokerSelection() default (Jupiter/last-used) → Binance map rendered as Coinbase; snapshot now stores broker and load restores game.broker + cr_broker_v1 BEFORE a forced loadCandles. DUPLICATES — import always unshifted with no content-dedupe and importedFrom broke the canon match; importedFrom now excluded from _CANON_EXCLUDE and dedupeAll runs after import-load. Builds already ride the map (both openers load the same tools/indicators); live build-sync is Pass 2. No SDK, broker route, signing, on-chain write, or live-execution change.)
@@ -33174,20 +33176,29 @@ window.crRoom = (function(){
 
   function drawPeer(c, x, y, p){
     var col = SEAT_COLORS[p.seat] || SEAT_COLORS.guest;
+    // Render peers as the REAL runner sprite (not a dot), seat-tinted so they're
+    // distinguishable. The avatar draw fns expect the ctx already translated to
+    // the sprite center. cNFT/Honeycomb future: when a peer broadcasts a chosen
+    // NFT, load + drawImage it here instead of the procedural invader (mirrors
+    // the window._crNftAvatarImg path in _drawLoadoutAvatar). For now: tinted runner.
     c.save();
-    c.globalAlpha = 0.92;
-    c.beginPath(); c.arc(x, y, 9, 0, Math.PI*2); c.fillStyle = col; c.fill();
-    c.lineWidth = 2; c.strokeStyle = 'rgba(0,0,0,0.55)'; c.stroke();
-    c.beginPath(); c.moveTo(x, y); c.lineTo(x + (p.facing<0?-13:13), y-2);
-    c.strokeStyle = col; c.lineWidth = 2; c.stroke();
+    c.translate(x, y);
+    try {
+      if(typeof drawInvader === 'function') drawInvader(c, 1.5, col);
+      else if(typeof _drawLoadoutAvatar === 'function') _drawLoadoutAvatar(c, 1.5, { forceTint: col, useNft: false });
+      else { c.beginPath(); c.arc(0, 0, 9, 0, Math.PI*2); c.fillStyle = col; c.fill(); }
+    } catch(_){ try { c.beginPath(); c.arc(0, 0, 9, 0, Math.PI*2); c.fillStyle = col; c.fill(); } catch(__){} }
+    c.restore();
+    // Handle label above the sprite (screen coords).
+    c.save();
     var label = (p.seat==='creator'?'★ ':'') + (p.handle||'player');
     c.font = '11px ui-monospace, Menlo, monospace';
     var tw = c.measureText(label).width;
-    c.globalAlpha = 0.78; c.fillStyle = 'rgba(10,12,20,0.82)';
-    c.fillRect(x - tw/2 - 4, y - 27, tw + 8, 15);
+    c.globalAlpha = 0.82; c.fillStyle = 'rgba(10,12,20,0.82)';
+    c.fillRect(x - tw/2 - 4, y - 33, tw + 8, 15);
     c.globalAlpha = 1; c.fillStyle = col;
     c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillText(label, x, y - 19);
+    c.fillText(label, x, y - 25);
     c.restore();
   }
 
