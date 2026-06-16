@@ -4,8 +4,10 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.301
-     LAST UPDATED:    2026-06-16  ·  M-MP audit fixes (Pass 1): (1) room links now ALSO dismiss the #crBoot login gate (auto-guest) — v1.0.300 only hid #splash so the chart loaded behind the boot overlay = "opens desktop"; (2) maps now persist + restore the broker/venue so a Binance map no longer opens as Coinbase/Jupiter (broker was never saved); (3) imported maps dedupe by content (importedFrom excluded from canon) so opening a link stops stacking duplicate cards.
+     CURRENT VERSION: v1.0.302
+     LAST UPDATED:    2026-06-16  ·  M-MP Pass 2 — LIVE build-sync: crRoom now broadcasts the local player's placed tools/overlays (brackets, ladders, OCO, hlines, trendlines, VWAP, all TV overlays) on change (~1.25 Hz, FNV hash-diff) and renders every peer's builds as read-only ghosts (globalAlpha 0.42) by array-swapping them through the existing draw pipeline (drawVisualOverlays/drawTrendlines/drawAnchorLines/drawVwapAnchors/drawTvOverlays), restored in a finally. Indicators excluded v1 (global singleton + grind-poly cache). Relay: frame cap 2KB→64KB + new `builds`→`peer_builds` fan-out (needs relay redeploy).
+     (v1.0.302 = M-MP live build-sync Pass 2 (Julian: "see each other moving live + their builds"). Sender: crRoom._buildsSnapshot() serializes game.visual{Brackets,Ladders,OCO}/anchorLines/visualTrendlines/vwapAnchors/tvOverlays, FNV-1a hash-diffed on an 800ms timer (startBuilds/stopBuilds, started in ws.onopen, stopped onclose), broadcast as {t:'builds',b:snap} only on change, skipped >60KB. Receiver: peer_builds stores b on peers.get(sid).builds. Render: a new pass at the top of crRoom.render array-swaps each peer's builds into game.* and calls the existing pure draw fns at 0.42 alpha with selectedOverlay nulled + shadowBrackets emptied, restoring all globals in a finally (a thrown draw can't strand them). Indicators deferred (INDICATOR_STATE is a global singleton that writes the rideable grind-poly cache — can't render a second layer). Relay (chartrunner-relay/src/relay.js): RELAY_MAX_FRAME default 2048→65536 so build frames fit; new 'builds' case fans out 'peer_builds' to active room occupants. Requires relay redeploy + .env RELAY_MAX_FRAME bump. No SDK, broker, signing, on-chain write, or live-execution change — presence + builds are off-chain, non-authoritative, read-only ghosts.)
+     (v1.0.301 = M-MP audit fixes (Pass 1): (1) room links now ALSO dismiss the #crBoot login gate (auto-guest) — v1.0.300 only hid #splash so the chart loaded behind the boot overlay = "opens desktop"; (2) maps now persist + restore the broker/venue so a Binance map no longer opens as Coinbase/Jupiter (broker was never saved); (3) imported maps dedupe by content (importedFrom excluded from canon) so opening a link stops stacking duplicate cards.
      (v1.0.301 = M-MP audit fixes Pass 1 (Julian: "saved a map and it gave me another map (binance→coinbase) + it still opens desktop … audit the whole mapping and multiplayer system"). Root causes found + fixed: BOOT — room auto-launch called hideSplash() (hides #splash) but never dismissed the separate #crBoot login overlay, which re-shows for non-whitelisted users → chart loaded behind it; room path now auto-guests past the gate + adds .out to #crBoot. BROKER — crMaps.snapshot() never stored the venue, so crMaps.load re-fetched candles from the opener's own crBrokerSelection() default (Jupiter/last-used) → Binance map rendered as Coinbase; snapshot now stores broker and load restores game.broker + cr_broker_v1 BEFORE a forced loadCandles. DUPLICATES — import always unshifted with no content-dedupe and importedFrom broke the canon match; importedFrom now excluded from _CANON_EXCLUDE and dedupeAll runs after import-load. Builds already ride the map (both openers load the same tools/indicators); live build-sync is Pass 2. No SDK, broker route, signing, on-chain write, or live-execution change.)
      (v1.0.300 = M-MP room auto-launch + creator-only hosting (Julian: "link should direct directly to the chart … all runners should see all other runners moving live … only usable by maps creator"). The sharedMap import handler, when the URL carries ?room=, now calls crMaps.load(importedMapId) + hideSplash() right after import — dropping the opener straight into the shared chart (same path as clicking a map card) instead of the ChartRunnerOS desktop; every opener becomes a runner on the SAME map so crRoom presence shows all of them moving live. crMapsShare {live:true} hosting is now creator-only: blocked for guests (no wallet) AND imported copies (map.importedFrom set) — only the map's own creator mints a room link; non-creators get a snapshot link + notice. No SDK, broker, signing, on-chain write, or live-execution change.)
      (v1.0.299 = M-MP Live Map Rooms (Julian: "multiplayer means multiple players run on one chart" — guests + wallets open a map link and see each other live; only the creator acts on the original on-chain, other wallets fork saves/trades to their own account). NEW window.crRoom IIFE (inserted before the frame loop): captures ?room/host/asset/tf synchronously, resolves seat (wallet==host→creator / wallet / guest), connects the off-chain presence relay, sends player.wx/py at 15 Hz, renders peers via own sX()/priceToY() with interpolation/TTL/cull; crRoom.render hooked after crGhost.render. crMapsShare gains {live:true} → builds the schema room link (roomId=base58(sha256(host|mapHash|asset|tf)), polymorphic map ref, snapshot fallback); maps-card Share = snapshot, Shift/Alt-click = LIVE room (needs wallet); window.crMapsShareLive convenience. sharedMap import verifies the snapshot's canonical hash against the h sidecar/roomId-bound hash (window.crRoomMapVerify). DEFAULT_RELAY = wss://chartrunner-relay.tail879ec.ts.net (dev override localStorage.cr_relay_url). Relay service in chartrunner-relay/ NOT yet deployed; presence dormant until then. Static trace 9/9; node --check clean. No SDK, broker, signing, on-chain write, or live-execution change — presence is off-chain and non-authoritative.)
@@ -33034,8 +33036,9 @@ window.crRoom = (function(){
   })();
 
   var ws = null, mySid = null, spectator = false;
-  var peers = new Map();        // sid → {handle,seat,avatarClass,isWallet,wx,py,twx,tpy,vx,facing,last}
+  var peers = new Map();        // sid → {handle,seat,avatarClass,isWallet,wx,py,twx,tpy,vx,facing,builds,last}
   var posTimer = null, backoff = 1000;
+  var buildsTimer = null, _lastBuildsHash = '';   // M-MP Pass 2 — live build-sync
 
   function myWallet(){ try { return (window.crWallet && crWallet.publicKey) ? String(crWallet.publicKey) : ''; } catch(_){ return ''; } }
   function mySeat(){
@@ -33062,12 +33065,12 @@ window.crRoom = (function(){
     try { ws = new WebSocket(relayUrl()+'/?room='+encodeURIComponent(params.room)+'&v=1'); }
     catch(_){ scheduleReconnect(); return; }
     ws.onopen = function(){
-      backoff = 1000;
+      backoff = 1000; _lastBuildsHash = '';
       send({ t:'join', handle: myHandle(), seat: mySeat(), avatarClass:'runner', isWallet: !!myWallet(), host: params.host });
-      startPos();
+      startPos(); startBuilds();
     };
     ws.onmessage = function(ev){ try { onMsg(JSON.parse(ev.data)); } catch(_){} };
-    ws.onclose   = function(){ stopPos(); scheduleReconnect(); };
+    ws.onclose   = function(){ stopPos(); stopBuilds(); scheduleReconnect(); };
     ws.onerror   = function(){ try { ws.close(); } catch(_){} };
   }
   function scheduleReconnect(){ backoff = Math.min(15000, Math.floor(backoff*1.6)); setTimeout(connect, backoff); }
@@ -33084,6 +33087,7 @@ window.crRoom = (function(){
       twx: (o.x!=null ? o.x : ex.twx),
       tpy: (o.y!=null ? o.y : ex.tpy),
       vx: ex.vx || 0, facing: ex.facing || 1,
+      builds: ex.builds || null,
       last: Date.now(),
     });
   }
@@ -33106,6 +33110,11 @@ window.crRoom = (function(){
         if(p){ p.twx=m.x; p.tpy=m.y; p.vx=m.vx; p.facing=m.facing; p.last=Date.now(); if(p.wx==null){ p.wx=m.x; p.py=m.y; } }
         break;
       }
+      case 'peer_builds': {
+        var pb = peers.get(m.sessionId); if(!pb){ addPeer(m); pb = peers.get(m.sessionId); }
+        if(pb){ pb.builds = (m.b && typeof m.b === 'object') ? m.b : null; pb.last = Date.now(); }
+        break;
+      }
       case 'peer_state': { var s = peers.get(m.sessionId); if(s){ s.runActive=m.runActive; s.score=m.score; } break; }
       case 'peer_action': {
         try {
@@ -33126,6 +33135,40 @@ window.crRoom = (function(){
     try {
       if(typeof player==='undefined' || player.wx==null || player.py==null) return;
       send({ t:'pos', x: player.wx, y: player.py, vx: (player.vx||0), facing: (player.facing||1) });
+    } catch(_){}
+  }
+
+  // ── M-MP Pass 2 — live build-sync (broadcast side) ──────────────────────────
+  // Periodically serialize the local player's placed tools/overlays and broadcast
+  // them on change (FNV-1a hash diff, ~1.25 Hz). Indicators are excluded in v1
+  // (global singleton + grind-poly cache — too coupled to render per-peer).
+  function _buildsSnapshot(){
+    try {
+      if(typeof game === 'undefined') return null;
+      return {
+        brackets:  game.visualBrackets   || [],
+        ladders:   game.visualLadders     || [],
+        ocos:      game.visualOCO         || [],
+        hlines:    game.anchorLines       || [],
+        trendlines:game.visualTrendlines  || [],
+        vwaps:     game.vwapAnchors       || [],
+        tvOverlays:game.tvOverlays        || [],
+      };
+    } catch(_){ return null; }
+  }
+  function _fnv(s){ var h = 2166136261; for(var i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h>>>0).toString(16); }
+  function startBuilds(){ if(!buildsTimer) buildsTimer = setInterval(sendBuilds, 800); }
+  function stopBuilds(){ if(buildsTimer){ clearInterval(buildsTimer); buildsTimer = null; } }
+  function sendBuilds(){
+    if(spectator) return;
+    try {
+      var snap = _buildsSnapshot(); if(!snap) return;
+      var json = JSON.stringify(snap);
+      if(json.length > 60000) return;            // stay under the relay frame cap
+      var h = _fnv(json);
+      if(h === _lastBuildsHash) return;          // only broadcast on change
+      _lastBuildsHash = h;
+      send({ t:'builds', b: snap });
     } catch(_){}
   }
 
@@ -33152,6 +33195,41 @@ window.crRoom = (function(){
     if(!params || !peers.size) return;
     if(typeof sX!=='function' || typeof priceToY!=='function') return;
     var now = Date.now();
+    // M-MP Pass 2 — render peers' placed tools as read-only ghosts, reusing the
+    // existing draw pipeline via array-swap (point game.* at peer arrays, draw,
+    // restore in a finally). Those draw fns are pure (no real-state mutation, no
+    // particles/storage); selectedOverlay/shadowBrackets neutralized. Drawn first
+    // so live avatars paint on top. Indicators excluded (broadcast side).
+    try {
+      var hasB = false; peers.forEach(function(p){ if(p.builds) hasB = true; });
+      if(hasB && typeof game !== 'undefined' && typeof drawVisualOverlays === 'function'){
+        var _s = { vb:game.visualBrackets, vl:game.visualLadders, oc:game.visualOCO, al:game.anchorLines, tl:game.visualTrendlines, vw:game.vwapAnchors, tv:game.tvOverlays, sel:game.selectedOverlay, sb:game.shadowBrackets };
+        try {
+          c.save(); c.globalAlpha = 0.42;
+          game.selectedOverlay = null; game.shadowBrackets = [];
+          peers.forEach(function(p){
+            var b = p.builds; if(!b) return;
+            game.visualBrackets   = b.brackets   || [];
+            game.visualLadders    = b.ladders    || [];
+            game.visualOCO        = b.ocos       || [];
+            game.anchorLines      = b.hlines     || [];
+            game.visualTrendlines = b.trendlines || [];
+            game.vwapAnchors      = b.vwaps      || [];
+            game.tvOverlays       = b.tvOverlays || [];
+            try { if(typeof drawTvOverlays==='function')  drawTvOverlays();  } catch(_){}
+            try { if(typeof drawTrendlines==='function')  drawTrendlines();  } catch(_){}
+            try { if(typeof drawAnchorLines==='function') drawAnchorLines(); } catch(_){}
+            try { if(typeof drawVwapAnchors==='function') drawVwapAnchors(); } catch(_){}
+            try { drawVisualOverlays(); } catch(_){}
+          });
+        } finally {
+          game.visualBrackets=_s.vb; game.visualLadders=_s.vl; game.visualOCO=_s.oc;
+          game.anchorLines=_s.al; game.visualTrendlines=_s.tl; game.vwapAnchors=_s.vw;
+          game.tvOverlays=_s.tv; game.selectedOverlay=_s.sel; game.shadowBrackets=_s.sb;
+          c.restore();
+        }
+      }
+    } catch(_){}
     peers.forEach(function(p, sid){
       if(now - p.last > PEER_TTL_MS){ peers.delete(sid); return; }
       if(p.twx!=null) p.wx = (p.wx==null ? p.twx : p.wx + (p.twx - p.wx)*0.25);
