@@ -29,7 +29,7 @@ import { Buffer } from 'buffer';
 // re-pasted the printed ID into Anchor.toml + lib.rs.
 export const CR_MAPS_PROGRAM_ID = new PublicKey(
   (import.meta as any).env?.VITE_CR_MAPS_PROGRAM_ID ||
-    'ChMapsdLcj4N4ek3uW3RZE3pWYuKSTrgVLWeKQrU3yVz'
+    'DbzEqKfgCBqneR6Yuc17yEPc1fbVeqTeGy721f1n3UvH'
 );
 
 // sha256("global:save_map")[0..8] — precomputed; see anchor/README.md.
