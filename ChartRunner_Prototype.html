@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.318
-     LAST UPDATED:    2026-06-17  ·  Snapshot share-link open — retry fix. v1.0.317 wired the auto-open but crMaps.load() throws at the importer's ~1.2s mark (chart deps — switchAsset/candles/canvas — still warming up); inside the single surrounding try that skipped hideSplash and left the opener on the splash/desktop (the bug Julian saw: "still directs me to chartrunner.xyz/play"). Now the open retries (up to 6× / 700ms) until crMaps.load sticks, THEN hides the splash; crReport logs any miss. A manual crMaps.load+hideSplash renders the shared chart fine, confirming the only issue was the early-throw timing. No order/SDK/signing/on-chain change.
+     CURRENT VERSION: v1.0.319
+     LAST UPDATED:    2026-06-17  ·  MULTIPLAYER ROOM FIX (audit). Root cause Julian hit ("live room link lands on chart but plain /play URL + no other player"): crMapsShare + crRoom's myWallet read `crWallet.publicKey`, which DOESN'T EXIST — the wallet API exposes `crWallet.get()`. So host detection always failed → 🛰/live-Share silently produced a SNAPSHOT link (no &room=) even with a wallet connected → opening it = bare /play + no co-presence; and crRoom couldn't identify the creator. Fix 1: all 3 `crWallet.publicKey` reads → `crWallet.get()` (real room links now generate; seat/creator detection works). Fix 2: the HOST now auto-joins the room they create — the 🛰 button navigates the host into the room link after copying it, so guests who open the invite actually have someone to be co-present with (was: Share only copied a link, host never joined → empty room). Verified separately: two tabs in the same ?room= see each other (peers:1 each), so the relay/crRoom path itself is sound — the bug was purely host detection + host-join. No order/SDK/signing/on-chain change.
+     (v1.0.318 = Snapshot share-link open — retry fix. v1.0.317 wired the auto-open but crMaps.load() throws at the importer's ~1.2s mark (chart deps — switchAsset/candles/canvas — still warming up); inside the single surrounding try that skipped hideSplash and left the opener on the splash/desktop (the bug Julian saw: "still directs me to chartrunner.xyz/play"). Now the open retries (up to 6× / 700ms) until crMaps.load sticks, THEN hides the splash; crReport logs any miss. A manual crMaps.load+hideSplash renders the shared chart fine, confirming the only issue was the early-throw timing. No order/SDK/signing/on-chain change.
      (v1.0.317 = Snapshot share-links now OPEN the chart — first attempt; auto-open wired but threw early.
      (v1.0.316 = Dedicated LIVE-room button on map cards (Julian: "create/share room should have its own button instead of click-shift"). Each saved-map card now has a 🛰 room button (cyan) next to the ↗ snapshot-share button → calls crMapsShareLive(m) directly, no Shift/Alt-click needed (falls back to a snapshot link if no wallet). The ↗ Share keeps the Shift/Alt = live shortcut as a power-user bonus. Desktop map cards only (phone list unchanged). No order/SDK/signing/on-chain change.
      (v1.0.315 = Re-audit fixes R-01 + F-11 + F-04. (R-01) A snapshot-less `?room=` deep-link used to connect the relay but land on the DESKTOP; the resolver now seeds the chart from the room link's `asset` param and boots a fresh chart (crRoom still connects for presence) so you land on the room's chart. (F-11) Oscillator sub-panel readability: RSI/SRSI/OBV/MACD no longer overlap in one 0..100 strip — each active oscillator gets its OWN stacked sub-band (panel grows with count, capped 60% H; per-band 30/70 guides, separators, and legend; MACD midline per band). Shootable-poly y-mapping follows the bands. (F-04) Central error sink `window.crReport(err,ctx)` + `window.crErrors()` ring buffer; wired into the previously-silent paths — candle-load Binance fallback (was seeding synthetic candles with no log), crGhost RPC fetch, and crRoom relay onerror. Not a wholesale replacement of the ~1,700 cosmetic catches. No order/SDK/signing/on-chain change.
@@ -13392,7 +13393,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.318",
+  VERSION: "1.0.319",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -16013,7 +16014,7 @@ window.crChainSave = (function(){
     var url, live = false, notice;
     if (opts.live) {
       var host = '';
-      try { host = (window.crWallet && crWallet.publicKey) ? String(crWallet.publicKey) : ''; } catch(_){}
+      try { host = (window.crWallet && crWallet.get && crWallet.get()) ? String(crWallet.get()) : ''; } catch(_){}
       // Creator-only hosting: imported copies carry `importedFrom` — they can't be
       // re-hosted as new rooms. Only the map's own creator (wallet) may host.
       var _imported = !!(map && map.importedFrom);
@@ -33466,7 +33467,7 @@ window.crRoom = (function(){
   var posTimer = null, backoff = 1000;
   var buildsTimer = null, _lastBuildsHash = '';   // M-MP Pass 2 — live build-sync
 
-  function myWallet(){ try { return (window.crWallet && crWallet.publicKey) ? String(crWallet.publicKey) : ''; } catch(_){ return ''; } }
+  function myWallet(){ try { return (window.crWallet && crWallet.get && crWallet.get()) ? String(crWallet.get()) : ''; } catch(_){ return ''; } }
   function mySeat(){
     var w = myWallet();
     if(w && params && params.host && w === params.host) return 'creator';
@@ -64559,7 +64560,7 @@ function log(msg){
     try { price = (typeof currentPrice === 'function') ? currentPrice() : price; } catch(_){}
     try { score = (typeof game !== 'undefined' && game && Number.isFinite(game.score)) ? game.score : score; } catch(_){}
     try { pnl = (typeof game !== 'undefined' && game && Number.isFinite(game.pnl)) ? game.pnl : pnl; } catch(_){}
-    try { wallet = (window.crWallet && crWallet.publicKey) ? String(crWallet.publicKey) : ''; } catch(_){}
+    try { wallet = (window.crWallet && crWallet.get && crWallet.get()) ? String(crWallet.get()) : ''; } catch(_){}
     return { asset, timeframe:tf, price, score, pnl, wallet };
   }
   function _crTermStableJson(value){
@@ -69187,9 +69188,19 @@ const crL3 = (function(){
           if(_roomBtn) _roomBtn.addEventListener('click', async e => {
             e.stopPropagation();
             try {
-              if(typeof crMapsShareLive === 'function') await crMapsShareLive(m);
-              else if(typeof crMapsShare === 'function') await crMapsShare(m, { live: true });
-              else if(typeof toast === 'function') toast('Live room unavailable');
+              var _url = '';
+              if(typeof crMapsShareLive === 'function') _url = await crMapsShareLive(m);
+              else if(typeof crMapsShare === 'function') _url = await crMapsShare(m, { live: true });
+              else { if(typeof toast === 'function') toast('Live room unavailable'); return; }
+              // v1.0.319 — the HOST must JOIN the room they just created, else a
+              // guest who opens the invite sees an empty room (no one to be co-
+              // present with). If a real room link was produced (&room= present —
+              // i.e. a wallet hosted), navigate the host into it after the clipboard
+              // copy + toast land. No wallet ⇒ crMapsShareLive returns a snapshot
+              // link (no &room=), so we leave the copied link and don't navigate.
+              if(_url && /[?&]room=/.test(String(_url))){
+                setTimeout(function(){ try { window.location.href = _url; } catch(_){} }, 500);
+              }
             } catch(err){
               try { if(typeof toast === 'function') toast('Room link failed: ' + (err && err.message || err)); } catch(_){}
             }
