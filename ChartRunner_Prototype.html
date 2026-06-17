@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.317
-     LAST UPDATED:    2026-06-17  ·  Snapshot share-links now OPEN the chart (Julian: "when i paste a room link it still directs me to chartrunner.xyz/play"). A bare `?sharedMap=1#m=` snapshot link used to import the map into Maps but leave the opener on the DESKTOP (only `&room=` links auto-opened). Now, when deep-links are live (default), the importer also auto-guests + crMaps.load + hideSplash for a snapshot link, so you drop straight onto the shared chart. Sibling of the R-01 room-link fix. No order/SDK/signing/on-chain change.
+     CURRENT VERSION: v1.0.318
+     LAST UPDATED:    2026-06-17  ·  Snapshot share-link open — retry fix. v1.0.317 wired the auto-open but crMaps.load() throws at the importer's ~1.2s mark (chart deps — switchAsset/candles/canvas — still warming up); inside the single surrounding try that skipped hideSplash and left the opener on the splash/desktop (the bug Julian saw: "still directs me to chartrunner.xyz/play"). Now the open retries (up to 6× / 700ms) until crMaps.load sticks, THEN hides the splash; crReport logs any miss. A manual crMaps.load+hideSplash renders the shared chart fine, confirming the only issue was the early-throw timing. No order/SDK/signing/on-chain change.
+     (v1.0.317 = Snapshot share-links now OPEN the chart — first attempt; auto-open wired but threw early.
      (v1.0.316 = Dedicated LIVE-room button on map cards (Julian: "create/share room should have its own button instead of click-shift"). Each saved-map card now has a 🛰 room button (cyan) next to the ↗ snapshot-share button → calls crMapsShareLive(m) directly, no Shift/Alt-click needed (falls back to a snapshot link if no wallet). The ↗ Share keeps the Shift/Alt = live shortcut as a power-user bonus. Desktop map cards only (phone list unchanged). No order/SDK/signing/on-chain change.
      (v1.0.315 = Re-audit fixes R-01 + F-11 + F-04. (R-01) A snapshot-less `?room=` deep-link used to connect the relay but land on the DESKTOP; the resolver now seeds the chart from the room link's `asset` param and boots a fresh chart (crRoom still connects for presence) so you land on the room's chart. (F-11) Oscillator sub-panel readability: RSI/SRSI/OBV/MACD no longer overlap in one 0..100 strip — each active oscillator gets its OWN stacked sub-band (panel grows with count, capped 60% H; per-band 30/70 guides, separators, and legend; MACD midline per band). Shootable-poly y-mapping follows the bands. (F-04) Central error sink `window.crReport(err,ctx)` + `window.crErrors()` ring buffer; wired into the previously-silent paths — candle-load Binance fallback (was seeding synthetic candles with no log), crGhost RPC fetch, and crRoom relay onerror. Not a wholesale replacement of the ~1,700 cosmetic catches. No order/SDK/signing/on-chain change.
      (v1.0.314 = Deep-links Phase 6 — LIVE FOR EVERYONE + Copy-link button. (1) CR_DEEPLINK defaults ON (kill-switch: ?crDeepLink=0 or localStorage.cr_deeplink='0'): `chartrunner.xyz/play/?symbol=VENUE:PAIR&tf=` (or a Solana mint) boots any visitor straight into a live run on that chart; `?map=<id>` opens a saved map; room/snapshot links keep their handlers; strict-sanitized, auto-guest-only (never connects/trades). (2) Simple share UI (Julian: "keep it simple"): one "🔗 Link" button in the in-game lite-profile run controls next to Connect → crCopyChartLink() copies the canonical `?symbol=&tf=` deep-link for the current chart (CEX venue:pair or DEX mint). No multiplayer tab / room-hosting flow — just the one button. Spec docs/architecture/deep-link-scheme.md.
@@ -13391,7 +13392,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.317",
+  VERSION: "1.0.318",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -15900,9 +15901,22 @@ window.crChainSave = (function(){
                   var _boot = document.getElementById('crBoot');
                   if (_boot) { _boot.classList.add('out'); _boot.style.pointerEvents = 'none'; }
                 } catch(_){}
-                if (typeof crMaps !== 'undefined' && crMaps.load) crMaps.load(map.id);
-                if (typeof hideSplash === 'function') hideSplash();
-                else { var _wm = document.getElementById('win-maps'); if (_wm) _wm.classList.remove('on'); }
+                // v1.0.318 — open the imported map into the chart WITH retries.
+                // At the importer's ~1.2s mark some chart deps (switchAsset /
+                // candles / canvas) can still be warming up and crMaps.load()
+                // throws — which (inside the single surrounding try) skipped
+                // hideSplash and stranded the opener on the splash/desktop. Retry
+                // until the load sticks, THEN hide the splash. crReport logs misses.
+                (function _openImported(id, tries){
+                  var ok = false;
+                  try { if (typeof crMaps !== 'undefined' && crMaps.load) { crMaps.load(id); ok = true; } }
+                  catch(e){ try { if(window.crReport) crReport(e, 'snapshot/open#' + tries); } catch(_){} }
+                  if(ok){
+                    try { if (typeof hideSplash === 'function') hideSplash(); else { var _wm = document.getElementById('win-maps'); if (_wm) _wm.classList.remove('on'); } } catch(_){}
+                  } else if(tries < 6){
+                    setTimeout(function(){ _openImported(id, tries + 1); }, 700);
+                  }
+                })(map.id, 0);
               }
             } catch(_){}
             // Collapse the just-imported copy against an identical local copy. Runs
