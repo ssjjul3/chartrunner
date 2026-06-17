@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.309
-     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 2 launch FIX (still DARK / flag-gated). v1.0.308 set currentAsset/timeframe globals then restart()'d — but restart() only repositions the player on the EXISTING candles array, it never re-fetches, so a `?symbol=ETH` link booted a run that reported eth/4h in getState but rendered the default BTC/15m candles. Fix: crApplyDeepLink is now async and reloads for real via the canonical switch path — switchAsset(assetId) (new asset → loadCandles(timeframe)+rebuildWorld) or loadCandles(timeframe)+rebuildWorld (same asset, new tf) — BEFORE restart(). Broker still set to CEX first so the fetch routes right. No order/SDK/signing/on-chain change.
+     CURRENT VERSION: v1.0.310
+     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 3 (still DARK / flag-gated): map + mint/DEX composition. crApplyDeepLink now also handles intent 'map' (bare ?map=<id>, self-only → crMaps.load restores the saved chart + dismiss splash, mirroring the room-link path; falls back to a symbol if the bare id isn't on this device) and 'symbol'+isMint (Solana token → crEnsureCustomSolanaToken + switchAsset → DEX/GeckoTerminal chart). 'room' and 'snapshot' are explicitly DEFERRED to their existing shipped handlers (crRoom + the ?sharedMap=1#m= importer) — never duplicated. Extracted _crDlGuestDismissBoot/_crDlEnterRun helpers. Deferred launch now fires for symbol+map. No order/SDK/signing/on-chain change; auto-guests only.
+     (v1.0.309 = Deep-links Phase 2 launch FIX (still DARK / flag-gated). v1.0.308 set currentAsset/timeframe globals then restart()'d — but restart() only repositions the player on the EXISTING candles array, it never re-fetches, so a `?symbol=ETH` link booted a run that reported eth/4h in getState but rendered the default BTC/15m candles. Fix: crApplyDeepLink is now async and reloads for real via the canonical switch path — switchAsset(assetId) (new asset → loadCandles(timeframe)+rebuildWorld) or loadCandles(timeframe)+rebuildWorld (same asset, new tf) — BEFORE restart(). Broker still set to CEX first so the fetch routes right. No order/SDK/signing/on-chain change.
      (v1.0.308 = Deep-links Phase 0–2 (DARK — flag-gated, default OFF; spec docs/architecture/deep-link-scheme.md). Adds `window.crDeepLink` pure helpers (parseSymbol/parseTf/chartLink — TradingView-shaped VENUE:PAIR + Solana-mint + short-id, tf alias table that kills the 1m/1M collision), `crResolveDeepLink()` (classifies boot intent room>snapshot>map>symbol>none), and `crApplyDeepLink()` which — when `window.CR_DEEPLINK` is on — boots a `?symbol=VENUE:PAIR&tf=` link straight into a live "Time is Money" run (auto-guest like room links, sets broker/asset/tf, restart(), document.title). Default OFF for everyone; per-session test override `?crDeepLink=1` or localStorage.cr_deeplink='1'. CEX known-assets only this phase (mint/DEX + map/room/snapshot composition = Phase 3). No order/SDK/broker-route/signing/on-chain change; a link auto-guests only, never connects/trades.
      (v1.0.307 = login splash version label now reflects the real build. It was a hardcoded `<div class="ver">v1.0.271</div>` in #crBoot that drifted from CONFIG.VERSION; now the static text matches and initModularFoundation syncs `#crBoot .ver` → 'v'+CONFIG.VERSION at boot so it never goes stale again. (Investigated alongside two reported issues that turned out to be non-bugs on the live build: the chart topbar is correctly `display:none` during the #crBoot/crSplashUp login gate in all themes via `body.crSplashUp .crChrome{display:none!important}` — no toolbar leak; and the desktop shows the intended 7 app icons, not 8 — workbench stays archived. Both were blurred-screenshot misreads.) No order/SDK/broker/signing/on-chain/render change.
      (v1.0.306 = topbar auto-hide reveal fix + boot-banner dedupe (gametest F-02/F-16). F-02: the in-game chart topbar (#crTopBar) auto-hides on a 5s idle timer and reveals on crossing INTO the ~95px top/side proximity band (`inZone && !_wasInZone`). If the idle timer hid it while the cursor was already inside that band, `_wasInZone` stayed true so the crossing-in reveal never re-fired and `_refreshPanelTimer()` no-op'd (it only refreshed when already-visible) — the bar got stuck hidden until you left the zone and re-entered (the reported "no way back"). Fix: `_refreshPanelTimer()` now reveals when in-zone but hidden, so any movement within the reveal band brings the chrome back. F-16: the `[crLiveChanges v1.0.272]` boot banner logged twice (boot() retries / re-runs across the splash→game transition) — now once-guarded via `window.__crLiveChangesBannerLogged`. No order/SDK/broker/signing/on-chain/render change.
@@ -13379,7 +13380,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.309",
+  VERSION: "1.0.310",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -23746,80 +23747,107 @@ try {
   }
 } catch(_){}
 
-/* ── DEEP-LINK launch — Phase 2 (intent==='symbol' → drop into a LIVE run) ────
-   Mirrors the room-link post-boot pattern (auto-guest → dismiss #crBoot → set
-   asset/tf/broker → restart() into the live "Time is Money" run). CEX
-   known-assets only here; mint/DEX launch + map/room/snapshot composition are
-   Phase 3 (room/snapshot already have their own handlers). Gated by CR_DEEPLINK,
-   deferred so restart()/hideSplash are ready. Never throws. */
+/* ── DEEP-LINK launch — Phase 2+3 (symbol / mint / map → drop into a LIVE run) ─
+   intents: 'symbol' (CEX known-asset, Phase 2), 'symbol'+isMint (Solana mint →
+   DEX chart, Phase 3), 'map' (bare ?map=<id>, self-only → load saved map, Phase
+   3). 'room' and 'snapshot' are LEFT to their existing shipped handlers (crRoom +
+   the ?sharedMap=1#m= importer) — we defer, never duplicate. Auto-guests like
+   room links; never connects/trades. Gated by CR_DEEPLINK, deferred so
+   restart()/crMaps/switchAsset are ready. Never throws. */
+// Shared: get past the #crBoot login gate on production (same as room links).
+function _crDlGuestDismissBoot(){
+  try {
+    if(localStorage.getItem('cr_stealth_auth_v1') !== '1'){
+      var _h = localStorage.getItem('cr_profile_name_v1') || ('guest-' + Math.random().toString(36).slice(2,6));
+      if(!localStorage.getItem('cr_guest_session_v1')) localStorage.setItem('cr_guest_session_v1', JSON.stringify({ username:_h, email:'', anonymous:true, expiresAt: Date.now() + 30*24*3600*1000 }));
+      localStorage.setItem('cr_stealth_auth_v1', '1');
+      localStorage.setItem('cr_profile_name_v1', _h);
+    }
+    var _boot = document.getElementById('crBoot');
+    if(_boot){ _boot.classList.add('out'); _boot.style.pointerEvents = 'none'; }
+  } catch(_){}
+}
+// Shared: enter a fresh live "Time is Money" run on the currently-loaded candles.
+function _crDlEnterRun(){
+  if(typeof game !== 'undefined'){ game.pendingMode = 'timeismoney'; game.mode = 'timeismoney'; }
+  try { document.querySelectorAll('.os-window.on').forEach(function(w){ w.classList.remove('on'); }); } catch(_){}
+  try { if(typeof restart === 'function') restart(); else if(typeof game !== 'undefined') game.running = true; } catch(_){}
+  try { if(typeof hideSplash === 'function') hideSplash(); } catch(_){}
+}
 async function crApplyDeepLink(res){
   try {
-    if(!res || res.intent !== 'symbol') return false;
-    if(res.isMint) return false; // DEX launch deferred to Phase 3
+    if(!res) return false;
+    // room/snapshot keep their existing shipped handlers — defer, don't duplicate.
+    if(res.intent === 'room' || res.intent === 'snapshot') return false;
+    if(res.intent !== 'symbol' && res.intent !== 'map') return false;
+
+    _crDlGuestDismissBoot();
+
+    // ── MAP (bare ?map=<id>, self-only) ── load the saved map, drop into the chart.
+    //    Mirrors the room-link path (crMaps.load restores broker/asset/tf/tools/
+    //    indicators + an async candle reload, then hideSplash). NO restart() — the
+    //    game loop is already live post-boot, and restart() could race the reload.
+    if(res.intent === 'map'){
+      var loaded = false;
+      try { loaded = (typeof crMaps !== 'undefined' && crMaps.load) ? !!crMaps.load(res.mapId) : false; } catch(_){}
+      if(loaded){
+        try { document.querySelectorAll('.os-window.on').forEach(function(w){ w.classList.remove('on'); }); } catch(_){}
+        try { if(typeof hideSplash === 'function') hideSplash(); } catch(_){}
+        try { document.title = 'Map · ChartRunner'; } catch(_){}
+        return true;
+      }
+      // Not on this device (bare cross-browser map link). Fall through to a symbol
+      // launch if the link also carried one; else bail (shared links carry #m=).
+      if(!(res.symbol && !res.isMint)){
+        try { if(typeof toast === 'function') toast('Map not on this device — open the shared link (it carries the snapshot)'); } catch(_){}
+        return false;
+      }
+    }
+
+    // ── MINT / DEX (Solana token) ── register a custom asset, switch to it, run.
+    if(res.isMint && res.mint){
+      var dexAsset = (typeof crEnsureCustomSolanaToken === 'function') ? crEnsureCustomSolanaToken(res.mint) : null;
+      if(!dexAsset || !dexAsset.id) return false;
+      try { if(typeof game !== 'undefined') game.broker = { type:'dex', name:'Jupiter' }; localStorage.setItem('cr_broker_v1', JSON.stringify({ type:'dex', name:'Jupiter' })); } catch(_){}
+      if(typeof timeframe !== 'undefined' && res.tf) timeframe = res.tf;
+      try { if(typeof renderAssetOptions === 'function') renderAssetOptions(document.getElementById('assetSel')); } catch(_){}
+      try { if(typeof switchAsset === 'function') await switchAsset(dexAsset.id); } catch(_){}
+      _crDlEnterRun();
+      try { document.title = ((typeof crShortMint === 'function') ? crShortMint(res.mint) : 'Token') + ' · ' + res.tf + ' · ChartRunner'; } catch(_){}
+      return true;
+    }
+
+    // ── CEX known-asset (Phase 2) ──
     var assetId = String(res.asset || '').toLowerCase();
     var known = (typeof ASSETS !== 'undefined' && Array.isArray(ASSETS)) && ASSETS.some(function(a){ return String(a.id).toLowerCase() === assetId; });
     if(!known) return false; // unknown asset → leave normal boot alone (Phase 5 sanitizes)
-
-    // 1) auto-guest — get past the #crBoot login gate on production (same as room links)
-    try {
-      if(localStorage.getItem('cr_stealth_auth_v1') !== '1'){
-        var _h = localStorage.getItem('cr_profile_name_v1') || ('guest-' + Math.random().toString(36).slice(2,6));
-        if(!localStorage.getItem('cr_guest_session_v1')) localStorage.setItem('cr_guest_session_v1', JSON.stringify({ username:_h, email:'', anonymous:true, expiresAt: Date.now() + 30*24*3600*1000 }));
-        localStorage.setItem('cr_stealth_auth_v1', '1');
-        localStorage.setItem('cr_profile_name_v1', _h);
-      }
-      var _boot = document.getElementById('crBoot');
-      if(_boot){ _boot.classList.add('out'); _boot.style.pointerEvents = 'none'; }
-    } catch(_){}
-
-    // 2) broker venue (CEX) — crBrokerSelection defaults to DEX/Jupiter, so a CEX
-    //    symbol MUST set the broker or candles won't load.
+    // broker venue — crBrokerSelection defaults to DEX/Jupiter, so a CEX symbol MUST set it.
     try {
       var venueName = (typeof CR_CEX_READONLY_LABELS !== 'undefined' && CR_CEX_READONLY_LABELS[res.venue]) ? CR_CEX_READONLY_LABELS[res.venue] : 'Binance';
       if(typeof game !== 'undefined') game.broker = { type:'cex', name: venueName };
       localStorage.setItem('cr_broker_v1', JSON.stringify({ type:'cex', name: venueName }));
     } catch(_){}
-
-    // 3) timeframe FIRST — switchAsset()/loadCandles() read the `timeframe` global.
-    if(typeof timeframe !== 'undefined' && res.tf) timeframe = res.tf;
-
-    // 4) ACTUALLY reload the asset's candles. restart() only repositions the
-    //    player on the existing `candles` array — it never re-fetches — so we
-    //    must reload via the real switch path: switchAsset (new asset) loads
-    //    candles@timeframe + rebuildWorld; same-asset just reloads at the new tf.
+    if(typeof timeframe !== 'undefined' && res.tf) timeframe = res.tf; // tf FIRST (switchAsset reads it)
+    // ACTUALLY reload candles — restart() doesn't re-fetch; use the real switch path.
     try {
       var cur = (typeof currentAsset !== 'undefined') ? currentAsset : null;
-      if(assetId !== cur && typeof switchAsset === 'function'){
-        await switchAsset(assetId);
-      } else {
-        if(typeof loadCandles === 'function') await loadCandles(timeframe);
-        if(typeof rebuildWorld === 'function') rebuildWorld();
-      }
+      if(assetId !== cur && typeof switchAsset === 'function') await switchAsset(assetId);
+      else { if(typeof loadCandles === 'function') await loadCandles(timeframe); if(typeof rebuildWorld === 'function') rebuildWorld(); }
     } catch(_){}
-
-    // 5) mode + launch — restart() now runs on the correctly-loaded candles
-    if(typeof game !== 'undefined'){ game.pendingMode = 'timeismoney'; game.mode = 'timeismoney'; }
-    try { document.querySelectorAll('.os-window.on').forEach(function(w){ w.classList.remove('on'); }); } catch(_){}
-    try { if(typeof restart === 'function') restart(); else if(typeof game !== 'undefined') game.running = true; } catch(_){}
-    try { if(typeof hideSplash === 'function') hideSplash(); } catch(_){}
-
-    // 6) document.title (Q5 — tab/history only)
-    try {
-      var q = (res.venue === 'coinbase') ? 'USD' : 'USDT';
-      document.title = String(assetId).toUpperCase() + '/' + q + ' · ' + res.tf + ' · ChartRunner';
-    } catch(_){}
-    // URL is the address — keep it so a refresh reproduces the chart (don't strip).
-    return true;
+    _crDlEnterRun();
+    try { var q = (res.venue === 'coinbase') ? 'USD' : 'USDT'; document.title = String(assetId).toUpperCase() + '/' + q + ' · ' + res.tf + ' · ChartRunner'; } catch(_){}
+    return true; // URL is the address — keep it so a refresh reproduces the chart.
   } catch(_){ return false; }
 }
 window.crApplyDeepLink = crApplyDeepLink;
 
-// Phase 2: deferred launch (after boot — restart/hideSplash ready). Symbol intent
-// only; room/snapshot/map keep their existing handlers (Phase 3 formalizes).
+// Phase 2+3: deferred launch (after boot — restart/crMaps/switchAsset ready).
+// Fires for 'symbol' (CEX + mint/DEX) and 'map' (bare self-only). 'room' and
+// 'snapshot' are left to their existing shipped handlers.
 try {
   if(window.CR_DEEPLINK){
     var _dlLaunch = crResolveDeepLink();
-    if(_dlLaunch.intent === 'symbol'){
+    if(_dlLaunch.intent === 'symbol' || _dlLaunch.intent === 'map'){
       setTimeout(function(){ try { crApplyDeepLink(_dlLaunch); } catch(_){} }, 1200);
     }
   }
