@@ -1,0 +1,66 @@
+# ChartRunner — reproducible verified-build CI (TEMPLATE).
+#
+# PLACEMENT: move this file to the GIT REPO ROOT at
+#   .github/workflows/verified-build.yml
+# (the chartrunner repo, not the vault). Adjust `working-directory` if the
+# anchor workspace is nested differently in the repo.
+#
+# WHAT IT DOES: on every push touching the anchor workspace, builds each
+# RECONCILED program deterministically with solana-verify (Docker) and compares
+# the executable hash to the on-chain (devnet) hash — catching source⇄deploy
+# drift automatically, without anyone's laptop. Runs on GitHub's x86 runners,
+# which also give more reproducible hashes than an M-series Mac.
+#
+# FIRST-RUN: validate once — solana-verify image selection for the 0.30.1
+# programs and the cargo-install time may need a tweak. match + oracle are
+# intentionally excluded until their source is reconciled (see BUILD_VERIFY.md).
+
+name: verified-build
+
+on:
+  push:
+    paths: [ "anchor/**" ]
+  pull_request:
+    paths: [ "anchor/**" ]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lib: chartrunner_maps
+            pid: DbzEqKfgCBqneR6Yuc17yEPc1fbVeqTeGy721f1n3UvH
+          - lib: chartrunner_registry
+            pid: ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn
+    defaults:
+      run:
+        working-directory: anchor
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install solana-verify
+        run: cargo install solana-verify --locked
+
+      - name: Deterministic build (${{ matrix.lib }})
+        run: solana-verify build --library-name ${{ matrix.lib }}
+
+      - name: Executable hash
+        id: exe
+        run: echo "hash=$(solana-verify get-executable-hash target/deploy/${{ matrix.lib }}.so)" >> "$GITHUB_OUTPUT"
+
+      - name: On-chain hash (devnet)
+        id: chain
+        run: echo "hash=$(solana-verify get-program-hash -u https://api.devnet.solana.com ${{ matrix.pid }})" >> "$GITHUB_OUTPUT"
+
+      - name: Compare
+        run: |
+          echo "executable: ${{ steps.exe.outputs.hash }}"
+          echo "on-chain  : ${{ steps.chain.outputs.hash }}"
+          if [ "${{ steps.exe.outputs.hash }}" != "${{ steps.chain.outputs.hash }}" ]; then
+            echo "::error::source ≠ deployed for ${{ matrix.lib }}"
+            exit 1
+          fi
+          echo "✅ ${{ matrix.lib }} reproduces the on-chain bytecode"

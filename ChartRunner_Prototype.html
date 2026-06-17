@@ -4,8 +4,10 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.303
-     LAST UPDATED:    2026-06-16  ·  M-MP peers render as the REAL runner sprite (not a dot): crRoom.drawPeer now draws the runner avatar (drawInvader / _drawLoadoutAvatar) translated to the peer's chart position, seat-tinted (creator gold / wallet green / guest blue), with the handle label above. cNFT/Honeycomb future hook noted — when a peer broadcasts a selected NFT, drawImage it instead of the procedural sprite (mirrors _crNftAvatarImg).
+     CURRENT VERSION: v1.0.305
+     LAST UPDATED:    2026-06-17  ·  Market Scan now populates live (gametest F-05). The Engine MARKET SCAN pane labelled "9 assets · live" only ever filled the active asset (others hard-dashed) and its refresher fetched a different 9-id list with no timeframe (cached under id|undefined while the painter read id|tf) via direct Binance REST (CORS/geo-blocked). Fix: (a) refreshMarketScan now scans the SAME ASSETS the painter shows and passes each asset's _tokTF(id) so cache keys match; (b) the painter fills non-active rows from _tokLiveOrNull(id, _tokTF(id)) (graceful "—" when absent), active row still uses the loaded-chart klines; (c) new _tokBinanceJson() tries direct Binance then falls back to corsproxy.io (same pattern as _fetchDrift) so live data populates despite browser CORS. Note F-03 (Coinbase symbol mapping) was a false positive — crCexSymbol() already maps Coinbase→BTC-USD / Kraken→XBT / OKX·KuCoin→BASE-QUOTE / Gate.io→BASE_QUOTE; the report's 404 came from probing crCexCandleUrl with a raw unmapped symbol. No new deps, single file, no order/SDK/broker/signing/on-chain change.
+     (v1.0.304 = make the modular surface REAL (gametest F-06/F-07/F-01). (1) ChartRunner.abilities was a 1-ability sample (momentumDash); it now bridges the bundled-core AbilityRegistry — the real ~24 trading primitives — onto the public surface, backed by the live `sdk` (+ host + currentAsset): list()/get()/byCategory()/describe()/execute() actually drive orders through the same SDK the in-game UI uses (orders still route through the SDK — hard rule preserved; movement abilities like momentumDash still resolve via the modular registry). (2) ChartRunner.getState() now merges the live run state (asset/timeframe/candleCount/running/score), not just the skeleton. (3) Renderer is honestly labelled a real adapter over the production render() (isLegacyBacked()/ready added; dropped the "renderer stub" text). (4) CONFIG.VERSION aligned 1.0.264→1.0.304 to kill the boot/console/run-summary version drift. No new deps, single file, no rendering/abilities crossing.
+     (v1.0.303 = M-MP peers render as the REAL runner sprite (not a dot): crRoom.drawPeer now draws the runner avatar (drawInvader / _drawLoadoutAvatar) translated to the peer's chart position, seat-tinted (creator gold / wallet green / guest blue), with the handle label above. cNFT/Honeycomb future hook noted — when a peer broadcasts a selected NFT, drawImage it instead of the procedural sprite (mirrors _crNftAvatarImg).)
      (v1.0.303 = M-MP peer avatars = real runner sprite (Julian: "runner should be displayed as real runner with avatar — once cNFT is enabled with Honeycomb it should show selected NFT"). crRoom.drawPeer replaced the colored dot with the actual runner sprite: ctx.translate(peerScreenX,peerScreenY) then drawInvader(c,1.5,seatColor) (falls back to _drawLoadoutAvatar forceTint, then a dot). Seat color tints the sprite so peers stay distinguishable; handle label retained above. Forward path: peers will broadcast their chosen NFT (the join payload already carries avatarClass) and drawPeer will drawImage the loaded NFT in place of the procedural invader — same mechanism as the local player's _crNftAvatarImg override in _drawLoadoutAvatar. No SDK, broker, signing, on-chain write, or live-execution change.)
      (v1.0.302 = M-MP Pass 2 — LIVE build-sync: crRoom now broadcasts the local player's placed tools/overlays (brackets, ladders, OCO, hlines, trendlines, VWAP, all TV overlays) on change (~1.25 Hz, FNV hash-diff) and renders every peer's builds as read-only ghosts (globalAlpha 0.42) by array-swapping them through the existing draw pipeline (drawVisualOverlays/drawTrendlines/drawAnchorLines/drawVwapAnchors/drawTvOverlays), restored in a finally. Indicators excluded v1 (global singleton + grind-poly cache). Relay: frame cap 2KB→64KB + new `builds`→`peer_builds` fan-out (needs relay redeploy).
      (v1.0.302 = M-MP live build-sync Pass 2 (Julian: "see each other moving live + their builds"). Sender: crRoom._buildsSnapshot() serializes game.visual{Brackets,Ladders,OCO}/anchorLines/visualTrendlines/vwapAnchors/tvOverlays, FNV-1a hash-diffed on an 800ms timer (startBuilds/stopBuilds, started in ws.onopen, stopped onclose), broadcast as {t:'builds',b:snap} only on change, skipped >60KB. Receiver: peer_builds stores b on peers.get(sid).builds. Render: a new pass at the top of crRoom.render array-swaps each peer's builds into game.* and calls the existing pure draw fns at 0.42 alpha with selectedOverlay nulled + shadowBrackets emptied, restoring all globals in a finally (a thrown draw can't strand them). Indicators deferred (INDICATOR_STATE is a global singleton that writes the rideable grind-poly cache — can't render a second layer). Relay (chartrunner-relay/src/relay.js): RELAY_MAX_FRAME default 2048→65536 so build frames fit; new 'builds' case fans out 'peer_builds' to active room occupants. Requires relay redeploy + .env RELAY_MAX_FRAME bump. No SDK, broker, signing, on-chain write, or live-execution change — presence + builds are off-chain, non-authoritative, read-only ghosts.)
@@ -13373,7 +13375,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.264",
+  VERSION: "1.0.305",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -13643,18 +13645,24 @@ const Renderer = (function() {
       try { _legacyRender(state.dt || 0.016); } catch(_){}
       return;
     }
+    // Pre-wire only: shown for the brief window before setLegacyRender() runs at
+    // boot (or never, if wired synchronously). Once backed, draw() delegates to
+    // the production renderer above — this is an adapter, not a stub.
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#05070d';
     ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.fillStyle = '#14f195';
     ctx.font = '14px monospace';
-    ctx.fillText('ChartRunner v' + CONFIG.VERSION + ' — renderer stub (legacy render active)', 20, 40);
+    ctx.fillText('ChartRunner v' + CONFIG.VERSION + ' — renderer initializing…', 20, 40);
   }
 
   function setLegacyRender(fn){ _legacyRender = fn; }
 
-  return { init, draw, setLegacyRender };
+  // isLegacyBacked()/ready: SDK consumers can verify the production renderer is
+  // live (true once boot wiring has run). The modular renderer is a real adapter
+  // over the production render(), not a placeholder.
+  return { init, draw, setLegacyRender, isLegacyBacked: function(){ return !!_legacyRender; }, get ready(){ return !!_legacyRender; } };
 })();
 
 // ====================== 9. INPUT ======================
@@ -52320,6 +52328,13 @@ function _softRefreshTokenWidgets(){
 // v0.9.54 — Once we've seen live data for an id, keep using the most recent
 // snapshot indefinitely as a fallback. This stops the "price on/off" flicker
 // where a stale-cache miss would drop the widget back to synth-seeded values.
+// v1.0.305 — Binance REST is CORS/geo-blocked from many browsers, which left
+// the Market Scan + Token panes empty ("—"). Try direct, then fall back to a
+// CORS proxy (same pattern as _fetchDrift) so live data populates regardless.
+function _tokBinanceJson(url){
+  return fetch(url).then(r => { if(!r.ok) throw new Error('http ' + r.status); return r.json(); })
+    .catch(() => fetch('https://corsproxy.io/?' + encodeURIComponent(url)).then(r => r.json()).catch(() => null));
+}
 function _tokFetchLive(id, tf){
   const pair = TOK_BINANCE_PAIR[id];
   const key = id + '|' + tf;
@@ -52344,10 +52359,10 @@ function _tokFetchLive(id, tf){
   // Binance fetches (only if a pair exists). null-promises keep the
   // Promise.all shape stable when only one source applies.
   const p1 = pair
-    ? fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=' + pair).then(r => r.json()).catch(() => null)
+    ? _tokBinanceJson('https://api.binance.com/api/v3/ticker/24hr?symbol=' + pair)
     : Promise.resolve(null);
   const p2 = pair
-    ? fetch('https://api.binance.com/api/v3/klines?symbol=' + pair + '&interval=' + tf + '&limit=60').then(r => r.json()).catch(() => null)
+    ? _tokBinanceJson('https://api.binance.com/api/v3/klines?symbol=' + pair + '&interval=' + tf + '&limit=60')
     : Promise.resolve(null);
   const p3 = wantBird ? window.crBirdeye.fetchToken(id).catch(() => null) : Promise.resolve(null);
   // v1.0.64 — Fire Birdeye OHLCV in parallel for sol-chain tokens.
@@ -67690,9 +67705,18 @@ const crL3 = (function(){
       let html = '<div class="crTerm-tblHd"><span>Asset</span><span>Last</span><span class="r">24h</span><span class="r">Vol</span></div>';
       list.forEach(a => {
         const isActive = a.id === active;
-        const px  = isActive ? lastP : null;
-        const dlt = isActive ? active24 : null;
-        const vol = isActive ? activeVol : null;
+        // v1.0.305 — non-active assets now show their live cached snapshot
+        // (_tokFetchLive populates _tokLiveCache via refreshMarketScan) instead
+        // of always dashing; the active asset still uses the loaded-chart klines.
+        let px, dlt, vol;
+        if(isActive){ px = lastP; dlt = active24; vol = activeVol; }
+        else {
+          let snap = null;
+          try { snap = (typeof _tokLiveOrNull === 'function') ? _tokLiveOrNull(a.id, (typeof _tokTF === 'function' ? _tokTF(a.id) : undefined)) : null; } catch(_){}
+          px  = (snap && isFinite(snap.px))    ? snap.px    : null;
+          dlt = (snap && isFinite(snap.ch24))  ? snap.ch24  : null;
+          vol = (snap && isFinite(snap.vol24)) ? snap.vol24 : null;
+        }
         const cls = (dlt == null) ? '' : (dlt >= 0 ? 'pos' : 'neg');
         const dltStr = dlt == null ? '—' : (dlt >= 0 ? '+' : '') + dlt.toFixed(2) + '%';
         const nameMark = isActive ? '<b style="color:var(--good)">' + a.nm + '</b>' : a.nm;
@@ -76276,10 +76300,18 @@ window.crGoldRush = (function(){
     if(!el) return;
     if(typeof window._tokFetchLive !== 'function' && typeof _tokFetchLive !== 'function') return;
     const fn = (typeof _tokFetchLive === 'function') ? _tokFetchLive : window._tokFetchLive;
-    const ENGINE_SCAN = ['btc','eth','sol','jup','jto','bonk','wif','doge','pyth'];
-    ENGINE_SCAN.forEach(id => { try { fn(id); } catch(_){} });
+    // v1.0.305 — scan the SAME assets the painter shows (ASSETS) and pass each
+    // asset's timeframe so the fetch caches under the id|tf key the Market Scan
+    // painter reads. Previously this scanned a different 9-id list with NO tf,
+    // caching under id|undefined (key miss) with a malformed klines interval,
+    // so the painter never found live data and every row dashed.
+    const scan = (typeof ASSETS !== 'undefined' && Array.isArray(ASSETS))
+      ? ASSETS.map(a => a.id)
+      : ['btc','eth','sol','jup','jto','bonk','wif','doge','pyth'];
+    const tfOf = (id) => (typeof _tokTF === 'function') ? _tokTF(id) : '1h';
+    scan.forEach(id => { try { fn(id, tfOf(id)); } catch(_){} });
     const tag = document.getElementById('crTermMktTag');
-    if(tag){ tag.textContent = ENGINE_SCAN.length + ' assets · live'; }
+    if(tag){ tag.textContent = scan.length + ' assets · live'; }
   }
 
   // ── v1.0.70 — final-batch refreshers ──────────────────────────────
@@ -77793,12 +77825,74 @@ window.crQvac = (function(){
           pan: (deltaX) => { try { ChartEngine.panCamera(deltaX || 0); } catch(_){} },
           reset: () => { try { ChartEngine.setCameraFollowMode(true); } catch(_){} }   // same as double-click or '0' key
         };
-        // Keep the original getState if present; add our gameState view too
+        // Keep the original getState; merge the REAL live run state (asset / tf /
+        // candle count / running / score) plus the modular skeleton view.
+        // v1.0.304 — make the modular surface real: getState reflects the engine.
         const _origGetState = window.ChartRunner.getState;
-        window.ChartRunner.getState = function(){ 
-          try { return Object.assign({}, _origGetState ? _origGetState() : {}, { modularFoundation: (typeof gameState !== 'undefined') ? gameState : null }); } 
-          catch(_){ return {}; }
+        window.ChartRunner.getState = function(){
+          var real = {};
+          try {
+            real = {
+              asset:       (typeof currentAsset !== 'undefined') ? currentAsset : null,
+              timeframe:   (typeof timeframe !== 'undefined') ? timeframe : null,
+              candleCount: (typeof candles !== 'undefined' && candles) ? candles.length : 0,
+              running:     (typeof game !== 'undefined' && game) ? !!game.running : false,
+              score:       (typeof game !== 'undefined' && game) ? game.score : undefined
+            };
+          } catch(_){}
+          try { return Object.assign({}, _origGetState ? _origGetState() : {}, real, { modularFoundation: (typeof gameState !== 'undefined') ? gameState : null }); }
+          catch(_){ return real; }
         };
+
+        // v1.0.304 — Make the public ability registry REAL (gametest F-06).
+        // ChartRunner.abilities previously exposed exactly one sample ability
+        // (momentumDash). Bridge the bundled-core AbilityRegistry (the real ~24
+        // trading primitives) onto the public surface, backed by the LIVE `sdk`
+        // (+ host + currentAsset), so list()/get()/byCategory()/execute() actually
+        // drive orders through the same SDK the in-game UI uses. Movement abilities
+        // (momentumDash) still resolve via the modular registry. Orders never
+        // bypass the SDK — hard rule preserved.
+        try {
+          if (typeof ChartRunnerCore !== 'undefined' && ChartRunnerCore.AbilityRegistry
+              && typeof sdk !== 'undefined' && sdk) {
+            var _realReg = ChartRunnerCore.AbilityRegistry.registerCoreAbilities();
+            var _modAbil = (typeof Abilities !== 'undefined') ? Abilities : null; // momentumDash etc.
+            var _ctxState = function(){ try { return { asset: (typeof currentAsset !== 'undefined' ? currentAsset : 'btc') }; } catch(_){ return { asset:'btc' }; } };
+            var _buildCtx = function(arg){
+              var isCtx = !!(arg && (arg.sdk || arg.host || arg.state || arg.params));
+              var base  = { sdk: sdk, host: (sdk && sdk.host) || null, state: _ctxState(), params: {} };
+              return isCtx ? Object.assign(base, arg) : Object.assign(base, { params: arg || {} });
+            };
+            var _bridged = {
+              registry: _realReg,
+              list: function(){
+                var real = _realReg.list().map(function(a){ return a.id; });
+                var extra = _modAbil ? _modAbil.list().filter(function(id){ return real.indexOf(id) < 0; }) : [];
+                return real.concat(extra);
+              },
+              get: function(id){ return _realReg.get(id) || (_modAbil && _modAbil.registry ? _modAbil.registry[id] : null) || null; },
+              byCategory: function(cat){ return _realReg.byCategory(cat); },
+              describe: function(){ return _realReg.list().map(function(a){ return { id:a.id, label:a.label, cat:a.cat, key:(a.key||null) }; }); },
+              // execute(id, paramsOrCtx) → Promise<{ok, result}> for real abilities
+              // (onFire is async); momentumDash falls back to the modular registry.
+              execute: function(id, arg){
+                var ab = _realReg.get(id);
+                if (ab && typeof ab.onFire === 'function') {
+                  try { return Promise.resolve(ab.onFire(_buildCtx(arg))); }
+                  catch(e){ return Promise.resolve({ ok:false, reason:String((e && e.message) || e) }); }
+                }
+                if (_modAbil && _modAbil.registry && _modAbil.registry[id]) {
+                  var mctx = (arg && (arg.player || arg.params)) ? arg : { player: (typeof player !== 'undefined' ? player : null) };
+                  return Promise.resolve({ ok: !!_modAbil.execute(id, mctx) });
+                }
+                return Promise.resolve({ ok:false, reason:'unknown ability: ' + id });
+              },
+              register: _modAbil ? _modAbil.register : function(){}
+            };
+            window.ChartRunner.abilities = _bridged;
+            if (window.ChartRunner.modular) window.ChartRunner.modular.abilities = _bridged;
+          }
+        } catch(e){ try { console.warn('[modular abilities bridge] non-fatal:', e.message); } catch(_){} }
       } catch(_){}
     }
 

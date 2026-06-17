@@ -56,6 +56,11 @@ pub const MAX_ROYALTY_BPS: u16 = 5000;       // 50% cap to prevent abuse
 // restored-fee path no longer reverts: flipping this to 500 (5%) is now safe.
 // Left at 0 until we decide to monetize.
 pub const PROTOCOL_FEE_BPS: u16 = 0;
+// v0.9.x — governance guardrail. The live fee now lives in the Config PDA
+// (admin-settable), but even the admin cannot exceed this hard ceiling — a
+// trust commitment that survives a key compromise: a hijacked admin can't set
+// a 100% fee. 1000 bps = 10%.
+pub const MAX_PROTOCOL_FEE_BPS: u16 = 1000;
 // Score / sharpe sanity caps for record_run. Without these any wallet can
 // submit u64::MAX score and pollute the leaderboard. Caps chosen as plausible
 // game maxima — far above any honest run, far below int max.
@@ -63,6 +68,12 @@ pub const MAX_RUN_SCORE:    u64 = 1_000_000;       // 1 M score cap
 pub const MAX_SHARPE_X100:  i32 = 10_000;          // sharpe ≤ 100.00
 pub const MAX_DURATION_SEC: u32 = 24 * 60 * 60;    // 24 h cap
 pub const ENTITY_TYPE_COUNT: u8 = 9;
+pub const PDA_BOT_RUN: &[u8] = b"bot_run";
+pub const MAX_BOT_BACKTEST_SCORE: u64 = 1_000_000;
+pub const MAX_BOT_BACKTEST_TX_COUNT: u32 = 100_000;
+pub const MAX_BOT_BACKTEST_DURATION_SEC: i64 = 30 * 24 * 60 * 60;
+pub const MAX_NET_PNL_BPS: i32 = 100_000;           // ±1000%
+pub const MAX_DRAWDOWN_BPS: u32 = 10_000;           // 100%
 // v0.9.x — runner-name (handle) register. Handle PDA is seeded by the handle
 // ONLY (no owner), so the handle is globally unique across all wallets.
 pub const MAX_HANDLE_LEN: usize = 32;
@@ -199,6 +210,7 @@ pub mod chartrunner_registry {
         _name: String,
         price_lamports: u64,
     ) -> Result<()> {
+        require!(!ctx.accounts.config.paused, CrError::ProtocolPaused);
         require!(price_lamports > 0, CrError::PriceMustBePositive);
 
         // Verify the entity actually exists + is owned by the lister.
@@ -228,6 +240,7 @@ pub mod chartrunner_registry {
         _name: String,
         max_price: u64,
     ) -> Result<()> {
+        require!(!ctx.accounts.config.paused, CrError::ProtocolPaused);
         let listing  = &ctx.accounts.listing;
         let price    = listing.price;
         // v0.9.8 — buyer slippage guard: reject if the listing price moved above
@@ -235,7 +248,7 @@ pub mod chartrunner_registry {
         // change on list_entity.
         require!(price <= max_price, CrError::PriceExceedsMax);
         let fee      = (price as u128)
-            .checked_mul(PROTOCOL_FEE_BPS as u128).ok_or(CrError::MathOverflow)?
+            .checked_mul(ctx.accounts.config.protocol_fee_bps as u128).ok_or(CrError::MathOverflow)?
             .checked_div(10_000).ok_or(CrError::MathOverflow)? as u64;
         let payout   = price.checked_sub(fee).ok_or(CrError::MathOverflow)?;
 
@@ -373,6 +386,102 @@ pub mod chartrunner_registry {
         Ok(())
     }
 
+    /// Anchor a bot/headless backtest with compact on-chain provenance. The
+    /// heavy transcript, SDK call log, and candle tape live off-chain; this PDA
+    /// stores their deterministic hashes plus run metrics so buyers and
+    /// leaderboards can verify claims without trusting a local screenshot.
+    pub fn record_bot_backtest(
+        ctx: Context<RecordBotBacktest>,
+        nonce: u64,
+        bot_id_hash: [u8; 32],
+        strategy_hash: [u8; 32],
+        session_hash: [u8; 32],
+        call_log_hash: [u8; 32],
+        candle_hash: [u8; 32],
+        asset: [u8; 16],
+        timeframe: [u8; 8],
+        start_ts: i64,
+        end_ts: i64,
+        tx_count: u32,
+        net_pnl_bps: i32,
+        sharpe_x100: i32,
+        score: u64,
+        max_drawdown_bps: u32,
+    ) -> Result<()> {
+        require!(end_ts >= start_ts, CrError::BotBacktestInvalidTimeRange);
+        require!(
+            end_ts.saturating_sub(start_ts) <= MAX_BOT_BACKTEST_DURATION_SEC,
+            CrError::BotBacktestDurationTooLong
+        );
+        require!(tx_count <= MAX_BOT_BACKTEST_TX_COUNT, CrError::BotBacktestTooManyTx);
+        require!(score <= MAX_BOT_BACKTEST_SCORE, CrError::ScoreTooHigh);
+        require!(sharpe_x100.unsigned_abs() <= MAX_SHARPE_X100 as u32, CrError::SharpeOutOfRange);
+        require!(net_pnl_bps.unsigned_abs() <= MAX_NET_PNL_BPS as u32, CrError::BotBacktestPnlOutOfRange);
+        require!(max_drawdown_bps <= MAX_DRAWDOWN_BPS, CrError::BotBacktestDrawdownOutOfRange);
+
+        let r = &mut ctx.accounts.bot_backtest;
+        r.bot_owner        = ctx.accounts.bot_owner.key();
+        r.nonce            = nonce;
+        r.bot_id_hash      = bot_id_hash;
+        r.strategy_hash    = strategy_hash;
+        r.session_hash     = session_hash;
+        r.call_log_hash    = call_log_hash;
+        r.candle_hash      = candle_hash;
+        r.asset            = asset;
+        r.timeframe        = timeframe;
+        r.start_ts         = start_ts;
+        r.end_ts           = end_ts;
+        r.tx_count         = tx_count;
+        r.net_pnl_bps      = net_pnl_bps;
+        r.sharpe_x100      = sharpe_x100;
+        r.score            = score;
+        r.max_drawdown_bps = max_drawdown_bps;
+        r.recorded_at      = Clock::get()?.unix_timestamp;
+        r.bump             = ctx.bumps.bot_backtest;
+        r.verified         = false;
+        r.oracle_cert      = Pubkey::default();
+        r.feed_id          = [0u8; 32];
+        r.price            = 0;
+        r.price_expo       = 0;
+        r.price_publish    = 0;
+
+        if let Some(cert_ai) = ctx.remaining_accounts.first() {
+            require_keys_eq!(*cert_ai.owner, ORACLE_PROGRAM_ID, CrError::CertWrongOwner);
+            let data = cert_ai.try_borrow_data()?;
+            require!(data.len() >= 8 + 69, CrError::CertMalformed);
+            require!(data[..8] == CERT_DISCRIMINATOR, CrError::CertBadDiscriminator);
+            let cert = PriceCertificateView::try_from_slice(&data[8..8 + 69])
+                .map_err(|_| CrError::CertMalformed)?;
+            let want = feed_id_for(&asset).ok_or(CrError::AssetHasNoFeed)?;
+            require!(cert.feed_id == want, CrError::CertFeedMismatch);
+            require!(
+                r.recorded_at.saturating_sub(cert.publish_time) <= MAX_CERT_AGE_SEC,
+                CrError::CertStale
+            );
+            r.verified      = true;
+            r.oracle_cert   = cert_ai.key();
+            r.feed_id       = cert.feed_id;
+            r.price         = cert.price;
+            r.price_expo    = cert.exponent;
+            r.price_publish = cert.publish_time;
+        }
+
+        emit!(BotBacktestRecorded {
+            bot_owner: r.bot_owner,
+            nonce,
+            bot_id_hash,
+            asset,
+            timeframe,
+            score,
+            net_pnl_bps,
+            tx_count,
+            session_hash,
+            call_log_hash,
+            candle_hash,
+        });
+        Ok(())
+    }
+
     // ── NAME REGISTER (globally-unique runner handles) ───────────────────────
 
     /// Claim a globally-unique runner name (handle). The PDA is seeded by the
@@ -409,6 +518,7 @@ pub mod chartrunner_registry {
     /// until bought. `init` (not init_if_needed) prevents silent re-pricing —
     /// same front-run defense as list_entity (re-price = cancel then re-list).
     pub fn list_license(ctx: Context<ListLicense>, price_lamports: u64) -> Result<()> {
+        require!(!ctx.accounts.config.paused, CrError::ProtocolPaused);
         require!(price_lamports > 0, CrError::PriceMustBePositive);
         let ll = &mut ctx.accounts.license_listing;
         ll.license   = ctx.accounts.license.key();
@@ -437,6 +547,7 @@ pub mod chartrunner_registry {
     /// License + the LicenseListing (rent → seller). `max_price` is the buyer's
     /// slippage guard.
     pub fn buy_license(ctx: Context<BuyLicense>, max_price: u64) -> Result<()> {
+        require!(!ctx.accounts.config.paused, CrError::ProtocolPaused);
         let price = ctx.accounts.license_listing.price;
         require!(price <= max_price, CrError::PriceExceedsMax);
 
@@ -444,7 +555,7 @@ pub mod chartrunner_registry {
             .checked_mul(ctx.accounts.entity.royalty_bps as u128).ok_or(CrError::MathOverflow)?
             .checked_div(10_000).ok_or(CrError::MathOverflow)? as u64;
         let fee = (price as u128)
-            .checked_mul(PROTOCOL_FEE_BPS as u128).ok_or(CrError::MathOverflow)?
+            .checked_mul(ctx.accounts.config.protocol_fee_bps as u128).ok_or(CrError::MathOverflow)?
             .checked_div(10_000).ok_or(CrError::MathOverflow)? as u64;
         let payout = price
             .checked_sub(royalty).ok_or(CrError::MathOverflow)?
@@ -505,9 +616,113 @@ pub mod chartrunner_registry {
         });
         Ok(())
     }
+
+    // ── GOVERNANCE / CIRCUIT BREAKER (Config PDA) ────────────────────────────
+
+    /// Bootstrap the singleton Config PDA. Front-run-safe by construction:
+    /// the outcome is FIXED regardless of who calls it — `admin` and `treasury`
+    /// are both pinned to `protocol_treasury()` (the Squads vault), and the fee
+    /// starts at the historical default. So an attacker racing to call this
+    /// first only does our job for us; they cannot install themselves as admin.
+    /// `init` makes it callable exactly once.
+    ///
+    /// MUST be called immediately after the program upgrade that introduces
+    /// Config — the marketplace list/buy paths require it to exist (see the
+    /// upgrade-ordering note in DEPLOY/handoff).
+    pub fn init_config(ctx: Context<InitConfig>) -> Result<()> {
+        let c = &mut ctx.accounts.config;
+        c.admin            = protocol_treasury();
+        c.treasury         = protocol_treasury();
+        c.protocol_fee_bps = PROTOCOL_FEE_BPS;
+        c.paused           = false;
+        c.bump             = ctx.bumps.config;
+        emit!(ConfigUpdated {
+            admin: c.admin, treasury: c.treasury,
+            protocol_fee_bps: c.protocol_fee_bps, paused: c.paused,
+        });
+        Ok(())
+    }
+
+    /// Admin-only: arm/disarm the marketplace circuit breaker. While paused,
+    /// list_entity / buy_entity / list_license / buy_license revert with
+    /// ProtocolPaused. Cancels, deletes, records, and name ops stay live so
+    /// users can always exit positions and the game keeps functioning.
+    pub fn set_paused(ctx: Context<AdminConfig>, paused: bool) -> Result<()> {
+        let c = &mut ctx.accounts.config;
+        c.paused = paused;
+        emit!(ConfigUpdated {
+            admin: c.admin, treasury: c.treasury,
+            protocol_fee_bps: c.protocol_fee_bps, paused: c.paused,
+        });
+        Ok(())
+    }
+
+    /// Admin-only: set the live protocol fee. Hard-capped at MAX_PROTOCOL_FEE_BPS
+    /// so even a compromised admin can't impose a predatory fee.
+    pub fn set_fee(ctx: Context<AdminConfig>, protocol_fee_bps: u16) -> Result<()> {
+        require!(protocol_fee_bps <= MAX_PROTOCOL_FEE_BPS, CrError::FeeTooHigh);
+        let c = &mut ctx.accounts.config;
+        c.protocol_fee_bps = protocol_fee_bps;
+        emit!(ConfigUpdated {
+            admin: c.admin, treasury: c.treasury,
+            protocol_fee_bps: c.protocol_fee_bps, paused: c.paused,
+        });
+        Ok(())
+    }
+
+    /// Admin-only: rotate the fee sink.
+    pub fn set_treasury(ctx: Context<AdminConfig>, new_treasury: Pubkey) -> Result<()> {
+        let c = &mut ctx.accounts.config;
+        c.treasury = new_treasury;
+        emit!(ConfigUpdated {
+            admin: c.admin, treasury: c.treasury,
+            protocol_fee_bps: c.protocol_fee_bps, paused: c.paused,
+        });
+        Ok(())
+    }
+
+    /// Admin-only: rotate governance authority (e.g. migrate to a new multisig).
+    pub fn set_admin(ctx: Context<AdminConfig>, new_admin: Pubkey) -> Result<()> {
+        let c = &mut ctx.accounts.config;
+        c.admin = new_admin;
+        emit!(ConfigUpdated {
+            admin: c.admin, treasury: c.treasury,
+            protocol_fee_bps: c.protocol_fee_bps, paused: c.paused,
+        });
+        Ok(())
+    }
 }
 
 // ─── Account contexts ─────────────────────────────────────────────────────
+
+#[derive(Accounts)]
+pub struct InitConfig<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + Config::SIZE,
+        seeds = [b"config"],
+        bump,
+    )]
+    pub config: Account<'info, Config>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Shared context for all admin-only config mutations. `has_one = admin`
+/// binds the signer to the stored governance authority.
+#[derive(Accounts)]
+pub struct AdminConfig<'info> {
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump = config.bump,
+        has_one = admin,
+    )]
+    pub config: Account<'info, Config>,
+    pub admin: Signer<'info>,
+}
 
 #[derive(Accounts)]
 #[instruction(entity_type: u8, name: String, content_hash: [u8; 32], royalty_bps: u16)]
@@ -562,6 +777,8 @@ pub struct ListEntity<'info> {
         bump,
     )]
     pub listing: Account<'info, Listing>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, Config>,
     #[account(mut)]
     pub owner: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -598,9 +815,12 @@ pub struct BuyEntity<'info> {
     // v0.9.8 — block self-purchase (wash-trading / fake volume).
     #[account(mut, constraint = buyer.key() != seller.key() @ CrError::SelfPurchase)]
     pub buyer: Signer<'info>,
-    /// CHECK: protocol treasury (fee sink). Constrained to the value of
-    /// `protocol_treasury()` to prevent caller swapping in their own address.
-    #[account(mut, address = protocol_treasury())]
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, Config>,
+    /// CHECK: protocol treasury (fee sink). Pinned to `config.treasury` so the
+    /// caller can't swap in their own address, and so governance can rotate the
+    /// sink without a program upgrade.
+    #[account(mut, address = config.treasury)]
     pub treasury: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
 }
@@ -638,6 +858,22 @@ pub struct RecordRun<'info> {
     pub run: Account<'info, RunRecord>,
     #[account(mut)]
     pub player: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(nonce: u64, bot_id_hash: [u8; 32])]
+pub struct RecordBotBacktest<'info> {
+    #[account(
+        init,
+        payer = bot_owner,
+        space = 8 + BotBacktestRecord::SIZE,
+        seeds = [PDA_BOT_RUN, bot_owner.key().as_ref(), bot_id_hash.as_ref(), &nonce.to_le_bytes()],
+        bump,
+    )]
+    pub bot_backtest: Account<'info, BotBacktestRecord>,
+    #[account(mut)]
+    pub bot_owner: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -694,6 +930,8 @@ pub struct ListLicense<'info> {
         bump,
     )]
     pub license_listing: Account<'info, LicenseListing>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, Config>,
     #[account(mut)]
     pub seller: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -761,13 +999,36 @@ pub struct BuyLicense<'info> {
     pub seller: AccountInfo<'info>,
     #[account(mut, constraint = buyer.key() != seller.key() @ CrError::SelfPurchase)]
     pub buyer: Signer<'info>,
-    /// CHECK: protocol treasury (fee sink); pinned to protocol_treasury().
-    #[account(mut, address = protocol_treasury())]
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, Config>,
+    /// CHECK: protocol treasury (fee sink); pinned to `config.treasury`.
+    #[account(mut, address = config.treasury)]
     pub treasury: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
 }
 
 // ─── Account data structures ──────────────────────────────────────────────
+
+/// Singleton protocol config — the governance + circuit-breaker root.
+/// PDA seeded by [b"config"] (exactly one per program).
+///
+/// Replaces the former compile-time `protocol_treasury()` / `PROTOCOL_FEE_BPS`
+/// constants so treasury + fee can be changed by governance without a program
+/// upgrade, and adds `paused` — a kill-switch for the value-moving marketplace
+/// paths (list/buy). `admin` is the Squads multisig vault (same authority that
+/// controls program upgrades); see `init_config` for the front-run-safe
+/// bootstrap.
+#[account]
+pub struct Config {
+    pub admin:            Pubkey,   // 32 — governance authority (Squads vault)
+    pub treasury:         Pubkey,   // 32 — fee sink
+    pub protocol_fee_bps: u16,      // 2  — live fee (≤ MAX_PROTOCOL_FEE_BPS)
+    pub paused:           bool,     // 1  — marketplace circuit breaker
+    pub bump:             u8,       // 1
+}
+impl Config {
+    pub const SIZE: usize = 32 + 32 + 2 + 1 + 1;  // 68
+}
 
 #[account]
 pub struct EntityRecord {
@@ -834,6 +1095,39 @@ impl RunRecord {
 }
 
 #[account]
+pub struct BotBacktestRecord {
+    pub bot_owner:        Pubkey,    // 32
+    pub nonce:            u64,       // 8
+    pub bot_id_hash:      [u8; 32],  // 32
+    pub strategy_hash:    [u8; 32],  // 32
+    pub session_hash:     [u8; 32],  // 32
+    pub call_log_hash:    [u8; 32],  // 32
+    pub candle_hash:      [u8; 32],  // 32
+    pub asset:            [u8; 16],  // 16
+    pub timeframe:        [u8; 8],   // 8
+    pub start_ts:         i64,       // 8
+    pub end_ts:           i64,       // 8
+    pub tx_count:         u32,       // 4
+    pub net_pnl_bps:      i32,       // 4
+    pub sharpe_x100:      i32,       // 4
+    pub score:            u64,       // 8
+    pub max_drawdown_bps: u32,       // 4
+    pub recorded_at:      i64,       // 8
+    pub bump:             u8,        // 1
+    pub verified:         bool,      // 1
+    pub oracle_cert:      Pubkey,    // 32
+    pub feed_id:          [u8; 32],  // 32
+    pub price:            i64,       // 8
+    pub price_expo:       i32,       // 4
+    pub price_publish:    i64,       // 8
+}
+impl BotBacktestRecord {
+    pub const SIZE: usize = 32 + 8 + 32 + 32 + 32 + 32 + 32 + 16 + 8
+                          + 8 + 8 + 4 + 4 + 4 + 8 + 4 + 8 + 1
+                          + 1 + 32 + 32 + 8 + 4 + 8;  // 358
+}
+
+#[account]
 pub struct NameClaim {
     pub owner:      Pubkey,    // 32
     pub name:       String,    // 4 + MAX_HANDLE_LEN
@@ -876,6 +1170,12 @@ impl LicenseListing {
     pub score: u64, pub sharpe_x100: i32, pub duration_secs: u32,
     pub map_hash: [u8; 32],
 }
+#[event] pub struct BotBacktestRecorded {
+    pub bot_owner: Pubkey, pub nonce: u64, pub bot_id_hash: [u8; 32],
+    pub asset: [u8; 16], pub timeframe: [u8; 8],
+    pub score: u64, pub net_pnl_bps: i32, pub tx_count: u32,
+    pub session_hash: [u8; 32], pub call_log_hash: [u8; 32], pub candle_hash: [u8; 32],
+}
 #[event] pub struct NameClaimed {
     pub owner: Pubkey, pub name: String, pub claimed_at: i64,
 }
@@ -885,6 +1185,9 @@ impl LicenseListing {
 #[event] pub struct LicenseResold {
     pub entity: Pubkey, pub seller: Pubkey, pub buyer: Pubkey, pub creator: Pubkey,
     pub price: u64, pub royalty: u64, pub fee: u64,
+}
+#[event] pub struct ConfigUpdated {
+    pub admin: Pubkey, pub treasury: Pubkey, pub protocol_fee_bps: u16, pub paused: bool,
 }
 
 // ─── Errors ───────────────────────────────────────────────────────────────
@@ -912,4 +1215,11 @@ pub enum CrError {
     #[msg("Certificate feed does not match the run asset")] CertFeedMismatch,
     #[msg("Price certificate is stale (>60s old)")]   CertStale,
     #[msg("No Pyth feed mapped for this asset")]      AssetHasNoFeed,
+    #[msg("Bot backtest end_ts must be >= start_ts")] BotBacktestInvalidTimeRange,
+    #[msg("Bot backtest duration exceeds cap")]       BotBacktestDurationTooLong,
+    #[msg("Bot backtest tx_count exceeds cap")]       BotBacktestTooManyTx,
+    #[msg("Bot backtest net PnL is out of range")]    BotBacktestPnlOutOfRange,
+    #[msg("Bot backtest drawdown is out of range")]   BotBacktestDrawdownOutOfRange,
+    #[msg("Marketplace is paused")]                    ProtocolPaused,
+    #[msg("Fee exceeds the 10% governance cap")]       FeeTooHigh,
 }
