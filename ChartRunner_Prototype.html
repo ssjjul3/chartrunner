@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.310
-     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 3 (still DARK / flag-gated): map + mint/DEX composition. crApplyDeepLink now also handles intent 'map' (bare ?map=<id>, self-only → crMaps.load restores the saved chart + dismiss splash, mirroring the room-link path; falls back to a symbol if the bare id isn't on this device) and 'symbol'+isMint (Solana token → crEnsureCustomSolanaToken + switchAsset → DEX/GeckoTerminal chart). 'room' and 'snapshot' are explicitly DEFERRED to their existing shipped handlers (crRoom + the ?sharedMap=1#m= importer) — never duplicated. Extracted _crDlGuestDismissBoot/_crDlEnterRun helpers. Deferred launch now fires for symbol+map. No order/SDK/signing/on-chain change; auto-guests only.
+     CURRENT VERSION: v1.0.311
+     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 4 (still DARK): chart→link emitter. `crChartLinkCurrent()` builds a canonical `?symbol=VENUE:PAIR&tf=` deep-link for the CURRENT live chart (CEX → venue:pair, DEX → the Solana mint via the custom asset's .mint), and `crCopyChartLink()` copies it — so a running chart is shareable by link without saving a map. Single grammar source = crDeepLink.chartLink; crMapsShare keeps owning saved-map/room links (snapshot grammar + room handshake), not force-routed through here. The "Copy chart link" UI button lands with the Phase 6 flag flip (a link only resolves for everyone once CR_DEEPLINK defaults on). No order/SDK/signing/on-chain change.
+     (v1.0.310 = Deep-links Phase 3 (still DARK / flag-gated): map + mint/DEX composition. crApplyDeepLink now also handles intent 'map' (bare ?map=<id>, self-only → crMaps.load restores the saved chart + dismiss splash, mirroring the room-link path; falls back to a symbol if the bare id isn't on this device) and 'symbol'+isMint (Solana token → crEnsureCustomSolanaToken + switchAsset → DEX/GeckoTerminal chart). 'room' and 'snapshot' are explicitly DEFERRED to their existing shipped handlers (crRoom + the ?sharedMap=1#m= importer) — never duplicated. Extracted _crDlGuestDismissBoot/_crDlEnterRun helpers. Deferred launch now fires for symbol+map. No order/SDK/signing/on-chain change; auto-guests only.
      (v1.0.309 = Deep-links Phase 2 launch FIX (still DARK / flag-gated). v1.0.308 set currentAsset/timeframe globals then restart()'d — but restart() only repositions the player on the EXISTING candles array, it never re-fetches, so a `?symbol=ETH` link booted a run that reported eth/4h in getState but rendered the default BTC/15m candles. Fix: crApplyDeepLink is now async and reloads for real via the canonical switch path — switchAsset(assetId) (new asset → loadCandles(timeframe)+rebuildWorld) or loadCandles(timeframe)+rebuildWorld (same asset, new tf) — BEFORE restart(). Broker still set to CEX first so the fetch routes right. No order/SDK/signing/on-chain change.
      (v1.0.308 = Deep-links Phase 0–2 (DARK — flag-gated, default OFF; spec docs/architecture/deep-link-scheme.md). Adds `window.crDeepLink` pure helpers (parseSymbol/parseTf/chartLink — TradingView-shaped VENUE:PAIR + Solana-mint + short-id, tf alias table that kills the 1m/1M collision), `crResolveDeepLink()` (classifies boot intent room>snapshot>map>symbol>none), and `crApplyDeepLink()` which — when `window.CR_DEEPLINK` is on — boots a `?symbol=VENUE:PAIR&tf=` link straight into a live "Time is Money" run (auto-guest like room links, sets broker/asset/tf, restart(), document.title). Default OFF for everyone; per-session test override `?crDeepLink=1` or localStorage.cr_deeplink='1'. CEX known-assets only this phase (mint/DEX + map/room/snapshot composition = Phase 3). No order/SDK/broker-route/signing/on-chain change; a link auto-guests only, never connects/trades.
      (v1.0.307 = login splash version label now reflects the real build. It was a hardcoded `<div class="ver">v1.0.271</div>` in #crBoot that drifted from CONFIG.VERSION; now the static text matches and initModularFoundation syncs `#crBoot .ver` → 'v'+CONFIG.VERSION at boot so it never goes stale again. (Investigated alongside two reported issues that turned out to be non-bugs on the live build: the chart topbar is correctly `display:none` during the #crBoot/crSplashUp login gate in all themes via `body.crSplashUp .crChrome{display:none!important}` — no toolbar leak; and the desktop shows the intended 7 app icons, not 8 — workbench stays archived. Both were blurred-screenshot misreads.) No order/SDK/broker/signing/on-chain/render change.
@@ -13380,7 +13381,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.310",
+  VERSION: "1.0.311",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -23840,6 +23841,42 @@ async function crApplyDeepLink(res){
   } catch(_){ return false; }
 }
 window.crApplyDeepLink = crApplyDeepLink;
+
+/* ── DEEP-LINK emitter — Phase 4. Builds a canonical deep-link for the CURRENT
+   live chart (symbol+tf) so a running chart can be shared by link WITHOUT saving
+   a map. Single grammar source = crDeepLink.chartLink. crMapsShare keeps owning
+   saved-map/room links (the snapshot grammar + room handshake) — different beast,
+   not forced through here. The "Copy chart link" UI affordance lands with the
+   Phase 6 flag flip (a link only resolves for everyone once the flag is on). */
+function crChartLinkCurrent(extra){
+  try {
+    var br   = (typeof crBrokerSelection === 'function') ? crBrokerSelection() : { type:'cex', name:'Binance' };
+    var aObj = (typeof currentAssetObj === 'function') ? currentAssetObj() : null;
+    var tf   = (typeof timeframe !== 'undefined') ? timeframe : '15m';
+    var opts = { tf: tf };
+    if(String(br.type).toLowerCase() === 'dex' && aObj && aObj.mint){
+      opts.mint = aObj.mint;                                   // Solana mint → DEX link
+    } else {
+      opts.venue = (typeof crVenueKey === 'function') ? crVenueKey(br.name) : 'binance';
+      opts.asset = (typeof currentAsset !== 'undefined') ? currentAsset : ((aObj && aObj.id) || 'btc');
+    }
+    if(extra && typeof extra === 'object'){ for(var k in extra){ if(Object.prototype.hasOwnProperty.call(extra,k)) opts[k] = extra[k]; } }
+    return (window.crDeepLink && window.crDeepLink.chartLink) ? window.crDeepLink.chartLink(opts) : '';
+  } catch(_){ return ''; }
+}
+window.crChartLinkCurrent = crChartLinkCurrent;
+async function crCopyChartLink(){
+  var url = crChartLinkCurrent();
+  if(!url) return '';
+  try {
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(url);
+      if(typeof crNotify === 'function') crNotify('🔗 Chart link copied'); else if(typeof toast === 'function') toast('🔗 Chart link copied');
+    } else { try { window.prompt('Chart link (copy):', url); } catch(_){} }
+  } catch(_){ try { window.prompt('Chart link (copy):', url); } catch(_){} }
+  return url;
+}
+window.crCopyChartLink = crCopyChartLink;
 
 // Phase 2+3: deferred launch (after boot — restart/crMaps/switchAsset ready).
 // Fires for 'symbol' (CEX + mint/DEX) and 'map' (bare self-only). 'room' and
