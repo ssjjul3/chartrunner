@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.306
-     LAST UPDATED:    2026-06-17  ·  Topbar auto-hide reveal fix + boot-banner dedupe (gametest F-02/F-16). F-02: the in-game chart topbar (#crTopBar) auto-hides on a 5s idle timer and reveals on crossing INTO the ~95px top/side proximity band (`inZone && !_wasInZone`). If the idle timer hid it while the cursor was already inside that band, `_wasInZone` stayed true so the crossing-in reveal never re-fired and `_refreshPanelTimer()` no-op'd (it only refreshed when already-visible) — the bar got stuck hidden until you left the zone and re-entered (the reported "no way back"). Fix: `_refreshPanelTimer()` now reveals when in-zone but hidden, so any movement within the reveal band brings the chrome back. F-16: the `[crLiveChanges v1.0.272]` boot banner logged twice (boot() retries / re-runs across the splash→game transition) — now once-guarded via `window.__crLiveChangesBannerLogged`. No order/SDK/broker/signing/on-chain/render change.
+     CURRENT VERSION: v1.0.307
+     LAST UPDATED:    2026-06-17  ·  Login splash version label now reflects the real build. It was a hardcoded `<div class="ver">v1.0.271</div>` in #crBoot that drifted from CONFIG.VERSION; now the static text matches and initModularFoundation syncs `#crBoot .ver` → 'v'+CONFIG.VERSION at boot so it never goes stale again. (Investigated alongside two reported issues that turned out to be non-bugs on the live build: the chart topbar is correctly `display:none` during the #crBoot/crSplashUp login gate in all themes via `body.crSplashUp .crChrome{display:none!important}` — no toolbar leak; and the desktop shows the intended 7 app icons, not 8 — workbench stays archived. Both were blurred-screenshot misreads.) No order/SDK/broker/signing/on-chain/render change.
+     (v1.0.306 = topbar auto-hide reveal fix + boot-banner dedupe (gametest F-02/F-16). F-02: the in-game chart topbar (#crTopBar) auto-hides on a 5s idle timer and reveals on crossing INTO the ~95px top/side proximity band (`inZone && !_wasInZone`). If the idle timer hid it while the cursor was already inside that band, `_wasInZone` stayed true so the crossing-in reveal never re-fired and `_refreshPanelTimer()` no-op'd (it only refreshed when already-visible) — the bar got stuck hidden until you left the zone and re-entered (the reported "no way back"). Fix: `_refreshPanelTimer()` now reveals when in-zone but hidden, so any movement within the reveal band brings the chrome back. F-16: the `[crLiveChanges v1.0.272]` boot banner logged twice (boot() retries / re-runs across the splash→game transition) — now once-guarded via `window.__crLiveChangesBannerLogged`. No order/SDK/broker/signing/on-chain/render change.
      (v1.0.305 = Market Scan now populates live (gametest F-05). The Engine MARKET SCAN pane labelled "9 assets · live" only ever filled the active asset (others hard-dashed) and its refresher fetched a different 9-id list with no timeframe (cached under id|undefined while the painter read id|tf) via direct Binance REST (CORS/geo-blocked). Fix: (a) refreshMarketScan now scans the SAME ASSETS the painter shows and passes each asset's _tokTF(id) so cache keys match; (b) the painter fills non-active rows from _tokLiveOrNull(id, _tokTF(id)) (graceful "—" when absent), active row still uses the loaded-chart klines; (c) new _tokBinanceJson() tries direct Binance then falls back to corsproxy.io (same pattern as _fetchDrift) so live data populates despite browser CORS. Note F-03 (Coinbase symbol mapping) was a false positive — crCexSymbol() already maps Coinbase→BTC-USD / Kraken→XBT / OKX·KuCoin→BASE-QUOTE / Gate.io→BASE_QUOTE; the report's 404 came from probing crCexCandleUrl with a raw unmapped symbol. No new deps, single file, no order/SDK/broker/signing/on-chain change.
      (v1.0.304 = make the modular surface REAL (gametest F-06/F-07/F-01). (1) ChartRunner.abilities was a 1-ability sample (momentumDash); it now bridges the bundled-core AbilityRegistry — the real ~24 trading primitives — onto the public surface, backed by the live `sdk` (+ host + currentAsset): list()/get()/byCategory()/describe()/execute() actually drive orders through the same SDK the in-game UI uses (orders still route through the SDK — hard rule preserved; movement abilities like momentumDash still resolve via the modular registry). (2) ChartRunner.getState() now merges the live run state (asset/timeframe/candleCount/running/score), not just the skeleton. (3) Renderer is honestly labelled a real adapter over the production render() (isLegacyBacked()/ready added; dropped the "renderer stub" text). (4) CONFIG.VERSION aligned 1.0.264→1.0.304 to kill the boot/console/run-summary version drift. No new deps, single file, no rendering/abilities crossing.
      (v1.0.303 = M-MP peers render as the REAL runner sprite (not a dot): crRoom.drawPeer now draws the runner avatar (drawInvader / _drawLoadoutAvatar) translated to the peer's chart position, seat-tinted (creator gold / wallet green / guest blue), with the handle label above. cNFT/Honeycomb future hook noted — when a peer broadcasts a selected NFT, drawImage it instead of the procedural sprite (mirrors _crNftAvatarImg).)
@@ -9378,7 +9379,7 @@
         <line x1="14" y1="55" x2="28" y2="55" stroke="#1a1a18" stroke-width="0.8"/>
       </svg>
       <div class="title" id="crBootTitle">Welcome to ChartRunnerOS</div>
-          <div class="ver">v1.0.271</div>
+          <div class="ver">v1.0.307</div><!-- synced to CONFIG.VERSION at boot (see initModularFoundation) -->
       <!-- v1.0.102 — Two paths only:
            1. Whitelisted Solana wallet (allowlist of pubkeys)
            2. Continue as Guest — anonymous handle generated on click, persists
@@ -13376,7 +13377,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.306",
+  VERSION: "1.0.307",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -13796,6 +13797,10 @@ function initModularFoundation() {
     } catch(_){}
   }, 50);
 
+  // v1.0.306 — keep the login splash version label in sync with CONFIG.VERSION
+  // (gametest follow-up: it was a hardcoded "v1.0.271" that drifted from the
+  // real build). One line so the boot label never goes stale again.
+  try { var _bootVer = document.querySelector('#crBoot .ver'); if(_bootVer) _bootVer.textContent = 'v' + CONFIG.VERSION; } catch(_){}
   // Do NOT auto-start the skeleton loop yet — the legacy frame() owns rendering.
   console.log(`%c[ChartRunner] v${CONFIG.VERSION} modular foundation initialized (migration mode)`, 'color:#14f195; font-weight:bold');
 }
