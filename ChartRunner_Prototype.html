@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.319
-     LAST UPDATED:    2026-06-17  ·  MULTIPLAYER ROOM FIX (audit). Root cause Julian hit ("live room link lands on chart but plain /play URL + no other player"): crMapsShare + crRoom's myWallet read `crWallet.publicKey`, which DOESN'T EXIST — the wallet API exposes `crWallet.get()`. So host detection always failed → 🛰/live-Share silently produced a SNAPSHOT link (no &room=) even with a wallet connected → opening it = bare /play + no co-presence; and crRoom couldn't identify the creator. Fix 1: all 3 `crWallet.publicKey` reads → `crWallet.get()` (real room links now generate; seat/creator detection works). Fix 2: the HOST now auto-joins the room they create — the 🛰 button navigates the host into the room link after copying it, so guests who open the invite actually have someone to be co-present with (was: Share only copied a link, host never joined → empty room). Verified separately: two tabs in the same ?room= see each other (peers:1 each), so the relay/crRoom path itself is sound — the bug was purely host detection + host-join. No order/SDK/signing/on-chain change.
+     CURRENT VERSION: v1.0.320
+     LAST UPDATED:    2026-06-17  ·  DEEP-LINK BOOT COVER — land directly on the chart. Julian's recording showed an opened room/share link flashing through the #crBoot login splash → OS desktop → a chart reload before finally landing on the right frame. Root cause: the chart-load for room/snapshot/symbol links is DEFERRED to after boot (setTimeout + retry while chart deps warm up), so the login gate and desktop paint first and the chart visibly re-renders last. Fix: a synchronous opaque "Loading chart…" cover (#crDlCover, z-index 100060, above #crBoot) that an inline <body>-top script raises the instant a chart-bound link is detected (?room always; ?sharedMap/?symbol/?map/?mint when deep-links enabled) — BEFORE the splash/desktop ever paint — and that fades out only once the chart is actually up (wired into the snapshot-importer success branch + crApplyDeepLink's _crDlEnterRun + the bare-map branch, each after a 450ms paint settle). A 14s safety timer reveals unconditionally so the cover can never strand a user. Net: invitee sees a clean loading spinner → the chart, no connect-page/desktop/reload flashes. No order/SDK/signing/on-chain change.
+     (v1.0.319 = MULTIPLAYER ROOM FIX (audit). Root cause Julian hit ("live room link lands on chart but plain /play URL + no other player"): crMapsShare + crRoom's myWallet read `crWallet.publicKey`, which DOESN'T EXIST — the wallet API exposes `crWallet.get()`. So host detection always failed → 🛰/live-Share silently produced a SNAPSHOT link (no &room=) even with a wallet connected → opening it = bare /play + no co-presence; and crRoom couldn't identify the creator. Fix 1: all 3 `crWallet.publicKey` reads → `crWallet.get()` (real room links now generate; seat/creator detection works). Fix 2: the HOST now auto-joins the room they create — the 🛰 button navigates the host into the room link after copying it, so guests who open the invite actually have someone to be co-present with (was: Share only copied a link, host never joined → empty room). Verified separately: two tabs in the same ?room= see each other (peers:1 each), so the relay/crRoom path itself is sound — the bug was purely host detection + host-join. No order/SDK/signing/on-chain change.
      (v1.0.318 = Snapshot share-link open — retry fix. v1.0.317 wired the auto-open but crMaps.load() throws at the importer's ~1.2s mark (chart deps — switchAsset/candles/canvas — still warming up); inside the single surrounding try that skipped hideSplash and left the opener on the splash/desktop (the bug Julian saw: "still directs me to chartrunner.xyz/play"). Now the open retries (up to 6× / 700ms) until crMaps.load sticks, THEN hides the splash; crReport logs any miss. A manual crMaps.load+hideSplash renders the shared chart fine, confirming the only issue was the early-throw timing. No order/SDK/signing/on-chain change.
      (v1.0.317 = Snapshot share-links now OPEN the chart — first attempt; auto-open wired but threw early.
      (v1.0.316 = Dedicated LIVE-room button on map cards (Julian: "create/share room should have its own button instead of click-shift"). Each saved-map card now has a 🛰 room button (cyan) next to the ↗ snapshot-share button → calls crMapsShareLive(m) directly, no Shift/Alt-click needed (falls back to a snapshot link if no wallet). The ↗ Share keeps the Shift/Alt = live shortcut as a power-user bonus. Desktop map cards only (phone list unchanged). No order/SDK/signing/on-chain change.
@@ -8565,6 +8566,56 @@
 </script>
 </head>
 <body>
+<!-- v1.0.320 — Deep-link boot cover. A chart-bound deep-link (?room / ?sharedMap /
+     ?symbol / ?map / ?mint) used to FLASH the #crBoot login splash, then the OS
+     desktop, then reload the chart before finally landing on the right frame (see
+     Julian's screen-recording). This opaque cover paints SYNCHRONOUSLY over all of
+     that the instant such a link is detected — before #crBoot/desktop ever paint —
+     and is faded out only once the chart is actually up. So an invitee lands
+     directly on the chart. A 14s safety timer reveals no matter what, so the cover
+     can never strand anyone. Cover only triggers for links that WILL auto-open
+     (room always opens; sharedMap/symbol/map/mint need deep-links enabled). -->
+<div id="crDlCover" aria-hidden="true">
+  <div class="crDlSpin"></div>
+  <div class="crDlMsg">Loading chart…</div>
+</div>
+<style>
+  #crDlCover{position:fixed;inset:0;z-index:100060;background:#0b0e14;display:none;
+    align-items:center;justify-content:center;flex-direction:column;gap:18px;
+    font:600 12px/1.5 ui-monospace,Menlo,monospace;color:#9fb3c8;letter-spacing:.5px;
+    transition:opacity .35s ease}
+  html.cr-dl-booting #crDlCover{display:flex}
+  #crDlCover.out{opacity:0;pointer-events:none}
+  #crDlCover .crDlSpin{width:34px;height:34px;border-radius:50%;
+    border:3px solid rgba(120,160,200,.18);border-top-color:#20f195;
+    animation:crDlSpin .8s linear infinite}
+  @keyframes crDlSpin{to{transform:rotate(360deg)}}
+  #crDlCover .crDlMsg{opacity:.85;text-transform:uppercase}
+</style>
+<script>
+(function(){
+  try{
+    var qs = location.search || '';
+    var has = function(k){ return new RegExp('[?&]'+k+'(=|&|$)').test(qs); };
+    // honor the same kill-switches as window.CR_DEEPLINK (default ON)
+    var killed = /[?&]crDeepLink=0(&|$)/.test(qs);
+    try{ if(localStorage.getItem('cr_deeplink')==='0') killed = true; }catch(_){}
+    // room ALWAYS auto-opens; the rest only when deep-links are enabled.
+    var chartBound = has('room') ||
+                     (!killed && (has('sharedMap') || has('symbol') || has('map') || has('mint')));
+    window.crDlRevealChart = function(){
+      try{ if(window.__crDlSafety){ clearTimeout(window.__crDlSafety); window.__crDlSafety = 0; } }catch(_){}
+      var c = document.getElementById('crDlCover');
+      try{ document.documentElement.classList.remove('cr-dl-booting'); }catch(_){}
+      if(c){ c.classList.add('out'); setTimeout(function(){ try{ c.parentNode && c.parentNode.removeChild(c); }catch(_){} }, 420); }
+    };
+    if(chartBound){
+      document.documentElement.classList.add('cr-dl-booting');
+      window.__crDlSafety = setTimeout(function(){ try{ crDlRevealChart(); }catch(_){} }, 14000);
+    }
+  }catch(_){}
+})();
+</script>
 <!-- v0.8L#3 — Body-level OS chrome that survives past hideSplash().
      The splash has its own internal Apple bar / dock for the desktop
      experience; once the player is in-game these fixed elements take over.
@@ -13393,7 +13444,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.319",
+  VERSION: "1.0.320",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -15914,6 +15965,10 @@ window.crChainSave = (function(){
                   catch(e){ try { if(window.crReport) crReport(e, 'snapshot/open#' + tries); } catch(_){} }
                   if(ok){
                     try { if (typeof hideSplash === 'function') hideSplash(); else { var _wm = document.getElementById('win-maps'); if (_wm) _wm.classList.remove('on'); } } catch(_){}
+                    // v1.0.320 — chart is up: drop the deep-link boot cover so the
+                    // invitee lands directly on this chart (no desktop flash). Small
+                    // delay lets the first chart frame paint under the cover first.
+                    try { setTimeout(function(){ try{ window.crDlRevealChart && crDlRevealChart(); }catch(_){} }, 450); } catch(_){}
                   } else if(tries < 6){
                     setTimeout(function(){ _openImported(id, tries + 1); }, 700);
                   }
@@ -23811,6 +23866,9 @@ function _crDlEnterRun(){
   try { document.querySelectorAll('.os-window.on').forEach(function(w){ w.classList.remove('on'); }); } catch(_){}
   try { if(typeof restart === 'function') restart(); else if(typeof game !== 'undefined') game.running = true; } catch(_){}
   try { if(typeof hideSplash === 'function') hideSplash(); } catch(_){}
+  // v1.0.320 — chart/run is up: drop the deep-link boot cover (symbol / mint / R-01
+  // room-without-snapshot all funnel through here). Delay = let the first frame paint.
+  try { setTimeout(function(){ try{ window.crDlRevealChart && crDlRevealChart(); }catch(_){} }, 450); } catch(_){}
 }
 async function crApplyDeepLink(res){
   try {
@@ -23839,6 +23897,7 @@ async function crApplyDeepLink(res){
         try { document.querySelectorAll('.os-window.on').forEach(function(w){ w.classList.remove('on'); }); } catch(_){}
         try { if(typeof hideSplash === 'function') hideSplash(); } catch(_){}
         try { document.title = 'Map · ChartRunner'; } catch(_){}
+        try { setTimeout(function(){ try{ window.crDlRevealChart && crDlRevealChart(); }catch(_){} }, 450); } catch(_){}
         return true;
       }
       // Not on this device (bare cross-browser map link). Fall through to a symbol
