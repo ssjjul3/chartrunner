@@ -4,8 +4,8 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.313
-     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 6a — LIVE FOR EVERYONE. CR_DEEPLINK now defaults ON (kill-switch: ?crDeepLink=0 or localStorage.cr_deeplink='0'). `chartrunner.xyz/play/?symbol=VENUE:PAIR&tf=` (or a Solana mint) now boots any visitor straight into a live run on that chart; `?map=<id>` opens a saved map; room/snapshot links keep their handlers. Strict-sanitized, auto-guest-only (never connects/trades). Phase 6b (the visible "Copy chart link" button placement) lands next per the multiplayer-surface decision. Spec docs/architecture/deep-link-scheme.md.
+     CURRENT VERSION: v1.0.314
+     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 6 — LIVE FOR EVERYONE + Copy-link button. (1) CR_DEEPLINK defaults ON (kill-switch: ?crDeepLink=0 or localStorage.cr_deeplink='0'): `chartrunner.xyz/play/?symbol=VENUE:PAIR&tf=` (or a Solana mint) boots any visitor straight into a live run on that chart; `?map=<id>` opens a saved map; room/snapshot links keep their handlers; strict-sanitized, auto-guest-only (never connects/trades). (2) Simple share UI (Julian: "keep it simple"): one "🔗 Link" button in the in-game lite-profile run controls next to Connect → crCopyChartLink() copies the canonical `?symbol=&tf=` deep-link for the current chart (CEX venue:pair or DEX mint). No multiplayer tab / room-hosting flow — just the one button. Spec docs/architecture/deep-link-scheme.md.
      (v1.0.312 = Deep-links Phase 5 (still DARK): sanitize + polish. parseSymbol now strict-allow-lists input — letters/digits plus `: / _ -` only, length ≤ 80 — so junk/injection (`%%%bad`, script/HTML tags, `ETH USDT`, `../../etc/passwd`, `BINANCE:BTC;DROP`, `javascript:`) is REJECTED (ok:false → resolver classifies 'none' → normal boot) and never reaches crCexSymbolParts or a fetch URL; valid CEX/short-id/mint inputs pass (fuzz-verified). DEX run title now prefers a clean ticker (currentAssetObj().sym) over the raw mint. tf alias table (1m≠1M / F-14) and the launch-time known-asset gate already bounded this; this is defense-in-depth + cleaner classification. No order/SDK/signing/on-chain change.
      (v1.0.311 = Deep-links Phase 4 (still DARK): chart→link emitter. `crChartLinkCurrent()` builds a canonical `?symbol=VENUE:PAIR&tf=` deep-link for the CURRENT live chart (CEX → venue:pair, DEX → the Solana mint via the custom asset's .mint), and `crCopyChartLink()` copies it — so a running chart is shareable by link without saving a map. Single grammar source = crDeepLink.chartLink; crMapsShare keeps owning saved-map/room links (snapshot grammar + room handshake), not force-routed through here. The "Copy chart link" UI button lands with the Phase 6 flag flip (a link only resolves for everyone once CR_DEEPLINK defaults on). No order/SDK/signing/on-chain change.
      (v1.0.310 = Deep-links Phase 3 (still DARK / flag-gated): map + mint/DEX composition. crApplyDeepLink now also handles intent 'map' (bare ?map=<id>, self-only → crMaps.load restores the saved chart + dismiss splash, mirroring the room-link path; falls back to a symbol if the bare id isn't on this device) and 'symbol'+isMint (Solana token → crEnsureCustomSolanaToken + switchAsset → DEX/GeckoTerminal chart). 'room' and 'snapshot' are explicitly DEFERRED to their existing shipped handlers (crRoom + the ?sharedMap=1#m= importer) — never duplicated. Extracted _crDlGuestDismissBoot/_crDlEnterRun helpers. Deferred launch now fires for symbol+map. No order/SDK/signing/on-chain change; auto-guests only.
@@ -9816,6 +9816,7 @@
           <button class="lp-runbtn" id="crLiteSupport"     type="button" title="Toggle the Setup Guide overlay during laser placement"><span class="ic">❏</span><span class="lbl">Support</span></button>
           <button class="lp-runbtn" id="crLitePerspective" type="button" title="Cycle price scale perspective: Auto-zoom → Logarithmic → Linear"><span class="ic">◿</span><span class="lbl" id="crLitePerspectiveLbl">Auto</span></button>
           <button class="lp-runbtn" id="crLiteConnect"     type="button" title="Connect a Solana wallet"><span class="ic">∞</span><span class="lbl">Connect</span></button>
+          <button class="lp-runbtn" id="crLiteChartLink"   type="button" title="Copy a link to this chart (symbol + timeframe) — opens straight here"><span class="ic">🔗</span><span class="lbl">Link</span></button>
         </div>
       </div>
     </div>
@@ -13383,7 +13384,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.313",
+  VERSION: "1.0.314",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -53714,6 +53715,12 @@ setTimeout(() => {
   proxy('crLiteSave',    'crBarSave');
   proxy('crLiteCoins',   'crBarCoins');
   proxy('crLiteConnect', 'crBarConnect');
+  // v1.0.314 — Copy chart link (deep-link to symbol+tf). Not a topbar proxy —
+  // calls the emitter directly. Simple share: no room, no wallet needed.
+  try {
+    const _lnk = document.getElementById('crLiteChartLink');
+    if(_lnk) _lnk.addEventListener('click', e => { e.stopPropagation(); try { if(typeof crCopyChartLink === 'function') crCopyChartLink(); } catch(_){} });
+  } catch(_){}
   // Mirror the wallet-connected glow from the topbar entry → lite-profile
   // entry so the player sees their connection status without opening menus.
   try {
