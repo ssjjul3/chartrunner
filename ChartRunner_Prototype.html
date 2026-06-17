@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.308
-     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 0–2 (DARK — flag-gated, default OFF; spec docs/architecture/deep-link-scheme.md). Adds `window.crDeepLink` pure helpers (parseSymbol/parseTf/chartLink — TradingView-shaped VENUE:PAIR + Solana-mint + short-id, tf alias table that kills the 1m/1M collision), `crResolveDeepLink()` (classifies boot intent room>snapshot>map>symbol>none), and `crApplyDeepLink()` which — when `window.CR_DEEPLINK` is on — boots a `?symbol=VENUE:PAIR&tf=` link straight into a live "Time is Money" run (auto-guest like room links, sets broker/asset/tf, restart(), document.title). Default OFF for everyone; per-session test override `?crDeepLink=1` or localStorage.cr_deeplink='1'. CEX known-assets only this phase (mint/DEX + map/room/snapshot composition = Phase 3). No order/SDK/broker-route/signing/on-chain change; a link auto-guests only, never connects/trades.
+     CURRENT VERSION: v1.0.309
+     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 2 launch FIX (still DARK / flag-gated). v1.0.308 set currentAsset/timeframe globals then restart()'d — but restart() only repositions the player on the EXISTING candles array, it never re-fetches, so a `?symbol=ETH` link booted a run that reported eth/4h in getState but rendered the default BTC/15m candles. Fix: crApplyDeepLink is now async and reloads for real via the canonical switch path — switchAsset(assetId) (new asset → loadCandles(timeframe)+rebuildWorld) or loadCandles(timeframe)+rebuildWorld (same asset, new tf) — BEFORE restart(). Broker still set to CEX first so the fetch routes right. No order/SDK/signing/on-chain change.
+     (v1.0.308 = Deep-links Phase 0–2 (DARK — flag-gated, default OFF; spec docs/architecture/deep-link-scheme.md). Adds `window.crDeepLink` pure helpers (parseSymbol/parseTf/chartLink — TradingView-shaped VENUE:PAIR + Solana-mint + short-id, tf alias table that kills the 1m/1M collision), `crResolveDeepLink()` (classifies boot intent room>snapshot>map>symbol>none), and `crApplyDeepLink()` which — when `window.CR_DEEPLINK` is on — boots a `?symbol=VENUE:PAIR&tf=` link straight into a live "Time is Money" run (auto-guest like room links, sets broker/asset/tf, restart(), document.title). Default OFF for everyone; per-session test override `?crDeepLink=1` or localStorage.cr_deeplink='1'. CEX known-assets only this phase (mint/DEX + map/room/snapshot composition = Phase 3). No order/SDK/broker-route/signing/on-chain change; a link auto-guests only, never connects/trades.
      (v1.0.307 = login splash version label now reflects the real build. It was a hardcoded `<div class="ver">v1.0.271</div>` in #crBoot that drifted from CONFIG.VERSION; now the static text matches and initModularFoundation syncs `#crBoot .ver` → 'v'+CONFIG.VERSION at boot so it never goes stale again. (Investigated alongside two reported issues that turned out to be non-bugs on the live build: the chart topbar is correctly `display:none` during the #crBoot/crSplashUp login gate in all themes via `body.crSplashUp .crChrome{display:none!important}` — no toolbar leak; and the desktop shows the intended 7 app icons, not 8 — workbench stays archived. Both were blurred-screenshot misreads.) No order/SDK/broker/signing/on-chain/render change.
      (v1.0.306 = topbar auto-hide reveal fix + boot-banner dedupe (gametest F-02/F-16). F-02: the in-game chart topbar (#crTopBar) auto-hides on a 5s idle timer and reveals on crossing INTO the ~95px top/side proximity band (`inZone && !_wasInZone`). If the idle timer hid it while the cursor was already inside that band, `_wasInZone` stayed true so the crossing-in reveal never re-fired and `_refreshPanelTimer()` no-op'd (it only refreshed when already-visible) — the bar got stuck hidden until you left the zone and re-entered (the reported "no way back"). Fix: `_refreshPanelTimer()` now reveals when in-zone but hidden, so any movement within the reveal band brings the chrome back. F-16: the `[crLiveChanges v1.0.272]` boot banner logged twice (boot() retries / re-runs across the splash→game transition) — now once-guarded via `window.__crLiveChangesBannerLogged`. No order/SDK/broker/signing/on-chain/render change.
      (v1.0.305 = Market Scan now populates live (gametest F-05). The Engine MARKET SCAN pane labelled "9 assets · live" only ever filled the active asset (others hard-dashed) and its refresher fetched a different 9-id list with no timeframe (cached under id|undefined while the painter read id|tf) via direct Binance REST (CORS/geo-blocked). Fix: (a) refreshMarketScan now scans the SAME ASSETS the painter shows and passes each asset's _tokTF(id) so cache keys match; (b) the painter fills non-active rows from _tokLiveOrNull(id, _tokTF(id)) (graceful "—" when absent), active row still uses the loaded-chart klines; (c) new _tokBinanceJson() tries direct Binance then falls back to corsproxy.io (same pattern as _fetchDrift) so live data populates despite browser CORS. Note F-03 (Coinbase symbol mapping) was a false positive — crCexSymbol() already maps Coinbase→BTC-USD / Kraken→XBT / OKX·KuCoin→BASE-QUOTE / Gate.io→BASE_QUOTE; the report's 404 came from probing crCexCandleUrl with a raw unmapped symbol. No new deps, single file, no order/SDK/broker/signing/on-chain change.
@@ -13378,7 +13379,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.308",
+  VERSION: "1.0.309",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -23751,7 +23752,7 @@ try {
    known-assets only here; mint/DEX launch + map/room/snapshot composition are
    Phase 3 (room/snapshot already have their own handlers). Gated by CR_DEEPLINK,
    deferred so restart()/hideSplash are ready. Never throws. */
-function crApplyDeepLink(res){
+async function crApplyDeepLink(res){
   try {
     if(!res || res.intent !== 'symbol') return false;
     if(res.isMint) return false; // DEX launch deferred to Phase 3
@@ -23779,17 +23780,30 @@ function crApplyDeepLink(res){
       localStorage.setItem('cr_broker_v1', JSON.stringify({ type:'cex', name: venueName }));
     } catch(_){}
 
-    // 3) asset + timeframe (internal values from the resolver)
-    if(typeof currentAsset !== 'undefined') currentAsset = assetId;
+    // 3) timeframe FIRST — switchAsset()/loadCandles() read the `timeframe` global.
     if(typeof timeframe !== 'undefined' && res.tf) timeframe = res.tf;
 
-    // 4) mode + launch — restart() reads game.pendingMode/mode (same path as the ⚃ Random button)
+    // 4) ACTUALLY reload the asset's candles. restart() only repositions the
+    //    player on the existing `candles` array — it never re-fetches — so we
+    //    must reload via the real switch path: switchAsset (new asset) loads
+    //    candles@timeframe + rebuildWorld; same-asset just reloads at the new tf.
+    try {
+      var cur = (typeof currentAsset !== 'undefined') ? currentAsset : null;
+      if(assetId !== cur && typeof switchAsset === 'function'){
+        await switchAsset(assetId);
+      } else {
+        if(typeof loadCandles === 'function') await loadCandles(timeframe);
+        if(typeof rebuildWorld === 'function') rebuildWorld();
+      }
+    } catch(_){}
+
+    // 5) mode + launch — restart() now runs on the correctly-loaded candles
     if(typeof game !== 'undefined'){ game.pendingMode = 'timeismoney'; game.mode = 'timeismoney'; }
     try { document.querySelectorAll('.os-window.on').forEach(function(w){ w.classList.remove('on'); }); } catch(_){}
     try { if(typeof restart === 'function') restart(); else if(typeof game !== 'undefined') game.running = true; } catch(_){}
     try { if(typeof hideSplash === 'function') hideSplash(); } catch(_){}
 
-    // 5) document.title (Q5 — tab/history only)
+    // 6) document.title (Q5 — tab/history only)
     try {
       var q = (res.venue === 'coinbase') ? 'USD' : 'USDT';
       document.title = String(assetId).toUpperCase() + '/' + q + ' · ' + res.tf + ' · ChartRunner';
