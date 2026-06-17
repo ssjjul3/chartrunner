@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.311
-     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 4 (still DARK): chart→link emitter. `crChartLinkCurrent()` builds a canonical `?symbol=VENUE:PAIR&tf=` deep-link for the CURRENT live chart (CEX → venue:pair, DEX → the Solana mint via the custom asset's .mint), and `crCopyChartLink()` copies it — so a running chart is shareable by link without saving a map. Single grammar source = crDeepLink.chartLink; crMapsShare keeps owning saved-map/room links (snapshot grammar + room handshake), not force-routed through here. The "Copy chart link" UI button lands with the Phase 6 flag flip (a link only resolves for everyone once CR_DEEPLINK defaults on). No order/SDK/signing/on-chain change.
+     CURRENT VERSION: v1.0.312
+     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 5 (still DARK): sanitize + polish. parseSymbol now strict-allow-lists input — letters/digits plus `: / _ -` only, length ≤ 80 — so junk/injection (`%%%bad`, `<script>`, `ETH USDT`, `../../etc/passwd`, `BINANCE:BTC;DROP`, `javascript:`) is REJECTED (ok:false → resolver classifies 'none' → normal boot) and never reaches crCexSymbolParts or a fetch URL; valid CEX/short-id/mint inputs pass (fuzz-verified). DEX run title now prefers a clean ticker (currentAssetObj().sym) over the raw mint. tf alias table (1m≠1M / F-14) and the launch-time known-asset gate already bounded this; this is defense-in-depth + cleaner classification. No order/SDK/signing/on-chain change.
+     (v1.0.311 = Deep-links Phase 4 (still DARK): chart→link emitter. `crChartLinkCurrent()` builds a canonical `?symbol=VENUE:PAIR&tf=` deep-link for the CURRENT live chart (CEX → venue:pair, DEX → the Solana mint via the custom asset's .mint), and `crCopyChartLink()` copies it — so a running chart is shareable by link without saving a map. Single grammar source = crDeepLink.chartLink; crMapsShare keeps owning saved-map/room links (snapshot grammar + room handshake), not force-routed through here. The "Copy chart link" UI button lands with the Phase 6 flag flip (a link only resolves for everyone once CR_DEEPLINK defaults on). No order/SDK/signing/on-chain change.
      (v1.0.310 = Deep-links Phase 3 (still DARK / flag-gated): map + mint/DEX composition. crApplyDeepLink now also handles intent 'map' (bare ?map=<id>, self-only → crMaps.load restores the saved chart + dismiss splash, mirroring the room-link path; falls back to a symbol if the bare id isn't on this device) and 'symbol'+isMint (Solana token → crEnsureCustomSolanaToken + switchAsset → DEX/GeckoTerminal chart). 'room' and 'snapshot' are explicitly DEFERRED to their existing shipped handlers (crRoom + the ?sharedMap=1#m= importer) — never duplicated. Extracted _crDlGuestDismissBoot/_crDlEnterRun helpers. Deferred launch now fires for symbol+map. No order/SDK/signing/on-chain change; auto-guests only.
      (v1.0.309 = Deep-links Phase 2 launch FIX (still DARK / flag-gated). v1.0.308 set currentAsset/timeframe globals then restart()'d — but restart() only repositions the player on the EXISTING candles array, it never re-fetches, so a `?symbol=ETH` link booted a run that reported eth/4h in getState but rendered the default BTC/15m candles. Fix: crApplyDeepLink is now async and reloads for real via the canonical switch path — switchAsset(assetId) (new asset → loadCandles(timeframe)+rebuildWorld) or loadCandles(timeframe)+rebuildWorld (same asset, new tf) — BEFORE restart(). Broker still set to CEX first so the fetch routes right. No order/SDK/signing/on-chain change.
      (v1.0.308 = Deep-links Phase 0–2 (DARK — flag-gated, default OFF; spec docs/architecture/deep-link-scheme.md). Adds `window.crDeepLink` pure helpers (parseSymbol/parseTf/chartLink — TradingView-shaped VENUE:PAIR + Solana-mint + short-id, tf alias table that kills the 1m/1M collision), `crResolveDeepLink()` (classifies boot intent room>snapshot>map>symbol>none), and `crApplyDeepLink()` which — when `window.CR_DEEPLINK` is on — boots a `?symbol=VENUE:PAIR&tf=` link straight into a live "Time is Money" run (auto-guest like room links, sets broker/asset/tf, restart(), document.title). Default OFF for everyone; per-session test override `?crDeepLink=1` or localStorage.cr_deeplink='1'. CEX known-assets only this phase (mint/DEX + map/room/snapshot composition = Phase 3). No order/SDK/broker-route/signing/on-chain change; a link auto-guests only, never connects/trades.
@@ -13381,7 +13382,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.311",
+  VERSION: "1.0.312",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -23603,6 +23604,11 @@ window.crDeepLink = (function(){
     if(raw == null) return out;
     const s = String(raw).trim();
     if(!s) return out;
+    // Phase 5 — strict allow-list: a symbol is letters/digits plus : / _ - only.
+    // Mints are base58 (alnum) so they pass; VENUE:PAIR passes; junk (%, spaces,
+    // control chars, injection attempts) is rejected → resolver classifies it
+    // 'none' and it never reaches crCexSymbolParts / a fetch URL. Cap length too.
+    if(s.length > 80 || /[^A-Za-z0-9:/_-]/.test(s)) return out;
 
     // Solana mint? (bare, or SOLANA:<mint>)
     let mintCandidate = s;
@@ -23814,7 +23820,12 @@ async function crApplyDeepLink(res){
       try { if(typeof renderAssetOptions === 'function') renderAssetOptions(document.getElementById('assetSel')); } catch(_){}
       try { if(typeof switchAsset === 'function') await switchAsset(dexAsset.id); } catch(_){}
       _crDlEnterRun();
-      try { document.title = ((typeof crShortMint === 'function') ? crShortMint(res.mint) : 'Token') + ' · ' + res.tf + ' · ChartRunner'; } catch(_){}
+      try {
+        var _t = '';
+        try { var _ao = (typeof currentAssetObj === 'function') ? currentAssetObj() : null; var _s = (_ao && _ao.sym) ? String(_ao.sym) : ''; if(/^[A-Za-z0-9]{1,12}$/.test(_s)) _t = _s; } catch(_){}
+        if(!_t) _t = (typeof crShortMint === 'function') ? crShortMint(res.mint) : 'Token';
+        document.title = _t + ' · ' + res.tf + ' · ChartRunner';
+      } catch(_){}
       return true;
     }
 
