@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.307
-     LAST UPDATED:    2026-06-17  ·  Login splash version label now reflects the real build. It was a hardcoded `<div class="ver">v1.0.271</div>` in #crBoot that drifted from CONFIG.VERSION; now the static text matches and initModularFoundation syncs `#crBoot .ver` → 'v'+CONFIG.VERSION at boot so it never goes stale again. (Investigated alongside two reported issues that turned out to be non-bugs on the live build: the chart topbar is correctly `display:none` during the #crBoot/crSplashUp login gate in all themes via `body.crSplashUp .crChrome{display:none!important}` — no toolbar leak; and the desktop shows the intended 7 app icons, not 8 — workbench stays archived. Both were blurred-screenshot misreads.) No order/SDK/broker/signing/on-chain/render change.
+     CURRENT VERSION: v1.0.308
+     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 0–2 (DARK — flag-gated, default OFF; spec docs/architecture/deep-link-scheme.md). Adds `window.crDeepLink` pure helpers (parseSymbol/parseTf/chartLink — TradingView-shaped VENUE:PAIR + Solana-mint + short-id, tf alias table that kills the 1m/1M collision), `crResolveDeepLink()` (classifies boot intent room>snapshot>map>symbol>none), and `crApplyDeepLink()` which — when `window.CR_DEEPLINK` is on — boots a `?symbol=VENUE:PAIR&tf=` link straight into a live "Time is Money" run (auto-guest like room links, sets broker/asset/tf, restart(), document.title). Default OFF for everyone; per-session test override `?crDeepLink=1` or localStorage.cr_deeplink='1'. CEX known-assets only this phase (mint/DEX + map/room/snapshot composition = Phase 3). No order/SDK/broker-route/signing/on-chain change; a link auto-guests only, never connects/trades.
+     (v1.0.307 = login splash version label now reflects the real build. It was a hardcoded `<div class="ver">v1.0.271</div>` in #crBoot that drifted from CONFIG.VERSION; now the static text matches and initModularFoundation syncs `#crBoot .ver` → 'v'+CONFIG.VERSION at boot so it never goes stale again. (Investigated alongside two reported issues that turned out to be non-bugs on the live build: the chart topbar is correctly `display:none` during the #crBoot/crSplashUp login gate in all themes via `body.crSplashUp .crChrome{display:none!important}` — no toolbar leak; and the desktop shows the intended 7 app icons, not 8 — workbench stays archived. Both were blurred-screenshot misreads.) No order/SDK/broker/signing/on-chain/render change.
      (v1.0.306 = topbar auto-hide reveal fix + boot-banner dedupe (gametest F-02/F-16). F-02: the in-game chart topbar (#crTopBar) auto-hides on a 5s idle timer and reveals on crossing INTO the ~95px top/side proximity band (`inZone && !_wasInZone`). If the idle timer hid it while the cursor was already inside that band, `_wasInZone` stayed true so the crossing-in reveal never re-fired and `_refreshPanelTimer()` no-op'd (it only refreshed when already-visible) — the bar got stuck hidden until you left the zone and re-entered (the reported "no way back"). Fix: `_refreshPanelTimer()` now reveals when in-zone but hidden, so any movement within the reveal band brings the chrome back. F-16: the `[crLiveChanges v1.0.272]` boot banner logged twice (boot() retries / re-runs across the splash→game transition) — now once-guarded via `window.__crLiveChangesBannerLogged`. No order/SDK/broker/signing/on-chain/render change.
      (v1.0.305 = Market Scan now populates live (gametest F-05). The Engine MARKET SCAN pane labelled "9 assets · live" only ever filled the active asset (others hard-dashed) and its refresher fetched a different 9-id list with no timeframe (cached under id|undefined while the painter read id|tf) via direct Binance REST (CORS/geo-blocked). Fix: (a) refreshMarketScan now scans the SAME ASSETS the painter shows and passes each asset's _tokTF(id) so cache keys match; (b) the painter fills non-active rows from _tokLiveOrNull(id, _tokTF(id)) (graceful "—" when absent), active row still uses the loaded-chart klines; (c) new _tokBinanceJson() tries direct Binance then falls back to corsproxy.io (same pattern as _fetchDrift) so live data populates despite browser CORS. Note F-03 (Coinbase symbol mapping) was a false positive — crCexSymbol() already maps Coinbase→BTC-USD / Kraken→XBT / OKX·KuCoin→BASE-QUOTE / Gate.io→BASE_QUOTE; the report's 404 came from probing crCexCandleUrl with a raw unmapped symbol. No new deps, single file, no order/SDK/broker/signing/on-chain change.
      (v1.0.304 = make the modular surface REAL (gametest F-06/F-07/F-01). (1) ChartRunner.abilities was a 1-ability sample (momentumDash); it now bridges the bundled-core AbilityRegistry — the real ~24 trading primitives — onto the public surface, backed by the live `sdk` (+ host + currentAsset): list()/get()/byCategory()/describe()/execute() actually drive orders through the same SDK the in-game UI uses (orders still route through the SDK — hard rule preserved; movement abilities like momentumDash still resolve via the modular registry). (2) ChartRunner.getState() now merges the live run state (asset/timeframe/candleCount/running/score), not just the skeleton. (3) Renderer is honestly labelled a real adapter over the production render() (isLegacyBacked()/ready added; dropped the "renderer stub" text). (4) CONFIG.VERSION aligned 1.0.264→1.0.304 to kill the boot/console/run-summary version drift. No new deps, single file, no rendering/abilities crossing.
@@ -13377,7 +13378,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.307",
+  VERSION: "1.0.308",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -23546,6 +23547,269 @@ const CR_CEX_READONLY_LABELS = {
   binance:'Binance', bybit:'Bybit', okx:'OKX', kucoin:'KuCoin', kraken:'Kraken',
   coinbase:'Coinbase', bitget:'Bitget', gateio:'Gate.io', mexc:'MEXC'
 };
+
+/* ════════════════════════════════════════════════════════════════════════════
+   DEEP-LINK helpers — Phase 0 (PURE, no wiring) · v1.0.308
+   Spec: docs/architecture/deep-link-scheme.md · Plan: docs/superpowers/specs/
+   2026-06-17-deep-link-implementation-plan.md
+   Three pure functions, exposed on window.crDeepLink for testing. NOTHING here
+   reads/writes game state or the URL or boots anything — Phase 1+ wires them.
+   Reuses the existing symbol/venue helpers above (crCexSymbolParts, crCexSymbol,
+   crIsSolanaMintAddress, crNormalizeSolanaMint) and the ASSETS registry.
+   ═══════════════════════════════════════════════════════════════════════════ */
+window.crDeepLink = (function(){
+  'use strict';
+  const VENUES   = ['binance','mexc','bybit','okx','kucoin','kraken','coinbase','bitget','gateio'];
+  // Internal data-tf values (what the engine's `timeframe` actually holds):
+  // hours/days/week are LOWERCASE; month is uppercase 1M. Case-sensitive so the
+  // 1m (minute) / 1M (month) pair never collides. Display labels (1H/1D/1W) are
+  // accepted on input via parseTf's case-insensitive fallback.
+  const TF_KEYS  = ['1m','5m','15m','1h','4h','12h','1d','3d','1w','1M'];
+  const TF_ALIASES = {
+    '1min':'1m','5min':'5m','15min':'15m',
+    '1':'1m','5':'5m','15':'15m','60':'1h','240':'4h','720':'12h', // TradingView numeric minutes
+    'd':'1d','w':'1w',
+    'mo':'1M','1mo':'1M','1month':'1M'
+  };
+  const DEFAULT_TF = '15m';
+  const DEFAULT_VENUE = 'binance';
+
+  function _assetList(){ try { return (typeof ASSETS !== 'undefined' && Array.isArray(ASSETS)) ? ASSETS : []; } catch(_){ return []; } }
+  function _assetIds(){ return _assetList().map(a => String(a.id).toLowerCase()); }
+
+  // tf string -> internal key. Exact (case-sensitive) wins; then alias; then an
+  // UNAMBIGUOUS case-insensitive key match (so '1h'->'1H' but '1m'/'1M' never
+  // collide because the exact-case branch already caught them); else default.
+  function parseTf(raw){
+    if(raw == null) return DEFAULT_TF;
+    const s = String(raw).trim();
+    if(!s) return DEFAULT_TF;
+    if(TF_KEYS.indexOf(s) >= 0) return s;
+    const lc = s.toLowerCase();
+    if(Object.prototype.hasOwnProperty.call(TF_ALIASES, lc)) return TF_ALIASES[lc];
+    const ci = TF_KEYS.filter(k => k.toLowerCase() === lc);
+    if(ci.length === 1) return ci[0];
+    return DEFAULT_TF;
+  }
+
+  // symbol string -> { ok, raw, venue, base, quote, asset, isMint, mint }.
+  // Forms: VENUE:PAIR · bare PAIR (default venue) · short internal id ('btc') ·
+  // Solana mint (bare or SOLANA:<mint>) -> DEX route.
+  function parseSymbol(raw){
+    const out = { ok:false, raw: raw==null?'':String(raw), venue:null, base:null, quote:null, asset:null, isMint:false, mint:null };
+    if(raw == null) return out;
+    const s = String(raw).trim();
+    if(!s) return out;
+
+    // Solana mint? (bare, or SOLANA:<mint>)
+    let mintCandidate = s;
+    if(/^solana:/i.test(s)) mintCandidate = s.slice(s.indexOf(':') + 1).trim();
+    try {
+      if(typeof crIsSolanaMintAddress === 'function' && crIsSolanaMintAddress(mintCandidate)){
+        const norm = (typeof crNormalizeSolanaMint === 'function') ? crNormalizeSolanaMint(mintCandidate) : mintCandidate;
+        out.ok = true; out.isMint = true; out.mint = norm; out.venue = 'dex'; out.asset = norm;
+        return out;
+      }
+    } catch(_){}
+
+    // VENUE:PAIR split
+    let venue = DEFAULT_VENUE, pairStr = s;
+    if(s.indexOf(':') >= 0){
+      const parts = s.split(':');
+      const v = parts[0].trim().toLowerCase();
+      if(VENUES.indexOf(v) >= 0){ venue = v; pairStr = parts.slice(1).join(':').trim(); }
+      else { pairStr = parts.slice(1).join(':').trim() || parts[0].trim(); } // unknown prefix -> default venue, keep pair
+    }
+
+    // short internal id? ('btc', 'eth', …)
+    const flat = pairStr.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if(_assetIds().indexOf(flat) >= 0){
+      out.ok = true; out.venue = venue; out.asset = flat;
+      const aObj = _assetList().find(a => String(a.id).toLowerCase() === flat);
+      try { out.base = (aObj && aObj.sym) ? String(aObj.sym).replace(/USDT$|USDC$|USD$/i,'') : flat.toUpperCase(); } catch(_){ out.base = flat.toUpperCase(); }
+      out.quote = (venue === 'coinbase') ? 'USD' : 'USDT';
+      return out;
+    }
+
+    // full pair -> reuse crCexSymbolParts (handles quote inference + venue quirks)
+    try {
+      if(typeof crCexSymbolParts === 'function'){
+        const p = crCexSymbolParts({ sym: pairStr, label: pairStr }, venue);
+        out.ok = !!(p && p.base); out.venue = venue; out.base = p && p.base; out.quote = p && p.quote;
+        out.asset = (p && p.base ? String(p.base).toLowerCase() : null); // best-effort internal id
+        return out;
+      }
+    } catch(_){}
+    return out;
+  }
+
+  // opts -> canonical deep-link URL (Phase 0: builder only; not invoked by boot).
+  // opts: { symbol | mint | (venue+base+quote) | asset, tf, mapId, room, host, sharedMapFrag }
+  function chartLink(opts){
+    opts = opts || {};
+    let base = '';
+    try { base = (location.origin || '') + (location.pathname || '/play/').replace(/[^/]*$/, ''); } catch(_){ base = '/play/'; }
+    let symbol;
+    if(opts.symbol){ symbol = String(opts.symbol); }
+    else if(opts.mint){ symbol = String(opts.mint); }
+    else {
+      const venueLc = (opts.venue || DEFAULT_VENUE);
+      const venueUc = venueLc.toUpperCase();
+      if(opts.base){
+        const quote = (opts.quote || (venueLc === 'coinbase' ? 'USD' : 'USDT')).toUpperCase();
+        symbol = venueUc + ':' + String(opts.base).toUpperCase() + quote;
+      } else if(opts.asset){
+        const aObj = _assetList().find(a => String(a.id).toLowerCase() === String(opts.asset).toLowerCase());
+        let pair;
+        try { pair = (typeof crCexSymbol === 'function') ? crCexSymbol(aObj || { sym: opts.asset }, venueLc) : (String(opts.asset).toUpperCase() + (venueLc==='coinbase'?'USD':'USDT')); }
+        catch(_){ pair = String(opts.asset).toUpperCase() + (venueLc==='coinbase'?'USD':'USDT'); }
+        symbol = venueUc + ':' + pair;
+      } else { symbol = venueUc + ':BTCUSDT'; }
+    }
+    const tf = parseTf(opts.tf);
+    let qs = 'symbol=' + encodeURIComponent(symbol) + '&tf=' + encodeURIComponent(tf);
+    if(opts.mapId) qs += '&map=' + encodeURIComponent(opts.mapId);
+    if(opts.room){ qs += '&room=' + encodeURIComponent(opts.room); if(opts.host) qs += '&host=' + encodeURIComponent(opts.host); }
+    // sharedMapFrag is the existing '#m=<snapshot>&h=<hex>' hash payload (snapshot
+    // builder supplies it verbatim); it composes with ?sharedMap=1 for portability.
+    if(opts.sharedMapFrag) return base + '?sharedMap=1&' + qs + opts.sharedMapFrag;
+    return base + '?' + qs;
+  }
+
+  return { parseSymbol, parseTf, chartLink, VENUES, TF_KEYS, TF_ALIASES, DEFAULT_TF, DEFAULT_VENUE, _phase: 0 };
+})();
+
+/* ── DEEP-LINK resolver — Phase 1 (classify only, NO side-effects) ───────────
+   Reads the URL once and classifies the boot intent. Precedence (spec §4):
+   room > snapshot(?sharedMap=1#m=) > map(id) > symbol > none.
+   Launch wiring is Phase 2; map/room/snapshot composition is Phase 3. Gated by
+   window.CR_DEEPLINK (default false): off ⇒ compute + debug-log only, boot
+   untouched. Never throws. Pre-existing room/sharedMap handlers are unaffected
+   (this is purely additive classification). */
+// Flag: OFF for normal users until Phase 6 flips the default. A per-session
+// override (`?crDeepLink=1` or localStorage.cr_deeplink='1') lets us verify each
+// phase live on the deployed build without enabling it for everyone (mirrors the
+// existing ?dev=1 / ?crLiveGame=1 dev-flag pattern).
+if(typeof window.CR_DEEPLINK === 'undefined'){
+  var _crDlForce = false;
+  try { _crDlForce = /[?&]crDeepLink=1/.test(location.search) || localStorage.getItem('cr_deeplink') === '1'; } catch(_){}
+  window.CR_DEEPLINK = _crDlForce;
+}
+function crResolveDeepLink(){
+  const res = { intent:'none', symbol:null, venue:null, asset:null, tf:null, mapId:null,
+                room:null, host:null, isMint:false, mint:null, mode:'chart', raw:{} };
+  let params, hash;
+  try { params = new URLSearchParams(location.search || ''); } catch(_){ return res; }
+  try { hash = String(location.hash || ''); } catch(_){ hash = ''; }
+  const get = k => { try { return params.get(k); } catch(_){ return null; } };
+
+  const symbolRaw = get('symbol');
+  const tfRaw     = get('tf');
+  const mapId     = get('map');
+  const room      = get('room');
+  const host      = get('host');
+  const mode      = String(get('mode') || 'chart').toLowerCase();
+  const sharedMap = get('sharedMap') === '1';
+  const hasSnapshot = sharedMap && /(?:^|[#&])m=/.test(hash);
+  res.raw = { hasSymbol:!!symbolRaw, hasMap:!!mapId, hasRoom:!!room, sharedMap, hasSnapshot };
+
+  const DL = window.crDeepLink;
+  res.tf = DL ? DL.parseTf(tfRaw) : (tfRaw || '15m');
+  if(['chart','regular','inspect','campaign','minigame','pvp'].indexOf(mode) >= 0) res.mode = mode;
+
+  if(symbolRaw && DL){
+    const s = DL.parseSymbol(symbolRaw);
+    if(s && s.ok){ res.symbol = s.raw; res.venue = s.venue; res.asset = s.asset; res.isMint = s.isMint; res.mint = s.mint; }
+  }
+
+  // precedence: room > snapshot > map > symbol > none
+  if(room){ res.intent = 'room'; res.room = room; res.host = host || null; }
+  else if(hasSnapshot){ res.intent = 'snapshot'; }
+  else if(mapId){ res.intent = 'map'; res.mapId = mapId; }
+  else if(res.symbol){ res.intent = 'symbol'; }
+  else res.intent = 'none';
+
+  return res;
+}
+window.crResolveDeepLink = crResolveDeepLink;
+
+// Phase 1: classify once at load for visibility. Takes NO action regardless of
+// the flag — Phase 2 adds the launch hand-off. Safe next to the existing crRoom
+// / sharedMap capture (which continue to own room/snapshot today).
+try {
+  const _dl = crResolveDeepLink();
+  if(_dl.intent !== 'none'){
+    console.debug('[crDeepLink] intent=' + _dl.intent +
+      (window.CR_DEEPLINK ? ' (resolver live)' : ' (CR_DEEPLINK off — classify only, no action)'),
+      { asset:_dl.asset, venue:_dl.venue, tf:_dl.tf, mapId:_dl.mapId, room:_dl.room });
+  }
+} catch(_){}
+
+/* ── DEEP-LINK launch — Phase 2 (intent==='symbol' → drop into a LIVE run) ────
+   Mirrors the room-link post-boot pattern (auto-guest → dismiss #crBoot → set
+   asset/tf/broker → restart() into the live "Time is Money" run). CEX
+   known-assets only here; mint/DEX launch + map/room/snapshot composition are
+   Phase 3 (room/snapshot already have their own handlers). Gated by CR_DEEPLINK,
+   deferred so restart()/hideSplash are ready. Never throws. */
+function crApplyDeepLink(res){
+  try {
+    if(!res || res.intent !== 'symbol') return false;
+    if(res.isMint) return false; // DEX launch deferred to Phase 3
+    var assetId = String(res.asset || '').toLowerCase();
+    var known = (typeof ASSETS !== 'undefined' && Array.isArray(ASSETS)) && ASSETS.some(function(a){ return String(a.id).toLowerCase() === assetId; });
+    if(!known) return false; // unknown asset → leave normal boot alone (Phase 5 sanitizes)
+
+    // 1) auto-guest — get past the #crBoot login gate on production (same as room links)
+    try {
+      if(localStorage.getItem('cr_stealth_auth_v1') !== '1'){
+        var _h = localStorage.getItem('cr_profile_name_v1') || ('guest-' + Math.random().toString(36).slice(2,6));
+        if(!localStorage.getItem('cr_guest_session_v1')) localStorage.setItem('cr_guest_session_v1', JSON.stringify({ username:_h, email:'', anonymous:true, expiresAt: Date.now() + 30*24*3600*1000 }));
+        localStorage.setItem('cr_stealth_auth_v1', '1');
+        localStorage.setItem('cr_profile_name_v1', _h);
+      }
+      var _boot = document.getElementById('crBoot');
+      if(_boot){ _boot.classList.add('out'); _boot.style.pointerEvents = 'none'; }
+    } catch(_){}
+
+    // 2) broker venue (CEX) — crBrokerSelection defaults to DEX/Jupiter, so a CEX
+    //    symbol MUST set the broker or candles won't load.
+    try {
+      var venueName = (typeof CR_CEX_READONLY_LABELS !== 'undefined' && CR_CEX_READONLY_LABELS[res.venue]) ? CR_CEX_READONLY_LABELS[res.venue] : 'Binance';
+      if(typeof game !== 'undefined') game.broker = { type:'cex', name: venueName };
+      localStorage.setItem('cr_broker_v1', JSON.stringify({ type:'cex', name: venueName }));
+    } catch(_){}
+
+    // 3) asset + timeframe (internal values from the resolver)
+    if(typeof currentAsset !== 'undefined') currentAsset = assetId;
+    if(typeof timeframe !== 'undefined' && res.tf) timeframe = res.tf;
+
+    // 4) mode + launch — restart() reads game.pendingMode/mode (same path as the ⚃ Random button)
+    if(typeof game !== 'undefined'){ game.pendingMode = 'timeismoney'; game.mode = 'timeismoney'; }
+    try { document.querySelectorAll('.os-window.on').forEach(function(w){ w.classList.remove('on'); }); } catch(_){}
+    try { if(typeof restart === 'function') restart(); else if(typeof game !== 'undefined') game.running = true; } catch(_){}
+    try { if(typeof hideSplash === 'function') hideSplash(); } catch(_){}
+
+    // 5) document.title (Q5 — tab/history only)
+    try {
+      var q = (res.venue === 'coinbase') ? 'USD' : 'USDT';
+      document.title = String(assetId).toUpperCase() + '/' + q + ' · ' + res.tf + ' · ChartRunner';
+    } catch(_){}
+    // URL is the address — keep it so a refresh reproduces the chart (don't strip).
+    return true;
+  } catch(_){ return false; }
+}
+window.crApplyDeepLink = crApplyDeepLink;
+
+// Phase 2: deferred launch (after boot — restart/hideSplash ready). Symbol intent
+// only; room/snapshot/map keep their existing handlers (Phase 3 formalizes).
+try {
+  if(window.CR_DEEPLINK){
+    var _dlLaunch = crResolveDeepLink();
+    if(_dlLaunch.intent === 'symbol'){
+      setTimeout(function(){ try { crApplyDeepLink(_dlLaunch); } catch(_){} }, 1200);
+    }
+  }
+} catch(_){}
 
 async function crFetchCexCandles(asset, tf, broker){
   const key = crVenueKey(broker && broker.name);
