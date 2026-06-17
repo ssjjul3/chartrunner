@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.314
-     LAST UPDATED:    2026-06-17  ·  Deep-links Phase 6 — LIVE FOR EVERYONE + Copy-link button. (1) CR_DEEPLINK defaults ON (kill-switch: ?crDeepLink=0 or localStorage.cr_deeplink='0'): `chartrunner.xyz/play/?symbol=VENUE:PAIR&tf=` (or a Solana mint) boots any visitor straight into a live run on that chart; `?map=<id>` opens a saved map; room/snapshot links keep their handlers; strict-sanitized, auto-guest-only (never connects/trades). (2) Simple share UI (Julian: "keep it simple"): one "🔗 Link" button in the in-game lite-profile run controls next to Connect → crCopyChartLink() copies the canonical `?symbol=&tf=` deep-link for the current chart (CEX venue:pair or DEX mint). No multiplayer tab / room-hosting flow — just the one button. Spec docs/architecture/deep-link-scheme.md.
+     CURRENT VERSION: v1.0.315
+     LAST UPDATED:    2026-06-17  ·  Re-audit fixes R-01 + F-11 + F-04. (R-01) A snapshot-less `?room=` deep-link used to connect the relay but land on the DESKTOP; the resolver now seeds the chart from the room link's `asset` param and boots a fresh chart (crRoom still connects for presence) so you land on the room's chart. (F-11) Oscillator sub-panel readability: RSI/SRSI/OBV/MACD no longer overlap in one 0..100 strip — each active oscillator gets its OWN stacked sub-band (panel grows with count, capped 60% H; per-band 30/70 guides, separators, and legend; MACD midline per band). Shootable-poly y-mapping follows the bands. (F-04) Central error sink `window.crReport(err,ctx)` + `window.crErrors()` ring buffer; wired into the previously-silent paths — candle-load Binance fallback (was seeding synthetic candles with no log), crGhost RPC fetch, and crRoom relay onerror. Not a wholesale replacement of the ~1,700 cosmetic catches. No order/SDK/signing/on-chain change.
+     (v1.0.314 = Deep-links Phase 6 — LIVE FOR EVERYONE + Copy-link button. (1) CR_DEEPLINK defaults ON (kill-switch: ?crDeepLink=0 or localStorage.cr_deeplink='0'): `chartrunner.xyz/play/?symbol=VENUE:PAIR&tf=` (or a Solana mint) boots any visitor straight into a live run on that chart; `?map=<id>` opens a saved map; room/snapshot links keep their handlers; strict-sanitized, auto-guest-only (never connects/trades). (2) Simple share UI (Julian: "keep it simple"): one "🔗 Link" button in the in-game lite-profile run controls next to Connect → crCopyChartLink() copies the canonical `?symbol=&tf=` deep-link for the current chart (CEX venue:pair or DEX mint). No multiplayer tab / room-hosting flow — just the one button. Spec docs/architecture/deep-link-scheme.md.
      (v1.0.312 = Deep-links Phase 5 (still DARK): sanitize + polish. parseSymbol now strict-allow-lists input — letters/digits plus `: / _ -` only, length ≤ 80 — so junk/injection (`%%%bad`, script/HTML tags, `ETH USDT`, `../../etc/passwd`, `BINANCE:BTC;DROP`, `javascript:`) is REJECTED (ok:false → resolver classifies 'none' → normal boot) and never reaches crCexSymbolParts or a fetch URL; valid CEX/short-id/mint inputs pass (fuzz-verified). DEX run title now prefers a clean ticker (currentAssetObj().sym) over the raw mint. tf alias table (1m≠1M / F-14) and the launch-time known-asset gate already bounded this; this is defense-in-depth + cleaner classification. No order/SDK/signing/on-chain change.
      (v1.0.311 = Deep-links Phase 4 (still DARK): chart→link emitter. `crChartLinkCurrent()` builds a canonical `?symbol=VENUE:PAIR&tf=` deep-link for the CURRENT live chart (CEX → venue:pair, DEX → the Solana mint via the custom asset's .mint), and `crCopyChartLink()` copies it — so a running chart is shareable by link without saving a map. Single grammar source = crDeepLink.chartLink; crMapsShare keeps owning saved-map/room links (snapshot grammar + room handshake), not force-routed through here. The "Copy chart link" UI button lands with the Phase 6 flag flip (a link only resolves for everyone once CR_DEEPLINK defaults on). No order/SDK/signing/on-chain change.
      (v1.0.310 = Deep-links Phase 3 (still DARK / flag-gated): map + mint/DEX composition. crApplyDeepLink now also handles intent 'map' (bare ?map=<id>, self-only → crMaps.load restores the saved chart + dismiss splash, mirroring the room-link path; falls back to a symbol if the bare id isn't on this device) and 'symbol'+isMint (Solana token → crEnsureCustomSolanaToken + switchAsset → DEX/GeckoTerminal chart). 'room' and 'snapshot' are explicitly DEFERRED to their existing shipped handlers (crRoom + the ?sharedMap=1#m= importer) — never duplicated. Extracted _crDlGuestDismissBoot/_crDlEnterRun helpers. Deferred launch now fires for symbol+map. No order/SDK/signing/on-chain change; auto-guests only.
@@ -13384,7 +13385,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.314",
+  VERSION: "1.0.315",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -14953,8 +14954,8 @@ window.crGhost = (function(){
       _lastFetch = Date.now();
       try { window.dispatchEvent(new CustomEvent('crGhost:updated', { detail: { keys: Object.keys(byKey) } })); } catch(_){}
     } catch(err){
-      // RPC blip — keep the previous cache, don't error.
-      if (typeof console !== 'undefined') console.warn('crGhost fetch:', err.message || err);
+      // RPC blip — keep the previous cache, don't error. F-04: route to the sink.
+      try { if(window.crReport) crReport(err, 'crGhost/fetch'); else if(typeof console !== 'undefined') console.warn('crGhost fetch:', err.message || err); } catch(_){}
     } finally {
       _inflight = false;
     }
@@ -23730,6 +23731,11 @@ function crResolveDeepLink(){
   if(symbolRaw && DL){
     const s = DL.parseSymbol(symbolRaw);
     if(s && s.ok){ res.symbol = s.raw; res.venue = s.venue; res.asset = s.asset; res.isMint = s.isMint; res.mint = s.mint; }
+  } else if(DL){
+    // R-01: room/share links carry the chart via an `asset` param (not `symbol`).
+    // Seed the chart fields from it so a snapshot-less room link can still boot a chart.
+    const assetParam = get('asset');
+    if(assetParam){ const s = DL.parseSymbol(assetParam); if(s && s.ok){ res.symbol = s.raw; res.venue = s.venue; res.asset = s.asset; res.isMint = s.isMint; res.mint = s.mint; } }
   }
 
   // precedence: room > snapshot > map > symbol > none
@@ -23785,9 +23791,16 @@ function _crDlEnterRun(){
 async function crApplyDeepLink(res){
   try {
     if(!res) return false;
-    // room/snapshot keep their existing shipped handlers — defer, don't duplicate.
-    if(res.intent === 'room' || res.intent === 'snapshot') return false;
-    if(res.intent !== 'symbol' && res.intent !== 'map') return false;
+    // snapshot keeps its existing importer (loads the map; crRoom connects separately) — defer.
+    if(res.intent === 'snapshot') return false;
+    // room WITH a snapshot → the importer loads the map; defer.
+    if(res.intent === 'room' && res.raw && res.raw.hasSnapshot) return false;
+    // room WITHOUT a snapshot (R-01): crRoom still connects for presence, but the
+    // chart-load is the snapshot importer's job and there's none — so the player
+    // would land on the DESKTOP. Fall through to the symbol/mint launch below using
+    // the asset/tf the room link carries, so we land on the room's chart + presence.
+    if(res.intent !== 'symbol' && res.intent !== 'map' && res.intent !== 'room') return false;
+    if(res.intent === 'room' && !res.asset && !res.isMint) return false; // truly bare room — nothing to chart
 
     _crDlGuestDismissBoot();
 
@@ -23896,11 +23909,28 @@ window.crCopyChartLink = crCopyChartLink;
 try {
   if(window.CR_DEEPLINK){
     var _dlLaunch = crResolveDeepLink();
-    if(_dlLaunch.intent === 'symbol' || _dlLaunch.intent === 'map'){
+    if(_dlLaunch.intent === 'symbol' || _dlLaunch.intent === 'map'
+       || (_dlLaunch.intent === 'room' && !(_dlLaunch.raw && _dlLaunch.raw.hasSnapshot))){
       setTimeout(function(){ try { crApplyDeepLink(_dlLaunch); } catch(_){} }, 1200);
     }
   }
 } catch(_){}
+
+/* ── Central error sink (gametest F-04) ──────────────────────────────────────
+   Many failures were caught into empty blocks and vanished. crReport routes the
+   key I/O / relay / chain failures to a ring buffer (inspect via window.crErrors())
+   AND the dev console, so they surface instead of dying silently. Not a wholesale
+   replacement of the ~1,700 cosmetic catches — wired into the paths that matter
+   (candle load, crGhost, relay). Never throws. */
+window.crReport = function(err, ctx){
+  try {
+    var rec = { t: Date.now(), ctx: String(ctx || '?'), msg: (err && err.message) ? err.message : String(err) };
+    var buf = (window.__crErrors = window.__crErrors || []);
+    buf.push(rec); if(buf.length > 120) buf.shift();
+    try { console.warn('[crReport] ' + rec.ctx + ': ' + rec.msg); } catch(_){}
+  } catch(_){}
+};
+window.crErrors = function(){ return (window.__crErrors || []).slice(); };
 
 async function crFetchCexCandles(asset, tf, broker){
   const key = crVenueKey(broker && broker.name);
@@ -24060,7 +24090,9 @@ async function loadCandles(tf){
       : 'live · Binance';
     crSetMarketSource(label, 'Binance');
   }catch(err){
-    // Fallback: seeded synthetic candles so the prototype always works offline
+    // Fallback: seeded synthetic candles so the prototype always works offline.
+    // F-04: surface WHY (was fully silent — user got synthetic candles with no clue).
+    try { if(window.crReport) crReport(err, 'loadCandles/binance ' + (asset && asset.sym || '?') + ' ' + tf); } catch(_){}
     candles = generateFallbackCandles(tf, 800);
     crSetMarketSource('offline · seeded', 'Seeded');
   }
@@ -33442,7 +33474,7 @@ window.crRoom = (function(){
     };
     ws.onmessage = function(ev){ try { onMsg(JSON.parse(ev.data)); } catch(_){} };
     ws.onclose   = function(){ stopPos(); stopBuilds(); scheduleReconnect(); };
-    ws.onerror   = function(){ try { ws.close(); } catch(_){} };
+    ws.onerror   = function(e){ try { if(window.crReport) crReport((e&&e.message)||'ws error','crRoom/relay'); } catch(_){} try { ws.close(); } catch(_){} };
   }
   function scheduleReconnect(){ backoff = Math.min(15000, Math.floor(backoff*1.6)); setTimeout(connect, backoff); }
 
@@ -35338,9 +35370,17 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
     const volActive = active.has('vol');
     const volPct    = Math.max(5, Math.min(60, +_getIndParam('vol','heightPct') || 15));
     const volH      = volActive ? H*(volPct/100) + 20 : 0;
-    const panelH    = Math.max(80, Math.min(160, H * 0.18));
+    // v1.0.315 (F-11) — one stacked sub-band per active oscillator so RSI / SRSI
+    // / OBV / MACD no longer overlap in a single 0..100 strip. Panel grows with
+    // the count (capped at 60% of H), split evenly; each line maps to its band.
+    const _oscN     = panelIds.length;
+    const _perBand  = Math.max(46, Math.min(90, H * 0.14));
+    const panelH    = Math.max(80, Math.min(H * 0.6, _oscN * _perBand));
     const panelBottomY = H - 30 - volH;
     const panelTopY    = panelBottomY - panelH;
+    const _bandH    = panelH / _oscN;
+    const _bandBot  = (id) => panelTopY + (panelIds.indexOf(id) + 1) * _bandH; // bottom Y of id's band
+    const _bandTop  = (id) => panelTopY + panelIds.indexOf(id) * _bandH;
 
     ctx.save();
     // Background strip with a top border line.
@@ -35349,25 +35389,23 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
     ctx.strokeStyle = 'rgba(180,200,230,0.25)';
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(0, panelTopY); ctx.lineTo(W, panelTopY); ctx.stroke();
+    // Band separators between stacked oscillators.
+    ctx.strokeStyle = 'rgba(180,200,230,0.12)';
+    for(let _k=1; _k<_oscN; _k++){ const _yy = panelTopY + _k*_bandH; ctx.beginPath(); ctx.moveTo(0,_yy); ctx.lineTo(W,_yy); ctx.stroke(); }
 
-    // 30 / 70 RSI guides (only drawn if rsi or srsi is on — OBV uses its own scale).
-    if(active.has('rsi') || active.has('srsi')){
-      const g30Y = panelBottomY - (30/100)*panelH;
-      const g70Y = panelBottomY - (70/100)*panelH;
-      const g50Y = panelBottomY - (50/100)*panelH;
-      ctx.strokeStyle = 'rgba(180,200,230,0.18)';
-      ctx.setLineDash([4,4]);
+    // 30 / 70 / 50 guides drawn INSIDE a given oscillator's band (rsi / srsi).
+    const _drawRsiGuides = (id) => {
+      const bot = _bandBot(id);
+      const g30Y = bot - 0.30*_bandH, g70Y = bot - 0.70*_bandH, g50Y = bot - 0.50*_bandH;
+      ctx.strokeStyle = 'rgba(180,200,230,0.18)'; ctx.setLineDash([4,4]);
       ctx.beginPath(); ctx.moveTo(0,g30Y); ctx.lineTo(W,g30Y); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(0,g70Y); ctx.lineTo(W,g70Y); ctx.stroke();
       ctx.strokeStyle = 'rgba(180,200,230,0.10)';
       ctx.beginPath(); ctx.moveTo(0,g50Y); ctx.lineTo(W,g50Y); ctx.stroke();
       ctx.setLineDash([]);
-      // Label 30 / 70 at the right edge.
-      ctx.font = '9px ui-monospace, Menlo, monospace';
-      ctx.fillStyle = 'rgba(180,200,230,0.55)';
-      ctx.fillText('70', W-18, g70Y-2);
-      ctx.fillText('30', W-18, g30Y-2);
-    }
+      ctx.font = '9px ui-monospace, Menlo, monospace'; ctx.fillStyle = 'rgba(180,200,230,0.55)';
+      ctx.fillText('70', W-18, g70Y-2); ctx.fillText('30', W-18, g30Y-2);
+    };
 
     // RSI line.
     // v0.8M#11 — Push as rideable poly. Sub-panel screen-Y is converted to a
@@ -35379,6 +35417,8 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
       const rsiP = Math.max(2, (_getIndParam('rsi','period')|0) || 14);
       const color = INDICATOR_BY_ID.rsi.color;
       const ridePts = [];
+      _drawRsiGuides('rsi');
+      const _bot = _bandBot('rsi');
       ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.95;
       ctx.beginPath();
       let first = true;
@@ -35387,7 +35427,7 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
         const v = _computeRSI(i, rsiP);
         const wx = i*STEP + STEP/2;
         const x  = sX(wx);
-        const y  = panelBottomY - (v/100)*panelH;
+        const y  = _bot - (v/100)*_bandH;
         ridePts.push({ wx, py: yToPrice(y) });
         if(first){ ctx.moveTo(x,y); first = false; } else ctx.lineTo(x,y);
       }
@@ -35400,6 +35440,8 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
       const sP = Math.max(2, (_getIndParam('srsi','period')|0) || 14);
       const color = INDICATOR_BY_ID.srsi.color;
       const ridePts = [];
+      _drawRsiGuides('srsi');
+      const _bot = _bandBot('srsi');
       ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.95;
       ctx.beginPath();
       let first = true;
@@ -35408,7 +35450,7 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
         const v = _computeStochRSI(i, sP);
         const wx = i*STEP + STEP/2;
         const x  = sX(wx);
-        const y  = panelBottomY - (v/100)*panelH;
+        const y  = _bot - (v/100)*_bandH;
         ridePts.push({ wx, py: yToPrice(y) });
         if(first){ ctx.moveTo(x,y); first = false; } else ctx.lineTo(x,y);
       }
@@ -35433,6 +35475,7 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
       const span = (mx - mn) || 1;
       const color = INDICATOR_BY_ID.obv.color;
       const ridePts = [];
+      const _bot = _bandBot('obv');
       ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.95;
       ctx.beginPath();
       let first = true;
@@ -35441,7 +35484,7 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
         const n  = (v - mn) / span;                   // 0..1 normalized
         const wx = i*STEP + STEP/2;
         const x  = sX(wx);
-        const y  = panelBottomY - n*panelH;
+        const y  = _bot - n*_bandH;
         ridePts.push({ wx, py: yToPrice(y) });
         if(first){ ctx.moveTo(x,y); first = false; } else ctx.lineTo(x,y);
       }
@@ -35462,8 +35505,8 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
         if(typeof p.hist === 'number') peak = Math.max(peak, Math.abs(p.hist));
       }
       peak = Math.max(peak, 1e-9);
-      const midY = panelBottomY - panelH * 0.5;
-      const scaleY = (panelH * 0.42) / peak;
+      const midY = _bandBot('macd') - _bandH * 0.5;
+      const scaleY = (_bandH * 0.42) / peak;
       ctx.strokeStyle = 'rgba(180,200,230,0.18)';
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(W, midY); ctx.stroke();
@@ -35503,32 +35546,26 @@ function _drawBadgeIndicators(startIdx, endIdx, active){
       drawMacdLine('signal', 'macd-signal', '#ffd166');
     }
 
-    // Legend — indicator + current value, stacked top-left of the panel.
+    // Per-band legend — each oscillator labelled at the top-left of its OWN band.
     ctx.font = 'bold 11px ui-monospace, Menlo, monospace';
-    let lx = 10, ly = panelTopY + 14;
-    const pushLegend = (color, label, val)=>{
-      ctx.fillStyle = color;
-      const text = label + '  ' + val;
-      ctx.fillText(text, lx, ly);
-      lx += ctx.measureText(text).width + 16;
-    };
+    const _legend = (id, color, text)=>{ if(panelIds.indexOf(id) < 0) return; ctx.fillStyle = color; ctx.fillText(text, 10, _bandTop(id) + 13); };
     if(active.has('rsi')){
       const rsiP = Math.max(2, (_getIndParam('rsi','period')|0) || 14);
-      pushLegend(INDICATOR_BY_ID.rsi.color, 'RSI('+rsiP+')', _computeRSI(endIdx, rsiP).toFixed(1));
+      _legend('rsi', INDICATOR_BY_ID.rsi.color, 'RSI('+rsiP+')  '+_computeRSI(endIdx, rsiP).toFixed(1));
     }
     if(active.has('srsi')){
       const sP = Math.max(2, (_getIndParam('srsi','period')|0) || 14);
-      pushLegend(INDICATOR_BY_ID.srsi.color, 'SRSI('+sP+')', _computeStochRSI(endIdx, sP).toFixed(1));
+      _legend('srsi', INDICATOR_BY_ID.srsi.color, 'SRSI('+sP+')  '+_computeStochRSI(endIdx, sP).toFixed(1));
     }
     if(active.has('obv')){
-      pushLegend(INDICATOR_BY_ID.obv.color, 'OBV', fmtCareer(_computeOBV(startIdx, endIdx)|0));
+      _legend('obv', INDICATOR_BY_ID.obv.color, 'OBV  '+fmtCareer(_computeOBV(startIdx, endIdx)|0));
     }
     if(active.has('macd')){
       const fast = Math.max(2, (_getIndParam('macd','fast')|0) || 12);
       const slow = Math.max(fast + 1, (_getIndParam('macd','slow')|0) || 26);
       const sigP = Math.max(2, (_getIndParam('macd','signal')|0) || 9);
       const last = _lastIndicatorValue(_sdkMACD({ fast, slow, signal:sigP }), 'hist');
-      pushLegend(INDICATOR_BY_ID.macd.color, 'MACD('+fast+','+slow+','+sigP+')', last == null ? 'warming' : last.toFixed(2));
+      _legend('macd', INDICATOR_BY_ID.macd.color, 'MACD('+fast+','+slow+','+sigP+')  '+(last == null ? 'warming' : last.toFixed(2)));
     }
     ctx.restore();
   }
