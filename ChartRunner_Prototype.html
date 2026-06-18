@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.320
-     LAST UPDATED:    2026-06-17  ·  DEEP-LINK BOOT COVER — land directly on the chart. Julian's recording showed an opened room/share link flashing through the #crBoot login splash → OS desktop → a chart reload before finally landing on the right frame. Root cause: the chart-load for room/snapshot/symbol links is DEFERRED to after boot (setTimeout + retry while chart deps warm up), so the login gate and desktop paint first and the chart visibly re-renders last. Fix: a synchronous opaque "Loading chart…" cover (#crDlCover, z-index 100060, above #crBoot) that an inline <body>-top script raises the instant a chart-bound link is detected (?room always; ?sharedMap/?symbol/?map/?mint when deep-links enabled) — BEFORE the splash/desktop ever paint — and that fades out only once the chart is actually up (wired into the snapshot-importer success branch + crApplyDeepLink's _crDlEnterRun + the bare-map branch, each after a 450ms paint settle). A 14s safety timer reveals unconditionally so the cover can never strand a user. Net: invitee sees a clean loading spinner → the chart, no connect-page/desktop/reload flashes. No order/SDK/signing/on-chain change.
+     CURRENT VERSION: v1.0.321
+     LAST UPDATED:    2026-06-18  ·  HOME from a deep-link chart routes back to the bare desktop URL. Clicking Home (#crBarFile) on a chart opened via a deep-link (?room/?symbol/?map/?mint/?sharedMap#m=) showed the desktop via showSplash() but LEFT the deep-link params in the address bar — so the URL didn't match the desktop and a refresh re-launched the chart. Fix: _doExit now calls _crHomeCleanUrl() which strips query+hash via history.replaceState (no reload — desktop is already up) so Home lands on a clean chartrunner.xyz/play; and if a live room was active it now tears the presence link down (new crRoom.leave(): nulls params so the reconnect guard trips, stops pos/builds timers, detaches handlers, closes the socket, clears peers) so co-presence doesn't linger on the desktop. No order/SDK/signing/on-chain change.
+     (v1.0.320 = DEEP-LINK BOOT COVER — land directly on the chart. Julian's recording showed an opened room/share link flashing through the #crBoot login splash → OS desktop → a chart reload before finally landing on the right frame. Root cause: the chart-load for room/snapshot/symbol links is DEFERRED to after boot (setTimeout + retry while chart deps warm up), so the login gate and desktop paint first and the chart visibly re-renders last. Fix: a synchronous opaque "Loading chart…" cover (#crDlCover, z-index 100060, above #crBoot) that an inline <body>-top script raises the instant a chart-bound link is detected (?room always; ?sharedMap/?symbol/?map/?mint when deep-links enabled) — BEFORE the splash/desktop ever paint — and that fades out only once the chart is actually up (wired into the snapshot-importer success branch + crApplyDeepLink's _crDlEnterRun + the bare-map branch, each after a 450ms paint settle). A 14s safety timer reveals unconditionally so the cover can never strand a user. Net: invitee sees a clean loading spinner → the chart, no connect-page/desktop/reload flashes. No order/SDK/signing/on-chain change.
      (v1.0.319 = MULTIPLAYER ROOM FIX (audit). Root cause Julian hit ("live room link lands on chart but plain /play URL + no other player"): crMapsShare + crRoom's myWallet read `crWallet.publicKey`, which DOESN'T EXIST — the wallet API exposes `crWallet.get()`. So host detection always failed → 🛰/live-Share silently produced a SNAPSHOT link (no &room=) even with a wallet connected → opening it = bare /play + no co-presence; and crRoom couldn't identify the creator. Fix 1: all 3 `crWallet.publicKey` reads → `crWallet.get()` (real room links now generate; seat/creator detection works). Fix 2: the HOST now auto-joins the room they create — the 🛰 button navigates the host into the room link after copying it, so guests who open the invite actually have someone to be co-present with (was: Share only copied a link, host never joined → empty room). Verified separately: two tabs in the same ?room= see each other (peers:1 each), so the relay/crRoom path itself is sound — the bug was purely host detection + host-join. No order/SDK/signing/on-chain change.
      (v1.0.318 = Snapshot share-link open — retry fix. v1.0.317 wired the auto-open but crMaps.load() throws at the importer's ~1.2s mark (chart deps — switchAsset/candles/canvas — still warming up); inside the single surrounding try that skipped hideSplash and left the opener on the splash/desktop (the bug Julian saw: "still directs me to chartrunner.xyz/play"). Now the open retries (up to 6× / 700ms) until crMaps.load sticks, THEN hides the splash; crReport logs any miss. A manual crMaps.load+hideSplash renders the shared chart fine, confirming the only issue was the early-throw timing. No order/SDK/signing/on-chain change.
      (v1.0.317 = Snapshot share-links now OPEN the chart — first attempt; auto-open wired but threw early.
@@ -13444,7 +13445,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.320",
+  VERSION: "1.0.321",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -33560,6 +33561,18 @@ window.crRoom = (function(){
     ws.onerror   = function(e){ try { if(window.crReport) crReport((e&&e.message)||'ws error','crRoom/relay'); } catch(_){} try { ws.close(); } catch(_){} };
   }
   function scheduleReconnect(){ backoff = Math.min(15000, Math.floor(backoff*1.6)); setTimeout(connect, backoff); }
+  // v1.0.321 — Tear the room down (called when the player clicks Home on a
+  // deep-link room chart). Null `params` FIRST so the onclose→scheduleReconnect
+  // path early-returns out of connect(); then stop timers, detach handlers, close
+  // the socket, and drop peers so no co-presence lingers on the desktop.
+  function leave(){
+    params = null;
+    try { stopPos(); } catch(_){}
+    try { if(typeof stopBuilds === 'function') stopBuilds(); } catch(_){}
+    try { if(ws){ ws.onclose = null; ws.onmessage = null; ws.onerror = null; ws.close(); } } catch(_){}
+    ws = null;
+    try { peers.clear(); } catch(_){}
+  }
 
   function addPeer(o){
     if(!o || !o.sessionId || o.sessionId===mySid) return;
@@ -33752,6 +33765,7 @@ window.crRoom = (function(){
     seat:         mySeat,
     isSpectator:  function(){ return spectator; },
     peerCount:    function(){ return peers.size; },
+    leave:        leave,
     _connect:     connect,
   };
 })();
@@ -65379,6 +65393,27 @@ function log(msg){
           }
         } catch(_){}
       };
+      // v1.0.321 — Home from a DEEP-LINK chart (?room/?symbol/?map/?mint/
+      // ?sharedMap#m=) must route back to the bare desktop URL. showSplash()
+      // only swaps the view; the deep-link params lingered in the address bar,
+      // so a refresh re-launched the chart and the URL didn't match the desktop.
+      // Strip query+hash via replaceState (no reload — the desktop is already
+      // up) so Home lands on a clean chartrunner.xyz/play. If a live room was
+      // active, drop the in-memory presence link too so co-presence doesn't
+      // linger on the desktop.
+      const _crHomeCleanUrl = () => {
+        try {
+          const _u = new URL(window.location.href);
+          if(_u.search || _u.hash){
+            window.history.replaceState({}, '', _u.origin + _u.pathname);
+          }
+        } catch(_){}
+        try {
+          if(window.crRoom && typeof crRoom.active === 'function' && crRoom.active() && typeof crRoom.leave === 'function'){
+            crRoom.leave();
+          }
+        } catch(_){}
+      };
       const _doExit = () => {
         try { if(typeof crNotify === 'function') crNotify('Exit · CRT fade home', 'warn'); } catch(_){}
         if(typeof crCrtFadeOut === 'function'){
@@ -65386,11 +65421,13 @@ function log(msg){
             try { if(typeof game !== 'undefined'){ game.running = false; } } catch(_){}
             _restoreCampaignConfig();
             try { showSplash(); } catch(_){}
+            _crHomeCleanUrl();
             setTimeout(() => { try { crCrtFadeIn(); } catch(_){} }, 260);
           });
         } else {
           _restoreCampaignConfig();
           showSplash();
+          _crHomeCleanUrl();
         }
       };
       if(hasOpenOrders && !hasMapId){
