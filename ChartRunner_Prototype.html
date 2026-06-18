@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.335
-     LAST UPDATED:    2026-06-19  ·  TERMINAL SYNTHESIS P3 — exploitable-score spine + radial gauge. New pure crExploitScore(candles) scores a chart 0–100 from REAL candles on the v2 indicators VWAP-displacement (|close−VWAP| in ATR units), Volatility (ATR%), and Persistence (directional run consistency), weighted 0.4/0.3/0.3 → state EXPLOITABLE≥66 / CANDIDATE≥40 / IDLE + LONG/SHORT side. The 4th v2 indicator (CVD) needs an order-flow feed → marked pending, NOT faked. New Engine Terminal pane "Exploit Score" (crExploitGauge) renders the mockup score-gauge (SVG donut) + state badge + per-component bars for the ACTIVE chart, recomputing as the player switches asset/tf (cheap + truthful — scores loaded candles rather than faking a per-row cross-asset score). Wired through the pane framework + added to the Engine view. Read-only — no order/route/signing change.
+     CURRENT VERSION: v1.0.336
+     LAST UPDATED:    2026-06-19  ·  TERMINAL SYNTHESIS P4 — Returns Matrix + Monte-Carlo radial. (1) Returns Matrix (mktMatrix, mockup "Robustness Matrix"): top assets × {1h,24h,7d,30d} REAL % returns from CoinGecko (crCgMarkets extended to multi-window via price_change_percentage=1h,24h,7d,30d; cache key v2→v3), cells colored red→green — one fetch, no per-cell candle pulls. (2) Monte-Carlo (mcRadial): pure crMonteCarlo() estimates drift+vol from the active chart's REAL log-returns, runs 400 random-walk paths over a 24-bar horizon → radial burst (green up / red down) + P(up)/P(down)/mean + terminal-distribution histogram. Clearly labeled MODEL (a forecast from real inputs, never measured fact) — the data-truth rule extended to simulations. Both added to the Engine view + wired through the pane framework. Read-only — no order/route/signing change.
+     (v1.0.335 = TERMINAL SYNTHESIS P3 — exploitable-score spine + radial gauge. New pure crExploitScore(candles) scores a chart 0–100 from REAL candles on the v2 indicators VWAP-displacement (|close−VWAP| in ATR units), Volatility (ATR%), and Persistence (directional run consistency), weighted 0.4/0.3/0.3 → state EXPLOITABLE≥66 / CANDIDATE≥40 / IDLE + LONG/SHORT side. The 4th v2 indicator (CVD) needs an order-flow feed → marked pending, NOT faked. New Engine Terminal pane "Exploit Score" (crExploitGauge) renders the mockup score-gauge (SVG donut) + state badge + per-component bars for the ACTIVE chart, recomputing as the player switches asset/tf (cheap + truthful — scores loaded candles rather than faking a per-row cross-asset score). Wired through the pane framework + added to the Engine view. Read-only — no order/route/signing change.
      (v1.0.334 = TERMINAL SYNTHESIS P2 — one row grammar + drilldown drawer. Adopts the v2 "Exploitables-Rail" panel design (06.B) as a shared component: new _crRailRowHTML({rank,sym,sub,right,scorePct,barColor,mint|ticker,title,detail}) renders rank · symbol · metric · SCORE-BAR at the right edge. Trending Pools, Funding Heatmap and Long/Short now all render through it (one consistent look; score-bar = trending rank / |funding| / long-share respectively, colored green/red). Tapping ANY rail row opens a shared slide-in drilldown drawer (#crRailDrawer, right side of the Terminal window) showing the row's key:value detail + an "▶ Open chart" action that launches the token (mint→crEnsureCustomSolanaToken) or asset (ticker→crEnsureCexAsset) chart. Delegated click handler, mockup-look adapted to Platinum chrome, all on live data (P1 truth-dots still apply). Read-only — no order/route/signing change.
      (v1.0.333 = TERMINAL SYNTHESIS P1 — data-truth made visible (plan: docs/design/2026-06-19-terminal-synthesis-plan.md). The reconciliation of the 3 sources (live truth × v2 meaning × mockup look) hinges on one rule — a panel may never show a number it can't source — so P1 makes truth a first-class, visible layer: (1) a "truth-dot" on EVERY pane header in consistent colors (green live / amber cached / red offline) via CSS ::before on .hd-tag, independent of the tag text color so it reads the same across all trackers; (2) a global Health-Pills strip (bottom-left of the Terminal window, always-on, non-interactive) with one pill per DATA SOURCE (Binance/CoinGecko/GeckoTerminal/DefiLlama/…) showing live/cached/offline + age — the "is my rig alive?" dial-tone. Driven by a provider-state rollup added to _setHdTag (prefers a fresh 'live'; one failing pane won't flip a provider that was live <90s ago) + a renderer on the 15s tick. Pure presentation over the existing pane framework — no new data, no order/route/signing change.
      (v1.0.332 = Market Regime widget — cache /global so it stays truthfully LIVE. Live-verify of v1.0.331 found 4/5 new widgets fully LIVE (Cross-Venue Spread 5/5, Funding Heatmap 754 perps, Long/Short, Heatmap 60) but Market Regime flipped its tag to "offline" while showing real data — it hit CoinGecko /global uncached every tick (CoinGecko rate-limits /global hard). Fix: cache the last good /global payload in localStorage (cr_cg_global_v1); on a throttled tick it re-renders from cache tagged "cached" instead of "offline" (only truly offline with no cache shows offline). Mirrors the crCgMarkets caching the heatmap already uses. Read-only — no order/route/signing change.
@@ -11837,6 +11838,14 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                 <div class="crTerm-paneHd"><span>▦ Market Heatmap</span><span class="hd-tag">24h % · live</span></div>
                 <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">loading heatmap…</div></div>
               </div>
+              <div class="crTerm-pane" data-pane-id="mktMatrix">
+                <div class="crTerm-paneHd"><span>▦ Returns Matrix</span><span class="hd-tag">1h·24h·7d·30d · live</span></div>
+                <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">loading returns matrix…</div></div>
+              </div>
+              <div class="crTerm-pane" data-pane-id="mcRadial">
+                <div class="crTerm-paneHd"><span>✶ Monte-Carlo</span><span class="hd-tag">MODEL · live vol</span></div>
+                <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">simulating…</div></div>
+              </div>
               <div class="crTerm-pane" data-pane-id="positions">
                 <div class="crTerm-paneHd"><span>◆ POSITIONS</span><span class="hd-tag live">LIVE</span></div>
                 <div class="crTerm-paneBd">
@@ -13564,7 +13573,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.335",
+  VERSION: "1.0.336",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -23410,7 +23419,7 @@ function currentAssetObj(){ return ASSETS.find(a=>a.id===currentAsset) || ASSETS
    market cap desc: {cgId,sym,name,price,mcap,rank,ch24,img}. Never throws —
    returns the cache (or []) on failure. */
 const CR_CG_BASE = 'https://api.coingecko.com/api/v3';
-const CR_CG_CACHE_KEY = 'cr_cg_markets_v2';
+const CR_CG_CACHE_KEY = 'cr_cg_markets_v3';
 // Stablecoins are excluded from the picker/Token lists — they peg to ~$1 so
 // there's no tradeable chart (and "USDT/USDT" is nonsense). v1.0.327.
 const CR_CG_STABLES = { usdt:1, usdc:1, dai:1, fdusd:1, tusd:1, usde:1, usdd:1, pyusd:1, usds:1, gusd:1, usdp:1, frax:1, lusd:1, susd:1, usdl:1, eurc:1, eurt:1, buidl:1, usd0:1, usdy:1, crvusd:1, gho:1, usdb:1 };
@@ -23425,12 +23434,12 @@ async function crCgMarkets(limit){
   var perPage = 250, pages = Math.ceil(limit / perPage), rows = [];
   try {
     for(var p = 1; p <= pages; p++){
-      var url = CR_CG_BASE + '/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=' + perPage + '&page=' + p + '&price_change_percentage=24h';
+      var url = CR_CG_BASE + '/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=' + perPage + '&page=' + p + '&price_change_percentage=1h,24h,7d,30d';
       var resp = await fetch(url, { headers: crCgHeaders() });
       if(!resp.ok) throw new Error('cg-http-' + resp.status);
       var arr = await resp.json();
       if(!Array.isArray(arr) || !arr.length) break;
-      arr.forEach(function(c){ if(CR_CG_STABLES[String(c.symbol || '').toLowerCase()]) return; rows.push({ cgId:c.id, sym:String(c.symbol || '').toUpperCase(), name:c.name || c.symbol, price:c.current_price || 0, mcap:c.market_cap || 0, rank:c.market_cap_rank || (rows.length + 1), ch24:(c.price_change_percentage_24h || 0), img:c.image || '' }); });
+      arr.forEach(function(c){ if(CR_CG_STABLES[String(c.symbol || '').toLowerCase()]) return; rows.push({ cgId:c.id, sym:String(c.symbol || '').toUpperCase(), name:c.name || c.symbol, price:c.current_price || 0, mcap:c.market_cap || 0, rank:c.market_cap_rank || (rows.length + 1), ch24:(c.price_change_percentage_24h || 0), ch1h:(c.price_change_percentage_1h_in_currency != null ? c.price_change_percentage_1h_in_currency : null), ch7d:(c.price_change_percentage_7d_in_currency != null ? c.price_change_percentage_7d_in_currency : null), ch30d:(c.price_change_percentage_30d_in_currency != null ? c.price_change_percentage_30d_in_currency : null), img:c.image || '' }); });
     }
   } catch(e){
     try { if(window.crReport) crReport(e, 'coingecko/markets'); } catch(_){}
@@ -24288,6 +24297,30 @@ function crExploitScore(rows){
   }catch(_){ return null; }
 }
 window.crExploitScore = crExploitScore;
+
+/* ── Monte-Carlo forecast (v1.0.336, synthesis P4) ───────────────────────────
+   A SIMULATION computed from the chart's REAL log-return drift+vol: estimate mu
+   and sigma from recent candles, run N random-walk paths over a horizon, return
+   terminal-return distribution + P(up)/P(down)/mean. Labeled MODEL in the UI —
+   it's a forecast from real inputs, never presented as measured fact. Pure. */
+function crMonteCarlo(rows, paths, horizon){
+  try{
+    if(!Array.isArray(rows) || rows.length < 30) return null;
+    paths = paths || 400; horizon = horizon || 24;
+    var n = rows.length, w = Math.min(200, n - 1), rs = [];
+    for(var i = n - w; i < n; i++){ var a = rows[i].c, b = rows[i - 1].c; if(a > 0 && b > 0) rs.push(Math.log(a / b)); }
+    if(rs.length < 10) return null;
+    var mu = rs.reduce(function(x, y){ return x + y; }, 0) / rs.length;
+    var varr = rs.reduce(function(x, y){ return x + (y - mu) * (y - mu); }, 0) / rs.length, sd = Math.sqrt(varr);
+    var rnd = function(){ var u = 0, v = 0; while(!u) u = Math.random(); while(!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+    var terms = [], up = 0;
+    for(var p = 0; p < paths; p++){ var s = 0; for(var h = 0; h < horizon; h++){ s += mu + sd * rnd(); } var ret = Math.expm1(s); terms.push(ret); if(ret > 0) up++; }
+    terms.sort(function(x, y){ return x - y; });
+    return { paths: paths, horizon: horizon, pUp: up / paths, pDown: 1 - up / paths,
+      mean: terms.reduce(function(x, y){ return x + y; }, 0) / paths, terms: terms, sd: sd, close: rows[n - 1].c };
+  }catch(_){ return null; }
+}
+window.crMonteCarlo = crMonteCarlo;
 
 // Phase 2+3: deferred launch (after boot — restart/crMaps/switchAsset ready).
 // Fires for 'symbol' (CEX + mint/DEX) and 'map' (bare self-only). 'room' and
@@ -50616,6 +50649,8 @@ function _crTermPickerDocsHtml(){
     + '<tr><td class="id">solTrending</td><td class="src">Birdeye <code>/defi/token_trending</code></td><td class="cad">120 s</td></tr>'
     + '<tr><td class="id">solGtTrending</td><td class="src">GeckoTerminal <code>/networks/solana/trending_pools</code></td><td class="cad">120 s</td></tr>'
     + '<tr><td class="id">crExploitGauge</td><td class="src">active chart candles (VWAP·Vol·Persistence)</td><td class="cad">20 s</td></tr>'
+    + '<tr><td class="id">mktMatrix</td><td class="src">CoinGecko <code>/coins/markets</code> (1h/24h/7d/30d)</td><td class="cad">120 s</td></tr>'
+    + '<tr><td class="id">mcRadial</td><td class="src">MODEL · active chart drift+vol simulation</td><td class="cad">30 s</td></tr>'
     + '<tr><td class="id">mktRegime</td><td class="src">CoinGecko <code>/global</code></td><td class="cad">120 s</td></tr>'
     + '<tr><td class="id">mktHeatmap</td><td class="src">CoinGecko <code>/coins/markets</code></td><td class="cad">90 s</td></tr>'
     + '<tr><td class="id">cexSpread</td><td class="src">Binance/OKX/Bybit/Coinbase/Kraken <code>ticker</code></td><td class="cad">20 s</td></tr>'
@@ -50730,7 +50765,7 @@ const CR_CHART_RUN_PANE_IDS = new Set([
 ]);
 const CR_DESKTOP_MARKET_PANE_IDS = new Set([
   'cexAgg','cexExchanges','cexStables','cexFunding','cexOI','cexWhales','cexListings','cexDepth','cexDexFlow',
-  'crExploitGauge','mktRegime','mktHeatmap','cexSpread','cexFundingBoard','cexLongShort',
+  'crExploitGauge','mktMatrix','mcRadial','mktRegime','mktHeatmap','cexSpread','cexFundingBoard','cexLongShort',
   'solPrice','solTopTokens','solDexVolume','solPumpfun','solSmart','solSwaps','solTrending','solGtTrending','solHolders','solSniper',
   'phxWhales','phxFunding','phxOI','phxBook','phxFlight','phxStatus',
   'coinWatchlist','walletWatchlist',
@@ -52173,6 +52208,14 @@ const _CR_PANE_SCHEMAS = {
   'pane:crExploitGauge': {
     icon: '◎', title: 'Exploit Score', sub: 'Active chart · VWAP·Vol·Persistence.',
     fields: [ { type:'note', text:'LIVE — scores the currently-loaded chart 0–100 (EXPLOITABLE/CANDIDATE/IDLE) from real candles. CVD (4th indicator) pending an order-flow feed.' }, { type:'slider', key:'refreshSec', label:'Refresh', min:10, max:120, step:5, unit:'s', default:20 } ],
+  },
+  'pane:mktMatrix': {
+    icon: '▦', title: 'Returns Matrix', sub: 'Top assets × 1h/24h/7d/30d.',
+    fields: [ { type:'note', text:'LIVE — real % returns (CoinGecko) per asset across 1h/24h/7d/30d, colored red→green.' }, { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 } ],
+  },
+  'pane:mcRadial': {
+    icon: '✶', title: 'Monte-Carlo', sub: 'MODEL · forecast from live vol.',
+    fields: [ { type:'note', text:'MODEL — simulates random-walk paths from the active chart’s real drift+volatility → P(up)/P(down) + terminal distribution. A forecast from real inputs, not measured fact.' }, { type:'slider', key:'refreshSec', label:'Refresh', min:15, max:180, step:15, unit:'s', default:30 } ],
   },
   'pane:mktRegime': {
     icon: '◆', title: 'Market Regime', sub: 'Risk-on/off · CoinGecko global.',
@@ -77151,6 +77194,54 @@ window.crGoldRush = (function(){
     }catch(e){ try{ if(window.crReport) crReport(e, 'exploitGauge'); }catch(_){} _setHdTag('crExploitGauge', 'offline', 'warn'); }
   }
 
+  // ── P4 (v1.0.336) — Returns Matrix + Monte-Carlo radial ──────────────────────
+  // Returns matrix (mockup "Robustness Matrix"): top assets × {1h,24h,7d,30d} real
+  // % from CoinGecko, cells colored red→green. One fetch, no per-cell candle pulls.
+  async function refreshMktMatrix(){
+    if(!_bodiesOf('mktMatrix').length) return;
+    try{
+      var rows = (typeof crCgMarkets === 'function') ? (await crCgMarkets(12)) : [];
+      if(!rows || !rows.length){ _setHdTag('mktMatrix','offline','warn'); return; }
+      var cols = [['1h','ch1h'],['24h','ch24'],['7d','ch7d'],['30d','ch30d']];
+      var cell = function(v){ if(v == null || isNaN(v)) return '<td style="text-align:right;color:var(--dim);padding:2px 5px">—</td>'; var base = v >= 0 ? '20,241,149' : '255,91,127'; var a = Math.min(0.8, 0.12 + Math.abs(v) / 30); return '<td style="text-align:right;background:rgba(' + base + ',' + a.toFixed(2) + ');padding:2px 5px;font-variant-numeric:tabular-nums">' + (v >= 0 ? '+' : '') + Number(v).toFixed(1) + '</td>'; };
+      var head = '<tr><th style="text-align:left;padding:2px 4px">Asset</th>' + cols.map(function(c){ return '<th style="text-align:right;padding:2px 5px">' + c[0] + '</th>'; }).join('') + '</tr>';
+      var body = rows.slice(0, 10).map(function(r){ return '<tr><td style="padding:2px 4px"><b>' + _crRailEsc(r.sym) + '</b></td>' + cols.map(function(c){ return cell(r[c[1]]); }).join('') + '</tr>'; }).join('');
+      _setBody('mktMatrix', '<table style="width:100%;border-collapse:collapse;font-size:10px"><thead style="color:var(--dim);font-size:9px">' + head + '</thead><tbody>' + body + '</tbody></table>');
+      _setHdTag('mktMatrix', rows.length + ' · LIVE', 'live');
+    }catch(e){ try{ if(window.crReport) crReport(e, 'mktMatrix'); }catch(_){} _setHdTag('mktMatrix','offline','warn'); }
+  }
+  // Monte-Carlo radial burst (MODEL) — spokes per simulated path, green up / red down.
+  function _crMcRadialSVG(mc){
+    var K = Math.min(120, mc.terms.length), step = mc.terms.length / K;
+    var maxAbs = Math.max(Math.abs(mc.terms[0]), Math.abs(mc.terms[mc.terms.length - 1])) || 0.01, spokes = '';
+    for(var i = 0; i < K; i++){ var ret = mc.terms[Math.floor(i * step)]; var ang = (i / K) * 2 * Math.PI - Math.PI / 2; var len = 6 + Math.min(34, Math.abs(ret) / maxAbs * 34); var x2 = 50 + Math.cos(ang) * len, y2 = 50 + Math.sin(ang) * len; spokes += '<line x1="50" y1="50" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="' + (ret >= 0 ? 'rgba(20,241,149,.7)' : 'rgba(255,91,127,.7)') + '" stroke-width="1"/>'; }
+    return '<svg viewBox="0 0 100 100" width="90" height="90">' + spokes + '<circle cx="50" cy="50" r="3" fill="#e8eef6"/></svg>';
+  }
+  function refreshMcRadial(){
+    if(!_bodiesOf('mcRadial').length) return;
+    try{
+      var mc = (typeof crMonteCarlo === 'function' && typeof candles !== 'undefined') ? crMonteCarlo(candles, 400, 24) : null;
+      if(!mc){ _setHdTag('mcRadial','no chart','warn'); _setBody('mcRadial','<div style="color:var(--dim);font-size:10px">load a chart to simulate</div>'); return; }
+      var aObj = (typeof currentAssetObj === 'function') ? currentAssetObj() : null, label = aObj ? (aObj.label || aObj.nm) : 'chart';
+      var pUpC = mc.pUp >= 0.5 ? '#14f195' : '#ff5b7f';
+      var bins = new Array(11).fill(0), lo = mc.terms[0], hi = mc.terms[mc.terms.length - 1], span = (hi - lo) || 1;
+      mc.terms.forEach(function(t){ var b = Math.floor((t - lo) / span * 11); if(b < 0) b = 0; if(b > 10) b = 10; bins[b]++; });
+      var mx = Math.max.apply(null, bins) || 1;
+      var hist = bins.map(function(b, i){ var mid = lo + (i + 0.5) / 11 * span; return '<span style="display:inline-block;width:7%;height:' + (b / mx * 22).toFixed(0) + 'px;background:' + (mid >= 0 ? '#14f195' : '#ff5b7f') + ';vertical-align:bottom;margin:0 0.4%"></span>'; }).join('');
+      _setBody('mcRadial', '<div style="display:flex;gap:8px;align-items:center">'
+        + '<div>' + _crMcRadialSVG(mc) + '</div>'
+        + '<div style="flex:1;font-size:10px">'
+          + '<div style="display:flex;justify-content:space-between"><span>P(up)</span><b style="color:' + pUpC + '">' + (mc.pUp * 100).toFixed(0) + '%</b></div>'
+          + '<div style="display:flex;justify-content:space-between"><span>P(down)</span><b style="color:#ff5b7f">' + (mc.pDown * 100).toFixed(0) + '%</b></div>'
+          + '<div style="display:flex;justify-content:space-between"><span>mean</span><b style="color:' + (mc.mean >= 0 ? '#14f195' : '#ff5b7f') + '">' + (mc.mean >= 0 ? '+' : '') + (mc.mean * 100).toFixed(1) + '%</b></div>'
+          + '<div style="color:var(--dim);font-size:8.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _crRailEsc(label) + '</div>'
+        + '</div></div>'
+        + '<div style="height:24px;margin-top:4px;text-align:center;display:flex;align-items:flex-end;justify-content:center">' + hist + '</div>'
+        + '<div style="color:var(--dim);font-size:8.5px;margin-top:3px"><span style="border:1px solid var(--line);border-radius:6px;padding:0 5px;color:#ffd166">MODEL</span> ' + mc.paths + ' paths · ' + mc.horizon + '-bar horizon · from live vol</div>');
+      _setHdTag('mcRadial','LIVE','live');
+    }catch(e){ try{ if(window.crReport) crReport(e, 'mcRadial'); }catch(_){} _setHdTag('mcRadial','offline','warn'); }
+  }
+
   // ── Quick-win market-overview widgets (v1.0.331) — all live, no key, and they
   // go honestly-offline on failure (never synthetic). ───────────────────────────
   // Engine · Market Regime dial — CoinGecko /global (mcap trend + BTC dominance).
@@ -77956,6 +78047,8 @@ window.crGoldRush = (function(){
     solTrending:  { fn: refreshSolTrending,  default: 120 },
     solGtTrending:{ fn: refreshSolGtTrending, default: 120 },
     crExploitGauge: { fn: refreshExploitGauge,   default: 20  },
+    mktMatrix:      { fn: refreshMktMatrix,      default: 120 },
+    mcRadial:       { fn: refreshMcRadial,       default: 30  },
     mktRegime:      { fn: refreshMktRegime,      default: 120 },
     mktHeatmap:     { fn: refreshMktHeatmap,     default: 90  },
     cexSpread:      { fn: refreshCexSpread,      default: 20  },
