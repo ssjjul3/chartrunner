@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.332
-     LAST UPDATED:    2026-06-19  ·  Market Regime widget — cache /global so it stays truthfully LIVE. Live-verify of v1.0.331 found 4/5 new widgets fully LIVE (Cross-Venue Spread 5/5, Funding Heatmap 754 perps, Long/Short, Heatmap 60) but Market Regime flipped its tag to "offline" while showing real data — it hit CoinGecko /global uncached every tick (CoinGecko rate-limits /global hard). Fix: cache the last good /global payload in localStorage (cr_cg_global_v1); on a throttled tick it re-renders from cache tagged "cached" instead of "offline" (only truly offline with no cache shows offline). Mirrors the crCgMarkets caching the heatmap already uses. Read-only — no order/route/signing change.
+     CURRENT VERSION: v1.0.333
+     LAST UPDATED:    2026-06-19  ·  TERMINAL SYNTHESIS P1 — data-truth made visible (plan: docs/design/2026-06-19-terminal-synthesis-plan.md). The reconciliation of the 3 sources (live truth × v2 meaning × mockup look) hinges on one rule — a panel may never show a number it can't source — so P1 makes truth a first-class, visible layer: (1) a "truth-dot" on EVERY pane header in consistent colors (green live / amber cached / red offline) via CSS ::before on .hd-tag, independent of the tag text color so it reads the same across all trackers; (2) a global Health-Pills strip (bottom-left of the Terminal window, always-on, non-interactive) with one pill per DATA SOURCE (Binance/CoinGecko/GeckoTerminal/DefiLlama/…) showing live/cached/offline + age — the "is my rig alive?" dial-tone. Driven by a provider-state rollup added to _setHdTag (prefers a fresh 'live'; one failing pane won't flip a provider that was live <90s ago) + a renderer on the 15s tick. Pure presentation over the existing pane framework — no new data, no order/route/signing change.
+     (v1.0.332 = Market Regime widget — cache /global so it stays truthfully LIVE. Live-verify of v1.0.331 found 4/5 new widgets fully LIVE (Cross-Venue Spread 5/5, Funding Heatmap 754 perps, Long/Short, Heatmap 60) but Market Regime flipped its tag to "offline" while showing real data — it hit CoinGecko /global uncached every tick (CoinGecko rate-limits /global hard). Fix: cache the last good /global payload in localStorage (cr_cg_global_v1); on a throttled tick it re-renders from cache tagged "cached" instead of "offline" (only truly offline with no cache shows offline). Mirrors the crCgMarkets caching the heatmap already uses. Read-only — no order/route/signing change.
      (v1.0.331 = 5 NEW market-overview Terminal widgets (all live, no key, honest-offline on failure). ENGINE: Market Regime dial (mktRegime — CoinGecko /global mcap-trend + BTC dominance → risk-on/neutral/risk-off gauge); Market Heatmap (mktHeatmap — top coins tiled + colored by 24h%). CEXTRACKER: Cross-Venue Spread (cexSpread — BTC last price across Binance/OKX/Bybit/Coinbase/Kraken → avg + spread bps + per-venue deviation, on-brand for the accuracy push); Funding Heatmap (cexFundingBoard — all Binance USDT perps ranked most-positive/most-negative funding); Long/Short Positioning (cexLongShort — retail global-account vs top-trader L/S ratio for BTC/ETH/SOL). Endpoints live-probed reachable; Solana-RPC widgets (network health, new-mint safety flags) DEFERRED — public RPC returns 403/CORS, would be permanently offline, so not shipped per the no-dead-pane rule. Wired through the standard pane framework (provider registry + REFRESHERS + schema + catalog + desktop set) and added live to the Engine + CEXTracker views. Read-only market data — no order/route/signing change.
      (v1.0.330 = NEW Terminal widget — SolanaTracker "Trending Pools" (solGtTrending). High-value on-chain data: GeckoTerminal /networks/solana/trending_pools (live Solana DEX momentum) — symbol · DEX · pool age · price · 24h% · liquidity, top-N. NO KEY required (unlike the Birdeye-gated solTrending), so it works for every user, and obeys the data-accuracy rule (LIVE tag on success, rate-limited/no-data/offline on failure — never synth). Clicking a row opens that token's DEX chart (crEnsureCustomSolanaToken → switchAsset, one-time delegated click handler). Wired through the standard pane framework (provider registry + REFRESHERS 120s + pane schema + data-source catalog + CR_DESKTOP_MARKET_PANE_IDS) and added live to the SolanaTracker view. Read-only market data — no order/route/signing change.
      (v1.0.329 = DEX accuracy — chosen AMM's pool or honest no-pool state (mirror of the CEX fix). crPickSolanaPool boosts the chosen DEX but falls back to the most-liquid pool on ANOTHER DEX, so picking Raydium for an Orca-only token rendered Orca's book labeled "Raydium fallback". Now crFetchSolanaTokenCandles throws crNoVenuePool when a specific AMM (Raydium/Orca/Meteora/PumpSwap) was chosen and no pool on it exists; loadCandles shows "⚠ no <dex> pool for this token · seeded (NOT LIVE)" + a toast to pick another DEX or Jupiter — never another DEX's pool as the chosen one's. Jupiter is exempt (aggregator/router, not an AMM with its own pools → most-liquid pool is a valid Jupiter route). Read-only — no order/route/signing change.
@@ -4531,6 +4532,16 @@
   .crTerm-paneHd .hd-tag.live{color:#ff4d6d;font-weight:700}
   .crTerm-paneHd .hd-tag.warn{color:#ffb74d;font-weight:700}
   .crTerm-paneHd .hd-tag.tune{color:#b388ff;font-weight:700}
+  /* v1.0.333 — P1 "truth-dot": at-a-glance data-truth on EVERY pane header,
+     in consistent truth colors (green live / amber cached / red offline),
+     independent of the tag's text color so it reads the same across all
+     trackers. The dot is the contract that lets the panels never lie. */
+  .crTerm-paneHd .hd-tag::before{content:'● ';color:#5b6470;font-weight:700}
+  .crTerm-paneHd .hd-tag.live::before{color:#14f195}
+  .crTerm-paneHd .hd-tag.tune::before{color:#ffd166}
+  .crTerm-paneHd .hd-tag.warn::before{color:#ff5b7f}
+  /* Global data-truth strip (bottom-left of the Terminal window). */
+  #crTermHealthStrip span.crHp{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.72);color:var(--dim)}
   .crTerm-paneBd{padding:8px 10px;color:#6acb3a;font-size:11px;line-height:1.45}
   .crTerm-paneBd.small{font-size:10.5px}
   .crTerm-paneBd.log{height:150px;overflow:auto;white-space:pre-wrap;font-size:10px;line-height:1.4}
@@ -13531,7 +13542,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.332",
+  VERSION: "1.0.333",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -76194,6 +76205,18 @@ window.crGoldRush = (function(){
     } catch(_){ return true; }
   }
   function _setHdTag(paneId, text, cls){
+    // v1.0.333 — P1: roll each pane's state up to its DATA SOURCE so the global
+    // Health-Pills strip can show "is the feed alive?". Prefer a fresh 'live' —
+    // one failing pane won't flip a provider that was live <90s ago.
+    try {
+      var _prov = (typeof CR_TERMINAL_PRIVATE_OPS_PANES !== 'undefined' && CR_TERMINAL_PRIVATE_OPS_PANES[paneId]) ? CR_TERMINAL_PRIVATE_OPS_PANES[paneId].provider : null;
+      if(_prov){
+        var _st = (cls === 'tune') ? 'cached' : (cls === 'warn') ? 'offline' : 'live';
+        var _H = (window._crTermHealth = window._crTermHealth || {});
+        var _cur = _H[_prov], _now = Date.now();
+        if(!_cur || _st === 'live' || _cur.state !== 'live' || (_now - _cur.ts) > 90000){ _H[_prov] = { state:_st, ts:_now }; }
+      }
+    } catch(_){}
     if(cls === 'warn' && window._crTermPaneIsPrivateOpsCandidate && window._crTermPaneIsPrivateOpsCandidate(paneId) && window._crTermArchivePanePrivateOps && !(window._crTermShowPrivateOpsFallbacks && window._crTermShowPrivateOpsFallbacks())){
       try { window._crTermArchivePanePrivateOps(paneId, text || 'provider unavailable', 'refresher-warn'); } catch(_){}
     }
@@ -77933,6 +77956,37 @@ window.crGoldRush = (function(){
       }
     });
     try { _tickPaneWidgets(false); } catch(_){}
+    try { _crRenderHealthPills(); } catch(_){}
+  }
+
+  // v1.0.333 — P1: global Health-Pills strip. One pill per DATA SOURCE showing
+  // its freshness (green live / amber cached / red offline + age), driven by the
+  // provider rollup in _setHdTag. The "is my rig alive?" dial-tone — bottom-left
+  // of the Terminal window, always-on, non-interactive.
+  function _crRenderHealthPills(){
+    try{
+      var H = window._crTermHealth || {};
+      var provs = Object.keys(H);
+      if(!provs.length) return;
+      var host = document.getElementById('crTermHealthStrip');
+      if(!host){
+        var win = document.getElementById('win-terminal');
+        if(!win) return;
+        host = document.createElement('div'); host.id = 'crTermHealthStrip';
+        host.style.cssText = 'position:absolute;left:8px;bottom:6px;display:flex;gap:5px;flex-wrap:wrap;max-width:60%;z-index:6;pointer-events:none;font:9px ui-monospace,Menlo,monospace';
+        win.appendChild(host);
+      }
+      var now = Date.now();
+      provs.sort(function(a,b){ return (({live:0,cached:1,offline:2})[H[a].state]||0) - (({live:0,cached:1,offline:2})[H[b].state]||0) || a.localeCompare(b); });
+      host.innerHTML = provs.map(function(p){
+        var h = H[p];
+        var col = h.state === 'live' ? '#14f195' : h.state === 'cached' ? '#ffd166' : '#ff5b7f';
+        var age = Math.max(0, Math.round((now - h.ts) / 1000));
+        var ageStr = age < 90 ? (age + 's') : (Math.round(age / 60) + 'm');
+        var label = String(p).replace(/[^A-Za-z0-9 .\-]/g, '').slice(0, 14);
+        return '<span class="crHp"><span style="color:' + col + '">●</span>' + label + ' <span style="opacity:.6">' + ageStr + '</span></span>';
+      }).join('');
+    }catch(_){}
   }
 
   // v1.0.72 — Force-tick any pane that lives inside the currently
