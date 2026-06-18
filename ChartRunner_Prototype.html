@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.328
-     LAST UPDATED:    2026-06-18  ·  DATA-ACCURACY AUDIT — chosen broker's OHLC or nothing (no silent cross-exchange swap). Audit (docs/qa/2026-06-18-data-accuracy-audit.md): live browser probe of all 9 venue adapters from chartrunner.xyz confirmed the 5 broker-wheel CEX venues (Binance/Bybit/OKX/Coinbase/Kraken) all return REAL, exchange-distinct OHLC; KuCoin/Gate.io/MEXC are CORS-blocked in-browser (not in the wheel, only reachable via deep-link). Per-venue symbol/interval/URL/response mappings spot-checked correct; tf-gap aggregation (crAggregateCandlesForTf) correct. KEY FIX: loadCandles no longer silently substitutes Binance candles for a failed non-Binance venue (it used to relabel them "Binance · <venue> fallback" — so picking Kraken for an asset Kraken doesn't list showed Binance's book as Kraken's). Now a chosen non-Binance CEX with no market for the asset/tf shows a clearly-labeled "⚠ no <venue> market · seeded (NOT LIVE)" placeholder + a toast to switch broker/asset — never another exchange's data. Binance-chosen failures still fall through to the public Binance path (same venue). Read-only — no order/route/signing change. (Lower-pri notes in the audit doc: Coinbase quote USD≠USDT, Kraken 1M≈15d, GeckoTerminal tf approximations.)
+     CURRENT VERSION: v1.0.329
+     LAST UPDATED:    2026-06-18  ·  DEX accuracy — chosen AMM's pool or honest no-pool state (mirror of the CEX fix). crPickSolanaPool boosts the chosen DEX but falls back to the most-liquid pool on ANOTHER DEX, so picking Raydium for an Orca-only token rendered Orca's book labeled "Raydium fallback". Now crFetchSolanaTokenCandles throws crNoVenuePool when a specific AMM (Raydium/Orca/Meteora/PumpSwap) was chosen and no pool on it exists; loadCandles shows "⚠ no <dex> pool for this token · seeded (NOT LIVE)" + a toast to pick another DEX or Jupiter — never another DEX's pool as the chosen one's. Jupiter is exempt (aggregator/router, not an AMM with its own pools → most-liquid pool is a valid Jupiter route). Read-only — no order/route/signing change.
+     (v1.0.328 = DATA-ACCURACY AUDIT — chosen broker's OHLC or nothing (no silent cross-exchange swap). Audit (docs/qa/2026-06-18-data-accuracy-audit.md): live browser probe of all 9 venue adapters from chartrunner.xyz confirmed the 5 broker-wheel CEX venues (Binance/Bybit/OKX/Coinbase/Kraken) all return REAL, exchange-distinct OHLC; KuCoin/Gate.io/MEXC are CORS-blocked in-browser (not in the wheel, only reachable via deep-link). Per-venue symbol/interval/URL/response mappings spot-checked correct; tf-gap aggregation (crAggregateCandlesForTf) correct. KEY FIX: loadCandles no longer silently substitutes Binance candles for a failed non-Binance venue (it used to relabel them "Binance · <venue> fallback" — so picking Kraken for an asset Kraken doesn't list showed Binance's book as Kraken's). Now a chosen non-Binance CEX with no market for the asset/tf shows a clearly-labeled "⚠ no <venue> market · seeded (NOT LIVE)" placeholder + a toast to switch broker/asset — never another exchange's data. Binance-chosen failures still fall through to the public Binance path (same venue). Read-only — no order/route/signing change. (Lower-pri notes in the audit doc: Coinbase quote USD≠USDT, Kraken 1M≈15d, GeckoTerminal tf approximations.)
      (v1.0.327 = FIX "USDT/USDT · Seeded" nonsense + real data for non-Binance picks. Julian picked USDT from the top-100 → it became sym USDTUSDT (no such pair) → fell through to a SEEDED random walk that looked like real price (wandering $1.2–1.5, labelled USDT/USDT). Two fixes: (1) stablecoins (USDT/USDC/DAI/FDUSD/USDe/… — CR_CG_STABLES) are filtered out of crCgMarkets, so they no longer appear in the Configure Run picker OR the Token app top-500 (no more USDT/USDT). (2) New crFetchCgOhlc() pulls REAL CoinGecko /ohlc candles; loadCandles now tries it for any top-100 pick that isn't on Binance (after the CEX/Binance attempts, before the seeded last resort) so coins off Binance show truthful candles instead of a fake walk. crEnsureCexAsset + the picker rows now carry the CoinGecko id. Cache key bumped v1→v2 to drop stale cached stablecoins. Read-only market data — no order/route/signing change.
      (v1.0.326 = TOKEN → PAIR two-token chart (Release 2). Configure Run's "Token" header is now a clickable Token↔Pair toggle; in Pair mode the single paste field splits into two (TOKEN A ÷ TOKEN B), each accepting a Solana mint OR a CEX ticker (e.g. ETH ÷ BTC). Entering both builds a synthetic ratio ASSET (crEnsurePairAsset, id pair_*) and switchAsset()s to it. New loadCandles pair branch fetches both legs (_crFetchSideCandles → GeckoTerminal for mints, Binance for tickers), aligns them by timestamp (index-join fallback) and divides component-wise (O=Oa/Ob, H=Ha/Hb, L=La/Lb, C=Ca/Cb) into a TradingView-style A÷B ratio the runner plays on; on failure it falls back to a seeded series + notice. The deep-link URL sync skips pair assets (no addressable link). Read-only market data — no order/SDK/broker-route/signing/on-chain change.
      (v1.0.325 = Configure Run "More" list now ordered BY MARKET CAP (Julian: "list is not in right order"). v1.0.324 appended the CoinGecko top-100 AFTER the curated assets, so the list read curated-first then #3 USDT… Now, when the top-100 lands, the whole list is rebuilt in mcap-rank order: primaries (BTC/ETH/SOL) stay as quick-pick buttons and are skipped; each top-100 row sits at its true rank (curated tickers mapped to their real asset id so switchAsset reuses the entry); curated assets outside the top-100 (e.g. a pasted SOL token) append at the end. Token app ALL tab already sorts by mcap desc. No data/route/signing change.
@@ -13503,7 +13504,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.328",
+  VERSION: "1.0.329",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -24277,6 +24278,19 @@ async function crFetchSolanaTokenCandles(asset, tf, broker){
   const meta = crGeckoPoolMeta(poolsPayload, pool, ohlcvPayload, mint);
   meta.requestedDex = broker && broker.type === 'dex' ? broker.name : '';
   meta.matchedRequestedDex = crGeckoPoolMatchesDex(poolsPayload, pool, crBrokerDexTargets(broker));
+  // v1.0.329 — ACCURACY (mirror of the CEX fix): never show a DIFFERENT DEX's pool
+  // as the chosen one's. crPickSolanaPool boosts the chosen DEX but falls back to
+  // the most-liquid pool on ANOTHER DEX — so picking Raydium for an Orca-only token
+  // used to render Orca's book labeled "Raydium fallback". If a specific AMM was
+  // chosen and no pool on it exists, fail loudly so loadCandles can say so. Jupiter
+  // is exempt: it's an aggregator/router, not an AMM with its own pools, so the
+  // most-liquid pool legitimately represents a Jupiter route.
+  const _dexKey = crVenueKey(broker && broker.name);
+  if(broker && broker.type === 'dex' && _dexKey && _dexKey !== 'jupiter' && !meta.matchedRequestedDex){
+    const e = new Error('no-' + _dexKey + '-pool');
+    e.crNoVenuePool = true; e.dex = broker.name;
+    throw e;
+  }
   crApplySolanaMarketMeta(asset, meta, rows);
   return { candles:rows, meta, source:crSolanaSourceLabel(meta) };
 }
@@ -24350,9 +24364,16 @@ async function loadCandles(tf){
       crSetMarketSource(live.source || 'live · GeckoTerminal', live.meta && live.meta.dexName);
     }catch(err){
       console.warn('[Solana token] live chart fetch failed — seeded fallback', err);
+      try { if(window.crReport) crReport(err, 'dex/' + (broker.name || '?')); } catch(_){}
       candles = generateFallbackCandles(tf, 800);
-      const msg = err && err.message ? String(err.message).replace(/^gecko-/, '') : 'unavailable';
-      crSetMarketSource('custom Solana token · ' + (broker.name || 'DEX') + ' · ' + msg + ' · seeded', broker.name || 'DEX');
+      if(err && err.crNoVenuePool){
+        // Chosen AMM has no pool for this token — honest state, NOT another DEX's pool.
+        crSetMarketSource('⚠ no ' + (err.dex || broker.name || 'DEX') + ' pool for this token · seeded (NOT LIVE)', broker.name || 'DEX');
+        try { if(typeof toast === 'function') toast('No ' + (err.dex || broker.name) + ' pool for this token — choose another DEX (or Jupiter)'); } catch(_){}
+      } else {
+        const msg = err && err.message ? String(err.message).replace(/^gecko-/, '') : 'unavailable';
+        crSetMarketSource('custom Solana token · ' + (broker.name || 'DEX') + ' · ' + msg + ' · seeded', broker.name || 'DEX');
+      }
     }
     finalizeCandleLoad();
     return;
