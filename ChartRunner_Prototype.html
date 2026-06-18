@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.323
-     LAST UPDATED:    2026-06-18  ·  DEEP-LINK live URL sync — every chart now has its own address. Julian: "it gives me chartrunner.xyz/play when I run any chart." Root cause: the deep-link feature only READ the URL on boot, COPIED via the 🔗 button, and CLEANED on Home — nothing ever wrote the running chart back into the address bar, so a normal run left the URL at a bare /play (not refreshable / not copy-paste shareable). Fix: new crSyncChartUrl() pushes the canonical crChartLinkCurrent() (?symbol=VENUE:PAIR&tf=) into the address bar via replaceState — called from restart() (run start) and finalizeCandleLoad() (asset/tf switches mid-run). Guards: deep-links must be on; only while game.running (desktop stays a clean /play, and Home still strips per v1.0.321); skipped in a live room (keeps ?room=&host=&#m=), on any snapshot/map hash, and in campaign chapters. replaceState only — no history spam, no reload. So running BTC 1h → URL becomes …/play/?symbol=BINANCE:BTCUSDT&tf=1h, and a refresh reproduces it via the existing resolver. No order/SDK/signing/on-chain change.
+     CURRENT VERSION: v1.0.324
+     LAST UPDATED:    2026-06-18  ·  ASSET UNIVERSE — top-100 picker + top-500 Token app (CoinGecko by mcap). Three things (Julian): (1) Configure Run's "More" asset dropdown SHOWED but you couldn't pick anything — it was a position:fixed popup appended to document.body, which sits outside Configure Run's overlay-relayed window subtree so its clicks were swallowed. Rebuilt as an INLINE, same-width, fixed-height SCROLLABLE panel in normal flow right under the asset row (inside the relayed window → clicks land), with a search box. (2) That panel now lists the curated assets + the CoinGecko TOP 100 by market cap; picking a coin with no existing entry promotes it to a chartable Binance USDT pair via new crEnsureCexAsset() then switchAsset()s. (3) Token app ALL tab now shows the TOP 500 by market cap: new shared crCgMarkets() (CoinGecko /coins/markets, optional Demo key from localStorage.cr_coingecko_key, 6-min localStorage cache) feeds a lazy merge into TOK_LIST (curated defs stamped with real price/mcap; the rest pushed as cgtok_*), ALL sorts by mcap desc and caps at 500, and the per-row live-fetch now only fires for rows with a real Binance/Birdeye source so 500 rows don't spawn 500 doomed requests. Read-only market data only — no order/SDK/broker-route/signing/on-chain change. (Token→Pair two-token chart = next release.)
+     (v1.0.323 = DEEP-LINK live URL sync — every chart now has its own address. Julian: "it gives me chartrunner.xyz/play when I run any chart." Root cause: the deep-link feature only READ the URL on boot, COPIED via the 🔗 button, and CLEANED on Home — nothing ever wrote the running chart back into the address bar, so a normal run left the URL at a bare /play (not refreshable / not copy-paste shareable). Fix: new crSyncChartUrl() pushes the canonical crChartLinkCurrent() (?symbol=VENUE:PAIR&tf=) into the address bar via replaceState — called from restart() (run start) and finalizeCandleLoad() (asset/tf switches mid-run). Guards: deep-links must be on; only while game.running (desktop stays a clean /play, and Home still strips per v1.0.321); skipped in a live room (keeps ?room=&host=&#m=), on any snapshot/map hash, and in campaign chapters. replaceState only — no history spam, no reload. So running BTC 1h → URL becomes …/play/?symbol=BINANCE:BTCUSDT&tf=1h, and a refresh reproduces it via the existing resolver. No order/SDK/signing/on-chain change.
      (v1.0.322 = DEEP-LINK BOOT COVER — on-brand "RUNNING CHART…" animation (Julian's mock). Replaced the generic spinner with the game's own identity: the ChartRunner Space Invader avatar (rebuilt from drawInvader's exact 15×7 Solana-green grid as crisp SVG, static & centered with a soft pulsing glow) sitting ABOVE a scrolling candlestick chart (a deterministic random-walk of green/red candles + wicks, two identical SVG copies in a flex track scrolling left via translateX(-50%) for a seamless loop, edge-masked). Label now reads "Running chart…". Built synchronously by the same <body>-top boot script that raises the cover, so it's populated before first paint; reveal/safety-timer unchanged. No order/SDK/signing/on-chain change.
      (v1.0.321 = HOME from a deep-link chart routes back to the bare desktop URL. Clicking Home (#crBarFile) on a chart opened via a deep-link (?room/?symbol/?map/?mint/?sharedMap#m=) showed the desktop via showSplash() but LEFT the deep-link params in the address bar — so the URL didn't match the desktop and a refresh re-launched the chart. Fix: _doExit now calls _crHomeCleanUrl() which strips query+hash via history.replaceState (no reload — desktop is already up) so Home lands on a clean chartrunner.xyz/play; and if a live room was active it now tears the presence link down (new crRoom.leave(): nulls params so the reconnect guard trips, stops pos/builds timers, detaches handlers, closes the socket, clears peers) so co-presence doesn't linger on the desktop. No order/SDK/signing/on-chain change.
      (v1.0.320 = DEEP-LINK BOOT COVER — land directly on the chart. Julian's recording showed an opened room/share link flashing through the #crBoot login splash → OS desktop → a chart reload before finally landing on the right frame. Root cause: the chart-load for room/snapshot/symbol links is DEFERRED to after boot (setTimeout + retry while chart deps warm up), so the login gate and desktop paint first and the chart visibly re-renders last. Fix: a synchronous opaque "Loading chart…" cover (#crDlCover, z-index 100060, above #crBoot) that an inline <body>-top script raises the instant a chart-bound link is detected (?room always; ?sharedMap/?symbol/?map/?mint when deep-links enabled) — BEFORE the splash/desktop ever paint — and that fades out only once the chart is actually up (wired into the snapshot-importer success branch + crApplyDeepLink's _crDlEnterRun + the bare-map branch, each after a 450ms paint settle). A 14s safety timer reveals unconditionally so the cover can never strand a user. Net: invitee sees a clean loading spinner → the chart, no connect-page/desktop/reload flashes. No order/SDK/signing/on-chain change.
@@ -13483,7 +13484,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.323",
+  VERSION: "1.0.324",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -23319,6 +23320,61 @@ try {
 } catch(_){}
 let currentAsset = 'btc';
 function currentAssetObj(){ return ASSETS.find(a=>a.id===currentAsset) || ASSETS[0]; }
+
+/* ── CoinGecko market-cap list (v1.0.324) ────────────────────────────────────
+   Shared by the Configure Run "More" top-100 asset picker AND the Token app's
+   top-500 "All" tab. Public CoinGecko API (no key required); an optional Demo
+   key in localStorage.cr_coingecko_key is sent as x-cg-demo-api-key to lift the
+   rate limit. Results cached in localStorage (6-min TTL, up to 500 rows) so
+   reopening the picker/app doesn't re-hit the limit. Returns rows ranked by
+   market cap desc: {cgId,sym,name,price,mcap,rank,ch24,img}. Never throws —
+   returns the cache (or []) on failure. */
+const CR_CG_BASE = 'https://api.coingecko.com/api/v3';
+const CR_CG_CACHE_KEY = 'cr_cg_markets_v1';
+function crCgHeaders(){ try { var k = localStorage.getItem('cr_coingecko_key') || ''; return k ? { 'x-cg-demo-api-key': k } : {}; } catch(_){ return {}; } }
+function _crCgCacheRead(limit){ try { var c = JSON.parse(localStorage.getItem(CR_CG_CACHE_KEY) || 'null'); if(c && Array.isArray(c.rows)) return c.rows.slice(0, limit); } catch(_){} return null; }
+async function crCgMarkets(limit){
+  limit = Math.max(1, Math.min(1000, (limit | 0) || 100));
+  try {
+    var fresh = JSON.parse(localStorage.getItem(CR_CG_CACHE_KEY) || 'null');
+    if(fresh && Array.isArray(fresh.rows) && fresh.rows.length >= limit && (Date.now() - fresh.ts) < 6 * 60 * 1000) return fresh.rows.slice(0, limit);
+  } catch(_){}
+  var perPage = 250, pages = Math.ceil(limit / perPage), rows = [];
+  try {
+    for(var p = 1; p <= pages; p++){
+      var url = CR_CG_BASE + '/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=' + perPage + '&page=' + p + '&price_change_percentage=24h';
+      var resp = await fetch(url, { headers: crCgHeaders() });
+      if(!resp.ok) throw new Error('cg-http-' + resp.status);
+      var arr = await resp.json();
+      if(!Array.isArray(arr) || !arr.length) break;
+      arr.forEach(function(c){ rows.push({ cgId:c.id, sym:String(c.symbol || '').toUpperCase(), name:c.name || c.symbol, price:c.current_price || 0, mcap:c.market_cap || 0, rank:c.market_cap_rank || (rows.length + 1), ch24:(c.price_change_percentage_24h || 0), img:c.image || '' }); });
+    }
+  } catch(e){
+    try { if(window.crReport) crReport(e, 'coingecko/markets'); } catch(_){}
+    return _crCgCacheRead(limit) || [];
+  }
+  if(rows.length){ try { localStorage.setItem(CR_CG_CACHE_KEY, JSON.stringify({ ts:Date.now(), rows: rows.slice(0, 500) })); } catch(_){} }
+  return rows.slice(0, limit);
+}
+window.crCgMarkets = crCgMarkets;
+
+/* Promote a CoinGecko ticker to a chartable CEX asset (Binance USDT pair) so the
+   top-100 picker can switchAsset() to any coin — the CEX mirror of
+   crEnsureCustomSolanaToken. crCexSymbolParts derives base/quote from `sym`; if a
+   venue lacks the pair, loadCandles falls back (seeded series + notice) so there's
+   never a dead chart. */
+function crEnsureCexAsset(ticker, name, seedPrice){
+  ticker = String(ticker || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if(!ticker) return null;
+  var id = 'cg_' + ticker.toLowerCase();
+  var asset = ASSETS.find(function(a){ return a.id === id; });
+  if(!asset){
+    asset = { id:id, nm:ticker, sym:ticker + 'USDT', label:ticker + '/USDT', seed:(seedPrice > 0 ? seedPrice : 1) };
+    ASSETS.push(asset);
+  } else if(seedPrice > 0){ asset.seed = seedPrice; }
+  return asset;
+}
+window.crEnsureCexAsset = crEnsureCexAsset;
 
 const CR_GECKO_BASE = 'https://api.geckoterminal.com/api/v2';
 const CR_GECKO_ACCEPT = 'application/json;version=20230203';
@@ -52436,6 +52492,10 @@ function _tokSnapshot(id){
       }
     }
   } catch(_){}
+  // v1.0.324 — CoinGecko top-500 row: use its real market data directly (these
+  // tokens have no Binance pair/Birdeye mint in our maps, so without this they'd
+  // fall through to synth). livePx is consumed before the synth fallback below.
+  if(def.cg && typeof def.cgPx === 'number' && def.cgPx > 0) livePx = def.cgPx;
   // Synth values seeded so the same token always shows the same profile.
   // v0.9.14 — Price preference order:
   //   1. Pyth Hermes snapshot (verifiable, ~400ms cadence)  ← NEW
@@ -52458,7 +52518,7 @@ function _tokSnapshot(id){
                  : (live && !isNaN(live.px)) ? live.px
                  : (livePx != null ? livePx
                  : ((_hasBin || _hasBird || _hasPyth) ? null : (rng() * 1000 + 0.001)));
-  const ch24     = (live && !isNaN(live.ch24)) ? live.ch24 : ((rng() - 0.4) * 60);
+  const ch24     = (live && !isNaN(live.ch24)) ? live.ch24 : ((def.cg && typeof def.cgCh === 'number') ? def.cgCh : ((rng() - 0.4) * 60));
   // v1.0.61 — 7d change from extended klines when Binance returned them.
   // Klines are stored at index 0 (oldest) → end (newest); we use the
   // first vs last close of the cached window. Fallback to synth when
@@ -52479,7 +52539,7 @@ function _tokSnapshot(id){
   const _liveSupply  = (live && typeof live.supply === 'number') ? live.supply : null;
   const _liveTop10   = (live && typeof live.top10pct === 'number') ? live.top10pct : null;
   const liq      = (_liveLiq != null) ? _liveLiq : Math.floor(rng() * 250e6 + 5e5);
-  const mc       = (_liveMc  != null) ? _liveMc  : Math.floor(rng() * 80e9 + 1e6);
+  const mc       = (_liveMc  != null) ? _liveMc  : ((def.cg && typeof def.cgMc === 'number' && def.cgMc > 0) ? def.cgMc : Math.floor(rng() * 80e9 + 1e6));
   // FDV: if Birdeye gave us mc + supply, derive FDV exactly. Otherwise synth.
   const fdv      = (_liveMc != null && _liveSupply != null && _liveSupply > 0 && px > 0)
                    ? _liveSupply * px
@@ -52579,8 +52639,42 @@ function _tokCategorize(snaps, tab){
     return sorted.filter(s => wl.has(s.def.id))
                  .sort((a, b) => a.def.tag.localeCompare(b.def.tag));
   }
-  else                         sorted.sort((a, b) => a.def.tag.localeCompare(b.def.tag));
+  else {
+    // v1.0.324 — ALL = top 500 by market cap (CoinGecko). Until the live list
+    // lands it falls back to the curated alphabetical order.
+    if(window._tokCgLoaded) sorted.sort((a, b) => (b.mc || 0) - (a.mc || 0));
+    else sorted.sort((a, b) => a.def.tag.localeCompare(b.def.tag));
+    return sorted.slice(0, 500);
+  }
   return sorted;
+}
+// v1.0.324 — Merge CoinGecko top-500 (by market cap) into TOK_LIST so the ALL
+// tab shows the real top-500. Existing curated defs (BTC/ETH/SOL/…) get stamped
+// with real cg price/change/mcap (so they sort correctly); the rest are pushed
+// as cgtok_* defs. Idempotent + lazy (only when the ALL tab is opened).
+let _tokCgLoaded = false, _tokCgLoading = false;
+function _tokMergeCgTop(rows){
+  if(!Array.isArray(rows) || !rows.length) return;
+  const byTag = {};
+  TOK_LIST.forEach(d => { byTag[String(d.tag).toUpperCase()] = d; });
+  rows.forEach(r => {
+    const tag = String(r.sym || '').toUpperCase();
+    if(!tag) return;
+    let d = byTag[tag];
+    if(d){ d.cg = true; d.cgPx = r.price; d.cgCh = r.ch24; d.cgMc = r.mcap; d.cgRank = r.rank; }
+    else {
+      d = { id:'cgtok_' + tag.toLowerCase(), nm:r.name || tag, tag:tag, chain:'cex', seed:(r.rank * 7 + 13),
+            cg:true, cgPx:r.price, cgCh:r.ch24, cgMc:r.mcap, cgRank:r.rank };
+      byTag[tag] = d; TOK_LIST.push(d);
+    }
+  });
+  window._tokCgLoaded = _tokCgLoaded = true;
+}
+function _tokEnsureCgTop(){
+  if(_tokCgLoaded || _tokCgLoading) return;
+  _tokCgLoading = true;
+  crCgMarkets(500).then(rows => { _tokMergeCgTop(rows); _tokCgLoading = false; try { _tokRenderList(); } catch(_){} })
+                  .catch(() => { _tokCgLoading = false; });
 }
 // State. v0.9.43 — added per-coin timeframe + live cache.
 const _TOK_TFS = ['15m','1h','4h','1d','1w'];
@@ -53095,6 +53189,8 @@ function _tokRenderList(){
   const host = document.getElementById('crTokList');
   const cnt  = document.getElementById('crTokCount');
   if(!host) return;
+  // v1.0.324 — ALL tab pulls the live top-500 by market cap (lazy, cached).
+  if(_tokState.activeTab === 'all'){ try { _tokEnsureCgTop(); } catch(_){} }
   const filter = (_tokState.filter || '').toLowerCase().trim();
   // v1.0.67 — Hide tokens marked archived in TOK_LIST. These were
   // showing "—" forever because they have no Binance pair and no
@@ -53123,7 +53219,12 @@ function _tokRenderList(){
   // Stagger requests 80ms apart so the rate-limit hit is spread out
   // across Binance / Birdeye instead of a single bulk burst. Cached
   // fetches return immediately (see _TOK_LIVE_TTL_MS).
+  // v1.0.324 — only fetch live for rows backed by a real source (Binance pair /
+  // Birdeye mint). CoinGecko top-500 rows already carry price/change, so this
+  // avoids firing hundreds of doomed requests when the ALL list is 500 long.
   snaps.forEach((s, i) => {
+    const hasReal = !!TOK_BINANCE_PAIR[s.def.id] || (typeof TOK_BIRDEYE_MINT !== 'undefined' && !!TOK_BIRDEYE_MINT[s.def.id]);
+    if(!hasReal) return;
     setTimeout(() => {
       try { _tokFetchLive(s.def.id, _tokTF(s.def.id)); } catch(_){}
     }, i * 80);
@@ -57871,6 +57972,13 @@ function osRenderAssetBox(hostId){
   moreBtn.textContent = (activeOther ? activeOther.nm : 'More') + ' ▾';
   moreBtn.style.cssText = 'border:0;background:transparent;color:' + (!isPrimary ? 'var(--fg)' : 'var(--dim)') + ';padding:6px 9px;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.4px;font-family:inherit';
   if(!isPrimary) moreBtn.style.background = '#121a30';
+  // v1.0.324 — INLINE scrollable top-100 picker. The old "More" popup was
+  // position:fixed + appended to document.body, which sits OUTSIDE Configure
+  // Run's overlay-relayed window subtree, so its clicks were swallowed (Julian:
+  // "More shows but I can't choose"). The panel now lives in normal flow right
+  // below the asset row (inside the relayed window → clicks land), is the same
+  // width, fixed-height + scrollable, and lists the curated assets followed by
+  // the CoinGecko top-100 by market cap (deduped). A filter box narrows 100 rows.
   let pop = null;
   const closePop = () => {
     if(pop && pop.parentNode){ pop.parentNode.removeChild(pop); }
@@ -57881,52 +57989,63 @@ function osRenderAssetBox(hostId){
     if(!pop) return;
     if(!pop.contains(ev.target) && ev.target !== moreBtn) closePop();
   }
+  const pickAsset = (id) => { try { switchAsset(id); } catch(_){} closePop(); try { osRenderAssetBox(hostId); } catch(_){} };
   moreBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if(pop){ closePop(); return; }
-    const r = moreBtn.getBoundingClientRect();
     pop = document.createElement('div');
     pop.className = 'os-more-pop';
-    pop.style.cssText = [
-      'position:fixed',
-      'left:' + Math.round(r.left) + 'px',
-      'top:'  + Math.round(r.bottom + 4) + 'px',
-      'min-width:' + Math.max(120, Math.round(r.width)) + 'px',
-      'z-index:9999',
-      'background:linear-gradient(180deg,rgba(18,26,48,.98),rgba(10,15,28,.99))',
-      'border:1px solid var(--line)',
-      'border-radius:8px',
-      'box-shadow:0 12px 28px rgba(0,0,0,0.6)',
-      'padding:4px',
-      'display:flex',
-      'flex-direction:column',
-      'gap:2px',
-      'font:11px ui-monospace,Menlo,monospace',
-      'color:var(--fg)',
-      'max-height:60vh',
-      'overflow-y:auto'
-    ].join(';');
-    others.forEach(a => {
+    pop.style.cssText = 'width:100%;margin-top:6px;background:linear-gradient(180deg,rgba(18,26,48,.98),rgba(10,15,28,.99));border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 28px rgba(0,0,0,0.5);padding:6px;font:11px ui-monospace,Menlo,monospace;color:var(--fg)';
+    const search = document.createElement('input');
+    search.type = 'text'; search.placeholder = 'Search top 100…';
+    search.style.cssText = 'width:100%;box-sizing:border-box;background:rgba(10,15,28,.85);border:1px solid var(--line);border-radius:6px;color:var(--fg);font:inherit;padding:6px 8px;margin-bottom:6px;outline:none';
+    const list = document.createElement('div');
+    list.style.cssText = 'max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:2px';
+    pop.appendChild(search); pop.appendChild(list);
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+    // dedupe key = uppercase ticker
+    const seen = {};
+    const items = [];
+    others.forEach(a => { const k = String(a.nm).toUpperCase(); if(!seen[k]){ seen[k] = 1; items.push({ id:a.id, sym:a.nm, name:a.label || a.nm, rank:0 }); } });
+    ASSETS.filter(a => PRIMARY.has(a.id)).forEach(a => { seen[String(a.nm).toUpperCase()] = 1; });
+    const makeRow = (it) => {
+      const isActive = it.id && it.id === currentAsset;
       const row = document.createElement('button');
       row.type = 'button';
-      const isActive = a.id === currentAsset;
-      row.style.cssText = 'background:' + (isActive ? 'rgba(61,220,151,0.15)' : 'transparent')
-        + ';border:1px solid ' + (isActive ? 'rgba(61,220,151,0.5)' : 'transparent')
-        + ';color:' + (isActive ? '#bff7df' : 'var(--fg)')
-        + ';padding:6px 12px;border-radius:5px;cursor:pointer;text-align:left;font:inherit;'
-        + 'letter-spacing:.4px;font-weight:700';
-      row.textContent = (isActive ? '✓ ' : '   ') + a.nm;
+      row.style.cssText = 'background:' + (isActive ? 'rgba(61,220,151,0.15)' : 'transparent') + ';border:1px solid ' + (isActive ? 'rgba(61,220,151,0.5)' : 'transparent') + ';color:' + (isActive ? '#bff7df' : 'var(--fg)') + ';padding:6px 10px;border-radius:5px;cursor:pointer;text-align:left;font:inherit;letter-spacing:.3px;font-weight:700;display:flex;gap:8px;align-items:baseline';
+      const rk = it.rank ? ('<span style="color:var(--dim);min-width:26px;display:inline-block">#' + it.rank + '</span>') : '<span style="min-width:26px;display:inline-block"></span>';
+      row.innerHTML = rk + '<span style="min-width:54px;display:inline-block">' + (isActive ? '✓ ' : '') + esc(it.sym) + '</span><span style="color:var(--dim);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(it.name || '') + '</span>';
       row.onmouseenter = () => { if(!isActive) row.style.background = 'rgba(155,140,255,0.15)'; };
       row.onmouseleave = () => { if(!isActive) row.style.background = 'transparent'; };
       row.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        switchAsset(a.id);
-        closePop();
+        if(it.id) pickAsset(it.id);
+        else { const as = crEnsureCexAsset(it.sym, it.name, it.price); if(as) pickAsset(as.id); }
       });
-      pop.appendChild(row);
-    });
-    document.body.appendChild(pop);
-    setTimeout(() => document.addEventListener('mousedown', onOutside, true), 0);
+      return row;
+    };
+    const renderRows = () => {
+      const f = (search.value || '').toLowerCase().trim();
+      list.innerHTML = '';
+      const shown = items.filter(it => !f || String(it.sym).toLowerCase().includes(f) || String(it.name).toLowerCase().includes(f));
+      if(!shown.length){ const e = document.createElement('div'); e.style.cssText = 'color:var(--dim);padding:8px 10px'; e.textContent = 'No match'; list.appendChild(e); return; }
+      shown.forEach(it => list.appendChild(makeRow(it)));
+    };
+    search.addEventListener('input', renderRows);
+    search.addEventListener('mousedown', (ev) => ev.stopPropagation());
+    renderRows();
+    // async: fold in the CoinGecko top-100 (deduped against curated)
+    const loadingRow = document.createElement('div');
+    loadingRow.style.cssText = 'color:var(--dim);padding:6px 10px';
+    loadingRow.textContent = '↧ loading top 100 by market cap…';
+    list.appendChild(loadingRow);
+    crCgMarkets(100).then(rows => {
+      (rows || []).forEach(r => { const k = String(r.sym).toUpperCase(); if(k && !seen[k]){ seen[k] = 1; items.push({ id:null, sym:r.sym, name:r.name, price:r.price, rank:r.rank }); } });
+      if(pop) renderRows();
+    }).catch(() => { if(loadingRow.parentNode) loadingRow.textContent = '⚠ top-100 list unavailable (offline)'; });
+    // inline, in normal flow, inside the relayed window → clicks register
+    host.parentNode.insertBefore(pop, host.nextSibling);
+    setTimeout(() => { document.addEventListener('mousedown', onOutside, true); try { search.focus(); } catch(_){} }, 0);
   });
   host.appendChild(moreBtn);
 }
