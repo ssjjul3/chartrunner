@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.329
-     LAST UPDATED:    2026-06-18  ·  DEX accuracy — chosen AMM's pool or honest no-pool state (mirror of the CEX fix). crPickSolanaPool boosts the chosen DEX but falls back to the most-liquid pool on ANOTHER DEX, so picking Raydium for an Orca-only token rendered Orca's book labeled "Raydium fallback". Now crFetchSolanaTokenCandles throws crNoVenuePool when a specific AMM (Raydium/Orca/Meteora/PumpSwap) was chosen and no pool on it exists; loadCandles shows "⚠ no <dex> pool for this token · seeded (NOT LIVE)" + a toast to pick another DEX or Jupiter — never another DEX's pool as the chosen one's. Jupiter is exempt (aggregator/router, not an AMM with its own pools → most-liquid pool is a valid Jupiter route). Read-only — no order/route/signing change.
+     CURRENT VERSION: v1.0.330
+     LAST UPDATED:    2026-06-19  ·  NEW Terminal widget — SolanaTracker "Trending Pools" (solGtTrending). High-value on-chain data: GeckoTerminal /networks/solana/trending_pools (live Solana DEX momentum) — symbol · DEX · pool age · price · 24h% · liquidity, top-N. NO KEY required (unlike the Birdeye-gated solTrending), so it works for every user, and obeys the data-accuracy rule (LIVE tag on success, rate-limited/no-data/offline on failure — never synth). Clicking a row opens that token's DEX chart (crEnsureCustomSolanaToken → switchAsset, one-time delegated click handler). Wired through the standard pane framework (provider registry + REFRESHERS 120s + pane schema + data-source catalog + CR_DESKTOP_MARKET_PANE_IDS) and added live to the SolanaTracker view. Read-only market data — no order/route/signing change.
+     (v1.0.329 = DEX accuracy — chosen AMM's pool or honest no-pool state (mirror of the CEX fix). crPickSolanaPool boosts the chosen DEX but falls back to the most-liquid pool on ANOTHER DEX, so picking Raydium for an Orca-only token rendered Orca's book labeled "Raydium fallback". Now crFetchSolanaTokenCandles throws crNoVenuePool when a specific AMM (Raydium/Orca/Meteora/PumpSwap) was chosen and no pool on it exists; loadCandles shows "⚠ no <dex> pool for this token · seeded (NOT LIVE)" + a toast to pick another DEX or Jupiter — never another DEX's pool as the chosen one's. Jupiter is exempt (aggregator/router, not an AMM with its own pools → most-liquid pool is a valid Jupiter route). Read-only — no order/route/signing change.
      (v1.0.328 = DATA-ACCURACY AUDIT — chosen broker's OHLC or nothing (no silent cross-exchange swap). Audit (docs/qa/2026-06-18-data-accuracy-audit.md): live browser probe of all 9 venue adapters from chartrunner.xyz confirmed the 5 broker-wheel CEX venues (Binance/Bybit/OKX/Coinbase/Kraken) all return REAL, exchange-distinct OHLC; KuCoin/Gate.io/MEXC are CORS-blocked in-browser (not in the wheel, only reachable via deep-link). Per-venue symbol/interval/URL/response mappings spot-checked correct; tf-gap aggregation (crAggregateCandlesForTf) correct. KEY FIX: loadCandles no longer silently substitutes Binance candles for a failed non-Binance venue (it used to relabel them "Binance · <venue> fallback" — so picking Kraken for an asset Kraken doesn't list showed Binance's book as Kraken's). Now a chosen non-Binance CEX with no market for the asset/tf shows a clearly-labeled "⚠ no <venue> market · seeded (NOT LIVE)" placeholder + a toast to switch broker/asset — never another exchange's data. Binance-chosen failures still fall through to the public Binance path (same venue). Read-only — no order/route/signing change. (Lower-pri notes in the audit doc: Coinbase quote USD≠USDT, Kraken 1M≈15d, GeckoTerminal tf approximations.)
      (v1.0.327 = FIX "USDT/USDT · Seeded" nonsense + real data for non-Binance picks. Julian picked USDT from the top-100 → it became sym USDTUSDT (no such pair) → fell through to a SEEDED random walk that looked like real price (wandering $1.2–1.5, labelled USDT/USDT). Two fixes: (1) stablecoins (USDT/USDC/DAI/FDUSD/USDe/… — CR_CG_STABLES) are filtered out of crCgMarkets, so they no longer appear in the Configure Run picker OR the Token app top-500 (no more USDT/USDT). (2) New crFetchCgOhlc() pulls REAL CoinGecko /ohlc candles; loadCandles now tries it for any top-100 pick that isn't on Binance (after the CEX/Binance attempts, before the seeded last resort) so coins off Binance show truthful candles instead of a fake walk. crEnsureCexAsset + the picker rows now carry the CoinGecko id. Cache key bumped v1→v2 to drop stale cached stablecoins. Read-only market data — no order/route/signing change.
      (v1.0.326 = TOKEN → PAIR two-token chart (Release 2). Configure Run's "Token" header is now a clickable Token↔Pair toggle; in Pair mode the single paste field splits into two (TOKEN A ÷ TOKEN B), each accepting a Solana mint OR a CEX ticker (e.g. ETH ÷ BTC). Entering both builds a synthetic ratio ASSET (crEnsurePairAsset, id pair_*) and switchAsset()s to it. New loadCandles pair branch fetches both legs (_crFetchSideCandles → GeckoTerminal for mints, Binance for tickers), aligns them by timestamp (index-join fallback) and divides component-wise (O=Oa/Ob, H=Ha/Hb, L=La/Lb, C=Ca/Cb) into a TradingView-style A÷B ratio the runner plays on; on failure it falls back to a seeded series + notice. The deep-link URL sync skips pair assets (no addressable link). Read-only market data — no order/SDK/broker-route/signing/on-chain change.
@@ -12142,6 +12143,10 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
             <div class="crTerm-hgrid">
               <!-- LEFT COL: SOL Price + Top Tokens + DEX Volume -->
               <div class="crTerm-col">
+                <div class="crTerm-pane crTerm-hpane" data-pane-id="solGtTrending">
+                  <div class="crTerm-paneHd"><span>◆ Trending Pools</span><span class="hd-tag">GeckoTerminal · live</span></div>
+                  <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">loading on-chain trending pools…</div></div>
+                </div>
                 <div class="crTerm-pane crTerm-hpane">
                   <div class="crTerm-paneHd"><span>◆ SOL · USDC</span><span class="hd-tag">spot · 1h</span></div>
                   <div class="crTerm-paneBd">
@@ -13504,7 +13509,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.329",
+  VERSION: "1.0.330",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -50524,6 +50529,7 @@ function _crTermPickerDocsHtml(){
     + '<tr><td class="id">solPrice</td><td class="src">Birdeye <code>/defi/token_overview</code></td><td class="cad">30 s</td></tr>'
     + '<tr><td class="id">solTopTokens</td><td class="src">Birdeye <code>/defi/tokenlist</code></td><td class="cad">60 s</td></tr>'
     + '<tr><td class="id">solTrending</td><td class="src">Birdeye <code>/defi/token_trending</code></td><td class="cad">120 s</td></tr>'
+    + '<tr><td class="id">solGtTrending</td><td class="src">GeckoTerminal <code>/networks/solana/trending_pools</code></td><td class="cad">120 s</td></tr>'
     + '<tr><td class="id">solHolders</td><td class="src">GoldRush <code>tokenHolders</code></td><td class="cad">90 s</td></tr>'
     + '<tr><td class="id">solSmart</td><td class="src">GoldRush <code>walletTxs</code> (per pasted wallet)</td><td class="cad">180 s</td></tr>'
     + '<tr><td class="id">solSniper</td><td class="src">solPumpfun cache × GoldRush holders</td><td class="cad">180 s</td></tr>'
@@ -50633,7 +50639,7 @@ const CR_CHART_RUN_PANE_IDS = new Set([
 ]);
 const CR_DESKTOP_MARKET_PANE_IDS = new Set([
   'cexAgg','cexExchanges','cexStables','cexFunding','cexOI','cexWhales','cexListings','cexDepth','cexDexFlow',
-  'solPrice','solTopTokens','solDexVolume','solPumpfun','solSmart','solSwaps','solTrending','solHolders','solSniper',
+  'solPrice','solTopTokens','solDexVolume','solPumpfun','solSmart','solSwaps','solTrending','solGtTrending','solHolders','solSniper',
   'phxWhales','phxFunding','phxOI','phxBook','phxFlight','phxStatus',
   'coinWatchlist','walletWatchlist',
 ]);
@@ -50645,6 +50651,7 @@ const CR_TERMINAL_PRIVATE_OPS_PANES = {
   solPrice:     { provider:'Birdeye',    need:'Birdeye key or verified data bridge' },
   solTopTokens: { provider:'Birdeye',    need:'Birdeye key or verified data bridge' },
   solTrending:  { provider:'Birdeye',    need:'Birdeye key or verified data bridge' },
+  solGtTrending:{ provider:'GeckoTerminal', need:'public GeckoTerminal trending reachable', onFailure:true },
   solHolders:   { provider:'GoldRush',   need:'GoldRush key or verified data bridge' },
   solSmart:     { provider:'GoldRush',   need:'GoldRush key or verified data bridge' },
   phxWhales:    { provider:'GoldRush',   need:'GoldRush key or verified data bridge' },
@@ -52063,6 +52070,14 @@ const _CR_PANE_SCHEMAS = {
     fields: [
       { type:'note', text:'LIVE — pulls Birdeye /defi/token_trending. Sorted by trending rank.' },
       { type:'slider', key:'window', label:'Window', min:1, max:24, step:1, unit:'h', default:1 },
+      { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 },
+    ],
+  },
+  'pane:solGtTrending': {
+    icon: '◆', title: 'Trending Pools', sub: 'Solana · GeckoTerminal (no key).',
+    fields: [
+      { type:'note', text:'LIVE — GeckoTerminal /networks/solana/trending_pools (on-chain DEX momentum). Click a row to open that token’s chart.' },
+      { type:'slider', key:'rows', label:'Rows', min:5, max:20, step:1, default:10 },
       { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 },
     ],
   },
@@ -76845,6 +76860,71 @@ window.crGoldRush = (function(){
     }
   }
 
+  // 2b. solGtTrending — GeckoTerminal Solana trending POOLS (on-chain DEX
+  // momentum). No key needed (unlike Birdeye solTrending) → works for everyone.
+  // Rows show symbol · DEX · age · price · 24h% · liquidity, and clicking a row
+  // opens that token's DEX chart (crEnsureCustomSolanaToken → switchAsset). v1.0.330.
+  async function refreshSolGtTrending(){
+    if(!_bodiesOf('solGtTrending').length) return;
+    const cfg = _getConfigFor('solGtTrending');
+    const rows = cfg.rows || 10;
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+    try {
+      const r = await fetch('https://api.geckoterminal.com/api/v2/networks/solana/trending_pools?include=base_token,dex&page=1', { headers: (typeof crGeckoHeaders === 'function' ? crGeckoHeaders() : { 'Accept':'application/json' }) });
+      if(!r.ok){ _setHdTag('solGtTrending','rate-limited','warn'); return; }
+      const j = await r.json();
+      const data = (j && Array.isArray(j.data)) ? j.data : [];
+      const inc  = (j && Array.isArray(j.included)) ? j.included : [];
+      if(!data.length){ _setHdTag('solGtTrending','no data','warn'); return; }
+      const byId = {}; inc.forEach(x => { byId[x.type + ':' + x.id] = x; });
+      const now = Date.now();
+      const html = '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
+        + data.slice(0, rows).map(p => {
+            const a = p.attributes || {};
+            const rel = p.relationships || {};
+            const bRel = rel.base_token && rel.base_token.data;
+            const dRel = rel.dex && rel.dex.data;
+            const base = bRel ? byId[bRel.type + ':' + bRel.id] : null;
+            const dex  = dRel ? byId[dRel.type + ':' + dRel.id] : null;
+            const sym  = (base && base.attributes && base.attributes.symbol) || String(a.name || '?').split(' / ')[0];
+            const mint = (base && base.attributes && base.attributes.address) || '';
+            const dexName = (dex && dex.attributes && dex.attributes.name) || '';
+            const ch  = (a.price_change_percentage && a.price_change_percentage.h24 != null) ? parseFloat(a.price_change_percentage.h24) : null;
+            const col = ch == null ? 'var(--dim)' : (ch >= 0 ? '#14f195' : '#ff5b7f');
+            const px  = (a.base_token_price_usd != null) ? _fmtUsd(parseFloat(a.base_token_price_usd)) : '—';
+            const liq = (a.reserve_in_usd != null) ? _fmtUsd(parseFloat(a.reserve_in_usd)) : '—';
+            const ageH = a.pool_created_at ? Math.max(0, Math.round((now - Date.parse(a.pool_created_at)) / 3600000)) : null;
+            const age = ageH == null ? '' : (ageH < 24 ? ageH + 'h' : Math.round(ageH / 24) + 'd');
+            const clk = (mint && typeof crIsSolanaMintAddress === 'function' && crIsSolanaMintAddress(mint))
+              ? (' data-cr-gt-mint="' + mint + '" data-cr-gt-sym="' + esc(sym) + '" style="cursor:pointer" title="Open ' + esc(sym) + ' chart"') : '';
+            return '<div class="crGtRow"' + clk + ' style="display:flex;justify-content:space-between;gap:6px">'
+              + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>' + esc(sym) + '</b> <span style="color:var(--dim)">' + esc(dexName) + (age ? (' · ' + age) : '') + '</span></span>'
+              + '<span class="r" style="white-space:nowrap"><b>' + px + '</b> <span style="color:' + col + '">' + (ch == null ? '—' : ((ch >= 0 ? '+' : '') + ch.toFixed(1) + '%')) + '</span> <span style="color:var(--dim)">L ' + liq + '</span></span>'
+              + '</div>';
+          }).join('')
+        + '</div>';
+      _setBody('solGtTrending', html);
+      _setHdTag('solGtTrending', data.length + ' pools · LIVE', 'live');
+    } catch(err){ try { if(window.crReport) crReport(err, 'gecko/trending'); } catch(_){} _setHdTag('solGtTrending','offline','warn'); }
+  }
+  // One-time delegated click → launch the clicked pool's token chart.
+  if(!window._crGtClickWired){
+    window._crGtClickWired = true;
+    document.addEventListener('click', function(ev){
+      try {
+        const row = ev.target && ev.target.closest && ev.target.closest('[data-cr-gt-mint]');
+        if(!row) return;
+        const mint = row.getAttribute('data-cr-gt-mint'); if(!mint) return;
+        const as = (typeof crEnsureCustomSolanaToken === 'function') ? crEnsureCustomSolanaToken(mint) : null;
+        if(!as) return;
+        try { game.broker = { type:'dex', name:'Jupiter' }; localStorage.setItem('cr_broker_v1', JSON.stringify({ type:'dex', name:'Jupiter' })); } catch(_){}
+        try { if(typeof renderAssetOptions === 'function') renderAssetOptions(document.getElementById('assetSel')); } catch(_){}
+        try { if(typeof switchAsset === 'function') switchAsset(as.id); } catch(_){}
+        try { if(typeof toast === 'function') toast('Chart: ' + (row.getAttribute('data-cr-gt-sym') || (typeof crShortMint === 'function' ? crShortMint(mint) : 'token'))); } catch(_){}
+      } catch(_){}
+    }, true);
+  }
+
   // 3. solDexVolume — DefiLlama Solana overview.
   async function refreshSolDexVolume(){
     if(!_bodiesOf('solDexVolume').length) return;
@@ -77530,6 +77610,7 @@ window.crGoldRush = (function(){
     // v1.0.68 — 15 new live wirings.
     solTopTokens: { fn: refreshSolTopTokens, default: 60  },
     solTrending:  { fn: refreshSolTrending,  default: 120 },
+    solGtTrending:{ fn: refreshSolGtTrending, default: 120 },
     solDexVolume: { fn: refreshSolDexVolume, default: 180 },
     solPumpfun:   { fn: refreshSolPumpfun,   default: 30  },
     solSwaps:     { fn: refreshSolSwaps,     default: 10  },
