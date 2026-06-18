@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.331
-     LAST UPDATED:    2026-06-19  ·  5 NEW market-overview Terminal widgets (all live, no key, honest-offline on failure). ENGINE: Market Regime dial (mktRegime — CoinGecko /global mcap-trend + BTC dominance → risk-on/neutral/risk-off gauge); Market Heatmap (mktHeatmap — top coins tiled + colored by 24h%). CEXTRACKER: Cross-Venue Spread (cexSpread — BTC last price across Binance/OKX/Bybit/Coinbase/Kraken → avg + spread bps + per-venue deviation, on-brand for the accuracy push); Funding Heatmap (cexFundingBoard — all Binance USDT perps ranked most-positive/most-negative funding); Long/Short Positioning (cexLongShort — retail global-account vs top-trader L/S ratio for BTC/ETH/SOL). Endpoints live-probed reachable; Solana-RPC widgets (network health, new-mint safety flags) DEFERRED — public RPC returns 403/CORS, would be permanently offline, so not shipped per the no-dead-pane rule. Wired through the standard pane framework (provider registry + REFRESHERS + schema + catalog + desktop set) and added live to the Engine + CEXTracker views. Read-only market data — no order/route/signing change.
+     CURRENT VERSION: v1.0.332
+     LAST UPDATED:    2026-06-19  ·  Market Regime widget — cache /global so it stays truthfully LIVE. Live-verify of v1.0.331 found 4/5 new widgets fully LIVE (Cross-Venue Spread 5/5, Funding Heatmap 754 perps, Long/Short, Heatmap 60) but Market Regime flipped its tag to "offline" while showing real data — it hit CoinGecko /global uncached every tick (CoinGecko rate-limits /global hard). Fix: cache the last good /global payload in localStorage (cr_cg_global_v1); on a throttled tick it re-renders from cache tagged "cached" instead of "offline" (only truly offline with no cache shows offline). Mirrors the crCgMarkets caching the heatmap already uses. Read-only — no order/route/signing change.
+     (v1.0.331 = 5 NEW market-overview Terminal widgets (all live, no key, honest-offline on failure). ENGINE: Market Regime dial (mktRegime — CoinGecko /global mcap-trend + BTC dominance → risk-on/neutral/risk-off gauge); Market Heatmap (mktHeatmap — top coins tiled + colored by 24h%). CEXTRACKER: Cross-Venue Spread (cexSpread — BTC last price across Binance/OKX/Bybit/Coinbase/Kraken → avg + spread bps + per-venue deviation, on-brand for the accuracy push); Funding Heatmap (cexFundingBoard — all Binance USDT perps ranked most-positive/most-negative funding); Long/Short Positioning (cexLongShort — retail global-account vs top-trader L/S ratio for BTC/ETH/SOL). Endpoints live-probed reachable; Solana-RPC widgets (network health, new-mint safety flags) DEFERRED — public RPC returns 403/CORS, would be permanently offline, so not shipped per the no-dead-pane rule. Wired through the standard pane framework (provider registry + REFRESHERS + schema + catalog + desktop set) and added live to the Engine + CEXTracker views. Read-only market data — no order/route/signing change.
      (v1.0.330 = NEW Terminal widget — SolanaTracker "Trending Pools" (solGtTrending). High-value on-chain data: GeckoTerminal /networks/solana/trending_pools (live Solana DEX momentum) — symbol · DEX · pool age · price · 24h% · liquidity, top-N. NO KEY required (unlike the Birdeye-gated solTrending), so it works for every user, and obeys the data-accuracy rule (LIVE tag on success, rate-limited/no-data/offline on failure — never synth). Clicking a row opens that token's DEX chart (crEnsureCustomSolanaToken → switchAsset, one-time delegated click handler). Wired through the standard pane framework (provider registry + REFRESHERS 120s + pane schema + data-source catalog + CR_DESKTOP_MARKET_PANE_IDS) and added live to the SolanaTracker view. Read-only market data — no order/route/signing change.
      (v1.0.329 = DEX accuracy — chosen AMM's pool or honest no-pool state (mirror of the CEX fix). crPickSolanaPool boosts the chosen DEX but falls back to the most-liquid pool on ANOTHER DEX, so picking Raydium for an Orca-only token rendered Orca's book labeled "Raydium fallback". Now crFetchSolanaTokenCandles throws crNoVenuePool when a specific AMM (Raydium/Orca/Meteora/PumpSwap) was chosen and no pool on it exists; loadCandles shows "⚠ no <dex> pool for this token · seeded (NOT LIVE)" + a toast to pick another DEX or Jupiter — never another DEX's pool as the chosen one's. Jupiter is exempt (aggregator/router, not an AMM with its own pools → most-liquid pool is a valid Jupiter route). Read-only — no order/route/signing change.
      (v1.0.328 = DATA-ACCURACY AUDIT — chosen broker's OHLC or nothing (no silent cross-exchange swap). Audit (docs/qa/2026-06-18-data-accuracy-audit.md): live browser probe of all 9 venue adapters from chartrunner.xyz confirmed the 5 broker-wheel CEX venues (Binance/Bybit/OKX/Coinbase/Kraken) all return REAL, exchange-distinct OHLC; KuCoin/Gate.io/MEXC are CORS-blocked in-browser (not in the wheel, only reachable via deep-link). Per-venue symbol/interval/URL/response mappings spot-checked correct; tf-gap aggregation (crAggregateCandlesForTf) correct. KEY FIX: loadCandles no longer silently substitutes Binance candles for a failed non-Binance venue (it used to relabel them "Binance · <venue> fallback" — so picking Kraken for an asset Kraken doesn't list showed Binance's book as Kraken's). Now a chosen non-Binance CEX with no market for the asset/tf shows a clearly-labeled "⚠ no <venue> market · seeded (NOT LIVE)" placeholder + a toast to switch broker/asset — never another exchange's data. Binance-chosen failures still fall through to the public Binance path (same venue). Read-only — no order/route/signing change. (Lower-pri notes in the audit doc: Coinbase quote USD≠USDT, Kraken 1M≈15d, GeckoTerminal tf approximations.)
@@ -13530,7 +13531,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.331",
+  VERSION: "1.0.332",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -76980,26 +76981,34 @@ window.crGoldRush = (function(){
   // ── Quick-win market-overview widgets (v1.0.331) — all live, no key, and they
   // go honestly-offline on failure (never synthetic). ───────────────────────────
   // Engine · Market Regime dial — CoinGecko /global (mcap trend + BTC dominance).
+  function _mktRegimeRender(d, tagText, tagCls){
+    const dom = d.market_cap_percentage && d.market_cap_percentage.btc;
+    const chg = d.market_cap_change_percentage_24h_usd;
+    const tot = d.total_market_cap && d.total_market_cap.usd;
+    const score = (chg == null) ? 0 : chg;
+    const label = score > 1.5 ? 'RISK-ON' : score < -1.5 ? 'RISK-OFF' : 'NEUTRAL';
+    const col = score > 1.5 ? '#14f195' : score < -1.5 ? '#ff5b7f' : '#ffd166';
+    const pos = Math.max(2, Math.min(98, 50 + (score * 8)));
+    _setBody('mktRegime', '<div style="font-size:10.5px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><span style="font-size:15px;font-weight:800;letter-spacing:.5px;color:'+col+'">'+label+'</span><span style="color:'+(score>=0?'#14f195':'#ff5b7f')+'">'+(score>=0?'+':'')+(chg==null?'—':chg.toFixed(2)+'%')+' mcap 24h</span></div>'
+      + '<div style="position:relative;height:6px;border-radius:3px;background:linear-gradient(90deg,#ff5b7f,#ffd166,#14f195);margin-bottom:6px"><span style="position:absolute;top:-2px;left:'+pos+'%;width:2px;height:10px;background:#fff;border-radius:1px"></span></div>'
+      + '<div style="display:flex;justify-content:space-between;color:var(--dim)"><span>BTC dom <b style="color:var(--fg)">'+(dom==null?'—':dom.toFixed(1)+'%')+'</b></span><span>total mcap <b style="color:var(--fg)">'+(tot?_fmtUsd(tot):'—')+'</b></span></div>'
+      + '</div>');
+    _setHdTag('mktRegime', tagText, tagCls);
+  }
   async function refreshMktRegime(){
     if(!_bodiesOf('mktRegime').length) return;
+    // v1.0.332 — cache /global (CoinGecko rate-limits /global hard). On a throttled
+    // tick, re-render from the last good payload tagged "cached" instead of flipping
+    // to "offline" while real data is still on screen.
+    const readCache = () => { try { const c = JSON.parse(localStorage.getItem('cr_cg_global_v1')||'null'); return (c && c.d) ? c : null; } catch(_){ return null; } };
     try{
       const r = await fetch('https://api.coingecko.com/api/v3/global', { headers:(typeof crCgHeaders==='function'?crCgHeaders():{}) });
-      if(!r.ok){ _setHdTag('mktRegime','rate-limited','warn'); return; }
+      if(!r.ok){ const c = readCache(); if(c){ _mktRegimeRender(c.d, 'cached', 'tune'); } else { _setHdTag('mktRegime','rate-limited','warn'); } return; }
       const d = (await r.json()).data || {};
-      const dom = d.market_cap_percentage && d.market_cap_percentage.btc;
-      const chg = d.market_cap_change_percentage_24h_usd;
-      const tot = d.total_market_cap && d.total_market_cap.usd;
-      const score = (chg == null) ? 0 : chg;
-      const label = score > 1.5 ? 'RISK-ON' : score < -1.5 ? 'RISK-OFF' : 'NEUTRAL';
-      const col = score > 1.5 ? '#14f195' : score < -1.5 ? '#ff5b7f' : '#ffd166';
-      const pos = Math.max(2, Math.min(98, 50 + (score * 8)));
-      _setBody('mktRegime', '<div style="font-size:10.5px">'
-        + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><span style="font-size:15px;font-weight:800;letter-spacing:.5px;color:'+col+'">'+label+'</span><span style="color:'+(score>=0?'#14f195':'#ff5b7f')+'">'+(score>=0?'+':'')+(chg==null?'—':chg.toFixed(2)+'%')+' mcap 24h</span></div>'
-        + '<div style="position:relative;height:6px;border-radius:3px;background:linear-gradient(90deg,#ff5b7f,#ffd166,#14f195);margin-bottom:6px"><span style="position:absolute;top:-2px;left:'+pos+'%;width:2px;height:10px;background:#fff;border-radius:1px"></span></div>'
-        + '<div style="display:flex;justify-content:space-between;color:var(--dim)"><span>BTC dom <b style="color:var(--fg)">'+(dom==null?'—':dom.toFixed(1)+'%')+'</b></span><span>total mcap <b style="color:var(--fg)">'+(tot?_fmtUsd(tot):'—')+'</b></span></div>'
-        + '</div>');
-      _setHdTag('mktRegime', 'LIVE', 'live');
-    }catch(e){ try{ if(window.crReport) crReport(e,'mktRegime'); }catch(_){} _setHdTag('mktRegime','offline','warn'); }
+      try { localStorage.setItem('cr_cg_global_v1', JSON.stringify({ ts:Date.now(), d })); } catch(_){}
+      _mktRegimeRender(d, 'LIVE', 'live');
+    }catch(e){ try{ if(window.crReport) crReport(e,'mktRegime'); }catch(_){} const c = readCache(); if(c){ _mktRegimeRender(c.d, 'cached', 'tune'); } else { _setHdTag('mktRegime','offline','warn'); } }
   }
   // Engine · Top market heatmap — CoinGecko markets, tiles colored by 24h %.
   async function refreshMktHeatmap(){
