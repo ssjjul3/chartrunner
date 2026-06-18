@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.333
-     LAST UPDATED:    2026-06-19  ·  TERMINAL SYNTHESIS P1 — data-truth made visible (plan: docs/design/2026-06-19-terminal-synthesis-plan.md). The reconciliation of the 3 sources (live truth × v2 meaning × mockup look) hinges on one rule — a panel may never show a number it can't source — so P1 makes truth a first-class, visible layer: (1) a "truth-dot" on EVERY pane header in consistent colors (green live / amber cached / red offline) via CSS ::before on .hd-tag, independent of the tag text color so it reads the same across all trackers; (2) a global Health-Pills strip (bottom-left of the Terminal window, always-on, non-interactive) with one pill per DATA SOURCE (Binance/CoinGecko/GeckoTerminal/DefiLlama/…) showing live/cached/offline + age — the "is my rig alive?" dial-tone. Driven by a provider-state rollup added to _setHdTag (prefers a fresh 'live'; one failing pane won't flip a provider that was live <90s ago) + a renderer on the 15s tick. Pure presentation over the existing pane framework — no new data, no order/route/signing change.
+     CURRENT VERSION: v1.0.334
+     LAST UPDATED:    2026-06-19  ·  TERMINAL SYNTHESIS P2 — one row grammar + drilldown drawer. Adopts the v2 "Exploitables-Rail" panel design (06.B) as a shared component: new _crRailRowHTML({rank,sym,sub,right,scorePct,barColor,mint|ticker,title,detail}) renders rank · symbol · metric · SCORE-BAR at the right edge. Trending Pools, Funding Heatmap and Long/Short now all render through it (one consistent look; score-bar = trending rank / |funding| / long-share respectively, colored green/red). Tapping ANY rail row opens a shared slide-in drilldown drawer (#crRailDrawer, right side of the Terminal window) showing the row's key:value detail + an "▶ Open chart" action that launches the token (mint→crEnsureCustomSolanaToken) or asset (ticker→crEnsureCexAsset) chart. Delegated click handler, mockup-look adapted to Platinum chrome, all on live data (P1 truth-dots still apply). Read-only — no order/route/signing change.
+     (v1.0.333 = TERMINAL SYNTHESIS P1 — data-truth made visible (plan: docs/design/2026-06-19-terminal-synthesis-plan.md). The reconciliation of the 3 sources (live truth × v2 meaning × mockup look) hinges on one rule — a panel may never show a number it can't source — so P1 makes truth a first-class, visible layer: (1) a "truth-dot" on EVERY pane header in consistent colors (green live / amber cached / red offline) via CSS ::before on .hd-tag, independent of the tag text color so it reads the same across all trackers; (2) a global Health-Pills strip (bottom-left of the Terminal window, always-on, non-interactive) with one pill per DATA SOURCE (Binance/CoinGecko/GeckoTerminal/DefiLlama/…) showing live/cached/offline + age — the "is my rig alive?" dial-tone. Driven by a provider-state rollup added to _setHdTag (prefers a fresh 'live'; one failing pane won't flip a provider that was live <90s ago) + a renderer on the 15s tick. Pure presentation over the existing pane framework — no new data, no order/route/signing change.
      (v1.0.332 = Market Regime widget — cache /global so it stays truthfully LIVE. Live-verify of v1.0.331 found 4/5 new widgets fully LIVE (Cross-Venue Spread 5/5, Funding Heatmap 754 perps, Long/Short, Heatmap 60) but Market Regime flipped its tag to "offline" while showing real data — it hit CoinGecko /global uncached every tick (CoinGecko rate-limits /global hard). Fix: cache the last good /global payload in localStorage (cr_cg_global_v1); on a throttled tick it re-renders from cache tagged "cached" instead of "offline" (only truly offline with no cache shows offline). Mirrors the crCgMarkets caching the heatmap already uses. Read-only — no order/route/signing change.
      (v1.0.331 = 5 NEW market-overview Terminal widgets (all live, no key, honest-offline on failure). ENGINE: Market Regime dial (mktRegime — CoinGecko /global mcap-trend + BTC dominance → risk-on/neutral/risk-off gauge); Market Heatmap (mktHeatmap — top coins tiled + colored by 24h%). CEXTRACKER: Cross-Venue Spread (cexSpread — BTC last price across Binance/OKX/Bybit/Coinbase/Kraken → avg + spread bps + per-venue deviation, on-brand for the accuracy push); Funding Heatmap (cexFundingBoard — all Binance USDT perps ranked most-positive/most-negative funding); Long/Short Positioning (cexLongShort — retail global-account vs top-trader L/S ratio for BTC/ETH/SOL). Endpoints live-probed reachable; Solana-RPC widgets (network health, new-mint safety flags) DEFERRED — public RPC returns 403/CORS, would be permanently offline, so not shipped per the no-dead-pane rule. Wired through the standard pane framework (provider registry + REFRESHERS + schema + catalog + desktop set) and added live to the Engine + CEXTracker views. Read-only market data — no order/route/signing change.
      (v1.0.330 = NEW Terminal widget — SolanaTracker "Trending Pools" (solGtTrending). High-value on-chain data: GeckoTerminal /networks/solana/trending_pools (live Solana DEX momentum) — symbol · DEX · pool age · price · 24h% · liquidity, top-N. NO KEY required (unlike the Birdeye-gated solTrending), so it works for every user, and obeys the data-accuracy rule (LIVE tag on success, rate-limited/no-data/offline on failure — never synth). Clicking a row opens that token's DEX chart (crEnsureCustomSolanaToken → switchAsset, one-time delegated click handler). Wired through the standard pane framework (provider registry + REFRESHERS 120s + pane schema + data-source catalog + CR_DESKTOP_MARKET_PANE_IDS) and added live to the SolanaTracker view. Read-only market data — no order/route/signing change.
@@ -4542,6 +4543,22 @@
   .crTerm-paneHd .hd-tag.warn::before{color:#ff5b7f}
   /* Global data-truth strip (bottom-left of the Terminal window). */
   #crTermHealthStrip span.crHp{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.72);color:var(--dim)}
+  /* v1.0.334 — P2 unified "Exploitables-Rail" row grammar + drilldown drawer.
+     One row design across Trending Pools / Funding / Long-Short: rank · sym ·
+     metric · score-bar at the right edge. Tap any row → the drilldown drawer. */
+  .crRailRow{display:grid;grid-template-columns:24px 1fr auto 44px;gap:6px;align-items:center;padding:3px 4px;border-radius:4px;cursor:pointer;font-size:10.5px}
+  .crRailRow:hover{background:rgba(155,140,255,.12)}
+  .crRailRk{color:var(--dim);font-variant-numeric:tabular-nums;text-align:right;font-size:9px}
+  .crRailSym{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .crRailSub{color:var(--dim);font-size:9px}
+  .crRailRt{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .crRailBar{position:relative;height:6px;border-radius:3px;background:rgba(120,140,170,.18);overflow:hidden}
+  .crRailBar>span{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+  #crRailDrawer{position:absolute;top:0;right:0;width:min(320px,46%);height:100%;background:linear-gradient(180deg,rgba(16,22,40,.99),rgba(10,14,26,.99));border-left:1px solid var(--line);box-shadow:-12px 0 30px rgba(0,0,0,.5);z-index:20;transform:translateX(102%);transition:transform .22s ease;padding:14px 14px 14px;overflow-y:auto;font:11px ui-monospace,Menlo,monospace;color:var(--fg)}
+  #crRailDrawer.on{transform:translateX(0)}
+  #crRailDrawer .crRdClose{position:absolute;top:8px;right:11px;cursor:pointer;color:var(--dim);font-size:15px;line-height:1}
+  #crRailDrawer .crRdBtn{display:inline-block;margin-top:12px;padding:6px 14px;border:1px solid rgba(20,241,149,.5);border-radius:6px;color:#bff7df;cursor:pointer;font-weight:700;letter-spacing:.4px}
+  #crRailDrawer .crRdBtn:hover{background:rgba(20,241,149,.12)}
   .crTerm-paneBd{padding:8px 10px;color:#6acb3a;font-size:11px;line-height:1.45}
   .crTerm-paneBd.small{font-size:10.5px}
   .crTerm-paneBd.log{height:150px;overflow:auto;white-space:pre-wrap;font-size:10px;line-height:1.4}
@@ -13542,7 +13559,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.333",
+  VERSION: "1.0.334",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -76954,8 +76971,9 @@ window.crGoldRush = (function(){
       if(!data.length){ _setHdTag('solGtTrending','no data','warn'); return; }
       const byId = {}; inc.forEach(x => { byId[x.type + ':' + x.id] = x; });
       const now = Date.now();
-      const html = '<div style="display:flex;flex-direction:column;gap:2px;font-size:10.5px">'
-        + data.slice(0, rows).map(p => {
+      const n = Math.min(rows, data.length);
+      const html = '<div style="display:flex;flex-direction:column;gap:2px">'
+        + data.slice(0, rows).map((p, i) => {
             const a = p.attributes || {};
             const rel = p.relationships || {};
             const bRel = rel.base_token && rel.base_token.data;
@@ -76963,20 +76981,22 @@ window.crGoldRush = (function(){
             const base = bRel ? byId[bRel.type + ':' + bRel.id] : null;
             const dex  = dRel ? byId[dRel.type + ':' + dRel.id] : null;
             const sym  = (base && base.attributes && base.attributes.symbol) || String(a.name || '?').split(' / ')[0];
-            const mint = (base && base.attributes && base.attributes.address) || '';
+            const mintAddr = (base && base.attributes && base.attributes.address) || '';
             const dexName = (dex && dex.attributes && dex.attributes.name) || '';
             const ch  = (a.price_change_percentage && a.price_change_percentage.h24 != null) ? parseFloat(a.price_change_percentage.h24) : null;
-            const col = ch == null ? 'var(--dim)' : (ch >= 0 ? '#14f195' : '#ff5b7f');
+            const col = ch == null ? '#8aa' : (ch >= 0 ? '#14f195' : '#ff5b7f');
             const px  = (a.base_token_price_usd != null) ? _fmtUsd(parseFloat(a.base_token_price_usd)) : '—';
             const liq = (a.reserve_in_usd != null) ? _fmtUsd(parseFloat(a.reserve_in_usd)) : '—';
             const ageH = a.pool_created_at ? Math.max(0, Math.round((now - Date.parse(a.pool_created_at)) / 3600000)) : null;
             const age = ageH == null ? '' : (ageH < 24 ? ageH + 'h' : Math.round(ageH / 24) + 'd');
-            const clk = (mint && typeof crIsSolanaMintAddress === 'function' && crIsSolanaMintAddress(mint))
-              ? (' data-cr-gt-mint="' + mint + '" data-cr-gt-sym="' + esc(sym) + '" style="cursor:pointer" title="Open ' + esc(sym) + ' chart"') : '';
-            return '<div class="crGtRow"' + clk + ' style="display:flex;justify-content:space-between;gap:6px">'
-              + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>' + esc(sym) + '</b> <span style="color:var(--dim)">' + esc(dexName) + (age ? (' · ' + age) : '') + '</span></span>'
-              + '<span class="r" style="white-space:nowrap"><b>' + px + '</b> <span style="color:' + col + '">' + (ch == null ? '—' : ((ch >= 0 ? '+' : '') + ch.toFixed(1) + '%')) + '</span> <span style="color:var(--dim)">L ' + liq + '</span></span>'
-              + '</div>';
+            const validMint = (mintAddr && typeof crIsSolanaMintAddress === 'function' && crIsSolanaMintAddress(mintAddr)) ? mintAddr : '';
+            return _crRailRowHTML({
+              rank: i + 1, sym: sym, sub: dexName + (age ? (' · ' + age) : ''),
+              right: '<b>' + px + '</b> <span style="color:' + col + '">' + (ch == null ? '—' : ((ch >= 0 ? '+' : '') + ch.toFixed(1) + '%')) + '</span>',
+              scorePct: 100 * (n - i) / Math.max(1, n), barColor: col,
+              mint: validMint, title: sym + ' · ' + dexName,
+              detail: 'Price: ' + px + ' · 24h: ' + (ch == null ? '—' : (ch.toFixed(2) + '%')) + ' · Liquidity: ' + liq + ' · DEX: ' + dexName + (age ? (' · Age: ' + age) : '')
+            });
           }).join('')
         + '</div>';
       _setBody('solGtTrending', html);
@@ -76999,6 +77019,60 @@ window.crGoldRush = (function(){
         try { if(typeof toast === 'function') toast('Chart: ' + (row.getAttribute('data-cr-gt-sym') || (typeof crShortMint === 'function' ? crShortMint(mint) : 'token'))); } catch(_){}
       } catch(_){}
     }, true);
+  }
+
+  // ── P2 (v1.0.334) — unified Exploitables-Rail row grammar + drilldown drawer ──
+  function _crRailEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]); }); }
+  // o: {rank, sym, sub, right(html), scorePct, barColor, mint, ticker, title, detail}
+  function _crRailRowHTML(o){
+    var pct = Math.max(0, Math.min(100, Number(o.scorePct) || 0));
+    var attrs = ' data-cr-rail-title="' + _crRailEsc(o.title || o.sym) + '" data-cr-rail-detail="' + _crRailEsc(o.detail || '') + '"';
+    if(o.mint) attrs += ' data-cr-rail-mint="' + _crRailEsc(o.mint) + '"';
+    if(o.ticker) attrs += ' data-cr-rail-ticker="' + _crRailEsc(o.ticker) + '"';
+    return '<div class="crRailRow"' + attrs + '>'
+      + '<span class="crRailRk">' + (o.rank != null ? ('#' + o.rank) : '') + '</span>'
+      + '<span class="crRailSym"><b>' + _crRailEsc(o.sym) + '</b>' + (o.sub ? ' <span class="crRailSub">' + _crRailEsc(o.sub) + '</span>' : '') + '</span>'
+      + '<span class="crRailRt">' + (o.right || '') + '</span>'
+      + '<span class="crRailBar"><span style="width:' + pct.toFixed(0) + '%;background:' + (o.barColor || '#14f195') + '"></span></span>'
+      + '</div>';
+  }
+  function _crOpenRailDrawer(row){
+    var win = document.getElementById('win-terminal'); if(!win) return;
+    var d = document.getElementById('crRailDrawer');
+    if(!d){ d = document.createElement('div'); d.id = 'crRailDrawer'; win.appendChild(d); }
+    var title = row.getAttribute('data-cr-rail-title') || '';
+    var detail = row.getAttribute('data-cr-rail-detail') || '';
+    var mint = row.getAttribute('data-cr-rail-mint') || '';
+    var ticker = row.getAttribute('data-cr-rail-ticker') || '';
+    var lines = detail.split('·').map(function(s){ return s.trim(); }).filter(Boolean).map(function(s){
+      var kv = s.split(/[:=]\s?/); var k = kv[0]; var v = kv.slice(1).join(': ');
+      return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid rgba(120,140,170,.12);padding:4px 0"><span style="color:var(--dim)">' + _crRailEsc(k) + '</span><span>' + _crRailEsc(v) + '</span></div>';
+    }).join('');
+    d.innerHTML = '<span class="crRdClose">×</span>'
+      + '<div style="font-weight:800;font-size:13px;margin-bottom:8px;letter-spacing:.3px;padding-right:16px">' + _crRailEsc(title) + '</div>'
+      + lines
+      + ((mint || ticker) ? '<div class="crRdBtn" data-cr-rd-open="1">▶ Open chart</div>' : '')
+      + '<div style="color:var(--dim);font-size:9px;margin-top:10px">live market data · read-only</div>';
+    d.setAttribute('data-mint', mint); d.setAttribute('data-ticker', ticker);
+    d.classList.add('on');
+  }
+  if(!window._crRailWired){
+    window._crRailWired = true;
+    document.addEventListener('click', function(ev){
+      try{
+        var t = ev.target; if(!t || !t.closest) return;
+        if(t.closest('.crRdClose')){ var dc = document.getElementById('crRailDrawer'); if(dc) dc.classList.remove('on'); return; }
+        if(t.closest('[data-cr-rd-open]')){
+          var dr = document.getElementById('crRailDrawer'); if(!dr) return;
+          var mn = dr.getAttribute('data-mint'), tk = dr.getAttribute('data-ticker'), as = null;
+          if(mn && typeof crEnsureCustomSolanaToken === 'function'){ as = crEnsureCustomSolanaToken(mn); try{ game.broker = { type:'dex', name:'Jupiter' }; localStorage.setItem('cr_broker_v1', JSON.stringify({ type:'dex', name:'Jupiter' })); }catch(_){} }
+          else if(tk && typeof crEnsureCexAsset === 'function'){ as = crEnsureCexAsset(tk); }
+          if(as){ try{ if(typeof renderAssetOptions === 'function') renderAssetOptions(document.getElementById('assetSel')); }catch(_){} try{ if(typeof switchAsset === 'function') switchAsset(as.id); }catch(_){} try{ if(typeof toast === 'function') toast('Chart: ' + (as.label || as.nm)); }catch(_){} }
+          dr.classList.remove('on'); return;
+        }
+        var rr = t.closest('.crRailRow'); if(rr) _crOpenRailDrawer(rr);
+      }catch(_){}
+    }, false);
   }
 
   // ── Quick-win market-overview widgets (v1.0.331) — all live, no key, and they
@@ -77086,8 +77160,12 @@ window.crGoldRush = (function(){
       if(!list.length){ _setHdTag('cexFundingBoard','no data','warn'); return; }
       list.sort((a,b)=>b.f-a.f);
       const top=list.slice(0,Math.ceil(rows/2)); const bot=list.slice(-Math.floor(rows/2)).reverse();
-      const row=x=>'<div style="display:flex;justify-content:space-between"><span><b>'+x.s+'</b></span><span class="r" style="color:'+(x.f>=0?'#14f195':'#ff5b7f')+'">'+(x.f>=0?'+':'')+x.f.toFixed(4)+'%</span></div>';
-      _setBody('cexFundingBoard','<div style="font-size:10.5px"><div style="color:var(--dim);font-size:9px;margin-bottom:2px">↑ longs pay (crowded long)</div>'+top.map(row).join('')+'<div style="color:var(--dim);font-size:9px;margin:5px 0 2px">↓ shorts pay (crowded short)</div>'+bot.map(row).join('')+'</div>');
+      const maxAbs=Math.max.apply(null,list.map(x=>Math.abs(x.f)))||1;
+      const railRow=x=>_crRailRowHTML({ sym:x.s,
+        right:'<span style="color:'+(x.f>=0?'#14f195':'#ff5b7f')+'">'+(x.f>=0?'+':'')+x.f.toFixed(4)+'%</span>',
+        scorePct:Math.min(100,Math.abs(x.f)/maxAbs*100), barColor:x.f>=0?'#14f195':'#ff5b7f', ticker:x.s, title:x.s+' · funding',
+        detail:'Funding (8h): '+(x.f>=0?'+':'')+x.f.toFixed(4)+'% · Bias: '+(x.f>=0?'longs pay (crowded long)':'shorts pay (crowded short)') });
+      _setBody('cexFundingBoard','<div style="display:flex;flex-direction:column;gap:2px"><div style="color:var(--dim);font-size:9px;margin-bottom:1px">↑ longs pay (crowded long)</div>'+top.map(railRow).join('')+'<div style="color:var(--dim);font-size:9px;margin:5px 0 1px">↓ shorts pay (crowded short)</div>'+bot.map(railRow).join('')+'</div>');
       _setHdTag('cexFundingBoard', list.length+' perps · LIVE', 'live');
     }catch(e){ try{ if(window.crReport) crReport(e,'cexFundingBoard'); }catch(_){} _setHdTag('cexFundingBoard','offline','warn'); }
   }
@@ -77104,8 +77182,13 @@ window.crGoldRush = (function(){
         }catch(_){ return { s:s.replace(/USDT$/,''), retail:NaN, top:NaN }; }
       }));
       if(!out.some(x=>Number.isFinite(x.retail))){ _setHdTag('cexLongShort','offline','warn'); return; }
-      const cell=v=>!Number.isFinite(v)?'<span style="color:var(--dim)">—</span>':'<b style="color:'+(v>=1?'#14f195':'#ff5b7f')+'">'+v.toFixed(2)+'</b>';
-      _setBody('cexLongShort','<div style="font-size:10.5px"><div style="display:flex;justify-content:space-between;color:var(--dim);font-size:9px;margin-bottom:2px"><span>asset</span><span>retail · top-trader</span></div>'+out.map(x=>'<div style="display:flex;justify-content:space-between"><span><b>'+x.s+'</b></span><span class="r">'+cell(x.retail)+' · '+cell(x.top)+'</span></div>').join('')+'<div style="color:var(--dim);font-size:8.5px;margin-top:3px">L/S &gt;1 = net long</div></div>');
+      const fmt=v=>Number.isFinite(v)?v.toFixed(2):'—';
+      const railRow=x=>{ const up=Number.isFinite(x.retail)&&x.retail>=1; const longShare=Number.isFinite(x.retail)?(x.retail/(1+x.retail)*100):50;
+        return _crRailRowHTML({ sym:x.s,
+          right:'<span style="color:var(--dim)">R</span> <b style="color:'+(up?'#14f195':'#ff5b7f')+'">'+fmt(x.retail)+'</b> <span style="color:var(--dim)">T</span> <b style="color:'+(Number.isFinite(x.top)&&x.top>=1?'#14f195':'#ff5b7f')+'">'+fmt(x.top)+'</b>',
+          scorePct:longShare, barColor:up?'#14f195':'#ff5b7f', ticker:x.s, title:x.s+' · positioning',
+          detail:'Retail L/S: '+fmt(x.retail)+' · Top-trader L/S: '+fmt(x.top)+' · Long share: '+longShare.toFixed(0)+'%' }); };
+      _setBody('cexLongShort','<div style="display:flex;flex-direction:column;gap:2px"><div style="display:flex;justify-content:space-between;color:var(--dim);font-size:9px;margin-bottom:1px"><span>asset</span><span>retail · top · share</span></div>'+out.map(railRow).join('')+'<div style="color:var(--dim);font-size:8.5px;margin-top:3px">L/S &gt;1 = net long · bar = long share</div></div>');
       _setHdTag('cexLongShort','LIVE','live');
     }catch(e){ try{ if(window.crReport) crReport(e,'cexLongShort'); }catch(_){} _setHdTag('cexLongShort','offline','warn'); }
   }
