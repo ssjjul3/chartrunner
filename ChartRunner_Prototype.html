@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.334
-     LAST UPDATED:    2026-06-19  ·  TERMINAL SYNTHESIS P2 — one row grammar + drilldown drawer. Adopts the v2 "Exploitables-Rail" panel design (06.B) as a shared component: new _crRailRowHTML({rank,sym,sub,right,scorePct,barColor,mint|ticker,title,detail}) renders rank · symbol · metric · SCORE-BAR at the right edge. Trending Pools, Funding Heatmap and Long/Short now all render through it (one consistent look; score-bar = trending rank / |funding| / long-share respectively, colored green/red). Tapping ANY rail row opens a shared slide-in drilldown drawer (#crRailDrawer, right side of the Terminal window) showing the row's key:value detail + an "▶ Open chart" action that launches the token (mint→crEnsureCustomSolanaToken) or asset (ticker→crEnsureCexAsset) chart. Delegated click handler, mockup-look adapted to Platinum chrome, all on live data (P1 truth-dots still apply). Read-only — no order/route/signing change.
+     CURRENT VERSION: v1.0.335
+     LAST UPDATED:    2026-06-19  ·  TERMINAL SYNTHESIS P3 — exploitable-score spine + radial gauge. New pure crExploitScore(candles) scores a chart 0–100 from REAL candles on the v2 indicators VWAP-displacement (|close−VWAP| in ATR units), Volatility (ATR%), and Persistence (directional run consistency), weighted 0.4/0.3/0.3 → state EXPLOITABLE≥66 / CANDIDATE≥40 / IDLE + LONG/SHORT side. The 4th v2 indicator (CVD) needs an order-flow feed → marked pending, NOT faked. New Engine Terminal pane "Exploit Score" (crExploitGauge) renders the mockup score-gauge (SVG donut) + state badge + per-component bars for the ACTIVE chart, recomputing as the player switches asset/tf (cheap + truthful — scores loaded candles rather than faking a per-row cross-asset score). Wired through the pane framework + added to the Engine view. Read-only — no order/route/signing change.
+     (v1.0.334 = TERMINAL SYNTHESIS P2 — one row grammar + drilldown drawer. Adopts the v2 "Exploitables-Rail" panel design (06.B) as a shared component: new _crRailRowHTML({rank,sym,sub,right,scorePct,barColor,mint|ticker,title,detail}) renders rank · symbol · metric · SCORE-BAR at the right edge. Trending Pools, Funding Heatmap and Long/Short now all render through it (one consistent look; score-bar = trending rank / |funding| / long-share respectively, colored green/red). Tapping ANY rail row opens a shared slide-in drilldown drawer (#crRailDrawer, right side of the Terminal window) showing the row's key:value detail + an "▶ Open chart" action that launches the token (mint→crEnsureCustomSolanaToken) or asset (ticker→crEnsureCexAsset) chart. Delegated click handler, mockup-look adapted to Platinum chrome, all on live data (P1 truth-dots still apply). Read-only — no order/route/signing change.
      (v1.0.333 = TERMINAL SYNTHESIS P1 — data-truth made visible (plan: docs/design/2026-06-19-terminal-synthesis-plan.md). The reconciliation of the 3 sources (live truth × v2 meaning × mockup look) hinges on one rule — a panel may never show a number it can't source — so P1 makes truth a first-class, visible layer: (1) a "truth-dot" on EVERY pane header in consistent colors (green live / amber cached / red offline) via CSS ::before on .hd-tag, independent of the tag text color so it reads the same across all trackers; (2) a global Health-Pills strip (bottom-left of the Terminal window, always-on, non-interactive) with one pill per DATA SOURCE (Binance/CoinGecko/GeckoTerminal/DefiLlama/…) showing live/cached/offline + age — the "is my rig alive?" dial-tone. Driven by a provider-state rollup added to _setHdTag (prefers a fresh 'live'; one failing pane won't flip a provider that was live <90s ago) + a renderer on the 15s tick. Pure presentation over the existing pane framework — no new data, no order/route/signing change.
      (v1.0.332 = Market Regime widget — cache /global so it stays truthfully LIVE. Live-verify of v1.0.331 found 4/5 new widgets fully LIVE (Cross-Venue Spread 5/5, Funding Heatmap 754 perps, Long/Short, Heatmap 60) but Market Regime flipped its tag to "offline" while showing real data — it hit CoinGecko /global uncached every tick (CoinGecko rate-limits /global hard). Fix: cache the last good /global payload in localStorage (cr_cg_global_v1); on a throttled tick it re-renders from cache tagged "cached" instead of "offline" (only truly offline with no cache shows offline). Mirrors the crCgMarkets caching the heatmap already uses. Read-only — no order/route/signing change.
      (v1.0.331 = 5 NEW market-overview Terminal widgets (all live, no key, honest-offline on failure). ENGINE: Market Regime dial (mktRegime — CoinGecko /global mcap-trend + BTC dominance → risk-on/neutral/risk-off gauge); Market Heatmap (mktHeatmap — top coins tiled + colored by 24h%). CEXTRACKER: Cross-Venue Spread (cexSpread — BTC last price across Binance/OKX/Bybit/Coinbase/Kraken → avg + spread bps + per-venue deviation, on-brand for the accuracy push); Funding Heatmap (cexFundingBoard — all Binance USDT perps ranked most-positive/most-negative funding); Long/Short Positioning (cexLongShort — retail global-account vs top-trader L/S ratio for BTC/ETH/SOL). Endpoints live-probed reachable; Solana-RPC widgets (network health, new-mint safety flags) DEFERRED — public RPC returns 403/CORS, would be permanently offline, so not shipped per the no-dead-pane rule. Wired through the standard pane framework (provider registry + REFRESHERS + schema + catalog + desktop set) and added live to the Engine + CEXTracker views. Read-only market data — no order/route/signing change.
@@ -11824,6 +11825,10 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
           <div class="crTerm-grid">
             <!-- LEFT COLUMN -->
             <div class="crTerm-col">
+              <div class="crTerm-pane" data-pane-id="crExploitGauge">
+                <div class="crTerm-paneHd"><span>◎ Exploit Score</span><span class="hd-tag">active chart · live</span></div>
+                <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">scoring the active chart…</div></div>
+              </div>
               <div class="crTerm-pane" data-pane-id="mktRegime">
                 <div class="crTerm-paneHd"><span>◆ Market Regime</span><span class="hd-tag">CoinGecko · live</span></div>
                 <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">reading market regime…</div></div>
@@ -13559,7 +13564,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.334",
+  VERSION: "1.0.335",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -24253,6 +24258,36 @@ function crSyncChartUrl(){
   } catch(_){}
 }
 window.crSyncChartUrl = crSyncChartUrl;
+
+/* ── Exploitable score (v1.0.335, synthesis P3) ──────────────────────────────
+   The v2 mental model's spine: score a chart 0–100 from REAL candles on three
+   indicators (the 4th, CVD, needs an order-flow feed → pending, not faked):
+     • VWAP displacement — |close − VWAP| in ATR units (directional energy)
+     • Volatility — ATR% of price (opportunity)
+     • Persistence — directional run consistency over the recent window
+   Weighted (0.4 / 0.3 / 0.3) → score; state EXPLOITABLE≥66 / CANDIDATE≥40 / IDLE;
+   side LONG/SHORT from close vs VWAP. Pure function, never throws. */
+function crExploitScore(rows){
+  try{
+    if(!Array.isArray(rows) || rows.length < 30) return null;
+    var n = rows.length, win = Math.min(96, n), seg = rows.slice(n - win);
+    var pv = 0, vv = 0;
+    seg.forEach(function(c){ var tp = (c.h + c.l + c.c) / 3, v = (c.v || 1); pv += tp * v; vv += v; });
+    var vwap = vv > 0 ? pv / vv : seg[seg.length - 1].c;
+    var close = rows[n - 1].c;
+    var trs = []; for(var i = Math.max(1, n - 14); i < n; i++){ var c = rows[i], p = rows[i - 1]; trs.push(Math.max(c.h - c.l, Math.abs(c.h - p.c), Math.abs(c.l - p.c))); }
+    var atr = trs.length ? trs.reduce(function(a, b){ return a + b; }, 0) / trs.length : close * 0.01;
+    var vwapDisp = Math.min(100, Math.abs(close - vwap) / Math.max(1e-9, atr) * 40); // ~2.5 ATR ⇒ 100
+    var vol = Math.min(100, (atr / Math.max(1e-9, close)) / 0.04 * 100);             // 4% ATR ⇒ 100
+    var m = Math.min(20, n - 1), up = 0; for(var k = n - m; k < n; k++){ if(rows[k].c >= rows[k - 1].c) up++; }
+    var persist = Math.abs(up - (m - up)) / m * 100;                                 // directional consistency
+    var score = Math.round(vwapDisp * 0.4 + vol * 0.3 + persist * 0.3);
+    var state = score >= 66 ? 'EXPLOITABLE' : score >= 40 ? 'CANDIDATE' : 'IDLE';
+    return { score: score, state: state, side: close >= vwap ? 'LONG' : 'SHORT',
+      components: { vwap: Math.round(vwapDisp), vol: Math.round(vol), persist: Math.round(persist) }, vwap: vwap, atr: atr };
+  }catch(_){ return null; }
+}
+window.crExploitScore = crExploitScore;
 
 // Phase 2+3: deferred launch (after boot — restart/crMaps/switchAsset ready).
 // Fires for 'symbol' (CEX + mint/DEX) and 'map' (bare self-only). 'room' and
@@ -50580,6 +50615,7 @@ function _crTermPickerDocsHtml(){
     + '<tr><td class="id">solTopTokens</td><td class="src">Birdeye <code>/defi/tokenlist</code></td><td class="cad">60 s</td></tr>'
     + '<tr><td class="id">solTrending</td><td class="src">Birdeye <code>/defi/token_trending</code></td><td class="cad">120 s</td></tr>'
     + '<tr><td class="id">solGtTrending</td><td class="src">GeckoTerminal <code>/networks/solana/trending_pools</code></td><td class="cad">120 s</td></tr>'
+    + '<tr><td class="id">crExploitGauge</td><td class="src">active chart candles (VWAP·Vol·Persistence)</td><td class="cad">20 s</td></tr>'
     + '<tr><td class="id">mktRegime</td><td class="src">CoinGecko <code>/global</code></td><td class="cad">120 s</td></tr>'
     + '<tr><td class="id">mktHeatmap</td><td class="src">CoinGecko <code>/coins/markets</code></td><td class="cad">90 s</td></tr>'
     + '<tr><td class="id">cexSpread</td><td class="src">Binance/OKX/Bybit/Coinbase/Kraken <code>ticker</code></td><td class="cad">20 s</td></tr>'
@@ -50694,7 +50730,7 @@ const CR_CHART_RUN_PANE_IDS = new Set([
 ]);
 const CR_DESKTOP_MARKET_PANE_IDS = new Set([
   'cexAgg','cexExchanges','cexStables','cexFunding','cexOI','cexWhales','cexListings','cexDepth','cexDexFlow',
-  'mktRegime','mktHeatmap','cexSpread','cexFundingBoard','cexLongShort',
+  'crExploitGauge','mktRegime','mktHeatmap','cexSpread','cexFundingBoard','cexLongShort',
   'solPrice','solTopTokens','solDexVolume','solPumpfun','solSmart','solSwaps','solTrending','solGtTrending','solHolders','solSniper',
   'phxWhales','phxFunding','phxOI','phxBook','phxFlight','phxStatus',
   'coinWatchlist','walletWatchlist',
@@ -52133,6 +52169,10 @@ const _CR_PANE_SCHEMAS = {
       { type:'slider', key:'window', label:'Window', min:1, max:24, step:1, unit:'h', default:1 },
       { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 },
     ],
+  },
+  'pane:crExploitGauge': {
+    icon: '◎', title: 'Exploit Score', sub: 'Active chart · VWAP·Vol·Persistence.',
+    fields: [ { type:'note', text:'LIVE — scores the currently-loaded chart 0–100 (EXPLOITABLE/CANDIDATE/IDLE) from real candles. CVD (4th indicator) pending an order-flow feed.' }, { type:'slider', key:'refreshSec', label:'Refresh', min:10, max:120, step:5, unit:'s', default:20 } ],
   },
   'pane:mktRegime': {
     icon: '◆', title: 'Market Regime', sub: 'Risk-on/off · CoinGecko global.',
@@ -77075,6 +77115,42 @@ window.crGoldRush = (function(){
     }, false);
   }
 
+  // ── P3 (v1.0.335) — Exploit Score gauge (Engine) ─────────────────────────────
+  // Mockup archetype #14 (score radial gauge) bound to the v2 score spine on the
+  // ACTIVE chart's real candles. Recomputes as the player switches asset/tf. The
+  // canonical VWAP·Vol·Persistence score needs OHLC, so it scores the loaded chart
+  // (cheap, truthful) rather than faking a score per cross-asset row.
+  function _crScoreGaugeSVG(score, state, side){
+    var pct = Math.max(0, Math.min(100, score)), r = 26, circ = 2 * Math.PI * r, off = circ * (1 - pct / 100);
+    var col = state === 'EXPLOITABLE' ? '#14f195' : state === 'CANDIDATE' ? '#ffd166' : '#8aa2b8';
+    return '<svg viewBox="0 0 70 70" width="66" height="66">'
+      + '<circle cx="35" cy="35" r="' + r + '" fill="none" stroke="rgba(120,140,170,.18)" stroke-width="7"/>'
+      + '<circle cx="35" cy="35" r="' + r + '" fill="none" stroke="' + col + '" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + circ.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 35 35)"/>'
+      + '<text x="35" y="34" text-anchor="middle" fill="#e8eef6" font-size="17" font-weight="800" font-family="ui-monospace,Menlo,monospace">' + pct + '</text>'
+      + '<text x="35" y="46" text-anchor="middle" fill="' + col + '" font-size="7" font-weight="700" font-family="ui-monospace,Menlo,monospace">' + side + '</text>'
+      + '</svg>';
+  }
+  function refreshExploitGauge(){
+    if(!_bodiesOf('crExploitGauge').length) return;
+    try{
+      var s = (typeof crExploitScore === 'function' && typeof candles !== 'undefined') ? crExploitScore(candles) : null;
+      if(!s){ _setHdTag('crExploitGauge', 'no chart', 'warn'); _setBody('crExploitGauge', '<div style="color:var(--dim);font-size:10px">load a chart to score</div>'); return; }
+      var aObj = (typeof currentAssetObj === 'function') ? currentAssetObj() : null;
+      var label = aObj ? (aObj.label || aObj.nm) : 'chart';
+      var col = s.state === 'EXPLOITABLE' ? '#14f195' : s.state === 'CANDIDATE' ? '#ffd166' : '#8aa2b8';
+      var bar = function(lab, v){ return '<div style="display:flex;align-items:center;gap:5px;margin:2px 0"><span style="width:42px;color:var(--dim);font-size:9px">' + lab + '</span><span style="flex:1;height:5px;border-radius:3px;background:rgba(120,140,170,.18);overflow:hidden;position:relative"><span style="position:absolute;left:0;top:0;bottom:0;width:' + v + '%;background:' + col + '"></span></span><span style="width:22px;text-align:right;font-size:9px">' + v + '</span></div>'; };
+      _setBody('crExploitGauge', '<div style="display:flex;gap:10px;align-items:center">'
+        + '<div>' + _crScoreGaugeSVG(s.score, s.state, s.side) + '</div>'
+        + '<div style="flex:1;min-width:0">'
+          + '<div style="font-weight:800;color:' + col + ';letter-spacing:.4px;font-size:11px">' + s.state + '</div>'
+          + '<div style="color:var(--dim);font-size:9px;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _crRailEsc(label) + '</div>'
+          + bar('VWAP', s.components.vwap) + bar('VOL', s.components.vol) + bar('PERSIST', s.components.persist)
+        + '</div></div>'
+        + '<div style="color:var(--dim);font-size:8.5px;margin-top:5px">VWAP·Vol·Persistence on live candles · CVD pending</div>');
+      _setHdTag('crExploitGauge', 'LIVE', 'live');
+    }catch(e){ try{ if(window.crReport) crReport(e, 'exploitGauge'); }catch(_){} _setHdTag('crExploitGauge', 'offline', 'warn'); }
+  }
+
   // ── Quick-win market-overview widgets (v1.0.331) — all live, no key, and they
   // go honestly-offline on failure (never synthetic). ───────────────────────────
   // Engine · Market Regime dial — CoinGecko /global (mcap trend + BTC dominance).
@@ -77879,6 +77955,7 @@ window.crGoldRush = (function(){
     solTopTokens: { fn: refreshSolTopTokens, default: 60  },
     solTrending:  { fn: refreshSolTrending,  default: 120 },
     solGtTrending:{ fn: refreshSolGtTrending, default: 120 },
+    crExploitGauge: { fn: refreshExploitGauge,   default: 20  },
     mktRegime:      { fn: refreshMktRegime,      default: 120 },
     mktHeatmap:     { fn: refreshMktHeatmap,     default: 90  },
     cexSpread:      { fn: refreshCexSpread,      default: 20  },
