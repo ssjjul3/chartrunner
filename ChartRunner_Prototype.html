@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.330
-     LAST UPDATED:    2026-06-19  ·  NEW Terminal widget — SolanaTracker "Trending Pools" (solGtTrending). High-value on-chain data: GeckoTerminal /networks/solana/trending_pools (live Solana DEX momentum) — symbol · DEX · pool age · price · 24h% · liquidity, top-N. NO KEY required (unlike the Birdeye-gated solTrending), so it works for every user, and obeys the data-accuracy rule (LIVE tag on success, rate-limited/no-data/offline on failure — never synth). Clicking a row opens that token's DEX chart (crEnsureCustomSolanaToken → switchAsset, one-time delegated click handler). Wired through the standard pane framework (provider registry + REFRESHERS 120s + pane schema + data-source catalog + CR_DESKTOP_MARKET_PANE_IDS) and added live to the SolanaTracker view. Read-only market data — no order/route/signing change.
+     CURRENT VERSION: v1.0.331
+     LAST UPDATED:    2026-06-19  ·  5 NEW market-overview Terminal widgets (all live, no key, honest-offline on failure). ENGINE: Market Regime dial (mktRegime — CoinGecko /global mcap-trend + BTC dominance → risk-on/neutral/risk-off gauge); Market Heatmap (mktHeatmap — top coins tiled + colored by 24h%). CEXTRACKER: Cross-Venue Spread (cexSpread — BTC last price across Binance/OKX/Bybit/Coinbase/Kraken → avg + spread bps + per-venue deviation, on-brand for the accuracy push); Funding Heatmap (cexFundingBoard — all Binance USDT perps ranked most-positive/most-negative funding); Long/Short Positioning (cexLongShort — retail global-account vs top-trader L/S ratio for BTC/ETH/SOL). Endpoints live-probed reachable; Solana-RPC widgets (network health, new-mint safety flags) DEFERRED — public RPC returns 403/CORS, would be permanently offline, so not shipped per the no-dead-pane rule. Wired through the standard pane framework (provider registry + REFRESHERS + schema + catalog + desktop set) and added live to the Engine + CEXTracker views. Read-only market data — no order/route/signing change.
+     (v1.0.330 = NEW Terminal widget — SolanaTracker "Trending Pools" (solGtTrending). High-value on-chain data: GeckoTerminal /networks/solana/trending_pools (live Solana DEX momentum) — symbol · DEX · pool age · price · 24h% · liquidity, top-N. NO KEY required (unlike the Birdeye-gated solTrending), so it works for every user, and obeys the data-accuracy rule (LIVE tag on success, rate-limited/no-data/offline on failure — never synth). Clicking a row opens that token's DEX chart (crEnsureCustomSolanaToken → switchAsset, one-time delegated click handler). Wired through the standard pane framework (provider registry + REFRESHERS 120s + pane schema + data-source catalog + CR_DESKTOP_MARKET_PANE_IDS) and added live to the SolanaTracker view. Read-only market data — no order/route/signing change.
      (v1.0.329 = DEX accuracy — chosen AMM's pool or honest no-pool state (mirror of the CEX fix). crPickSolanaPool boosts the chosen DEX but falls back to the most-liquid pool on ANOTHER DEX, so picking Raydium for an Orca-only token rendered Orca's book labeled "Raydium fallback". Now crFetchSolanaTokenCandles throws crNoVenuePool when a specific AMM (Raydium/Orca/Meteora/PumpSwap) was chosen and no pool on it exists; loadCandles shows "⚠ no <dex> pool for this token · seeded (NOT LIVE)" + a toast to pick another DEX or Jupiter — never another DEX's pool as the chosen one's. Jupiter is exempt (aggregator/router, not an AMM with its own pools → most-liquid pool is a valid Jupiter route). Read-only — no order/route/signing change.
      (v1.0.328 = DATA-ACCURACY AUDIT — chosen broker's OHLC or nothing (no silent cross-exchange swap). Audit (docs/qa/2026-06-18-data-accuracy-audit.md): live browser probe of all 9 venue adapters from chartrunner.xyz confirmed the 5 broker-wheel CEX venues (Binance/Bybit/OKX/Coinbase/Kraken) all return REAL, exchange-distinct OHLC; KuCoin/Gate.io/MEXC are CORS-blocked in-browser (not in the wheel, only reachable via deep-link). Per-venue symbol/interval/URL/response mappings spot-checked correct; tf-gap aggregation (crAggregateCandlesForTf) correct. KEY FIX: loadCandles no longer silently substitutes Binance candles for a failed non-Binance venue (it used to relabel them "Binance · <venue> fallback" — so picking Kraken for an asset Kraken doesn't list showed Binance's book as Kraken's). Now a chosen non-Binance CEX with no market for the asset/tf shows a clearly-labeled "⚠ no <venue> market · seeded (NOT LIVE)" placeholder + a toast to switch broker/asset — never another exchange's data. Binance-chosen failures still fall through to the public Binance path (same venue). Read-only — no order/route/signing change. (Lower-pri notes in the audit doc: Coinbase quote USD≠USDT, Kraken 1M≈15d, GeckoTerminal tf approximations.)
      (v1.0.327 = FIX "USDT/USDT · Seeded" nonsense + real data for non-Binance picks. Julian picked USDT from the top-100 → it became sym USDTUSDT (no such pair) → fell through to a SEEDED random walk that looked like real price (wandering $1.2–1.5, labelled USDT/USDT). Two fixes: (1) stablecoins (USDT/USDC/DAI/FDUSD/USDe/… — CR_CG_STABLES) are filtered out of crCgMarkets, so they no longer appear in the Configure Run picker OR the Token app top-500 (no more USDT/USDT). (2) New crFetchCgOhlc() pulls REAL CoinGecko /ohlc candles; loadCandles now tries it for any top-100 pick that isn't on Binance (after the CEX/Binance attempts, before the seeded last resort) so coins off Binance show truthful candles instead of a fake walk. crEnsureCexAsset + the picker rows now carry the CoinGecko id. Cache key bumped v1→v2 to drop stale cached stablecoins. Read-only market data — no order/route/signing change.
@@ -11794,6 +11795,14 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
           <div class="crTerm-grid">
             <!-- LEFT COLUMN -->
             <div class="crTerm-col">
+              <div class="crTerm-pane" data-pane-id="mktRegime">
+                <div class="crTerm-paneHd"><span>◆ Market Regime</span><span class="hd-tag">CoinGecko · live</span></div>
+                <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">reading market regime…</div></div>
+              </div>
+              <div class="crTerm-pane" data-pane-id="mktHeatmap">
+                <div class="crTerm-paneHd"><span>▦ Market Heatmap</span><span class="hd-tag">24h % · live</span></div>
+                <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">loading heatmap…</div></div>
+              </div>
               <div class="crTerm-pane" data-pane-id="positions">
                 <div class="crTerm-paneHd"><span>◆ POSITIONS</span><span class="hd-tag live">LIVE</span></div>
                 <div class="crTerm-paneBd">
@@ -12313,6 +12322,18 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
             <div class="crTerm-hgrid">
               <!-- LEFT COL: BTC Aggregator + Top Exchanges + Stablecoin Flows -->
               <div class="crTerm-col">
+                <div class="crTerm-pane crTerm-hpane" data-pane-id="cexSpread">
+                  <div class="crTerm-paneHd"><span>⇄ Cross-Venue Spread</span><span class="hd-tag">BTC · live</span></div>
+                  <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">polling 5 venues…</div></div>
+                </div>
+                <div class="crTerm-pane crTerm-hpane" data-pane-id="cexFundingBoard">
+                  <div class="crTerm-paneHd"><span>∿ Funding Heatmap</span><span class="hd-tag">all perps · live</span></div>
+                  <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">loading funding…</div></div>
+                </div>
+                <div class="crTerm-pane crTerm-hpane" data-pane-id="cexLongShort">
+                  <div class="crTerm-paneHd"><span>⚖ Long/Short</span><span class="hd-tag">retail vs top · live</span></div>
+                  <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">loading positioning…</div></div>
+                </div>
                 <div class="crTerm-pane crTerm-hpane">
                   <div class="crTerm-paneHd"><span>◆ BTC · Cross-CEX Aggregator</span><span class="hd-tag">live · spot</span></div>
                   <div class="crTerm-paneBd">
@@ -13509,7 +13530,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.330",
+  VERSION: "1.0.331",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -50530,6 +50551,11 @@ function _crTermPickerDocsHtml(){
     + '<tr><td class="id">solTopTokens</td><td class="src">Birdeye <code>/defi/tokenlist</code></td><td class="cad">60 s</td></tr>'
     + '<tr><td class="id">solTrending</td><td class="src">Birdeye <code>/defi/token_trending</code></td><td class="cad">120 s</td></tr>'
     + '<tr><td class="id">solGtTrending</td><td class="src">GeckoTerminal <code>/networks/solana/trending_pools</code></td><td class="cad">120 s</td></tr>'
+    + '<tr><td class="id">mktRegime</td><td class="src">CoinGecko <code>/global</code></td><td class="cad">120 s</td></tr>'
+    + '<tr><td class="id">mktHeatmap</td><td class="src">CoinGecko <code>/coins/markets</code></td><td class="cad">90 s</td></tr>'
+    + '<tr><td class="id">cexSpread</td><td class="src">Binance/OKX/Bybit/Coinbase/Kraken <code>ticker</code></td><td class="cad">20 s</td></tr>'
+    + '<tr><td class="id">cexFundingBoard</td><td class="src">Binance <code>/fapi/v1/premiumIndex</code> (all)</td><td class="cad">120 s</td></tr>'
+    + '<tr><td class="id">cexLongShort</td><td class="src">Binance <code>/futures/data/*LongShort*</code></td><td class="cad">60 s</td></tr>'
     + '<tr><td class="id">solHolders</td><td class="src">GoldRush <code>tokenHolders</code></td><td class="cad">90 s</td></tr>'
     + '<tr><td class="id">solSmart</td><td class="src">GoldRush <code>walletTxs</code> (per pasted wallet)</td><td class="cad">180 s</td></tr>'
     + '<tr><td class="id">solSniper</td><td class="src">solPumpfun cache × GoldRush holders</td><td class="cad">180 s</td></tr>'
@@ -50639,6 +50665,7 @@ const CR_CHART_RUN_PANE_IDS = new Set([
 ]);
 const CR_DESKTOP_MARKET_PANE_IDS = new Set([
   'cexAgg','cexExchanges','cexStables','cexFunding','cexOI','cexWhales','cexListings','cexDepth','cexDexFlow',
+  'mktRegime','mktHeatmap','cexSpread','cexFundingBoard','cexLongShort',
   'solPrice','solTopTokens','solDexVolume','solPumpfun','solSmart','solSwaps','solTrending','solGtTrending','solHolders','solSniper',
   'phxWhales','phxFunding','phxOI','phxBook','phxFlight','phxStatus',
   'coinWatchlist','walletWatchlist',
@@ -50671,6 +50698,11 @@ const CR_TERMINAL_PRIVATE_OPS_PANES = {
   phxFlight:    { provider:'DefiLlama',  need:'public DefiLlama fees reachable', onFailure:true },
   phxFunding:   { provider:'Drift',      need:'fresh Drift funding bridge data', onFailure:true },
   phxOI:        { provider:'Drift',      need:'fresh Drift exposure bridge data', onFailure:true },
+  mktRegime:      { provider:'CoinGecko', need:'public CoinGecko global reachable', onFailure:true },
+  mktHeatmap:     { provider:'CoinGecko', need:'public CoinGecko markets reachable', onFailure:true },
+  cexSpread:      { provider:'Multi-CEX', need:'public CEX tickers reachable', onFailure:true },
+  cexFundingBoard:{ provider:'Binance',   need:'public Binance funding reachable', onFailure:true },
+  cexLongShort:   { provider:'Binance',   need:'public Binance long/short ratio reachable', onFailure:true },
 };
 function _crTermCssEsc(s){
   try { if(window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(String(s)); } catch(_){}
@@ -52072,6 +52104,26 @@ const _CR_PANE_SCHEMAS = {
       { type:'slider', key:'window', label:'Window', min:1, max:24, step:1, unit:'h', default:1 },
       { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 },
     ],
+  },
+  'pane:mktRegime': {
+    icon: '◆', title: 'Market Regime', sub: 'Risk-on/off · CoinGecko global.',
+    fields: [ { type:'note', text:'LIVE — total-mcap 24h trend + BTC dominance → risk-on / neutral / risk-off.' }, { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 } ],
+  },
+  'pane:mktHeatmap': {
+    icon: '▦', title: 'Market Heatmap', sub: 'Top coins · 24h % (CoinGecko).',
+    fields: [ { type:'note', text:'LIVE — top coins by market cap, tiles colored by 24h %.' }, { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:90 } ],
+  },
+  'pane:cexSpread': {
+    icon: '⇄', title: 'Cross-Venue Spread', sub: 'BTC across 5 CEX venues.',
+    fields: [ { type:'note', text:'LIVE — BTC last price on Binance/OKX/Bybit/Coinbase/Kraken → best price + spread (bps).' }, { type:'slider', key:'refreshSec', label:'Refresh', min:10, max:120, step:5, unit:'s', default:20 } ],
+  },
+  'pane:cexFundingBoard': {
+    icon: '∿', title: 'Funding Heatmap', sub: 'All perps · Binance funding.',
+    fields: [ { type:'note', text:'LIVE — most-positive (crowded long) / most-negative (crowded short) perp funding across all Binance USDT perps.' }, { type:'slider', key:'rows', label:'Rows', min:6, max:16, step:2, default:8 }, { type:'slider', key:'refreshSec', label:'Refresh', min:60, max:600, step:30, unit:'s', default:120 } ],
+  },
+  'pane:cexLongShort': {
+    icon: '⚖', title: 'Long/Short Positioning', sub: 'Retail vs top trader (Binance).',
+    fields: [ { type:'note', text:'LIVE — global-account vs top-trader long/short ratio for BTC/ETH/SOL. >1 = net long.' }, { type:'slider', key:'refreshSec', label:'Refresh', min:30, max:300, step:30, unit:'s', default:60 } ],
   },
   'pane:solGtTrending': {
     icon: '◆', title: 'Trending Pools', sub: 'Solana · GeckoTerminal (no key).',
@@ -76925,6 +76977,107 @@ window.crGoldRush = (function(){
     }, true);
   }
 
+  // ── Quick-win market-overview widgets (v1.0.331) — all live, no key, and they
+  // go honestly-offline on failure (never synthetic). ───────────────────────────
+  // Engine · Market Regime dial — CoinGecko /global (mcap trend + BTC dominance).
+  async function refreshMktRegime(){
+    if(!_bodiesOf('mktRegime').length) return;
+    try{
+      const r = await fetch('https://api.coingecko.com/api/v3/global', { headers:(typeof crCgHeaders==='function'?crCgHeaders():{}) });
+      if(!r.ok){ _setHdTag('mktRegime','rate-limited','warn'); return; }
+      const d = (await r.json()).data || {};
+      const dom = d.market_cap_percentage && d.market_cap_percentage.btc;
+      const chg = d.market_cap_change_percentage_24h_usd;
+      const tot = d.total_market_cap && d.total_market_cap.usd;
+      const score = (chg == null) ? 0 : chg;
+      const label = score > 1.5 ? 'RISK-ON' : score < -1.5 ? 'RISK-OFF' : 'NEUTRAL';
+      const col = score > 1.5 ? '#14f195' : score < -1.5 ? '#ff5b7f' : '#ffd166';
+      const pos = Math.max(2, Math.min(98, 50 + (score * 8)));
+      _setBody('mktRegime', '<div style="font-size:10.5px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><span style="font-size:15px;font-weight:800;letter-spacing:.5px;color:'+col+'">'+label+'</span><span style="color:'+(score>=0?'#14f195':'#ff5b7f')+'">'+(score>=0?'+':'')+(chg==null?'—':chg.toFixed(2)+'%')+' mcap 24h</span></div>'
+        + '<div style="position:relative;height:6px;border-radius:3px;background:linear-gradient(90deg,#ff5b7f,#ffd166,#14f195);margin-bottom:6px"><span style="position:absolute;top:-2px;left:'+pos+'%;width:2px;height:10px;background:#fff;border-radius:1px"></span></div>'
+        + '<div style="display:flex;justify-content:space-between;color:var(--dim)"><span>BTC dom <b style="color:var(--fg)">'+(dom==null?'—':dom.toFixed(1)+'%')+'</b></span><span>total mcap <b style="color:var(--fg)">'+(tot?_fmtUsd(tot):'—')+'</b></span></div>'
+        + '</div>');
+      _setHdTag('mktRegime', 'LIVE', 'live');
+    }catch(e){ try{ if(window.crReport) crReport(e,'mktRegime'); }catch(_){} _setHdTag('mktRegime','offline','warn'); }
+  }
+  // Engine · Top market heatmap — CoinGecko markets, tiles colored by 24h %.
+  async function refreshMktHeatmap(){
+    if(!_bodiesOf('mktHeatmap').length) return;
+    const esc = (s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    try{
+      const rows = (typeof crCgMarkets==='function') ? (await crCgMarkets(60)) : [];
+      if(!rows || !rows.length){ _setHdTag('mktHeatmap','offline','warn'); return; }
+      const tiles = rows.slice(0,48).map(c=>{ const ch=c.ch24||0; const base=ch>=0?'20,241,149':'255,91,127'; const a=Math.min(0.85,0.16+Math.abs(ch)/22);
+        return '<div title="'+esc(c.name)+' '+ch.toFixed(1)+'%" style="background:rgba('+base+','+a.toFixed(2)+');border-radius:3px;padding:3px 1px;text-align:center;overflow:hidden">'
+          + '<div style="font-weight:700;font-size:9px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.sym)+'</div>'
+          + '<div style="font-size:8px;color:#e8f6ff">'+(ch>=0?'+':'')+ch.toFixed(1)+'</div></div>'; }).join('');
+      _setBody('mktHeatmap', '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:2px">'+tiles+'</div>');
+      _setHdTag('mktHeatmap', rows.length+' · LIVE', 'live');
+    }catch(e){ try{ if(window.crReport) crReport(e,'mktHeatmap'); }catch(_){} _setHdTag('mktHeatmap','offline','warn'); }
+  }
+  // CEXTracker · Cross-venue spread — BTC last price across the 5 working venues.
+  async function refreshCexSpread(){
+    if(!_bodiesOf('cexSpread').length) return;
+    const venues = [
+      ['Binance','https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', j=>parseFloat(j.price)],
+      ['OKX','https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT', j=>parseFloat(j.data&&j.data[0]&&j.data[0].last)],
+      ['Bybit','https://api.bybit.com/v5/market/tickers?category=spot&symbol=BTCUSDT', j=>parseFloat(j.result&&j.result.list&&j.result.list[0]&&j.result.list[0].lastPrice)],
+      ['Coinbase','https://api.exchange.coinbase.com/products/BTC-USD/ticker', j=>parseFloat(j.price)],
+      ['Kraken','https://api.kraken.com/0/public/Ticker?pair=XBTUSDT', j=>{ const k=j.result&&Object.keys(j.result)[0]; return k?parseFloat(j.result[k].c[0]):NaN; }]
+    ];
+    try{
+      const res = await Promise.all(venues.map(async v=>{ try{ const r=await fetch(v[1]); if(!r.ok) return [v[0],NaN]; return [v[0], v[2](await r.json())]; }catch(_){ return [v[0],NaN]; } }));
+      const ok = res.filter(x=>Number.isFinite(x[1]) && x[1]>0);
+      if(ok.length < 2){ _setHdTag('cexSpread','offline','warn'); return; }
+      const avg = ok.reduce((s,x)=>s+x[1],0)/ok.length;
+      const hi=Math.max.apply(null,ok.map(x=>x[1])), lo=Math.min.apply(null,ok.map(x=>x[1]));
+      const bps=((hi-lo)/avg*10000);
+      const body = '<div style="font-size:10.5px">'
+        + '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>avg <b>'+_fmtUsd(avg)+'</b></span><span>spread <b style="color:'+(bps>5?'#ffd166':'#14f195')+'">'+bps.toFixed(1)+' bps</b></span></div>'
+        + ok.sort((a,b)=>b[1]-a[1]).map(x=>{ const d=((x[1]-avg)/avg*10000); return '<div style="display:flex;justify-content:space-between"><span>'+x[0]+'</span><span class="r"><b>'+_fmtUsd(x[1])+'</b> <span style="color:'+(d>=0?'#14f195':'#ff5b7f')+'">'+(d>=0?'+':'')+d.toFixed(1)+' bps</span></span></div>'; }).join('')
+        + res.filter(x=>!Number.isFinite(x[1])).map(x=>'<div style="display:flex;justify-content:space-between;color:var(--dim)"><span>'+x[0]+'</span><span>offline</span></div>').join('')
+        + '</div>';
+      _setBody('cexSpread', body);
+      _setHdTag('cexSpread', ok.length+'/5 · LIVE', 'live');
+    }catch(e){ try{ if(window.crReport) crReport(e,'cexSpread'); }catch(_){} _setHdTag('cexSpread','offline','warn'); }
+  }
+  // CEXTracker · Funding heatmap — most-positive / most-negative perp funding (Binance, all USDT perps).
+  async function refreshCexFundingBoard(){
+    if(!_bodiesOf('cexFundingBoard').length) return;
+    const cfg=_getConfigFor('cexFundingBoard'); const rows=cfg.rows||8;
+    try{
+      const r=await fetch('https://fapi.binance.com/fapi/v1/premiumIndex');
+      if(!r.ok){ _setHdTag('cexFundingBoard','offline','warn'); return; }
+      const arr=await r.json();
+      const list=(Array.isArray(arr)?arr:[]).filter(x=>/USDT$/.test(x.symbol)&&x.lastFundingRate!=null).map(x=>({s:x.symbol.replace(/USDT$/,''),f:parseFloat(x.lastFundingRate)*100}));
+      if(!list.length){ _setHdTag('cexFundingBoard','no data','warn'); return; }
+      list.sort((a,b)=>b.f-a.f);
+      const top=list.slice(0,Math.ceil(rows/2)); const bot=list.slice(-Math.floor(rows/2)).reverse();
+      const row=x=>'<div style="display:flex;justify-content:space-between"><span><b>'+x.s+'</b></span><span class="r" style="color:'+(x.f>=0?'#14f195':'#ff5b7f')+'">'+(x.f>=0?'+':'')+x.f.toFixed(4)+'%</span></div>';
+      _setBody('cexFundingBoard','<div style="font-size:10.5px"><div style="color:var(--dim);font-size:9px;margin-bottom:2px">↑ longs pay (crowded long)</div>'+top.map(row).join('')+'<div style="color:var(--dim);font-size:9px;margin:5px 0 2px">↓ shorts pay (crowded short)</div>'+bot.map(row).join('')+'</div>');
+      _setHdTag('cexFundingBoard', list.length+' perps · LIVE', 'live');
+    }catch(e){ try{ if(window.crReport) crReport(e,'cexFundingBoard'); }catch(_){} _setHdTag('cexFundingBoard','offline','warn'); }
+  }
+  // CEXTracker · Long/Short positioning — retail vs top-trader L/S ratio (Binance futures data).
+  async function refreshCexLongShort(){
+    if(!_bodiesOf('cexLongShort').length) return;
+    const syms=['BTCUSDT','ETHUSDT','SOLUSDT'];
+    try{
+      const out=await Promise.all(syms.map(async s=>{
+        try{
+          const g=await fetch('https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol='+s+'&period=5m&limit=1').then(r=>r.json());
+          const t=await fetch('https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol='+s+'&period=5m&limit=1').then(r=>r.json());
+          return { s:s.replace(/USDT$/,''), retail:parseFloat(g&&g[0]&&g[0].longShortRatio), top:parseFloat(t&&t[0]&&t[0].longShortRatio) };
+        }catch(_){ return { s:s.replace(/USDT$/,''), retail:NaN, top:NaN }; }
+      }));
+      if(!out.some(x=>Number.isFinite(x.retail))){ _setHdTag('cexLongShort','offline','warn'); return; }
+      const cell=v=>!Number.isFinite(v)?'<span style="color:var(--dim)">—</span>':'<b style="color:'+(v>=1?'#14f195':'#ff5b7f')+'">'+v.toFixed(2)+'</b>';
+      _setBody('cexLongShort','<div style="font-size:10.5px"><div style="display:flex;justify-content:space-between;color:var(--dim);font-size:9px;margin-bottom:2px"><span>asset</span><span>retail · top-trader</span></div>'+out.map(x=>'<div style="display:flex;justify-content:space-between"><span><b>'+x.s+'</b></span><span class="r">'+cell(x.retail)+' · '+cell(x.top)+'</span></div>').join('')+'<div style="color:var(--dim);font-size:8.5px;margin-top:3px">L/S &gt;1 = net long</div></div>');
+      _setHdTag('cexLongShort','LIVE','live');
+    }catch(e){ try{ if(window.crReport) crReport(e,'cexLongShort'); }catch(_){} _setHdTag('cexLongShort','offline','warn'); }
+  }
+
   // 3. solDexVolume — DefiLlama Solana overview.
   async function refreshSolDexVolume(){
     if(!_bodiesOf('solDexVolume').length) return;
@@ -77611,6 +77764,11 @@ window.crGoldRush = (function(){
     solTopTokens: { fn: refreshSolTopTokens, default: 60  },
     solTrending:  { fn: refreshSolTrending,  default: 120 },
     solGtTrending:{ fn: refreshSolGtTrending, default: 120 },
+    mktRegime:      { fn: refreshMktRegime,      default: 120 },
+    mktHeatmap:     { fn: refreshMktHeatmap,     default: 90  },
+    cexSpread:      { fn: refreshCexSpread,      default: 20  },
+    cexFundingBoard:{ fn: refreshCexFundingBoard, default: 120 },
+    cexLongShort:   { fn: refreshCexLongShort,   default: 60  },
     solDexVolume: { fn: refreshSolDexVolume, default: 180 },
     solPumpfun:   { fn: refreshSolPumpfun,   default: 30  },
     solSwaps:     { fn: refreshSolSwaps,     default: 10  },
