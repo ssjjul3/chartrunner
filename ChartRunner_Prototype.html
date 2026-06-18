@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.337
-     LAST UPDATED:    2026-06-19  ·  TERMINAL SYNTHESIS P5 — CVD rounds up the score + Probability Lattice. (1) CVD, the v2 model's 4th indicator, now feeds the Exploit Score: when the active chart is a centralized USDT perp, the gauge async-fetches Binance taker order-flow (futures/data/takerlongshortRatio), derives a CVD magnitude+side, and blends it in (VWAP·0.3 / Vol·0.25 / Persist·0.2 / CVD·0.25); spot/DEX charts have no public taker feed → CVD shown "—" (never faked), score stays the 3-component base. (2) Probability Lattice (probLattice) — the mockup "every trade = one ball" Galton board: each Monte-Carlo path drops through a peg lattice into loss / breakeven(±0.5%) / profit, rendered as lattice + outcome histogram + loss/flat/profit %, MODEL-chipped (forecast from the chart's real vol). Both Engine-view, wired through the pane framework. Remaining depth (relationship graph) deferred — needs whale/flow data behind an API key (no-dead-pane rule). Read-only — no order/route/signing change.
+     CURRENT VERSION: v1.0.338
+     LAST UPDATED:    2026-06-19  ·  SOLANA RPC BRIDGE + on-chain widgets. New endpoint-agnostic crSolanaRpc(method,params) — default keyless CORS public RPC (solana-rpc.publicnode.com, browser-verified reachable; mainnet-beta/ankr/drpc are CORS-blocked), override via localStorage.cr_solana_rpc to point at a SOVEREIGN endpoint (e.g. an Umbrel RPC proxy over Tailscale Funnel that keeps a Helius key server-side + adds CORS+cache; proxy service + deploy steps in umbrel-mcp/solana-rpc-proxy/). Ships two previously-deferred widgets: (1) Network Health (solNetHealth) — Solana TPS, slot time, priority-fee level / congestion via getRecentPerformanceSamples + getRecentPrioritizationFees; (2) Token Safety (solSafety) — rug-check the active Solana token on-chain (mint authority renounced? freeze authority? top-10 holder concentration) via getAccountInfo + getTokenLargestAccounts + getTokenSupply. Both honestly-offline if the RPC is unreachable (never faked). The whale relationship-graph still needs an indexer (GoldRush/Birdeye/Helius enhanced) → remains deferred. Read-only — no order/route/signing change.
+     (v1.0.337 = TERMINAL SYNTHESIS P5 — CVD rounds up the score + Probability Lattice. (1) CVD, the v2 model's 4th indicator, now feeds the Exploit Score: when the active chart is a centralized USDT perp, the gauge async-fetches Binance taker order-flow (futures/data/takerlongshortRatio), derives a CVD magnitude+side, and blends it in (VWAP·0.3 / Vol·0.25 / Persist·0.2 / CVD·0.25); spot/DEX charts have no public taker feed → CVD shown "—" (never faked), score stays the 3-component base. (2) Probability Lattice (probLattice) — the mockup "every trade = one ball" Galton board: each Monte-Carlo path drops through a peg lattice into loss / breakeven(±0.5%) / profit, rendered as lattice + outcome histogram + loss/flat/profit %, MODEL-chipped (forecast from the chart's real vol). Both Engine-view, wired through the pane framework. Remaining depth (relationship graph) deferred — needs whale/flow data behind an API key (no-dead-pane rule). Read-only — no order/route/signing change.
      (v1.0.336 = TERMINAL SYNTHESIS P4 — Returns Matrix + Monte-Carlo radial. (1) Returns Matrix (mktMatrix, mockup "Robustness Matrix"): top assets × {1h,24h,7d,30d} REAL % returns from CoinGecko (crCgMarkets extended to multi-window via price_change_percentage=1h,24h,7d,30d; cache key v2→v3), cells colored red→green — one fetch, no per-cell candle pulls. (2) Monte-Carlo (mcRadial): pure crMonteCarlo() estimates drift+vol from the active chart's REAL log-returns, runs 400 random-walk paths over a 24-bar horizon → radial burst (green up / red down) + P(up)/P(down)/mean + terminal-distribution histogram. Clearly labeled MODEL (a forecast from real inputs, never measured fact) — the data-truth rule extended to simulations. Both added to the Engine view + wired through the pane framework. Read-only — no order/route/signing change.
      (v1.0.335 = TERMINAL SYNTHESIS P3 — exploitable-score spine + radial gauge. New pure crExploitScore(candles) scores a chart 0–100 from REAL candles on the v2 indicators VWAP-displacement (|close−VWAP| in ATR units), Volatility (ATR%), and Persistence (directional run consistency), weighted 0.4/0.3/0.3 → state EXPLOITABLE≥66 / CANDIDATE≥40 / IDLE + LONG/SHORT side. The 4th v2 indicator (CVD) needs an order-flow feed → marked pending, NOT faked. New Engine Terminal pane "Exploit Score" (crExploitGauge) renders the mockup score-gauge (SVG donut) + state badge + per-component bars for the ACTIVE chart, recomputing as the player switches asset/tf (cheap + truthful — scores loaded candles rather than faking a per-row cross-asset score). Wired through the pane framework + added to the Engine view. Read-only — no order/route/signing change.
      (v1.0.334 = TERMINAL SYNTHESIS P2 — one row grammar + drilldown drawer. Adopts the v2 "Exploitables-Rail" panel design (06.B) as a shared component: new _crRailRowHTML({rank,sym,sub,right,scorePct,barColor,mint|ticker,title,detail}) renders rank · symbol · metric · SCORE-BAR at the right edge. Trending Pools, Funding Heatmap and Long/Short now all render through it (one consistent look; score-bar = trending rank / |funding| / long-share respectively, colored green/red). Tapping ANY rail row opens a shared slide-in drilldown drawer (#crRailDrawer, right side of the Terminal window) showing the row's key:value detail + an "▶ Open chart" action that launches the token (mint→crEnsureCustomSolanaToken) or asset (ticker→crEnsureCexAsset) chart. Delegated click handler, mockup-look adapted to Platinum chrome, all on live data (P1 truth-dots still apply). Read-only — no order/route/signing change.
@@ -12204,6 +12205,14 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                   <div class="crTerm-paneHd"><span>◆ Trending Pools</span><span class="hd-tag">GeckoTerminal · live</span></div>
                   <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">loading on-chain trending pools…</div></div>
                 </div>
+                <div class="crTerm-pane crTerm-hpane" data-pane-id="solNetHealth">
+                  <div class="crTerm-paneHd"><span>☉ Network Health</span><span class="hd-tag">RPC · live</span></div>
+                  <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">reading Solana network…</div></div>
+                </div>
+                <div class="crTerm-pane crTerm-hpane" data-pane-id="solSafety">
+                  <div class="crTerm-paneHd"><span>🛡 Token Safety</span><span class="hd-tag">RPC · live</span></div>
+                  <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">load a Solana token to scan…</div></div>
+                </div>
                 <div class="crTerm-pane crTerm-hpane">
                   <div class="crTerm-paneHd"><span>◆ SOL · USDC</span><span class="hd-tag">spot · 1h</span></div>
                   <div class="crTerm-paneBd">
@@ -13578,7 +13587,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.337",
+  VERSION: "1.0.338",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -24326,6 +24335,23 @@ function crMonteCarlo(rows, paths, horizon){
   }catch(_){ return null; }
 }
 window.crMonteCarlo = crMonteCarlo;
+
+/* ── Solana RPC bridge (v1.0.338) ────────────────────────────────────────────
+   Endpoint-agnostic JSON-RPC. Default = a keyless CORS-enabled public RPC so the
+   on-chain widgets work out of the box; override with localStorage.cr_solana_rpc
+   to point at your OWN sovereign endpoint — e.g. an Umbrel RPC PROXY exposed over
+   Tailscale Funnel (same pattern as chartrunner-relay), which keeps a Helius key
+   server-side + adds CORS + caching. Never throws to callers that catch. */
+const CR_SOL_RPC_DEFAULT = 'https://solana-rpc.publicnode.com';
+function crSolanaRpcUrl(){ try { return localStorage.getItem('cr_solana_rpc') || CR_SOL_RPC_DEFAULT; } catch(_){ return CR_SOL_RPC_DEFAULT; } }
+async function crSolanaRpc(method, params){
+  var r = await fetch(crSolanaRpcUrl(), { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ jsonrpc:'2.0', id:1, method:method, params: params || [] }) });
+  if(!r.ok) throw new Error('rpc-http-' + r.status);
+  var j = await r.json();
+  if(j && j.error) throw new Error('rpc-' + (j.error.code || '') + ':' + String(j.error.message || '').slice(0, 40));
+  return j ? j.result : null;
+}
+window.crSolanaRpc = crSolanaRpc;
 
 // Phase 2+3: deferred launch (after boot — restart/crMaps/switchAsset ready).
 // Fires for 'symbol' (CEX + mint/DEX) and 'map' (bare self-only). 'room' and
@@ -50653,6 +50679,8 @@ function _crTermPickerDocsHtml(){
     + '<tr><td class="id">solTopTokens</td><td class="src">Birdeye <code>/defi/tokenlist</code></td><td class="cad">60 s</td></tr>'
     + '<tr><td class="id">solTrending</td><td class="src">Birdeye <code>/defi/token_trending</code></td><td class="cad">120 s</td></tr>'
     + '<tr><td class="id">solGtTrending</td><td class="src">GeckoTerminal <code>/networks/solana/trending_pools</code></td><td class="cad">120 s</td></tr>'
+    + '<tr><td class="id">solNetHealth</td><td class="src">Solana RPC <code>getRecentPerformanceSamples</code>/<code>PrioritizationFees</code></td><td class="cad">30 s</td></tr>'
+    + '<tr><td class="id">solSafety</td><td class="src">Solana RPC <code>getAccountInfo</code>/<code>getTokenLargestAccounts</code></td><td class="cad">60 s</td></tr>'
     + '<tr><td class="id">crExploitGauge</td><td class="src">active chart candles (VWAP·Vol·Persistence)</td><td class="cad">20 s</td></tr>'
     + '<tr><td class="id">mktMatrix</td><td class="src">CoinGecko <code>/coins/markets</code> (1h/24h/7d/30d)</td><td class="cad">120 s</td></tr>'
     + '<tr><td class="id">mcRadial</td><td class="src">MODEL · active chart drift+vol simulation</td><td class="cad">30 s</td></tr>'
@@ -50772,7 +50800,7 @@ const CR_CHART_RUN_PANE_IDS = new Set([
 const CR_DESKTOP_MARKET_PANE_IDS = new Set([
   'cexAgg','cexExchanges','cexStables','cexFunding','cexOI','cexWhales','cexListings','cexDepth','cexDexFlow',
   'crExploitGauge','mktMatrix','mcRadial','probLattice','mktRegime','mktHeatmap','cexSpread','cexFundingBoard','cexLongShort',
-  'solPrice','solTopTokens','solDexVolume','solPumpfun','solSmart','solSwaps','solTrending','solGtTrending','solHolders','solSniper',
+  'solPrice','solTopTokens','solDexVolume','solPumpfun','solSmart','solSwaps','solTrending','solGtTrending','solNetHealth','solSafety','solHolders','solSniper',
   'phxWhales','phxFunding','phxOI','phxBook','phxFlight','phxStatus',
   'coinWatchlist','walletWatchlist',
 ]);
@@ -50785,6 +50813,8 @@ const CR_TERMINAL_PRIVATE_OPS_PANES = {
   solTopTokens: { provider:'Birdeye',    need:'Birdeye key or verified data bridge' },
   solTrending:  { provider:'Birdeye',    need:'Birdeye key or verified data bridge' },
   solGtTrending:{ provider:'GeckoTerminal', need:'public GeckoTerminal trending reachable', onFailure:true },
+  solNetHealth: { provider:'Solana RPC', need:'public/Umbrel Solana RPC reachable', onFailure:true },
+  solSafety:    { provider:'Solana RPC', need:'public/Umbrel Solana RPC reachable', onFailure:true },
   solHolders:   { provider:'GoldRush',   need:'GoldRush key or verified data bridge' },
   solSmart:     { provider:'GoldRush',   need:'GoldRush key or verified data bridge' },
   phxWhales:    { provider:'GoldRush',   need:'GoldRush key or verified data bridge' },
@@ -52246,6 +52276,14 @@ const _CR_PANE_SCHEMAS = {
   'pane:cexLongShort': {
     icon: '⚖', title: 'Long/Short Positioning', sub: 'Retail vs top trader (Binance).',
     fields: [ { type:'note', text:'LIVE — global-account vs top-trader long/short ratio for BTC/ETH/SOL. >1 = net long.' }, { type:'slider', key:'refreshSec', label:'Refresh', min:30, max:300, step:30, unit:'s', default:60 } ],
+  },
+  'pane:solNetHealth': {
+    icon: '☉', title: 'Network Health', sub: 'Solana · TPS · priority fees.',
+    fields: [ { type:'note', text:'LIVE — Solana TPS, slot time and priority-fee level (congestion) via the Solana RPC bridge. Set localStorage.cr_solana_rpc to your Umbrel/Helius endpoint.' }, { type:'slider', key:'refreshSec', label:'Refresh', min:15, max:180, step:15, unit:'s', default:30 } ],
+  },
+  'pane:solSafety': {
+    icon: '🛡', title: 'Token Safety', sub: 'Active token · rug-check.',
+    fields: [ { type:'note', text:'LIVE — scans the active Solana token on-chain: mint/freeze authority renounced? + top-10 holder concentration. Via the Solana RPC bridge.' }, { type:'slider', key:'refreshSec', label:'Refresh', min:30, max:300, step:30, unit:'s', default:60 } ],
   },
   'pane:solGtTrending': {
     icon: '◆', title: 'Trending Pools', sub: 'Solana · GeckoTerminal (no key).',
@@ -77291,6 +77329,69 @@ window.crGoldRush = (function(){
     }catch(e){ try{ if(window.crReport) crReport(e, 'probLattice'); }catch(_){} _setHdTag('probLattice','offline','warn'); }
   }
 
+  // ── P5+ (v1.0.338) — on-chain widgets via the Solana RPC bridge ──────────────
+  // Solana Network Health — TPS, slot time, priority-fee level (congestion).
+  async function refreshSolNetHealth(){
+    if(!_bodiesOf('solNetHealth').length) return;
+    // Independent calls so a method blocked by a restricted public node (e.g.
+    // publicnode blocks getRecentPerformanceSamples) still shows what DOES work.
+    var perf = null, fees = null;
+    try{ fees = await crSolanaRpc('getRecentPrioritizationFees', [[]]); }catch(_){}
+    try{ perf = await crSolanaRpc('getRecentPerformanceSamples', [2]); }catch(_){}
+    if(!fees && !perf){ _setHdTag('solNetHealth', 'offline', 'warn'); _setBody('solNetHealth', '<div style="color:var(--dim);font-size:10px">RPC unreachable — set localStorage.cr_solana_rpc to your Umbrel/Helius endpoint</div>'); return; }
+    var s = (Array.isArray(perf) && perf[0]) || {};
+    var tps = s.samplePeriodSecs ? (s.numTransactions / s.samplePeriodSecs) : null;
+    var slotMs = (s.numSlots && s.samplePeriodSecs) ? (s.samplePeriodSecs / s.numSlots * 1000) : null;
+    var fa = (Array.isArray(fees) ? fees : []).map(function(f){ return f.prioritizationFee || 0; }).sort(function(a, b){ return a - b; });
+    var medFee = fa.length ? fa[Math.floor(fa.length / 2)] : null;
+    var cong = medFee == null ? '—' : medFee > 50000 ? 'HIGH' : medFee > 5000 ? 'ELEVATED' : 'LOW';
+    var cc = medFee == null ? '#8aa2b8' : medFee > 50000 ? '#ff5b7f' : medFee > 5000 ? '#ffd166' : '#14f195';
+    var rowK = function(k, v){ return '<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--dim)">' + k + '</span><span><b>' + v + '</b></span></div>'; };
+    _setBody('solNetHealth', '<div style="font-size:10.5px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px"><span style="font-size:15px;font-weight:800;color:' + cc + '">' + cong + '</span><span style="color:var(--dim);font-size:9px">network load</span></div>'
+      + rowK('TPS', tps != null ? Math.round(tps).toLocaleString('en-US') : '—')
+      + rowK('Slot time', slotMs != null ? (slotMs.toFixed(0) + ' ms') : '—')
+      + rowK('Priority fee', (medFee != null ? ('<span style="color:' + cc + '">' + medFee.toLocaleString('en-US') + '</span> µlam/CU') : '—'))
+      + (perf ? '' : '<div style="color:var(--dim);font-size:8.5px;margin-top:3px">TPS/slot need a full RPC — set cr_solana_rpc</div>')
+      + '</div>');
+    _setHdTag('solNetHealth', (perf && fees) ? 'LIVE' : 'partial', (perf && fees) ? 'live' : 'tune');
+  }
+  // New-mint Safety — rug-check the ACTIVE Solana token: mint/freeze authority +
+  // top-10 holder concentration. Pure RPC (getAccountInfo / getTokenLargestAccounts).
+  async function refreshSolSafety(){
+    if(!_bodiesOf('solSafety').length) return;
+    try{
+      var aObj = (typeof currentAssetObj === 'function') ? currentAssetObj() : null;
+      var mint = aObj && aObj.mint ? aObj.mint : ((aObj && aObj.aSpec && typeof crIsSolanaMintAddress === 'function' && crIsSolanaMintAddress(aObj.aSpec)) ? aObj.aSpec : '');
+      if(!mint){ _setHdTag('solSafety', 'no token', 'warn'); _setBody('solSafety', '<div style="color:var(--dim);font-size:10px">load a Solana token (paste a mint / pick a DEX pool) to scan</div>'); return; }
+      // Independent calls — getTokenLargestAccounts is blocked on some public nodes;
+      // mint/freeze authority still resolve, concentration just shows "—" until a
+      // full RPC (Umbrel/Helius) is configured.
+      var info = null, largest = null, supply = null;
+      try{ info = await crSolanaRpc('getAccountInfo', [mint, { encoding:'jsonParsed' }]); }catch(_){}
+      try{ supply = await crSolanaRpc('getTokenSupply', [mint]); }catch(_){}
+      try{ largest = await crSolanaRpc('getTokenLargestAccounts', [mint]); }catch(_){}
+      if(!info){ _setHdTag('solSafety', 'offline', 'warn'); _setBody('solSafety', '<div style="color:var(--dim);font-size:10px">RPC unreachable — set localStorage.cr_solana_rpc</div>'); return; }
+      var parsed = (info && info.value && info.value.data && info.value.data.parsed && info.value.data.parsed.info) || {};
+      var mintAuth = parsed.mintAuthority, freezeAuth = parsed.freezeAuthority;
+      var supplyAmt = (supply && supply.value) ? Number(supply.value.amount) : 0;
+      var top10 = (largest && largest.value && supplyAmt > 0) ? (largest.value.slice(0, 10).reduce(function(a, x){ return a + Number(x.amount || 0); }, 0) / supplyAmt * 100) : null;
+      var mintOk = !mintAuth, freezeOk = !freezeAuth, concOk = (top10 != null && top10 < 40);
+      var checks = [mintOk, freezeOk]; if(top10 != null) checks.push(concOk);
+      var safe = checks.filter(Boolean).length, total = checks.length;
+      var sc = safe === total ? '#14f195' : safe >= total - 1 ? '#ffd166' : '#ff5b7f';
+      var flag = function(ok, label, detail, unknown){ var c = unknown ? '#8aa2b8' : (ok ? '#14f195' : '#ff5b7f'); return '<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--dim)">' + label + '</span><span style="color:' + c + '">' + (unknown ? '· ' : (ok ? '✓ ' : '⚠ ')) + detail + '</span></div>'; };
+      _setBody('solSafety', '<div style="font-size:10.5px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px"><span style="font-size:14px;font-weight:800;color:' + sc + '">' + safe + '/' + total + ' safe</span><span style="color:var(--dim);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%">' + _crRailEsc(aObj.label || aObj.nm || 'token') + '</span></div>'
+        + flag(mintOk, 'Mint authority', mintOk ? 'renounced' : 'ACTIVE (can mint)')
+        + flag(freezeOk, 'Freeze authority', freezeOk ? 'none' : 'ACTIVE (can freeze)')
+        + flag(concOk, 'Top-10 holders', top10 != null ? (top10.toFixed(1) + '%') : 'needs full RPC', top10 == null)
+        + '<div style="color:var(--dim);font-size:8.5px;margin-top:4px">on-chain via RPC · largest accounts may include LP/locked</div>'
+        + '</div>');
+      _setHdTag('solSafety', (top10 != null) ? 'LIVE' : 'partial', (top10 != null) ? 'live' : 'tune');
+    }catch(e){ try{ if(window.crReport) crReport(e, 'solSafety'); }catch(_){} _setHdTag('solSafety', 'offline', 'warn'); }
+  }
+
   // ── Quick-win market-overview widgets (v1.0.331) — all live, no key, and they
   // go honestly-offline on failure (never synthetic). ───────────────────────────
   // Engine · Market Regime dial — CoinGecko /global (mcap trend + BTC dominance).
@@ -78095,6 +78196,8 @@ window.crGoldRush = (function(){
     solTopTokens: { fn: refreshSolTopTokens, default: 60  },
     solTrending:  { fn: refreshSolTrending,  default: 120 },
     solGtTrending:{ fn: refreshSolGtTrending, default: 120 },
+    solNetHealth: { fn: refreshSolNetHealth,  default: 30  },
+    solSafety:    { fn: refreshSolSafety,     default: 60  },
     crExploitGauge: { fn: refreshExploitGauge,   default: 20  },
     mktMatrix:      { fn: refreshMktMatrix,      default: 120 },
     mcRadial:       { fn: refreshMcRadial,       default: 30  },
