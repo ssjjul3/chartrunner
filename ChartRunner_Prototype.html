@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.326
-     LAST UPDATED:    2026-06-18  ·  TOKEN → PAIR two-token chart (Release 2). Configure Run's "Token" header is now a clickable Token↔Pair toggle; in Pair mode the single paste field splits into two (TOKEN A ÷ TOKEN B), each accepting a Solana mint OR a CEX ticker (e.g. ETH ÷ BTC). Entering both builds a synthetic ratio ASSET (crEnsurePairAsset, id pair_*) and switchAsset()s to it. New loadCandles pair branch fetches both legs (_crFetchSideCandles → GeckoTerminal for mints, Binance for tickers), aligns them by timestamp (index-join fallback) and divides component-wise (O=Oa/Ob, H=Ha/Hb, L=La/Lb, C=Ca/Cb) into a TradingView-style A÷B ratio the runner plays on; on failure it falls back to a seeded series + notice. The deep-link URL sync skips pair assets (no addressable link). Read-only market data — no order/SDK/broker-route/signing/on-chain change.
+     CURRENT VERSION: v1.0.327
+     LAST UPDATED:    2026-06-18  ·  FIX "USDT/USDT · Seeded" nonsense + real data for non-Binance picks. Julian picked USDT from the top-100 → it became sym USDTUSDT (no such pair) → fell through to a SEEDED random walk that looked like real price (wandering $1.2–1.5, labelled USDT/USDT). Two fixes: (1) stablecoins (USDT/USDC/DAI/FDUSD/USDe/… — CR_CG_STABLES) are filtered out of crCgMarkets, so they no longer appear in the Configure Run picker OR the Token app top-500 (no more USDT/USDT). (2) New crFetchCgOhlc() pulls REAL CoinGecko /ohlc candles; loadCandles now tries it for any top-100 pick that isn't on Binance (after the CEX/Binance attempts, before the seeded last resort) so coins off Binance show truthful candles instead of a fake walk. crEnsureCexAsset + the picker rows now carry the CoinGecko id. Cache key bumped v1→v2 to drop stale cached stablecoins. Read-only market data — no order/route/signing change.
+     (v1.0.326 = TOKEN → PAIR two-token chart (Release 2). Configure Run's "Token" header is now a clickable Token↔Pair toggle; in Pair mode the single paste field splits into two (TOKEN A ÷ TOKEN B), each accepting a Solana mint OR a CEX ticker (e.g. ETH ÷ BTC). Entering both builds a synthetic ratio ASSET (crEnsurePairAsset, id pair_*) and switchAsset()s to it. New loadCandles pair branch fetches both legs (_crFetchSideCandles → GeckoTerminal for mints, Binance for tickers), aligns them by timestamp (index-join fallback) and divides component-wise (O=Oa/Ob, H=Ha/Hb, L=La/Lb, C=Ca/Cb) into a TradingView-style A÷B ratio the runner plays on; on failure it falls back to a seeded series + notice. The deep-link URL sync skips pair assets (no addressable link). Read-only market data — no order/SDK/broker-route/signing/on-chain change.
      (v1.0.325 = Configure Run "More" list now ordered BY MARKET CAP (Julian: "list is not in right order"). v1.0.324 appended the CoinGecko top-100 AFTER the curated assets, so the list read curated-first then #3 USDT… Now, when the top-100 lands, the whole list is rebuilt in mcap-rank order: primaries (BTC/ETH/SOL) stay as quick-pick buttons and are skipped; each top-100 row sits at its true rank (curated tickers mapped to their real asset id so switchAsset reuses the entry); curated assets outside the top-100 (e.g. a pasted SOL token) append at the end. Token app ALL tab already sorts by mcap desc. No data/route/signing change.
      (v1.0.324 = ASSET UNIVERSE — top-100 picker + top-500 Token app (CoinGecko by mcap). Three things (Julian): (1) Configure Run's "More" asset dropdown SHOWED but you couldn't pick anything — it was a position:fixed popup appended to document.body, which sits outside Configure Run's overlay-relayed window subtree so its clicks were swallowed. Rebuilt as an INLINE, same-width, fixed-height SCROLLABLE panel in normal flow right under the asset row (inside the relayed window → clicks land), with a search box. (2) That panel now lists the curated assets + the CoinGecko TOP 100 by market cap; picking a coin with no existing entry promotes it to a chartable Binance USDT pair via new crEnsureCexAsset() then switchAsset()s. (3) Token app ALL tab now shows the TOP 500 by market cap: new shared crCgMarkets() (CoinGecko /coins/markets, optional Demo key from localStorage.cr_coingecko_key, 6-min localStorage cache) feeds a lazy merge into TOK_LIST (curated defs stamped with real price/mcap; the rest pushed as cgtok_*), ALL sorts by mcap desc and caps at 500, and the per-row live-fetch now only fires for rows with a real Binance/Birdeye source so 500 rows don't spawn 500 doomed requests. Read-only market data only — no order/SDK/broker-route/signing/on-chain change. (Token→Pair two-token chart = next release.)
      (v1.0.323 = DEEP-LINK live URL sync — every chart now has its own address. Julian: "it gives me chartrunner.xyz/play when I run any chart." Root cause: the deep-link feature only READ the URL on boot, COPIED via the 🔗 button, and CLEANED on Home — nothing ever wrote the running chart back into the address bar, so a normal run left the URL at a bare /play (not refreshable / not copy-paste shareable). Fix: new crSyncChartUrl() pushes the canonical crChartLinkCurrent() (?symbol=VENUE:PAIR&tf=) into the address bar via replaceState — called from restart() (run start) and finalizeCandleLoad() (asset/tf switches mid-run). Guards: deep-links must be on; only while game.running (desktop stays a clean /play, and Home still strips per v1.0.321); skipped in a live room (keeps ?room=&host=&#m=), on any snapshot/map hash, and in campaign chapters. replaceState only — no history spam, no reload. So running BTC 1h → URL becomes …/play/?symbol=BINANCE:BTCUSDT&tf=1h, and a refresh reproduces it via the existing resolver. No order/SDK/signing/on-chain change.
@@ -13501,7 +13502,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.326",
+  VERSION: "1.0.327",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -23347,7 +23348,10 @@ function currentAssetObj(){ return ASSETS.find(a=>a.id===currentAsset) || ASSETS
    market cap desc: {cgId,sym,name,price,mcap,rank,ch24,img}. Never throws —
    returns the cache (or []) on failure. */
 const CR_CG_BASE = 'https://api.coingecko.com/api/v3';
-const CR_CG_CACHE_KEY = 'cr_cg_markets_v1';
+const CR_CG_CACHE_KEY = 'cr_cg_markets_v2';
+// Stablecoins are excluded from the picker/Token lists — they peg to ~$1 so
+// there's no tradeable chart (and "USDT/USDT" is nonsense). v1.0.327.
+const CR_CG_STABLES = { usdt:1, usdc:1, dai:1, fdusd:1, tusd:1, usde:1, usdd:1, pyusd:1, usds:1, gusd:1, usdp:1, frax:1, lusd:1, susd:1, usdl:1, eurc:1, eurt:1, buidl:1, usd0:1, usdy:1, crvusd:1, gho:1, usdb:1 };
 function crCgHeaders(){ try { var k = localStorage.getItem('cr_coingecko_key') || ''; return k ? { 'x-cg-demo-api-key': k } : {}; } catch(_){ return {}; } }
 function _crCgCacheRead(limit){ try { var c = JSON.parse(localStorage.getItem(CR_CG_CACHE_KEY) || 'null'); if(c && Array.isArray(c.rows)) return c.rows.slice(0, limit); } catch(_){} return null; }
 async function crCgMarkets(limit){
@@ -23364,7 +23368,7 @@ async function crCgMarkets(limit){
       if(!resp.ok) throw new Error('cg-http-' + resp.status);
       var arr = await resp.json();
       if(!Array.isArray(arr) || !arr.length) break;
-      arr.forEach(function(c){ rows.push({ cgId:c.id, sym:String(c.symbol || '').toUpperCase(), name:c.name || c.symbol, price:c.current_price || 0, mcap:c.market_cap || 0, rank:c.market_cap_rank || (rows.length + 1), ch24:(c.price_change_percentage_24h || 0), img:c.image || '' }); });
+      arr.forEach(function(c){ if(CR_CG_STABLES[String(c.symbol || '').toLowerCase()]) return; rows.push({ cgId:c.id, sym:String(c.symbol || '').toUpperCase(), name:c.name || c.symbol, price:c.current_price || 0, mcap:c.market_cap || 0, rank:c.market_cap_rank || (rows.length + 1), ch24:(c.price_change_percentage_24h || 0), img:c.image || '' }); });
     }
   } catch(e){
     try { if(window.crReport) crReport(e, 'coingecko/markets'); } catch(_){}
@@ -23375,20 +23379,39 @@ async function crCgMarkets(limit){
 }
 window.crCgMarkets = crCgMarkets;
 
+/* Real OHLC candles for any CoinGecko coin (v1.0.327) — used as the truthful
+   data source for top-100 picks that aren't on Binance, so they never fall back
+   to a misleading seeded random walk. CoinGecko's /ohlc endpoint returns real
+   [t,o,h,l,c] (no volume); granularity is auto by the `days` window, which we map
+   from the selected timeframe. Never returns < 5 bars (throws so the caller can
+   fall through). */
+async function crFetchCgOhlc(cgId, tf){
+  if(!cgId) throw new Error('cg-ohlc-no-id');
+  var daysMap = { '1m':1, '5m':1, '15m':1, '30m':1, '1h':7, '2h':14, '4h':14, '6h':30, '8h':30, '12h':90, '1d':180, '3d':365, '1w':365, '1M':365 };
+  var days = daysMap[tf] || 30;
+  var url = CR_CG_BASE + '/coins/' + encodeURIComponent(cgId) + '/ohlc?vs_currency=usd&days=' + days;
+  var resp = await fetch(url, { headers: crCgHeaders() });
+  if(!resp.ok) throw new Error('cg-ohlc-http-' + resp.status);
+  var arr = await resp.json();
+  if(!Array.isArray(arr) || arr.length < 5) throw new Error('cg-ohlc-empty');
+  return arr.map(function(k){ return { t:k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], v:0 }; });
+}
+window.crFetchCgOhlc = crFetchCgOhlc;
+
 /* Promote a CoinGecko ticker to a chartable CEX asset (Binance USDT pair) so the
    top-100 picker can switchAsset() to any coin — the CEX mirror of
    crEnsureCustomSolanaToken. crCexSymbolParts derives base/quote from `sym`; if a
    venue lacks the pair, loadCandles falls back (seeded series + notice) so there's
    never a dead chart. */
-function crEnsureCexAsset(ticker, name, seedPrice){
+function crEnsureCexAsset(ticker, name, seedPrice, cgId){
   ticker = String(ticker || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if(!ticker) return null;
   var id = 'cg_' + ticker.toLowerCase();
   var asset = ASSETS.find(function(a){ return a.id === id; });
   if(!asset){
-    asset = { id:id, nm:ticker, sym:ticker + 'USDT', label:ticker + '/USDT', seed:(seedPrice > 0 ? seedPrice : 1) };
+    asset = { id:id, nm:ticker, sym:ticker + 'USDT', label:ticker + '/USDT', seed:(seedPrice > 0 ? seedPrice : 1), cgId:(cgId || '') };
     ASSETS.push(asset);
-  } else if(seedPrice > 0){ asset.seed = seedPrice; }
+  } else { if(seedPrice > 0) asset.seed = seedPrice; if(cgId) asset.cgId = cgId; }
   return asset;
 }
 window.crEnsureCexAsset = crEnsureCexAsset;
@@ -24362,6 +24385,19 @@ async function loadCandles(tf){
         }
       }
     }
+  }
+
+  // v1.0.327 — Real CoinGecko OHLC for a top-100 pick that isn't on Binance.
+  // Reached only after the CEX/Binance attempts above failed, so Binance-listed
+  // coins still use their (finer, real-time) klines; everything else gets REAL
+  // CoinGecko candles instead of a misleading seeded random walk.
+  if(asset.cgId){
+    try{
+      candles = await crFetchCgOhlc(asset.cgId, tf);
+      crSetMarketSource('live · CoinGecko', 'CoinGecko');
+      finalizeCandleLoad();
+      return;
+    }catch(err){ try { if(window.crReport) crReport(err, 'coingecko/ohlc'); } catch(_){} }
   }
 
   // Live Binance path (public play / default, or fallback for DEX-selected non-Solana assets)
@@ -58104,7 +58140,7 @@ function osRenderAssetBox(hostId){
       row.addEventListener('click', (ev) => {
         ev.stopPropagation();
         if(it.id) pickAsset(it.id);
-        else { const as = crEnsureCexAsset(it.sym, it.name, it.price); if(as) pickAsset(as.id); }
+        else { const as = crEnsureCexAsset(it.sym, it.name, it.price, it.cgId); if(as) pickAsset(as.id); }
       });
       return row;
     };
@@ -58138,7 +58174,7 @@ function osRenderAssetBox(hostId){
         const k = String(r.sym).toUpperCase();
         if(!k || primaryTag[k] || used[k]) return;
         const cur = curatedByTag[k];
-        next.push({ id: cur ? cur.id : null, sym: r.sym, name: cur ? (cur.label || cur.nm) : r.name, price: r.price, rank: r.rank });
+        next.push({ id: cur ? cur.id : null, sym: r.sym, name: cur ? (cur.label || cur.nm) : r.name, price: r.price, rank: r.rank, cgId: r.cgId });
         used[k] = 1;
       });
       others.forEach(a => { const k = String(a.nm).toUpperCase(); if(!used[k]){ next.push({ id:a.id, sym:a.nm, name:a.label || a.nm, rank:0 }); used[k] = 1; } });
