@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.321
-     LAST UPDATED:    2026-06-18  ·  HOME from a deep-link chart routes back to the bare desktop URL. Clicking Home (#crBarFile) on a chart opened via a deep-link (?room/?symbol/?map/?mint/?sharedMap#m=) showed the desktop via showSplash() but LEFT the deep-link params in the address bar — so the URL didn't match the desktop and a refresh re-launched the chart. Fix: _doExit now calls _crHomeCleanUrl() which strips query+hash via history.replaceState (no reload — desktop is already up) so Home lands on a clean chartrunner.xyz/play; and if a live room was active it now tears the presence link down (new crRoom.leave(): nulls params so the reconnect guard trips, stops pos/builds timers, detaches handlers, closes the socket, clears peers) so co-presence doesn't linger on the desktop. No order/SDK/signing/on-chain change.
+     CURRENT VERSION: v1.0.322
+     LAST UPDATED:    2026-06-18  ·  DEEP-LINK BOOT COVER — on-brand "RUNNING CHART…" animation (Julian's mock). Replaced the generic spinner with the game's own identity: the ChartRunner Space Invader avatar (rebuilt from drawInvader's exact 15×7 Solana-green grid as crisp SVG, static & centered with a soft pulsing glow) sitting ABOVE a scrolling candlestick chart (a deterministic random-walk of green/red candles + wicks, two identical SVG copies in a flex track scrolling left via translateX(-50%) for a seamless loop, edge-masked). Label now reads "Running chart…". Built synchronously by the same <body>-top boot script that raises the cover, so it's populated before first paint; reveal/safety-timer unchanged. No order/SDK/signing/on-chain change.
+     (v1.0.321 = HOME from a deep-link chart routes back to the bare desktop URL. Clicking Home (#crBarFile) on a chart opened via a deep-link (?room/?symbol/?map/?mint/?sharedMap#m=) showed the desktop via showSplash() but LEFT the deep-link params in the address bar — so the URL didn't match the desktop and a refresh re-launched the chart. Fix: _doExit now calls _crHomeCleanUrl() which strips query+hash via history.replaceState (no reload — desktop is already up) so Home lands on a clean chartrunner.xyz/play; and if a live room was active it now tears the presence link down (new crRoom.leave(): nulls params so the reconnect guard trips, stops pos/builds timers, detaches handlers, closes the socket, clears peers) so co-presence doesn't linger on the desktop. No order/SDK/signing/on-chain change.
      (v1.0.320 = DEEP-LINK BOOT COVER — land directly on the chart. Julian's recording showed an opened room/share link flashing through the #crBoot login splash → OS desktop → a chart reload before finally landing on the right frame. Root cause: the chart-load for room/snapshot/symbol links is DEFERRED to after boot (setTimeout + retry while chart deps warm up), so the login gate and desktop paint first and the chart visibly re-renders last. Fix: a synchronous opaque "Loading chart…" cover (#crDlCover, z-index 100060, above #crBoot) that an inline <body>-top script raises the instant a chart-bound link is detected (?room always; ?sharedMap/?symbol/?map/?mint when deep-links enabled) — BEFORE the splash/desktop ever paint — and that fades out only once the chart is actually up (wired into the snapshot-importer success branch + crApplyDeepLink's _crDlEnterRun + the bare-map branch, each after a 450ms paint settle). A 14s safety timer reveals unconditionally so the cover can never strand a user. Net: invitee sees a clean loading spinner → the chart, no connect-page/desktop/reload flashes. No order/SDK/signing/on-chain change.
      (v1.0.319 = MULTIPLAYER ROOM FIX (audit). Root cause Julian hit ("live room link lands on chart but plain /play URL + no other player"): crMapsShare + crRoom's myWallet read `crWallet.publicKey`, which DOESN'T EXIST — the wallet API exposes `crWallet.get()`. So host detection always failed → 🛰/live-Share silently produced a SNAPSHOT link (no &room=) even with a wallet connected → opening it = bare /play + no co-presence; and crRoom couldn't identify the creator. Fix 1: all 3 `crWallet.publicKey` reads → `crWallet.get()` (real room links now generate; seat/creator detection works). Fix 2: the HOST now auto-joins the room they create — the 🛰 button navigates the host into the room link after copying it, so guests who open the invite actually have someone to be co-present with (was: Share only copied a link, host never joined → empty room). Verified separately: two tabs in the same ?room= see each other (peers:1 each), so the relay/crRoom path itself is sound — the bug was purely host detection + host-join. No order/SDK/signing/on-chain change.
      (v1.0.318 = Snapshot share-link open — retry fix. v1.0.317 wired the auto-open but crMaps.load() throws at the importer's ~1.2s mark (chart deps — switchAsset/candles/canvas — still warming up); inside the single surrounding try that skipped hideSplash and left the opener on the splash/desktop (the bug Julian saw: "still directs me to chartrunner.xyz/play"). Now the open retries (up to 6× / 700ms) until crMaps.load sticks, THEN hides the splash; crReport logs any miss. A manual crMaps.load+hideSplash renders the shared chart fine, confirming the only issue was the early-throw timing. No order/SDK/signing/on-chain change.
@@ -8577,21 +8578,30 @@
      can never strand anyone. Cover only triggers for links that WILL auto-open
      (room always opens; sharedMap/symbol/map/mint need deep-links enabled). -->
 <div id="crDlCover" aria-hidden="true">
-  <div class="crDlSpin"></div>
-  <div class="crDlMsg">Loading chart…</div>
+  <div class="crDlAvatar" id="crDlAvatar" aria-hidden="true"></div>
+  <div class="crDlChartWrap"><div class="crDlTrack" id="crDlTrack"></div></div>
+  <div class="crDlMsg">Running chart…</div>
 </div>
 <style>
   #crDlCover{position:fixed;inset:0;z-index:100060;background:#0b0e14;display:none;
-    align-items:center;justify-content:center;flex-direction:column;gap:18px;
-    font:600 12px/1.5 ui-monospace,Menlo,monospace;color:#9fb3c8;letter-spacing:.5px;
+    align-items:center;justify-content:center;flex-direction:column;gap:26px;
+    font:600 12px/1.5 ui-monospace,Menlo,monospace;color:#9fb3c8;letter-spacing:2px;
     transition:opacity .35s ease}
   html.cr-dl-booting #crDlCover{display:flex}
   #crDlCover.out{opacity:0;pointer-events:none}
-  #crDlCover .crDlSpin{width:34px;height:34px;border-radius:50%;
-    border:3px solid rgba(120,160,200,.18);border-top-color:#20f195;
-    animation:crDlSpin .8s linear infinite}
-  @keyframes crDlSpin{to{transform:rotate(360deg)}}
-  #crDlCover .crDlMsg{opacity:.85;text-transform:uppercase}
+  /* Avatar — the in-game Space Invader sprite, static & centered, gently pulsing glow. */
+  #crDlCover .crDlAvatar{width:116px;height:auto;filter:drop-shadow(0 0 9px rgba(20,241,149,.35));
+    animation:crDlGlow 1.8s ease-in-out infinite}
+  #crDlCover .crDlAvatar svg{display:block;width:100%;height:auto}
+  @keyframes crDlGlow{0%,100%{filter:drop-shadow(0 0 7px rgba(20,241,149,.28))}50%{filter:drop-shadow(0 0 14px rgba(20,241,149,.55))}}
+  /* Running chart — scrolling candlesticks beneath the avatar. */
+  #crDlCover .crDlChartWrap{width:min(540px,72vw);height:120px;overflow:hidden;position:relative;
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent);
+    mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent)}
+  #crDlCover .crDlTrack{display:flex;height:100%;width:max-content;animation:crDlScroll 7s linear infinite}
+  #crDlCover .crDlTrack svg{display:block;height:100%;width:auto}
+  @keyframes crDlScroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  #crDlCover .crDlMsg{opacity:.8;text-transform:uppercase}
 </style>
 <script>
 (function(){
@@ -8611,6 +8621,33 @@
       if(c){ c.classList.add('out'); setTimeout(function(){ try{ c.parentNode && c.parentNode.removeChild(c); }catch(_){} }, 420); }
     };
     if(chartBound){
+      // Avatar — rebuild the in-game Space Invader sprite (matches drawInvader's
+      // 15×7 grid, Solana-green) as crisp SVG rects, static & centered.
+      try{
+        var grid=['..11111111111..','.1111111111111.','111.1111111.111','11111111111111.','..11.11111.11..','.1...11111...1.','....1.....1....'];
+        var cell=8, rects='', y, x;
+        for(y=0;y<grid.length;y++){ for(x=0;x<grid[y].length;x++){ if(grid[y].charAt(x)==='1'){ rects+='<rect x="'+(x*cell)+'" y="'+(y*cell)+'" width="'+cell+'" height="'+cell+'"/>'; } } }
+        var aw=grid[0].length*cell, ah=grid.length*cell;
+        var av=document.getElementById('crDlAvatar');
+        if(av) av.innerHTML='<svg viewBox="0 0 '+aw+' '+ah+'" fill="#14f195" xmlns="http://www.w3.org/2000/svg">'+rects+'</svg>';
+      }catch(_){}
+      // Running chart — a deterministic random-walk of candlesticks that scrolls
+      // left beneath the avatar (two identical copies → seamless loop via -50%).
+      try{
+        var W=540,H=120,n=27,step=W/n,seed=7,price=H*0.5,body='',i;
+        var rnd=function(){ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
+        for(i=0;i<n;i++){
+          var o=price, d=(rnd()-0.46)*22; price=Math.max(20,Math.min(H-20,price+d)); var c=price;
+          var up=(c<=o), col=up?'#14f195':'#ff5c7c', cx=i*step+step/2;
+          var bt=Math.min(o,c), bb=Math.max(o,c), bh=Math.max(2,bb-bt);
+          var hi=bt-rnd()*9-2, lo=bb+rnd()*9+2, bw=step*0.56;
+          body+='<line x1="'+cx.toFixed(1)+'" y1="'+hi.toFixed(1)+'" x2="'+cx.toFixed(1)+'" y2="'+lo.toFixed(1)+'" stroke="'+col+'" stroke-width="1.4"/>';
+          body+='<rect x="'+(cx-bw/2).toFixed(1)+'" y="'+bt.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="'+col+'"/>';
+        }
+        var one='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" style="width:'+W+'px">'+body+'</svg>';
+        var tr=document.getElementById('crDlTrack');
+        if(tr) tr.innerHTML=one+one;
+      }catch(_){}
       document.documentElement.classList.add('cr-dl-booting');
       window.__crDlSafety = setTimeout(function(){ try{ crDlRevealChart(); }catch(_){} }, 14000);
     }
@@ -13445,7 +13482,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.321",
+  VERSION: "1.0.322",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
