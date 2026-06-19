@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.341
-     LAST UPDATED:    2026-06-19  ·  Stage-2 fix — archived chart tabs now actually hidden. Live-verify of v1.0.340 found the 5 archived tabs (RUN FOCUS/EXECUTION/HUD/OVERLAYS/SETUPS) still showing on the chart surface: the archive rule `.crTerm-tab[data-cr-tab-archived]` (specificity 0,2,0) lost to the chart-surface show rule `#win-terminal[surface] .crTerm-tab[data-cr-chart-tab]` (1,3,0) even with !important. Fixed by raising the archive selector to `#win-terminal[data-cr-terminal-surface="chart"] .crTerm-tab[data-cr-chart-tab="1"][data-cr-tab-archived="1"]` (1,4,0) so it wins. (Desktop-only pane hiding + run-pane visibility verified correct in v1.0.340.) No order/route/signing change.
+     CURRENT VERSION: v1.0.342
+     LAST UPDATED:    2026-06-19  ·  OVERLAY-ARC → TOOLBAR INDICATORS (Stage-2 follow-up). The terminal-arc overlays (VWAP · CVD · Volatility · Regime band · Slots band) are now first-class entries in the toolbar indicator picker (#indGrid / INDICATORS), alongside SMA/EMA/BB/RSI — free (cost 0). crTerminalArc.draw() (already called every frame) now reads INDICATOR_STATE.active as the source of truth (OR'd with the legacy arc-widget toggles), so toggling VWAP/CVD/etc. in the indicator grid draws them on the chart and persists via cr_indicators_v1. Completes the OVERLAYS-tab consolidation: overlays live where the other indicators do. No order/route/signing change.
+     (v1.0.341 = Stage-2 fix — archived chart tabs now actually hidden. Live-verify of v1.0.340 found the 5 archived tabs (RUN FOCUS/EXECUTION/HUD/OVERLAYS/SETUPS) still showing on the chart surface: the archive rule `.crTerm-tab[data-cr-tab-archived]` (specificity 0,2,0) lost to the chart-surface show rule `#win-terminal[surface] .crTerm-tab[data-cr-chart-tab]` (1,3,0) even with !important. Fixed by raising the archive selector to `#win-terminal[data-cr-terminal-surface="chart"] .crTerm-tab[data-cr-chart-tab="1"][data-cr-tab-archived="1"]` (1,4,0) so it wins. (Desktop-only pane hiding + run-pane visibility verified correct in v1.0.340.) No order/route/signing change.
      (v1.0.340 = IN-GAME TERMINAL Stage 2 — consolidate to run-useful tabs (audit doc: docs/qa/2026-06-19-ingame-terminal-pane-audit.md). Audited every chart-Engine pane for in-run, token-specific usefulness. ARCHIVED the RUN FOCUS / EXECUTION / HUD / OVERLAYS / SETUPS chart tabs (data-cr-tab-archived; reversible) — their run-useful panes (positions, openPositions, availableTools, tradeExec, terminalSession, riskSnapshot, edgeFormulas, regimeDetect, marketScan) already live in ENGINE, so nothing run-critical is lost. HID the market-overview panes that duplicate the desktop trackers from the CHART surface (data-cr-desktop-only-pane on mktRegime/mktHeatmap/mktMatrix/coinWatchlist/walletWatchlist) while keeping them on the desktop Terminal. Net chart tabs: ENGINE (token analytics: Exploit Score / Monte-Carlo / Probability Lattice + positions/tools/exec/session) · INFO · TXN · BUBBLE MAPS. Overlay-arc overlays belong in the toolbar indicator system (BB/EMA/SMA-style) — OVERLAYS tab archived; per-overlay wiring into the indicator picker is a focused follow-up. Read-only — no order/route/signing change.
      (v1.0.339 = IN-GAME TERMINAL — 3 new token tabs (Info / Txn / Bubble Maps), Stage 1 of the tab refactor. All read the ACTIVE Solana token (currentAssetObj().mint / .gtPool) and pull live data: INFO = GeckoTerminal pool overview (price · liquidity · FDV · mkt cap · 5m/1h/6h/24h % · 24h buys/sells + volume); TXN = recent pool trades (time · buy/sell · USD · price · trader, 30 rows); BUBBLE MAPS = embedded Bubblemaps holder-cluster map (iframe app.bubblemaps.io/sol/token/<mint>, verified embeddable) + Open ↗. Honestly-empty when the active chart isn't a Solana token. Wired as chart-only tabs (data-cr-chart-tab) into the existing tab-bar + _crTermSetMainView views map; light 20s refresh for the active Info/Txn tab. Read-only — no order/route/signing change. STAGE 2 (next): consolidate Setup/HUD/Run-Focus/Execution → Engine + Overlay-arc overlays → the toolbar indicator system, archiving those tabs.
      (v1.0.338 = SOLANA RPC BRIDGE + on-chain widgets. New endpoint-agnostic crSolanaRpc(method,params) — default keyless CORS public RPC (solana-rpc.publicnode.com, browser-verified reachable; mainnet-beta/ankr/drpc are CORS-blocked), override via localStorage.cr_solana_rpc to point at a SOVEREIGN endpoint (e.g. an Umbrel RPC proxy over Tailscale Funnel that keeps a Helius key server-side + adds CORS+cache; proxy service + deploy steps in umbrel-mcp/solana-rpc-proxy/). Ships two previously-deferred widgets: (1) Network Health (solNetHealth) — Solana TPS, slot time, priority-fee level / congestion via getRecentPerformanceSamples + getRecentPrioritizationFees; (2) Token Safety (solSafety) — rug-check the active Solana token on-chain (mint authority renounced? freeze authority? top-10 holder concentration) via getAccountInfo + getTokenLargestAccounts + getTokenSupply. Both honestly-offline if the RPC is unreachable (never faked). The whale relationship-graph still needs an indexer (GoldRush/Birdeye/Helius enhanced) → remains deferred. Read-only — no order/route/signing change.
@@ -13631,7 +13632,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.341",
+  VERSION: "1.0.342",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -55517,7 +55518,18 @@ const crTerminalArc = (function(){
     if(!state.overlays) return;
     const arr = candleWindow(180);
     if(!arr.length || typeof ctx === 'undefined' || typeof sX !== 'function' || typeof priceToY !== 'function') return;
-    const overlays = state.overlays;
+    // v1.0.342 — these overlays now live in the toolbar indicator picker, so the
+    // indicator state is the source of truth (OR'd with the legacy arc-widget
+    // toggles for back-compat). Toggling VWAP/CVD/Volatility/Regime/Slots in the
+    // indicator grid drives the draw + persists via cr_indicators_v1.
+    const _ia = (typeof INDICATOR_STATE !== 'undefined' && INDICATOR_STATE.active) ? INDICATOR_STATE.active : null;
+    const overlays = {
+      vwap:       !!state.overlays.vwap       || !!(_ia && _ia.has('vwap')),
+      cvd:        !!state.overlays.cvd        || !!(_ia && _ia.has('cvd')),
+      volatility: !!state.overlays.volatility || !!(_ia && _ia.has('volatility')),
+      regime:     !!state.overlays.regime     || !!(_ia && _ia.has('regime')),
+      slots:      !!state.overlays.slots      || !!(_ia && _ia.has('slots')),
+    };
     const firstIdx = Math.max(0, Math.floor(wXFromS(0) / STEP) - 2);
     const lastIdx = Math.min(candles.length - 1, Math.floor(wXFromS(W) / STEP) + 2);
     if(overlays.regime || overlays.slots){
@@ -59912,6 +59924,14 @@ function _saveIndicators(){
 // `label(paramsMerged)` if provided, so the slot text updates when the user
 // tunes a value. Draw/compute helpers read params through _getIndParam().
 const INDICATORS = [
+  // v1.0.342 — Terminal-arc overlays promoted into the toolbar indicator picker
+  // (they ARE chart overlays, like SMA/EMA). Drawn by crTerminalArc.draw(), which
+  // now reads INDICATOR_STATE; free (cost 0) so they toggle without a career gate.
+  { id:'vwap',       nm:'VWAP',        ic:'∿', cost:0, kind:'overlay', color:'#14f195', arc:true, params:[] },
+  { id:'cvd',        nm:'CVD',         ic:'≀', cost:0, kind:'overlay', color:'#3ddc97', arc:true, params:[] },
+  { id:'volatility', nm:'Volatility',  ic:'◠', cost:0, kind:'overlay', color:'#ffd166', arc:true, params:[] },
+  { id:'regime',     nm:'Regime Band', ic:'▭', cost:0, kind:'overlay', color:'#ff5b7f', arc:true, params:[] },
+  { id:'slots',      nm:'Slots Band',  ic:'┊', cost:0, kind:'overlay', color:'#3a86ff', arc:true, params:[] },
   { id:'fg',   nm:'Fear/Greed',    ic:'◐', cost:100,   kind:'badge',   color:'#ffd166',
     params:[
       { key:'rsiPeriod', label:'RSI period',       min:2, max:50, step:1, def:14 },
