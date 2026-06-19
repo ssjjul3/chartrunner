@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.343
-     LAST UPDATED:    2026-06-19  ·  Token tabs UX rebuild + clickable on-chain addresses (DexScreener/GeckoTerminal-style). INFO: was an overlapping jumble — rebuilt as a clean DexScreener-style card (symbol + chain·DEX + clickable Solscan mint header, big price + 24h%, a non-overlapping CSS-grid stat block Liquidity/24h-Vol/FDV/Mkt-Cap, a 4-col 5M/1H/6H/24H % strip, and a buy/sell pressure bar). TXN: aligned CSS-grid rows (time · USD · price · trader); addresses are now INTERACTABLE — tap the time → opens the transaction on Solscan, tap the trader → opens their wallet on Solscan. BUBBLE MAPS: the embed showed a broken image (Bubblemaps blocks framing for most tokens), replaced with a clean launch card → "Open interactive bubble map ↗" (new tab) + "View top holders on Solscan ↗" (holder concentration also lives in the RPC Token Safety widget). Read-only — no order/route/signing change.
+     CURRENT VERSION: v1.0.344
+     LAST UPDATED:    2026-06-19  ·  TXN glitch fix + INFO pair-detail block (DexScreener parity). TXN: rows were flowing horizontally — the wrapper inherited .crTerm-paneBd.small > div{display:flex} from the pane CSS; pinned the wrapper to display:block so the grid rows stack vertically again (time · USD · price · trader). INFO: added the DexScreener pair-detail block under the buy/sell bar — "Pair created" relative age (from pool_created_at), "Pooled <BASE>" and "Pooled <QUOTE>" (token amount + ~50/50 reserve USD, honest constant-product approximation), and three interactable address rows (Pair / base / quote) each with a one-click copy button (⧉ → ✓) and an "EXP ↗" Solscan link. Copy is a delegated [data-cr-copy] handler (no inline onclick, CSP-safe; clipboard API + execCommand fallback). Pulls quote_token via the pool include. Read-only — no order/route/signing change.
+     (v1.0.343 = Token tabs UX rebuild + clickable on-chain addresses (DexScreener/GeckoTerminal-style). INFO: was an overlapping jumble — rebuilt as a clean DexScreener-style card (symbol + chain·DEX + clickable Solscan mint header, big price + 24h%, a non-overlapping CSS-grid stat block Liquidity/24h-Vol/FDV/Mkt-Cap, a 4-col 5M/1H/6H/24H % strip, and a buy/sell pressure bar). TXN: aligned CSS-grid rows (time · USD · price · trader); addresses are now INTERACTABLE — tap the time → opens the transaction on Solscan, tap the trader → opens their wallet on Solscan. BUBBLE MAPS: the embed showed a broken image (Bubblemaps blocks framing for most tokens), replaced with a clean launch card → "Open interactive bubble map ↗" (new tab) + "View top holders on Solscan ↗" (holder concentration also lives in the RPC Token Safety widget). Read-only — no order/route/signing change.)
      (v1.0.342 = OVERLAY-ARC → TOOLBAR INDICATORS (Stage-2 follow-up). The terminal-arc overlays (VWAP · CVD · Volatility · Regime band · Slots band) are now first-class entries in the toolbar indicator picker (#indGrid / INDICATORS), alongside SMA/EMA/BB/RSI — free (cost 0). crTerminalArc.draw() (already called every frame) now reads INDICATOR_STATE.active as the source of truth (OR'd with the legacy arc-widget toggles), so toggling VWAP/CVD/etc. in the indicator grid draws them on the chart and persists via cr_indicators_v1. Completes the OVERLAYS-tab consolidation: overlays live where the other indicators do. No order/route/signing change.
      (v1.0.341 = Stage-2 fix — archived chart tabs now actually hidden. Live-verify of v1.0.340 found the 5 archived tabs (RUN FOCUS/EXECUTION/HUD/OVERLAYS/SETUPS) still showing on the chart surface: the archive rule `.crTerm-tab[data-cr-tab-archived]` (specificity 0,2,0) lost to the chart-surface show rule `#win-terminal[surface] .crTerm-tab[data-cr-chart-tab]` (1,3,0) even with !important. Fixed by raising the archive selector to `#win-terminal[data-cr-terminal-surface="chart"] .crTerm-tab[data-cr-chart-tab="1"][data-cr-tab-archived="1"]` (1,4,0) so it wins. (Desktop-only pane hiding + run-pane visibility verified correct in v1.0.340.) No order/route/signing change.
      (v1.0.340 = IN-GAME TERMINAL Stage 2 — consolidate to run-useful tabs (audit doc: docs/qa/2026-06-19-ingame-terminal-pane-audit.md). Audited every chart-Engine pane for in-run, token-specific usefulness. ARCHIVED the RUN FOCUS / EXECUTION / HUD / OVERLAYS / SETUPS chart tabs (data-cr-tab-archived; reversible) — their run-useful panes (positions, openPositions, availableTools, tradeExec, terminalSession, riskSnapshot, edgeFormulas, regimeDetect, marketScan) already live in ENGINE, so nothing run-critical is lost. HID the market-overview panes that duplicate the desktop trackers from the CHART surface (data-cr-desktop-only-pane on mktRegime/mktHeatmap/mktMatrix/coinWatchlist/walletWatchlist) while keeping them on the desktop Terminal. Net chart tabs: ENGINE (token analytics: Exploit Score / Monte-Carlo / Probability Lattice + positions/tools/exec/session) · INFO · TXN · BUBBLE MAPS. Overlay-arc overlays belong in the toolbar indicator system (BB/EMA/SMA-style) — OVERLAYS tab archived; per-overlay wiring into the indicator picker is a focused follow-up. Read-only — no order/route/signing change.
@@ -13633,7 +13634,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.343",
+  VERSION: "1.0.344",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -51377,6 +51378,17 @@ async function _crResolvePool(mint, known){
 function _crSolscan(type, id){ return 'https://solscan.io/' + type + '/' + encodeURIComponent(String(id || '')); }
 function _crShort(a, n){ a = String(a || ''); n = n || 4; return a.length > (n*2+1) ? (a.slice(0, n) + '…' + a.slice(-n)) : a; }
 function _crPct(v){ v = (v == null ? null : parseFloat(v)); if(v == null || isNaN(v)) return { t:'—', c:'var(--dim)' }; return { t:(v >= 0 ? '+' : '') + v.toFixed(2) + '%', c:(v >= 0 ? '#14f195' : '#ff5b7f') }; }
+// DexScreener-style "Pair created Nd Nh ago" relative age.
+function _crAgo(ts){ var t = (typeof ts === 'number') ? ts : Date.parse(ts); if(!isFinite(t)) return '—'; var s = Math.max(0, Math.floor((Date.now() - t) / 1000)); var d = Math.floor(s/86400), mo = Math.floor(d/30), y = Math.floor(d/365); if(y >= 1) return y + 'y ' + Math.floor((d%365)/30) + 'mo ago'; if(mo >= 1) return mo + 'mo ' + (d%30) + 'd ago'; if(d >= 1) return d + 'd ' + Math.floor((s%86400)/3600) + 'h ago'; var h = Math.floor(s/3600); if(h >= 1) return h + 'h ' + Math.floor((s%3600)/60) + 'm ago'; return Math.floor(s/60) + 'm ago'; }
+// Compact pooled-token amount (54.81B / 1,116.75 style).
+function _crFmtAmt(n){ n = Number(n); if(!isFinite(n)) return '—'; var a = Math.abs(n); if(a >= 1e9) return (n/1e9).toFixed(2) + 'B'; if(a >= 1e6) return (n/1e6).toFixed(2) + 'M'; if(a >= 1e3) return n.toLocaleString('en-US', { maximumFractionDigits: 0 }); if(a >= 1) return n.toLocaleString('en-US', { maximumFractionDigits: 2 }); return n.toPrecision(3); }
+// One address row: label · short addr · copy · EXP ↗ (DexScreener pair-detail grammar).
+function _crAddrRow(label, addr, type){ addr = String(addr || ''); if(!addr) return ''; var exp = _crSolscan(type || 'account', addr); return '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:3px 0;border-top:1px solid rgba(120,140,170,.08)">'
+  + '<span style="color:var(--dim);font-size:9px;min-width:34px">' + _crTokEsc(label) + '</span>'
+  + '<span style="font-family:ui-monospace,monospace;font-size:9.5px;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _crShort(addr, 5) + '</span>'
+  + '<button type="button" data-cr-copy="' + _crTokEsc(addr) + '" title="copy address" style="background:none;border:0;cursor:pointer;color:#7aa2ff;font-size:11px;padding:0 2px">⧉</button>'
+  + '<a href="' + exp + '" target="_blank" rel="noopener" title="view on Solscan ↗" style="color:#7aa2ff;text-decoration:none;font-size:8.5px;border:1px solid rgba(122,162,255,.4);border-radius:4px;padding:1px 4px">EXP ↗</a>'
+  + '</div>'; }
 async function crRenderTokenInfo(){
   var host = document.getElementById('crTermInfoBody'); if(!host) return;
   var tok = _crActiveSolToken();
@@ -51385,14 +51397,25 @@ async function crRenderTokenInfo(){
     var pool = await _crResolvePool(tok.mint, tok.pool);
     if(!pool){ host.innerHTML = '<div class="dim" style="font-size:10px">No Solana pool found for this token.</div>'; return; }
     var ck = 'info:' + pool, c = _crTokTabCache[ck], j;
-    if(c && Date.now() - c.t < 15000) j = c.v; else { j = await _crGtJson('https://api.geckoterminal.com/api/v2/networks/solana/pools/' + pool + '?include=base_token,dex'); _crTokTabCache[ck] = { t:Date.now(), v:j }; }
+    if(c && Date.now() - c.t < 15000) j = c.v; else { j = await _crGtJson('https://api.geckoterminal.com/api/v2/networks/solana/pools/' + pool + '?include=base_token,quote_token,dex'); _crTokTabCache[ck] = { t:Date.now(), v:j }; }
     var a = (j.data && j.data.attributes) || {};
-    var inc = (j.included || []); var dexName = ''; var sym = '';
-    inc.forEach(function(x){ if(x.type === 'dex') dexName = (x.attributes && x.attributes.name) || dexName; if(x.type === 'token' && x.id && x.id.indexOf(tok.mint) >= 0) sym = (x.attributes && x.attributes.symbol) || sym; });
+    var rel = (j.data && j.data.relationships) || {};
+    var quoteMint = (((rel.quote_token || {}).data || {}).id || '').replace(/^solana_/, '');
+    var inc = (j.included || []); var dexName = ''; var sym = ''; var quoteSym = '';
+    inc.forEach(function(x){ if(x.type === 'dex') dexName = (x.attributes && x.attributes.name) || dexName; if(x.type === 'token'){ var id = x.id || ''; if(id.indexOf(tok.mint) >= 0) sym = (x.attributes && x.attributes.symbol) || sym; else if(quoteMint && id.indexOf(quoteMint) >= 0) quoteSym = (x.attributes && x.attributes.symbol) || quoteSym; } });
     if(!sym) sym = String(a.name || tok.label).split(/[\s/]/)[0];
+    if(!quoteSym) quoteSym = 'quote';
     var pc = a.price_change_percentage || {}, tx = (a.transactions && a.transactions.h24) || {}, vol = a.volume_usd || {};
     var h24 = _crPct(pc.h24), price = (a.base_token_price_usd != null) ? _crFmtUsd(parseFloat(a.base_token_price_usd)) : '—';
     var buys = Number(tx.buys || 0), sells = Number(tx.sells || 0), tot = buys + sells || 1;
+    // Pooled liquidity per side. GeckoTerminal exposes reserve_in_usd (total); for a
+    // constant-product AMM the two sides are ~50/50, so each ≈ reserve/2 and the token
+    // amount = that USD / token price. Honest approximation (DexScreener shows exact).
+    var reserve = Number(a.reserve_in_usd) || 0, sideUsd = reserve / 2;
+    var baseP = parseFloat(a.base_token_price_usd), quoteP = parseFloat(a.quote_token_price_usd);
+    var baseAmt = (sideUsd > 0 && isFinite(baseP) && baseP > 0) ? (sideUsd / baseP) : NaN;
+    var quoteAmt = (sideUsd > 0 && isFinite(quoteP) && quoteP > 0) ? (sideUsd / quoteP) : NaN;
+    var created = a.pool_created_at;
     var stat = function(lab, val){ return '<div style="background:rgba(10,15,28,.5);border:1px solid var(--line);border-radius:6px;padding:6px 8px"><div style="color:var(--dim);font-size:8.5px;text-transform:uppercase;letter-spacing:.4px">' + lab + '</div><div style="font-weight:700;font-size:12px">' + val + '</div></div>'; };
     var tfc = function(lab, v){ var p = _crPct(v); return '<div style="text-align:center"><div style="color:var(--dim);font-size:8.5px">' + lab + '</div><div style="color:' + p.c + ';font-weight:700;font-size:10.5px">' + p.t + '</div></div>'; };
     host.innerHTML = '<div style="font-size:11px;line-height:1.45;display:block">'
@@ -51407,6 +51430,16 @@ async function crRenderTokenInfo(){
         + tfc('5M', pc.m5) + tfc('1H', pc.h1) + tfc('6H', pc.h6) + tfc('24H', pc.h24) + '</div>'
       + '<div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:3px"><span style="color:var(--dim)">24h txns ' + tot.toLocaleString('en-US') + '</span><span><b style="color:#14f195">' + buys.toLocaleString('en-US') + '</b> buys · <b style="color:#ff5b7f">' + sells.toLocaleString('en-US') + '</b> sells</span></div>'
       + '<div style="height:6px;border-radius:3px;overflow:hidden;display:flex"><span style="width:' + (buys/tot*100).toFixed(0) + '%;background:#14f195"></span><span style="flex:1;background:#ff5b7f"></span></div>'
+      + '<div style="margin-top:9px;background:rgba(10,15,28,.5);border:1px solid var(--line);border-radius:6px;padding:7px 8px">'
+        + '<div style="display:flex;justify-content:space-between;font-size:9.5px;margin-bottom:5px"><span style="color:var(--dim)">Pair created</span><span style="font-weight:700">' + _crAgo(created) + '</span></div>'
+        + '<div style="display:flex;justify-content:space-between;font-size:9.5px;margin-bottom:3px"><span style="color:var(--dim)">Pooled ' + _crTokEsc(sym) + '</span><span style="font-weight:700">' + _crFmtAmt(baseAmt) + ' <span style="color:var(--dim);font-weight:400">' + _crFmtUsd(sideUsd) + '</span></span></div>'
+        + '<div style="display:flex;justify-content:space-between;font-size:9.5px"><span style="color:var(--dim)">Pooled ' + _crTokEsc(quoteSym) + '</span><span style="font-weight:700">' + _crFmtAmt(quoteAmt) + ' <span style="color:var(--dim);font-weight:400">' + _crFmtUsd(sideUsd) + '</span></span></div>'
+        + '<div style="margin-top:6px">'
+          + _crAddrRow('Pair', pool, 'account')
+          + _crAddrRow(sym, tok.mint, 'token')
+          + _crAddrRow(quoteSym, quoteMint, 'token')
+        + '</div>'
+      + '</div>'
       + '</div>';
   }catch(e){ try{ if(window.crReport) crReport(e, 'tokInfo'); }catch(_){} host.innerHTML = '<div class="dim" style="font-size:10px">token info unavailable right now</div>'; }
 }
@@ -51421,7 +51454,7 @@ async function crRenderTokenTxns(){
     var rows = (j.data || []).slice(0, 30);
     if(!rows.length){ host.innerHTML = '<div class="dim" style="font-size:10px">no recent trades</div>'; return; }
     var now = Date.now();
-    host.innerHTML = '<div style="font-size:10px">'
+    host.innerHTML = '<div style="font-size:10px;display:block">'
       + '<div style="display:grid;grid-template-columns:50px 1fr auto 64px;gap:6px;color:var(--dim);font-size:8.5px;padding:0 2px 3px;border-bottom:1px solid rgba(120,140,170,.12)"><span>time</span><span>USD</span><span style="text-align:right">price</span><span style="text-align:right">trader</span></div>'
       + rows.map(function(t){
           var x = t.attributes || {}; var buy = x.kind === 'buy'; var col = buy ? '#14f195' : '#ff5b7f';
@@ -51467,6 +51500,14 @@ function _crTokTabTick(){
   }catch(_){}
 }
 try{ setInterval(_crTokTabTick, 20000); }catch(_){}
+// Delegated copy handler for address rows ([data-cr-copy]) — no inline onclick (CSP-safe).
+try{ document.addEventListener('click', function(e){
+  var b = e.target && e.target.closest && e.target.closest('[data-cr-copy]'); if(!b) return;
+  e.preventDefault(); var v = b.getAttribute('data-cr-copy') || ''; var old = b.textContent;
+  var done = function(){ b.textContent = '✓'; b.style.color = '#14f195'; setTimeout(function(){ b.textContent = old; b.style.color = ''; }, 1100); };
+  try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(v).then(done, function(){ done(); }); return; } }catch(_){}
+  try{ var ta = document.createElement('textarea'); ta.value = v; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done(); }catch(_){}
+}, true); }catch(_){}
 
 function _crTermSetMainView(view){
   try {
