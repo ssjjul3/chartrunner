@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.347
-     LAST UPDATED:    2026-06-19  ·  Decouple pass 2 — removed the archived #win-workbench
-     window DOM (470 lines / ~480 fewer charting-frame nodes). App was archived
-     (CR_WORKBENCH_ARCHIVED): no icon, osOpenWindow('workbench') redirects to Profile, window
-     never rendered. Tools loadout already lives in Profile → TOOLS (#wbToolList, intact). All 8
-     _wbRender* fns null-guard so they no-op; Runroom injector guards too. Renderers + redirect
-     kept for a later traced cut. (Pass 1 = dead #win-marketplace; v1.0.345 = perf+net.)
+     CURRENT VERSION: v1.0.348
+     LAST UPDATED:    2026-06-19  ·  Decouple pass 3 — emptied the 7 Workbench-only renderer
+     bodies (_wbRenderBots/Strats/Inds/Apps/Terms/Primitives/BackHistory) into no-op stubs
+     (−404 lines). Their containers were removed with the window in v1.0.347, so they were
+     already no-op early-returns; kept as named stubs so every (dead/guarded) call site still
+     resolves. _wbRenderTools STAYS (live Profile → TOOLS). Builder/equip helpers + the bot
+     SYSTEM untouched. Phoenix Live + Journal bot/alertv2 renderers STAGED (entangled — see plan).
+     (Pass 2 = #win-workbench DOM; pass 1 = #win-marketplace; v1.0.345 = perf+net.)
      Plan: docs/architecture/2026-06-19-archived-code-decoupling-plan.md -->
 <meta charset="utf-8" />
 <title>Chartrunner.xyz</title>
@@ -12830,7 +12831,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.347",
+  VERSION: "1.0.348",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -48565,116 +48566,7 @@ function _wbToolEquipNone(scope){
  * primitive placements grouped by category (forecast / fib / orders) with
  * icon, label, kind (1-click / 2-anchor), step instructions, and hint.
  * Hovers turn green; clicks toast with the hotkey reminder. */
-function _wbRenderPrimitives(){
-  // v0.9.41 — Primitives tab now mirrors Tools tab: equipped summary on the
-  // left, click-to-equip rows on the right. Reuses _wbToolEquipped /
-  // _wbToggleTool / _wbToolStarred so a single wb.equippedTools array drives
-  // both tabs. The in-game laser palette filter (line 10655) routes by cat
-  // so equipping here only affects hotkey 3, not hotkey 2.
-  const list = document.getElementById('wbPrimList');
-  const cnt  = document.getElementById('wbPrimEquipCount');
-  const sum  = document.getElementById('wbPrimEquippedSummary');
-  if(typeof WB_LASER_TOOLS === 'undefined') return;
-  const primDefs = WB_LASER_TOOLS.filter(t => crLaserIsBlueOrder(t.id));
-  const total = primDefs.length;
-  const equippedPrims = wb.equippedTools.filter(id => {
-    const d = WB_LASER_TOOLS.find(t => t.id === id);
-    return d && crLaserIsBlueOrder(d.id);
-  });
-  const eqN = equippedPrims.length;
-  if(cnt) cnt.textContent = '(' + eqN + '/' + total + ')';
-  if(sum){
-    if(eqN === 0){
-      sum.style.fontStyle = 'italic';
-      sum.style.color = '#ff5b7f';
-      sum.innerHTML = 'Blue Orders favorites are empty — order routes are activated from a placed object\'s settings (⚡ Activate…) or by hotkey-3 clicking it. Equip or star orders on the right to organize this panel.';
-    } else {
-      const labels = equippedPrims
-        .map(id => _wbToolDef(id))
-        .filter(Boolean)
-        .map(t => '<span style="display:inline-block;padding:2px 6px;margin:2px 4px 2px 0;border:1px solid rgba(58,134,255,0.6);border-radius:4px;background:rgba(58,134,255,0.12);color:#79c0ff;font-size:10px">'+t.ic+' '+t.label+'</span>')
-        .join('');
-      sum.style.fontStyle = 'normal';
-      sum.style.color = 'var(--fg)';
-      sum.innerHTML = '<div style="font-size:10px;color:var(--dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Equipped (' + eqN + '/' + total + ')</div>' + labels;
-    }
-  }
-  if(!list) return;
-  list.innerHTML = '';
-  // Group rows by primitive category, same shape as Tools tab.
-  const PRIM_CAT_ORDER = ['forecast','fib','orders'];
-  const PRIM_CAT_LABELS = { forecast:'⌖ Forecasting', fib:'☰ Fibonacci', orders:'◇ Orders' };
-  PRIM_CAT_ORDER.forEach(catId => {
-    // v1.0.105 — Filter out non-live primitives. Drops the empty SOON
-    // rows from the Workbench Primitives tab (barPattern, fibChannel,
-    // fibTimeZone, fibCircles). Category headers with zero live items
-    // are then skipped entirely.
-    const tools = WB_LASER_TOOLS.filter(t => t.cat === catId && t.live && crLaserIsBlueOrder(t.id));
-    if(!tools.length) return;
-    const header = document.createElement('div');
-    header.style.cssText = 'display:flex;align-items:center;gap:8px;margin:8px 0 4px;padding:0 4px;font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--dim);text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:4px';
-    header.innerHTML = '<span style="font-size:12px">'+(PRIM_CAT_LABELS[catId]||catId).split(' ')[0]+'</span> ' + ((PRIM_CAT_LABELS[catId]||catId).split(' ').slice(1).join(' ') || catId) + ' <span style="margin-left:auto;font-weight:400">(' + tools.length + ')</span>';
-    list.appendChild(header);
-    tools.forEach(t => {
-      const eq = _wbToolEquipped(t.id);
-      const row = document.createElement('div');
-      row.style.cssText = [
-        'display:flex','align-items:center','gap:10px',
-        'padding:6px 10px',
-        'border:1px solid ' + (eq ? 'rgba(58,134,255,0.6)' : 'var(--line)'),
-        'border-radius:6px',
-        'background:' + (eq ? 'rgba(58,134,255,0.10)' : 'rgba(10,15,28,0.4)'),
-        'cursor:pointer',
-        'transition:background .12s,border-color .12s',
-        'opacity:' + (t.live ? '1' : '0.65')
-      ].join(';');
-      row.onmouseenter = ()=>{ row.style.background = eq ? 'rgba(58,134,255,0.18)' : 'rgba(58,134,255,0.12)'; };
-      row.onmouseleave = ()=>{ row.style.background = eq ? 'rgba(58,134,255,0.10)' : 'rgba(10,15,28,0.4)'; };
-      row.onclick = ()=> _wbToggleTool(t.id);
-      const ic = document.createElement('div');
-      ic.textContent = t.ic;
-      ic.style.cssText = 'font-size:16px;line-height:1;width:22px;text-align:center';
-      const body = document.createElement('div');
-      body.style.cssText = 'flex:1;min-width:0';
-      const head = document.createElement('div');
-      head.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap';
-      const name = document.createElement('div');
-      name.textContent = t.label;
-      name.style.cssText = 'font-weight:700;font-size:12px;color:var(--fg)';
-      head.appendChild(name);
-      // Star toggle — same behavior as Tools tab.
-      const fav = document.createElement('button');
-      fav.type = 'button';
-      const starred = _wbToolStarred(t.id);
-      fav.textContent = starred ? '★' : '☆';
-      fav.title = starred ? 'Unstar — remove from ★ favorites' : 'Star — add to ★ favorites';
-      fav.style.cssText = 'background:transparent;border:0;cursor:pointer;padding:0 4px;font-size:14px;line-height:1;color:' + (starred ? '#ffd166' : 'var(--dim)');
-      fav.addEventListener('mouseenter', () => { fav.style.color = '#ffd166'; });
-      fav.addEventListener('mouseleave', () => { fav.style.color = starred ? '#ffd166' : 'var(--dim)'; });
-      fav.addEventListener('click', (e) => { e.stopPropagation(); _wbToggleStar(t.id); });
-      head.appendChild(fav);
-      const tag = document.createElement('span');
-      tag.textContent = t.cls;
-      tag.style.cssText = 'font-size:9px;padding:1px 5px;border:1px solid var(--line);border-radius:3px;color:var(--dim);text-transform:uppercase;letter-spacing:.3px';
-      head.appendChild(tag);
-      if(!t.live){
-        const soon = document.createElement('span');
-        soon.textContent = 'SOON';
-        soon.style.cssText = 'font-size:9px;padding:1px 5px;border:1px solid rgba(255,209,102,.5);border-radius:3px;color:#ffd166;background:rgba(255,209,102,.1);letter-spacing:.3px';
-        head.appendChild(soon);
-      }
-      const desc = document.createElement('div');
-      desc.textContent = t.desc;
-      desc.style.cssText = 'font-size:11px;color:var(--dim);margin-top:2px;line-height:1.35';
-      body.appendChild(head); body.appendChild(desc);
-      const state = document.createElement('div');
-      state.textContent = eq ? '✓' : '+';
-      state.style.cssText = 'font-size:14px;font-weight:700;color:' + (eq ? '#79c0ff' : 'var(--dim)') + ';white-space:nowrap;width:18px;text-align:center';
-      row.appendChild(ic); row.appendChild(body); row.appendChild(state);
-      list.appendChild(row);
-    });
-  });
-}
+function _wbRenderPrimitives(){ /* v1.0.348 — Workbench UI archived (window DOM removed v1.0.347). Render body removed; kept as a no-op stub so every (now-dead/guarded) call site still resolves. */ }
 
 function _wbRenderTools(){
   const list = document.getElementById('wbToolList');
@@ -48923,79 +48815,7 @@ function _wbColor(v, fallback){
   const s = String(v || '').trim();
   return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(s) ? s : (fallback || '#3ddc97');
 }
-function _wbRenderBots(){
-  const list = document.getElementById('wbBotList');
-  const cnt  = document.getElementById('wbBotCount');
-  // v1.0.294 — archived (non-top-10) bots are hidden from the roster UI.
-  const rosterBots = wb.bots.filter(b => !(b && b.archived));
-  const botTotal = rosterBots.length;
-  if(cnt) cnt.textContent = botTotal + (botTotal === 1 ? ' bot' : ' bots');
-  if(!list) return;
-  // v0.9.44 — subcategory filter strip rendered above the row list.
-  const filtered = _wbFilterByCategory(rosterBots, 'bots');
-  list.innerHTML = _wbSubTabsHTML('bots');
-  _wbWireSubTabs(list, 'bots', _wbRenderBots);
-  if(!filtered.length){
-    const sub = _wbSubTabState.bots;
-    const msg = (sub === 'all') ? 'No bots yet. Build one on the left.' :
-                (sub === 'in-game') ? 'No in-game bots loaded.' :
-                (sub === 'creation') ? 'No bots crafted yet — build one on the left.' :
-                'No purchased bots — visit Marketplace.';
-    const empty = document.createElement('div');
-    empty.style.cssText = 'font-size:11px;color:var(--dim);font-style:italic;padding:8px';
-    empty.textContent = msg;
-    list.appendChild(empty);
-    return;
-  }
-  filtered.forEach(b => {
-    const equipped = wb.equipped.includes(b.id);
-    const role = Object.prototype.hasOwnProperty.call(WB_BOT_ROLES, b.role) ? WB_BOT_ROLES[b.role] : { ic:'▣', desc:b.role };
-    const color = _wbColor(b.color);
-    const isLocalForge = !!(b.fromSpec || (b.source && b.source.kind === 'workbench-forge') || (b.spec && b.spec.source && b.spec.source.kind === 'workbench-forge'));
-    const localBadge = isLocalForge ? ' · Local forge' : '';
-    const row = document.createElement('div');
-    row.className = 'wb-row' + (isLocalForge ? ' local-forge' : '');
-    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid ' + (equipped ? color : 'var(--line)') + ';border-radius:6px;background:rgba(10,15,28,.6);cursor:pointer;transition:border-color .15s';
-    row.innerHTML =
-      '<div style="font-size:18px;width:24px;text-align:center">' + _wbEsc(role.ic) + '</div>' +
-      '<div style="flex:1;min-width:0">' +
-        '<div style="font-size:12px;font-weight:700;color:' + color + '">' + _wbEsc(b.name) + '</div>' +
-        '<div style="font-size:10px;color:var(--dim)">' + _wbEsc(b.role) + ' · ' + _wbEsc(role.desc) + _wbEsc(localBadge) + '</div>' +
-      '</div>' +
-      '<button class="cr-go" type="button" style="padding:4px 10px;font-size:10px;background:' + (equipped ? color : 'transparent') + ';border:1px solid ' + color + ';color:' + (equipped ? '#0c0c14' : color) + '">' + (equipped ? '● Equipped' : 'Equip') + '</button>' +
-      '<button class="cr-go" type="button" data-del style="padding:4px 8px;font-size:10px;background:transparent;border:1px solid var(--line);color:var(--dim)">×</button>';
-    row.querySelector('button:not([data-del])').addEventListener('click', e => {
-      e.stopPropagation();
-      _wbToggleEquip(b.id);
-    });
-    row.querySelector('[data-del]').addEventListener('click', e => {
-      e.stopPropagation();
-      // v0.9.30 — Built-in detector bots can't be deleted (they'd just be
-      // re-seeded on next page load anyway, and the built-in fire actions
-      // live in DETECTOR_BOTS, not in the saved row). Player can still
-      // unequip them — that's the intended off switch.
-      if(b.isDetectorBot && !isLocalForge){
-        if(typeof toast === 'function') toast('Built-in bot — unequip instead of delete');
-        return;
-      }
-      if(isLocalForge && window.crBots && typeof window.crBots.remove === 'function'){
-        const removed = window.crBots.remove(b.id);
-        if(removed && removed.ok !== false){
-          try { _wbRenderBots(); _wbRebuildBacktestTargets(); } catch(_){}
-          if(typeof toast === 'function') toast('Bot deleted');
-          return;
-        }
-      }
-      wb.bots = wb.bots.filter(x => x.id !== b.id);
-      wb.equipped = wb.equipped.filter(x => x !== b.id);
-      _wbSave(); _wbRenderBots(); _wbRebuildBacktestTargets();
-      if(typeof toast === 'function') toast('Bot deleted');
-    });
-    // v0.9.6 — splice in ◎ Save on-chain + ↥ List buttons
-    try { if(!isLocalForge) _wbAddChainActions(row, 2 /* Bot */, b); } catch(_){}
-    list.appendChild(row);
-  });
-}
+function _wbRenderBots(){ /* v1.0.348 — Workbench UI archived (window DOM removed v1.0.347). Render body removed; kept as a no-op stub so every (now-dead/guarded) call site still resolves. */ }
 function _wbBuildBot(){
   const name = (document.getElementById('wbBotName')?.value || '').trim();
   const role = document.getElementById('wbBotRole')?.value || 'scout';
@@ -49014,86 +48834,7 @@ function _wbApplyTemplate(){
   if(ta && WB_BOT_TEMPLATES[role]) ta.value = WB_BOT_TEMPLATES[role];
   if(typeof toast === 'function') toast('Template loaded · ' + role);
 }
-function _wbRenderStrats(){
-  const list = document.getElementById('wbStratList');
-  const cnt  = document.getElementById('wbStratCount');
-  // v0.8k#24aw — Built-in STRATEGIES (HL Funding Shorts/Longs, Poly EV6%,
-  // Arb PriceLag) now live in this same My Strategies list, above the
-  // user-built ones. Each row has an Activate / Active toggle that fires
-  // the canonical change event on #strategySel — same path the in-game
-  // Strat pill, OS Configs, and Terminal Strategies tab all use.
-  const builtIns = (typeof STRATEGIES !== 'undefined' && typeof STRATEGY_IDS !== 'undefined')
-    ? STRATEGY_IDS.filter(id => id !== 'none').map(id => ({ id, ...STRATEGIES[id], _builtIn: true }))
-    : [];
-  const total = builtIns.length + wb.strategies.length;
-  if(cnt) cnt.textContent = '(' + total + ')';
-  if(!list) return;
-  // v0.9.44 — Subcategory strip + filter. Built-ins are 'in-game'; user
-  // strategies fall under 'creation' / 'purchased' via their category field.
-  const sub = _wbSubTabState.strats || 'all';
-  list.innerHTML = _wbSubTabsHTML('strats');
-  _wbWireSubTabs(list, 'strats', _wbRenderStrats);
-  const showBuiltIns = (sub === 'all' || sub === 'in-game');
-  const userStrats = _wbFilterByCategory(wb.strategies, 'strats');
-  const cur = (typeof game !== 'undefined' && game.strategy) ? game.strategy : 'none';
-  // Built-in section
-  if(showBuiltIns && builtIns.length){
-    const hd = document.createElement('div');
-    hd.style.cssText = 'font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;padding:4px 0 2px';
-    hd.textContent = 'Built-in';
-    list.appendChild(hd);
-    builtIns.forEach(s => {
-      const active = cur === s.id;
-      const ytdPct = (s.ytd != null ? (s.ytd >= 0 ? '+' : '') + Math.round(s.ytd * 100) + '%' : '');
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid '
-        + (active ? s.color : 'var(--line)') + ';border-radius:6px;background:rgba(10,15,28,.6)';
-      row.innerHTML =
-        '<div style="font-size:18px;width:24px;text-align:center">' + (s.ic || '↗') + '</div>' +
-        '<div style="flex:1;min-width:0">' +
-          '<div style="font-size:12px;font-weight:700;color:' + s.color + '">' + s.label + '</div>' +
-          '<div style="font-size:10px;color:var(--dim)">built-in · ' + ytdPct + ' YTD</div>' +
-        '</div>' +
-        '<button class="cr-go" type="button" data-act style="padding:4px 10px;font-size:10px;background:'
-          + (active ? s.color : 'transparent') + ';border:1px solid ' + s.color + ';color:'
-          + (active ? '#0c0c14' : s.color) + '">' + (active ? '● Active' : 'Activate') + '</button>';
-      row.querySelector('[data-act]').addEventListener('click', () => {
-        const sel = document.getElementById('strategySel');
-        if(sel){ sel.value = s.id; sel.dispatchEvent(new Event('change')); }
-        else if(typeof game !== 'undefined') game.strategy = s.id;
-        _wbRenderStrats();
-      });
-      list.appendChild(row);
-    });
-  }
-  // User-built section (filtered by sub-category — Creations / Purchased)
-  if(userStrats.length){
-    const hd = document.createElement('div');
-    hd.style.cssText = 'font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;padding:8px 0 2px';
-    hd.textContent = (sub === 'purchased') ? 'Purchased' : 'Custom';
-    list.appendChild(hd);
-    userStrats.forEach(s => {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6)';
-      row.innerHTML =
-        '<div style="font-size:18px;width:24px;text-align:center">' + (s.icon || '↗') + '</div>' +
-        '<div style="flex:1;min-width:0">' +
-          '<div style="font-size:12px;font-weight:700;color:#b58aff">' + s.name + '</div>' +
-          '<div style="font-size:10px;color:var(--dim)">custom' + (s.strategySpec ? ' · Pine Adapter JSON' : '') + ' · created ' + new Date(s.created).toLocaleDateString() + '</div>' +
-        '</div>' +
-        '<button class="cr-go" type="button" data-del style="padding:4px 8px;font-size:10px;background:transparent;border:1px solid var(--line);color:var(--dim)">×</button>';
-      row.querySelector('[data-del]').addEventListener('click', () => {
-        wb.strategies = wb.strategies.filter(x => x.id !== s.id);
-        _wbSave(); _wbRenderStrats(); _wbRebuildBacktestTargets();
-        if(typeof toast === 'function') toast('Strategy deleted');
-      });
-      try { _wbAddChainActions(row, 1 /* Strategy */, s); } catch(_){}
-      list.appendChild(row);
-    });
-  } else if(!builtIns.length){
-    list.innerHTML = '<div style="font-size:11px;color:var(--dim);font-style:italic;padding:8px">No strategies yet. Build one on the left.</div>';
-  }
-}
+function _wbRenderStrats(){ /* v1.0.348 — Workbench UI archived (window DOM removed v1.0.347). Render body removed; kept as a no-op stub so every (now-dead/guarded) call site still resolves. */ }
 /* v0.9.9 — Quick Builder spine for the Strategies view.
  * The 8 components below mirror ChartRunnerSDK.scoreSetup() exactly so the
  * checkbox/slider grid is the single source of truth for which signals fire
@@ -49240,46 +48981,7 @@ function _wbBuildStrat(){
   document.getElementById('wbStratName').value = '';
   if(typeof toast === 'function') toast('Built · ' + name);
 }
-function _wbRenderInds(){
-  const list = document.getElementById('wbIndList');
-  const cnt  = document.getElementById('wbIndCount');
-  if(cnt) cnt.textContent = '(' + wb.indicators.length + ')';
-  if(!list) return;
-  // v0.9.44 — Subcategory strip + filter.
-  const filtered = _wbFilterByCategory(wb.indicators, 'inds');
-  list.innerHTML = _wbSubTabsHTML('inds');
-  _wbWireSubTabs(list, 'inds', _wbRenderInds);
-  if(!filtered.length){
-    const sub = _wbSubTabState.inds;
-    const msg = (sub === 'creation') ? 'No custom indicators yet — build one on the left.' :
-                (sub === 'purchased') ? 'No purchased indicators — visit Marketplace.' :
-                (sub === 'in-game') ? 'No in-game indicators bundled.' :
-                'No indicators yet. Build one on the left.';
-    const empty = document.createElement('div');
-    empty.style.cssText = 'font-size:11px;color:var(--dim);font-style:italic;padding:8px';
-    empty.textContent = msg;
-    list.appendChild(empty);
-    return;
-  }
-  filtered.forEach(i => {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6)';
-    row.innerHTML =
-      '<div style="font-size:18px;width:24px;text-align:center">▦</div>' +
-      '<div style="flex:1;min-width:0">' +
-        '<div style="font-size:12px;font-weight:700;color:#ffd166">' + i.name + '</div>' +
-        '<div style="font-size:10px;color:var(--dim)">' + i.kind + ' · custom · ' + new Date(i.created).toLocaleDateString() + '</div>' +
-      '</div>' +
-      '<button class="cr-go" type="button" data-del style="padding:4px 8px;font-size:10px;background:transparent;border:1px solid var(--line);color:var(--dim)">×</button>';
-    row.querySelector('[data-del]').addEventListener('click', () => {
-      wb.indicators = wb.indicators.filter(x => x.id !== i.id);
-      _wbSave(); _wbRenderInds(); _wbRebuildBacktestTargets();
-      if(typeof toast === 'function') toast('Indicator deleted');
-    });
-    try { _wbAddChainActions(row, 3 /* Indicator */, i); } catch(_){}
-    list.appendChild(row);
-  });
-}
+function _wbRenderInds(){ /* v1.0.348 — Workbench UI archived (window DOM removed v1.0.347). Render body removed; kept as a no-op stub so every (now-dead/guarded) call site still resolves. */ }
 /* v0.9.9 — Indicator Quick Builder.
  * The preset dropdown clones one of the built-in INDICATORS (or 'reflevels')
  * so the player gets an instantly-usable starting point. The param sliders
@@ -49442,51 +49144,7 @@ function _wbUninstallApp(id){
   const win = document.getElementById('win-' + id);
   if(win) win.remove();
 }
-function _wbRenderApps(){
-  const list = document.getElementById('wbAppList');
-  const cnt  = document.getElementById('wbAppCount');
-  if(cnt) cnt.textContent = '(' + wb.apps.length + ')';
-  if(!list) return;
-  // v0.9.44 — Subcategory strip + filter.
-  const filtered = _wbFilterByCategory(wb.apps, 'apps');
-  list.innerHTML = _wbSubTabsHTML('apps');
-  _wbWireSubTabs(list, 'apps', _wbRenderApps);
-  if(!filtered.length){
-    const sub = _wbSubTabState.apps;
-    const msg = (sub === 'creation') ? 'No custom apps crafted — build one on the left.' :
-                (sub === 'purchased') ? 'No purchased apps — visit Marketplace.' :
-                (sub === 'in-game') ? 'No in-game apps bundled.' :
-                'No custom apps yet. Build one on the left.';
-    const empty = document.createElement('div');
-    empty.style.cssText = 'font-size:11px;color:var(--dim);font-style:italic;padding:8px';
-    empty.textContent = msg;
-    list.appendChild(empty);
-    return;
-  }
-  filtered.forEach(a => {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6)';
-    row.innerHTML =
-      '<div style="font-size:18px;width:24px;text-align:center">' + a.icon + '</div>' +
-      '<div style="flex:1;min-width:0">' +
-        '<div style="font-size:12px;font-weight:700;color:var(--fg)">' + a.name + '</div>' +
-        '<div style="font-size:10px;color:var(--dim)">' + a.type + (a.source ? ' · ' + a.source : '') + '</div>' +
-      '</div>' +
-      '<button class="cr-go" type="button" data-open style="padding:4px 10px;font-size:10px">Open</button>' +
-      '<button class="cr-go" type="button" data-del style="padding:4px 8px;font-size:10px;background:transparent;border:1px solid var(--line);color:var(--dim)">×</button>';
-    row.querySelector('[data-open]').addEventListener('click', () => {
-      try { if(typeof osOpenWindowMulti === 'function') osOpenWindowMulti(a.id); } catch(_){}
-    });
-    row.querySelector('[data-del]').addEventListener('click', () => {
-      _wbUninstallApp(a.id);
-      wb.apps = wb.apps.filter(x => x.id !== a.id);
-      _wbSave(); _wbRenderApps();
-      if(typeof toast === 'function') toast('App uninstalled');
-    });
-    try { _wbAddChainActions(row, 5 /* App */, a); } catch(_){}
-    list.appendChild(row);
-  });
-}
+function _wbRenderApps(){ /* v1.0.348 — Workbench UI archived (window DOM removed v1.0.347). Render body removed; kept as a no-op stub so every (now-dead/guarded) call site still resolves. */ }
 function _wbBuildApp(){
   const name = (document.getElementById('wbAppName')?.value || '').trim();
   const icon = (document.getElementById('wbAppIcon')?.value || '▦').trim() || '▦';
@@ -49538,25 +49196,7 @@ function _wbRebuildBacktestTargets(){
     sel.appendChild(og);
   });
 }
-function _wbRenderBackHistory(){
-  const host = document.getElementById('wbBackHistory');
-  const cnt  = document.getElementById('wbBackHistCount');
-  if(cnt) cnt.textContent = '(' + wb.backtests.length + ')';
-  if(!host) return;
-  if(!wb.backtests.length){
-    host.innerHTML = '<div style="font-size:11px;color:var(--dim);font-style:italic">No previous backtests.</div>';
-    return;
-  }
-  host.innerHTML = wb.backtests.slice(0, 10).map(r => {
-    const cls = r.ret >= 0 ? 'pos' : 'neg';
-    const color = r.ret >= 0 ? '#3ddc97' : '#ff4d6d';
-    return '<div style="display:flex;justify-content:space-between;font-size:10px;padding:3px 6px;border-bottom:1px dashed rgba(180,200,230,.08)">' +
-      '<span style="color:#cfd2db">' + r.target + '</span>' +
-      '<span style="color:var(--dim)">' + r.asset.toUpperCase() + ' · ' + r.tf + ' · ' + r.range + 'd</span>' +
-      '<span style="color:' + color + ';font-weight:700;font-variant-numeric:tabular-nums">' + (r.ret >= 0 ? '+' : '') + (r.ret * 100).toFixed(1) + '%</span>' +
-    '</div>';
-  }).join('');
-}
+function _wbRenderBackHistory(){ /* v1.0.348 — Workbench UI archived (window DOM removed v1.0.347). Render body removed; kept as a no-op stub so every (now-dead/guarded) call site still resolves. */ }
 function _wbRunBacktest(){
   const target = document.getElementById('wbBackTarget')?.value || '';
   if(!target){ if(typeof toast === 'function') toast('Select a build first'); return; }
@@ -49813,50 +49453,7 @@ function _wbTermApplyTemplate(){
   // rows from the dropdown). The composer on the live widget is the editor.
   if(typeof toast === 'function') toast('Pick a template above, then Build.');
 }
-function _wbRenderTerms(){
-  const list = document.getElementById('wbTermList');
-  const cnt  = document.getElementById('wbTermCount');
-  if(cnt) cnt.textContent = '(' + wb.terms.length + ')';
-  if(!list) return;
-  // v0.9.44 — Subcategory strip + filter.
-  const filtered = _wbFilterByCategory(wb.terms, 'term');
-  list.innerHTML = _wbSubTabsHTML('term');
-  _wbWireSubTabs(list, 'term', _wbRenderTerms);
-  if(!filtered.length){
-    const sub = _wbSubTabState.term;
-    const msg = (sub === 'creation') ? 'No custom widgets crafted — build one on the left, then open Terminal → + to spawn.' :
-                (sub === 'purchased') ? 'No purchased widgets — visit Marketplace.' :
-                (sub === 'in-game') ? 'No in-game widgets bundled.' :
-                'No custom widgets yet. Build one on the left, then open Terminal → + to spawn.';
-    const empty = document.createElement('div');
-    empty.style.cssText = 'font-size:11px;color:var(--dim);font-style:italic;padding:8px';
-    empty.textContent = msg;
-    list.appendChild(empty);
-    return;
-  }
-  filtered.forEach(t => {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6)';
-    row.innerHTML =
-      '<div style="font-size:18px;width:24px;text-align:center">' + t.icon + '</div>' +
-      '<div style="flex:1;min-width:0">' +
-        '<div style="font-size:12px;font-weight:700;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + t.name + '</div>' +
-        '<div style="font-size:10px;color:var(--dim)">' + t.kind + ' · ' + new Date(t.created).toLocaleDateString() + '</div>' +
-      '</div>' +
-      '<button class="cr-go" type="button" data-spawn style="padding:4px 10px;font-size:10px">Spawn</button>' +
-      '<button class="cr-go" type="button" data-del style="padding:4px 8px;font-size:10px;background:transparent;border:1px solid var(--line);color:var(--dim)">×</button>';
-    row.querySelector('[data-spawn]').addEventListener('click', () => {
-      _termSpawnWbTerm(t.id);
-      if(typeof toast === 'function') toast('Spawned · ' + t.name);
-    });
-    row.querySelector('[data-del]').addEventListener('click', () => {
-      wb.terms = wb.terms.filter(x => x.id !== t.id);
-      _wbSave(); _wbRenderTerms();
-      if(typeof toast === 'function') toast('Widget deleted');
-    });
-    list.appendChild(row);
-  });
-}
+function _wbRenderTerms(){ /* v1.0.348 — Workbench UI archived (window DOM removed v1.0.347). Render body removed; kept as a no-op stub so every (now-dead/guarded) call site still resolves. */ }
 
 /* =========================================================================
  * v0.8k#24cb — Terminal "+" tab: chooser modal + spawner
