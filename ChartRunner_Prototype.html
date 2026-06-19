@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.348
-     LAST UPDATED:    2026-06-19  ·  Decouple pass 3 — emptied the 7 Workbench-only renderer
-     bodies (_wbRenderBots/Strats/Inds/Apps/Terms/Primitives/BackHistory) into no-op stubs
-     (−404 lines). Their containers were removed with the window in v1.0.347, so they were
-     already no-op early-returns; kept as named stubs so every (dead/guarded) call site still
-     resolves. _wbRenderTools STAYS (live Profile → TOOLS). Builder/equip helpers + the bot
-     SYSTEM untouched. Phoenix Live + Journal bot/alertv2 renderers STAGED (entangled — see plan).
-     (Pass 2 = #win-workbench DOM; pass 1 = #win-marketplace; v1.0.345 = perf+net.)
+     CURRENT VERSION: v1.0.349
+     LAST UPDATED:    2026-06-19  ·  Decouple pass 4 (finishes Phoenix + Journal). PHOENIX LIVE:
+     hard-disabled crLive at its source (get→false/count→0/mult→1) and collapsed the
+     archivePhoenixLive IIFE to a CSS panel-hide — this REMOVES the old 250ms×40 retry interval
+     (the only runtime cost); drawWhaleGhosts/drawLiquidityWater bodies emptied to no-op stubs.
+     JOURNAL: emptied the archived BOT + ALERTV2 renderers (+helper) to no-op stubs; live
+     _crJrnRenderStats (P&L tab) untouched. −376 lines, parse-gated. (Pass 3 = Workbench
+     renderers; pass 2 = #win-workbench DOM; pass 1 = #win-marketplace; v1.0.345 = perf+net.)
      Plan: docs/architecture/2026-06-19-archived-code-decoupling-plan.md -->
 <meta charset="utf-8" />
 <title>Chartrunner.xyz</title>
@@ -12831,7 +12831,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.348",
+  VERSION: "1.0.349",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -28364,26 +28364,14 @@ try { if (RUNROOM_ENABLED && typeof window !== 'undefined') window.crRadarPreset
 // still exist but no-op because their first line checks `crLive.get(id)` first.
 // Resume by removing this block. See memory: project_phoenix_live_parked_2026_05_19.md
 (function archivePhoenixLive(){
-  function _disable(){
-    try {
-      if (!window.crLive) return false;
-      window.crLive.get   = function(){ return false; };
-      window.crLive.count = function(){ return 0; };
-      window.crLive.mult  = function(){ return 1; };
-      const s = document.createElement('style');
-      s.id = 'crPhoenixLiveArchive';
-      s.textContent = '#crLivePanel{display:none !important;}';
-      document.head.appendChild(s);
-      return true;
-    } catch(_){ return false; }
-  }
-  // crLive may not exist yet at this point in script load order; retry until it does.
-  if (_disable()) return;
-  let tries = 0;
-  const iv = setInterval(() => {
-    tries++;
-    if (_disable() || tries > 40) clearInterval(iv);
-  }, 250);
+  // v1.0.349 — Phoenix Live parked. crLive is hard-disabled at its source definition now,
+  // so the former retry-override loop is gone; only the panel hide remains.
+  try {
+    const s = document.createElement('style');
+    s.id = 'crPhoenixLiveArchive';
+    s.textContent = '#crLivePanel{display:none !important;}';
+    (document.head || document.documentElement).appendChild(s);
+  } catch(_){}
 })();
 
 // ─── crScoring ─────────────────────────────────────────────────────────────
@@ -42235,52 +42223,7 @@ function _crJrnRenderTable(listElId, countElId, filter){
 // v0.9.40 — Public render hooks. Manual = auto-only; Paper = paper-only.
 function _crJrnRenderManual(){ _crJrnRenderTable('crJrnAutoList', 'crJrnAutoCount2', 'auto'); }
 function _crJrnRenderPaper(){  _crJrnRenderTable('crJrnList',     'crJrnCount',      'paper'); }
-function _crJrnRenderBot(){
-  const list = document.getElementById('crJrnBotList');
-  if(!list) return;
-  const data = _crJrnLoad();
-  let bots = [];
-  try {
-    if(typeof sdk !== 'undefined' && Array.isArray(sdk.openOrders)){
-      bots = sdk.openOrders.filter(o => o && (o.bot === true || (typeof o.botId === 'string' && o.botId.length)));
-    }
-  } catch(_){}
-  if(!bots.length){
-    list.innerHTML = '<div style="padding:14px;font-size:11px;color:var(--dim);font-style:italic;text-align:center">No bot trades yet. Equip a bot in Workbench → Bots; auto-imports as it fires orders.</div>';
-    return;
-  }
-  const cols = ['Bot','Asset/TF','Side','Type','Entry','SL/TP','Status','PnL','Comment'];
-  let html = '<div style="display:grid;grid-template-columns:120px 80px 50px 80px 80px 130px 70px 70px 1fr 30px;gap:0;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;background:rgba(20,30,55,0.4);border-bottom:1px solid var(--line);font-weight:700">';
-  for(const c of cols) html += '<div>'+c+'</div>';
-  html += '<div></div></div>';
-  for(const o of bots){
-    const cmt = data.botComments[o.id] || '';
-    const slTp = (o.sl != null ? Number(o.sl).toFixed(2) : '—') + ' / ' + (o.tp != null ? Number(o.tp).toFixed(2) : '—');
-    const pnl = (o.pnl != null) ? o.pnl : (o.entry != null && typeof candles !== 'undefined' && candles.length ? (o.side === 'buy' ? candles[candles.length-1].c - o.entry : o.entry - candles[candles.length-1].c) : null);
-    const pnlColor = (pnl > 0) ? '#3ddc97' : (pnl < 0 ? '#ff5b7f' : 'var(--dim)');
-    html += '<div style="display:grid;grid-template-columns:120px 80px 50px 80px 80px 130px 70px 70px 1fr 30px;gap:0;font-size:10.5px;padding:6px 8px;border-bottom:1px solid rgba(180,200,230,0.06);align-items:center">';
-    html += '<div style="font-weight:700;color:#9b8cff">'+(o.botId || 'bot')+'</div>';
-    html += '<div><b>'+((typeof currentAsset==='string'?currentAsset.toUpperCase():'?'))+'</b><span style="color:var(--dim)"> '+((typeof timeframe==='string'?timeframe:''))+'</span></div>';
-    html += '<div style="color:'+(o.side==='buy'?'#3ddc97':'#ff5b7f')+';font-weight:700">'+(o.side==='buy'?'L':'S')+'</div>';
-    html += '<div style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px">'+(o.type||'?')+'</div>';
-    html += '<div style="font-family:ui-monospace,Menlo,monospace">'+(o.entry!=null?Number(o.entry).toFixed(2):(o.price!=null?Number(o.price).toFixed(2):'—'))+'</div>';
-    html += '<div style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px">'+slTp+'</div>';
-    html += '<div style="font-weight:700;color:'+(o.status==='closed'?'var(--dim)':'#7ee787')+'">'+(o.status||'open').toUpperCase()+'</div>';
-    html += '<div style="font-family:ui-monospace,Menlo,monospace;color:'+pnlColor+';font-weight:700">'+(pnl!=null?(pnl>=0?'+':'')+'$'+Math.abs(pnl).toFixed(2):'—')+'</div>';
-    html += '<div><input type="text" data-jrn-bot-cmt="'+o.id+'" value="'+(cmt.replace(/"/g,'&quot;'))+'" placeholder="comment…" style="width:100%;padding:3px 6px;border:1px solid var(--line);border-radius:3px;background:rgba(10,15,28,.6);color:var(--fg);font:10px ui-monospace,Menlo,monospace"></div>';
-    html += '<div></div>';
-    html += '</div>';
-  }
-  list.innerHTML = html;
-  list.querySelectorAll('[data-jrn-bot-cmt]').forEach(input => {
-    input.addEventListener('input', () => {
-      const id = input.getAttribute('data-jrn-bot-cmt');
-      const d = _crJrnLoad();
-      d.botComments[id] = input.value;
-      _crJrnSave(d);
-    });
-  });
-}
+function _crJrnRenderBot(){ /* v1.0.349 — Journal BOT tab archived (CR_JRN_TAB_ARCHIVE.bot); body removed, no-op stub. */ }
 function _crJrnProgressLastPrice(){
   try {
     if(typeof currentPrice === 'function'){
@@ -42630,255 +42573,8 @@ function _crJrnAlertV2Lifecycle(row){
   html += '</div>';
   return html;
 }
-function _crJrnRenderAlertV2ProgressDetail(item){
-  const spec = _crJrnAlertProgressSpec(item);
-  if(!spec || !spec.type) return '';
-  const type = String(spec.type);
-  const esc = _crJrnEsc;
-  const shell = (title, body, pct, color) =>
-    '<div data-alert-v2-progress-detail="'+esc(type)+'" data-alert-progress-type="'+esc(type)+'" style="margin:8px 0 8px;padding:9px 10px;border:1px solid rgba(123,227,243,.24);border-radius:7px;background:rgba(123,227,243,.055)">' +
-      '<div style="display:flex;align-items:center;gap:8px;font-size:9.5px;color:#7be3f3;text-transform:uppercase;letter-spacing:.5px;font-weight:900">' +
-        '<span>'+esc(title)+'</span>' +
-        (pct != null ? '<span style="margin-left:auto;color:var(--dim);font-weight:700">'+_crJrnProgressPct(pct)+'</span>' : '') +
-      '</div>' +
-      '<div style="font-size:10.5px;color:#cfd2db;line-height:1.55;margin-top:6px">'+body+'</div>' +
-      (pct != null ? _crJrnProgressBar(pct, color || '#7be3f3') : '') +
-    '</div>';
-  const line = text => text ? '<div>'+text+'</div>' : '';
-
-  if(type === 'distance'){
-    const current = Number.isFinite(Number(spec.currentPrice)) ? Number(spec.currentPrice) : _crJrnProgressLastPrice();
-    const target = Number(spec.targetPrice != null ? spec.targetPrice : spec.price);
-    if(!Number.isFinite(target)) return '';
-    const dist = Number.isFinite(Number(spec.moneyAway)) ? Math.abs(Number(spec.moneyAway)) : (Number.isFinite(current) ? Math.abs(target - current) : 0);
-    const pctAway = Number.isFinite(Number(spec.pctAway)) ? Math.abs(Number(spec.pctAway)) : (Number.isFinite(current) && current !== 0 ? Math.abs(dist / current * 100) : 0);
-    const progressPct = Math.max(0, Math.min(100, 100 - pctAway));
-    const direction = spec.direction || (Number.isFinite(current) ? (current < target ? 'above' : (current > target ? 'below' : 'inside zone')) : 'level');
-    let body = '';
-    body += '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:7px">';
-    [
-      _crJrnProgressMoney(dist) + ' until alarm',
-      _crJrnProgressPct(pctAway) + ' away',
-      (spec.atrAway != null ? _crJrnV2FmtNum(spec.atrAway, 1) + ' ATR away' : ''),
-      (spec.ticksAway != null ? Math.round(Number(spec.ticksAway) || 0) + ' ticks away' : '')
-    ].forEach(v => { if(v) body += '<div style="padding:6px 7px;border:1px solid rgba(255,255,255,.08);border-radius:6px;background:rgba(255,255,255,.025);font-weight:800;color:#fff">'+esc(v)+'</div>'; });
-    body += '</div>';
-    body += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">' + _crJrnV2Badge(direction, '#ffd166') + _crJrnV2Badge(spec.directionDetail, '#9b8cff') + '</div>';
-    body += line('Progress bar from current price to target level.');
-    if(spec.closingSpeed != null || spec.etaCandles != null || spec.candlesToward != null || spec.velocity || spec.nearMissPct != null){
-      body += '<div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,255,255,.07)">';
-      body += '<div style="font-size:9px;color:#ffd166;text-transform:uppercase;letter-spacing:.45px;font-weight:900;margin-bottom:4px">Momentum Toward Alert</div>';
-      if(spec.closingSpeed != null) body += line('closing speed: ' + (Number(spec.closingSpeed) >= 0 ? '+' : '-') + _crJrnProgressMoney(spec.closingSpeed) + '/candle');
-      if(spec.etaCandles != null) body += line('ETA: ~' + Math.round(Number(spec.etaCandles) || 0) + ' candles');
-      if(spec.candlesToward != null) body += line(Math.round(Number(spec.candlesToward) || 0) + ' candles moving toward level');
-      if(spec.velocity) body += line('velocity ' + esc(spec.velocity));
-      if(spec.nearMissPct != null) body += line('near miss: ' + _crJrnProgressPct(spec.nearMissPct) + ' away');
-      body += '</div>';
-    }
-    return shell('Distance Progress', body, progressPct, '#ffd166');
-  }
-
-  if(type === 'multi-level'){
-    const levels = Array.isArray(spec.levels) ? spec.levels : [];
-    const hit = levels.filter(l => String(l.state || '').toLowerCase() === 'hit').length;
-    let body = levels.length ? line(levels.map(l => esc(l.label || 'Level') + ' ' + esc(l.state || 'watch')).join(' · ')) : '';
-    if(spec.bracket && typeof spec.bracket === 'object'){
-      const b = spec.bracket;
-      body += line((b.entryTouched ? 'Entry touched' : 'Entry pending') + ' · TP1 ' + _crJrnV2FmtNum(b.tp1Pct, 0) + '% · TP2 ' + _crJrnV2FmtNum(b.tp2Pct, 0) + '% · SL ' + _crJrnV2FmtNum(b.slRiskPct, 0) + '% risk proximity');
-    }
-    if(spec.ladder && typeof spec.ladder === 'object') body += line(Math.round(Number(spec.ladder.tapped) || 0) + ' / ' + Math.max(1, Math.round(Number(spec.ladder.total) || 1)) + ' rungs tapped');
-    if(spec.channel && typeof spec.channel === 'object') body += line((spec.channel.midlineTapped ? 'midline tapped' : 'midline pending') + ' · upper band ' + _crJrnV2FmtNum(spec.channel.upperBandPct, 0) + '% away');
-    if(spec.vwap && typeof spec.vwap === 'object') body += line(esc(spec.vwap.relation || 'VWAP pending') + ' · ' + esc(spec.vwap.status || 'reclaim pending'));
-    return shell('Multi-Level Tool Progress', body, levels.length ? hit / levels.length * 100 : null, '#3ddc97');
-  }
-
-  if(type === 'tap-count'){
-    const cur = Math.max(0, Number(spec.current != null ? spec.current : spec.taps) || 0);
-    const req = Math.max(1, Number(spec.required != null ? spec.required : spec.requiredTaps) || 1);
-    const remaining = spec.remaining != null ? Math.max(0, Number(spec.remaining) || 0) : Math.max(0, req - cur);
-    let body = line(cur + ' / ' + req + ' taps');
-    if(spec.lastTapAgo) body += line('last tap ' + esc(spec.lastTapAgo));
-    if(spec.expiresIn) body += line('tap expires in ' + esc(spec.expiresIn));
-    if(spec.zonePct != null) body += line('needs ' + remaining + ' more touches inside ' + _crJrnProgressPct(spec.zonePct) + ' zone');
-    if(spec.resetRule) body += line('Reset rule visible: ' + esc(spec.resetRule));
-    return shell('Tap / Touch Progress', body, cur / req * 100, '#7ee787');
-  }
-
-  if(type === 'time-in-zone'){
-    const elapsed = Math.max(0, Number(spec.elapsedSeconds != null ? spec.elapsedSeconds : spec.zoneSeconds) || 0);
-    const required = Math.max(1, Number(spec.requiredSeconds != null ? spec.requiredSeconds : spec.requiredZoneSeconds) || 1);
-    let body = '';
-    if(spec.totalLabel) body += line(esc(spec.totalLabel));
-    body += line(_crJrnV2Duration(elapsed) + ' / ' + _crJrnV2Duration(required) + ' required');
-    if(spec.candlesInside != null || spec.candlesRequired != null) body += line(Math.round(Number(spec.candlesInside) || 0) + ' / ' + Math.max(1, Math.round(Number(spec.candlesRequired) || 1)) + ' candles closed inside range');
-    if(spec.zoneIntegrity != null) body += line('zone integrity: ' + _crJrnV2FmtNum(spec.zoneIntegrity, 0) + '%');
-    if(spec.breaks != null){
-      const br = Math.round(Number(spec.breaks) || 0);
-      body += line('broke zone ' + (br === 1 ? 'once' : (br === 2 ? 'twice' : br + ' times')));
-    }
-    return shell('Time-In-Zone Progress', body, elapsed / required * 100, '#9b8cff');
-  }
-
-  if(type === 'confluence'){
-    const items = Array.isArray(spec.items) ? spec.items : [];
-    const ready = items.filter(x => !!x.ok || !!x.met || String(x.state || '').toLowerCase() === 'ready').length;
-    let body = line(ready + ' / ' + items.length + ' conditions ready');
-    body += items.map(x => line(esc(x.label || 'Condition') + ' ' + esc(x.state || (x.ok || x.met ? 'ready' : 'pending')))).join('');
-    if(spec.formedPct != null) body += line('Overall progress: setup ' + _crJrnV2FmtNum(spec.formedPct, 0) + '% formed');
-    return shell('Confluence Progress', body, items.length ? ready / items.length * 100 : null, '#ffb300');
-  }
-
-  if(type === 'zone-quality'){
-    let body = '';
-    body += line(esc(spec.state || 'inside zone'));
-    if(spec.ageCandles != null) body += line('zone age: ' + Math.round(Number(spec.ageCandles) || 0) + ' candles');
-    if(spec.touches != null) body += line('touches: ' + Math.round(Number(spec.touches) || 0));
-    if(spec.failedBreaks != null) body += line('failed breaks: ' + Math.round(Number(spec.failedBreaks) || 0));
-    if(spec.acceptanceScore != null) body += line('acceptance score: ' + _crJrnV2FmtNum(spec.acceptanceScore, 0));
-    return shell('Zone Quality', body, spec.acceptanceScore != null ? Number(spec.acceptanceScore) : null, '#14f195');
-  }
-
-  return _crJrnRenderAlertProgress(item);
-}
-function _crJrnRenderAlertV2(){
-  const scope = document.getElementById('crJrnAlertV2Scope');
-  const summary = document.getElementById('crJrnAlertV2Summary');
-  const list = document.getElementById('crJrnAlertV2List');
-  if(!scope || !summary || !list) return;
-  const alarm = (typeof window !== 'undefined') ? window.crAlarm : null;
-  const bus = (typeof window !== 'undefined') ? window.crAlertBus : null;
-  const alarms = (alarm && Array.isArray(alarm.alarms)) ? alarm.alarms.filter(Boolean) : [];
-  // v1.0.292 — dedup alarm-mirror bus events (see _crJrnDedupBusEvents).
-  const events = _crJrnDedupBusEvents(
-    (bus && typeof bus.list === 'function') ? bus.list().filter(Boolean) : [],
-    alarms
-  );
-  const esc = _crJrnEsc;
-  const fmtDate = ts => ts ? new Date(ts).toLocaleString() : '--';
-  const rows = [];
-  events.forEach(e => {
-    rows.push({
-      source:'bus',
-      id:e.id,
-      ts:Number(e.ts) || 0,
-      item:e,
-      title:e.message || 'Alert event',
-      type:e.type || 'event',
-      status:e.ackAt ? 'ACK' : String(e.severity || 'INFO').toUpperCase(),
-      statusColor:e.severity === 'critical' ? '#ff5b7f' : (e.severity === 'warn' ? '#ffd166' : '#7be3f3'),
-      asset:e.asset || 'BTC',
-      timeframe:e.timeframe || '15m',
-      price:e.price,
-      meta:e.source || 'alert-bus'
-    });
-  });
-  alarms.forEach(a => {
-    const first = (a.conditions || [])[0] || {};
-    rows.push({
-      source:'alarm',
-      id:a.id,
-      ts:Number(a.lastFiredAt || a.createdAt) || 0,
-      item:a,
-      title:a.name || 'Alarm',
-      type:a.confluence ? 'confluence' : 'price-alert',
-      status:a.triggered ? 'FIRED' : (a.enabled ? 'ARMED' : 'OFF'),
-      statusColor:a.triggered ? '#ff5b7f' : (a.enabled ? '#3ddc97' : 'var(--dim)'),
-      asset:(typeof currentAsset === 'string' ? currentAsset.toUpperCase() : 'BTC'),
-      timeframe:(typeof timeframe === 'string' ? timeframe : '15m'),
-      price:first.price,
-      meta:a.anchorMapId ? 'anchored' : 'local alarm'
-    });
-  });
-  rows.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-
-  const armed = alarms.filter(a => a.enabled && !a.triggered).length;
-  const fired = alarms.filter(a => a.triggered).length;
-  const progressCount = rows.filter(r => _crJrnAlertProgressSpec(r.item)).length;
-  scope.innerHTML =
-    '<span data-alert-v2-scope="all" style="display:inline-flex;align-items:center;height:24px;padding:0 10px;border:1px solid rgba(123,227,243,.5);border-radius:6px;background:rgba(123,227,243,.10);color:#7be3f3;font-size:10px;font-weight:800;letter-spacing:.5px">ALL</span>' +
-    '<span style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.45px">'+rows.length+' mixed rows</span>' +
-    '<span style="font-size:10px;color:var(--dim)">alarm laser + alert bus</span>';
-  const cards = [
-    { k:'Total', v:rows.length, sub:'all alert rows' },
-    { k:'Alarms', v:alarms.length, sub:armed + ' armed · ' + fired + ' fired' },
-    { k:'Bus', v:events.length, sub:'normalized events' },
-    { k:'Progress', v:progressCount, sub:'rows with cards' },
-  ];
-  summary.innerHTML = cards.map(c =>
-    '<div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:rgba(10,15,28,.4)">' +
-      '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px">' + esc(c.k) + '</div>' +
-      '<div style="font-size:20px;font-weight:700;margin-top:4px">' + esc(c.v) + '</div>' +
-      '<div style="font-size:10px;color:var(--dim);margin-top:2px">' + esc(c.sub) + '</div>' +
-    '</div>'
-  ).join('');
-
-  const refreshBtn = document.getElementById('crJrnAlertV2Refresh');
-  const newBtn = document.getElementById('crJrnAlertV2New');
-  if(refreshBtn) refreshBtn.onclick = _crJrnRenderAlertV2;
-  if(newBtn) newBtn.onclick = () => {
-    try {
-      if(alarm && typeof alarm.arm === 'function') alarm.arm();
-      else if(typeof toast === 'function') toast('Alerts module is still booting');
-    } catch(_){}
-    _crJrnRenderAlertV2();
-  };
-
-  if((!alarm || !Array.isArray(alarm.alarms)) && !events.length){
-    list.innerHTML = '<div style="padding:14px;font-size:11px;color:var(--dim);font-style:italic;text-align:center">Alert V2 is waiting for the alarm module.</div>';
-    return;
-  }
-  if(!rows.length){
-    list.innerHTML = '<div style="padding:14px;font-size:11px;color:var(--dim);font-style:italic;text-align:center">No alert rows yet.</div>';
-    return;
-  }
-
-  let html = '';
-  rows.forEach(row => {
-    const id = esc(row.id);
-    const srcColor = row.source === 'alarm' ? '#ffd166' : '#7be3f3';
-    html += '<div data-alert-v2-row-source="'+esc(row.source)+'" style="border:1px solid rgba(123,227,243,.24);border-radius:8px;padding:9px 10px;margin:0 0 7px;background:rgba(10,15,28,.34);border-bottom:1px solid rgba(255,255,255,.06)">';
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;min-width:0">';
-    html += '<span style="flex:0 0 auto;border:1px solid rgba(255,255,255,.12);border-radius:5px;padding:2px 6px;color:'+srcColor+';font-size:9px;font-weight:800;letter-spacing:.45px">'+(row.source === 'alarm' ? 'ALARM' : 'BUS')+'</span>';
-    html += '<b style="color:#f7f9ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(row.title)+'</b>';
-    html += '<span style="margin-left:auto;font-size:10px;font-weight:800;color:'+row.statusColor+'">'+esc(row.status)+'</span>';
-    html += '</div>';
-    html += '<div style="display:grid;grid-template-columns:130px 88px 90px 1fr;gap:8px;font-size:10px;color:var(--dim);margin-bottom:6px">';
-    html += '<span>'+esc(fmtDate(row.ts))+'</span>';
-    html += '<span>'+esc(row.asset)+' '+esc(row.timeframe)+'</span>';
-    html += '<span>'+(row.price != null && isFinite(row.price) ? Number(row.price).toFixed(2) : 'local')+'</span>';
-    html += '<span style="text-align:right">'+esc(row.meta)+'</span>';
-    html += '</div>';
-    html += '<div style="font-size:10.5px;color:#cfd2db;line-height:1.45">'+esc(row.type)+'</div>';
-    html += _crJrnAlertV2Lifecycle(row);
-    html += _crJrnRenderAlertV2ProgressDetail(row.item);
-    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
-    if(row.source === 'bus'){
-      html += '<button class="cr-go" type="button" data-alert-v2-note="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid var(--line);color:var(--dim)">Note</button>';
-      html += '<button class="cr-go" type="button" data-alert-v2-replay="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid rgba(20,241,149,.35);color:#14f195">Replay</button>';
-      if(!row.item.ackAt) html += '<button class="cr-go" type="button" data-alert-v2-ack="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid var(--line);color:var(--dim)">Ack</button>';
-    } else {
-      html += '<button class="cr-go" type="button" data-alert-v2-alarm-toggle="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid var(--line);color:var(--dim)">'+(row.item.enabled?'Pause':'Arm')+'</button>';
-      if(row.item.triggered) html += '<button class="cr-go" type="button" data-alert-v2-alarm-rearm="'+id+'" style="font-size:10px;padding:4px 9px;background:transparent;border:1px solid var(--line);color:#ffd166">Re-arm</button>';
-    }
-    html += '</div></div>';
-  });
-  list.innerHTML = html;
-  list.querySelectorAll('[data-alert-v2-note]').forEach(btn => {
-    btn.addEventListener('click', () => { try { if(bus) bus.toJournalNote(btn.getAttribute('data-alert-v2-note')); } catch(_){} _crJrnRenderAlertV2(); });
-  });
-  list.querySelectorAll('[data-alert-v2-replay]').forEach(btn => {
-    btn.addEventListener('click', () => { try { if(bus) bus.replay(btn.getAttribute('data-alert-v2-replay')); } catch(_){} _crJrnRenderAlertV2(); });
-  });
-  list.querySelectorAll('[data-alert-v2-ack]').forEach(btn => {
-    btn.addEventListener('click', () => { try { if(bus) bus.ack(btn.getAttribute('data-alert-v2-ack')); } catch(_){} _crJrnRenderAlertV2(); });
-  });
-  list.querySelectorAll('[data-alert-v2-alarm-toggle]').forEach(btn => {
-    btn.addEventListener('click', () => { try { if(alarm) alarm.toggle(btn.getAttribute('data-alert-v2-alarm-toggle')); } catch(_){} _crJrnRenderAlertV2(); });
-  });
-  list.querySelectorAll('[data-alert-v2-alarm-rearm]').forEach(btn => {
-    btn.addEventListener('click', () => { try { if(alarm) alarm.rearm(btn.getAttribute('data-alert-v2-alarm-rearm')); } catch(_){} _crJrnRenderAlertV2(); });
-  });
-}
+function _crJrnRenderAlertV2ProgressDetail(item){ /* v1.0.349 — Journal AlertV2 archived; helper body removed. */ return ''; }
+function _crJrnRenderAlertV2(){ /* v1.0.349 — Journal ALERTV2 tab archived (CR_JRN_TAB_ARCHIVE.alertv2); body removed, no-op stub. */ }
 window.crJrnRenderAlerts = _crJrnRenderAlerts;
 window.crJrnRenderAlertV2 = _crJrnRenderAlertV2;
 function _crJrnRenderStats(){
@@ -61685,11 +61381,11 @@ window.crCrtFadeIn  = crCrtFadeIn;
   setTimeout(_liveRender, 0);
   // Public surface — other modules (campaign chapter coach, run engine)
   // can read the live state via window.crLive.get(id).
-  window.crLive = {
-    get:    (id) => !!_liveLoad()[id],
-    all:    ()   => _liveLoad(),
-    count:  ()   => _liveActiveCount(_liveLoad()),
-    mult:   ()   => _liveMultiplier(_liveActiveCount(_liveLoad())),
+  window.crLive = {           // v1.0.349 — Phoenix Live parked: hard-disabled at source
+    get:    () => false,      // (replaces the former archivePhoenixLive retry override)
+    all:    () => ({}),
+    count:  () => 0,
+    mult:   () => 1,
   };
 
   // v1.0.2 — Whale ghosts visual hook. When the ghosts overlay is on,
@@ -61698,51 +61394,7 @@ window.crCrtFadeIn  = crCrtFadeIn;
   // across the visible chart at those price levels. The numbers are
   // synthetic until M2.6 wires Helius DAS to read real holder data —
   // this is the visual hook the player sees regardless.
-  window.drawWhaleGhosts = function(){
-    if(!window.crLive || !window.crLive.get('ghosts')) return;
-    if(typeof ctx === 'undefined' || typeof candles === 'undefined' || !candles.length) return;
-    if(typeof priceToY !== 'function') return;
-    // Anchor the synthetic ghost prices to the visible candle range so
-    // they always read as plausible entries (within ±15% of mid).
-    let lo = Infinity, hi = -Infinity;
-    const sample = Math.min(candles.length, 80);
-    for(let i = candles.length - sample; i < candles.length; i++){
-      const c = candles[i]; if(!c) continue;
-      if(c.l < lo) lo = c.l;
-      if(c.h > hi) hi = c.h;
-    }
-    if(!isFinite(lo) || !isFinite(hi) || hi <= lo) return;
-    const mid = (lo + hi) / 2;
-    const span = (hi - lo) * 1.15;
-    // Cheap deterministic PRNG seeded from the asset symbol so the same
-    // ghost lines stick across re-renders.
-    const seed = ((typeof currentAssetObj === 'function')
-      ? (currentAssetObj()?.id || 'x') : 'x').split('').reduce((a,c) => a + c.charCodeAt(0), 0);
-    function rnd(i){ const x = Math.sin(seed * 9301 + i * 49297) * 233280; return x - Math.floor(x); }
-    ctx.save();
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 4]);
-    for(let i = 1; i <= 8; i++){
-      const px = mid + (rnd(i) - 0.5) * span;
-      const y = priceToY(px);
-      if(!isFinite(y) || y < 0 || y > H) continue;
-      // Brighter ghosts on bigger holders (i=1 = #1 holder). Color cycles
-      // from cool blue (smaller holder) to icy white (top holder).
-      const t = (8 - i) / 8;             // 0..1, 1 = top
-      const alpha = 0.10 + t * 0.16;
-      ctx.strokeStyle = 'rgba(178,210,255,' + alpha + ')';
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W - 60, y);
-      ctx.stroke();
-      // Tag: "◌ #1" etc. just inside the price-axis.
-      ctx.font = '9px ui-monospace,Menlo,monospace';
-      ctx.fillStyle = 'rgba(178,210,255,' + (alpha + 0.10) + ')';
-      ctx.fillText('◌ #' + i, W - 64 - 36, y - 2);
-    }
-    ctx.restore();
-    ctx.setLineDash([]);
-  };
+  window.drawWhaleGhosts = function(){}; /* v1.0.349 — Phoenix parked: draw body removed (crLive off). */
 
   // v1.0.2 — Liquidity = water level visual hook. Renders a translucent
   // blue overlay rising from the bottom of the chart, with a wavy water
@@ -61750,47 +61402,7 @@ window.crCrtFadeIn  = crCrtFadeIn;
   // running orderbook-thinness proxy (until Phoenix orderbook pane wires
   // a real depth feed). Thin book = high water = chart feels submerged.
   let _waterPhase = 0;
-  window.drawLiquidityWater = function(){
-    if(!window.crLive || !window.crLive.get('liquidity')) return;
-    if(typeof ctx === 'undefined') return;
-    _waterPhase += 0.025;
-    // Synthetic depth: oscillates 0.18..0.45 of chart height. Real feed
-    // would read aggregate depth from phxBook pane and map to [0..1].
-    const baseFrac = 0.30 + Math.sin(_waterPhase * 0.4) * 0.08;
-    const waterTop = H * (1 - baseFrac);
-    ctx.save();
-    // Body: vertical gradient from translucent surface to deeper blue.
-    const grad = ctx.createLinearGradient(0, waterTop, 0, H);
-    grad.addColorStop(0, 'rgba(58,134,255,0.12)');
-    grad.addColorStop(1, 'rgba(58,134,255,0.22)');
-    ctx.fillStyle = grad;
-    // Wavy surface
-    ctx.beginPath();
-    ctx.moveTo(0, waterTop);
-    const cols = 36;
-    for(let i = 0; i <= cols; i++){
-      const x = (W * i) / cols;
-      const y = waterTop + Math.sin(_waterPhase * 1.6 + i * 0.5) * 2.4
-                         + Math.sin(_waterPhase * 0.9 + i * 0.13) * 1.2;
-      ctx.lineTo(x, y);
-    }
-    ctx.lineTo(W, H);
-    ctx.lineTo(0, H);
-    ctx.closePath();
-    ctx.fill();
-    // Surface highlight stroke
-    ctx.strokeStyle = 'rgba(180,210,255,0.25)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for(let i = 0; i <= cols; i++){
-      const x = (W * i) / cols;
-      const y = waterTop + Math.sin(_waterPhase * 1.6 + i * 0.5) * 2.4
-                         + Math.sin(_waterPhase * 0.9 + i * 0.13) * 1.2;
-      if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.restore();
-  };
+  window.drawLiquidityWater = function(){}; /* v1.0.349 — Phoenix parked: draw body removed (crLive off). */
 
   // v1.0.2 — Frogs from longs + Bears density retune are GAMEPLAY-engine
   // overlays — they tweak the spawn rates of existing frog mobs and bear
