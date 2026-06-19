@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.339
-     LAST UPDATED:    2026-06-19  ·  IN-GAME TERMINAL — 3 new token tabs (Info / Txn / Bubble Maps), Stage 1 of the tab refactor. All read the ACTIVE Solana token (currentAssetObj().mint / .gtPool) and pull live data: INFO = GeckoTerminal pool overview (price · liquidity · FDV · mkt cap · 5m/1h/6h/24h % · 24h buys/sells + volume); TXN = recent pool trades (time · buy/sell · USD · price · trader, 30 rows); BUBBLE MAPS = embedded Bubblemaps holder-cluster map (iframe app.bubblemaps.io/sol/token/<mint>, verified embeddable) + Open ↗. Honestly-empty when the active chart isn't a Solana token. Wired as chart-only tabs (data-cr-chart-tab) into the existing tab-bar + _crTermSetMainView views map; light 20s refresh for the active Info/Txn tab. Read-only — no order/route/signing change. STAGE 2 (next): consolidate Setup/HUD/Run-Focus/Execution → Engine + Overlay-arc overlays → the toolbar indicator system, archiving those tabs.
+     CURRENT VERSION: v1.0.340
+     LAST UPDATED:    2026-06-19  ·  IN-GAME TERMINAL Stage 2 — consolidate to run-useful tabs (audit doc: docs/qa/2026-06-19-ingame-terminal-pane-audit.md). Audited every chart-Engine pane for in-run, token-specific usefulness. ARCHIVED the RUN FOCUS / EXECUTION / HUD / OVERLAYS / SETUPS chart tabs (data-cr-tab-archived; reversible) — their run-useful panes (positions, openPositions, availableTools, tradeExec, terminalSession, riskSnapshot, edgeFormulas, regimeDetect, marketScan) already live in ENGINE, so nothing run-critical is lost. HID the market-overview panes that duplicate the desktop trackers from the CHART surface (data-cr-desktop-only-pane on mktRegime/mktHeatmap/mktMatrix/coinWatchlist/walletWatchlist) while keeping them on the desktop Terminal. Net chart tabs: ENGINE (token analytics: Exploit Score / Monte-Carlo / Probability Lattice + positions/tools/exec/session) · INFO · TXN · BUBBLE MAPS. Overlay-arc overlays belong in the toolbar indicator system (BB/EMA/SMA-style) — OVERLAYS tab archived; per-overlay wiring into the indicator picker is a focused follow-up. Read-only — no order/route/signing change.
+     (v1.0.339 = IN-GAME TERMINAL — 3 new token tabs (Info / Txn / Bubble Maps), Stage 1 of the tab refactor. All read the ACTIVE Solana token (currentAssetObj().mint / .gtPool) and pull live data: INFO = GeckoTerminal pool overview (price · liquidity · FDV · mkt cap · 5m/1h/6h/24h % · 24h buys/sells + volume); TXN = recent pool trades (time · buy/sell · USD · price · trader, 30 rows); BUBBLE MAPS = embedded Bubblemaps holder-cluster map (iframe app.bubblemaps.io/sol/token/<mint>, verified embeddable) + Open ↗. Honestly-empty when the active chart isn't a Solana token. Wired as chart-only tabs (data-cr-chart-tab) into the existing tab-bar + _crTermSetMainView views map; light 20s refresh for the active Info/Txn tab. Read-only — no order/route/signing change. STAGE 2 (next): consolidate Setup/HUD/Run-Focus/Execution → Engine + Overlay-arc overlays → the toolbar indicator system, archiving those tabs.
      (v1.0.338 = SOLANA RPC BRIDGE + on-chain widgets. New endpoint-agnostic crSolanaRpc(method,params) — default keyless CORS public RPC (solana-rpc.publicnode.com, browser-verified reachable; mainnet-beta/ankr/drpc are CORS-blocked), override via localStorage.cr_solana_rpc to point at a SOVEREIGN endpoint (e.g. an Umbrel RPC proxy over Tailscale Funnel that keeps a Helius key server-side + adds CORS+cache; proxy service + deploy steps in umbrel-mcp/solana-rpc-proxy/). Ships two previously-deferred widgets: (1) Network Health (solNetHealth) — Solana TPS, slot time, priority-fee level / congestion via getRecentPerformanceSamples + getRecentPrioritizationFees; (2) Token Safety (solSafety) — rug-check the active Solana token on-chain (mint authority renounced? freeze authority? top-10 holder concentration) via getAccountInfo + getTokenLargestAccounts + getTokenSupply. Both honestly-offline if the RPC is unreachable (never faked). The whale relationship-graph still needs an indexer (GoldRush/Birdeye/Helius enhanced) → remains deferred. Read-only — no order/route/signing change.
      (v1.0.337 = TERMINAL SYNTHESIS P5 — CVD rounds up the score + Probability Lattice. (1) CVD, the v2 model's 4th indicator, now feeds the Exploit Score: when the active chart is a centralized USDT perp, the gauge async-fetches Binance taker order-flow (futures/data/takerlongshortRatio), derives a CVD magnitude+side, and blends it in (VWAP·0.3 / Vol·0.25 / Persist·0.2 / CVD·0.25); spot/DEX charts have no public taker feed → CVD shown "—" (never faked), score stays the 3-component base. (2) Probability Lattice (probLattice) — the mockup "every trade = one ball" Galton board: each Monte-Carlo path drops through a peg lattice into loss / breakeven(±0.5%) / profit, rendered as lattice + outcome histogram + loss/flat/profit %, MODEL-chipped (forecast from the chart's real vol). Both Engine-view, wired through the pane framework. Remaining depth (relationship graph) deferred — needs whale/flow data behind an API key (no-dead-pane rule). Read-only — no order/route/signing change.
      (v1.0.336 = TERMINAL SYNTHESIS P4 — Returns Matrix + Monte-Carlo radial. (1) Returns Matrix (mktMatrix, mockup "Robustness Matrix"): top assets × {1h,24h,7d,30d} REAL % returns from CoinGecko (crCgMarkets extended to multi-window via price_change_percentage=1h,24h,7d,30d; cache key v2→v3), cells colored red→green — one fetch, no per-cell candle pulls. (2) Monte-Carlo (mcRadial): pure crMonteCarlo() estimates drift+vol from the active chart's REAL log-returns, runs 400 random-walk paths over a 24-bar horizon → radial burst (green up / red down) + P(up)/P(down)/mean + terminal-distribution histogram. Clearly labeled MODEL (a forecast from real inputs, never measured fact) — the data-truth rule extended to simulations. Both added to the Engine view + wired through the pane framework. Read-only — no order/route/signing change.
@@ -4614,6 +4615,12 @@
   #win-terminal[data-cr-terminal-surface="chart"] #crTermViewDarkflow .crTerm-pane:not([data-pane-id]),
   #win-terminal[data-cr-terminal-surface="chart"] #crTermViewDarkflow .crTerm-pane[data-cr-chart-pane="0"]{display:none!important}
   #win-terminal:not([data-cr-terminal-surface="chart"]) .crTerm-pane[data-cr-chart-only-pane="1"]{display:none!important}
+  /* v1.0.340 — Stage 2 in-run curation: market-overview panes that duplicate the
+     desktop trackers are hidden on the CHART surface (kept on desktop). And the
+     consolidated chart tabs are archived (Run Focus/Execution/HUD/Overlays/Setups
+     → their run-useful panes already live in ENGINE). */
+  #win-terminal[data-cr-terminal-surface="chart"] .crTerm-pane[data-cr-desktop-only-pane="1"]{display:none!important}
+  .crTerm-tab[data-cr-tab-archived="1"]{display:none!important}
   #win-terminal[data-cr-terminal-surface="chart"] .crTerm-prompt{display:none!important}
   #win-terminal[data-cr-terminal-surface="chart"] .crTerm-sessionPane .crTerm-paneBd.log{height:132px}
   .crTerm-runGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
@@ -11776,11 +11783,14 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
           <!-- v0.8k#24s/#24t/#24u/#24ac — Tabs: Darkflow · trackers · Strategies. -->
           <div class="crTerm-tabs">
             <button class="crTerm-tab active" data-termview="darkflow" type="button">ENGINE</button>
-            <button class="crTerm-tab" data-termview="runfocus" data-cr-chart-tab="1" type="button">RUN FOCUS</button>
-            <button class="crTerm-tab" data-termview="execution" data-cr-chart-tab="1" type="button">EXECUTION</button>
-            <button class="crTerm-tab" data-termview="hud" data-cr-chart-tab="1" type="button">HUD</button>
-            <button class="crTerm-tab" data-termview="overlays" data-cr-chart-tab="1" type="button">OVERLAYS</button>
-            <button class="crTerm-tab" data-termview="setups" data-cr-chart-tab="1" type="button">SETUPS</button>
+            <!-- v1.0.340 — Stage 2: consolidated into ENGINE (run-useful panes already
+                 live there). Tabs archived (reversible — remove data-cr-tab-archived).
+                 Overlay-arc overlays belong in the toolbar indicator system (BB/EMA/…). -->
+            <button class="crTerm-tab" data-termview="runfocus" data-cr-chart-tab="1" data-cr-tab-archived="1" type="button">RUN FOCUS</button>
+            <button class="crTerm-tab" data-termview="execution" data-cr-chart-tab="1" data-cr-tab-archived="1" type="button">EXECUTION</button>
+            <button class="crTerm-tab" data-termview="hud" data-cr-chart-tab="1" data-cr-tab-archived="1" type="button">HUD</button>
+            <button class="crTerm-tab" data-termview="overlays" data-cr-chart-tab="1" data-cr-tab-archived="1" type="button">OVERLAYS</button>
+            <button class="crTerm-tab" data-termview="setups" data-cr-chart-tab="1" data-cr-tab-archived="1" type="button">SETUPS</button>
             <!-- v1.0.339 — token/run-specific tabs -->
             <button class="crTerm-tab" data-termview="info" data-cr-chart-tab="1" type="button">INFO</button>
             <button class="crTerm-tab" data-termview="txn" data-cr-chart-tab="1" type="button">TXN</button>
@@ -11837,15 +11847,15 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                 <div class="crTerm-paneHd"><span>◎ Exploit Score</span><span class="hd-tag">active chart · live</span></div>
                 <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">scoring the active chart…</div></div>
               </div>
-              <div class="crTerm-pane" data-pane-id="mktRegime">
+              <div class="crTerm-pane" data-pane-id="mktRegime" data-cr-desktop-only-pane="1">
                 <div class="crTerm-paneHd"><span>◆ Market Regime</span><span class="hd-tag">CoinGecko · live</span></div>
                 <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">reading market regime…</div></div>
               </div>
-              <div class="crTerm-pane" data-pane-id="mktHeatmap">
+              <div class="crTerm-pane" data-pane-id="mktHeatmap" data-cr-desktop-only-pane="1">
                 <div class="crTerm-paneHd"><span>▦ Market Heatmap</span><span class="hd-tag">24h % · live</span></div>
                 <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">loading heatmap…</div></div>
               </div>
-              <div class="crTerm-pane" data-pane-id="mktMatrix">
+              <div class="crTerm-pane" data-pane-id="mktMatrix" data-cr-desktop-only-pane="1">
                 <div class="crTerm-paneHd"><span>▦ Returns Matrix</span><span class="hd-tag">1h·24h·7d·30d · live</span></div>
                 <div class="crTerm-paneBd"><div style="font-size:10px;color:var(--dim)">loading returns matrix…</div></div>
               </div>
@@ -11969,7 +11979,7 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                    localStorage.cr_tok_watchlist_v1 (the same Set the Token
                    Terminal Watchlist tab uses). ☆ a token in Token Terminal
                    to add it here. _crTermPaintEngineWatchlists paints rows. -->
-              <div class="crTerm-pane" data-pane-id="coinWatchlist">
+              <div class="crTerm-pane" data-pane-id="coinWatchlist" data-cr-desktop-only-pane="1">
                 <div class="crTerm-paneHd"><span>◎ COIN WATCHLIST</span><span class="hd-tag" id="crTermCoinWlTag">— · synced</span></div>
                 <div class="crTerm-paneBd small" id="crTermCoinWl">
                   <div class="dim" style="font-style:italic;font-size:10px;padding:6px">Star tokens in Token to populate.</div>
@@ -11978,7 +11988,7 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
               <!-- v0.9.50 — Wallet Watchlist pane (Engine view). Reads from
                    localStorage.cr_wallet_watchlist_v1. Click the gear in
                    Configure Terminal Widgets → Wallet Watchlist row to edit. -->
-              <div class="crTerm-pane" data-pane-id="walletWatchlist">
+              <div class="crTerm-pane" data-pane-id="walletWatchlist" data-cr-desktop-only-pane="1">
                 <div class="crTerm-paneHd"><span>▤ WALLET WATCHLIST</span><span class="hd-tag" id="crTermWalWlTag">— wallets · cached 60s</span></div>
                 <div class="crTerm-paneBd small" id="crTermWalWl">
                   <div class="dim" style="font-style:italic;font-size:10px;padding:6px">Add Solana addresses via Configure Terminal Widgets ⊛ → Wallet Watchlist.</div>
@@ -13618,7 +13628,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.339",
+  VERSION: "1.0.340",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
