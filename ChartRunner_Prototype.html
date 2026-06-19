@@ -2,8 +2,18 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.350
-     LAST UPDATED:    2026-06-19  ·  ARCHIVED the boot/stealth-login screen (#crBoot:
+     CURRENT VERSION: v1.0.351
+     LAST UPDATED:    2026-06-19  ·  FIX reload boot-flash. v1.0.350 archived the login
+     modal that used to mask the ~4.6MB boot; without it, plain /play reloads exposed the
+     un-initialized desktop (in-game chrome #crOSBar + chart topbar + Workbench icon +
+     default theme + no widgets) until the script applied saved state. Fix = (1) the
+     existing #crDlCover boot cover now shows on EVERY load (was chart-bound deep links
+     only) and lifts on window 'load' (crSplashUp + saved theme + restored widgets are
+     ready by then; 14s safety + chart-paint paths still reveal for deep links); (2) saved
+     theme applies synchronously (dropped the 200ms setTimeout); (3) archived Workbench
+     icon hidden via static CSS at parse time (was JS-hidden ~line 40738). Un-archive =
+     remove the CSS rule + flip CR_WORKBENCH_ARCHIVED.
+     ---- prior (v1.0.350) ----  ARCHIVED the boot/stealth-login screen (#crBoot:
      Connect Wallet / Continue as Guest). The 47-line modal DOM moved OUT of source to
      _patches/login-archive-2026-06-19/crBoot-login-modal.html; the app now auto-enters as an
      anonymous guest every load (crArchivedLoginAutoGuest IIFE seeds the same session/auth keys
@@ -2815,6 +2825,13 @@
   body.crSplashUp #crOSBar,
   body.crSplashUp #crOSDockFixed,
   body.crSplashUp .crChrome{display:none!important}
+
+  /* v1.0.351 — Workbench is permanently archived (window.CR_WORKBENCH_ARCHIVED=true).
+     The JS hide runs ~line 40738, deep in the ~4.6MB script, so the icon used to
+     flash on reload before that ran. Hide it at parse time so it never paints.
+     Un-archive = remove this rule AND flip the flag. */
+  .os-icon[data-prog="workbench"],
+  .dockBtn[data-prog="workbench"]{display:none!important}
 
   /* Mobile collapse for TV chrome */
   @media (max-width:720px){
@@ -8370,7 +8387,13 @@
       try{ document.documentElement.classList.remove('cr-dl-booting'); }catch(_){}
       if(c){ c.classList.add('out'); setTimeout(function(){ try{ c.parentNode && c.parentNode.removeChild(c); }catch(_){} }, 420); }
     };
-    if(chartBound){
+    // v1.0.351 — boot cover now masks EVERY load, not just chart-bound deep links.
+    // The login modal that used to hide the boot flash was ARCHIVED in v1.0.350,
+    // which exposed the un-initialized desktop (in-game chrome #crOSBar + chart
+    // topbar + Workbench icon + default theme + no widgets) until the ~4.6MB
+    // script applied saved state. Show the cover immediately; reveal once the
+    // desktop has initialized (crSplashUp + saved theme + restored widgets).
+    {
       // Avatar — rebuild the in-game Space Invader sprite (matches drawInvader's
       // 15×7 grid, Solana-green) as crisp SVG rects, static & centered.
       try{
@@ -8398,8 +8421,22 @@
         var tr=document.getElementById('crDlTrack');
         if(tr) tr.innerHTML=one+one;
       }catch(_){}
+      // Plain desktop load → we're not "running a chart", so use a neutral label.
+      if(!chartBound){ try{ var _m=document.querySelector('#crDlCover .crDlMsg'); if(_m) _m.textContent='Loading…'; }catch(_){} }
       document.documentElement.classList.add('cr-dl-booting');
       window.__crDlSafety = setTimeout(function(){ try{ crDlRevealChart(); }catch(_){} }, 14000);
+      if(!chartBound){
+        // No chart-paint path fires for a plain desktop reload, so nothing would
+        // ever call crDlRevealChart. Reveal once the heavy script has fully parsed
+        // and run — by `load` the body has crSplashUp, the saved theme is applied,
+        // and renderWidgets() has restored the desktop widgets. Two rAFs + a short
+        // settle let that first clean frame paint under the cover before it lifts.
+        window.addEventListener('load', function(){
+          requestAnimationFrame(function(){ requestAnimationFrame(function(){
+            setTimeout(function(){ try{ crDlRevealChart(); }catch(_){} }, 120);
+          }); });
+        }, { once:true });
+      }
     }
   }catch(_){}
 })();
@@ -70378,14 +70415,16 @@ const crL3 = (function(){
   try{
     const stored = localStorage.getItem('cr_os_theme');
     if(stored && typeof stored === 'string'){
-      // Defer until splash is constructed so the menubar Theme cycle picks it up
-      setTimeout(() => {
-        const splashEl = document.getElementById('splash');
-        if(!splashEl) return;
+      // v1.0.351 — apply immediately (was a 200ms setTimeout). The splash is long
+      // since constructed by the time this IIFE runs this late in the file, and the
+      // deferral leaked a default-theme flash on reload now that the boot login
+      // modal (which masked it) is archived. The boot cover keeps the swap unseen.
+      const splashEl = document.getElementById('splash');
+      if(splashEl){
         if(stored === 'dark'){ splashEl.removeAttribute('data-theme'); }
         else { splashEl.setAttribute('data-theme', stored); }
-        try{ document.body.setAttribute('data-os-theme', stored); }catch{}
-      }, 200);
+      }
+      try{ document.body.setAttribute('data-os-theme', stored); }catch{}
     }
   }catch{}
   // Persist on every theme change. Watch the splash data-theme via observer.
