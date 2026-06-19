@@ -4,8 +4,9 @@
 <!-- ============================================================
      ChartRunner — version banner
      ============================================================
-     CURRENT VERSION: v1.0.338
-     LAST UPDATED:    2026-06-19  ·  SOLANA RPC BRIDGE + on-chain widgets. New endpoint-agnostic crSolanaRpc(method,params) — default keyless CORS public RPC (solana-rpc.publicnode.com, browser-verified reachable; mainnet-beta/ankr/drpc are CORS-blocked), override via localStorage.cr_solana_rpc to point at a SOVEREIGN endpoint (e.g. an Umbrel RPC proxy over Tailscale Funnel that keeps a Helius key server-side + adds CORS+cache; proxy service + deploy steps in umbrel-mcp/solana-rpc-proxy/). Ships two previously-deferred widgets: (1) Network Health (solNetHealth) — Solana TPS, slot time, priority-fee level / congestion via getRecentPerformanceSamples + getRecentPrioritizationFees; (2) Token Safety (solSafety) — rug-check the active Solana token on-chain (mint authority renounced? freeze authority? top-10 holder concentration) via getAccountInfo + getTokenLargestAccounts + getTokenSupply. Both honestly-offline if the RPC is unreachable (never faked). The whale relationship-graph still needs an indexer (GoldRush/Birdeye/Helius enhanced) → remains deferred. Read-only — no order/route/signing change.
+     CURRENT VERSION: v1.0.339
+     LAST UPDATED:    2026-06-19  ·  IN-GAME TERMINAL — 3 new token tabs (Info / Txn / Bubble Maps), Stage 1 of the tab refactor. All read the ACTIVE Solana token (currentAssetObj().mint / .gtPool) and pull live data: INFO = GeckoTerminal pool overview (price · liquidity · FDV · mkt cap · 5m/1h/6h/24h % · 24h buys/sells + volume); TXN = recent pool trades (time · buy/sell · USD · price · trader, 30 rows); BUBBLE MAPS = embedded Bubblemaps holder-cluster map (iframe app.bubblemaps.io/sol/token/<mint>, verified embeddable) + Open ↗. Honestly-empty when the active chart isn't a Solana token. Wired as chart-only tabs (data-cr-chart-tab) into the existing tab-bar + _crTermSetMainView views map; light 20s refresh for the active Info/Txn tab. Read-only — no order/route/signing change. STAGE 2 (next): consolidate Setup/HUD/Run-Focus/Execution → Engine + Overlay-arc overlays → the toolbar indicator system, archiving those tabs.
+     (v1.0.338 = SOLANA RPC BRIDGE + on-chain widgets. New endpoint-agnostic crSolanaRpc(method,params) — default keyless CORS public RPC (solana-rpc.publicnode.com, browser-verified reachable; mainnet-beta/ankr/drpc are CORS-blocked), override via localStorage.cr_solana_rpc to point at a SOVEREIGN endpoint (e.g. an Umbrel RPC proxy over Tailscale Funnel that keeps a Helius key server-side + adds CORS+cache; proxy service + deploy steps in umbrel-mcp/solana-rpc-proxy/). Ships two previously-deferred widgets: (1) Network Health (solNetHealth) — Solana TPS, slot time, priority-fee level / congestion via getRecentPerformanceSamples + getRecentPrioritizationFees; (2) Token Safety (solSafety) — rug-check the active Solana token on-chain (mint authority renounced? freeze authority? top-10 holder concentration) via getAccountInfo + getTokenLargestAccounts + getTokenSupply. Both honestly-offline if the RPC is unreachable (never faked). The whale relationship-graph still needs an indexer (GoldRush/Birdeye/Helius enhanced) → remains deferred. Read-only — no order/route/signing change.
      (v1.0.337 = TERMINAL SYNTHESIS P5 — CVD rounds up the score + Probability Lattice. (1) CVD, the v2 model's 4th indicator, now feeds the Exploit Score: when the active chart is a centralized USDT perp, the gauge async-fetches Binance taker order-flow (futures/data/takerlongshortRatio), derives a CVD magnitude+side, and blends it in (VWAP·0.3 / Vol·0.25 / Persist·0.2 / CVD·0.25); spot/DEX charts have no public taker feed → CVD shown "—" (never faked), score stays the 3-component base. (2) Probability Lattice (probLattice) — the mockup "every trade = one ball" Galton board: each Monte-Carlo path drops through a peg lattice into loss / breakeven(±0.5%) / profit, rendered as lattice + outcome histogram + loss/flat/profit %, MODEL-chipped (forecast from the chart's real vol). Both Engine-view, wired through the pane framework. Remaining depth (relationship graph) deferred — needs whale/flow data behind an API key (no-dead-pane rule). Read-only — no order/route/signing change.
      (v1.0.336 = TERMINAL SYNTHESIS P4 — Returns Matrix + Monte-Carlo radial. (1) Returns Matrix (mktMatrix, mockup "Robustness Matrix"): top assets × {1h,24h,7d,30d} REAL % returns from CoinGecko (crCgMarkets extended to multi-window via price_change_percentage=1h,24h,7d,30d; cache key v2→v3), cells colored red→green — one fetch, no per-cell candle pulls. (2) Monte-Carlo (mcRadial): pure crMonteCarlo() estimates drift+vol from the active chart's REAL log-returns, runs 400 random-walk paths over a 24-bar horizon → radial burst (green up / red down) + P(up)/P(down)/mean + terminal-distribution histogram. Clearly labeled MODEL (a forecast from real inputs, never measured fact) — the data-truth rule extended to simulations. Both added to the Engine view + wired through the pane framework. Read-only — no order/route/signing change.
      (v1.0.335 = TERMINAL SYNTHESIS P3 — exploitable-score spine + radial gauge. New pure crExploitScore(candles) scores a chart 0–100 from REAL candles on the v2 indicators VWAP-displacement (|close−VWAP| in ATR units), Volatility (ATR%), and Persistence (directional run consistency), weighted 0.4/0.3/0.3 → state EXPLOITABLE≥66 / CANDIDATE≥40 / IDLE + LONG/SHORT side. The 4th v2 indicator (CVD) needs an order-flow feed → marked pending, NOT faked. New Engine Terminal pane "Exploit Score" (crExploitGauge) renders the mockup score-gauge (SVG donut) + state badge + per-component bars for the ACTIVE chart, recomputing as the player switches asset/tf (cheap + truthful — scores loaded candles rather than faking a per-row cross-asset score). Wired through the pane framework + added to the Engine view. Read-only — no order/route/signing change.
@@ -11780,6 +11781,10 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
             <button class="crTerm-tab" data-termview="hud" data-cr-chart-tab="1" type="button">HUD</button>
             <button class="crTerm-tab" data-termview="overlays" data-cr-chart-tab="1" type="button">OVERLAYS</button>
             <button class="crTerm-tab" data-termview="setups" data-cr-chart-tab="1" type="button">SETUPS</button>
+            <!-- v1.0.339 — token/run-specific tabs -->
+            <button class="crTerm-tab" data-termview="info" data-cr-chart-tab="1" type="button">INFO</button>
+            <button class="crTerm-tab" data-termview="txn" data-cr-chart-tab="1" type="button">TXN</button>
+            <button class="crTerm-tab" data-termview="bubble" data-cr-chart-tab="1" type="button">BUBBLE MAPS</button>
             <!-- v1.0.263 — RUN WIDGETS chart tab archived. Chart/run spawns
                  now live in their owning tabs: Engine, Run Focus, Execution,
                  HUD, and Overlays. Desktop keeps the gear picker below.
@@ -12049,6 +12054,32 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
               <div class="crTerm-pane" data-cr-run-panel="setup-tape">
                 <div class="crTerm-paneHd"><span>◇ SETUP TAPE</span><span class="hd-tag">recent</span></div>
                 <div class="crTerm-paneBd small" id="crTermSetupTape"><div class="dim">No setup history yet.</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- v1.0.339 — token/run-specific chart tabs (Info / Txn / Bubble Maps) -->
+          <div class="crTerm-view hidden" id="crTermViewInfo" data-cr-chart-view="1">
+            <div class="crTerm-runGrid">
+              <div class="crTerm-pane" data-cr-run-panel="token-info">
+                <div class="crTerm-paneHd"><span>ℹ INFO</span><span class="hd-tag">token · live</span></div>
+                <div class="crTerm-paneBd small" id="crTermInfoBody"><div class="dim">loading token info…</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="crTerm-view hidden" id="crTermViewTxn" data-cr-chart-view="1">
+            <div class="crTerm-runGrid">
+              <div class="crTerm-pane" data-cr-run-panel="token-txn">
+                <div class="crTerm-paneHd"><span>⇅ TXN</span><span class="hd-tag">recent trades · live</span></div>
+                <div class="crTerm-paneBd small" id="crTermTxnBody"><div class="dim">loading transactions…</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="crTerm-view hidden" id="crTermViewBubble" data-cr-chart-view="1">
+            <div class="crTerm-runGrid">
+              <div class="crTerm-pane" data-cr-run-panel="token-bubble">
+                <div class="crTerm-paneHd"><span>◴ BUBBLE MAPS</span><span class="hd-tag">holders · Bubblemaps</span></div>
+                <div class="crTerm-paneBd small" id="crTermBubbleBody"><div class="dim">load a Solana token…</div></div>
               </div>
             </div>
           </div>
@@ -13587,7 +13618,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.338",
+  VERSION: "1.0.339",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -51312,6 +51343,92 @@ function _crTermRenderChartRunViews(){
     _crTermSetHTML('crTermSetupTape', tape);
   } catch(_){}
 }
+/* ── In-game Terminal token tabs — Info / Txn / Bubble Maps (v1.0.339) ────────
+   Token/run-specific tabs for the chart Terminal. All read the ACTIVE Solana
+   token (currentAssetObj().mint / .gtPool) and pull live GeckoTerminal data
+   (pool overview + trades), or embed Bubblemaps. Honestly-empty when the active
+   chart isn't a Solana token. Read-only. */
+const _crTokTabCache = {};
+function _crFmtUsd(n){ n = Number(n); if(!isFinite(n)) return '—'; var a = Math.abs(n), s = n < 0 ? '-' : ''; if(a >= 1e9) return s + '$' + (a/1e9).toFixed(2) + 'B'; if(a >= 1e6) return s + '$' + (a/1e6).toFixed(2) + 'M'; if(a >= 1e3) return s + '$' + (a/1e3).toFixed(1) + 'K'; if(a >= 1) return s + '$' + a.toFixed(2); if(a > 0) return s + '$' + a.toPrecision(3); return '$0'; }
+function _crTokEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]); }); }
+async function _crGtJson(url){ var r = await fetch(url, { headers: { 'Accept':'application/json;version=20230203' } }); if(!r.ok) throw new Error('gt-' + r.status); return r.json(); }
+function _crActiveSolToken(){ try{ var a = (typeof currentAssetObj === 'function') ? currentAssetObj() : null; if(a && a.mint && typeof crIsSolanaMintAddress === 'function' && crIsSolanaMintAddress(a.mint)) return { mint:a.mint, pool:(a.gtPool && a.gtPool.address) || '', label:a.label || a.nm || 'token' }; }catch(_){} return null; }
+async function _crResolvePool(mint, known){
+  if(known) return known;
+  var ck = 'pool:' + mint, c = _crTokTabCache[ck]; if(c && Date.now() - c.t < 60000) return c.v;
+  try{ var j = await _crGtJson('https://api.geckoterminal.com/api/v2/networks/solana/tokens/' + mint + '/pools?sort=h24_volume_usd_liquidity_desc&page=1'); var p = (j.data || [])[0]; var addr = (p && p.attributes && p.attributes.address) || ''; _crTokTabCache[ck] = { t:Date.now(), v:addr }; return addr; }catch(_){ return ''; }
+}
+async function crRenderTokenInfo(){
+  var host = document.getElementById('crTermInfoBody'); if(!host) return;
+  var tok = _crActiveSolToken();
+  if(!tok){ host.innerHTML = '<div class="dim" style="font-size:10px">Load a Solana token (paste a mint / pick a DEX pool / Trending Pools → Open chart) to see token info.</div>'; return; }
+  try{
+    var pool = await _crResolvePool(tok.mint, tok.pool);
+    if(!pool){ host.innerHTML = '<div class="dim" style="font-size:10px">No Solana pool found for this token.</div>'; return; }
+    var ck = 'info:' + pool, c = _crTokTabCache[ck], j;
+    if(c && Date.now() - c.t < 15000) j = c.v; else { j = await _crGtJson('https://api.geckoterminal.com/api/v2/networks/solana/pools/' + pool + '?include=base_token,dex'); _crTokTabCache[ck] = { t:Date.now(), v:j }; }
+    var a = (j.data && j.data.attributes) || {};
+    var pc = a.price_change_percentage || {}, tx = (a.transactions && a.transactions.h24) || {}, vol = a.volume_usd || {};
+    var pctCell = function(lab, v){ v = (v == null ? null : parseFloat(v)); var col = v == null ? 'var(--dim)' : v >= 0 ? '#14f195' : '#ff5b7f'; return '<div style="flex:1;text-align:center"><div style="color:var(--dim);font-size:8.5px">' + lab + '</div><div style="color:' + col + ';font-weight:700">' + (v == null ? '—' : ((v >= 0 ? '+' : '') + v.toFixed(2) + '%')) + '</div></div>'; };
+    var card = function(lab, val){ return '<div style="flex:1;background:rgba(10,15,28,.5);border:1px solid var(--line);border-radius:6px;padding:5px 6px;text-align:center"><div style="color:var(--dim);font-size:8.5px">' + lab + '</div><div style="font-weight:700;font-size:11px">' + val + '</div></div>'; };
+    var buys = Number(tx.buys || 0), sells = Number(tx.sells || 0), tot = buys + sells || 1;
+    var bv = Number(vol.h24 || 0);
+    host.innerHTML = '<div style="font-size:10.5px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><span style="font-weight:800">' + _crTokEsc(a.name || tok.label) + '</span><span style="color:var(--dim);font-size:9px">Solana</span></div>'
+      + '<div style="display:flex;gap:6px;margin-bottom:6px">' + card('PRICE USD', (a.base_token_price_usd != null ? _crFmtUsd(parseFloat(a.base_token_price_usd)).replace(/^\$/, '$') : '—')) + card('LIQUIDITY', _crFmtUsd(a.reserve_in_usd)) + '</div>'
+      + '<div style="display:flex;gap:6px;margin-bottom:6px">' + card('FDV', _crFmtUsd(a.fdv_usd)) + card('MKT CAP', _crFmtUsd(a.market_cap_usd)) + '</div>'
+      + '<div style="display:flex;gap:4px;background:rgba(10,15,28,.5);border:1px solid var(--line);border-radius:6px;padding:5px 4px;margin-bottom:6px">' + pctCell('5M', pc.m5) + pctCell('1H', pc.h1) + pctCell('6H', pc.h6) + pctCell('24H', pc.h24) + '</div>'
+      + '<div style="display:flex;justify-content:space-between;margin-bottom:2px"><span style="color:var(--dim)">24h txns</span><span><b style="color:#14f195">' + buys.toLocaleString('en-US') + '</b> buys · <b style="color:#ff5b7f">' + sells.toLocaleString('en-US') + '</b> sells</span></div>'
+      + '<div style="height:5px;border-radius:3px;overflow:hidden;display:flex;margin-bottom:5px"><span style="width:' + (buys/tot*100).toFixed(0) + '%;background:#14f195"></span><span style="flex:1;background:#ff5b7f"></span></div>'
+      + '<div style="display:flex;justify-content:space-between"><span style="color:var(--dim)">24h volume</span><b>' + _crFmtUsd(bv) + '</b></div>'
+      + '</div>';
+  }catch(e){ try{ if(window.crReport) crReport(e, 'tokInfo'); }catch(_){} host.innerHTML = '<div class="dim" style="font-size:10px">token info unavailable right now</div>'; }
+}
+async function crRenderTokenTxns(){
+  var host = document.getElementById('crTermTxnBody'); if(!host) return;
+  var tok = _crActiveSolToken();
+  if(!tok){ host.innerHTML = '<div class="dim" style="font-size:10px">Load a Solana token to see recent transactions.</div>'; return; }
+  try{
+    var pool = await _crResolvePool(tok.mint, tok.pool);
+    if(!pool){ host.innerHTML = '<div class="dim" style="font-size:10px">No Solana pool found.</div>'; return; }
+    var j = await _crGtJson('https://api.geckoterminal.com/api/v2/networks/solana/pools/' + pool + '/trades');
+    var rows = (j.data || []).slice(0, 30);
+    if(!rows.length){ host.innerHTML = '<div class="dim" style="font-size:10px">no recent trades</div>'; return; }
+    var now = Date.now();
+    host.innerHTML = '<div style="display:flex;flex-direction:column;gap:1px;font-size:10px">'
+      + '<div style="display:flex;justify-content:space-between;color:var(--dim);font-size:8.5px;padding:0 2px 2px"><span>time · side</span><span>USD · price · trader</span></div>'
+      + rows.map(function(t){
+          var x = t.attributes || {}; var buy = x.kind === 'buy'; var col = buy ? '#14f195' : '#ff5b7f';
+          var ageS = Math.max(0, Math.round((now - Date.parse(x.block_timestamp)) / 1000)); var age = ageS < 90 ? ageS + 's' : ageS < 5400 ? Math.round(ageS/60) + 'm' : Math.round(ageS/3600) + 'h';
+          var px = parseFloat(buy ? x.price_to_in_usd : x.price_from_in_usd);
+          var tr = String(x.tx_from_address || ''); tr = tr ? (tr.slice(0,4) + '…' + tr.slice(-4)) : '—';
+          return '<div style="display:flex;justify-content:space-between;padding:1px 2px;border-bottom:1px solid rgba(120,140,170,.08)">'
+            + '<span style="color:' + col + '">' + (buy ? '▲' : '▼') + ' <span style="color:var(--dim)">' + age + '</span></span>'
+            + '<span class="r"><b>' + _crFmtUsd(x.volume_in_usd) + '</b> <span style="color:var(--dim)">' + (isFinite(px) ? _crFmtUsd(px) : '—') + '</span> <span style="color:#7aa2ff">' + _crTokEsc(tr) + '</span></span></div>';
+        }).join('')
+      + '</div>';
+  }catch(e){ try{ if(window.crReport) crReport(e, 'tokTxns'); }catch(_){} host.innerHTML = '<div class="dim" style="font-size:10px">transactions unavailable right now</div>'; }
+}
+function crRenderBubbleMap(){
+  var host = document.getElementById('crTermBubbleBody'); if(!host) return;
+  var tok = _crActiveSolToken();
+  if(!tok){ host.innerHTML = '<div class="dim" style="font-size:10px">Load a Solana token to see its holder bubble map.</div>'; return; }
+  var url = 'https://app.bubblemaps.io/sol/token/' + tok.mint;
+  if(host.getAttribute('data-mint') === tok.mint && host.querySelector('iframe')) return; // already showing this token
+  host.setAttribute('data-mint', tok.mint);
+  host.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:9px"><span style="color:var(--dim)">holder clusters · Bubblemaps</span><a href="' + url + '" target="_blank" rel="noopener" style="color:#7aa2ff">Open ↗</a></div>'
+    + '<iframe src="' + url + '" style="width:100%;height:380px;border:1px solid var(--line);border-radius:6px;background:#0b0e14" loading="lazy" referrerpolicy="no-referrer"></iframe>'
+    + '<div style="color:var(--dim);font-size:8.5px;margin-top:4px">connected bubbles = wallets that transacted together (possible same entity). Methodology: wiki.bubblemaps.io</div>';
+}
+function _crTokTabTick(){
+  try{
+    var active = document.querySelector('#win-terminal .crTerm-tab.active[data-termview]');
+    var v = active ? active.getAttribute('data-termview') : '';
+    if(v === 'info') crRenderTokenInfo(); else if(v === 'txn') crRenderTokenTxns();
+  }catch(_){}
+}
+try{ setInterval(_crTokTabTick, 20000); }catch(_){}
+
 function _crTermSetMainView(view){
   try {
     const target = view || 'darkflow';
@@ -51327,6 +51444,9 @@ function _crTermSetMainView(view){
       hud: document.getElementById('crTermViewHud'),
       overlays: document.getElementById('crTermViewOverlays'),
       setups: document.getElementById('crTermViewSetups'),
+      info: document.getElementById('crTermViewInfo'),
+      txn: document.getElementById('crTermViewTxn'),
+      bubble: document.getElementById('crTermViewBubble'),
       phoenix: document.getElementById('crTermViewPhoenix'),
       solana: document.getElementById('crTermViewSolana'),
       cex: document.getElementById('crTermViewCex'),
@@ -51341,6 +51461,8 @@ function _crTermSetMainView(view){
     });
     if(typeof _crTermApplyChartViewWindows === 'function') _crTermApplyChartViewWindows(target);
     _crTermRenderChartRunViews();
+    // v1.0.339 — render the token/run tabs on open
+    try{ if(target === 'info') crRenderTokenInfo(); else if(target === 'txn') crRenderTokenTxns(); else if(target === 'bubble') crRenderBubbleMap(); }catch(_){}
   } catch(_){}
 }
 // ─── v1.0.280 — Chart tabs display widget WINDOWS (Engine-style) ────────────
