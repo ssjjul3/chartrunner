@@ -2,8 +2,17 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.358
-     LAST UPDATED:    2026-06-20  ·  Terminal Engine cleanup. (1) ARCHIVED engine panes via
+     CURRENT VERSION: v1.0.359
+     LAST UPDATED:    2026-06-20  ·  Broker moved to Profile + per-trade API select. (1) The
+     Broker picker (CEX/DEX seg + wheel + Connect) MOVED out of Configure Run into a new
+     Profile → BROKER tab (#crProfileViewBroker in win-wallet; same ids cfgBrokerSeg/
+     cfgBrokerWheel/cfgBrokerWheelList/cfgBrokerConnect so the wiring IIFE is unchanged;
+     _crBrokerSync() re-centers the wheel when the tab opens). Connect once there. (2) The
+     in-game blue-laser ACTIVATION card now has a connected-broker selector (#crBlBrokerSel,
+     built from cr_broker_connection_v1) — pick which connected API routes the trade; arming
+     writes cr_broker_v1 + game.broker so _brokerState()/route state record it. No broker
+     connected → a "connect in Profile → Broker" hint (arming still works in paper mode).
+     ---- prior (v1.0.358) ----  Terminal Engine cleanup. (1) ARCHIVED engine panes via
      data-cr-archived + one !important CSS rule: corr matrix, edge formulas, available tools,
      waveform analyzer, transition matrix, L3 command console (COMMAND SESSION + L3> prompt),
      stderr.watch(). (2) API CALLS pane only STREAMS when a real broker/API is connected
@@ -11005,27 +11014,10 @@
               <button data-tf="1M">1M</button>
             </div>
           </div>
-          <!-- v1.0.180 — Broker picker. CEX/DEX segmented toggle picks
-               the venue family (CEX = Binance-gold, DEX = Solana-purple); the
-               compact game-native wheel picks the specific broker. Selection persists
-               to cr_broker_v1 + game.broker and feeds terminal/cockpit display;
-               it still has NO downstream SDK order-routing effect yet. The wheel is re-centered
-               from osRefreshConfigs() once the window is visible (scroll math
-               needs a laid-out element). -->
-          <div class="os-section">
-            <h4>Broker</h4>
-            <div class="cfg-broker">
-              <div class="cfg-brokerSeg" id="cfgBrokerSeg" role="tablist" aria-label="Broker venue family">
-                <button data-bk="dex" class="on" type="button" role="tab">DEX</button>
-                <button data-bk="cex" type="button" role="tab">CEX</button>
-              </div>
-              <div class="cfg-wheel" id="cfgBrokerWheel" title="Scroll to pick a broker">
-                <div class="cfg-wheel-list" id="cfgBrokerWheelList"></div>
-                <div class="cfg-wheel-sel" aria-hidden="true"></div>
-              </div>
-              <button class="cfg-broker-connect" id="cfgBrokerConnect" type="button">Connect CEX/DEX</button>
-            </div>
-          </div>
+          <!-- v1.0.359 — Broker picker MOVED to Profile → BROKER (connect once there).
+               The connected API is then chosen per-trade on the in-game activation card.
+               Markup relocated to #crProfileViewBroker (same ids: cfgBrokerSeg /
+               cfgBrokerWheel / cfgBrokerWheelList / cfgBrokerConnect). -->
           <!-- v0.9.46 — Indicators + Strategies removed from Configure Run.
                Both are configured in Workbench (Indicators/Strategies tabs)
                and toggled in-run via the side panel; the Configure Run modal
@@ -11212,6 +11204,8 @@
             <button class="crTerm-tab" data-profview="bal" type="button">WALLET</button>
             <!-- v1.0.288 — TOOLS tab moved here from the archived Workbench app. -->
             <button class="crTerm-tab" data-profview="tools" type="button">TOOLS</button>
+            <!-- v1.0.359 — BROKER tab moved here from Configure Run. Connect once here. -->
+            <button class="crTerm-tab" data-profview="broker" type="button">BROKER</button>
             <button class="crTerm-tab" data-profview="stats" type="button" style="display:none">STATS</button>
             <button class="crTerm-tab" data-profview="missions" type="button" style="display:none">MISSIONS</button>
           </div>
@@ -11237,6 +11231,26 @@
                 <div id="wbToolList" style="display:flex;flex-direction:column;gap:6px;max-height:380px;overflow:auto"></div>
               </div>
             </div>
+          </div>
+          <!-- v1.0.359 — BROKER view: connect a CEX/DEX once here (moved from Configure
+               Run). The connected API is then selectable per-trade on the in-game
+               activation card. Ids match the old block so the broker IIFE wiring is
+               unchanged; _crBrokerSync() re-centers the wheel when this tab opens. -->
+          <div class="crTerm-view hidden" id="crProfileViewBroker">
+            <h4 style="margin:0 0 8px">Broker · connect once</h4>
+            <p style="margin:0 0 10px;font-size:11px;color:var(--dim)">Pick a venue family and broker, then Connect. Once connected, choose which API to route through when you activate a trade in-game.</p>
+            <div class="cfg-broker" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;grid-template-columns:none">
+              <div class="cfg-brokerSeg" id="cfgBrokerSeg" role="tablist" aria-label="Broker venue family">
+                <button data-bk="dex" class="on" type="button" role="tab">DEX</button>
+                <button data-bk="cex" type="button" role="tab">CEX</button>
+              </div>
+              <div class="cfg-wheel" id="cfgBrokerWheel" title="Scroll to pick a broker">
+                <div class="cfg-wheel-list" id="cfgBrokerWheelList"></div>
+                <div class="cfg-wheel-sel" aria-hidden="true"></div>
+              </div>
+              <button class="cfg-broker-connect" id="cfgBrokerConnect" type="button">Connect CEX/DEX</button>
+            </div>
+            <p style="margin:10px 0 0;font-size:10px;color:var(--dim)">Connections are saved and persist across sessions. No funds move and no live order routes — execution is paper/mock until Phase 2.</p>
           </div>
           <!-- v0.8k#24bq — Player tab: choose Skin · Gear · Vehicle · Weapon ·
                Bots. Each sub-section renders a toggle grid using the same
@@ -12939,7 +12953,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.358",
+  VERSION: "1.0.359",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -43886,6 +43900,8 @@ function osRefreshShop(){
   const misV    = document.getElementById('crProfileViewMissions');
   // v1.0.288 — TOOLS view (Red Laser Loadout, moved from archived Workbench).
   const toolsV  = document.getElementById('crProfileViewTools');
+  // v1.0.359 — BROKER view (moved from Configure Run).
+  const brokerV = document.getElementById('crProfileViewBroker');
   tabs.forEach(btn => {
     btn.addEventListener('click', () => {
       const view = btn.getAttribute('data-profview');
@@ -43895,9 +43911,12 @@ function osRefreshShop(){
       if(statsV)  statsV.classList.toggle('hidden',  view !== 'stats');
       if(misV)    misV.classList.toggle('hidden',    view !== 'missions');
       if(toolsV)  toolsV.classList.toggle('hidden',  view !== 'tools');
+      if(brokerV) brokerV.classList.toggle('hidden', view !== 'broker');
       if(view === 'player' && typeof _renderPlayerTab === 'function') _renderPlayerTab();
       if(view === 'bal' && typeof _crWalletRender === 'function') _crWalletRender();
       if(view === 'tools'){ try { if(typeof _wbRenderTools === 'function') _wbRenderTools(); } catch(_){} }
+      // v1.0.359 — re-center the broker wheel now that the tab is laid out (scroll math needs size).
+      if(view === 'broker'){ try { if(typeof window._crBrokerSync === 'function') window._crBrokerSync(); } catch(_){} }
     });
   });
 })();
@@ -72685,9 +72704,20 @@ window.crChainBuilder = {
     const px = _refPrice(hit);
     const isArmed = STATE.isArmed(hit.overlay);
     const broker = _brokerState();
+    // v1.0.359 — choose which CONNECTED broker/API to route this activation through
+    // (brokers are connected once in Profile → Broker). Falls back to a connect hint.
+    let _conns = {};
+    try { _conns = JSON.parse(localStorage.getItem('cr_broker_connection_v1') || '{}') || {}; } catch(_){}
+    const _connList = Object.keys(_conns).map(k => _conns[k]).filter(r => r && r.status === 'connected' && r.name);
+    const _curKey = (broker.type || '') + '|' + (broker.name || '');
+    const brokerSub = _connList.length
+      ? '<div class="sub">Route via <select id="crBlBrokerSel" style="background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:5px;color:var(--fg);font:inherit;padding:2px 6px">'
+          + _connList.map(r => { const key = (r.type || '') + '|' + (r.name || ''); return '<option value="' + _html(key) + '"' + (key === _curKey ? ' selected' : '') + '>' + _html((r.type || '').toUpperCase() + ' · ' + r.name) + '</option>'; }).join('')
+          + '</select></div>'
+      : '<div class="sub">No broker connected — <b>connect one in Profile → Broker</b> (arming still works in paper mode).</div>';
     card.innerHTML =
       '<h3>Arm ' + _html(_kindLabel(hit.kind, hit.overlay)) + (px != null ? ' @ ' + _html(_fmt(px)) : '') + '</h3>' +
-      '<div class="sub">Configured venue · ' + _html(broker.label) + ' · ' + _html(broker.conn) + '</div>' +
+      brokerSub +
       '<div class="cr-bl-tabs"><button class="on" data-cr-bl-tab="route" type="button">Route</button><button data-cr-bl-tab="alarm" type="button">Alarm</button></div>' +
       '<div data-cr-bl-pane="route">' +
         '<div class="grid">' +
@@ -72709,6 +72739,12 @@ window.crChainBuilder = {
       b.addEventListener('click', () => {
         const side = b.getAttribute('data-side');
         const mode = b.getAttribute('data-mode');
+        // v1.0.359 — apply the chosen connected broker for this activation so the
+        // route records/displays the API the player picked (display/intent only).
+        try {
+          const sel = document.getElementById('crBlBrokerSel');
+          if(sel && sel.value){ const parts = sel.value.split('|'); if(parts[0] && parts[1]){ localStorage.setItem('cr_broker_v1', JSON.stringify({ type:parts[0], name:parts[1] })); if(typeof game !== 'undefined') game.broker = { type:parts[0], name:parts[1] }; } }
+        } catch(_){}
         if(mode === 'chain'){
           const node = (typeof assignExecNode === 'function') ? assignExecNode(hit) : null;
           _closeCard();
