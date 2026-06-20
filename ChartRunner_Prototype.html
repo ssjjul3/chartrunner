@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.360
-     LAST UPDATED:    2026-06-20  ·  Theme + token/maps UI pass. (1) ARCHIVED the Solana +
+     CURRENT VERSION: v1.0.361
+     LAST UPDATED:    2026-06-20  ·  Terminal theming + Configure Run redesign. (1) The desktop
+     Terminal background now follows the theme (.crTerm uses --ct-bg + per-theme overrides for
+     platinum/frontier) instead of a static black. (2) "Choose a mode" tabs now inherit the shared
+     tab-strip styling (look like the Token/Profile tabs; v1.0.356 green-pill override removed).
+     (3) Configure Run: Asset + Token/Pair + Timeframe are now ONE aligned block (label + controls
+     per row); Token/Pair sits BELOW Asset; the Timeframe row uses a primary set + "More ▾"
+     dropdown (osRenderTfBox) mirroring the Asset row's More picker.
+     ---- prior (v1.0.360) ----  Theme + token/maps UI pass. (1) ARCHIVED the Solana +
      Liquid Glass themes (removed from THEMES/VALID/THEME_META; fallback→platinum; stale saved
      theme normalizes to platinum on boot). (2) In light themes (platinum / black&white / mono /
      frontier) the Run-window section labels + TOKEN/PAIR label were too light — forced dark ink.
@@ -4286,9 +4293,17 @@
    * Dense info view. Hard-coded monospace. All color tokens are local so
    * themes don't bleed in — the Terminal is always the same cypherpunk look.
    * ===================================================================== */
-  .crTerm{background:#0a0e05!important;color:#6acb3a;
+  /* v1.0.361 — Terminal background now follows the theme (was a static black). Uses the
+     terminal theme var --ct-bg where a theme defines it (bw=white, mono=dark), with the
+     cypherpunk green-black as the fallback for dark themes. Light themes (platinum / frontier)
+     get explicit overrides below so the terminal matches the other apps per theme. */
+  .crTerm{background:var(--ct-bg,#0a0e05)!important;color:var(--ct-ink,#6acb3a);
     font-family:Monaco,"Andale Mono",ui-monospace,monospace;
     padding:10px 12px!important;overflow:auto;font-size:11px;line-height:1.4}
+  body[data-os-theme="platinum"] .crTerm,
+  .splash[data-theme="platinum"] .crTerm{background:#ecebe2!important;color:#1a1a18}
+  body[data-os-theme="frontier"] .crTerm,
+  .splash[data-theme="frontier"] .crTerm{background:#f4eedd!important;color:#2a2418}
   .crTerm .dim{color:#4d7a30}
   .crTerm .pos{color:#6acb3a}
   .crTerm .neg{color:#ff4d6d}
@@ -7777,17 +7792,33 @@
   body[data-os-theme="bw"] #win-configs .cfg-token-toggle .cfg-tk-off,
   body[data-os-theme="mono"] #win-configs .cfg-token-toggle .cfg-tk-off,
   body[data-os-theme="frontier"] #win-configs .cfg-token-toggle .cfg-tk-off{ color:#5a5a52 !important; }
-  /* v1.0.356 — Mode tabs: the chosen tab stays clearly green (like the selected
-     asset / timeframe / broker buttons); unchosen tabs stay neutral so the choice reads
-     at a glance. #win-run id beats the themed .os-window .modeTabs rules. */
-  #win-run .modeTabs button{ color:var(--dim) !important; border-color:rgba(120,140,170,.22) !important; }
-  #win-run .modeTabs button:hover:not(.on){ color:var(--fg) !important; border-color:rgba(106,203,58,.45) !important; }
-  #win-run .modeTabs button.on{
-    background:rgba(106,203,58,.12) !important;
-    border-color:rgba(106,203,58,.74) !important;
-    color:#bff7df !important;
-    box-shadow:inset 0 0 0 1px rgba(106,203,58,.12) !important;
+  /* v1.0.361 — Mode tabs (Choose a mode) now inherit the shared .os-window .modeTabs /
+     .crTerm-tab tab-strip styling so they look exactly like the tabs in the other apps
+     (Token / Profile). The v1.0.356 custom green-pill override was removed. */
+  /* v1.0.361 — Configure Run: Asset + Token/Pair + Timeframe as one aligned block. */
+  #win-configs .cfg-block{
+    display:flex !important; flex-direction:column !important; gap:10px !important;
+    border:1px solid var(--cr-cfg-line, var(--line)) !important; border-radius:10px !important;
+    padding:12px 14px !important; background:rgba(127,127,127,.06) !important;
   }
+  #win-configs .cfg-row{
+    display:grid !important; grid-template-columns:88px 1fr !important;
+    align-items:center !important; gap:12px !important;
+  }
+  #win-configs .cfg-row > h4{ margin:0 !important; align-self:center !important; }
+  #win-configs .cfg-row .cfg-asset-row,
+  #win-configs .cfg-row .asset-box,
+  #win-configs .cfg-row .tfbox{ display:flex !important; flex-wrap:wrap !important; gap:6px !important; align-items:center !important; }
+  #win-configs .cfg-row .cfg-token-wrap{ min-width:0 !important; }
+  #win-configs .cfg-row .cfg-token-wrap .cfg-token-input{ width:100% !important; box-sizing:border-box !important; }
+  /* Timeframe "More ▾" dropdown popup (mirrors the asset More popup). */
+  #win-configs .tfbox .cfg-tf-more{ border:0 !important; background:transparent !important; color:var(--dim); font:700 11px ui-monospace,Menlo,monospace; cursor:pointer; padding:6px 9px; letter-spacing:.4px; }
+  #win-configs .tfbox .cfg-tf-pop{
+    flex-basis:100% !important; display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;
+    padding:6px; border:1px solid var(--line); border-radius:8px;
+    background:linear-gradient(180deg,rgba(18,26,48,.98),rgba(10,15,28,.99));
+  }
+  @media (max-width:560px){ #win-configs .cfg-row{ grid-template-columns:1fr !important; } }
   #win-configs .cfg-line{
     gap:12px !important;
     align-items:flex-start !important;
@@ -11001,44 +11032,30 @@
           <button class="wclose" data-close>Close</button>
         </div>
         <div class="os-wbody">
-          <!-- v1.0.221 — Configure Run keeps three explicit lines, with the
-               Solana token paste input now occupying the former Perspective
-               slot. Perspective is controlled from the topbar/lite paths.
-               Line 1: Asset + token paste.
-               Line 2: Timeframe.
-               Line 3: Broker. -->
+          <!-- v1.0.361 — Asset + Token/Pair + Timeframe combined into one aligned block.
+               Each row = label (fixed col) + controls. Token/Pair sits BELOW Asset; the
+               timeframe row uses a primary set + a "More ▾" dropdown like the asset row. -->
           <div class="os-section">
-            <div class="cfg-line">
-              <div class="cfg-col">
+            <div class="cfg-block">
+              <div class="cfg-row">
                 <h4>Asset</h4>
-                <div class="cfg-asset-row">
-                  <div class="asset-box" id="osAssetBox"></div>
-                </div>
+                <div class="cfg-asset-row"><div class="asset-box" id="osAssetBox"></div></div>
               </div>
-              <div class="cfg-col cfg-col-fixed cfg-token-col">
+              <div class="cfg-row">
                 <h4 id="crCfgTokenModeToggle" class="cfg-token-toggle" role="button" tabindex="0" title="Click to switch between a single Token and a two-token Pair (A÷B ratio chart)"><span class="cfg-tk-on">Token</span><span class="cfg-tk-off"> / Pair</span></h4>
-                <input id="crCfgTokenAddress" class="cfg-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="MINT, TICKER OR NAME" title="Paste a Solana mint, or type a ticker / coin name (e.g. ETH, pepe) — Enter to load">
-                <div id="crCfgPairWrap" class="cfg-pair-wrap" style="display:none">
-                  <input id="crCfgPairA" class="cfg-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="TOKEN A · mint or ticker" title="Numerator — Solana mint or CEX ticker (e.g. ETH)">
-                  <span class="cfg-pair-div">÷</span>
-                  <input id="crCfgPairB" class="cfg-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="TOKEN B · mint or ticker" title="Denominator — Solana mint or CEX ticker (e.g. BTC)">
+                <div class="cfg-token-wrap">
+                  <input id="crCfgTokenAddress" class="cfg-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="MINT, TICKER OR NAME" title="Paste a Solana mint, or type a ticker / coin name (e.g. ETH, pepe) — Enter to load">
+                  <div id="crCfgPairWrap" class="cfg-pair-wrap" style="display:none">
+                    <input id="crCfgPairA" class="cfg-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="TOKEN A · mint or ticker" title="Numerator — Solana mint or CEX ticker (e.g. ETH)">
+                    <span class="cfg-pair-div">÷</span>
+                    <input id="crCfgPairB" class="cfg-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="TOKEN B · mint or ticker" title="Denominator — Solana mint or CEX ticker (e.g. BTC)">
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-          <div class="os-section">
-            <h4>Timeframe</h4>
-            <div class="tfbox" id="osTfBox">
-              <button data-tf="1m">1m</button>
-              <button data-tf="5m">5m</button>
-              <button data-tf="15m" class="on">15m</button>
-              <button data-tf="1h">1H</button>
-              <button data-tf="4h">4H</button>
-              <button data-tf="12h">12H</button>
-              <button data-tf="1d">1D</button>
-              <button data-tf="3d">3D</button>
-              <button data-tf="1w">1W</button>
-              <button data-tf="1M">1M</button>
+              <div class="cfg-row">
+                <h4>Timeframe</h4>
+                <div class="tfbox" id="osTfBox"></div>
+              </div>
             </div>
           </div>
           <!-- v1.0.359 — Broker picker MOVED to Profile → BROKER (connect once there).
@@ -12981,7 +12998,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.360",
+  VERSION: "1.0.361",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -45291,9 +45308,8 @@ function osRefreshConfigs(){
   } catch(_){}
   const strat = document.getElementById('osStrategySel');
   if(strat) strat.value = game.strategy || 'none';
-  document.querySelectorAll('#osTfBox button').forEach(b=>{
-    b.classList.toggle('on', b.dataset.tf===timeframe);
-  });
+  // v1.0.361 — render the timeframe row (primary set + More ▾ dropdown).
+  try { osRenderTfBox(); } catch(_){ document.querySelectorAll('#osTfBox button').forEach(b=>{ b.classList.toggle('on', b.dataset.tf===timeframe); }); }
   osRenderAssetBox('osAssetBox');
   try { if(typeof _crCfgTokenSync === 'function') _crCfgTokenSync(); } catch(_){}
   _renderConfigIndicatorGrid();
@@ -45312,9 +45328,42 @@ document.getElementById('osStrategySel').addEventListener('change', e=>{
 });
 document.getElementById('osTfBox').addEventListener('click', async e=>{
   const b = e.target.closest('button'); if(!b) return;
+  if(!b.dataset.tf) return; // v1.0.361 — ignore the "More ▾" toggle (no data-tf); it has its own handler.
   await applyInterval(b.dataset.tf);
   osRefreshConfigs();
 });
+// v1.0.361 — Configure Run timeframe row: a primary set + a "More ▾" dropdown for the
+// rest (mirrors the asset "More" picker), so Asset and Timeframe rows read the same way.
+const _CFG_TF_PRIMARY = ['15m','1h','4h','1d'];
+const _CFG_TF_ALL = ['1m','5m','15m','1h','4h','12h','1d','3d','1w','1M'];
+const _CFG_TF_LABEL = { '1m':'1m','5m':'5m','15m':'15m','1h':'1H','4h':'4H','12h':'12H','1d':'1D','3d':'3D','1w':'1W','1M':'1M' };
+function osRenderTfBox(){
+  const box = document.getElementById('osTfBox'); if(!box) return;
+  const cur = (typeof timeframe !== 'undefined') ? timeframe : '15m';
+  box.innerHTML = '';
+  const mk = tf => { const b = document.createElement('button'); b.type = 'button'; b.dataset.tf = tf; b.textContent = _CFG_TF_LABEL[tf] || tf; if(tf === cur) b.classList.add('on'); return b; };
+  _CFG_TF_PRIMARY.forEach(tf => box.appendChild(mk(tf)));
+  if(!_CFG_TF_PRIMARY.includes(cur)) box.appendChild(mk(cur)); // keep the active TF visible even if it's a "More" one
+  const rest = _CFG_TF_ALL.filter(tf => !_CFG_TF_PRIMARY.includes(tf) && tf !== cur);
+  if(!rest.length) return;
+  const more = document.createElement('button');
+  more.type = 'button'; more.className = 'cfg-tf-more'; more.textContent = 'More ▾'; more.title = 'More timeframes';
+  more.addEventListener('click', e => {
+    e.stopPropagation();
+    const existing = box.querySelector('.cfg-tf-pop');
+    if(existing){ existing.remove(); return; }
+    const pop = document.createElement('div'); pop.className = 'cfg-tf-pop';
+    rest.forEach(tf => {
+      const r = document.createElement('button'); r.type = 'button'; r.dataset.tf = tf; r.textContent = _CFG_TF_LABEL[tf] || tf;
+      r.addEventListener('click', async ev => { ev.stopPropagation(); pop.remove(); try { await applyInterval(tf); } catch(_){} osRenderTfBox(); });
+      pop.appendChild(r);
+    });
+    box.appendChild(pop);
+    const onOut = ev => { if(!box.contains(ev.target)){ pop.remove(); document.removeEventListener('mousedown', onOut, true); } };
+    setTimeout(() => document.addEventListener('mousedown', onOut, true), 0);
+  });
+  box.appendChild(more);
+}
 
 // v1.0.180 — Configure Run broker picker. The CEX/DEX segment toggles
 // the venue family; the vertical scroll wheel snap-selects the specific broker.
