@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.385
-     LAST UPDATED:    2026-06-21  ·  Racing minigame v2 (window.crRacing): full self-contained loop — spawn at
+     CURRENT VERSION: v1.0.386
+     LAST UPDATED:    2026-06-21  ·  Minigame deep-link: ?mg=racing|monster|snake (or the first path segment
+     racing/monster/snake) boots straight into that minigame — enables chartrunner.xyz/racing · /monster ·
+     /snake via redirect stubs to /play/?mg=<mode>. (Domain restructure — root=desktopOS, landing→/landing —
+     is a repo/Pages change; routing kit staged in Trading Game/_routing-v1.0.386/.)
+     ---- prior (v1.0.385) ----  Racing minigame v2 (window.crRacing): full self-contained loop — spawn at
      the start → pick a vehicle → 3·2·1·GO countdown → drive a cross-bike (gas →, brake/reverse ←, hop ↑,
      airborne ←/→ to flip; gravity + terrain-follow + crest launches; flips shave time) → cross the finish →
      end card with time/flips + "Mint record on-chain" (crRegistry.recordRun) + Race again. update() hands
@@ -13330,7 +13334,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.385",
+  VERSION: "1.0.386",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -23983,6 +23987,31 @@ async function crApplyDeepLink(res){
   } catch(_){ return false; }
 }
 window.crApplyDeepLink = crApplyDeepLink;
+
+// ── v1.0.386 — Minigame deep-link ───────────────────────────────────────────
+// chartrunner.xyz/racing · /monster · /snake (served as redirect stubs to
+// /play/?mg=<mode>), OR ?mg=racing|monster|snake directly on /play, boot straight
+// into that minigame. Reads either the ?mg= param or the first path segment, then
+// auto-guest-dismisses the boot cover and launches via crLaunchMinigameRandom.
+(function crMinigameDeepLink(){
+  try {
+    const MG = { racing:1, monster:1, snake:1 };
+    let mg = '';
+    try { mg = String(new URLSearchParams(location.search || '').get('mg') || '').toLowerCase(); } catch(_){}
+    if(!MG[mg]){
+      let seg = '';
+      try { seg = (String(location.pathname || '').split('/').filter(Boolean)[0] || '').toLowerCase(); } catch(_){}
+      if(MG[seg]) mg = seg;
+    }
+    if(!MG[mg]) return;
+    const go = function(){
+      try { if(typeof _crDlGuestDismissBoot === 'function') _crDlGuestDismissBoot(); } catch(_){}
+      try { if(typeof crLaunchMinigameRandom === 'function') crLaunchMinigameRandom(mg); } catch(_){}
+    };
+    if(document.readyState === 'complete') setTimeout(go, 1200);
+    else window.addEventListener('load', function(){ setTimeout(go, 1200); });
+  } catch(_){}
+})();
 
 /* ── DEEP-LINK emitter — Phase 4. Builds a canonical deep-link for the CURRENT
    live chart (symbol+tf) so a running chart can be shared by link WITHOUT saving
