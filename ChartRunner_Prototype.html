@@ -2,8 +2,13 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.384
-     LAST UPDATED:    2026-06-20  ·  Price tag + coin polish. (1) Removed the dashed guide line from the runner
+     CURRENT VERSION: v1.0.385
+     LAST UPDATED:    2026-06-21  ·  Racing minigame v2 (window.crRacing): full self-contained loop — spawn at
+     the start → pick a vehicle → 3·2·1·GO countdown → drive a cross-bike (gas →, brake/reverse ←, hop ↑,
+     airborne ←/→ to flip; gravity + terrain-follow + crest launches; flips shave time) → cross the finish →
+     end card with time/flips + "Mint record on-chain" (crRegistry.recordRun) + Race again. update() hands
+     the loop off while racing; normal runner physics/render/keys are suppressed.
+     ---- prior (v1.0.384) ----  Price tag + coin polish. (1) Removed the dashed guide line from the runner
      price tag — just a clean pill on the right axis at the avatar's height. (2) Coins reworked: a minted
      disc (rim + face + highlight), ALL labelled "C" ($CHART) instead of T/C, and ~40% spin around their
      vertical axis (the "C" hides while edge-on). drawPickups + drawPlayerPriceTag.
@@ -13325,7 +13330,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.384",
+  VERSION: "1.0.385",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -24669,6 +24674,12 @@ window.addEventListener('keydown', e=>{
   const k = e.key.toLowerCase();
   if(e.repeat) return;
   if(!typing) keys[k]=true;
+  // v1.0.385 — while a race is running, crRacing owns the controls. keys[k] is
+  // set above for driving; skip the normal one-shot actions (shoot / bracket /
+  // hop-launch / dashes) so they don't fire behind the race. Escape still passes.
+  if(!typing && k !== 'escape' && game.mode === 'racing' && window.crRacing && crRacing.active()){
+    return;
+  }
   if(typing){
     if(e.key==='Enter' && bracketEditor.open){ e.preventDefault(); confirmBracket(); return; }
     if(e.key==='Escape' && bracketEditor.open){ cancelBracket(); return; }
@@ -32903,7 +32914,10 @@ try { if(_crIsDevHost() && /[?&]dev=1/.test(location.search) && window.ChartRunn
 	  // v1.0.355 — minigames drop in at a RANDOM moment in chart history (10%–60%
 	  // band, leaving forward runway). restart() carves a safe zone around startIdx,
 	  // so a random index can't spawn the player inside a fatal hazard.
-	  if(m === 'snake' || m === 'racing' || m === 'monster'){
+	  // v1.0.385 — Racing starts at the BEGINNING (spawn point) with the whole
+	  // chart as the track; Snake/Monster keep the random mid-history drop.
+	  if(m === 'racing') return 0;
+	  if(m === 'snake' || m === 'monster'){
 	    if(count < 8) return Math.max(0, Math.min(lastIdx, Math.floor(count * 0.35)));
 	    const lo = Math.floor(count * 0.10), hi = Math.floor(count * 0.60);
 	    const span = Math.max(1, hi - lo);
@@ -34087,6 +34101,12 @@ function update(dt){
     player.vy = 0; // kill any residual gravity so unfreeze feels clean
     return;
   }
+  // v1.0.385 — Racing v2: hand the whole loop to the crRacing engine (its own
+  // physics/phases). Skips the normal runner physics + shooting while racing.
+  if(game.mode === 'racing' && window.crRacing && crRacing.active()){
+    try { crRacing.tick(dt); } catch(_){}
+    return;
+  }
   // v0.8k#24k — Held-spacebar (or X) = continuous fire. shoot() respects
   // player.shootCooldown internally, so calling it every frame just emits a
   // bullet whenever the cooldown ticks off. Original keydown still fires the
@@ -34849,9 +34869,12 @@ function render(){
   try { if(typeof drawExecGraphChartOverlays === 'function') drawExecGraphChartOverlays(); } catch(_){}
   // v1.0.1 — Blue laser lightning halos around armed tools.
   try { if(typeof drawBlueLaserHalos === 'function') drawBlueLaserHalos(); } catch(_){}
-  if(game.running) drawPlayer();
+  // v1.0.385 — during a race the crRacing engine draws the rotating vehicle, so
+  // suppress the normal avatar render.
+  const _racing = (game.mode === 'racing' && window.crRacing && crRacing.active());
+  if(game.running && !_racing) drawPlayer();
   // v1.0.382 — live price tag on the right axis, aligned to the avatar's height.
-  if(game.running) drawPlayerPriceTag();
+  if(game.running && !_racing) drawPlayerPriceTag();
   // v0.8k#24ad — Equipped Workbench bots: orbital orbs around the avatar.
   if(game.running && typeof drawBotOrbs === 'function') drawBotOrbs();
   // v0.8e #B — HP bar shows whenever the player is in combat, not just upside-down.
@@ -36776,6 +36799,316 @@ function drawVwapAnchors(){
 const _MINIGAME_PICKUP_GOAL = 25;        // Snake: coins to win
 const _RACING_FINISH_FRAC   = 0.95;       // 95% through the candle range
 // v0.8k#24mz — Pacman & Pong tunables removed alongside their mode loops.
+
+// ─── v1.0.385 — Racing minigame v2 (crRacing) ───────────────────────────────
+// A self-contained hill-climb / cross-bike race over the candle terrain:
+//   pick a vehicle → 3·2·1·GO countdown → drive (gas/brake, hop, airborne
+//   flips) → cross the finish → end card with time, flips and an on-chain
+//   "mint record" button. update() hands the whole loop to crRacing.tick while
+//   game.mode==='racing', and the normal avatar render is suppressed in favour
+//   of the rotating vehicle. Physics: x in world-px (player.wx), gravity in
+//   price space (so it feels right at any zoom), angle in screen radians.
+window.crRacing = (function(){
+  const FINISH_FRAC = 0.96;
+  const G_PX = 2400;   // gravity, screen px/s^2 (→ price/s^2 per frame via priceScale)
+  const VCOLOR = { skateboard:'#7be3f3', surfboard:'#3ddc97', rollercoaster:'#ffd166',
+                   miningcart:'#c9a36a', lambo:'#ff5b7f', jetski:'#9b8cff', none:'#14f195' };
+  let st = null;
+  function active(){ return !!(st && st.on); }
+  function _ground(wx){
+    if(typeof candles === 'undefined' || !candles || !candles.length) return 0;
+    let f = wx / STEP - 0.5, i = Math.floor(f), frac = f - i;
+    i = Math.max(0, Math.min(candles.length - 1, i));
+    const j = Math.max(0, Math.min(candles.length - 1, i + 1));
+    return candles[i].h + (candles[j].h - candles[i].h) * Math.max(0, Math.min(1, frac));
+  }
+  function _groundY(wx){ try { return priceToY(_ground(wx)); } catch(_){ return 0; } }
+  function _slope(wx){
+    const a = _groundY(wx - STEP*0.5), b = _groundY(wx + STEP*0.5);
+    const dx = STEP * (camera && camera.zoomX ? camera.zoomX : 1);
+    return Math.atan2(b - a, dx || 1);  // screen-space slope (y down)
+  }
+  function _followCam(dt, tight){
+    const target = player.wx - W*0.32;
+    camera.wx += (target - camera.wx) * Math.min(1, dt*(tight?6:4));
+  }
+  function init(){
+    if(typeof game === 'undefined' || typeof candles === 'undefined' || !candles || !candles.length) return;
+    st = {
+      on:true, phase:'vehicle',
+      vehicleId:(game.vehicle && game.vehicle !== 'none') ? game.vehicle : null,
+      finishWx: Math.floor((candles.length-1) * FINISH_FRAC) * STEP,
+      vx:0, angle:0, angVel:0, onGround:true, airTime:0, rotAccum:0,
+      timer:0, startT:0, cdStart:0, flips:0, _prevSlope:null,
+      best:(()=>{ try { return parseFloat(localStorage.getItem('cr_racing_best')||'0')||0; } catch(_){ return 0; } })()
+    };
+    player.wx = STEP*0.6;
+    player.py = _ground(player.wx);
+    player.vy = 0; player.onGround = true; player.alive = true; player.facing = 1;
+    try { camera.wx = player.wx - W*0.30; camera.panX = 0; camera.panY = 0; camera.manualUntil = 0; } catch(_){}
+    _ensureUI(); _showPicker(true); _showEnd(false);
+  }
+  function pick(id){
+    if(!st) return;
+    st.vehicleId = id;
+    try { game.vehicle = id; } catch(_){}
+    _showPicker(false);
+    st.phase = 'countdown';
+    st.cdStart = performance.now()/1000;
+  }
+  function tick(dt){
+    if(!st || !st.on) return;
+    dt = Math.min(0.040, Math.max(0, dt || 0.016));
+    const now = performance.now()/1000;
+    if(st.phase === 'vehicle'){ _followCam(dt, true); return; }
+    if(st.phase === 'countdown'){
+      _followCam(dt, true);
+      if(now - st.cdStart >= 3.0){ st.phase = 'racing'; st.startT = now; }
+      return;
+    }
+    if(st.phase === 'finished'){ _followCam(dt, false); return; }
+    // ---- racing ----
+    st.timer = now - st.startT;
+    const veh = (typeof vehicleById === 'function') ? vehicleById(st.vehicleId || 'skateboard') : { maxVel:420, fric:0.95 };
+    const maxVel = Math.max(360, veh.maxVel || 420);
+    const fric = veh.fric || 0.95;
+    const right = keys['arrowright'] || keys['d'];
+    const left  = keys['arrowleft']  || keys['a'];
+    const hop   = keys['arrowup'] || keys['w'] || keys[' '];
+    const ps = (typeof priceScale === 'number' && priceScale > 0) ? priceScale : 1;
+    const gP = G_PX / ps;   // gravity in price/s^2
+    // horizontal
+    const thr = (right?1:0) - (left?1:0);
+    if(st.onGround && thr !== 0){
+      st.vx = Math.max(-maxVel*0.55, Math.min(maxVel, st.vx + thr * maxVel*3 * dt));
+      player.facing = thr < 0 ? -1 : 1;
+    } else if(st.onGround){
+      st.vx *= Math.pow(fric, dt*60);
+      if(Math.abs(st.vx) < 2) st.vx = 0;
+    }
+    player.wx += st.vx * dt;
+    player.wx = Math.max(0, Math.min((candles.length-1)*STEP, player.wx));
+    // hop off the ground
+    if(st.onGround && hop){ player.vy = gP*0.46; st.onGround = false; }
+    // crest launch — driving fast over a convex peak pops you airborne
+    if(st.onGround){
+      const sl = _slope(player.wx);
+      if(st._prevSlope != null){
+        const crest = st._prevSlope - sl;   // >0 when the slope is dropping (a peak)
+        if(crest > 0.05 && Math.abs(st.vx) > maxVel*0.4){
+          player.vy = Math.min(gP*0.55, gP*0.18 + (Math.abs(st.vx)/maxVel)*crest*gP*1.2);
+          st.onGround = false;
+        }
+      }
+      st._prevSlope = sl;
+    }
+    // vertical integrate (price space; +py = up)
+    player.vy = (player.vy || 0) - gP*dt;
+    player.py += player.vy * dt;
+    const gNow = _ground(player.wx);
+    if(player.py <= gNow){
+      if(!st.onGround){
+        // flip credit on landing
+        const turns = Math.floor((Math.abs(st.rotAccum) + 0.5) / (Math.PI*2));
+        if(turns > 0){
+          st.flips += turns;
+          st.startT += turns * 0.8;   // each flip shaves 0.8s off the clock
+          try { spawnFloat && spawnFloat(player.wx, gNow, '🌀 FLIP ×' + turns + '  −' + (turns*0.8).toFixed(1) + 's', '#ffd166'); } catch(_){}
+        }
+        // rough landing if badly off-angle
+        const slope = _slope(player.wx);
+        const da = Math.atan2(Math.sin(st.angle - slope), Math.cos(st.angle - slope));
+        if(Math.abs(da) > 1.4){
+          st.vx *= 0.35;
+          try { spawnParticles && spawnParticles(sX(player.wx), priceToY(gNow), '#ff5b7f', 8, 120); } catch(_){}
+        }
+        st.rotAccum = 0;
+      }
+      player.py = gNow; player.vy = 0; st.onGround = true; st.airTime = 0;
+    } else {
+      st.onGround = false; st.airTime += dt;
+    }
+    // angle
+    if(st.onGround){
+      const slope = _slope(player.wx);
+      st.angle += Math.atan2(Math.sin(slope - st.angle), Math.cos(slope - st.angle)) * Math.min(1, dt*12);
+      st.angVel = 0;
+    } else {
+      // airborne flip control: gas = backflip (CCW), brake = frontflip (CW)
+      const torque = (right ? -1 : 0) + (left ? 1 : 0);
+      st.angVel += torque * 8 * dt;
+      st.angVel *= Math.pow(0.985, dt*60);
+      st.angVel = Math.max(-10, Math.min(10, st.angVel));
+      const da = st.angVel * dt;
+      st.angle += da; st.rotAccum += da;
+    }
+    _followCam(dt, false);
+    if(player.wx >= st.finishWx){
+      st.phase = 'finished';
+      const t = Math.max(0, st.timer);
+      let isBest = false;
+      if(!st.best || t < st.best){ st.best = t; isBest = true; try { localStorage.setItem('cr_racing_best', String(t)); } catch(_){} }
+      try { confettiBurst && confettiBurst(W/2, H*0.4, '#3ddc97'); } catch(_){}
+      _showEnd(true, t, isBest, st.flips);
+    }
+  }
+  function _rr(c,x,y,w,h,r){ c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); }
+  function _drawVehicle(){
+    const sx = sX(player.wx), sy = priceToY(player.py);
+    const col = VCOLOR[st.vehicleId] || '#14f195';
+    ctx.save();
+    ctx.translate(sx, sy - 9);
+    ctx.rotate(st.angle || 0);
+    ctx.scale((player.facing < 0) ? -1 : 1, 1);
+    ctx.shadowColor = col; ctx.shadowBlur = 10;
+    ctx.fillStyle = col;
+    ctx.beginPath(); _rr(ctx, -15, -7, 30, 11, 4); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#0a0c14'; ctx.fillRect(-3, -13, 6, 6);   // rider
+    for(const wxw of [-10, 10]){
+      ctx.fillStyle = '#0a0c14'; ctx.strokeStyle = col; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(wxw, 7, 5.5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      const sp = (player.wx * 0.25) % (Math.PI*2);
+      ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(wxw, 7); ctx.lineTo(wxw + Math.cos(sp)*4, 7 + Math.sin(sp)*4); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function draw(){
+    if(!st || !st.on) return;
+    // finish post
+    if(typeof sX === 'function'){
+      const fx = sX(st.finishWx);
+      if(fx > -60 && fx < W + 60){
+        ctx.save();
+        for(let i=0;i<Math.ceil(H/14);i++){ ctx.fillStyle = (i%2 ? '#ffd166' : '#0a0c14'); ctx.fillRect(fx-3, i*14, 6, 7); }
+        ctx.fillStyle = '#ffd166'; ctx.font = 'bold 13px ui-monospace,monospace';
+        ctx.fillText('⚑ FINISH', fx + 8, 30);
+        ctx.restore();
+      }
+    }
+    if(st.phase !== 'vehicle') _drawVehicle();
+    // HUD timer
+    if(st.phase === 'racing' || st.phase === 'finished'){
+      ctx.save();
+      ctx.fillStyle = 'rgba(10,15,28,0.82)'; ctx.fillRect(W/2 - 86, 34, 172, 36);
+      ctx.fillStyle = '#ffd166'; ctx.font = 'bold 20px ui-monospace,monospace'; ctx.textAlign = 'center';
+      ctx.fillText((st.timer||0).toFixed(2) + 's', W/2, 59);
+      ctx.fillStyle = 'rgba(155,170,200,.7)'; ctx.font = '10px ui-monospace,monospace';
+      ctx.fillText((st.best ? 'best ' + st.best.toFixed(2) + 's' : 'no best yet') + '  ·  flips ' + st.flips, W/2, 76);
+      ctx.textAlign = 'left'; ctx.restore();
+    }
+    // countdown
+    if(st.phase === 'countdown'){
+      const el = performance.now()/1000 - st.cdStart;
+      const n = Math.ceil(3 - el);
+      const label = n > 0 ? String(n) : 'GO!';
+      ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.globalAlpha = Math.max(0.2, 1 - (el % 1));
+      ctx.fillStyle = n > 0 ? '#ffd166' : '#3ddc97';
+      ctx.font = 'bold 88px ui-monospace,monospace';
+      ctx.fillText(label, W/2, H*0.42);
+      ctx.globalAlpha = 1; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.restore();
+    }
+    if(st.phase === 'vehicle'){
+      ctx.save(); ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(190,200,220,.85)'; ctx.font = '13px ui-monospace,monospace';
+      ctx.fillText('Pick your ride to start the race', W/2, H*0.5);
+      ctx.textAlign = 'left'; ctx.restore();
+    }
+  }
+  // ---- UI overlays (vehicle picker + end card) ----
+  function _ensureUI(){
+    if(document.getElementById('crRaceUI')) return;
+    const wrap = document.createElement('div'); wrap.id = 'crRaceUI';
+    wrap.innerHTML =
+      '<div id="crRaceVehiclePicker" class="crRaceOv" style="display:none">'
+      + '<div class="crRaceCard">'
+      +   '<div class="crRaceTtl">🏁 PICK YOUR RIDE</div>'
+      +   '<div class="crRaceSub">Every ride flips. Gas = →, brake/reverse = ←, hop = ↑. In the air, ← / → to spin. Cross the finish fastest — flips shave time.</div>'
+      +   '<div id="crRaceVehList" class="crRaceGrid"></div>'
+      + '</div></div>'
+      + '<div id="crRaceEndCard" class="crRaceOv" style="display:none">'
+      + '<div class="crRaceCard" style="text-align:center">'
+      +   '<div class="crRaceTtl" style="font-size:18px">🏁 FINISH!</div>'
+      +   '<div id="crRaceEndTime" class="crRaceTime">0.00s</div>'
+      +   '<div id="crRaceEndSub" class="crRaceSub" style="text-align:center"></div>'
+      +   '<div class="crRaceActions">'
+      +     '<button id="crRaceMint" class="crRaceBtn primary">★ Mint record on-chain</button>'
+      +     '<button id="crRaceAgain" class="crRaceBtn">↻ Race again</button>'
+      +     '<button id="crRaceClose" class="crRaceBtn ghost">Close</button>'
+      +   '</div>'
+      + '</div></div>';
+    document.body.appendChild(wrap);
+    const css = ''
+      + '#crRaceUI .crRaceOv{position:fixed;inset:0;z-index:99550;display:none;align-items:center;justify-content:center;background:rgba(4,8,18,.78);backdrop-filter:blur(4px)}'
+      + '#crRaceUI .crRaceOv.on{display:flex}'
+      + '#crRaceUI .crRaceCard{width:min(540px,calc(100% - 40px));background:linear-gradient(180deg,#0c1424,#070b16);border:1px solid rgba(20,241,149,.42);border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.7);padding:18px 20px;color:#e9efff;font-family:ui-monospace,Menlo,Consolas,monospace}'
+      + '#crRaceUI .crRaceTtl{font-weight:800;color:#3ddc97;letter-spacing:.6px;margin-bottom:6px}'
+      + '#crRaceUI .crRaceSub{font-size:11px;color:#9fb3c8;line-height:1.5;margin-bottom:14px}'
+      + '#crRaceUI .crRaceGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}'
+      + '#crRaceUI .crRaceVeh{appearance:none;cursor:pointer;text-align:left;border:1px solid rgba(120,140,180,.4);border-radius:9px;background:rgba(10,15,28,.6);color:#e9efff;padding:9px 11px;font:inherit;transition:border-color .12s,background .12s}'
+      + '#crRaceUI .crRaceVeh:hover{background:rgba(20,241,149,.10)}'
+      + '#crRaceUI .crRaceVeh .vn{display:block;font-weight:800;font-size:12px;margin-bottom:2px}'
+      + '#crRaceUI .crRaceVeh .vm{display:block;font-size:9.5px;color:#9fb3c8}'
+      + '#crRaceUI .crRaceTime{font-size:40px;font-weight:800;color:#ffd166;text-align:center;margin:6px 0 2px;text-shadow:0 0 14px rgba(255,209,102,.45)}'
+      + '#crRaceUI .crRaceActions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}'
+      + '#crRaceUI .crRaceBtn{appearance:none;cursor:pointer;border:1px solid rgba(120,140,180,.5);border-radius:8px;background:rgba(10,15,28,.6);color:#e9efff;font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.4px;padding:9px 14px}'
+      + '#crRaceUI .crRaceBtn:hover{border-color:rgba(20,241,149,.6)}'
+      + '#crRaceUI .crRaceBtn.primary{background:rgba(20,241,149,.85);color:#06160d;border-color:rgba(20,241,149,.7)}'
+      + '#crRaceUI .crRaceBtn.primary:hover{background:#14f195}'
+      + '#crRaceUI .crRaceBtn.ghost{background:transparent;color:#9fb3c8}';
+    const s = document.createElement('style'); s.id = 'crRaceUICss'; s.textContent = css; document.head.appendChild(s);
+    // build vehicle list
+    const list = document.getElementById('crRaceVehList');
+    if(list && typeof VEHICLES !== 'undefined'){
+      VEHICLES.filter(v => v.id !== 'none').forEach(v => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'crRaceVeh';
+        b.style.borderColor = (VCOLOR[v.id] || '#14f195');
+        b.innerHTML = '<span class="vn" style="color:' + (VCOLOR[v.id]||'#14f195') + '">' + v.ic + ' ' + v.nm + '</span><span class="vm">top ' + (v.maxVel||0) + ' · grip ' + Math.round((v.fric||0)*100) + '</span>';
+        b.addEventListener('click', () => pick(v.id));
+        list.appendChild(b);
+      });
+    }
+    // end-card buttons
+    const mint = document.getElementById('crRaceMint');
+    const again = document.getElementById('crRaceAgain');
+    const close = document.getElementById('crRaceClose');
+    if(mint)  mint.addEventListener('click', () => _mint(st ? st.best : 0));
+    if(again) again.addEventListener('click', () => { _showEnd(false); try { if(typeof restart === 'function') restart(); } catch(_){} });
+    if(close) close.addEventListener('click', () => { _showEnd(false); });
+  }
+  function _showPicker(on){ const el = document.getElementById('crRaceVehiclePicker'); if(el) el.classList.toggle('on', !!on); }
+  function _showEnd(on, t, isBest, flips){
+    const el = document.getElementById('crRaceEndCard'); if(!el) return;
+    if(on){
+      const tEl = document.getElementById('crRaceEndTime'); if(tEl) tEl.textContent = (t||0).toFixed(2) + 's';
+      const sub = document.getElementById('crRaceEndSub');
+      if(sub) sub.textContent = (isBest ? '🏆 NEW BEST! · ' : '') + (flips ? (flips + ' flip' + (flips>1?'s':'') + ' · ') : '') + 'Anchor your time on Solana so it lands on the leaderboard.';
+    }
+    el.classList.toggle('on', !!on);
+  }
+  async function _mint(t){
+    try {
+      if(window.crRegistry && typeof crRegistry.recordRun === 'function'){
+        const secs = Math.max(1, Math.round(t || (st && st.best) || 1));
+        const score = Math.max(1, Math.round(100000 / secs));   // faster time → higher score
+        try { if(typeof toast === 'function') toast('Opening wallet to anchor your race time…'); } catch(_){}
+        const ok = await crRegistry.recordRun({
+          asset: (typeof currentAsset !== 'undefined' ? currentAsset : 'BTCUSDT'),
+          timeframe: (typeof timeframe !== 'undefined' ? timeframe : '15m'),
+          score, sharpeX100: 0, durationSecs: secs
+        });
+        try { if(typeof toast === 'function') toast(ok ? '★ Race time recorded on-chain' : 'Wallet bridge opened — approve to record'); } catch(_){}
+      } else {
+        try { if(typeof toast === 'function') toast('On-chain record unavailable — connect a wallet'); } catch(_){}
+      }
+    } catch(e){ try { if(typeof toast === 'function') toast('Record failed: ' + (e && e.message || e)); } catch(_){} }
+  }
+  return { init, pick, tick, draw, active };
+})();
+
 function crMinigameInit(){
   if(typeof game === 'undefined') return;
   game.minigame = {
@@ -36802,13 +37135,10 @@ function crMinigameInit(){
     game.minigame.candleOffsets = candles.map(() => ({ y: 0, vy: 0 }));
     if(typeof toast === 'function') toast('Snake · eat ' + _MINIGAME_PICKUP_GOAL + ' coins to win');
   } else if(game.mode === 'racing'){
+    // v1.0.385 — Racing v2: the crRacing engine owns spawn, vehicle pick,
+    // countdown, physics, finish + end card. update() hands it the loop.
     if(typeof playerLoadout !== 'undefined') playerLoadout.avatar = 'invader';
-    const lastIdx = candles.length - 1;
-    game.minigame.finishWx = Math.floor(lastIdx * _RACING_FINISH_FRAC) * STEP;
-    // Place player at the leftmost candle.
-    player.wx = STEP / 2;
-    player.py = candles[0].h + 60 / priceScale;
-    if(typeof toast === 'function') toast('Racing · sprint to the finish line');
+    try { if(window.crRacing && crRacing.init) crRacing.init(); } catch(_){}
   } else if(game.mode === 'arena'){
     if(typeof toast === 'function') toast('Battle Arena · matchmaking ships in Phase 2');
   }
@@ -36851,22 +37181,7 @@ function crMinigameTick(dt){
       }
     }
   } else if(m.mode === 'racing'){
-    if(!m.startedAt) m.startedAt = performance.now() / 1000;
-    m.timer = (performance.now() / 1000) - m.startedAt;
-    // Win: cross the finish line.
-    if(player.wx >= m.finishWx){
-      m.won = true;
-      const t = m.timer;
-      let bestNote = '';
-      if(!m.bestTime || t < m.bestTime){
-        m.bestTime = t;
-        try { localStorage.setItem('cr_racing_best', String(t)); } catch(_){}
-        bestNote = ' · NEW BEST';
-      }
-      try { showBanner?.('RACING · FINISH', t.toFixed(2) + ' s' + bestNote); toast('Restart from the topbar'); } catch(_){}
-    }
-    // Lose: player falls off (dead alive flag).
-    if(!player.alive) m.lost = true;
+    // v1.0.385 — handled by the crRacing engine (driven from update()); no-op here.
   }
   // v0.8k#24mz — pacman + pong tick branches retired.
 }
@@ -36874,34 +37189,8 @@ function drawMinigame(){
   const m = game && game.minigame;
   if(!m || !m.mode) return;
   if(m.mode === 'racing'){
-    // Finish-line vertical band.
-    if(typeof sX === 'function'){
-      const x = sX(m.finishWx);
-      if(x > -50 && x < W + 50){
-        ctx.save();
-        ctx.fillStyle = 'rgba(255,209,102,0.15)';
-        ctx.fillRect(x - 4, 0, 8, H);
-        ctx.fillStyle = 'rgba(255,209,102,0.95)';
-        ctx.font = 'bold 14px ui-monospace,monospace';
-        ctx.fillText('⚑ FINISH', x + 8, 32);
-        ctx.restore();
-      }
-    }
-    // Timer HUD.
-    ctx.save();
-    ctx.fillStyle = 'rgba(10,15,28,0.85)';
-    ctx.fillRect(W/2 - 80, 36, 160, 32);
-    ctx.fillStyle = '#ffd166';
-    ctx.font = 'bold 18px ui-monospace,monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(m.timer.toFixed(2) + ' s', W/2, 58);
-    if(m.bestTime){
-      ctx.fillStyle = 'rgba(155,170,200,0.7)';
-      ctx.font = '10px ui-monospace,monospace';
-      ctx.fillText('best ' + m.bestTime.toFixed(2) + 's', W/2, 76);
-    }
-    ctx.textAlign = 'left';
-    ctx.restore();
+    // v1.0.385 — Racing v2 render (vehicle, countdown, HUD, finish post).
+    try { if(window.crRacing && crRacing.draw) crRacing.draw(); } catch(_){}
   } else if(m.mode === 'snake'){
     // Snake HUD — coin count + goal.
     ctx.save();
