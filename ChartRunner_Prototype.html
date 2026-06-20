@@ -2,8 +2,19 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.365
-     LAST UPDATED:    2026-06-20  ·  Run window: Start Run right-aligned to sit directly under the
+     CURRENT VERSION: v1.0.367
+     LAST UPDATED:    2026-06-20  ·  Gating correction: connect-explicit apps are now Maps / Journal /
+     RUN-tube (RUN-tube gated in crPipToggle). PROFILE is PUBLIC for guests but shows ONLY the
+     Player + Tools tabs (Wallet / Broker / Coach tabs hidden); the Tools loadout stays locked for
+     guests (all force-equipped, bulk-equip buttons + toggling disabled). Everything else per v1.0.366.
+     ---- prior (v1.0.366) ----  Wallet-connect gating + guest restrictions. GUEST (no wallet)
+     is a locked default: connect-explicit apps Profile / Maps / Journal are hidden (icons + dock),
+     ALL Red-Laser tools are force-equipped (Profile hidden so it can't be changed), the avatar is
+     the invader (green), NO bots, NO Blue Laser (HUD slot hidden + use blocked), NO Alarm Laser.
+     Connecting a wallet removes every lock (crWallet.on → crApplyAccessGates toggles body.cr-guest +
+     resets the loadout). Also fixed: cr_equipped_tools_v1 is now per-wallet namespaced (was leaking
+     to a global key). Gates: useAbility (Blue), crAlarm.arm (Alarm), osOpenWindowMulti/Toggle (apps).
+     ---- prior (v1.0.365) ----  Run window: Start Run right-aligned to sit directly under the
      timeframe "More ▾" column, and the window now spawns at a compact ~900px default (still
      drag/resizable). (COACH model config → Profile tab landed in v1.0.364.)
      ---- prior (v1.0.364) ----  COACH model config → Profile tab. The COACH.llm provider config
@@ -2177,6 +2188,28 @@
      !important so the warn/live refresher's inline display:'' can't re-show them.
      Un-archive = remove data-cr-archived from the element. */
   [data-cr-archived="1"]{display:none!important}
+  /* v1.0.366 — Wallet-connect gating. Guests (no wallet → body.cr-guest):
+     v1.0.367 — connect-explicit apps = Maps / Journal / RUN-tube (hidden on desktop + dock).
+     Profile (=wallet) is PUBLIC for guests but shows ONLY the Player + Tools tabs. Guests
+     also have no Blue Laser HUD slot. Connecting a wallet removes .cr-guest and unlocks all. */
+  body.cr-guest .os-icon[data-prog="maps"],
+  body.cr-guest .os-icon[data-prog="journal"],
+  body.cr-guest .os-icon[data-prog="runtube"],
+  body.cr-guest #crOSDockFixed .dockBtn[data-prog="maps"],
+  body.cr-guest #crOSDockFixed .dockBtn[data-prog="journal"],
+  body.cr-guest #crOSDockFixed .dockBtn[data-prog="runtube"],
+  body.cr-guest .dockBtn[data-prog="maps"],
+  body.cr-guest .dockBtn[data-prog="journal"],
+  body.cr-guest .dockBtn[data-prog="runtube"]{display:none!important}
+  body.cr-guest .slot[data-abl="bluelaser"]{display:none!important}
+  /* Profile: guests see only PLAYER + TOOLS — hide the Wallet / Broker / Coach tabs. */
+  body.cr-guest #win-wallet .crTerm-tab[data-profview="bal"],
+  body.cr-guest #win-wallet .crTerm-tab[data-profview="broker"],
+  body.cr-guest #win-wallet .crTerm-tab[data-profview="coach"]{display:none!important}
+  /* Guests can't change the tool loadout (all force-equipped) — hide the bulk-equip buttons. */
+  body.cr-guest #wbToolEquipStars,
+  body.cr-guest #wbToolEquipAll,
+  body.cr-guest #wbToolEquipNone{display:none!important}
   .splash .os-wbar{
     background:
       repeating-linear-gradient(180deg,
@@ -13049,7 +13082,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.365",
+  VERSION: "1.0.367",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -13539,6 +13572,7 @@ window.crWallet = (function(){
     'cr_maps_v1': 1,
     'cr_workbench_v1': 1,
     'cr_equipped_bots_v1': 1,
+    'cr_equipped_tools_v1': 1,        // v1.0.366 — equipped laser tools, per-wallet (guest gating writes the __guest__ slot, not the global)
     'cr_widgets_v1': 1,
     'cr_chart_widgets_v1': 1,        // v1.0.28 — in-game chart widgets per-wallet
     'cr_bot_sessions_v1': 1,         // v1.0.143 — Bot Terminal session archive
@@ -30179,6 +30213,7 @@ const slotEls = [];
 // instant and predictable.
 ABILITIES.forEach((a,i)=>{
   const el=document.createElement('div'); el.className='slot';
+  el.dataset.abl = String(a.nm || '').toLowerCase().replace(/[^a-z0-9]/g, ''); // v1.0.366 — for guest gating (hide blue laser)
   el.innerHTML=`<div class="kb">${a.key}</div><div class="ic">${a.ic}</div><div class="nm">${a.nm}</div><div class="ch" aria-label="charges"></div>`;
   el.title = 'Click: use · Double-click: edit';
   let lastClickAt = -Infinity;
@@ -30234,6 +30269,11 @@ function updateHeaderPillStatus(){
 renderAllCharges();
 function useAbility(n, ev){
   const i=n-1, a=ABILITIES[i]; if(!a) return;
+  // v1.0.366 — guests (no wallet connected) have no Blue Laser. Connect to unlock.
+  if(typeof window.crGuest === 'function' && window.crGuest() && a.nm === 'Blue Laser'){
+    try { toast('Connect a wallet to use the Blue Laser'); } catch(_){}
+    return;
+  }
   const s=slotEls[i];
   // v0.8a — Abilities NEVER self-delete. They are TradingView tools translated
   // into the game (Ladder, Bracket, OCO, Hedge, Radar, Rescue, Trail). A
@@ -32577,6 +32617,9 @@ try { if(_crIsDevHost() && /[?&]dev=1/.test(location.search) && window.ChartRunn
   // Restart while the tutorial was mid-step left a 250ms setInterval ticking
   // against a stale gateSnap with `_TUT.gateMet` never reaching the new run.
   try { if(typeof _tutClearGate === 'function') _tutClearGate(); } catch(_){}
+  // v1.0.366 — re-enforce guest locks at run start (all tools, no bots, invader skin),
+  // in case a map load / mid-session change repopulated them while not connected.
+  try { if(typeof window.crApplyAccessGates === 'function') window.crApplyAccessGates(); } catch(_){}
   game._runStartTs = performance.now();  // bot-friendly: run-start clock for getRunSummary()
   player.vy=0; player.flying=false; player.upsideDown=false; player.onGround=false; player.alive=true;
   player.hp = player.hpMax; player.iFramesUntil = 0; player.shootCooldown = 0;
@@ -48553,6 +48596,11 @@ function _wbRerenderBoth(){
 }
 function _wbToolEquipped(id){ return wb.equippedTools.indexOf(id) >= 0; }
 function _wbToggleTool(id){
+  // v1.0.367 — guests (no wallet) get ALL tools equipped and can't change the loadout.
+  if(typeof window.crGuest === 'function' && window.crGuest()){
+    try { if(typeof toast === 'function') toast('Connect a wallet to customize tools'); } catch(_){}
+    return;
+  }
   const def = WB_LASER_TOOLS.find(t => t.id === id);
   const i = wb.equippedTools.indexOf(id);
   if(i >= 0){
@@ -61867,6 +61915,11 @@ window.crCrtFadeIn  = crCrtFadeIn;
     if(id === 'runtube') stopRunTubeCamera();
   }
   function togglePip(id){
+    // v1.0.367 — RUN-tube is connect-explicit: guests (no wallet) can't open it.
+    if(id === 'runtube' && typeof window.crGuest === 'function' && window.crGuest()){
+      try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); else if(typeof toast === 'function') toast('Connect a wallet to use RUN-tube'); } catch(_){}
+      return;
+    }
     const el = document.getElementById(ID_OF[id]);
     if(!el) return;
     if(el.classList.contains('on')) hidePip(id); else showPip(id);
@@ -64126,6 +64179,12 @@ function log(msg){
     // v1.0.354 — Play app opens the Run window, whose Regular tab now embeds the
     // Configure Run content inline (no second window). See crConfigEmbed + refreshFor('run').
     if(prog === 'chartrunner') prog = 'run';
+    // v1.0.367 — connect-explicit apps: guests (no wallet) can't open Maps / Journal.
+    // (Profile is public; RUN-tube is gated in crPipToggle since it's a PIP, not a window.)
+    if((prog === 'maps' || prog === 'journal') && typeof crGuest === 'function' && crGuest()){
+      try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); else if(typeof toast === 'function') toast('Connect a wallet to use this'); } catch(_){}
+      return;
+    }
     if(isArchivedProgram(prog)){
       closeArchivedProgram(prog);
       return;
@@ -64164,6 +64223,12 @@ function log(msg){
   window.osToggleWindowMulti = function(prog){
     // v1.0.354 — Play app → Run window (Regular tab embeds Configure Run inline).
     if(prog === 'chartrunner') prog = 'run';
+    // v1.0.367 — connect-explicit apps: guests (no wallet) can't open Maps / Journal.
+    // (Profile is public; RUN-tube is gated in crPipToggle since it's a PIP, not a window.)
+    if((prog === 'maps' || prog === 'journal') && typeof crGuest === 'function' && crGuest()){
+      try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); else if(typeof toast === 'function') toast('Connect a wallet to use this'); } catch(_){}
+      return;
+    }
     if(isArchivedProgram(prog)){
       closeArchivedProgram(prog);
       return;
@@ -64186,6 +64251,47 @@ function log(msg){
     window.osOpenWindow = function(prog){ osOpenWindowMulti(prog); };
     window.osCloseAllWindows = function(){ osCloseAllWindowsMulti(); };
   }catch{}
+
+  /* v1.0.366 — Wallet-connect gating + guest restrictions ───────────────────────
+     GUEST (no wallet) = locked default: all Red-Laser tools equipped (Profile hidden
+     so it can't be changed), invader (green) avatar, NO bots, NO Blue Laser, NO Alarm
+     Laser, and the connect-explicit apps (Profile / Maps / Journal) hidden. Connecting
+     a wallet removes every lock. Driven by crWallet.on() (fires on connect/disconnect
+     and once immediately). The per-feature blocks live in useAbility (Blue Laser),
+     crAlarm.arm (Alarm), osOpenWindowMulti/Toggle (apps), and CSS (body.cr-guest). */
+  function crConnected(){ try { return !!(window.crWallet && crWallet.isConnected && crWallet.isConnected()); } catch(_){ return false; } }
+  function crGuest(){ return !crConnected(); }
+  try { window.crConnected = crConnected; window.crGuest = crGuest; } catch(_){}
+  function _crAllToolIds(){ try { return (typeof WB_LASER_TOOLS !== 'undefined' && Array.isArray(WB_LASER_TOOLS)) ? WB_LASER_TOOLS.map(t => t.id) : []; } catch(_){ return []; } }
+  function crApplyAccessGates(){
+    const guest = crGuest();
+    try { document.body.classList.toggle('cr-guest', guest); } catch(_){}
+    if(guest){
+      try {
+        if(typeof wb !== 'undefined'){
+          const all = _crAllToolIds();
+          if(all.length) wb.equippedTools = all;                 // all tools equipped (locked — Profile hidden)
+          if(Array.isArray(wb.equipped)) wb.equipped.length = 0; else wb.equipped = []; // no bots
+          try { if(typeof _wbSave === 'function') _wbSave(); } catch(_){}
+        }
+      } catch(_){}
+      try { currentFlightSkin = 'invader'; } catch(_){}          // invader (green) avatar
+      // Profile is public for guests but only Player + Tools tabs show — if a now-hidden
+      // tab (Wallet / Broker / Coach) was active, fall back to Player.
+      try {
+        const at = document.querySelector('#win-wallet .crTerm-tab[data-profview].active');
+        const av = at ? at.getAttribute('data-profview') : '';
+        if(av === 'bal' || av === 'broker' || av === 'coach'){
+          const pl = document.querySelector('#win-wallet .crTerm-tab[data-profview="player"]');
+          if(pl) pl.click();
+        }
+      } catch(_){}
+    }
+    // Repaint the laser menu / loadout surfaces if they're open.
+    try { if(typeof renderLaserMenu === 'function') renderLaserMenu(); } catch(_){}
+  }
+  try { window.crApplyAccessGates = crApplyAccessGates; } catch(_){}
+  try { if(window.crWallet && typeof crWallet.on === 'function') crWallet.on(crApplyAccessGates); else crApplyAccessGates(); } catch(_){ try { crApplyAccessGates(); } catch(__){} }
 
   function raiseWindow(el){
     el.style.zIndex = ++zTop;
@@ -79261,6 +79367,8 @@ window.crQvac = (function(){
   var crAlarm = {
     alarms:[], aiming:false, draft:null, _lastEval:0,
     arm:function(){ if(!inRun()){ note('Start a run first to set alarms'); return; }
+      // v1.0.366 — guests (no wallet connected) have no Alarm Laser. Connect to unlock.
+      try { if(typeof window.crGuest === 'function' && window.crGuest()){ note('Connect a wallet to use the Alarm Laser'); return; } } catch(_){}
       this.aiming=true; this.draft={ id:uid(), name:'', conditions:[], confluence:false }; freePan(true);
       try { if(window.crLaserCursor) window.crLaserCursor.arm('alarm', { source:'hotkey-4', exclusive:true }); } catch(_){}
       note('◉ Alarm laser ON — click candles / lines / primitives to add triggers · multiple = confluence · Enter or Esc saves'); },
