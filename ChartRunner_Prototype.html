@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.354
-     LAST UPDATED:    2026-06-20  ·  Configure Run EMBEDDED in the Play window. The desktop
+     CURRENT VERSION: v1.0.355
+     LAST UPDATED:    2026-06-20  ·  Minigame RANDOM DROP. Picking a minigame (Snake / Racing /
+     Monster) no longer opens Configure Run — crLaunchMinigameRandom() drops the player into a
+     RANDOM liquid token (btc/eth/sol/bnb/xrp/doge/link/jup/trx) at a RANDOM timeframe
+     (15m/1h/4h/1d) and a RANDOM moment in chart history (crRunStartIndexForMode returns a random
+     10%–60% start index for minigame modes; restart() carves a safe zone so the drop is never
+     fatal). The three minigame cards now call the launcher directly. Regular tab still embeds
+     Configure Run (v1.0.354).
+     ---- prior (v1.0.354) ----  Configure Run EMBEDDED in the Play window. The desktop
      app is "Play" (v1.0.353), and its Run window's Regular tab now shows the Configure Run
      content INLINE instead of popping a second window: crConfigEmbed() reparents the same
      #win-configs node into a new #crRegularCfgHost inside win-run, strips the floating-window
@@ -12870,7 +12877,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.354",
+  VERSION: "1.0.355",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -32379,7 +32386,17 @@ try { if(_crIsDevHost() && /[?&]dev=1/.test(location.search) && window.ChartRunn
 	function crRunStartIndexForMode(mode, candleCount){
 	  const count = Math.max(0, candleCount || 0);
 	  const lastIdx = Math.max(0, count - 1);
-	  if(String(mode || '') === 'timeismoney') return Math.max(0, lastIdx - 15);
+	  const m = String(mode || '');
+	  if(m === 'timeismoney') return Math.max(0, lastIdx - 15);
+	  // v1.0.355 — minigames drop in at a RANDOM moment in chart history (10%–60%
+	  // band, leaving forward runway). restart() carves a safe zone around startIdx,
+	  // so a random index can't spawn the player inside a fatal hazard.
+	  if(m === 'snake' || m === 'racing' || m === 'monster'){
+	    if(count < 8) return Math.max(0, Math.min(lastIdx, Math.floor(count * 0.35)));
+	    const lo = Math.floor(count * 0.10), hi = Math.floor(count * 0.60);
+	    const span = Math.max(1, hi - lo);
+	    return Math.max(0, Math.min(lastIdx, lo + Math.floor(Math.random() * span)));
+	  }
 	  return Math.max(0, Math.min(lastIdx, Math.floor(count * 0.35)));
 	}
 
@@ -39203,12 +39220,34 @@ function pickMode(mode){
 // v0.8k#24cq — Mode picker wiring. New modes go through pickMode() which
 // stamps game.pendingMode; restart() reads it. Null-guarded so pruning
 // the markup later doesn't brick boot.
+// v1.0.355 — Minigame "random drop": picking a minigame skips Configure Run and
+// drops the player into a RANDOM liquid token at a RANDOM moment in chart history
+// (the random start index is chosen in crRunStartIndexForMode for minigame modes).
+async function crLaunchMinigameRandom(mode){
+  try {
+    const POOL = ['btc','eth','sol','bnb','xrp','doge','link','jup','tron'];
+    const TFS  = ['15m','1h','4h','1d'];
+    const pick = POOL[Math.floor(Math.random() * POOL.length)];
+    const tf   = TFS[Math.floor(Math.random() * TFS.length)];
+    if(typeof game !== 'undefined'){ game.pendingMode = mode; game.mode = mode; }
+    try { if(typeof crConfigEmbed === 'function') crConfigEmbed(false); } catch(_){}
+    try { const rw = document.getElementById('win-run'); if(rw) rw.classList.remove('on'); } catch(_){}
+    try { if(typeof toast === 'function') toast('🎲 ' + mode.toUpperCase() + ' · ' + pick.toUpperCase() + ' ' + tf.toUpperCase() + ' · random drop'); } catch(_){}
+    // Load a random token at a random timeframe, then launch at a random moment.
+    try { if(pick !== currentAsset && typeof switchAsset === 'function') await switchAsset(pick); } catch(_){}
+    try { if(typeof applyInterval === 'function') await applyInterval(tf); } catch(_){}
+    try { if(typeof restart === 'function') restart(); } catch(_){}
+    try { if(typeof hideSplash === 'function') hideSplash(); } catch(_){}
+  } catch(e){ try { if(window.crReport) crReport(e, 'minigameRandom'); } catch(_){} }
+}
+window.crLaunchMinigameRandom = crLaunchMinigameRandom;
 {
   const bind = (id, fn) => { const el = document.getElementById(id); if(el) el.onclick = fn; };
   bind('modeTIM',     () => pickMode('timeismoney'));
-  bind('modeMonster', () => pickMode('monster'));
-  bind('modeSnake',   () => pickMode('snake'));
-  bind('modeRacing',  () => pickMode('racing'));
+  // v1.0.355 — minigames drop into a random token at a random moment (no Configure Run).
+  bind('modeMonster', () => crLaunchMinigameRandom('monster'));
+  bind('modeSnake',   () => crLaunchMinigameRandom('snake'));
+  bind('modeRacing',  () => crLaunchMinigameRandom('racing'));
   // v0.8k#24mz — pacman + pong modes retired.
   bind('modeArena',   () => {
     // Toggle the sub-mode picker; clicking the card again hides it.
