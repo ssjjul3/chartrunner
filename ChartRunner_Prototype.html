@@ -2,14 +2,17 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.353
-     LAST UPDATED:    2026-06-20  ·  PLAY app + direct Configure Run. (1) The desktop
-     "ChartRunner" app is renamed "Play" (icon label + titles; data-prog stays "chartrunner").
-     (2) Opening Play now lands DIRECTLY on Configure Run with Time is Money as the default
-     mode, instead of the mode-picker card list — the chartrunner→run redirect in
-     osOpenWindowMulti/osToggleWindowMulti now calls pickMode('timeismoney') (stamps
-     game.pendingMode + opens win-configs). Configure Run's Back button still returns to the
-     full mode picker (Campaign / Minigame / PVP), so no modes are lost.
+     CURRENT VERSION: v1.0.354
+     LAST UPDATED:    2026-06-20  ·  Configure Run EMBEDDED in the Play window. The desktop
+     app is "Play" (v1.0.353), and its Run window's Regular tab now shows the Configure Run
+     content INLINE instead of popping a second window: crConfigEmbed() reparents the same
+     #win-configs node into a new #crRegularCfgHost inside win-run, strips the floating-window
+     chrome via CSS (.cr-embedded), widens win-run (.cr-run-embed), hides #crModeGrid, and sets
+     Time is Money as the default mode. The Time is Money card (#modeTIM) is archived. Switching
+     to Campaign/Minigame/PVP tabs detaches the node (crConfigEmbed(false)) and shows the cards;
+     minigame/monster still use the popup via pickMode (which now un-embeds first). Start Run
+     launches from the embedded panel. refreshFor('run') triggers the embed on window open.
+     ---- prior (v1.0.353) ----  PLAY app + direct Configure Run (superseded by the embed above).
      ---- prior (v1.0.352) ----  UNIVERSAL TOKENS. Charting/data widened to all tokens
      while trade execution stays CEX + Solana-DEX only. (1) Terminal Info/Txn/Bubble Maps are
      now MULTI-CHAIN: a new _crActiveTokenMC() resolver maps any active asset → {network,
@@ -2072,6 +2075,23 @@
   .splash .os-window.on{display:flex}
   .splash .os-window.dragging{box-shadow:3px 5px 0 rgba(0,0,0,.28),
     0 0 0 1px #fff inset}
+  /* v1.0.354 — Configure Run embedded inside the Play (Run) window's Regular tab.
+     The same #win-configs node is reparented into #crRegularCfgHost and rendered
+     inline (no floating-window chrome) instead of popping a second window. */
+  #crRegularCfgHost{display:none}
+  #crRegularCfgHost.on{display:block}
+  #win-configs.cr-embedded{
+    position:static!important;inset:auto!important;top:auto!important;left:auto!important;right:auto!important;bottom:auto!important;
+    transform:none!important;width:100%!important;min-width:0!important;max-width:none!important;
+    height:auto!important;max-height:none!important;
+    background:transparent!important;border:0!important;border-radius:0!important;
+    box-shadow:none!important;overflow:visible!important;color:inherit!important;margin:0!important}
+  #win-configs.cr-embedded .os-wbar{display:none!important}
+  #win-configs.cr-embedded #crCfgBack{display:none!important}
+  #win-configs.cr-embedded .os-wbody{padding-top:2px!important}
+  /* Widen the Run window while it hosts the embedded Configure Run so the
+     10-pill timeframe row + token field sit comfortably (mirrors win-configs). */
+  #win-run.cr-run-embed{width:min(1080px,calc(100% - 44px))!important;max-width:none!important}
   .splash .os-wbar{
     background:
       repeating-linear-gradient(180deg,
@@ -10176,9 +10196,15 @@
               <button data-cat="minigame">Minigame</button>
               <button data-cat="pvp">PVP</button>
             </div>
+            <!-- v1.0.354 — Regular tab embeds the Configure Run content inline.
+                 crConfigEmbed() reparents #win-configs into this host (no second
+                 window pops up); the Time is Money card below is archived. -->
+            <div id="crRegularCfgHost"></div>
             <div class="modegrid" id="crModeGrid">
               <!-- ── REGULAR ─────────────────────────────────────── -->
-              <button class="modecard" data-cat="regular" id="modeTIM" data-mode="timeismoney">
+              <!-- v1.0.354 — Time is Money card archived: the Regular tab now shows
+                   the embedded Configure Run (Time is Money is its default mode). -->
+              <button class="modecard" data-cat="regular" id="modeTIM" data-mode="timeismoney" style="display:none" aria-hidden="true">
                 <div class="modeIcon"><svg class="mc-svg" style="--accent:#3ddc97;--accent2:#ffd166" viewBox="0 0 24 24" aria-hidden="true">
                   <circle cx="12" cy="13" r="8" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
                   <path class="l" d="M12 8 v5 l3 2"/>
@@ -12844,7 +12870,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.353",
+  VERSION: "1.0.354",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -39141,6 +39167,9 @@ const _MODE_LABELS = {
 };
 function pickMode(mode){
   if(typeof game !== 'undefined') game.pendingMode = mode;
+  // v1.0.354 — non-Regular modes (minigames / monster) still use the Configure Run
+  // POPUP, so detach the embedded copy from the Run window first.
+  try { if(typeof crConfigEmbed === 'function') crConfigEmbed(false); } catch(_){}
   const lbl = document.getElementById('crCfgModeLabel');
   if(lbl) lbl.textContent = _MODE_LABELS[mode] || mode;
   // v0.9.29 — If the player exits Campaign (picks a non-campaign mode), restore
@@ -40450,6 +40479,46 @@ function pickMode(mode){
   // v0.9.50 — Selector extended to .modeSection so the new Campaign-tab
   // section dividers (Foundation / Tools / Primitives / Strategy / Bots) also
   // hide when a non-campaign tab is active.
+  // v1.0.354 — Configure Run embeds inside this (Run) window's Regular tab.
+  // crConfigEmbed(true) reparents #win-configs into #crRegularCfgHost and renders
+  // it inline; crConfigEmbed(false) returns it to its home parent so the other
+  // mode paths (minigames / monster via pickMode) keep using it as a popup window.
+  let _crCfgHome = null, _crCfgHomeNext = null;
+  function crConfigEmbed(on){
+    const cfg = document.getElementById('win-configs');
+    const host = document.getElementById('crRegularCfgHost');
+    const grid = document.getElementById('crModeGrid');
+    if(!cfg) return;
+    const runWin = document.getElementById('win-run');
+    if(on){
+      if(!_crCfgHome){ _crCfgHome = cfg.parentNode; _crCfgHomeNext = cfg.nextSibling; }
+      if(host && cfg.parentNode !== host) host.appendChild(cfg);
+      cfg.classList.add('cr-embedded', 'on');
+      if(host) host.classList.add('on');
+      if(runWin) runWin.classList.add('cr-run-embed');
+      if(grid) grid.style.display = 'none';
+      try { if(typeof game !== 'undefined') game.pendingMode = 'timeismoney'; } catch(_){}
+      const lbl = document.getElementById('crCfgModeLabel'); if(lbl) lbl.textContent = '⏱ Time is Money';
+      try { if(typeof osRefreshConfigs === 'function') osRefreshConfigs(); } catch(_){}
+    } else {
+      cfg.classList.remove('cr-embedded', 'on');
+      if(host) host.classList.remove('on');
+      if(runWin) runWin.classList.remove('cr-run-embed');
+      if(_crCfgHome && host && cfg.parentNode === host){
+        if(_crCfgHomeNext && _crCfgHomeNext.parentNode === _crCfgHome) _crCfgHome.insertBefore(cfg, _crCfgHomeNext);
+        else _crCfgHome.appendChild(cfg);
+      }
+      if(grid) grid.style.display = '';
+    }
+  }
+  window.crConfigEmbed = crConfigEmbed;
+  // Sync the embed to the active mode tab — called when the Run window opens.
+  function crSyncRegularEmbed(){
+    const active = document.querySelector('#crModeTabs button.on');
+    const cat = active ? active.getAttribute('data-cat') : 'regular';
+    crConfigEmbed(cat === 'regular');
+  }
+  window.crSyncRegularEmbed = crSyncRegularEmbed;
   document.querySelectorAll('#crModeTabs button').forEach(btn => {
     btn.addEventListener('click', () => {
       const cat = btn.getAttribute('data-cat');
@@ -40462,6 +40531,8 @@ function pickMode(mode){
         const sub = document.getElementById('crArenaSubModes');
         if(sub) sub.style.display = 'none';
       }
+      // v1.0.354 — Regular tab shows the embedded Configure Run; others show cards.
+      crConfigEmbed(cat === 'regular');
     });
   });
   // Initial filter — default to "Regular".
@@ -63702,14 +63773,9 @@ function log(msg){
   // but route everything through the new function.
   window.osOpenWindowMulti = function(prog){
     // v0.8M#1 — redirect map for merged apps
-    // v1.0.353 — Play app opens Configure Run DIRECTLY (Time is Money default) instead
-    // of the mode-picker card list. pickMode() stamps game.pendingMode + opens win-configs;
-    // Configure Run's Back button still returns to the full mode picker (campaign / minigame /
-    // PVP). Fallback to the 'run' picker if pickMode isn't available yet.
-    if(prog === 'chartrunner'){
-      try { if(typeof pickMode === 'function'){ pickMode('timeismoney'); return; } } catch(_){}
-      prog = 'run';
-    }
+    // v1.0.354 — Play app opens the Run window, whose Regular tab now embeds the
+    // Configure Run content inline (no second window). See crConfigEmbed + refreshFor('run').
+    if(prog === 'chartrunner') prog = 'run';
     if(isArchivedProgram(prog)){
       closeArchivedProgram(prog);
       return;
@@ -63746,11 +63812,8 @@ function log(msg){
   // post-action navigation) keep using osOpenWindowMulti directly so
   // they don't accidentally close a window the caller wanted open.
   window.osToggleWindowMulti = function(prog){
-    // v1.0.353 — Play app → Configure Run directly (see osOpenWindowMulti note).
-    if(prog === 'chartrunner'){
-      try { if(typeof pickMode === 'function'){ pickMode('timeismoney'); return; } } catch(_){}
-      prog = 'run';
-    }
+    // v1.0.354 — Play app → Run window (Regular tab embeds Configure Run inline).
+    if(prog === 'chartrunner') prog = 'run';
     if(isArchivedProgram(prog)){
       closeArchivedProgram(prog);
       return;
@@ -63859,6 +63922,8 @@ function log(msg){
     else if(prog === 'shop'){ try{ if(typeof osRefreshShop === 'function') osRefreshShop(); }catch{} }
     else if(prog === 'profile'){ try{ if(typeof osRefreshProfile === 'function') osRefreshProfile(); }catch{} }
     else if(prog === 'configs'){ try{ if(typeof osRefreshConfigs === 'function') osRefreshConfigs(); }catch{} }
+    // v1.0.354 — Run window: embed Configure Run for the active (default Regular) tab.
+    else if(prog === 'run'){ try{ if(typeof crSyncRegularEmbed === 'function') crSyncRegularEmbed(); }catch{} }
     else if(prog === 'brokerconnect'){ try{ if(typeof window._crBrokerRenderConnector === 'function') window._crBrokerRenderConnector(); }catch{} }
     else if(prog === 'workbench'){ try{ if(typeof _wbRenderBots === 'function'){ if(typeof _wbRenderTools === 'function') try{_wbRenderTools();}catch(e){console.warn('wbTools',e)} try{_wbRenderPrimitives();}catch(e){console.warn('wbPrim',e)} try{_wbRenderBots();}catch(e){console.warn('wbBots',e)} try{_wbRenderStrats();}catch(e){console.warn('wbStrats',e)} try{_wbRenderInds();}catch(e){console.warn('wbInds',e)} try{_wbRenderTerms();}catch(e){console.warn('wbTerms',e)} try{_wbRenderApps();}catch(e){console.warn('wbApps',e)} try{_wbRebuildBacktestTargets();}catch(e){console.warn('wbBack',e)} try{_wbRenderBackHistory();}catch(e){console.warn('wbHist',e)} } }catch{} }
     // v0.8k#24ce — Token Terminal refresh hook.
