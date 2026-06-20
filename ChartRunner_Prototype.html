@@ -2,8 +2,17 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.356
-     LAST UPDATED:    2026-06-20  ·  Run window label/tab polish. (1) The section labels
+     CURRENT VERSION: v1.0.357
+     LAST UPDATED:    2026-06-20  ·  Maps folders + multiple token watchlists. (1) MAPS app
+     gains a Finder-style left folder tree: folders live in cr_map_folders_v1, each map carries
+     a `folder` id (crMaps.readFolders/addFolder/renameFolder/delFolder/setMapFolder); the grid
+     filters by the selected folder (All / Unfiled / each folder), drag a map card onto a folder
+     row to move it. (2) TOKEN watchlist supports MULTIPLE named lists: crTokLists
+     (cr_tok_watchlists_v1 = {lists:[{id,name,items}],activeId}) with a selector + ＋new/✎rename/
+     🗑delete in the WATCHLIST tab; the old single list migrates to 'Default'; the active list is
+     mirrored to the legacy cr_tok_watchlist_v1 key so every existing reader (Engine panes,
+     widgets, config editor) keeps working; ★ adds to the active list.
+     ---- prior (v1.0.356) ----  Run window label/tab polish. (1) The section labels
      (Choose a mode / Asset / Timeframe / Broker) now use the same brighter color as the
      TOKEN/PAIR label (var(--fg)), unified across the Run window + embedded Configure Run.
      (2) The chosen mode tab is now clearly green (border + bg + text) like the selected
@@ -12368,15 +12377,22 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
           <!-- v0.9.58 — Save description moved to bottom of the window;
                wording shortened from "every placed bracket / ladder /
                OCO / line / trendline" to "placed tools and trading primitives". -->
-          <div style="display:flex;gap:8px;margin:0 0 14px">
+          <div style="display:flex;gap:8px;margin:0 0 12px">
             <input type="text" id="crMapName" placeholder="Map name (e.g. BTC 1h breakout)" style="flex:1;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:rgba(10,15,28,.6);color:var(--fg);font-size:13px;font-family:inherit">
             <button class="cr-go" id="crMapSave" type="button">＋ Save</button>
           </div>
-          <div class="os-section">
-            <h4>Saved maps · <span id="crMapCount">0</span></h4>
-            <div id="crMapGrid" class="cr-mapGrid"></div>
+          <!-- v1.0.357 — Finder-style layout: folder tree on the left, map grid on
+               the right. Folders live in cr_map_folders_v1; each map carries a folder id. -->
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div id="crMapFolders" style="flex:0 0 170px;display:flex;flex-direction:column;gap:3px;max-height:470px;overflow-y:auto;padding-right:2px"></div>
+            <div style="flex:1;min-width:0">
+              <div class="os-section" style="margin:0">
+                <h4><span id="crMapFolderTitle">All maps</span> · <span id="crMapCount">0</span></h4>
+                <div id="crMapGrid" class="cr-mapGrid"></div>
+              </div>
+            </div>
           </div>
-          <p style="margin:14px 0 0;font-size:11px;color:var(--dim)">Save the current chart setup — asset, timeframe, indicators, placed tools and trading primitives. Click any saved map to restore it.</p>
+          <p style="margin:14px 0 0;font-size:11px;color:var(--dim)">Save the current chart setup — asset, timeframe, indicators, placed tools and trading primitives. Click any saved map to restore it. Use the folders on the left to organize — drag any map card onto a folder to move it there.</p>
         </div>
       </div>
 
@@ -12777,6 +12793,16 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                 <input type="text" id="crTokSearch" placeholder="Filter by ticker or name…" style="flex:1;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
                 <span class="dim" style="font-size:10px" id="crTokCount">— tokens</span>
               </div>
+              <!-- v1.0.357 — Multiple named watchlists. Shown only on the WATCHLIST tab.
+                   Selector switches the active list; ＋ new / ✎ rename / 🗑 delete.
+                   The ★ on each row adds/removes from the active list. -->
+              <div id="crTokWlBar" style="display:none;align-items:center;gap:6px">
+                <span class="dim" style="font-size:9px;letter-spacing:.5px">LIST</span>
+                <select id="crTokWlSelect" title="Active watchlist" style="flex:1;min-width:0;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace"></select>
+                <button id="crTokWlNew" type="button" title="New watchlist" style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:rgba(20,241,149,.10);color:#bff7df;cursor:pointer;font:600 12px ui-monospace,Menlo,monospace">＋</button>
+                <button id="crTokWlRename" type="button" title="Rename watchlist" style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6);color:var(--fg);cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">✎</button>
+                <button id="crTokWlDel" type="button" title="Delete watchlist" style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6);color:#ff8fa3;cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">🗑</button>
+              </div>
               <div id="crTokList" style="display:flex;flex-direction:column;gap:4px;max-height:440px;overflow-y:auto;padding-right:4px"></div>
             </div>
             <!-- RIGHT: selected token profile -->
@@ -12899,7 +12925,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.356",
+  VERSION: "1.0.357",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -51491,8 +51517,10 @@ const _CR_PANE_SCHEMAS = {
     persist: (cfg) => {
       try {
         const list = String(cfg.tokens || '').split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
-        // Token Terminal expects a JSON array under this key.
-        localStorage.setItem('cr_tok_watchlist_v1', JSON.stringify(list));
+        // v1.0.357 — write through the ACTIVE named list (mirrors the legacy key too).
+        // Falls back to the flat key if the lists module isn't present.
+        if(window.crTokLists && typeof crTokLists.writeActiveItems === 'function') crTokLists.writeActiveItems(list);
+        else localStorage.setItem('cr_tok_watchlist_v1', JSON.stringify(list));
         // Reload Token Terminal's in-memory Set so its Watchlist
         // tab + star toggles reflect the new state without a reload.
         try {
@@ -51946,18 +51974,55 @@ function _tokSnapshot(id){
 // under cr_tok_watchlist_v1. Defaults to BTC/ETH/SOL on first load so the
 // tab doesn't read empty.
 const _TOK_WATCHLIST_KEY = 'cr_tok_watchlist_v1';
+// v1.0.357 — Multiple NAMED token watchlists. Stored at cr_tok_watchlists_v1 as
+// { lists:[{id,name,items:[ids]}], activeId }. The ACTIVE list's items are mirrored
+// to the legacy cr_tok_watchlist_v1 key on every change, so every existing reader
+// (Engine coin-watch panes, desktop widgets, share/export, the config editor) keeps
+// working unchanged — they always see the active list.
+const _TOK_LISTS_KEY = 'cr_tok_watchlists_v1';
+const crTokLists = (function(){
+  let store = null;
+  function _persist(){ try { localStorage.setItem(_TOK_LISTS_KEY, JSON.stringify(store)); } catch(_){} }
+  function _mirror(){ try { const a = active(); localStorage.setItem(_TOK_WATCHLIST_KEY, JSON.stringify(a ? a.items : [])); } catch(_){} }
+  function _newId(){ return 'wl_' + Date.now().toString(36) + Math.floor(Math.random()*1e4).toString(36); }
+  function _ensure(){
+    if(store) return store;
+    try {
+      const raw = localStorage.getItem(_TOK_LISTS_KEY);
+      if(raw){ const p = JSON.parse(raw); if(p && Array.isArray(p.lists) && p.lists.length){ store = p; if(!store.activeId || !store.lists.find(l => l.id === store.activeId)) store.activeId = store.lists[0].id; return store; } }
+    } catch(_){}
+    // Migrate the legacy single list (or seed defaults) into one 'Default' list.
+    let seed = ['btc','eth','sol'];
+    try { const raw = localStorage.getItem(_TOK_WATCHLIST_KEY); if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr)) seed = arr; } } catch(_){}
+    const id = _newId();
+    store = { lists:[{ id, name:'Default', items: seed.slice() }], activeId:id };
+    _persist(); _mirror();
+    return store;
+  }
+  function lists(){ return _ensure().lists; }
+  function active(){ const s = _ensure(); return s.lists.find(l => l.id === s.activeId) || s.lists[0] || null; }
+  function activeId(){ return _ensure().activeId; }
+  function _syncStateFromActive(){
+    try { const a = active(); if(typeof _tokState !== 'undefined') _tokState.watchlist = new Set(a ? a.items : []); } catch(_){}
+    try { if(typeof _tokRenderList === 'function') _tokRenderList(); } catch(_){}
+    try { if(typeof renderWidgets === 'function') renderWidgets(); } catch(_){}
+    try { if(typeof window._crRepaintEngineWatchlists === 'function') window._crRepaintEngineWatchlists(); } catch(_){}
+  }
+  function setActive(id){ const s = _ensure(); if(s.lists.find(l => l.id === id)){ s.activeId = id; _persist(); _mirror(); _syncStateFromActive(); } }
+  function create(name){ const s = _ensure(); const id = _newId(); s.lists.push({ id, name:(String(name || '').trim() || ('List ' + (s.lists.length + 1))), items:[] }); s.activeId = id; _persist(); _mirror(); _syncStateFromActive(); return id; }
+  function rename(id, name){ const s = _ensure(); const l = s.lists.find(x => x.id === id); if(l){ l.name = String(name || l.name).trim() || l.name; _persist(); try { if(typeof _tokRenderList === 'function') _tokRenderList(); } catch(_){} } }
+  function remove(id){ const s = _ensure(); if(s.lists.length <= 1) return false; s.lists = s.lists.filter(x => x.id !== id); if(s.activeId === id) s.activeId = s.lists[0].id; _persist(); _mirror(); _syncStateFromActive(); return true; }
+  function writeActiveItems(items){ const a = active(); if(a){ a.items = Array.from(items || []); _persist(); _mirror(); } }
+  return { lists, active, activeId, setActive, create, rename, remove, writeActiveItems, _ensure, _mirror };
+})();
+try { window.crTokLists = crTokLists; } catch(_){}
 function _tokLoadWatchlist(){
-  try {
-    const raw = localStorage.getItem(_TOK_WATCHLIST_KEY);
-    if(raw){
-      const arr = JSON.parse(raw);
-      if(Array.isArray(arr)) return new Set(arr);
-    }
-  } catch(_){}
+  try { const a = crTokLists.active(); if(a) return new Set(a.items); } catch(_){}
   return new Set(['btc','eth','sol']);
 }
 function _tokSaveWatchlist(){
-  try { localStorage.setItem(_TOK_WATCHLIST_KEY, JSON.stringify(Array.from(_tokState.watchlist || []))); } catch(_){}
+  try { crTokLists.writeActiveItems(Array.from(_tokState.watchlist || [])); }
+  catch(_){ try { localStorage.setItem(_TOK_WATCHLIST_KEY, JSON.stringify(Array.from(_tokState.watchlist || []))); } catch(__){} }
 }
 function _tokToggleWatch(id){
   if(!_tokState.watchlist) _tokState.watchlist = new Set();
@@ -52533,10 +52598,35 @@ function _tokSignalColor(sig){
   return '#ff5b7f';
 }
 // Render the list panel.
+// v1.0.357 — Watchlist selector bar (only on the WATCHLIST tab).
+function _tokWlEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
+function _tokRenderWlBar(){
+  const bar = document.getElementById('crTokWlBar');
+  if(!bar) return;
+  const on = _tokState.activeTab === 'watchlist';
+  bar.style.display = on ? 'flex' : 'none';
+  if(!on) return;
+  const sel = document.getElementById('crTokWlSelect');
+  if(sel){
+    const lists = crTokLists.lists(); const act = crTokLists.activeId();
+    sel.innerHTML = lists.map(l => '<option value="' + l.id + '"' + (l.id === act ? ' selected' : '') + '>' + _tokWlEsc(l.name) + ' (' + (l.items ? l.items.length : 0) + ')</option>').join('');
+  }
+  if(!bar._wired){
+    bar._wired = true;
+    if(sel) sel.addEventListener('change', () => { try { crTokLists.setActive(sel.value); } catch(_){} });
+    const nb = document.getElementById('crTokWlNew');
+    if(nb) nb.addEventListener('click', () => { const n = prompt('New watchlist name:', 'List ' + (crTokLists.lists().length + 1)); if(n !== null){ crTokLists.create(n || undefined); try { toast('Watchlist created'); } catch(_){} } });
+    const rb = document.getElementById('crTokWlRename');
+    if(rb) rb.addEventListener('click', () => { const a = crTokLists.active(); if(!a) return; const n = prompt('Rename watchlist:', a.name); if(n){ crTokLists.rename(a.id, n); _tokRenderWlBar(); } });
+    const db = document.getElementById('crTokWlDel');
+    if(db) db.addEventListener('click', () => { const a = crTokLists.active(); if(!a) return; if(crTokLists.lists().length <= 1){ try { toast('Keep at least one watchlist'); } catch(_){} return; } if(confirm('Delete watchlist "' + a.name + '"? (the tokens in it are just unpinned)')){ crTokLists.remove(a.id); try { toast('Watchlist deleted'); } catch(_){} } });
+  }
+}
 function _tokRenderList(){
   const host = document.getElementById('crTokList');
   const cnt  = document.getElementById('crTokCount');
   if(!host) return;
+  try { _tokRenderWlBar(); } catch(_){}
   // v1.0.324 — ALL tab pulls the live top-500 by market cap (lazy, cached).
   if(_tokState.activeTab === 'all'){ try { _tokEnsureCgTop(); } catch(_){} }
   const filter = (_tokState.filter || '').toLowerCase().trim();
@@ -68475,6 +68565,8 @@ const crL3 = (function(){
         destroyedVRVPBuckets: destVrvp,
         destroyedStratSignals:destStrat,
         fgDestroyed:          !!(game && game.fgDestroyed),
+        // v1.0.357 — folder assignment ('' = Unfiled). Set via crMaps.setMapFolder.
+        folder: '',
         thumb,
       };
       return map;
@@ -68484,7 +68576,7 @@ const crL3 = (function(){
     // v1.0.297 — content canon for duplicate detection: stable sorted-key
     // JSON excluding identity/volatile/on-chain fields (mirrors the share
     // module's HASH_EXCLUDE). Two saves of the same chart setup canon equal.
-    const _CANON_EXCLUDE = { id:1, t:1, thumb:1, thumbAuto:1, onChain:1, sig:1, onChainAt:1, importedFrom:1 };
+    const _CANON_EXCLUDE = { id:1, t:1, thumb:1, thumbAuto:1, onChain:1, sig:1, onChainAt:1, importedFrom:1, folder:1 };
     function _canon(m){
       try {
         const sort = v => {
@@ -68684,7 +68776,16 @@ const crL3 = (function(){
       const list = readAll().filter(x => x.id !== id);
       writeAll(list);
     }
-    return { readAll, save, load, del, setThumb, dedupeAll };
+    // v1.0.357 — Folders. A flat list of {id,name} in cr_map_folders_v1; each map
+    // carries a `folder` id ('' = Unfiled). Deleting a folder re-files its maps to ''.
+    const FOLDERS_KEY = 'cr_map_folders_v1';
+    function readFolders(){ try{ const raw = localStorage.getItem(FOLDERS_KEY); const p = raw ? JSON.parse(raw) : []; return Array.isArray(p) ? p : []; }catch{ return []; } }
+    function writeFolders(list){ try{ localStorage.setItem(FOLDERS_KEY, JSON.stringify(list)); }catch{} }
+    function addFolder(name){ const list = readFolders(); const id = 'f_' + Date.now().toString(36) + Math.floor(Math.random()*1e4).toString(36); list.push({ id, name:(String(name||'').trim() || ('Folder ' + (list.length+1))) }); writeFolders(list); return id; }
+    function renameFolder(id, name){ const list = readFolders(); const f = list.find(x => x.id === id); if(f){ f.name = String(name||f.name).trim() || f.name; writeFolders(list); } }
+    function delFolder(id){ writeFolders(readFolders().filter(x => x.id !== id)); const maps = readAll(); let touched = false; maps.forEach(m => { if(m.folder === id){ m.folder = ''; touched = true; } }); if(touched) writeAll(maps); }
+    function setMapFolder(mapId, folderId){ const maps = readAll(); const m = maps.find(x => x.id === mapId); if(m){ m.folder = folderId || ''; writeAll(maps); } }
+    return { readAll, save, load, del, setThumb, dedupeAll, readFolders, addFolder, renameFolder, delFolder, setMapFolder };
   })();
   // v0.8k#24be — Expose crMaps on window so the desktop-widget renderer
   // (_wBodyHTML / _wTitleFor at top-level scope) can resolve dragged map
@@ -68761,8 +68862,64 @@ const crL3 = (function(){
     if(healed) try { renderMaps(); } catch(_){}
   }
   // Render the desktop Maps grid + phone Maps list
+  // v1.0.357 — Maps folder tree (left sidebar). Selection persists across renders.
+  let _crMapFolderSel = 'all'; // 'all' | 'unfiled' | <folderId>
+  function _crMapFolderCounts(){
+    const maps = crMaps.readAll(); const folders = crMaps.readFolders();
+    const valid = {}; folders.forEach(f => { valid[f.id] = 0; });
+    let unfiled = 0;
+    maps.forEach(m => { if(m.folder && Object.prototype.hasOwnProperty.call(valid, m.folder)) valid[m.folder]++; else unfiled++; });
+    return { total: maps.length, unfiled, byId: valid, folders };
+  }
+  function renderMapFolders(){
+    const host = document.getElementById('crMapFolders'); if(!host) return;
+    const { total, unfiled, byId, folders } = _crMapFolderCounts();
+    host.innerHTML = '';
+    const mkRow = (key, label, count, opts) => {
+      opts = opts || {};
+      const sel = _crMapFolderSel === key;
+      const baseBorder = sel ? 'rgba(106,203,58,.55)' : 'var(--line)';
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid ' + baseBorder + ';border-radius:7px;cursor:pointer;background:' + (sel ? 'rgba(106,203,58,.10)' : 'rgba(10,15,28,.4)') + ';font:600 11px ui-monospace,Menlo,monospace;color:' + (sel ? '#bff7df' : 'var(--fg)');
+      row.innerHTML = '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(label) + '</span><span style="color:var(--dim);font-size:9px">' + count + '</span>';
+      row.addEventListener('click', () => { _crMapFolderSel = key; renderMaps(); });
+      if(opts.dropId !== undefined){
+        row.addEventListener('dragover', e => { e.preventDefault(); row.style.borderColor = 'rgba(106,203,58,.85)'; });
+        row.addEventListener('dragleave', () => { row.style.borderColor = baseBorder; });
+        row.addEventListener('drop', e => { e.preventDefault(); let id = ''; try { id = e.dataTransfer.getData('application/x-cr-mapmove'); } catch(_){} if(id){ crMaps.setMapFolder(id, opts.dropId); renderMaps(); try { toast('Map moved'); } catch(_){} } });
+      }
+      if(opts.folderId){
+        const ren = document.createElement('button'); ren.textContent = '✎'; ren.title = 'Rename folder';
+        ren.style.cssText = 'background:none;border:0;color:#7aa2ff;cursor:pointer;font-size:10px;padding:0 2px';
+        ren.addEventListener('click', e => { e.stopPropagation(); const n = prompt('Rename folder:', opts.name); if(n){ crMaps.renameFolder(opts.folderId, n); renderMaps(); } });
+        const del = document.createElement('button'); del.textContent = '×'; del.title = 'Delete folder (its maps move to Unfiled)';
+        del.style.cssText = 'background:none;border:0;color:#ff8fa3;cursor:pointer;font-size:12px;padding:0 2px';
+        del.addEventListener('click', e => { e.stopPropagation(); if(confirm('Delete folder "' + opts.name + '"? Its maps move to Unfiled.')){ if(_crMapFolderSel === opts.folderId) _crMapFolderSel = 'all'; crMaps.delFolder(opts.folderId); renderMaps(); } });
+        row.appendChild(ren); row.appendChild(del);
+      }
+      host.appendChild(row);
+    };
+    mkRow('all', '🗂 All maps', total, {});
+    mkRow('unfiled', '📂 Unfiled', unfiled, { dropId: '' });
+    folders.forEach(f => mkRow(f.id, '📁 ' + f.name, byId[f.id] || 0, { dropId: f.id, folderId: f.id, name: f.name }));
+    const add = document.createElement('button');
+    add.type = 'button'; add.textContent = '＋ New folder';
+    add.style.cssText = 'margin-top:4px;padding:6px 8px;border:1px dashed var(--line);border-radius:7px;background:transparent;color:var(--dim);cursor:pointer;font:600 11px ui-monospace,Menlo,monospace;text-align:left';
+    add.addEventListener('click', () => { const n = prompt('New folder name:'); if(n){ const id = crMaps.addFolder(n); _crMapFolderSel = id; renderMaps(); } });
+    host.appendChild(add);
+  }
   function renderMaps(){
-    const list = crMaps.readAll();
+    const fullList = crMaps.readAll();
+    try { renderMapFolders(); } catch(_){}
+    // v1.0.357 — filter the grid to the selected folder.
+    const _folderIds = {}; crMaps.readFolders().forEach(f => { _folderIds[f.id] = 1; });
+    const list = (_crMapFolderSel === 'all') ? fullList
+      : (_crMapFolderSel === 'unfiled') ? fullList.filter(m => !m.folder || !_folderIds[m.folder])
+      : fullList.filter(m => m.folder === _crMapFolderSel);
+    try {
+      const titleEl = document.getElementById('crMapFolderTitle');
+      if(titleEl){ const f = crMaps.readFolders().find(x => x.id === _crMapFolderSel); titleEl.textContent = (_crMapFolderSel === 'all') ? 'All maps' : (_crMapFolderSel === 'unfiled') ? 'Unfiled' : (f ? f.name : 'Folder'); }
+    } catch(_){}
     try { setTimeout(_crMapThumbBackfill, 0); } catch(_){}
     const fmtAgo = (t) => {
       const d = (Date.now() - t) / 1000;
@@ -68787,6 +68944,9 @@ const crL3 = (function(){
           const card = document.createElement('button');
           card.className = 'cr-mapCard';
           card.type = 'button';
+          // v1.0.357 — drag a card onto a folder row (left) to move it there.
+          card.draggable = true;
+          card.addEventListener('dragstart', e => { try { e.dataTransfer.setData('application/x-cr-mapmove', m.id); e.dataTransfer.effectAllowed = 'move'; } catch(_){} });
           const indCount = (m.indicators || []).length;
           const toolCount = (m.brackets||[]).length + (m.ladders||[]).length + (m.ocos||[]).length
                           + (m.hlines||[]).length + (m.trendlines||[]).length + (m.vwaps||[]).length;
