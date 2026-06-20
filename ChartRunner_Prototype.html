@@ -2,9 +2,13 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.394
-     LAST UPDATED:    2026-06-21  ·  Desktop Terminal: archived the DEXTRACKER tab and relocated its panes
-     (Whales/Funding/OI/Route Depth/DEX Fees/Status) into SOLANATRACKER at init (crMergeDexIntoSol) so the
+     CURRENT VERSION: v1.0.396
+     LAST UPDATED:    2026-06-21  ·  Configure Run: the Timeframe segmented track no longer stretches to fill the
+     grid column — pinned with justify-self:start so it shrinks to its segments and lines up with the Asset track.
+     ── earlier ── v1.0.395: Racing PICK YOUR RIDE / end-card overlays are now theme-aware (--rc-* props,
+     Platinum-light default + ascii/frontier/bw/mono overrides), and the equipped avatar (Runner skin or cNFT
+     pfp via _drawLoadoutAvatar) now rides EVERY vehicle, not just the boards.
+     ── earlier ── v1.0.394: archived the DEXTRACKER tab and relocated its panes (crMergeDexIntoSol) into SOLANATRACKER, so the
      live refreshers keep running in one consolidated tracker; gated panes still auto-hide offline.
      ---- prior (v1.0.393) ----  Configure Run (Regular) Asset + Timeframe rows render as a SEGMENTED CONTROL
      (one dark rounded track, segments inside, selected = light pill) matching the in-game TF bar —
@@ -8172,6 +8176,11 @@
     border-radius:11px !important; padding:3px !important;
     box-shadow:inset 0 1px 2px rgba(0,0,0,.4) !important;
   }
+  /* v1.0.396 — the Timeframe track sits directly in the cfg-row grid (the Asset
+     track is wrapped in .cfg-asset-row), so as a grid item it stretched to fill
+     the 1fr column. Pin it to the start so it shrinks to its segments and lines
+     up with the Asset track above. */
+  #win-configs .cfg-row > .tfbox{ justify-self:start !important; }
   #win-configs .os-wbody .asset-box button,
   #win-configs .os-wbody .tfbox button,
   #win-configs .os-wbody .tfbox .cfg-tf-more,
@@ -13400,7 +13409,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.394",
+  VERSION: "1.0.396",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -37069,17 +37078,15 @@ window.crRacing = (function(){
       for(const wxw of [-10, 10]){ ctx.fillStyle = '#0a0c14'; ctx.beginPath(); ctx.arc(wxw, 5, 5, 0, Math.PI*2); ctx.fill(); }
     }
     ctx.shadowBlur = 0;
-    // v1.0.391 — the Runner RIDES board-type vehicles (skateboard / surfboard):
-    // feet planted on the deck (deck top ≈ -2*s), body above. Cars/jetski are
-    // self-contained art, so no extra rider on those.
-    const board = (st.vehicleId === 'skateboard' || st.vehicleId === 'surfboard');
+    // v1.0.395 — the EQUIPPED avatar always rides the vehicle: the Runner (with
+    // the player's skin tint) or their chosen cNFT pfp, via _drawLoadoutAvatar.
+    // Seated on the deck/top (deck ≈ -2*s), body above.
     try {
-      if(board && typeof drawInvader === 'function'){
-        ctx.save();
-        ctx.translate(0, -2*s - 3);   // stand on the deck
-        drawInvader(ctx, 1.15, col);
-        ctx.restore();
-      }
+      ctx.save();
+      ctx.translate(0, -2*s - 3);
+      if(typeof _drawLoadoutAvatar === 'function') _drawLoadoutAvatar(ctx, 1.15, {});
+      else if(typeof drawInvader === 'function') drawInvader(ctx, 1.15, col);
+      ctx.restore();
     } catch(_){}
     ctx.restore();
   }
@@ -37150,23 +37157,35 @@ window.crRacing = (function(){
       + '</div></div>';
     document.body.appendChild(wrap);
     const css = ''
-      + '#crRaceUI .crRaceOv{position:fixed;inset:0;z-index:99550;display:none;align-items:center;justify-content:center;background:rgba(4,8,18,.78);backdrop-filter:blur(4px)}'
+      // v1.0.395 — theme-aware overlay. Local --rc-* props default to Platinum
+      // (light); per-theme override blocks below match the selected desktop theme,
+      // same pattern as the NFT/wallet/swap/claim-name modals.
+      + '#crRaceUI .crRaceCard{'
+      +   '--rc-ov:rgba(20,28,44,.42);--rc-bg:linear-gradient(180deg,#ffffff,#eef1f6);--rc-bd:#c4ccd8;'
+      +   '--rc-fg:#1b2331;--rc-dim:#5d6b7e;--rc-accent:#12a766;--rc-ink:#06160d;'
+      +   '--rc-veh-bg:#ffffff;--rc-veh-bd:#d4dae4;--rc-veh-hover:rgba(18,167,102,.10);'
+      +   '--rc-time:#d98a00;--rc-shadow:0 24px 64px rgba(20,30,50,.28)}'
+      + 'body[data-os-theme="ascii"] #crRaceUI .crRaceCard{--rc-ov:rgba(0,0,0,.82);--rc-bg:linear-gradient(180deg,#001a0c,#000400);--rc-bd:#14f195;--rc-fg:#c6ffd9;--rc-dim:#5aa97f;--rc-accent:#14f195;--rc-ink:#02160a;--rc-veh-bg:rgba(0,30,12,.6);--rc-veh-bd:rgba(20,241,149,.4);--rc-veh-hover:rgba(20,241,149,.14);--rc-time:#9dff5b;--rc-shadow:0 24px 64px rgba(0,0,0,.7)}'
+      + 'body[data-os-theme="frontier"] #crRaceUI .crRaceCard{--rc-ov:rgba(4,8,18,.78);--rc-bg:linear-gradient(180deg,#0c1424,#070b16);--rc-bd:rgba(20,241,149,.42);--rc-fg:#e9efff;--rc-dim:#9fb3c8;--rc-accent:#3ddc97;--rc-ink:#06160d;--rc-veh-bg:rgba(10,15,28,.6);--rc-veh-bd:rgba(120,140,180,.4);--rc-veh-hover:rgba(20,241,149,.10);--rc-time:#ffd166;--rc-shadow:0 24px 64px rgba(0,0,0,.7)}'
+      + 'body[data-os-theme="bw"] #crRaceUI .crRaceCard{--rc-ov:rgba(0,0,0,.5);--rc-bg:#ffffff;--rc-bd:#000000;--rc-fg:#000000;--rc-dim:#555555;--rc-accent:#000000;--rc-ink:#ffffff;--rc-veh-bg:#ffffff;--rc-veh-bd:#000000;--rc-veh-hover:#eeeeee;--rc-time:#000000;--rc-shadow:0 24px 64px rgba(0,0,0,.4)}'
+      + 'body[data-os-theme="mono"] #crRaceUI .crRaceCard{--rc-ov:rgba(0,0,0,.82);--rc-bg:#111111;--rc-bd:#888888;--rc-fg:#e8e8e8;--rc-dim:#999999;--rc-accent:#e8e8e8;--rc-ink:#111111;--rc-veh-bg:#1a1a1a;--rc-veh-bd:#555555;--rc-veh-hover:#262626;--rc-time:#ffffff;--rc-shadow:0 24px 64px rgba(0,0,0,.7)}'
+      + '#crRaceUI .crRaceOv{position:fixed;inset:0;z-index:99550;display:none;align-items:center;justify-content:center;background:var(--rc-ov,rgba(4,8,18,.78));backdrop-filter:blur(4px)}'
       + '#crRaceUI .crRaceOv.on{display:flex}'
-      + '#crRaceUI .crRaceCard{width:min(540px,calc(100% - 40px));background:linear-gradient(180deg,#0c1424,#070b16);border:1px solid rgba(20,241,149,.42);border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.7);padding:18px 20px;color:#e9efff;font-family:ui-monospace,Menlo,Consolas,monospace}'
-      + '#crRaceUI .crRaceTtl{font-weight:800;color:#3ddc97;letter-spacing:.6px;margin-bottom:6px}'
-      + '#crRaceUI .crRaceSub{font-size:11px;color:#9fb3c8;line-height:1.5;margin-bottom:14px}'
+      + '#crRaceUI .crRaceCard{width:min(540px,calc(100% - 40px));background:var(--rc-bg);border:1px solid var(--rc-bd);border-radius:14px;box-shadow:var(--rc-shadow);padding:18px 20px;color:var(--rc-fg);font-family:ui-monospace,Menlo,Consolas,monospace}'
+      + '#crRaceUI .crRaceTtl{font-weight:800;color:var(--rc-accent);letter-spacing:.6px;margin-bottom:6px}'
+      + '#crRaceUI .crRaceSub{font-size:11px;color:var(--rc-dim);line-height:1.5;margin-bottom:14px}'
       + '#crRaceUI .crRaceGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}'
-      + '#crRaceUI .crRaceVeh{appearance:none;cursor:pointer;text-align:left;border:1px solid rgba(120,140,180,.4);border-radius:9px;background:rgba(10,15,28,.6);color:#e9efff;padding:9px 11px;font:inherit;transition:border-color .12s,background .12s}'
-      + '#crRaceUI .crRaceVeh:hover{background:rgba(20,241,149,.10)}'
+      + '#crRaceUI .crRaceVeh{appearance:none;cursor:pointer;text-align:left;border:1px solid var(--rc-veh-bd);border-radius:9px;background:var(--rc-veh-bg);color:var(--rc-fg);padding:9px 11px;font:inherit;transition:border-color .12s,background .12s}'
+      + '#crRaceUI .crRaceVeh:hover{background:var(--rc-veh-hover);border-color:var(--rc-accent)}'
       + '#crRaceUI .crRaceVeh .vn{display:block;font-weight:800;font-size:12px;margin-bottom:2px}'
-      + '#crRaceUI .crRaceVeh .vm{display:block;font-size:9.5px;color:#9fb3c8}'
-      + '#crRaceUI .crRaceTime{font-size:40px;font-weight:800;color:#ffd166;text-align:center;margin:6px 0 2px;text-shadow:0 0 14px rgba(255,209,102,.45)}'
+      + '#crRaceUI .crRaceVeh .vm{display:block;font-size:9.5px;color:var(--rc-dim)}'
+      + '#crRaceUI .crRaceTime{font-size:40px;font-weight:800;color:var(--rc-time);text-align:center;margin:6px 0 2px}'
       + '#crRaceUI .crRaceActions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}'
-      + '#crRaceUI .crRaceBtn{appearance:none;cursor:pointer;border:1px solid rgba(120,140,180,.5);border-radius:8px;background:rgba(10,15,28,.6);color:#e9efff;font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.4px;padding:9px 14px}'
-      + '#crRaceUI .crRaceBtn:hover{border-color:rgba(20,241,149,.6)}'
-      + '#crRaceUI .crRaceBtn.primary{background:rgba(20,241,149,.85);color:#06160d;border-color:rgba(20,241,149,.7)}'
-      + '#crRaceUI .crRaceBtn.primary:hover{background:#14f195}'
-      + '#crRaceUI .crRaceBtn.ghost{background:transparent;color:#9fb3c8}';
+      + '#crRaceUI .crRaceBtn{appearance:none;cursor:pointer;border:1px solid var(--rc-veh-bd);border-radius:8px;background:var(--rc-veh-bg);color:var(--rc-fg);font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.4px;padding:9px 14px}'
+      + '#crRaceUI .crRaceBtn:hover{border-color:var(--rc-accent)}'
+      + '#crRaceUI .crRaceBtn.primary{background:var(--rc-accent);color:var(--rc-ink);border-color:var(--rc-accent)}'
+      + '#crRaceUI .crRaceBtn.primary:hover{filter:brightness(1.08)}'
+      + '#crRaceUI .crRaceBtn.ghost{background:transparent;color:var(--rc-dim)}';
     const s = document.createElement('style'); s.id = 'crRaceUICss'; s.textContent = css; document.head.appendChild(s);
     // build vehicle list
     const list = document.getElementById('crRaceVehList');
