@@ -2,8 +2,18 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.351
-     LAST UPDATED:    2026-06-19  ·  FIX reload boot-flash. v1.0.350 archived the login
+     CURRENT VERSION: v1.0.352
+     LAST UPDATED:    2026-06-20  ·  UNIVERSAL TOKENS. Charting/data widened to all tokens
+     while trade execution stays CEX + Solana-DEX only. (1) Terminal Info/Txn/Bubble Maps are
+     now MULTI-CHAIN: a new _crActiveTokenMC() resolver maps any active asset → {network,
+     address} via CoinGecko platforms (CG net→GeckoTerminal slug→Bubblemaps chain + per-chain
+     explorers); EVM addresses lowercased for GT, Solana left intact. (2) CEX/CoinGecko assets
+     with no DEX pool (BTC, ETH…) get a CoinGecko MARKET-DATA card in Info; Txn/Bubble show an
+     on-chain-only notice. (3) Configure Run picker widened top-100 → top-500 + live CoinGecko
+     /search (any listed coin); single Token field now accepts a Solana mint OR a ticker/coin
+     name (EVM contracts guided to symbol search, since charts stay Solana+CEX). Also bumped
+     CONFIG.VERSION (was out of sync at 1.0.350). Static playtest trace = no bugs.
+     ---- prior (v1.0.351) ----  FIX reload boot-flash. v1.0.350 archived the login
      modal that used to mask the ~4.6MB boot; without it, plain /play reloads exposed the
      un-initialized desktop (in-game chrome #crOSBar + chart topbar + Workbench icon +
      default theme + no widgets) until the script applied saved state. Fix = (1) the
@@ -10886,7 +10896,7 @@
               </div>
               <div class="cfg-col cfg-col-fixed cfg-token-col">
                 <h4 id="crCfgTokenModeToggle" class="cfg-token-toggle" role="button" tabindex="0" title="Click to switch between a single Token and a two-token Pair (A÷B ratio chart)"><span class="cfg-tk-on">Token</span><span class="cfg-tk-off"> / Pair</span></h4>
-                <input id="crCfgTokenAddress" class="cfg-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="PASTE TOKEN ADDRESS" title="Paste a Solana token mint address">
+                <input id="crCfgTokenAddress" class="cfg-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="MINT, TICKER OR NAME" title="Paste a Solana mint, or type a ticker / coin name (e.g. ETH, pepe) — Enter to load">
                 <div id="crCfgPairWrap" class="cfg-pair-wrap" style="display:none">
                   <input id="crCfgPairA" class="cfg-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="TOKEN A · mint or ticker" title="Numerator — Solana mint or CEX ticker (e.g. ETH)">
                   <span class="cfg-pair-div">÷</span>
@@ -11759,7 +11769,7 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
             <div class="crTerm-runGrid">
               <div class="crTerm-pane" data-cr-run-panel="token-bubble">
                 <div class="crTerm-paneHd"><span>◴ BUBBLE MAPS</span><span class="hd-tag">holders · Bubblemaps</span></div>
-                <div class="crTerm-paneBd small" id="crTermBubbleBody"><div class="dim">load a Solana token…</div></div>
+                <div class="crTerm-paneBd small" id="crTermBubbleBody"><div class="dim">load a token…</div></div>
               </div>
             </div>
           </div>
@@ -12827,7 +12837,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.350",
+  VERSION: "1.0.352",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -49867,11 +49877,117 @@ const _crTokTabCache = {};
 function _crFmtUsd(n){ n = Number(n); if(!isFinite(n)) return '—'; var a = Math.abs(n), s = n < 0 ? '-' : ''; if(a >= 1e9) return s + '$' + (a/1e9).toFixed(2) + 'B'; if(a >= 1e6) return s + '$' + (a/1e6).toFixed(2) + 'M'; if(a >= 1e3) return s + '$' + (a/1e3).toFixed(1) + 'K'; if(a >= 1) return s + '$' + a.toFixed(2); if(a > 0) return s + '$' + a.toPrecision(3); return '$0'; }
 function _crTokEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]); }); }
 async function _crGtJson(url){ var r = await fetch(url, { headers: { 'Accept':'application/json;version=20230203' } }); if(!r.ok) throw new Error('gt-' + r.status); return r.json(); }
+/* ── v1.0.352 — Multi-chain token resolution for the Terminal tabs ───────────
+   Scope (per Julian): info/txn/bubblemaps resolve on ANY chain GeckoTerminal +
+   Bubblemaps support; candle CHARTS stay Solana + CEX/CoinGecko; trade execution
+   is untouched (CEX + Solana DEX only). CEX/CoinGecko assets with no on-chain DEX
+   pool get a CoinGecko market-data fallback in Info; Txn/Bubblemaps show an
+   on-chain-only notice. Read-only, never throws. */
+// CoinGecko asset-platform id → GeckoTerminal network slug.
+const CR_CG_NET_TO_GT = { 'solana':'solana','ethereum':'eth','binance-smart-chain':'bsc','polygon-pos':'polygon_pos','base':'base','arbitrum-one':'arbitrum','optimistic-ethereum':'optimism','avalanche':'avax','fantom':'fantom','cronos':'cro','sui':'sui','aptos':'aptos','tron':'tron','the-open-network':'ton','sei-network':'sei-evm','blast':'blast','linea':'linea','mantle':'mantle','scroll':'scroll','zksync':'zksync-era','celo':'celo','xdai':'xdai' };
+// GeckoTerminal network slug → Bubblemaps chain code (subset Bubblemaps supports).
+const CR_GT_TO_BUBBLE = { 'solana':'sol','eth':'eth','bsc':'bsc','polygon_pos':'poly','base':'base','arbitrum':'arbi','avax':'avax','fantom':'ftm','cro':'cro','sonic':'sonic' };
+// Explorer base per GeckoTerminal network (Solana = Solscan; EVM = *scan). Maps the
+// address-type to each explorer's path grammar.
+const CR_GT_EXPLORER = { 'solana':'https://solscan.io/','eth':'https://etherscan.io/','bsc':'https://bscscan.com/','polygon_pos':'https://polygonscan.com/','base':'https://basescan.org/','arbitrum':'https://arbiscan.io/','optimism':'https://optimistic.etherscan.io/','avax':'https://snowtrace.io/','fantom':'https://ftmscan.com/','cro':'https://cronoscan.com/' };
+function _crExplorer(network, type, id){
+  var base = CR_GT_EXPLORER[network] || CR_GT_EXPLORER.solana;
+  id = encodeURIComponent(String(id || ''));
+  if(network === 'solana'){ return base + (type === 'wallet' ? 'account' : type) + '/' + id; }
+  // EVM explorers: token→token, wallet→address, tx→tx
+  var path = type === 'token' ? 'token' : (type === 'wallet' ? 'address' : 'tx');
+  return base + path + '/' + id;
+}
+// Common CEX tickers → CoinGecko id (for the market-data fallback on assets that
+// carry no cgId, e.g. the curated BTC/ETH/SOL quick-picks).
+const CR_TICKER_CGID = { BTC:'bitcoin', ETH:'ethereum', SOL:'solana', BNB:'binancecoin', XRP:'ripple', ADA:'cardano', DOGE:'dogecoin', AVAX:'avalanche-2', LINK:'chainlink', MATIC:'matic-network', POL:'matic-network', DOT:'polkadot', TRX:'tron', LTC:'litecoin', JUP:'jupiter-exchange-solana', BCH:'bitcoin-cash', ATOM:'cosmos', NEAR:'near', APT:'aptos', ARB:'arbitrum', OP:'optimism', SUI:'sui', TON:'the-open-network' };
+function _crTickerToCgId(sym){ sym = String(sym || '').toUpperCase(); if(CR_TICKER_CGID[sym]) return CR_TICKER_CGID[sym]; try{ var c = _crCgCacheRead(500) || []; var hit = c.find(function(r){ return String(r.sym).toUpperCase() === sym; }); return hit ? hit.cgId : ''; }catch(_){ return ''; } }
+// CoinGecko coin detail (platforms = chain→contract). Cached 10 min.
+async function _crCgCoinDetail(cgId){
+  if(!cgId) return null;
+  var ck = 'cgdet:' + cgId, c = _crTokTabCache[ck]; if(c && Date.now() - c.t < 600000) return c.v;
+  try{
+    var r = await fetch(CR_CG_BASE + '/coins/' + encodeURIComponent(cgId) + '?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false&sparkline=false', { headers: crCgHeaders() });
+    if(!r.ok) throw new Error('cg-' + r.status);
+    var j = await r.json();
+    var v = { platforms:(j.platforms || {}), name:j.name, sym:String(j.symbol || '').toUpperCase() };
+    _crTokTabCache[ck] = { t:Date.now(), v:v }; return v;
+  }catch(_){ return null; }
+}
+// Single-coin market row (price, mcap, fdv, vol, supply, ATH…). Cached 30 s.
+async function _crCgMarketOne(cgId){
+  if(!cgId) return null;
+  var ck = 'cgmkt:' + cgId, c = _crTokTabCache[ck]; if(c && Date.now() - c.t < 30000) return c.v;
+  try{
+    var r = await fetch(CR_CG_BASE + '/coins/markets?vs_currency=usd&ids=' + encodeURIComponent(cgId) + '&price_change_percentage=1h,24h,7d', { headers: crCgHeaders() });
+    if(!r.ok) throw new Error('cg-' + r.status);
+    var a = await r.json(); var m = (Array.isArray(a) && a[0]) || null;
+    _crTokTabCache[ck] = { t:Date.now(), v:m }; return m;
+  }catch(_){ return null; }
+}
+// Pick the best on-chain home for a CoinGecko coin (prefer chains we explore well).
+function _crPickCgPlatform(platforms){
+  if(!platforms) return null;
+  var pref = ['solana','ethereum','base','binance-smart-chain','arbitrum-one','polygon-pos','optimistic-ethereum','avalanche'];
+  for(var i = 0; i < pref.length; i++){ var p = pref[i]; if(platforms[p] && CR_CG_NET_TO_GT[p]) return { gtNet:CR_CG_NET_TO_GT[p], address:platforms[p] }; }
+  for(var k in platforms){ if(platforms[k] && CR_CG_NET_TO_GT[k]) return { gtNet:CR_CG_NET_TO_GT[k], address:platforms[k] }; }
+  return null;
+}
+// Multi-chain active-token resolver. Returns {network,address,pool,cgId,isCex,label,sym} | null.
+async function _crActiveTokenMC(){
+  try{
+    var a = (typeof currentAssetObj === 'function') ? currentAssetObj() : null; if(!a) return null;
+    var label = a.label || a.nm || 'token', sym = a.nm || label;
+    // 1) Solana mint (existing path).
+    if(a.mint && typeof crIsSolanaMintAddress === 'function' && crIsSolanaMintAddress(a.mint))
+      return { network:'solana', address:a.mint, pool:(a.gtPool && a.gtPool.address) || '', cgId:a.cgId || '', isCex:false, label:label, sym:sym };
+    // 2) Generic on-chain token stamped on the asset (EVM paste / contract pick).
+    if(a.gtNetwork && a.gtAddress)
+      return { network:a.gtNetwork, address:a.gtAddress, pool:(a.gtPool && a.gtPool.address) || '', cgId:a.cgId || '', isCex:false, label:label, sym:sym };
+    // 3) CoinGecko-backed asset → resolve a contract/network from CG platforms.
+    var cgId = a.cgId || _crTickerToCgId(a.nm);
+    if(cgId){
+      var det = await _crCgCoinDetail(cgId);
+      var pick = det ? _crPickCgPlatform(det.platforms) : null;
+      if(pick) return { network:pick.gtNet, address:pick.address, pool:'', cgId:cgId, isCex:false, label:label, sym:(sym || det.sym) };
+      // No on-chain contract (e.g. BTC) → CEX/market-only.
+      return { network:'', address:'', pool:'', cgId:cgId, isCex:true, label:label, sym:sym };
+    }
+    // 4) No identity we can resolve → market-only empty.
+    return { network:'', address:'', pool:'', cgId:'', isCex:true, label:label, sym:sym };
+  }catch(_){ return null; }
+}
+// CoinGecko market-data card — the fallback Info view for CEX/market assets.
+function _crRenderMarketCard(host, m, label){
+  if(!m){ host.innerHTML = '<div class="dim" style="font-size:10px">Market data unavailable right now for ' + _crTokEsc(label) + '.</div>'; return; }
+  var h24 = _crPct(m.price_change_percentage_24h);
+  var stat = function(lab, val){ return '<div style="background:rgba(10,15,28,.5);border:1px solid var(--line);border-radius:6px;padding:6px 8px"><div style="color:var(--dim);font-size:8.5px;text-transform:uppercase;letter-spacing:.4px">' + lab + '</div><div style="font-weight:700;font-size:12px">' + val + '</div></div>'; };
+  var tfc = function(lab, v){ var p = _crPct(v); return '<div style="text-align:center"><div style="color:var(--dim);font-size:8.5px">' + lab + '</div><div style="color:' + p.c + ';font-weight:700;font-size:10.5px">' + p.t + '</div></div>'; };
+  var athPct = _crPct(m.ath_change_percentage);
+  host.innerHTML = '<div style="font-size:11px;line-height:1.45;display:block">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">'
+      + '<div style="min-width:0"><div style="font-weight:800;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _crTokEsc(String(m.symbol || label).toUpperCase()) + '</div>'
+      + '<div style="color:var(--dim);font-size:9px;white-space:nowrap">' + _crTokEsc(m.name || label) + (m.market_cap_rank ? (' · #' + m.market_cap_rank) : '') + ' · CEX / market</div></div>'
+      + '<div style="text-align:right;white-space:nowrap"><div style="font-weight:800;font-size:14px">' + _crFmtUsd(m.current_price) + '</div><div style="color:' + h24.c + ';font-size:10px">' + h24.t + ' 24h</div></div>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">'
+      + stat('Mkt Cap', _crFmtUsd(m.market_cap)) + stat('24h Vol', _crFmtUsd(m.total_volume)) + stat('FDV', _crFmtUsd(m.fully_diluted_valuation)) + stat('Circ Supply', _crFmtAmt(m.circulating_supply)) + '</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:rgba(10,15,28,.5);border:1px solid var(--line);border-radius:6px;padding:6px 4px;margin-bottom:8px">'
+      + tfc('1H', m.price_change_percentage_1h_in_currency) + tfc('24H', m.price_change_percentage_24h_in_currency != null ? m.price_change_percentage_24h_in_currency : m.price_change_percentage_24h) + tfc('7D', m.price_change_percentage_7d_in_currency) + '</div>'
+    + '<div style="background:rgba(10,15,28,.5);border:1px solid var(--line);border-radius:6px;padding:7px 8px">'
+      + '<div style="display:flex;justify-content:space-between;font-size:9.5px;margin-bottom:3px"><span style="color:var(--dim)">24h High / Low</span><span style="font-weight:700">' + _crFmtUsd(m.high_24h) + ' / ' + _crFmtUsd(m.low_24h) + '</span></div>'
+      + '<div style="display:flex;justify-content:space-between;font-size:9.5px;margin-bottom:3px"><span style="color:var(--dim)">All-Time High</span><span style="font-weight:700">' + _crFmtUsd(m.ath) + ' <span style="color:' + athPct.c + ';font-weight:500">' + athPct.t + '</span></span></div>'
+      + '<div style="display:flex;justify-content:space-between;font-size:9.5px"><span style="color:var(--dim)">Total / Max Supply</span><span style="font-weight:700">' + _crFmtAmt(m.total_supply) + ' / ' + (m.max_supply ? _crFmtAmt(m.max_supply) : '∞') + '</span></div>'
+    + '</div>'
+    + '<div style="color:var(--dim);font-size:8px;margin-top:6px">Market data · CoinGecko. On-chain Txn / Bubble Maps need a DEX-traded token.</div>'
+    + '</div>';
+}
 function _crActiveSolToken(){ try{ var a = (typeof currentAssetObj === 'function') ? currentAssetObj() : null; if(a && a.mint && typeof crIsSolanaMintAddress === 'function' && crIsSolanaMintAddress(a.mint)) return { mint:a.mint, pool:(a.gtPool && a.gtPool.address) || '', label:a.label || a.nm || 'token' }; }catch(_){} return null; }
-async function _crResolvePool(mint, known){
+async function _crResolvePool(addrOrMint, known, network){
+  network = network || 'solana';
   if(known) return known;
-  var ck = 'pool:' + mint, c = _crTokTabCache[ck]; if(c && Date.now() - c.t < 60000) return c.v;
-  try{ var j = await _crGtJson('https://api.geckoterminal.com/api/v2/networks/solana/tokens/' + mint + '/pools?sort=h24_volume_usd_liquidity_desc&page=1'); var p = (j.data || [])[0]; var addr = (p && p.attributes && p.attributes.address) || ''; _crTokTabCache[ck] = { t:Date.now(), v:addr }; return addr; }catch(_){ return ''; }
+  var ck = 'pool:' + network + ':' + addrOrMint, c = _crTokTabCache[ck]; if(c && Date.now() - c.t < 60000) return c.v;
+  try{ var j = await _crGtJson('https://api.geckoterminal.com/api/v2/networks/' + network + '/tokens/' + addrOrMint + '/pools?sort=h24_volume_usd_liquidity_desc&page=1'); var p = (j.data || [])[0]; var addr = (p && p.attributes && p.attributes.address) || ''; _crTokTabCache[ck] = { t:Date.now(), v:addr }; return addr; }catch(_){ return ''; }
 }
 // Solana explorer links (clickable addresses / txns — DexScreener-style).
 function _crSolscan(type, id){ return 'https://solscan.io/' + type + '/' + encodeURIComponent(String(id || '')); }
@@ -49882,28 +49998,37 @@ function _crAgo(ts){ var t = (typeof ts === 'number') ? ts : Date.parse(ts); if(
 // Compact pooled-token amount (54.81B / 1,116.75 style).
 function _crFmtAmt(n){ n = Number(n); if(!isFinite(n)) return '—'; var a = Math.abs(n); if(a >= 1e9) return (n/1e9).toFixed(2) + 'B'; if(a >= 1e6) return (n/1e6).toFixed(2) + 'M'; if(a >= 1e3) return n.toLocaleString('en-US', { maximumFractionDigits: 0 }); if(a >= 1) return n.toLocaleString('en-US', { maximumFractionDigits: 2 }); return n.toPrecision(3); }
 // One address row: label · short addr · copy · EXP ↗ (DexScreener pair-detail grammar).
-function _crAddrRow(label, addr, type){ addr = String(addr || ''); if(!addr) return ''; var exp = _crSolscan(type || 'account', addr); return '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:3px 0;border-top:1px solid rgba(120,140,170,.08)">'
+function _crAddrRow(label, addr, type, network){ addr = String(addr || ''); if(!addr) return ''; network = network || 'solana'; var exp = _crExplorer(network, type || 'wallet', addr); var expName = (network === 'solana') ? 'Solscan' : 'explorer'; return '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:3px 0;border-top:1px solid rgba(120,140,170,.08)">'
   + '<span style="color:var(--dim);font-size:9px;min-width:34px">' + _crTokEsc(label) + '</span>'
   + '<span style="font-family:ui-monospace,monospace;font-size:9.5px;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _crShort(addr, 5) + '</span>'
   + '<button type="button" data-cr-copy="' + _crTokEsc(addr) + '" title="copy address" style="background:none;border:0;cursor:pointer;color:#7aa2ff;font-size:11px;padding:0 2px">⧉</button>'
-  + '<a href="' + exp + '" target="_blank" rel="noopener" title="view on Solscan ↗" style="color:#7aa2ff;text-decoration:none;font-size:8.5px;border:1px solid rgba(122,162,255,.4);border-radius:4px;padding:1px 4px">EXP ↗</a>'
+  + '<a href="' + exp + '" target="_blank" rel="noopener" title="view on ' + expName + ' ↗" style="color:#7aa2ff;text-decoration:none;font-size:8.5px;border:1px solid rgba(122,162,255,.4);border-radius:4px;padding:1px 4px">EXP ↗</a>'
   + '</div>'; }
 async function crRenderTokenInfo(){
   var host = document.getElementById('crTermInfoBody'); if(!host) return;
-  var tok = _crActiveSolToken();
-  if(!tok){ host.innerHTML = '<div class="dim" style="font-size:10px">Load a Solana token (paste a mint / pick a DEX pool / Trending Pools → Open chart) to see token info.</div>'; return; }
+  var tok = await _crActiveTokenMC();
+  if(!tok){ host.innerHTML = '<div class="dim" style="font-size:10px">Load a token (paste a mint / contract, pick a DEX pool, or choose any asset) to see token info.</div>'; return; }
+  // CEX / market-only asset (no on-chain DEX pool) → CoinGecko market-data card.
+  if(tok.isCex || !tok.address){ _crRenderMarketCard(host, await _crCgMarketOne(tok.cgId), tok.label); return; }
   try{
-    var pool = await _crResolvePool(tok.mint, tok.pool);
-    if(!pool){ host.innerHTML = '<div class="dim" style="font-size:10px">No Solana pool found for this token.</div>'; return; }
-    var ck = 'info:' + pool, c = _crTokTabCache[ck], j;
-    if(c && Date.now() - c.t < 15000) j = c.v; else { j = await _crGtJson('https://api.geckoterminal.com/api/v2/networks/solana/pools/' + pool + '?include=base_token,quote_token,dex'); _crTokTabCache[ck] = { t:Date.now(), v:j }; }
+    var net = tok.network, gtAddr = (net === 'solana') ? tok.address : String(tok.address).toLowerCase();
+    var pool = await _crResolvePool(gtAddr, tok.pool, net);
+    if(!pool){
+      // No on-chain pool → fall back to market data if we have a CoinGecko id, else notice.
+      if(tok.cgId){ _crRenderMarketCard(host, await _crCgMarketOne(tok.cgId), tok.label); return; }
+      host.innerHTML = '<div class="dim" style="font-size:10px">No ' + _crTokEsc(net) + ' pool found for this token.</div>'; return;
+    }
+    var ck = 'info:' + net + ':' + pool, c = _crTokTabCache[ck], j;
+    if(c && Date.now() - c.t < 15000) j = c.v; else { j = await _crGtJson('https://api.geckoterminal.com/api/v2/networks/' + net + '/pools/' + pool + '?include=base_token,quote_token,dex'); _crTokTabCache[ck] = { t:Date.now(), v:j }; }
     var a = (j.data && j.data.attributes) || {};
     var rel = (j.data && j.data.relationships) || {};
-    var quoteMint = (((rel.quote_token || {}).data || {}).id || '').replace(/^solana_/, '');
+    var quoteMint = (((rel.quote_token || {}).data || {}).id || '').replace(new RegExp('^' + net + '_'), '');
     var inc = (j.included || []); var dexName = ''; var sym = ''; var quoteSym = '';
-    inc.forEach(function(x){ if(x.type === 'dex') dexName = (x.attributes && x.attributes.name) || dexName; if(x.type === 'token'){ var id = x.id || ''; if(id.indexOf(tok.mint) >= 0) sym = (x.attributes && x.attributes.symbol) || sym; else if(quoteMint && id.indexOf(quoteMint) >= 0) quoteSym = (x.attributes && x.attributes.symbol) || quoteSym; } });
-    if(!sym) sym = String(a.name || tok.label).split(/[\s/]/)[0];
+    var la = gtAddr.toLowerCase(), lq = String(quoteMint).toLowerCase();
+    inc.forEach(function(x){ if(x.type === 'dex') dexName = (x.attributes && x.attributes.name) || dexName; if(x.type === 'token'){ var id = String(x.id || '').toLowerCase(); if(id.indexOf(la) >= 0) sym = (x.attributes && x.attributes.symbol) || sym; else if(lq && id.indexOf(lq) >= 0) quoteSym = (x.attributes && x.attributes.symbol) || quoteSym; } });
+    if(!sym) sym = tok.sym || String(a.name || tok.label).split(/[\s/]/)[0];
     if(!quoteSym) quoteSym = 'quote';
+    var netLabel = (net === 'solana') ? 'Solana' : net.replace(/_/g, ' ').replace(/\b\w/g, function(ch){ return ch.toUpperCase(); });
     var pc = a.price_change_percentage || {}, tx = (a.transactions && a.transactions.h24) || {}, vol = a.volume_usd || {};
     var h24 = _crPct(pc.h24), price = (a.base_token_price_usd != null) ? _crFmtUsd(parseFloat(a.base_token_price_usd)) : '—';
     var buys = Number(tx.buys || 0), sells = Number(tx.sells || 0), tot = buys + sells || 1;
@@ -49920,7 +50045,7 @@ async function crRenderTokenInfo(){
     host.innerHTML = '<div style="font-size:11px;line-height:1.45;display:block">'
       + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">'
         + '<div style="min-width:0"><div style="font-weight:800;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _crTokEsc(sym) + '</div>'
-        + '<div style="color:var(--dim);font-size:9px;white-space:nowrap">Solana' + (dexName ? (' · ' + _crTokEsc(dexName)) : '') + ' · <a href="' + _crSolscan('token', tok.mint) + '" target="_blank" rel="noopener" style="color:#7aa2ff;text-decoration:none">' + _crShort(tok.mint) + ' ↗</a></div></div>'
+        + '<div style="color:var(--dim);font-size:9px;white-space:nowrap">' + _crTokEsc(netLabel) + (dexName ? (' · ' + _crTokEsc(dexName)) : '') + ' · <a href="' + _crExplorer(net, 'token', tok.address) + '" target="_blank" rel="noopener" style="color:#7aa2ff;text-decoration:none">' + _crShort(tok.address) + ' ↗</a></div></div>'
         + '<div style="text-align:right;white-space:nowrap"><div style="font-weight:800;font-size:14px">' + price + '</div><div style="color:' + h24.c + ';font-size:10px">' + h24.t + ' 24h</div></div>'
       + '</div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">'
@@ -49934,22 +50059,26 @@ async function crRenderTokenInfo(){
         + '<div style="display:flex;justify-content:space-between;font-size:9.5px;margin-bottom:3px"><span style="color:var(--dim)">Pooled ' + _crTokEsc(sym) + '</span><span style="font-weight:700">' + _crFmtAmt(baseAmt) + ' <span style="color:var(--dim);font-weight:400">' + _crFmtUsd(sideUsd) + '</span></span></div>'
         + '<div style="display:flex;justify-content:space-between;font-size:9.5px"><span style="color:var(--dim)">Pooled ' + _crTokEsc(quoteSym) + '</span><span style="font-weight:700">' + _crFmtAmt(quoteAmt) + ' <span style="color:var(--dim);font-weight:400">' + _crFmtUsd(sideUsd) + '</span></span></div>'
         + '<div style="margin-top:6px">'
-          + _crAddrRow('Pair', pool, 'account')
-          + _crAddrRow(sym, tok.mint, 'token')
-          + _crAddrRow(quoteSym, quoteMint, 'token')
+          + _crAddrRow('Pair', pool, 'wallet', net)
+          + _crAddrRow(sym, tok.address, 'token', net)
+          + _crAddrRow(quoteSym, quoteMint, 'token', net)
         + '</div>'
       + '</div>'
       + '</div>';
-  }catch(e){ try{ if(window.crReport) crReport(e, 'tokInfo'); }catch(_){} host.innerHTML = '<div class="dim" style="font-size:10px">token info unavailable right now</div>'; }
+  }catch(e){ try{ if(window.crReport) crReport(e, 'tokInfo'); }catch(_){} if(tok && tok.cgId){ try{ _crRenderMarketCard(host, await _crCgMarketOne(tok.cgId), tok.label); return; }catch(_){} } host.innerHTML = '<div class="dim" style="font-size:10px">token info unavailable right now</div>'; }
 }
 async function crRenderTokenTxns(){
   var host = document.getElementById('crTermTxnBody'); if(!host) return;
-  var tok = _crActiveSolToken();
-  if(!tok){ host.innerHTML = '<div class="dim" style="font-size:10px">Load a Solana token to see recent transactions.</div>'; return; }
+  var tok = await _crActiveTokenMC();
+  if(!tok){ host.innerHTML = '<div class="dim" style="font-size:10px">Load a token to see recent transactions.</div>'; return; }
+  // On-chain trades only — CEX/market assets have no public per-trade tape.
+  if(tok.isCex || !tok.address){ host.innerHTML = '<div class="dim" style="font-size:10px">Transactions are on-chain only. ' + _crTokEsc(tok.label) + ' is a CEX / market asset — see Info for market data.</div>'; return; }
   try{
-    var pool = await _crResolvePool(tok.mint, tok.pool);
-    if(!pool){ host.innerHTML = '<div class="dim" style="font-size:10px">No Solana pool found.</div>'; return; }
-    var j = await _crGtJson('https://api.geckoterminal.com/api/v2/networks/solana/pools/' + pool + '/trades');
+    var net = tok.network, gtAddr = (net === 'solana') ? tok.address : String(tok.address).toLowerCase();
+    var pool = await _crResolvePool(gtAddr, tok.pool, net);
+    if(!pool){ host.innerHTML = '<div class="dim" style="font-size:10px">No ' + _crTokEsc(net) + ' pool found.</div>'; return; }
+    var expName = (net === 'solana') ? 'Solscan' : 'explorer';
+    var j = await _crGtJson('https://api.geckoterminal.com/api/v2/networks/' + net + '/pools/' + pool + '/trades');
     var rows = (j.data || []).slice(0, 30);
     if(!rows.length){ host.innerHTML = '<div class="dim" style="font-size:10px">no recent trades</div>'; return; }
     var now = Date.now();
@@ -49960,34 +50089,39 @@ async function crRenderTokenTxns(){
           var ageS = Math.max(0, Math.round((now - Date.parse(x.block_timestamp)) / 1000)); var age = ageS < 90 ? ageS + 's' : ageS < 5400 ? Math.round(ageS/60) + 'm' : Math.round(ageS/3600) + 'h';
           var px = parseFloat(buy ? x.price_to_in_usd : x.price_from_in_usd);
           var tr = String(x.tx_from_address || ''); var txh = String(x.tx_hash || '');
-          var trLink = tr ? '<a href="' + _crSolscan('account', tr) + '" target="_blank" rel="noopener" style="color:#7aa2ff;text-decoration:none">' + _crShort(tr) + '</a>' : '—';
-          var timeCell = txh ? '<a href="' + _crSolscan('tx', txh) + '" target="_blank" rel="noopener" style="color:' + col + ';text-decoration:none" title="open transaction ↗">' + (buy ? '▲' : '▼') + ' ' + age + '</a>' : '<span style="color:' + col + '">' + (buy ? '▲' : '▼') + ' ' + age + '</span>';
+          var trLink = tr ? '<a href="' + _crExplorer(net, 'wallet', tr) + '" target="_blank" rel="noopener" style="color:#7aa2ff;text-decoration:none">' + _crShort(tr) + '</a>' : '—';
+          var timeCell = txh ? '<a href="' + _crExplorer(net, 'tx', txh) + '" target="_blank" rel="noopener" style="color:' + col + ';text-decoration:none" title="open transaction ↗">' + (buy ? '▲' : '▼') + ' ' + age + '</a>' : '<span style="color:' + col + '">' + (buy ? '▲' : '▼') + ' ' + age + '</span>';
           return '<div style="display:grid;grid-template-columns:50px 1fr auto 64px;gap:6px;align-items:center;padding:2px;border-bottom:1px solid rgba(120,140,170,.08)">'
             + '<span>' + timeCell + '</span>'
             + '<b style="color:' + col + '">' + _crFmtUsd(x.volume_in_usd) + '</b>'
             + '<span style="color:var(--dim);text-align:right">' + (isFinite(px) ? _crFmtUsd(px) : '—') + '</span>'
             + '<span style="text-align:right">' + trLink + '</span></div>';
         }).join('')
-      + '<div style="color:var(--dim);font-size:8px;margin-top:4px">tap a time to open the tx · tap a trader for their wallet (Solscan)</div>'
+      + '<div style="color:var(--dim);font-size:8px;margin-top:4px">tap a time to open the tx · tap a trader for their wallet (' + expName + ')</div>'
       + '</div>';
   }catch(e){ try{ if(window.crReport) crReport(e, 'tokTxns'); }catch(_){} host.innerHTML = '<div class="dim" style="font-size:10px">transactions unavailable right now</div>'; }
 }
-function crRenderBubbleMap(){
+async function crRenderBubbleMap(){
   var host = document.getElementById('crTermBubbleBody'); if(!host) return;
-  var tok = _crActiveSolToken();
-  if(!tok){ host.innerHTML = '<div class="dim" style="font-size:10px">Load a Solana token to see its holder bubble map.</div>'; return; }
-  if(host.getAttribute('data-mint') === tok.mint && host.querySelector('[data-cr-bubble-card]')) return;
-  host.setAttribute('data-mint', tok.mint);
-  var url = 'https://app.bubblemaps.io/sol/token/' + tok.mint;
+  var tok = await _crActiveTokenMC();
+  if(!tok){ host.innerHTML = '<div class="dim" style="font-size:10px">Load a token to see its holder bubble map.</div>'; return; }
+  // On-chain holders only — CEX/market assets have no on-chain holder graph.
+  if(tok.isCex || !tok.address){ host.innerHTML = '<div class="dim" style="font-size:10px">Bubble maps are on-chain only. ' + _crTokEsc(tok.label) + ' is a CEX / market asset — see Info for market data.</div>'; return; }
+  var net = tok.network, bubbleChain = CR_GT_TO_BUBBLE[net];
+  if(!bubbleChain){ host.innerHTML = '<div class="dim" style="font-size:10px">Bubble maps aren\'t available for ' + _crTokEsc(net) + ' yet — try the explorer holders view. <a href="' + _crExplorer(net, 'token', tok.address) + '" target="_blank" rel="noopener" style="color:#7aa2ff">Open explorer ↗</a></div>'; return; }
+  if(host.getAttribute('data-mint') === tok.address && host.querySelector('[data-cr-bubble-card]')) return;
+  host.setAttribute('data-mint', tok.address);
+  var expName = (net === 'solana') ? 'Solscan' : 'explorer';
+  var url = 'https://app.bubblemaps.io/' + bubbleChain + '/token/' + tok.address;
   // Bubblemaps blocks framing for most tokens (shows a broken embed), so we give a
   // clean launch card → full interactive map opens in a new tab. Holder concentration
-  // lives in the Token Safety widget (RPC) / Solscan holders.
+  // lives in the Token Safety widget (RPC) / explorer holders.
   host.innerHTML = '<div data-cr-bubble-card style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:300px;text-align:center;border:1px solid var(--line);border-radius:10px;background:radial-gradient(circle at 50% 35%,rgba(20,241,149,.06),rgba(10,15,28,.5))">'
     + '<div style="font-size:34px;line-height:1">◴</div>'
     + '<div style="font-weight:800;font-size:13px">Holder Bubble Map</div>'
     + '<div style="color:var(--dim);font-size:9.5px;max-width:240px">See wallet clusters — bubbles that trade together (possible same entity / insider group) for ' + _crTokEsc(tok.label) + '.</div>'
     + '<a href="' + url + '" target="_blank" rel="noopener" style="display:inline-block;padding:8px 18px;border:1px solid rgba(20,241,149,.55);border-radius:7px;color:#bff7df;text-decoration:none;font-weight:700;letter-spacing:.3px">▶ Open interactive bubble map ↗</a>'
-    + '<a href="' + _crSolscan('token', tok.mint) + '#holders" target="_blank" rel="noopener" style="color:#7aa2ff;text-decoration:none;font-size:9px">View top holders on Solscan ↗</a>'
+    + '<a href="' + _crExplorer(net, 'token', tok.address) + '#holders" target="_blank" rel="noopener" style="color:#7aa2ff;text-decoration:none;font-size:9px">View top holders on ' + expName + ' ↗</a>'
     + '<div style="color:var(--dim);font-size:8px;max-width:240px">Powered by Bubblemaps · methodology: wiki.bubblemaps.io</div>'
     + '</div>';
 }
@@ -57083,7 +57217,7 @@ function osRenderAssetBox(hostId){
     pop.className = 'os-more-pop';
     pop.style.cssText = 'width:100%;margin-top:6px;background:linear-gradient(180deg,rgba(18,26,48,.98),rgba(10,15,28,.99));border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 28px rgba(0,0,0,0.5);padding:6px;font:11px ui-monospace,Menlo,monospace;color:var(--fg)';
     const search = document.createElement('input');
-    search.type = 'text'; search.placeholder = 'Search top 100…';
+    search.type = 'text'; search.placeholder = 'Search any token…';
     search.style.cssText = 'width:100%;box-sizing:border-box;background:rgba(10,15,28,.85);border:1px solid var(--line);border-radius:6px;color:var(--fg);font:inherit;padding:6px 8px;margin-bottom:6px;outline:none';
     const list = document.createElement('div');
     list.style.cssText = 'max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:2px';
@@ -57110,12 +57244,41 @@ function osRenderAssetBox(hostId){
       });
       return row;
     };
+    // v1.0.352 — "access to all tokens": beyond the loaded top-500, a live
+    // CoinGecko /search resolves ANY listed coin (charts via CoinGecko OHLC).
+    let _searchSeq = 0; const _cgSearchCache = {};
+    const cgSearch = async (q) => {
+      q = String(q || '').trim(); if(q.length < 2) return [];
+      if(_cgSearchCache[q]) return _cgSearchCache[q];
+      try{
+        const r = await fetch(CR_CG_BASE + '/search?query=' + encodeURIComponent(q), { headers: crCgHeaders() });
+        if(!r.ok) throw new Error('cg-' + r.status);
+        const j = await r.json();
+        const coins = (j.coins || []).slice(0, 25).map(c => ({ id:null, sym:String(c.symbol || '').toUpperCase(), name:c.name || c.symbol, rank:c.market_cap_rank || 0, cgId:c.id, price:0 }));
+        _cgSearchCache[q] = coins; return coins;
+      }catch(_){ return []; }
+    };
     const renderRows = () => {
       const f = (search.value || '').toLowerCase().trim();
       list.innerHTML = '';
       const shown = items.filter(it => !f || String(it.sym).toLowerCase().includes(f) || String(it.name).toLowerCase().includes(f));
-      if(!shown.length){ const e = document.createElement('div'); e.style.cssText = 'color:var(--dim);padding:8px 10px'; e.textContent = 'No match'; list.appendChild(e); return; }
       shown.forEach(it => list.appendChild(makeRow(it)));
+      if(!shown.length){ const e = document.createElement('div'); e.id = 'cr-nomatch'; e.style.cssText = 'color:var(--dim);padding:8px 10px'; e.textContent = f ? 'Searching CoinGecko…' : 'No match'; list.appendChild(e); }
+      // Remote search for anything beyond the loaded list → true "all tokens".
+      if(f && f.length >= 2){
+        const mySeq = ++_searchSeq;
+        cgSearch(f).then(remote => {
+          if(mySeq !== _searchSeq || !pop) return; // stale query or popup closed
+          const localKeys = {}; shown.forEach(it => { localKeys[String(it.sym).toUpperCase()] = 1; });
+          const extra = remote.filter(it => it.sym && !localKeys[it.sym.toUpperCase()]);
+          const nm = document.getElementById('cr-nomatch'); if(nm && nm.parentNode) nm.parentNode.removeChild(nm);
+          if(extra.length){
+            const sep = document.createElement('div'); sep.style.cssText = 'color:var(--dim);font-size:8.5px;padding:6px 10px 2px;letter-spacing:.4px';
+            sep.textContent = '— more from CoinGecko —'; list.appendChild(sep);
+            extra.forEach(it => list.appendChild(makeRow(it)));
+          } else if(!shown.length){ const e = document.createElement('div'); e.style.cssText = 'color:var(--dim);padding:8px 10px'; e.textContent = 'No match'; list.appendChild(e); }
+        });
+      }
     };
     search.addEventListener('input', renderRows);
     search.addEventListener('mousedown', (ev) => ev.stopPropagation());
@@ -57123,9 +57286,9 @@ function osRenderAssetBox(hostId){
     // async: fold in the CoinGecko top-100 (deduped against curated)
     const loadingRow = document.createElement('div');
     loadingRow.style.cssText = 'color:var(--dim);padding:6px 10px';
-    loadingRow.textContent = '↧ loading top 100 by market cap…';
+    loadingRow.textContent = '↧ loading top 500 by market cap…';
     list.appendChild(loadingRow);
-    crCgMarkets(100).then(rows => {
+    crCgMarkets(500).then(rows => {
       // Rebuild the whole list in MARKET-CAP order (CoinGecko returns mcap desc).
       // Primaries (BTC/ETH/SOL) stay as the quick-pick buttons → skipped here.
       // Curated assets map to their real id so switchAsset reuses the entry, but
@@ -57146,7 +57309,7 @@ function osRenderAssetBox(hostId){
       others.forEach(a => { const k = String(a.nm).toUpperCase(); if(!used[k]){ next.push({ id:a.id, sym:a.nm, name:a.label || a.nm, rank:0 }); used[k] = 1; } });
       if(next.length){ items.length = 0; Array.prototype.push.apply(items, next); }
       if(pop) renderRows();
-    }).catch(() => { if(loadingRow.parentNode) loadingRow.textContent = '⚠ top-100 list unavailable (offline)'; });
+    }).catch(() => { if(loadingRow.parentNode) loadingRow.textContent = '⚠ market-cap list unavailable (offline) — search still works'; });
     // inline, in normal flow, inside the relayed window → clicks register
     host.parentNode.insertBefore(pop, host.nextSibling);
     setTimeout(() => { document.addEventListener('mousedown', onOutside, true); try { search.focus(); } catch(_){} }, 0);
@@ -57167,34 +57330,47 @@ function _crCfgTokenSync(){
   input.classList.toggle('cr-token-ok', !!(mint && crIsSolanaMintAddress(mint)));
   input.classList.remove('cr-token-bad');
 }
-function _crApplyTokenAddress(raw){
+// v1.0.352 — "access to all tokens": the single Token field now accepts a Solana
+// mint (DEX chart), OR a CEX ticker / coin name (resolved via CoinGecko → charts
+// via CoinGecko OHLC). EVM contracts aren't chartable here (charts are Solana +
+// CEX per scope) — they're guided to the asset picker / symbol search.
+async function _crApplyTokenAddress(raw){
   const input = document.getElementById('crCfgTokenAddress');
-  const mint = crNormalizeSolanaMint(raw);
-  if(!mint){
-    if(input){
-      input.classList.remove('cr-token-ok');
-      input.classList.remove('cr-token-bad');
-    }
+  const val = String(raw || '').trim();
+  if(!val){ if(input){ input.classList.remove('cr-token-ok'); input.classList.remove('cr-token-bad'); } return false; }
+  // 1) Solana mint → DEX chart (existing path).
+  if(crIsSolanaMintAddress(val)){
+    const asset = crEnsureCustomSolanaToken(val);
+    if(!asset) return false;
+    if(input){ input.value = val; input.classList.add('cr-token-ok'); input.classList.remove('cr-token-bad'); }
+    try { renderAssetOptions(document.getElementById('assetSel')); } catch(_){}
+    try { switchAsset(asset.id); } catch(_){}
+    try { toast('Token: ' + crShortMint(val)); } catch(_){}
+    return true;
+  }
+  // 2) EVM contract → not chartable here (charts are Solana + CEX); guide to symbol.
+  if(/^0x[a-fA-F0-9]{40}$/.test(val)){
+    if(input){ input.classList.remove('cr-token-ok'); input.classList.add('cr-token-bad'); }
+    try { toast('EVM contract: chart it by symbol via the asset picker (charts are Solana + CEX).'); } catch(_){}
     return false;
   }
-  if(!crIsSolanaMintAddress(mint)){
-    if(input){
-      input.classList.remove('cr-token-ok');
-      input.classList.add('cr-token-bad');
+  // 3) Ticker / coin name → resolve a CoinGecko coin and switch.
+  const q = val.toUpperCase();
+  let cgId = '', sym = q, name = q, price = 0, hit = null;
+  try {
+    const cache = (typeof _crCgCacheRead === 'function' ? (_crCgCacheRead(500) || []) : []);
+    hit = cache.find(r => String(r.sym).toUpperCase() === q) || cache.find(r => String(r.name).toUpperCase() === q);
+    if(!hit){
+      const r = await fetch(CR_CG_BASE + '/search?query=' + encodeURIComponent(val), { headers: crCgHeaders() });
+      if(r.ok){ const j = await r.json(); const c = (j.coins || [])[0]; if(c){ hit = { sym:String(c.symbol || '').toUpperCase(), name:c.name, cgId:c.id, price:0 }; } }
     }
-    try { toast('Token address: invalid Solana mint'); } catch(_){}
-    return false;
-  }
-  const asset = crEnsureCustomSolanaToken(mint);
-  if(!asset) return false;
-  if(input){
-    input.value = mint;
-    input.classList.add('cr-token-ok');
-    input.classList.remove('cr-token-bad');
-  }
-  try { renderAssetOptions(document.getElementById('assetSel')); } catch(_){}
+  } catch(_){}
+  if(hit){ cgId = hit.cgId || ''; sym = hit.sym || q; name = hit.name || q; price = hit.price || 0; }
+  const asset = crEnsureCexAsset(sym, name, price, cgId);
+  if(!asset){ if(input){ input.classList.add('cr-token-bad'); } try { toast('No token found for "' + val + '"'); } catch(_){} return false; }
+  if(input){ input.classList.add('cr-token-ok'); input.classList.remove('cr-token-bad'); }
   try { switchAsset(asset.id); } catch(_){}
-  try { toast('Token: ' + crShortMint(mint)); } catch(_){}
+  try { toast('Token: ' + sym); } catch(_){}
   return true;
 }
 function _crWireTokenAddressInput(){
@@ -57215,7 +57391,10 @@ function _crWireTokenAddressInput(){
   input.addEventListener('change', () => _crApplyTokenAddress(input.value));
   input.addEventListener('paste', () => {
     setTimeout(() => {
-      if(crIsSolanaMintAddress(input.value)) _crApplyTokenAddress(input.value);
+      // Auto-apply address-like pastes (Solana mint or EVM contract); plain
+      // tickers/names wait for Enter so we don't fire a search on every paste.
+      var v = String(input.value || '').trim();
+      if(crIsSolanaMintAddress(v) || /^0x[a-fA-F0-9]{40}$/.test(v)) _crApplyTokenAddress(v);
     }, 0);
   });
   // v1.0.326 — Token ↔ Pair toggle + two-token (A÷B) launch.
