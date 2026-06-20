@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.369
-     LAST UPDATED:    2026-06-20  ·  Terminal cleanup: removed the bottom data-source health-pills strip
+     CURRENT VERSION: v1.0.370
+     LAST UPDATED:    2026-06-20  ·  COACH polish: (1) renamed every "COACH.exe" speech-bubble header to
+     "COACH.llm" (tutorial narrator + desktop hub bubble). (2) The COACH.llm chat now spawns ANCHORED to
+     the desktop invader (right-aligned, sitting just above its head — `_crAnchorCoachWidget` measures the
+     rendered widget) so the welcome bubble, chat, and tutorial all appear in the same invader corner.
+     ---- prior (v1.0.369) ----  Terminal cleanup: removed the bottom data-source health-pills strip
      (#crTermHealthStrip — Binance/CoinGecko/DefiLlama/GeckoTerminal/Jupiter/Multi-CEX/Solana RPC/Drift
      with cadence dots) AND the bottom status footer (Trades / Volume / Wallet / CONNECTED, .crTerm-foot)
      from the Terminal window. Provider freshness tracking + the renderDesktop updater still run; they
@@ -9996,7 +10000,7 @@
     <div class="cr-tut-card coach-narrator">
       <!-- The Invader's speech window — narrates each step, floats above him -->
       <div class="cr-tut-terminal-bubble">
-        <div class="term-head">COACH.exe</div>
+        <div class="term-head">COACH.llm</div>
         <div class="term-body" id="crTutLine">Loading…</div>
         <div class="term-tail"></div>
 
@@ -10200,7 +10204,7 @@
            merged into this bubble. -->
       <div id="crCoachHub">
         <div id="crCoachHubBubble" class="cr-tut-terminal-bubble" role="dialog" aria-label="COACH.llm" style="display:none">
-          <div class="term-head">COACH.exe</div>
+          <div class="term-head">COACH.llm</div>
           <div class="term-body" id="crCoachHubLine">Hey — I'm COACH.llm, your guide. Want the guided tour, or just to chat?</div>
           <div class="term-tail"></div>
           <div class="crCoachHubActions">
@@ -13163,7 +13167,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.369",
+  VERSION: "1.0.370",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -63129,33 +63133,53 @@ function log(msg){
   // invader hub's "Chat" button reuses the exact same path. The crMenuHelp
   // menu element itself was removed from the menubar (merged into the hub);
   // bindMenu no-ops on the missing id, so this binding is harmless.
+  // v1.0.370 — Anchor the COACH.llm chat widget right above the desktop invader
+  // (its right edge aligned to the invader, bottom sitting just over its head) so
+  // chat "spawns inside the field" by the invader — same corner as the welcome
+  // bubble + the tutorial narrator. Measures the rendered widget so it works
+  // regardless of the widget's content-driven width/height.
+  function _crAnchorCoachWidget(){
+    try {
+      var hub   = document.getElementById('crCoachHub');
+      var layer = document.getElementById('crWidgetLayer');
+      var el    = document.querySelector('#crWidgetLayer .cr-coach-widget');
+      if(!hub || !layer || !el || typeof widgets === 'undefined' || !widgets) return;
+      var ir = hub.getBoundingClientRect();
+      var lr = layer.getBoundingClientRect();
+      var ew = el.offsetWidth  || 320;
+      var eh = el.offsetHeight || 240;
+      var x = Math.round(ir.right - lr.left - ew);        // right-align to the invader
+      var y = Math.round(ir.top   - lr.top  - eh - 12);   // sit just above the invader
+      x = Math.max(8, Math.min(x, Math.max(8, lr.width  - ew - 4)));
+      y = Math.max(8, Math.min(y, Math.max(8, lr.height - eh - 4)));
+      var item = widgets.items && widgets.items.find(function(w){ return w.type === 'coach' && w.sourceId === 'coach'; });
+      if(item){ item.x = x; item.y = y; try { if(typeof _wSave === 'function') _wSave(); } catch(_){} }
+      el.style.left = x + 'px';
+      el.style.top  = y + 'px';
+    } catch(_){}
+  }
   function crOpenCoachChat(){
     try {
-      const x = Math.max(20, window.innerWidth  - 320);
-      const y = Math.max(60, window.innerHeight - 360);
-      if(typeof widgets !== 'undefined' && widgets && Array.isArray(widgets.items)){
-        const existing = widgets.items.find(w => w.type === 'coach' && w.sourceId === 'coach');
-        if(existing){
-          // Summon saved Coach widgets that drifted off-screen after a resize
-          // or monitor change. _wAdd intentionally refuses duplicates.
-          existing.x = Math.max(20, x - 100);
-          existing.y = Math.max(40, y - 14);
-          existing.t = Date.now();
-          try { if(typeof _wSave === 'function') _wSave(); } catch(_){}
-          try { if(typeof renderWidgets === 'function') renderWidgets(); } catch(_){}
-          try { if(typeof toast === 'function') toast('COACH.llm brought to desktop'); } catch(_){}
-          return;
-        }
-      }
-      if(typeof _wAdd === 'function'){
-        // Place Coach near the right side of the screen by default — same
-        // anchor the tutorial portrait uses, so the new widget feels at
-        // home if it's the first time.
-        _wAdd('coach', 'coach', x, y);
+      var existing = (typeof widgets !== 'undefined' && widgets && Array.isArray(widgets.items))
+        ? widgets.items.find(function(w){ return w.type === 'coach' && w.sourceId === 'coach'; })
+        : null;
+      if(existing){
+        // Already on the desktop — re-summon + re-anchor to the invader.
+        existing.t = Date.now();
+        try { if(typeof renderWidgets === 'function') renderWidgets(); } catch(_){}
+      } else if(typeof _wAdd === 'function'){
+        // _wAdd renders synchronously; we re-anchor on the next frame so the
+        // measured size is final.
+        _wAdd('coach', 'coach', window.innerWidth - 200, window.innerHeight - 200);
       } else {
-        const btn = document.getElementById('crTvCoachBtn');
+        var btn = document.getElementById('crTvCoachBtn');
         if(btn) btn.click();
+        return;
       }
+      try {
+        if(typeof requestAnimationFrame === 'function') requestAnimationFrame(_crAnchorCoachWidget);
+        else setTimeout(_crAnchorCoachWidget, 0);
+      } catch(_){ _crAnchorCoachWidget(); }
     } catch(_){}
   }
   try { window.crOpenCoachChat = crOpenCoachChat; } catch(_){}
