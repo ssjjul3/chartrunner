@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.381
-     LAST UPDATED:    2026-06-20  ·  COACH = the AI hub. (1) No "Umbrel" naming (the MODE option is "MCP server").
+     CURRENT VERSION: v1.0.382
+     LAST UPDATED:    2026-06-20  ·  Live runner price tag: a pill pinned to the RIGHT price axis tracks the
+     avatar's height (priceToY(player.py)) and shows the exact price under the ChartRunner, sliding up/down
+     with it (green up-world / red upside-down) + a faint dashed guide from the avatar to the tag.
+     (drawPlayerPriceTag, called from render after drawPlayer.)
+     ---- prior (v1.0.381) ----  COACH = the AI hub. (1) No "Umbrel" naming (the MODE option is "MCP server").
      (2) Added Claude (Anthropic) as a first-class MODE (messages API + x-api-key headers). (3) Quick-connect
      presets (Claude / OpenAI / Ollama / MCP) that fill+save the form, and a REAL Test button that pings the
      endpoint and reports ✓ ok / ✗ fail with CORS/key hints (crCoachProviders.test()). (4) Folded the Bot
@@ -13313,7 +13317,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.381",
+  VERSION: "1.0.382",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -34838,6 +34842,8 @@ function render(){
   // v1.0.1 — Blue laser lightning halos around armed tools.
   try { if(typeof drawBlueLaserHalos === 'function') drawBlueLaserHalos(); } catch(_){}
   if(game.running) drawPlayer();
+  // v1.0.382 — live price tag on the right axis, aligned to the avatar's height.
+  if(game.running) drawPlayerPriceTag();
   // v0.8k#24ad — Equipped Workbench bots: orbital orbs around the avatar.
   if(game.running && typeof drawBotOrbs === 'function') drawBotOrbs();
   // v0.8e #B — HP bar shows whenever the player is in combat, not just upside-down.
@@ -34854,6 +34860,56 @@ function drawParticles(){
     ctx.fillRect(p.sx - p.size/2, p.sy - p.size/2, p.size, p.size);
   }
   ctx.globalAlpha = 1;
+}
+// v1.0.382 — Live runner price tag. A pill pinned to the RIGHT price axis that
+// tracks the avatar's vertical position (priceToY(player.py)), so it slides up
+// and down with the ChartRunner and always shows the exact price under the
+// avatar. Green in the upper world, red in the upside-down; a faint dashed guide
+// links the avatar to the tag so the horizontal alignment reads at a glance.
+function drawPlayerPriceTag(){
+  try {
+    if(typeof player === 'undefined' || !player || !isFinite(player.py)) return;
+    if(!candles || !candles.length) return;
+    const price = player.py;
+    let y = priceToY(price);
+    if(!isFinite(y)) return;
+    const label = (typeof fmtPrice === 'function') ? fmtPrice(price) : String(Math.round(price));
+    ctx.save();
+    ctx.font = '700 11px ui-monospace,Menlo,monospace';
+    const tw = ctx.measureText(label).width;
+    const padX = 7, h = 17, arrow = 6;
+    const w = tw + padX*2 + arrow;
+    const x = W - w - 2;                                  // sit in the right-axis lane
+    y = Math.max(h/2 + 1, Math.min(H - h/2 - 1, y));      // keep it on-screen
+    const up = !player.upsideDown;
+    const accent = up ? '#14f195' : '#ff5b7f';
+    const rgb = up ? '20,241,149' : '255,91,127';
+    // faint dashed guide from the avatar across to the tag
+    const px = (typeof sX === 'function') ? sX(player.wx) : 0;
+    ctx.strokeStyle = 'rgba(' + rgb + ',0.45)';
+    ctx.lineWidth = 1; ctx.setLineDash([3,4]);
+    ctx.beginPath(); ctx.moveTo(Math.min(px + 14, x), y); ctx.lineTo(x, y); ctx.stroke();
+    ctx.setLineDash([]);
+    // pill with a left-pointing arrow tip at the axis edge
+    const top = y - h/2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + arrow, top);
+    ctx.lineTo(x + w, top);
+    ctx.lineTo(x + w, top + h);
+    ctx.lineTo(x + arrow, top + h);
+    ctx.closePath();
+    ctx.fillStyle = accent;
+    ctx.shadowColor = 'rgba(' + rgb + ',0.55)';
+    ctx.shadowBlur = 6;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#06160d';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, x + arrow + padX, y + 0.5);
+    ctx.restore();
+    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+  } catch(_){}
 }
 function drawFloats(){
   ctx.font='bold 12px ui-monospace,monospace';
