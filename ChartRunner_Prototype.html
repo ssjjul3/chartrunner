@@ -2,8 +2,13 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.371
-     LAST UPDATED:    2026-06-20  ·  Unified COACH chrome: all three COACH surfaces (welcome bubble, chat
+     CURRENT VERSION: v1.0.372
+     LAST UPDATED:    2026-06-20  ·  COACH surfaces now all dock into the SAME frame — the third right-column
+     dock slot (`_dockSlots()[2]` via new `window._crCoachDockRect()`). Welcome bubble, chat widget, and
+     tutorial narrator each snap to that slot's top-left + width (natural height) so they spawn in the exact
+     same field, just above the persistent invader (which sits in the bottom slot). Builds on v1.0.371's
+     shared `.crCoachWin` chrome.
+     ---- prior (v1.0.371) ----  Unified COACH chrome: all three COACH surfaces (welcome bubble, chat
      widget, tutorial narrator) now render in the SAME window style (shared `.crCoachWin` chrome mirroring
      the chat widget — invader icon + COACH.llm + status dot + × header, dark terminal body, bottom-right
      resize-handle, no comic tail) and the SAME position (docked above the persistent desktop invader,
@@ -1554,8 +1559,13 @@
     animation:crTutInvaderBob 2.6s ease-in-out infinite}
   #crCoachHubBtn:hover{filter:drop-shadow(0 0 14px rgba(20,241,149,.85))}
   #crCoachHubBtn canvas{display:block;width:120px;height:84px;image-rendering:pixelated}
-  #crCoachHubBubble{pointer-events:auto;position:relative;width:380px;max-width:80vw}
-  #crCoachHubBubble .crCoachHubActions{display:flex;gap:6px;padding:6px 10px 12px;flex-wrap:wrap}
+  /* v1.0.372 — Welcome bubble fills the THIRD right-column dock slot (set as a
+     fixed rect by JS on open). Flex column so the action buttons pin to the
+     bottom of the frame, like the chat window's input row. */
+  #crCoachHubBubble{pointer-events:auto;position:relative;width:380px;max-width:80vw;
+    display:flex;flex-direction:column;overflow:hidden}
+  #crCoachHubBubble .term-body{flex:1 1 auto;overflow:auto}
+  #crCoachHubBubble .crCoachHubActions{display:flex;gap:6px;padding:8px 10px 12px;flex-wrap:wrap;margin-top:auto}
   #crCoachHubBubble .crCoachHubActions .cr-go{flex:0 0 auto}
   /* v1.0.371 — Shared COACH window chrome. Mirrors the .cr-coach-widget chat
      window EXACTLY (header bar = invader icon + COACH.llm + status dot + ×, dark
@@ -1573,12 +1583,16 @@
   .crCoachWin .cw-x:hover{background:rgba(255,91,127,.18);color:#ff8aa6}
   .crCoachWin .cw-resize{position:absolute;right:3px;bottom:3px;width:14px;height:14px;pointer-events:none;
     background:linear-gradient(135deg,transparent 50%,#14f195 50%,#14f195 60%,transparent 60%,transparent 70%,#14f195 70%,#14f195 80%,transparent 80%)}
-  /* Tutorial narrator → same chrome + docks above the persistent invader (which
-     stays visible during the tour), so the tutorial matches welcome/chat. Its
-     own floating invader sprite is hidden (the desktop hub invader is the mascot). */
-  .cr-tut.cr-tut-invaderNarrator .cr-tut-card.coach-narrator{right:26px;bottom:190px}
+  /* Tutorial narrator → same chrome; the card is positioned to the THIRD dock
+     slot by JS (so it shares the welcome/chat frame). The persistent invader
+     stays visible during the tour; the tutorial's own invader sprite is hidden.
+     Flex column so the nav buttons pin to the bottom of the frame. */
   .cr-tut.cr-tut-invaderNarrator .cr-tut-invader-stand{display:none!important}
-  .cr-tut.cr-tut-invaderNarrator .cr-tut-terminal-bubble{width:380px;max-width:80vw}
+  .cr-tut.cr-tut-invaderNarrator .cr-tut-card.coach-narrator{display:flex}
+  .cr-tut.cr-tut-invaderNarrator .cr-tut-terminal-bubble{width:100%;max-width:none;height:100%;
+    display:flex;flex-direction:column;overflow:hidden}
+  .cr-tut.cr-tut-invaderNarrator .cr-tut-terminal-bubble .term-body{flex:1 1 auto;overflow:auto}
+  .cr-tut.cr-tut-invaderNarrator .cr-tut-terminal-bubble .cr-tut-foot{margin-top:auto}
 
   .cr-tut-portrait{position:relative;width:120px;height:160px;flex-shrink:0;
     border:1px solid rgba(20,241,149,.5);border-radius:8px;
@@ -13187,7 +13201,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.371",
+  VERSION: "1.0.372",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -58687,6 +58701,18 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
   window._floatNearestDock = _floatNearestDock;
   window._floatApplyDock   = _floatApplyDock;
   window._dockSlots        = _dockSlots;
+  // v1.0.372 — The COACH surfaces (welcome bubble / chat widget / tutorial
+  // narrator) all dock into the THIRD right-column slot (index 2) so they spawn
+  // in the same frame. Returns that slot's viewport rect, with a self-contained
+  // fallback if the dock system isn't ready.
+  function _crCoachDockRect(){
+    try { const s = _dockSlots(); if(s && s[2]) return s[2]; } catch(_){}
+    const W = Math.max(320, Math.min(540, Math.round(window.innerWidth * 0.30)));
+    const H = Math.max(280, window.innerHeight - 74 - 30);
+    const slotH = Math.floor(H / 4);
+    return { left: Math.max(14, window.innerWidth - W - 14), top: 74 + slotH * 2, width: W, height: slotH, index: 2 };
+  }
+  window._crCoachDockRect = _crCoachDockRect;
   // v0.8k#24cp — Blackboard sync retired. Dock system is gone in-game;
   // floating Terminal/Profile are now plain drag-to-move with chart-
   // anchoring as the only "stick" mechanic. Stub kept so any older
@@ -63160,22 +63186,21 @@ function log(msg){
   // regardless of the widget's content-driven width/height.
   function _crAnchorCoachWidget(){
     try {
-      var hub   = document.getElementById('crCoachHub');
       var layer = document.getElementById('crWidgetLayer');
       var el    = document.querySelector('#crWidgetLayer .cr-coach-widget');
-      if(!hub || !layer || !el || typeof widgets === 'undefined' || !widgets) return;
-      var ir = hub.getBoundingClientRect();
+      if(!layer || !el || typeof widgets === 'undefined' || !widgets) return;
+      var slot = (typeof window._crCoachDockRect === 'function') ? window._crCoachDockRect() : null;
+      if(!slot) return;
       var lr = layer.getBoundingClientRect();
-      var ew = el.offsetWidth  || 320;
-      var eh = el.offsetHeight || 240;
-      var x = Math.round(ir.right - lr.left - ew);        // right-align to the invader
-      var y = Math.round(ir.top   - lr.top  - eh - 12);   // sit just above the invader
-      x = Math.max(8, Math.min(x, Math.max(8, lr.width  - ew - 4)));
-      y = Math.max(8, Math.min(y, Math.max(8, lr.height - eh - 4)));
+      var x = Math.round(slot.left - lr.left);
+      var y = Math.round(slot.top  - lr.top);
       var item = widgets.items && widgets.items.find(function(w){ return w.type === 'coach' && w.sourceId === 'coach'; });
-      if(item){ item.x = x; item.y = y; try { if(typeof _wSave === 'function') _wSave(); } catch(_){} }
-      el.style.left = x + 'px';
-      el.style.top  = y + 'px';
+      if(item){ item.x = x; item.y = y; item.w = slot.width; try { if(typeof _wSave === 'function') _wSave(); } catch(_){} }
+      // Snap the chat widget into the third dock slot (top-left + frame width;
+      // natural height so the terminal body/input lay out normally).
+      el.style.left  = x + 'px';
+      el.style.top   = y + 'px';
+      el.style.width = slot.width + 'px';
     } catch(_){}
   }
   function crOpenCoachChat(){
@@ -63215,8 +63240,24 @@ function log(msg){
     const bubble = document.getElementById('crCoachHubBubble');
     if(!hub || !btn || !bubble) return;
     function show(on){
-      bubble.style.display = on ? 'block' : 'none';
-      if(on){ try { if(window.crCoachSpeak) window.crCoachSpeak(1500); } catch(_){} try { if(window._crPaintCoachHub) window._crPaintCoachHub(); } catch(_){} }
+      if(on){
+        // v1.0.372 — dock the welcome bubble into the THIRD right-column slot
+        // (same frame the chat + tutorial use). Fixed rect, out of the hub flex.
+        try {
+          var s = (typeof window._crCoachDockRect === 'function') ? window._crCoachDockRect() : null;
+          if(s){
+            bubble.style.position = 'fixed';
+            bubble.style.left = s.left + 'px'; bubble.style.top = s.top + 'px';
+            bubble.style.right = 'auto'; bubble.style.bottom = 'auto';
+            bubble.style.width = s.width + 'px';
+          }
+        } catch(_){}
+        bubble.style.display = 'flex';
+        try { if(window.crCoachSpeak) window.crCoachSpeak(1500); } catch(_){}
+        try { if(window._crPaintCoachHub) window._crPaintCoachHub(); } catch(_){}
+      } else {
+        bubble.style.display = 'none';
+      }
     }
     btn.addEventListener('click', function(e){
       e.stopPropagation();
@@ -64309,9 +64350,19 @@ function log(msg){
     _TUT.idx = 0;
     root.style.display = 'block';
     // v1.0.371 — keep the persistent desktop COACH invader visible during the
-    // tour; the tutorial narrator docks just above it (same spot/style as the
-    // welcome bubble + chat). Close the welcome bubble if it was open.
+    // tour; the tutorial narrator docks in the same frame as the welcome
+    // bubble + chat (the THIRD right-column slot). Close the welcome bubble if open.
     try { var _hb = document.getElementById('crCoachHubBubble'); if(_hb) _hb.style.display = 'none'; } catch(_){}
+    // v1.0.372 — dock the tutorial narrator card into the third slot.
+    try {
+      var _tc = document.querySelector('#crTutorial .cr-tut-card.coach-narrator');
+      var _s  = (typeof window._crCoachDockRect === 'function') ? window._crCoachDockRect() : null;
+      if(_tc && _s){
+        _tc.style.right = 'auto'; _tc.style.bottom = 'auto';
+        _tc.style.left = _s.left + 'px'; _tc.style.top = _s.top + 'px';
+        _tc.style.width = _s.width + 'px';
+      }
+    } catch(_){}
     _renderTutStep();
     // v1.0.130 — Invader narrator: drive the floating Space Invader canvas with
     // a light paint tick (idle shuffle + speaking-tint). Glasses-glow CSS still
