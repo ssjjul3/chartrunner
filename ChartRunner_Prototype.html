@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.359
-     LAST UPDATED:    2026-06-20  ·  Broker moved to Profile + per-trade API select. (1) The
+     CURRENT VERSION: v1.0.360
+     LAST UPDATED:    2026-06-20  ·  Theme + token/maps UI pass. (1) ARCHIVED the Solana +
+     Liquid Glass themes (removed from THEMES/VALID/THEME_META; fallback→platinum; stale saved
+     theme normalizes to platinum on boot). (2) In light themes (platinum / black&white / mono /
+     frontier) the Run-window section labels + TOKEN/PAIR label were too light — forced dark ink.
+     (3) Token app: filter now matches contract/mint too; the profile panel shows the contract
+     address (copy + Solscan) when available. (4) Watchlist tab: hides the ticker/name search and
+     dropped the "LIST" label. (5) Maps: removed the Unfiled folder (drag onto All maps to
+     un-file). (6) Maps: asset-filter tabs under the header (ALL · BTC · ETH · SOL · custom · ＋).
+     ---- prior (v1.0.359) ----  Broker moved to Profile + per-trade API select. (1) The
      Broker picker (CEX/DEX seg + wheel + Connect) MOVED out of Configure Run into a new
      Profile → BROKER tab (#crProfileViewBroker in win-wallet; same ids cfgBrokerSeg/
      cfgBrokerWheel/cfgBrokerWheelList/cfgBrokerConnect so the wiring IIFE is unchanged;
@@ -7750,6 +7758,25 @@
     letter-spacing:.7px !important;
     text-transform:uppercase !important;
   }
+  /* v1.0.360 — In LIGHT themes (Platinum / Black & White / Monochrome / Frontier) the
+     var(--fg) above is too light to read on the pale window — force dark ink for the
+     section labels AND the TOKEN / PAIR label. */
+  body[data-os-theme="platinum"] #win-run .os-section h4,
+  body[data-os-theme="platinum"] #win-configs .os-section h4,
+  body[data-os-theme="bw"] #win-run .os-section h4,
+  body[data-os-theme="bw"] #win-configs .os-section h4,
+  body[data-os-theme="mono"] #win-run .os-section h4,
+  body[data-os-theme="mono"] #win-configs .os-section h4,
+  body[data-os-theme="frontier"] #win-run .os-section h4,
+  body[data-os-theme="frontier"] #win-configs .os-section h4,
+  body[data-os-theme="platinum"] #win-configs .cfg-token-toggle .cfg-tk-on,
+  body[data-os-theme="bw"] #win-configs .cfg-token-toggle .cfg-tk-on,
+  body[data-os-theme="mono"] #win-configs .cfg-token-toggle .cfg-tk-on,
+  body[data-os-theme="frontier"] #win-configs .cfg-token-toggle .cfg-tk-on{ color:#1a1a18 !important; }
+  body[data-os-theme="platinum"] #win-configs .cfg-token-toggle .cfg-tk-off,
+  body[data-os-theme="bw"] #win-configs .cfg-token-toggle .cfg-tk-off,
+  body[data-os-theme="mono"] #win-configs .cfg-token-toggle .cfg-tk-off,
+  body[data-os-theme="frontier"] #win-configs .cfg-token-toggle .cfg-tk-off{ color:#5a5a52 !important; }
   /* v1.0.356 — Mode tabs: the chosen tab stays clearly green (like the selected
      asset / timeframe / broker buttons); unchosen tabs stay neutral so the choice reads
      at a glance. #win-run id beats the themed .os-window .modeTabs rules. */
@@ -12416,6 +12443,8 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
             <div style="flex:1;min-width:0">
               <div class="os-section" style="margin:0">
                 <h4><span id="crMapFolderTitle">All maps</span> · <span id="crMapCount">0</span></h4>
+                <!-- v1.0.360 — asset-filter tabs (All · BTC · ETH · SOL · custom · ＋). -->
+                <div id="crMapAssetTabs" style="display:flex;flex-wrap:wrap;gap:4px;margin:0 0 8px"></div>
                 <div id="crMapGrid" class="cr-mapGrid"></div>
               </div>
             </div>
@@ -12817,15 +12846,14 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
             <!-- LEFT: token list -->
             <div style="display:flex;flex-direction:column;gap:6px;min-height:0">
-              <div style="display:flex;align-items:center;gap:6px">
-                <input type="text" id="crTokSearch" placeholder="Filter by ticker or name…" style="flex:1;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+              <div id="crTokSearchRow" style="display:flex;align-items:center;gap:6px">
+                <input type="text" id="crTokSearch" placeholder="Filter by ticker, name or contract…" style="flex:1;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
                 <span class="dim" style="font-size:10px" id="crTokCount">— tokens</span>
               </div>
               <!-- v1.0.357 — Multiple named watchlists. Shown only on the WATCHLIST tab.
                    Selector switches the active list; ＋ new / ✎ rename / 🗑 delete.
                    The ★ on each row adds/removes from the active list. -->
               <div id="crTokWlBar" style="display:none;align-items:center;gap:6px">
-                <span class="dim" style="font-size:9px;letter-spacing:.5px">LIST</span>
                 <select id="crTokWlSelect" title="Active watchlist" style="flex:1;min-width:0;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace"></select>
                 <button id="crTokWlNew" type="button" title="New watchlist" style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:rgba(20,241,149,.10);color:#bff7df;cursor:pointer;font:600 12px ui-monospace,Menlo,monospace">＋</button>
                 <button id="crTokWlRename" type="button" title="Rename watchlist" style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6);color:var(--fg);cursor:pointer;font:600 11px ui-monospace,Menlo,monospace">✎</button>
@@ -12953,7 +12981,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.359",
+  VERSION: "1.0.360",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -52647,6 +52675,8 @@ function _tokRenderWlBar(){
   if(!bar) return;
   const on = _tokState.activeTab === 'watchlist';
   bar.style.display = on ? 'flex' : 'none';
+  // v1.0.360 — On the WATCHLIST tab, hide the "Filter by ticker or name" search.
+  try { const sr = document.getElementById('crTokSearchRow'); if(sr) sr.style.display = on ? 'none' : 'flex'; } catch(_){}
   if(!on) return;
   const sel = document.getElementById('crTokWlSelect');
   if(sel){
@@ -52678,7 +52708,13 @@ function _tokRenderList(){
   // one flag flip + a mint, no other code change needed.
   let snaps = TOK_LIST.filter(t => !t.archived).map(t => _tokSnapshot(t.id)).filter(Boolean);
   if(filter){
-    snaps = snaps.filter(s => s.def.tag.toLowerCase().includes(filter) || s.def.nm.toLowerCase().includes(filter));
+    // v1.0.360 — also match by contract / mint address.
+    snaps = snaps.filter(s => {
+      const tag = s.def.tag.toLowerCase(), nm = s.def.nm.toLowerCase();
+      let mint = '';
+      try { mint = String((typeof TOK_BIRDEYE_MINT !== 'undefined' && TOK_BIRDEYE_MINT[s.def.id]) || s.def.mint || '').toLowerCase(); } catch(_){}
+      return tag.includes(filter) || nm.includes(filter) || (!!mint && mint.includes(filter));
+    });
   }
   // v1.0.61 — "Hide synth-only tokens" filter (Token Terminal settings).
   // A token is synth-only when it has neither a Binance pair nor a
@@ -52808,12 +52844,25 @@ function _tokRenderProfile(){
     return '<button type="button" data-tok-tf="' + tf + '" style="padding:3px 8px;font-size:10px;letter-spacing:.4px;text-transform:uppercase;border:1px solid ' + (on ? 'rgba(20,241,149,0.55)' : 'var(--line)') + ';background:' + (on ? 'rgba(20,241,149,0.10)' : 'rgba(10,15,28,.4)') + ';color:' + (on ? '#3ddc97' : 'var(--dim)') + ';border-radius:4px;cursor:pointer;font-family:ui-monospace,Menlo,monospace">' + tf + '</button>';
   }).join('');
   const sparkId = 'tokSpark_' + def.id;
+  // v1.0.360 — contract / mint address (shown when available).
+  let _tokMint = '';
+  try { _tokMint = String((typeof TOK_BIRDEYE_MINT !== 'undefined' && TOK_BIRDEYE_MINT[def.id]) || def.mint || ''); } catch(_){}
+  const _tokEscA = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+  const _contractRow = _tokMint
+    ? '<div class="dim" style="font-size:9.5px;display:flex;align-items:center;gap:6px;margin-top:3px">' +
+        '<span style="text-transform:uppercase;letter-spacing:.4px">Contract</span>' +
+        '<span style="font-family:ui-monospace,Menlo,monospace">' + _tokEscA(_tokMint.slice(0,4)) + '…' + _tokEscA(_tokMint.slice(-4)) + '</span>' +
+        '<button type="button" data-cr-copy="' + _tokEscA(_tokMint) + '" title="copy contract" style="background:none;border:0;cursor:pointer;color:#7aa2ff;font-size:11px;padding:0 2px">⧉</button>' +
+        '<a href="https://solscan.io/token/' + _tokEscA(_tokMint) + '" target="_blank" rel="noopener" title="view on Solscan ↗" style="color:#7aa2ff;text-decoration:none;font-size:8.5px;border:1px solid rgba(122,162,255,.4);border-radius:4px;padding:1px 4px">EXP ↗</a>' +
+      '</div>'
+    : '';
   host.innerHTML =
     // Header: tag + name + signal
     '<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">' +
       '<div style="flex:1;min-width:0">' +
         '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px;font-weight:700">' + def.tag + '</span><span class="dim">' + def.nm + '</span>' + liveBadge + '</div>' +
         '<div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.5px">' + def.chain + ' · ' + s.ageDays + 'd old' + (s.isNew ? ' · NEW' : '') + '</div>' +
+        _contractRow +
       '</div>' +
       '<div style="text-align:right">' +
         '<div style="font-size:18px;font-weight:700;font-variant-numeric:tabular-nums">' + _tokFmtPx(s.px) + '</div>' +
@@ -63203,7 +63252,8 @@ function log(msg){
   // modern sans body, dark pill CTAs.
   // v1.0.156 — Added Liquid Glass as a mature translucent cockpit theme.
   // v1.0.158 — Added Black & White and Monochrome mature cockpit themes.
-  const THEMES = ['platinum','solana','ascii','frontier','liquid','bw','mono'];
+  // v1.0.360 — Solana + Liquid Glass themes ARCHIVED everywhere (removed from the list).
+  const THEMES = ['platinum','ascii','frontier','bw','mono'];
   // v1.0.183 — Public /play archives only ASCII + Frontier while local builds
   // keep the full workshop set available.
   const LIVE_THEME_ARCHIVE = new Set(['ascii','frontier']);
@@ -63223,15 +63273,15 @@ function log(msg){
   }
   function _crThemeList(){
     const list = THEMES.filter(t => !_crLiveThemeArchived(t));
-    return list.length ? list : ['solana'];
+    return list.length ? list : ['platinum'];
   }
   function _crThemeFallback(){
-    return (window.cr && window.cr.isLiveGameSurface) ? 'solana' : 'platinum';
+    return 'platinum';
   }
   function _crNormalizeThemeForSurface(name){
     let t = THEMES.includes(name) ? name : _crThemeFallback();
     if(_crLiveThemeArchived(t)) t = _crThemeFallback();
-    if(!THEMES.includes(t) || _crLiveThemeArchived(t)) t = 'solana';
+    if(!THEMES.includes(t) || _crLiveThemeArchived(t)) t = 'platinum';
     return t;
   }
   let themeIdx = 0;
@@ -63306,7 +63356,7 @@ function log(msg){
   // ──────────────────────────────────────────────────────────────────
   (function wbThemeBuilder(){
     const KEY = 'cr_theme_state_v1';
-    const VALID = new Set(['platinum','solana','ascii','frontier','liquid','bw','mono']);
+    const VALID = new Set(['platinum','ascii','frontier','bw','mono']); // v1.0.360 — solana/liquid archived
     function load(){
       try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(_){ return null; }
     }
@@ -68937,6 +68987,47 @@ const crL3 = (function(){
   // Render the desktop Maps grid + phone Maps list
   // v1.0.357 — Maps folder tree (left sidebar). Selection persists across renders.
   let _crMapFolderSel = 'all'; // 'all' | 'unfiled' | <folderId>
+  // v1.0.360 — Maps asset-filter tabs (All · BTC · ETH · SOL · custom · ＋).
+  let _crMapAssetSel = 'all'; // 'all' | <asset id lowercase>
+  const _CR_MAP_ASSET_TABS_KEY = 'cr_map_asset_tabs_v1';
+  function _crMapAssetTabs(){
+    let custom = [];
+    try { const raw = JSON.parse(localStorage.getItem(_CR_MAP_ASSET_TABS_KEY) || '[]'); if(Array.isArray(raw)) custom = raw; } catch(_){}
+    const base = ['btc','eth','sol'];
+    const seen = {}; const out = [];
+    base.concat(custom).forEach(a => { a = String(a || '').toLowerCase().trim(); if(a && !seen[a]){ seen[a] = 1; out.push(a); } });
+    return out;
+  }
+  function renderMapAssetTabs(){
+    const host = document.getElementById('crMapAssetTabs'); if(!host) return;
+    host.innerHTML = '';
+    const mk = (key, label) => {
+      const sel = _crMapAssetSel === key;
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = label;
+      b.style.cssText = 'appearance:none;cursor:pointer;padding:4px 10px;border-radius:6px;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.4px;border:1px solid ' + (sel ? 'rgba(106,203,58,.74)' : 'var(--line)') + ';background:' + (sel ? 'rgba(106,203,58,.12)' : 'rgba(10,15,28,.4)') + ';color:' + (sel ? '#bff7df' : 'var(--dim)') + '';
+      b.addEventListener('click', () => { _crMapAssetSel = key; renderMaps(); });
+      return b;
+    };
+    host.appendChild(mk('all', 'ALL'));
+    _crMapAssetTabs().forEach(a => host.appendChild(mk(a, a.toUpperCase())));
+    const add = document.createElement('button');
+    add.type = 'button'; add.textContent = '＋';
+    add.title = 'Add an asset tab (e.g. XRP, BNB)';
+    add.style.cssText = 'appearance:none;cursor:pointer;padding:4px 10px;border-radius:6px;font:600 11px ui-monospace,Menlo,monospace;border:1px dashed var(--line);background:transparent;color:var(--dim)';
+    add.addEventListener('click', () => {
+      const t = prompt('Add an asset tab (ticker, e.g. XRP):');
+      if(t){
+        const key = String(t).toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+        if(key){
+          let custom = []; try { custom = JSON.parse(localStorage.getItem(_CR_MAP_ASSET_TABS_KEY) || '[]') || []; } catch(_){}
+          if(!custom.includes(key)){ custom.push(key); try { localStorage.setItem(_CR_MAP_ASSET_TABS_KEY, JSON.stringify(custom)); } catch(_){} }
+          _crMapAssetSel = key; renderMaps();
+        }
+      }
+    });
+    host.appendChild(add);
+  }
   function _crMapFolderCounts(){
     const maps = crMaps.readAll(); const folders = crMaps.readFolders();
     const valid = {}; folders.forEach(f => { valid[f.id] = 0; });
@@ -68972,8 +69063,8 @@ const crL3 = (function(){
       }
       host.appendChild(row);
     };
-    mkRow('all', '🗂 All maps', total, {});
-    mkRow('unfiled', '📂 Unfiled', unfiled, { dropId: '' });
+    // v1.0.360 — Unfiled folder removed; "All maps" is the drop target to un-file a map.
+    mkRow('all', '🗂 All maps', total, { dropId: '' });
     folders.forEach(f => mkRow(f.id, '📁 ' + f.name, byId[f.id] || 0, { dropId: f.id, folderId: f.id, name: f.name }));
     const add = document.createElement('button');
     add.type = 'button'; add.textContent = '＋ New folder';
@@ -68984,11 +69075,14 @@ const crL3 = (function(){
   function renderMaps(){
     const fullList = crMaps.readAll();
     try { renderMapFolders(); } catch(_){}
+    try { renderMapAssetTabs(); } catch(_){}
     // v1.0.357 — filter the grid to the selected folder.
     const _folderIds = {}; crMaps.readFolders().forEach(f => { _folderIds[f.id] = 1; });
-    const list = (_crMapFolderSel === 'all') ? fullList
+    let list = (_crMapFolderSel === 'all') ? fullList
       : (_crMapFolderSel === 'unfiled') ? fullList.filter(m => !m.folder || !_folderIds[m.folder])
       : fullList.filter(m => m.folder === _crMapFolderSel);
+    // v1.0.360 — then filter by the selected asset tab.
+    if(_crMapAssetSel !== 'all'){ list = list.filter(m => String(m.asset || '').toLowerCase() === _crMapAssetSel); }
     try {
       const titleEl = document.getElementById('crMapFolderTitle');
       if(titleEl){ const f = crMaps.readFolders().find(x => x.id === _crMapFolderSel); titleEl.textContent = (_crMapFolderSel === 'all') ? 'All maps' : (_crMapFolderSel === 'unfiled') ? 'Unfiled' : (f ? f.name : 'Folder'); }
@@ -70969,7 +71063,10 @@ const crL3 = (function(){
   // ---- 6) Persistence (theme + bg + ticker) -------------------------
   // try/catch wrapped so artifact-blocked localStorage doesn't crash.
   try{
-    const stored = localStorage.getItem('cr_os_theme');
+    let stored = localStorage.getItem('cr_os_theme');
+    // v1.0.360 — normalize archived themes (solana/liquid) → platinum BEFORE applying,
+    // so a stale saved theme never even momentarily sets a dead data-theme on boot.
+    try { if(stored && window.crNormalizeThemeForSurface) stored = window.crNormalizeThemeForSurface(stored); } catch(_){}
     if(stored && typeof stored === 'string'){
       // v1.0.351 — apply immediately (was a 200ms setTimeout). The splash is long
       // since constructed by the time this IIFE runs this late in the file, and the
@@ -70977,7 +71074,7 @@ const crL3 = (function(){
       // modal (which masked it) is archived. The boot cover keeps the swap unseen.
       const splashEl = document.getElementById('splash');
       if(splashEl){
-        if(stored === 'dark'){ splashEl.removeAttribute('data-theme'); }
+        if(stored === 'dark' || stored === 'platinum'){ splashEl.removeAttribute('data-theme'); }
         else { splashEl.setAttribute('data-theme', stored); }
       }
       try{ document.body.setAttribute('data-os-theme', stored); }catch{}
@@ -73947,12 +74044,11 @@ window.crChainBuilder = {
   'use strict';
 
   const BG_KEY = 'cr_desktop_bg_v1';
+  // v1.0.360 — Solana + Liquid Glass archived (removed from the picker).
   const THEME_META = [
     { id:'platinum', name:'Platinum',  sub:'Mac OS 9 · default OS chrome' },
-    { id:'solana',   name:'Solana',    sub:'Cypherpunk · purple/mint glow' },
     { id:'ascii',    name:'Ascii',     sub:'Terminal · 80s green-on-black'  },
     { id:'frontier', name:'Frontier',  sub:'Solana hackathon · cream/sand'  },
-    { id:'liquid',   name:'Liquid Glass', sub:'Mature · frosted trading cockpit' },
     { id:'bw',       name:'Black & White', sub:'High contrast · ink cockpit' },
     { id:'mono',     name:'Monochrome', sub:'Soft grayscale · single-ink cockpit' },
   ];
