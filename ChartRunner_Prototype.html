@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.393
-     LAST UPDATED:    2026-06-21  ·  Configure Run (Regular) Asset + Timeframe rows render as a SEGMENTED CONTROL
+     CURRENT VERSION: v1.0.394
+     LAST UPDATED:    2026-06-21  ·  Desktop Terminal: archived the DEXTRACKER tab and relocated its panes
+     (Whales/Funding/OI/Route Depth/DEX Fees/Status) into SOLANATRACKER at init (crMergeDexIntoSol) so the
+     live refreshers keep running in one consolidated tracker; gated panes still auto-hide offline.
+     ---- prior (v1.0.393) ----  Configure Run (Regular) Asset + Timeframe rows render as a SEGMENTED CONTROL
      (one dark rounded track, segments inside, selected = light pill) matching the in-game TF bar —
      BTC/ETH/SOL + More and 15M/1H/4H + More. CSS only.
      ---- prior (v1.0.392) ----  "Choose a mode" PVP tab is now wallet-connect-exclusive — hidden for guests
@@ -12035,7 +12038,8 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                  OI longs/shorts, orderbook depth, Flight fees) so
                  traders inspecting the chart can cross-reference what's
                  driving the runtime modifiers. -->
-            <button class="crTerm-tab" data-termview="phoenix" type="button">DEXTRACKER</button>
+            <!-- v1.0.394 — DEXTRACKER tab archived; its live panes are relocated into SOLANATRACKER at init. -->
+            <button class="crTerm-tab" data-termview="phoenix" data-cr-tab-archived="1" type="button">DEXTRACKER</button>
             <button class="crTerm-tab" data-termview="solana" type="button">SOLANATRACKER</button>
             <button class="crTerm-tab" data-termview="cex" type="button">CEXTRACKER</button>
             <!-- v0.9.92 — HYPERTRACKER + STRATEGIES tabs archived. Their
@@ -13396,7 +13400,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.393",
+  VERSION: "1.0.394",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -37228,6 +37232,31 @@ window.crRacing = (function(){
   return { init, pick, tick, draw, active };
 })();
 
+// v1.0.394 — Merge DEXTRACKER → SOLANATRACKER. The DEXTRACKER tab is archived
+// in markup; relocate its panes (phxWhales/phxFunding/phxOI/phxBook/phxFlight/
+// phxStatus) into the SOLANATRACKER grid so their live refreshers keep running
+// in one consolidated tracker. The gated ones (GoldRush/RPC) still auto-hide
+// when offline. Runs once; idempotent.
+(function crMergeDexIntoSol(){
+  function run(){
+    try {
+      const src = document.getElementById('crTermViewPhoenix');
+      const dst = document.getElementById('crTermViewSolana');
+      if(!src || !dst || src.getAttribute('data-cr-merged') === '1') return;
+      const dstGrid = dst.querySelector('.crTerm-hgrid');
+      if(!dstGrid) return;
+      const dstCols = dstGrid.querySelectorAll(':scope > .crTerm-col');
+      const srcCols = src.querySelectorAll('.crTerm-hgrid > .crTerm-col');
+      srcCols.forEach((col, i) => {
+        const target = dstCols.length ? (dstCols[i] || dstCols[dstCols.length - 1]) : dstGrid;
+        col.querySelectorAll(':scope > .crTerm-hpane').forEach(p => target.appendChild(p));
+      });
+      src.setAttribute('data-cr-merged', '1');
+    } catch(_){}
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
+})();
 function crMinigameInit(){
   if(typeof game === 'undefined') return;
   game.minigame = {
