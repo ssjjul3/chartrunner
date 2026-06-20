@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.388
-     LAST UPDATED:    2026-06-21  ·  Archived the in-game lite-profile "🔗 Link" button (#crLiteChartLink hidden;
+     CURRENT VERSION: v1.0.389
+     LAST UPDATED:    2026-06-21  ·  Racing now uses the EXISTING vehicle art: the in-race vehicle renders via
+     VEHICLES[].draw (skateboard / surfboard / rollercoaster / mining cart / lambo / jetski), rotated for
+     flips, with a small invader rider; the vehicle picker buttons show each ride's real art (_drawVehIcon).
+     ---- prior (v1.0.388) ----  Archived the in-game lite-profile "🔗 Link" button (#crLiteChartLink hidden;
      chart deep-link copy still available from the desktop Link control). Handler left bound (harmless).
      ---- prior (v1.0.387) ----  Racing fix: the vehicle picker / end card never showed — the overlays ship
      with inline display:none which beat the .on class (display:flex). `_showPicker`/`_showEnd` now set
@@ -13340,7 +13343,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.388",
+  VERSION: "1.0.389",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -36991,22 +36994,24 @@ window.crRacing = (function(){
   function _drawVehicle(){
     const sx = sX(player.wx), sy = priceToY(player.py);
     const col = VCOLOR[st.vehicleId] || '#14f195';
+    const veh = (typeof vehicleById === 'function') ? vehicleById(st.vehicleId || 'skateboard') : null;
     ctx.save();
-    ctx.translate(sx, sy - 9);
-    ctx.rotate(st.angle || 0);
+    ctx.translate(sx, sy - 10);
+    ctx.rotate(st.angle || 0);                       // flips spin the whole rig
     ctx.scale((player.facing < 0) ? -1 : 1, 1);
-    ctx.shadowColor = col; ctx.shadowBlur = 10;
-    ctx.fillStyle = col;
-    ctx.beginPath(); _rr(ctx, -15, -7, 30, 11, 4); ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#0a0c14'; ctx.fillRect(-3, -13, 6, 6);   // rider
-    for(const wxw of [-10, 10]){
-      ctx.fillStyle = '#0a0c14'; ctx.strokeStyle = col; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(wxw, 7, 5.5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-      const sp = (player.wx * 0.25) % (Math.PI*2);
-      ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(wxw, 7); ctx.lineTo(wxw + Math.cos(sp)*4, 7 + Math.sin(sp)*4); ctx.stroke();
+    ctx.shadowColor = col; ctx.shadowBlur = 8;
+    let drew = false;
+    // v1.0.389 — use the existing vehicle art (VEHICLES[].draw) instead of a
+    // generic buggy. The draw fns are centered at origin and face right.
+    try { if(veh && typeof veh.draw === 'function'){ veh.draw(ctx, 1.7); drew = true; } } catch(_){}
+    if(!drew){
+      ctx.fillStyle = col;
+      ctx.beginPath(); _rr(ctx, -15, -7, 30, 11, 4); ctx.fill();
+      for(const wxw of [-10, 10]){ ctx.fillStyle = '#0a0c14'; ctx.beginPath(); ctx.arc(wxw, 7, 5.5, 0, Math.PI*2); ctx.fill(); }
     }
+    ctx.shadowBlur = 0;
+    // small invader rider on top, tinted to the world color
+    try { if(typeof drawInvader === 'function'){ ctx.save(); ctx.translate(0, -13); drawInvader(ctx, 1.1, col); ctx.restore(); } } catch(_){}
     ctx.restore();
   }
   function draw(){
@@ -37101,7 +37106,14 @@ window.crRacing = (function(){
         const b = document.createElement('button');
         b.type = 'button'; b.className = 'crRaceVeh';
         b.style.borderColor = (VCOLOR[v.id] || '#14f195');
-        b.innerHTML = '<span class="vn" style="color:' + (VCOLOR[v.id]||'#14f195') + '">' + v.ic + ' ' + v.nm + '</span><span class="vm">top ' + (v.maxVel||0) + ' · grip ' + Math.round((v.fric||0)*100) + '</span>';
+        // v1.0.389 — show the real vehicle art (via _drawVehIcon) on each button.
+        const cv = document.createElement('canvas');
+        cv.width = 64; cv.height = 34; cv.className = 'crRaceVehArt';
+        cv.style.cssText = 'display:block;width:64px;height:34px;margin-bottom:4px';
+        const txt = document.createElement('span');
+        txt.innerHTML = '<span class="vn" style="color:' + (VCOLOR[v.id]||'#14f195') + '">' + v.nm + '</span><span class="vm">top ' + (v.maxVel||0) + ' · grip ' + Math.round((v.fric||0)*100) + '</span>';
+        b.appendChild(cv); b.appendChild(txt);
+        try { if(typeof _drawVehIcon === 'function') _drawVehIcon(cv, v.id); } catch(_){}
         b.addEventListener('click', () => pick(v.id));
         list.appendChild(b);
       });
