@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.390
-     LAST UPDATED:    2026-06-21  ·  Profile: archived the Runner/Snake avatar tabs from the public profile
+     CURRENT VERSION: v1.0.391
+     LAST UPDATED:    2026-06-21  ·  Racing: the Runner now properly RIDES the board — anchored the race vehicle
+     at the ground/foot (was floating ~10px high) and seated the invader rider on the deck (board-type rides
+     only; cars/jetski stay self-contained). drawPlayerVehicle in crRacing.
+     ---- prior (v1.0.390) ----  Profile: archived the Runner/Snake avatar tabs from the public profile
      (player-altar-avatar-tabs hidden); renamed the player-facing "Invader" → "Runner" everywhere (avatar +
      skin labels, flight-skin name, marketplace skins, tutorial copy). Internal ids ('invader',
      'invader-green', drawInvader) are unchanged.
@@ -13348,7 +13351,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.390",
+  VERSION: "1.0.391",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -37000,23 +37003,35 @@ window.crRacing = (function(){
     const sx = sX(player.wx), sy = priceToY(player.py);
     const col = VCOLOR[st.vehicleId] || '#14f195';
     const veh = (typeof vehicleById === 'function') ? vehicleById(st.vehicleId || 'skateboard') : null;
+    const s = 1.7;
     ctx.save();
-    ctx.translate(sx, sy - 10);
-    ctx.rotate(st.angle || 0);                       // flips spin the whole rig
+    // v1.0.391 — anchor at the GROUND/foot (the vehicle art's documented origin:
+    // foot at y=0, body extends upward). Lift a hair so the wheels sit on the
+    // surface instead of sinking. Rotate the whole rig for flips.
+    ctx.translate(sx, sy - 1.2*s);
+    ctx.rotate(st.angle || 0);
     ctx.scale((player.facing < 0) ? -1 : 1, 1);
     ctx.shadowColor = col; ctx.shadowBlur = 8;
     let drew = false;
-    // v1.0.389 — use the existing vehicle art (VEHICLES[].draw) instead of a
-    // generic buggy. The draw fns are centered at origin and face right.
-    try { if(veh && typeof veh.draw === 'function'){ veh.draw(ctx, 1.7); drew = true; } } catch(_){}
+    try { if(veh && typeof veh.draw === 'function'){ veh.draw(ctx, s); drew = true; } } catch(_){}
     if(!drew){
       ctx.fillStyle = col;
       ctx.beginPath(); _rr(ctx, -15, -7, 30, 11, 4); ctx.fill();
-      for(const wxw of [-10, 10]){ ctx.fillStyle = '#0a0c14'; ctx.beginPath(); ctx.arc(wxw, 7, 5.5, 0, Math.PI*2); ctx.fill(); }
+      for(const wxw of [-10, 10]){ ctx.fillStyle = '#0a0c14'; ctx.beginPath(); ctx.arc(wxw, 5, 5, 0, Math.PI*2); ctx.fill(); }
     }
     ctx.shadowBlur = 0;
-    // small invader rider on top, tinted to the world color
-    try { if(typeof drawInvader === 'function'){ ctx.save(); ctx.translate(0, -13); drawInvader(ctx, 1.1, col); ctx.restore(); } } catch(_){}
+    // v1.0.391 — the Runner RIDES board-type vehicles (skateboard / surfboard):
+    // feet planted on the deck (deck top ≈ -2*s), body above. Cars/jetski are
+    // self-contained art, so no extra rider on those.
+    const board = (st.vehicleId === 'skateboard' || st.vehicleId === 'surfboard');
+    try {
+      if(board && typeof drawInvader === 'function'){
+        ctx.save();
+        ctx.translate(0, -2*s - 3);   // stand on the deck
+        drawInvader(ctx, 1.15, col);
+        ctx.restore();
+      }
+    } catch(_){}
     ctx.restore();
   }
   function draw(){
