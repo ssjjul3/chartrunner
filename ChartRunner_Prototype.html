@@ -2,8 +2,14 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.373
-     LAST UPDATED:    2026-06-20  ·  Swap modal theming + MAX fix: the $CHART→$RUN mock-swap (`crMockSwap`)
+     CURRENT VERSION: v1.0.374
+     LAST UPDATED:    2026-06-20  ·  Multiplayer MAP CHAT: in a live map room (`crRoom.active()`) the in-game
+     terminal notification panel (`.crNotify`) becomes a chat display — it shows messages from every player
+     in the map (name-tagged, seat-colored) and gains a chat input row at the bottom, keeping the terminal
+     style; command/event notifications are suppressed from the panel (still logged to the desktop Terminal
+     session). Chat rides the existing `crRoom` action relay (kind:'chat'; no relay-server change). Solo play
+     is unchanged.
+     ---- prior (v1.0.373) ----  Swap modal theming + MAX fix: the $CHART→$RUN mock-swap (`crMockSwap`)
      is now theme-aware (local `--ms-*` props, Platinum-light default + ascii/frontier/bw/mono overrides;
      $CHART purple / $RUN gold stay as brand tokens) instead of a fixed dark-blue, and the MAX button no
      longer overflows the card — the amount input gets `min-width:0` so it shrinks and MAX stays inside.
@@ -7365,6 +7371,51 @@
   /* Hide on splash like other in-game chrome */
   body.crSplashUp .crNotify{display:none !important}
 
+  /* ── v1.0.374 — Map-chat mode. In a live map room the terminal notification
+     panel becomes a CHAT display: command/event lines are suppressed (they still
+     log to the desktop Terminal pane), it shows messages from every player in the
+     map (name-tagged), and gains a chat input row at the bottom. Same terminal
+     style, just interactive + scrollable + no auto-fade. */
+  .crNotify.cr-chat-mode{
+    pointer-events:auto;max-width:none;
+    width:min(420px,calc(100vw - 36px));max-height:46vh;overflow-y:auto;
+    background:rgba(8,14,22,.82);border:1px solid rgba(61,220,151,.32);
+    border-radius:8px;padding:8px;backdrop-filter:blur(3px);
+    box-shadow:0 14px 36px rgba(0,0,0,.5),0 0 0 1px rgba(20,241,149,.06) inset;
+  }
+  .crNotify.cr-chat-mode .crNotifyFold{display:none}
+  .crNotify.cr-chat-mode .crNotifyMsg{
+    white-space:normal;overflow:visible;text-overflow:clip;display:block !important;max-width:none;
+  }
+  .crChatHead{display:none}
+  .crNotify.cr-chat-mode .crChatHead{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    position:sticky;top:0;z-index:1;margin:0 0 4px;padding:2px 2px 4px;
+    color:#7ee787;font:800 9.5px ui-monospace,Menlo,monospace;letter-spacing:.6px;text-transform:uppercase;
+    border-bottom:1px dashed rgba(61,220,151,.25);background:rgba(8,14,22,.92);
+  }
+  .crChatMsg .crChatNm{color:#7aa2ff;font-weight:800;margin-right:5px}
+  .crChatMsg.seat-creator .crChatNm{color:#f5a623}
+  .crChatMsg.seat-wallet  .crChatNm{color:#14f195}
+  .crChatMsg.mine .crChatNm{color:#bff7df}
+  .crChatRow{display:none}
+  .crNotify.cr-chat-mode .crChatRow{
+    display:flex;gap:6px;margin-top:6px;pointer-events:auto;position:sticky;bottom:0;
+    background:rgba(8,14,22,.92);padding-top:4px;
+  }
+  .crChatInput{
+    flex:1 1 auto;min-width:0;background:rgba(4,8,14,.9);
+    border:1px solid rgba(61,220,151,.4);border-radius:6px;color:#bff7df;
+    font:inherit;font-size:12px;padding:6px 8px;outline:none;
+  }
+  .crChatInput::placeholder{color:rgba(126,231,135,.5)}
+  .crChatSend{
+    flex:0 0 auto;background:rgba(20,241,149,.16);border:1px solid rgba(61,220,151,.6);
+    border-radius:6px;color:#bff7df;font:inherit;font-size:11px;font-weight:800;
+    letter-spacing:.4px;padding:6px 10px;cursor:pointer;
+  }
+  .crChatSend:hover{background:rgba(20,241,149,.28)}
+
   /* ── v0.9.27 — RUN-tube + File Display (demo/streaming rig) ─────────
      Two draggable picture-in-picture widgets. RUN-tube hosts a video
      stream (webcam during recording, future YouTube/Twitch connectors
@@ -13205,7 +13256,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.373",
+  VERSION: "1.0.374",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -33738,7 +33789,14 @@ window.crRoom = (function(){
       case 'peer_action': {
         try {
           var a = peers.get(m.sessionId);
-          if(typeof crNotify==='function') crNotify('◫ '+((a&&a.handle)||'player')+' '+(m.label||m.kind||''));
+          var who = (a&&a.handle)||'player';
+          // v1.0.374 — chat rides the action channel (kind:'chat'); route it to
+          // the in-game chat terminal instead of the generic notification feed.
+          if(m.kind === 'chat'){
+            if(typeof window._crChatReceive === 'function') window._crChatReceive(who, m.label||'', (a&&a.seat)||'guest');
+          } else if(typeof crNotify==='function'){
+            crNotify('◫ '+who+' '+(m.label||m.kind||''));
+          }
         } catch(_){}
         break;
       }
@@ -33873,6 +33931,14 @@ window.crRoom = (function(){
 
   // Display-only event broadcast — call from save/trade flows for room flavor.
   function action(kind, label){ send({ t:'action', kind:String(kind||'event'), label:String(label||'') }); }
+  // v1.0.374 — Map chat. Rides the same action relay channel (kind:'chat') so no
+  // relay-server change is needed; peers receive it as 'peer_action' kind:'chat'.
+  function chat(text){
+    var t = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+    if(!t) return '';
+    action('chat', t);
+    return t;
+  }
 
   if(params){ setTimeout(connect, 1400); }        // let auth + chart settle first
 
@@ -33882,6 +33948,8 @@ window.crRoom = (function(){
     render:       render,
     sendPos:      sendPos,
     action:       action,
+    chat:         chat,
+    handle:       myHandle,
     seat:         mySeat,
     isSpectator:  function(){ return spectator; },
     peerCount:    function(){ return peers.size; },
@@ -61849,10 +61917,142 @@ function _crNotifyEnsurePanel(){
   });
   el.appendChild(fold);
   _crInGameTerminalApplyFold();
+  try { _crChatEnsure(el); } catch(_){}
+  try { _crChatSyncMode(); } catch(_){}
   return el;
 }
+// ── v1.0.374 — Map chat (multiplayer) ───────────────────────────────────────
+// In a live map room the notification panel flips into a chat display: it shows
+// messages from all players in the map and hides command/event notifications.
+function _crChatModeActive(){
+  try { return !!(window.crRoom && crRoom.active && crRoom.active()); } catch(_){ return false; }
+}
+function _crChatEnsure(panel){
+  if(!panel) return;
+  if(!panel.querySelector('.crChatHead')){
+    const head = document.createElement('div');
+    head.className = 'crChatHead';
+    head.innerHTML = '<span>◫ MAP CHAT</span><span class="crChatCount" data-cr-chat-count></span>';
+    // Insert as the first child (the fold button is hidden in chat mode).
+    if(panel.firstChild) panel.insertBefore(head, panel.firstChild);
+    else panel.appendChild(head);
+  }
+  if(!panel.querySelector('.crChatRow')){
+    const row = document.createElement('div');
+    row.className = 'crChatRow';
+    const inp = document.createElement('input');
+    inp.className = 'crChatInput';
+    inp.type = 'text';
+    inp.maxLength = 240;
+    inp.setAttribute('aria-label', 'Map chat message');
+    inp.placeholder = 'Message the map…';
+    // Stop ALL keydowns from reaching the game movement handler (keys[] tracker
+    // on window) while typing; Enter sends, Escape blurs.
+    inp.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if(e.key === 'Enter'){ e.preventDefault(); _crChatSendFromInput(inp); }
+      else if(e.key === 'Escape'){ e.preventDefault(); inp.blur(); }
+    });
+    inp.addEventListener('keyup', e => { e.stopPropagation(); });
+    const btn = document.createElement('button');
+    btn.className = 'crChatSend';
+    btn.type = 'button';
+    btn.textContent = 'SEND';
+    btn.addEventListener('click', () => _crChatSendFromInput(inp));
+    row.appendChild(inp);
+    row.appendChild(btn);
+    panel.appendChild(row);
+  }
+}
+function _crChatSyncMode(){
+  const panel = _crNotifyState.panel;
+  if(!panel) return;
+  const on = _crChatModeActive();
+  if(panel.classList.contains('cr-chat-mode') === on) {
+    if(on) _crChatUpdateCount(panel);
+    return;
+  }
+  panel.classList.toggle('cr-chat-mode', on);
+  if(on){
+    _crChatEnsure(panel);
+    _crChatUpdateCount(panel);
+  }
+}
+function _crChatUpdateCount(panel){
+  try {
+    const c = panel.querySelector('[data-cr-chat-count]');
+    if(!c) return;
+    let n = 1;
+    try { n = 1 + (window.crRoom && crRoom.peerCount ? crRoom.peerCount() : 0); } catch(_){}
+    c.textContent = n + (n === 1 ? ' player' : ' players');
+  } catch(_){}
+}
+function _crChatSendFromInput(inp){
+  if(!inp) return;
+  const t = (inp.value || '').trim();
+  if(!t) return;
+  inp.value = '';
+  let sent = t;
+  try { if(window.crRoom && crRoom.chat) sent = crRoom.chat(t) || t; } catch(_){}
+  let me = 'you';
+  try { me = (window.crRoom && crRoom.handle ? crRoom.handle() : 'you') || 'you'; } catch(_){}
+  let seat = 'guest';
+  try { seat = (window.crRoom && crRoom.seat ? crRoom.seat() : 'guest') || 'guest'; } catch(_){}
+  _crChatAppend(me, sent, true, seat);
+  try { inp.focus(); } catch(_){}
+}
+function _crChatAppend(name, text, mine, seat){
+  const text2 = String(text || '').trim();
+  if(!text2) return;
+  const panel = _crNotifyEnsurePanel();
+  const line = document.createElement('div');
+  line.className = 'crNotifyMsg crChatMsg' + (mine ? ' mine' : '') + (seat ? ' seat-' + seat : '');
+  const nm = document.createElement('span');
+  nm.className = 'crChatNm';
+  nm.textContent = (mine ? 'you' : (name || 'player'));
+  const tx = document.createElement('span');
+  tx.className = 'crChatTx';
+  tx.textContent = text2;
+  line.appendChild(nm);
+  line.appendChild(tx);
+  // Insert before the input row so the row stays at the bottom.
+  const row = panel.querySelector('.crChatRow');
+  if(row) panel.insertBefore(line, row);
+  else panel.appendChild(line);
+  // Cap chat history at 60 lines.
+  const msgs = panel.querySelectorAll('.crChatMsg');
+  if(msgs.length > 60) msgs[0].remove();
+  // Keep the newest message in view.
+  try { panel.scrollTop = panel.scrollHeight; } catch(_){}
+}
+try {
+  window._crChatReceive = function(name, text, seat){
+    try { _crChatSyncMode(); } catch(_){}
+    _crChatAppend(name, text, false, seat);
+  };
+  window._crChatSyncMode = _crChatSyncMode;
+} catch(_){}
+// Flip the panel into / out of chat mode as the room connects / disconnects
+// (the relay joins ~1.4 s after load, and there may be no notification to
+// trigger the sync otherwise). Cheap: only materializes the panel in a room.
+try {
+  setInterval(function(){
+    try {
+      if(_crChatModeActive()){ _crNotifyEnsurePanel(); _crChatSyncMode(); }
+      else { _crChatSyncMode(); }
+    } catch(_){}
+  }, 1500);
+} catch(_){}
 function crNotify(msg, kind){
   if(!msg) return;
+  // v1.0.374 — In a live map room the on-screen terminal is a CHAT display, not
+  // a command feed: route command/event notifications to the desktop Terminal
+  // session log only, and keep the panel for chat.
+  if(_crChatModeActive()){
+    try { _crChatSyncMode(); } catch(_){}
+    try { _crInGameTerminalAppend(msg, kind); } catch(_){}
+    return;
+  }
   const panel = _crNotifyEnsurePanel();
   // De-duplicate identical messages emitted within 200 ms (helps with
   // toasts that fire from multiple paths).
