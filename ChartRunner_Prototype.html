@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.383
-     LAST UPDATED:    2026-06-20  ·  Desktop COACH invader tucked further into the bottom-right corner
+     CURRENT VERSION: v1.0.384
+     LAST UPDATED:    2026-06-20  ·  Price tag + coin polish. (1) Removed the dashed guide line from the runner
+     price tag — just a clean pill on the right axis at the avatar's height. (2) Coins reworked: a minted
+     disc (rim + face + highlight), ALL labelled "C" ($CHART) instead of T/C, and ~40% spin around their
+     vertical axis (the "C" hides while edge-on). drawPickups + drawPlayerPriceTag.
+     ---- prior (v1.0.383) ----  Desktop COACH invader tucked further into the bottom-right corner
      (#crCoachHub bottom:96px→18px) so it doesn't crowd the COACH.llm / tutorial window text above it.
      ---- prior (v1.0.382) ----  Live runner price tag: a pill pinned to the RIGHT price axis tracks the
      avatar's height (priceToY(player.py)) and shows the exact price under the ChartRunner, sliding up/down
@@ -13321,7 +13325,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.383",
+  VERSION: "1.0.384",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -34888,12 +34892,8 @@ function drawPlayerPriceTag(){
     const up = !player.upsideDown;
     const accent = up ? '#14f195' : '#ff5b7f';
     const rgb = up ? '20,241,149' : '255,91,127';
-    // faint dashed guide from the avatar across to the tag
-    const px = (typeof sX === 'function') ? sX(player.wx) : 0;
-    ctx.strokeStyle = 'rgba(' + rgb + ',0.45)';
-    ctx.lineWidth = 1; ctx.setLineDash([3,4]);
-    ctx.beginPath(); ctx.moveTo(Math.min(px + 14, x), y); ctx.lineTo(x, y); ctx.stroke();
-    ctx.setLineDash([]);
+    // v1.0.384 — no guide line; just a clean pill on the right axis at the
+    // avatar's height (it already moves with the runner via priceToY(player.py)).
     // pill with a left-pointing arrow tip at the axis edge
     const top = y - h/2;
     ctx.beginPath();
@@ -39390,16 +39390,40 @@ function drawPickups(){
       ctx.font = 'bold 10px ui-monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText('L', 0, 0.5);
     } else {
-      // Spawned coins (the normal path since v1.0.124) fade in on birth and fade out
-      // near the end of their life. Gives visual urgency + polish.
+      // v1.0.384 — $CHART coin. Both economy kinds (tick/creds) render as a
+      // pleasant minted disc — rim + face + top highlight — and ALL show "C"
+      // ($CHART). ~40% of coins spin around their vertical axis (deterministic by
+      // position, no per-coin state): the face squashes through edge-on and the
+      // "C" hides while it's turned away, then re-appears.
       if(pk._spawned){ const a = coinSpawnAlpha(pk); ctx.globalAlpha = a; const s = 0.6 + 0.4*a; ctx.scale(s, s); }
-      ctx.shadowColor = pk.kind==='tick' ? '#ffd166' : '#9b8cff';
-      ctx.shadowBlur = 12+glow;
-      ctx.fillStyle = pk.kind==='tick' ? '#ffd166' : '#9b8cff';
-      ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle='rgba(0,0,0,0.6)';
-      ctx.font='bold 8px ui-monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(pk.kind==='tick'?'T':'C', 0, 0.5);
+      const gold = pk.kind === 'tick';
+      const col  = gold ? '#ffd166' : '#9b8cff';
+      const rim  = gold ? '#a9781a' : '#5b40b8';
+      const hi   = gold ? '#fff3c4' : '#ded2ff';
+      const spin = ((Math.floor(Math.abs(pk.wx)) % 5) < 2);   // ~40% spin
+      const face = spin ? Math.cos(performance.now()/240 + pk.wx*0.6) : 1;  // -1..1
+      const sxAbs = Math.max(0.10, Math.abs(face));
+      ctx.scale(sxAbs, 1);
+      const r = 6.6;
+      ctx.shadowColor = col; ctx.shadowBlur = 10 + glow;
+      // rim
+      ctx.fillStyle = rim;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
+      // face
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(0, 0, r - 1.5, 0, Math.PI*2); ctx.fill();
+      // top-left highlight crescent
+      ctx.globalAlpha *= 0.55;
+      ctx.fillStyle = hi;
+      ctx.beginPath(); ctx.arc(-1.7, -1.9, r*0.42, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = (ctx.globalAlpha/0.55);
+      // "C" — only when fairly face-on; counter-scale so it isn't squashed
+      if(sxAbs > 0.52){
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.font = 'bold 8px ui-monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.save(); ctx.scale(1/sxAbs, 1); ctx.fillText('C', 0, 0.5); ctx.restore();
+      }
     }
     ctx.restore();
   }
