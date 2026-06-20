@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.376
-     LAST UPDATED:    2026-06-20  ·  Map-chat trims: archived the "· N players" count from the header (now just
+     CURRENT VERSION: v1.0.377
+     LAST UPDATED:    2026-06-20  ·  Configure Run timeframe "More ▾" now mirrors the Asset "More ▾": picking a
+     timeframe from the dropdown turns the More button INTO that timeframe (label + selected highlight),
+     instead of adding a separate button next to a plain "More ▾". (osRenderTfBox).
+     ---- prior (v1.0.376) ----  Map-chat trims: archived the "· N players" count from the header (now just
      "◫ MAP CHAT") and archived the SEND button (Enter is the only send path).
      ---- prior (v1.0.375) ----  Map-chat now renders INTEGRATED into the terminal feed — same borderless
      stacked terminal lines (the v1.0.374 boxed panel chrome / rounded border / scroll box are gone). The
@@ -13257,7 +13260,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.376",
+  VERSION: "1.0.377",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -45676,7 +45679,10 @@ document.getElementById('osStrategySel').addEventListener('change', e=>{
 });
 document.getElementById('osTfBox').addEventListener('click', async e=>{
   const b = e.target.closest('button'); if(!b) return;
-  if(!b.dataset.tf) return; // v1.0.361 — ignore the "More ▾" toggle (no data-tf); it has its own handler.
+  // v1.0.361 — ignore the "More ▾" toggle; it has its own click handler (opens
+  // the dropdown). v1.0.377 — even when it carries a data-tf (so the active "More"
+  // TF stays highlighted), the .cfg-tf-more button must NOT re-apply on click.
+  if(!b.dataset.tf || b.classList.contains('cfg-tf-more')) return;
   await applyInterval(b.dataset.tf);
   osRefreshConfigs();
 });
@@ -45691,11 +45697,21 @@ function osRenderTfBox(){
   box.innerHTML = '';
   const mk = tf => { const b = document.createElement('button'); b.type = 'button'; b.dataset.tf = tf; b.textContent = _CFG_TF_LABEL[tf] || tf; if(tf === cur) b.classList.add('on'); return b; };
   _CFG_TF_PRIMARY.forEach(tf => box.appendChild(mk(tf)));
-  if(!_CFG_TF_PRIMARY.includes(cur)) box.appendChild(mk(cur)); // keep the active TF visible even if it's a "More" one
-  const rest = _CFG_TF_ALL.filter(tf => !_CFG_TF_PRIMARY.includes(tf) && tf !== cur);
+  const rest = _CFG_TF_ALL.filter(tf => !_CFG_TF_PRIMARY.includes(tf));
   if(!rest.length) return;
+  // v1.0.377 — mirror the Asset "More ▾": when the active TF is a non-primary
+  // ("More") one, the More button BECOMES that TF — its label shows the TF and
+  // it gets the selected (.on) highlight, just like picking BTC/ETH/SOL vs the
+  // asset More dropdown. data-tf keeps it highlighted across external togglers;
+  // the delegated #osTfBox handler skips .cfg-tf-more so clicking it only opens
+  // the dropdown.
+  const isPrimary = _CFG_TF_PRIMARY.includes(cur);
   const more = document.createElement('button');
-  more.type = 'button'; more.className = 'cfg-tf-more'; more.textContent = 'More ▾'; more.title = 'More timeframes';
+  more.type = 'button';
+  more.className = 'cfg-tf-more' + (!isPrimary ? ' on' : '');
+  more.title = 'More timeframes';
+  if(!isPrimary){ more.dataset.tf = cur; more.textContent = (_CFG_TF_LABEL[cur] || cur) + ' ▾'; }
+  else { more.textContent = 'More ▾'; }
   more.addEventListener('click', e => {
     e.stopPropagation();
     const existing = box.querySelector('.cfg-tf-pop');
@@ -45703,6 +45719,7 @@ function osRenderTfBox(){
     const pop = document.createElement('div'); pop.className = 'cfg-tf-pop';
     rest.forEach(tf => {
       const r = document.createElement('button'); r.type = 'button'; r.dataset.tf = tf; r.textContent = _CFG_TF_LABEL[tf] || tf;
+      if(tf === cur) r.classList.add('on');
       r.addEventListener('click', async ev => { ev.stopPropagation(); pop.remove(); try { await applyInterval(tf); } catch(_){} osRenderTfBox(); });
       pop.appendChild(r);
     });
