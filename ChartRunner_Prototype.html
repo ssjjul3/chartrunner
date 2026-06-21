@@ -27560,7 +27560,7 @@ function openTvSettingsDialog(overlay, opts = {}){
   let tabs = ['Inputs','Style','Alarm','Coordinates','Visibility'];
   // Alarm is wallet-connect-exclusive. Guest + normal play → drop the tab; in
   // onboarding/showcase it stays but nudges (handled in the tab onclick below).
-  if(crIsGuest() && !crIsShowcaseCtx()) tabs = tabs.filter(function(t){ return t !== 'Alarm'; });
+  if((typeof crFeatureLevelOk === 'function' && !crFeatureLevelOk('alarm')) || (crIsGuest() && !crIsShowcaseCtx())) tabs = tabs.filter(function(t){ return t !== 'Alarm'; });
   let active = tabs.includes(opts.activeTab) ? opts.activeTab : 'Inputs';
   const tabBtns = {};
   tabs.forEach(t => {
@@ -27837,6 +27837,12 @@ function openTvSettingsDialog(overlay, opts = {}){
       const paintLeverageRow = () => {
         leverageRow.innerHTML = '';
         if(!leverageOn){
+          if(typeof crFeatureLevelOk === 'function' && !crFeatureLevelOk('leverage')){
+            const lnote = document.createElement('div');
+            lnote.style.cssText = 'color:#6f7686;font-style:italic;font-size:11px;padding:6px 2px';
+            lnote.textContent = 'Leverage unlocks at level ' + ((typeof crFeatureUnlockLv === 'function') ? crFeatureUnlockLv('leverage') : 3) + ' · campaign';
+            leverageRow.appendChild(lnote);
+          } else {
           const ghost = document.createElement('button');
           ghost.type = 'button';
           ghost.setAttribute('data-cr-bracket-action', 'leverage-toggle');
@@ -27851,6 +27857,7 @@ function openTvSettingsDialog(overlay, opts = {}){
             drawRiskDeck();
           };
           leverageRow.appendChild(ghost);
+          }
         } else {
           // v1.0.282 — the expanded Leverage section owns Trade size,
           // Round-trip fee, and Apply setup (they only feed the leveraged
@@ -28617,7 +28624,12 @@ function openTvSettingsDialog(overlay, opts = {}){
         try {
           // ⚡Activate is wallet-connect-exclusive. Guest+play → skip (note only);
           // guest+onboarding/showcase → show but nudge instead of expanding.
-          if(crIsGuest() && !crIsShowcaseCtx()){
+          if(typeof crFeatureLevelOk === 'function' && !crFeatureLevelOk('activation')){
+            const xl = document.createElement('div');
+            xl.style.cssText = 'color:#6f7686;font-style:italic;font-size:12px;margin:14px 0 4px';
+            xl.textContent = 'Order activation unlocks at level ' + ((typeof crFeatureUnlockLv==='function')?crFeatureUnlockLv('activation'):5) + ' · campaign';
+            body.appendChild(xl);
+          } else if(crIsGuest() && !crIsShowcaseCtx()){
             const xn = document.createElement('div');
             xn.style.cssText = 'color:#6f7686;font-style:italic;font-size:12px;margin:14px 0 4px';
             xn.textContent = 'Order activation unlocks when you connect a wallet.';
@@ -29112,6 +29124,7 @@ const ABILITIES = [
   // v1.0.254-slice — Slot 3 = Blue Laser Orders. Same aim dot flow as Red,
   // but routed through the blue order taxonomy and blue cursor/state toggle.
   {key:'3',ic:'◇', nm:'Blue Laser', maxCharges:3, charges:3, use:()=>{
+    if(typeof crFeatureLevelOk === 'function' && !crFeatureLevelOk('activation')){ try { if(typeof toast==='function') toast('Activation Laser unlocks at level ' + ((typeof crFeatureUnlockLv==='function')?crFeatureUnlockLv('activation'):5) + ' · campaign'); } catch(_){} return; }
     const blueActive = !!(window.cr && window.cr.blueLaser && window.cr.blueLaser.active);
     const clearBlueAim = () => {
       game.laserAiming = false;
@@ -32084,6 +32097,15 @@ function vehicleById(id){ return VEHICLES.find(v => v.id === id) || VEHICLES[0];
 // + early game). Higher tiers unlock by level later. Single source of truth.
 function crVehicleUnlocked(id){ id = String(id || ''); return id === 'none' || id === 'skateboard'; }
 try { window.crVehicleUnlocked = crVehicleUnlocked; } catch(_){}
+// ── Minimal campaign LEVEL system ───────────────────────────────────────────
+// Player level = number of campaign chapters completed (claimed). Advanced
+// features unlock at the levels below — tune CR_FEATURE_UNLOCK_LV freely. Until
+// a player reaches the level, the feature is hidden/blocked for EVERYONE.
+function crPlayerLevel(){ try { var c = JSON.parse(localStorage.getItem('cr_campaign_claimed_v1') || '{}') || {}; return Object.keys(c).length; } catch(_){ return 0; } }
+const CR_FEATURE_UNLOCK_LV = { leverage: 3, activation: 5, alarm: 7 };
+function crFeatureUnlockLv(feat){ try { return CR_FEATURE_UNLOCK_LV[feat] || 0; } catch(_){ return 0; } }
+function crFeatureLevelOk(feat){ try { var n = CR_FEATURE_UNLOCK_LV[feat]; return (n == null) ? true : (crPlayerLevel() >= n); } catch(_){ return false; } }
+try { window.crPlayerLevel = crPlayerLevel; window.crFeatureLevelOk = crFeatureLevelOk; window.crFeatureUnlockLv = crFeatureUnlockLv; } catch(_){}
 // v1.0.127 — draw a vehicle's game-art onto a small canvas (no emoji). 'none' shows the canon avatar.
 function _drawVehIcon(cv, vehId){
   if(!cv || !cv.getContext) return;
@@ -61440,7 +61462,7 @@ function openIndicatorEditor(ind){
   // Alarm tab gating (re-evaluated each open): guest+play → hide, guest+showcase → lock badge.
   try {
     const _at = wrap.querySelector('[data-ind-ed-tab="alarm"]');
-    if(_at){ _at.classList.remove('cr-xcl-hide','cr-xcl-locked'); if(crIsGuest()) _at.classList.add(crIsShowcaseCtx() ? 'cr-xcl-locked' : 'cr-xcl-hide'); }
+    if(_at){ _at.style.display=''; _at.classList.remove('cr-xcl-hide','cr-xcl-locked'); if(typeof crFeatureLevelOk==='function' && !crFeatureLevelOk('alarm')){ _at.style.display='none'; } else if(crIsGuest()){ _at.classList.add(crIsShowcaseCtx() ? 'cr-xcl-locked' : 'cr-xcl-hide'); } }
   } catch(_){}
   _setIndicatorEditorTab('params');
   wrap.classList.add('on');
@@ -81886,6 +81908,7 @@ window.crQvac = (function(){
     if(isTyping(e.target)) return;
     try { if((typeof bracketEditor!=='undefined'&&bracketEditor&&bracketEditor.open)||(typeof ladderEditor!=='undefined'&&ladderEditor&&ladderEditor.open)) return; } catch(_){}
     if(e.key==='4'){ if(e.repeat) return;  // key auto-repeat would arm/disarm-toggle
+      try { if(typeof crFeatureLevelOk==='function' && !crFeatureLevelOk('alarm')){ e.preventDefault(); if(typeof toast==='function') toast('Alarm Laser unlocks at level ' + ((typeof crFeatureUnlockLv==='function')?crFeatureUnlockLv('alarm'):7) + ' · campaign'); return; } } catch(_){}
       try { if((typeof shopIsOpen==='function'&&shopIsOpen())||(typeof vehiclePickerIsOpen==='function'&&vehiclePickerIsOpen())) return; } catch(_){}  // modals swallow keys
       e.preventDefault(); if(crAlarm.aiming) crAlarm.disarm(); else crAlarm.arm(); return; }
     if(crAlarm.aiming){ if(e.key==='Enter'){ e.preventDefault(); crAlarm.save(); } else if(e.key==='Escape'){ e.preventDefault(); crAlarm.disarm(); } }
