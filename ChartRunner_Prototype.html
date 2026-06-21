@@ -12063,7 +12063,7 @@
               <span id="crWalletStatusText" style="color:var(--dim)">Not connected — click Connect in the topbar to load on-chain holdings</span>
               <button class="cr-go" id="crWalletConnectBtn" type="button" style="margin-left:auto;font-size:10px;padding:4px 10px">Connect</button>
             </div>
-            <div id="crWalletProofDemo" style="border:1px solid var(--line);border-radius:8px;background:rgba(10,15,28,.42);padding:10px 12px;margin:0 0 10px;display:grid;gap:8px;font-size:12px">
+            <div id="crWalletProofDemo" style="display:none;border:1px solid var(--line);border-radius:8px;background:rgba(10,15,28,.42);padding:10px 12px;margin:0 0 10px;gap:8px;font-size:12px">
               <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
                 <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim)">Signed Devnet Demo</h4>
                 <span id="crProofDemoRoute" style="font:10px ui-monospace,Menlo,monospace;color:var(--dim)">No wallet selected</span>
@@ -32080,6 +32080,10 @@ const VEHICLES = [
   { id:'jetski',       nm:'Jetski',        cost:1000, ic:'≋', maxVel:900,  fric:0.98, free:false, draw:_vDrawJetski },
 ];
 function vehicleById(id){ return VEHICLES.find(v => v.id === id) || VEHICLES[0]; }
+// Until the level system exists, only On foot + Skateboard are unlocked (guests
+// + early game). Higher tiers unlock by level later. Single source of truth.
+function crVehicleUnlocked(id){ id = String(id || ''); return id === 'none' || id === 'skateboard'; }
+try { window.crVehicleUnlocked = crVehicleUnlocked; } catch(_){}
 // v1.0.127 — draw a vehicle's game-art onto a small canvas (no emoji). 'none' shows the canon avatar.
 function _drawVehIcon(cv, vehId){
   if(!cv || !cv.getContext) return;
@@ -46953,6 +46957,7 @@ function _renderPlayerTab(){
       ev.stopPropagation();
       const cur = playerLoadout[slotKey];
       _openPlayerSlotPop(card, list, cur, (opt) => {
+        if(opt && opt._locked){ if(typeof toast === 'function') toast((opt.nm || 'This') + ' unlocks at a higher level'); return; }
         // Click the same option = clear back to default; otherwise activate.
         const next = (opt.id === cur) ? defaultId : opt.id;
         playerLoadout[slotKey] = next;
@@ -46974,7 +46979,13 @@ function _renderPlayerTab(){
   wireSlot('weapon',  PLAYER_OPTIONS.weapon,  'default');
   wireSlot('gear',    PLAYER_OPTIONS.gear,    'none');
   wireSlot('skin',    PLAYER_OPTIONS.skin,    'invader-green');
-  wireSlot('vehicle', PLAYER_OPTIONS.vehicle, 'none');
+  // Vehicles: only On foot + Skateboard unlocked until levels exist; others 🔒.
+  // Clamp any previously-equipped locked vehicle back to On foot.
+  try { if(typeof crVehicleUnlocked === 'function' && !crVehicleUnlocked(playerLoadout.vehicle)){ playerLoadout.vehicle = 'none'; _savePlayerLoadout(); } } catch(_){}
+  wireSlot('vehicle', PLAYER_OPTIONS.vehicle.map(function(v){
+    return (typeof crVehicleUnlocked === 'function' && crVehicleUnlocked(v.id))
+      ? v : Object.assign({}, v, { ic:'🔒', desc:'Unlocks at a higher level', _locked:true });
+  }), 'none');
   // ----- Bots (right column, three slots) -----
   // Show first-3 equipped bots in the slot cards. Empty slots offer a
   // picker that lists every built bot for the user to pick.
