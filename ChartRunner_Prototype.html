@@ -41957,6 +41957,14 @@ window.crLaunchMinigameRandom = crLaunchMinigameRandom;
             localStorage.setItem(claimedKey, JSON.stringify(claimed));
             if(typeof game !== 'undefined') game.run = (game.run|0) + REWARD;
             try { spawnFloat(window.innerWidth/2, 130, '+' + REWARD + ' $RUN', '#ffd166'); } catch(_){}
+            // Campaign bot grant: completing Ch.29/30/33 unlocks CCV/H&S/Divergence.
+            try {
+              var _cbot = (typeof CR_CAMPAIGN_BOT_BY_CH !== 'undefined') && CR_CAMPAIGN_BOT_BY_CH[chapter];
+              if(_cbot && typeof crUnlockBot === 'function' && crUnlockBot(_cbot)){
+                try { spawnFloat(window.innerWidth/2, 162, 'BOT UNLOCKED', '#14f195'); } catch(_){}
+                try { if(typeof toast === 'function') toast('New bot unlocked — equip it in Profile'); } catch(_){}
+              }
+            } catch(_){}
           }
         } catch(_){}
         try { confettiBurst(); } catch(_){}
@@ -47002,22 +47010,32 @@ function _renderPlayerTab(){
       }
       const _guest = (typeof window.crGuest === 'function' && window.crGuest());
       const list = [{ id:'__empty', ic:'∅', nm:'(empty)', desc:'Unequip this slot' }];
-      // v1.0.416 — guests see ONLY the 3 guest-available bots; the rest are
-      // wallet-exclusive and omitted from the picker entirely.
-      allBots.filter(b => !_guest || _crBotGuestOk(b.id)).forEach(b => list.push({ id:b.id, ic:'▣', nm:b.name || b.id,
-        desc:(b.role || 'bot') + ((eq.indexOf(b.id) >= 0) ? ' · already equipped' : '') }));
+      // Guests: only the 3 guest bots (rest hidden). Connected: owned bots are
+      // equippable; unowned show LOCKED → "Buy in marketplace" for CR_BOT_PRICE_RUN $RUN.
+      allBots.forEach(b => {
+        const owned = (typeof crBotOwned === 'function') ? crBotOwned(b.id) : _crBotGuestOk(b.id);
+        if(_guest && !owned) return;                       // guests don't see locked bots
+        if(owned){
+          list.push({ id:b.id, ic:'▣', nm:b.name || b.id, desc:(b.role || 'bot') + ((eq.indexOf(b.id) >= 0) ? ' · already equipped' : '') });
+        } else {
+          list.push({ id:b.id, ic:'🔒', nm:b.name || b.id, desc:'Locked · buy in marketplace · ' + ((typeof CR_BOT_PRICE_RUN !== 'undefined') ? CR_BOT_PRICE_RUN : 25) + ' $RUN', _buy:true });
+        }
+      });
       const cur = equipId || '__empty';
       _openPlayerSlotPop(card, list, cur, (opt) => {
         if(opt.id === '__empty'){
           // Unequip whatever is currently in this slot.
           if(equipId && typeof _wbToggleEquip === 'function') _wbToggleEquip(equipId);
         } else if(opt.id !== equipId){
-          // v1.0.413 — guests can equip ONLY the 3 guest-available bots; the rest
-          // are wallet-connect exclusive (this slot path bypasses _wbToggleEquip,
-          // so gate it here too).
+          // Guests: only the 3 guest bots; the rest require a wallet.
           if(typeof window.crGuest === 'function' && window.crGuest() && !_crBotGuestOk(opt.id)){
             if(typeof toast === 'function') toast('Connect a wallet to use this bot');
             try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){}
+            return;
+          }
+          // Connected: a locked (unowned) bot → buy it with $RUN, then re-render.
+          if(opt._buy || (typeof crBotOwned === 'function' && !crBotOwned(opt.id))){
+            if(typeof crBuyBot === 'function' && crBuyBot(opt.id)){ try { _renderPlayerTab(); } catch(_){} }
             return;
           }
           // Move this bot into this slot. If the bot is already equipped
@@ -49190,6 +49208,33 @@ function _crBotLive(id){
 // bot is wallet-connect exclusive. (SFP Hunter · Volume Climax · VWAP Reclaim.)
 const CR_GUEST_BOT_IDS = new Set(['det_sfp', 'det_climax', 'det_vwap']);
 function _crBotGuestOk(id){ return CR_GUEST_BOT_IDS.has(String(id || '')); }
+// ── Connected-player bot progression: start 3 (same as guest) → +3 via campaign
+//    (CCV/H&S/Divergence on completing their chapters) → rest bought with $RUN. ──
+const CR_STARTER_BOT_IDS = ['det_sfp', 'det_climax', 'det_vwap'];
+const CR_CAMPAIGN_BOT_BY_CH = { 29: 'det_ccv', 30: 'det_hs', 33: 'det_div' };
+const CR_BOT_PRICE_RUN = 25;
+const _CR_OWNED_BOTS_KEY = 'cr_owned_bots_v1';
+let CR_OWNED_BOTS = (function(){
+  try { var s = JSON.parse(localStorage.getItem(_CR_OWNED_BOTS_KEY) || 'null'); if(Array.isArray(s)) return new Set(s.concat(CR_STARTER_BOT_IDS)); } catch(_){}
+  return new Set(CR_STARTER_BOT_IDS);
+})();
+function _crSaveOwnedBots(){ try { localStorage.setItem(_CR_OWNED_BOTS_KEY, JSON.stringify(Array.from(CR_OWNED_BOTS))); } catch(_){} }
+function crBotOwned(id){ id = String(id || ''); return _crBotGuestOk(id) || CR_OWNED_BOTS.has(id); }
+function crUnlockBot(id){ id = String(id || ''); if(!id || CR_OWNED_BOTS.has(id)) return false; CR_OWNED_BOTS.add(id); _crSaveOwnedBots(); return true; }
+// Marketplace buy with $RUN (game.run). Returns true on success.
+function crBuyBot(id){
+  id = String(id || ''); if(!id) return false;
+  if(crBotOwned(id)){ try { if(typeof toast === 'function') toast('Already owned'); } catch(_){} return false; }
+  var bal = (typeof game !== 'undefined' && game.run) ? (game.run | 0) : 0;
+  if(bal < CR_BOT_PRICE_RUN){ try { if(typeof toast === 'function') toast('Need ' + CR_BOT_PRICE_RUN + ' $RUN for this bot (you have ' + bal + ')'); } catch(_){} return false; }
+  try { game.run = bal - CR_BOT_PRICE_RUN; } catch(_){}
+  try { var el = document.getElementById('run'); if(el) el.textContent = String(game.run | 0); } catch(_){}
+  crUnlockBot(id);
+  try { if(typeof spawnFloat === 'function') spawnFloat(window.innerWidth/2, 150, 'BOT BOUGHT · -' + CR_BOT_PRICE_RUN + ' $RUN', '#14f195'); } catch(_){}
+  try { if(typeof toast === 'function') toast('Bot unlocked'); } catch(_){}
+  return true;
+}
+try { window.crBotOwned = crBotOwned; window.crUnlockBot = crUnlockBot; window.crBuyBot = crBuyBot; } catch(_){}
 try { window.CR_GUEST_BOT_IDS = CR_GUEST_BOT_IDS; } catch(_){}
 // Seed detector bots into wb.bots if not already present. Idempotent — runs
 // after _wbLoad on every boot, so adding a new DETECTOR_BOTS entry in a
