@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.433
-     LAST UPDATED:    2026-06-21  ·  PUBLIC ROOMS: search & join LIVE rooms by player or map name — Maps → "🔍 Rooms" browser
-                      (reads the relay /rooms directory). Hosts opt-in via room → Public. NEEDS THE RELAY REDEPLOYED (deploy.sh).
+     CURRENT VERSION: v1.0.434
+     LAST UPDATED:    2026-06-21  ·  LIVE COUNTERS (social P1): "🔴 N live" runner total in the 🔍 Rooms browser header + a
+                      "live · N" badge on Maps cards with an active public room. Client-only (reads /rooms); no relay change.
+     PREV (v1.0.433): PUBLIC ROOMS — search & join live rooms by player/map name (🔍 Rooms browser + relay /rooms directory).
      PREV (v1.0.432): THEME — Save-Map / confirm / prompt dialogs are theme-aware (--cd-* vars; Platinum + ascii/frontier/bw/mono).
      ALSO (v1.0.431): MULTIPLAYER MAPS — (1) online-players roster panel (top-right, lists self + peers by name, seat-colored);
                       (2) Maps card buttons relabeled: ↗→"send" (snapshot link), 🛰→"room" (LIVE multiplayer).
@@ -949,6 +950,10 @@
   #crRoomsBackdrop .crRoomRow .join{appearance:none;border:1px solid var(--cd-accent);background:color-mix(in srgb,var(--cd-accent) 16%,transparent);color:var(--cd-fg);font:700 11px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.4px;padding:7px 13px;border-radius:6px;cursor:pointer;flex:none}
   #crRoomsBackdrop .crRoomRow .join:hover{background:color-mix(in srgb,var(--cd-accent) 28%,transparent)}
   #crRoomsBackdrop .crRoomsEmpty{color:var(--cd-dim);text-align:center;padding:22px 8px;font-size:12px;line-height:1.6}
+  /* v1.0.434 — live-room badge on Maps cards + counter dot */
+  .cr-live-badge{display:inline-flex;align-items:center;gap:5px;margin-top:4px;font:700 9.5px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.4px;text-transform:uppercase;color:#ff5b7f}
+  .cr-live-badge .dot{width:6px;height:6px;border-radius:50%;background:#ff5b7f;box-shadow:0 0 6px #ff5b7f;animation:crLivePulse 1.6s ease-in-out infinite}
+  @keyframes crLivePulse{0%,100%{opacity:1}50%{opacity:.35}}
   /* v0.9.95 — NFT avatar picker. Same Coach palette as crConfirm but
      a wider card with a 2-step inner: collection grid → NFT grid for
      the chosen collection. + button on the profile avatar opens this. */
@@ -13603,7 +13608,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.433",
+  VERSION: "1.0.434",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -34437,6 +34442,12 @@ window.crRoom = (function(){
     try {
       var r = await fetch(http() + '/rooms' + (q ? ('?q=' + encodeURIComponent(q)) : ''), { cache:'no-store' });
       var arr = await r.json();
+      // v1.0.434 — live runner counter in the header.
+      try {
+        var _t = bd.querySelector('.crRoomsHead .t');
+        var _tot = (Array.isArray(arr) ? arr : []).reduce(function(s, x){ return s + (x.players || 0); }, 0);
+        if(_t) _t.innerHTML = '🛰 Public rooms · <span style="color:#ff5b7f">●</span> ' + _tot + ' live';
+      } catch(_){}
       if(!Array.isArray(arr) || !arr.length){ listEl.innerHTML = '<div class="crRoomsEmpty">No public rooms right now.<br>Host one: open a map → <b>room</b> → <b>Public</b>.</div>'; return; }
       listEl.innerHTML = '';
       arr.forEach(function(rm){
@@ -34465,6 +34476,34 @@ window.crRoom = (function(){
     } catch(e){ try { if(typeof toast === 'function') toast('Could not join — that room may have closed'); } catch(_){} }
   }
   window.crRoomsBrowser = { open: open, close: close };
+
+  // v1.0.434 — live-room badges on Maps cards. Cross-refs the /rooms directory by
+  // map name and stamps "🔴 live · N" on any card with an active public room.
+  async function annotateMaps(){
+    try {
+      var grid = document.getElementById('crMapGrid'), ph = document.getElementById('crPhMapList');
+      if((!grid || !grid.children.length) && (!ph || !ph.children.length)) return;
+      var r = await fetch(http() + '/rooms', { cache:'no-store' });
+      var arr = await r.json();
+      var byName = {};
+      (Array.isArray(arr) ? arr : []).forEach(function(rm){ var k = String(rm.mapName||'').toLowerCase().trim(); if(k) byName[k] = (byName[k]||0) + (rm.players||0); });
+      [grid, ph].forEach(function(g){
+        if(!g) return;
+        Array.prototype.forEach.call(g.children, function(card){
+          var nm = ((card.dataset && card.dataset.mapName) || '').toLowerCase().trim();
+          var n = nm ? byName[nm] : 0;
+          var b = card.querySelector('.cr-live-badge');
+          if(n){
+            if(!b){ b = document.createElement('span'); b.className = 'cr-live-badge'; var host2 = card.querySelector('.meta') || card.querySelector('.body') || card; host2.appendChild(b); }
+            b.innerHTML = '<span class="dot"></span>live · ' + n;
+          } else if(b){ b.remove(); }
+        });
+      });
+    } catch(_){}
+  }
+  window.crAnnotateLiveMaps = annotateMaps;
+  setInterval(function(){ try { var w = document.getElementById('win-maps'); if(w && w.classList.contains('on')) annotateMaps(); } catch(_){} }, 7000);
+
   // Maps-window "🔍 Rooms" launcher (delegated; the button is rendered in markup).
   document.addEventListener('click', function(e){
     var b = e.target && e.target.closest && e.target.closest('#crFindRooms');
@@ -71193,6 +71232,7 @@ const crL3 = (function(){
           const card = document.createElement('button');
           card.className = 'cr-mapCard';
           card.type = 'button';
+          try { card.dataset.mapName = (m.name || ''); } catch(_){}   // v1.0.434 — live-room badge match
           // v1.0.357 — drag a card onto a folder row (left) to move it there.
           card.draggable = true;
           card.addEventListener('dragstart', e => { try { e.dataTransfer.setData('application/x-cr-mapmove', m.id); e.dataTransfer.effectAllowed = 'move'; } catch(_){} });
@@ -71338,6 +71378,8 @@ const crL3 = (function(){
         }
       }
     }
+    // v1.0.434 — stamp "🔴 live · N" badges on cards that have an active public room.
+    try { if(window.crAnnotateLiveMaps) setTimeout(window.crAnnotateLiveMaps, 60); } catch(_){}
     // Phone list
     const phList = document.getElementById('crPhMapList');
     if(phList){
@@ -71351,6 +71393,7 @@ const crL3 = (function(){
         for(const m of list){
           const row = document.createElement('div');
           row.className = 'ph-mapCard';
+          try { row.dataset.mapName = (m.name || ''); } catch(_){}   // v1.0.434 — live-room badge match
           row.innerHTML = `
             ${_crMapThumbHTML(m)}
             <div class="body">
