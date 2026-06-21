@@ -953,7 +953,8 @@
   #crRoomsBackdrop .crRoomRow .join:hover{background:color-mix(in srgb,var(--cd-accent) 28%,transparent)}
   #crRoomsBackdrop .crRoomsEmpty{color:var(--cd-dim);text-align:center;padding:22px 8px;font-size:12px;line-height:1.6}
   /* v1.0.434 — live-room badge on Maps cards + counter dot */
-  .cr-live-badge{display:inline-flex;align-items:center;gap:5px;margin-top:4px;font:700 9.5px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.4px;text-transform:uppercase;color:#ff5b7f}
+  /* v1.0.434 fix — absolute overlay so appearing/removing never reflows the card grid */
+  .cr-live-badge{position:absolute;top:6px;right:6px;z-index:3;display:inline-flex;align-items:center;gap:5px;font:700 9.5px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.4px;text-transform:uppercase;color:#ff5b7f;background:rgba(10,12,20,.72);padding:2px 6px;border-radius:999px;pointer-events:none}
   .cr-live-badge .dot{width:6px;height:6px;border-radius:50%;background:#ff5b7f;box-shadow:0 0 6px #ff5b7f;animation:crLivePulse 1.6s ease-in-out infinite}
   @keyframes crLivePulse{0%,100%{opacity:1}50%{opacity:.35}}
   /* v1.0.436 — Social: player Search + profile cards (P3/P4). Reuses --cd-* theme palette. */
@@ -34634,9 +34635,16 @@ window.crRoom = (function(){
         Array.prototype.forEach.call(g.children, function(card){
           var nm = ((card.dataset && card.dataset.mapName) || '').toLowerCase().trim();
           var n = nm ? byName[nm] : 0;
+          // Change-guard: only touch the DOM when the count actually changed, so a
+          // steady count doesn't recreate the badge (no flicker / animation restart).
+          var prev = (card.dataset && card.dataset.liveN) || '0';
+          if(String(n) === prev) return;
+          if(card.dataset) card.dataset.liveN = String(n);
           var b = card.querySelector('.cr-live-badge');
           if(n){
-            if(!b){ b = document.createElement('span'); b.className = 'cr-live-badge'; var host2 = card.querySelector('.meta') || card.querySelector('.body') || card; host2.appendChild(b); }
+            // Overlay on the card itself (absolute) → never changes card height.
+            try { if(getComputedStyle(card).position === 'static') card.style.position = 'relative'; } catch(_){}
+            if(!b){ b = document.createElement('span'); b.className = 'cr-live-badge'; card.appendChild(b); }
             b.innerHTML = '<span class="dot"></span>live · ' + n;
           } else if(b){ b.remove(); }
         });
