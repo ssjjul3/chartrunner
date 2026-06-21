@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.412
-     LAST UPDATED:    2026-06-21  ·  Racing HUD now lives INSIDE the game toolbar (#crTopBar): during a race the
-     toolbar shows ONLY the minigame content (time/best/flips · % · distance · minimap); standalone overlay deleted.
-     ── earlier ── v1.0.411: racing HUD dropped the green bar + hid the menu bar.
+     CURRENT VERSION: v1.0.413
+     LAST UPDATED:    2026-06-21  ·  Bots: fixed equipped bots vanishing for guests (crApplyAccessGates wiped ALL
+     bot equips → no orbs). Guests now keep/equip ONLY 3 bots (SFP Hunter · Volume Climax · VWAP Reclaim); every
+     other bot is wallet-connect exclusive (gated in the gate + _wbToggleEquip + the Profile slot picker).
+     ── earlier ── v1.0.412: racing HUD moved INTO the game toolbar (#crTopBar); overlay deleted.
+     v1.0.411: racing HUD dropped the green bar + hid the menu bar.
      v1.0.410: racing gaps no longer lethal (NaN/null-candle guard + terrain clamp).
      v1.0.409: racing feel (creep baseline + snappy gas) + top HUD bar (progress + minimap).
      v1.0.408: Profile RUNNER/SNAKE tabs + Snake card are connect-exclusive.
@@ -13457,7 +13459,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.412",
+  VERSION: "1.0.413",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -46217,15 +46219,26 @@ function _renderPlayerTab(){
         if(typeof toast === 'function') toast('No bots built yet — Workbench → Bots');
         return;
       }
+      const _guest = (typeof window.crGuest === 'function' && window.crGuest());
       const list = [{ id:'__empty', ic:'∅', nm:'(empty)', desc:'Unequip this slot' }];
       allBots.forEach(b => list.push({ id:b.id, ic:'▣', nm:b.name || b.id,
-        desc:(b.role || 'bot') + ((eq.indexOf(b.id) >= 0) ? ' · already equipped' : '') }));
+        // v1.0.413 — guests see non-guest bots as wallet-locked.
+        desc:(_guest && !_crBotGuestOk(b.id)) ? '🔒 connect a wallet'
+             : ((b.role || 'bot') + ((eq.indexOf(b.id) >= 0) ? ' · already equipped' : '')) }));
       const cur = equipId || '__empty';
       _openPlayerSlotPop(card, list, cur, (opt) => {
         if(opt.id === '__empty'){
           // Unequip whatever is currently in this slot.
           if(equipId && typeof _wbToggleEquip === 'function') _wbToggleEquip(equipId);
         } else if(opt.id !== equipId){
+          // v1.0.413 — guests can equip ONLY the 3 guest-available bots; the rest
+          // are wallet-connect exclusive (this slot path bypasses _wbToggleEquip,
+          // so gate it here too).
+          if(typeof window.crGuest === 'function' && window.crGuest() && !_crBotGuestOk(opt.id)){
+            if(typeof toast === 'function') toast('Connect a wallet to use this bot');
+            try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){}
+            return;
+          }
           // Move this bot into this slot. If the bot is already equipped
           // elsewhere → unequip first, then re-equip into the new position.
           // The orbital-orb renderer reads wb.equipped order, so to put
@@ -48392,6 +48405,11 @@ function _crBotLive(id){
   if(typeof CR_BOT_ROSTER_TOP10 === 'undefined' || !CR_BOT_ROSTER_TOP10) return true;
   return CR_LIVE_BOT_IDS.has(String(id || ''));
 }
+// v1.0.413 — guest-available bots: guests can equip ONLY these three; every other
+// bot is wallet-connect exclusive. (SFP Hunter · Volume Climax · VWAP Reclaim.)
+const CR_GUEST_BOT_IDS = new Set(['det_sfp', 'det_climax', 'det_vwap']);
+function _crBotGuestOk(id){ return CR_GUEST_BOT_IDS.has(String(id || '')); }
+try { window.CR_GUEST_BOT_IDS = CR_GUEST_BOT_IDS; } catch(_){}
 // Seed detector bots into wb.bots if not already present. Idempotent — runs
 // after _wbLoad on every boot, so adding a new DETECTOR_BOTS entry in a
 // future version just appears in the next save without clobbering the
@@ -49580,6 +49598,13 @@ function _wbToggleEquip(id){
     wb.equipped.splice(i, 1);
     if(typeof toast === 'function') toast('Bot unequipped');
   } else {
+    // v1.0.413 — guests can equip ONLY the 3 guest-available bots; the rest are
+    // wallet-connect exclusive.
+    if(typeof window.crGuest === 'function' && window.crGuest() && !_crBotGuestOk(id)){
+      if(typeof toast === 'function') toast('Connect a wallet to use this bot');
+      try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){}
+      return;
+    }
     // v1.0.294 — archived (non-top-10) bots can't be player-equipped.
     const row = wb.bots.find(b => b.id === id);
     if(row && row.archived){
@@ -65557,7 +65582,10 @@ function log(msg){
         if(typeof wb !== 'undefined'){
           const all = _crAllToolIds();
           if(all.length) wb.equippedTools = all;                 // all tools equipped (locked — Profile hidden)
-          if(Array.isArray(wb.equipped)) wb.equipped.length = 0; else wb.equipped = []; // no bots
+          // v1.0.413 — guests keep ONLY the 3 guest-available bots (SFP · Volume
+          // Climax · VWAP Reclaim); the rest are wallet-exclusive and get dropped.
+          if(Array.isArray(wb.equipped)) wb.equipped = wb.equipped.filter(id => _crBotGuestOk(id));
+          else wb.equipped = [];
           try { if(typeof _wbSave === 'function') _wbSave(); } catch(_){}
         }
       } catch(_){}
