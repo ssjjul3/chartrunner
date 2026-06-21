@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.430
-     LAST UPDATED:    2026-06-21  ·  MOBILE pass 2: (1) on-screen TOUCH move-pad (◀ ▶ ↑ ↓) on phones during a run —
+     CURRENT VERSION: v1.0.431
+     LAST UPDATED:    2026-06-21  ·  MULTIPLAYER MAPS: (1) online-players roster panel — top-right corner lists everyone live
+                      in the room (self + peers) by name, seat-colored (★ creator · wallet · guest); shown only in a ?room= map.
+                      (2) Maps card buttons relabeled to plain words: ↗→"send" (snapshot link), 🛰→"room" (LIVE multiplayer).
+     PREV:            2026-06-21  ·  MOBILE pass 2: (1) on-screen TOUCH move-pad (◀ ▶ ↑ ↓) on phones during a run —
      drives the same keys as the keyboard; (2) chart toolbar scrolls horizontally (all TF pills reachable);
      (3) in-game Terminal renders in-frame; (4) coach welcome + chat render like the tutorial (full-width, text wraps).
      ── earlier ── v1.0.429: Minigame tab hides the "Real candles · asset:" footer.
@@ -13562,7 +13565,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.430",
+  VERSION: "1.0.431",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -34276,6 +34279,18 @@ window.crRoom = (function(){
     return t;
   }
 
+  // v1.0.431 — Online roster: self + live peers (TTL-filtered) for the corner panel.
+  function roster(){
+    var out = [{ handle: myHandle(), seat: mySeat(), isWallet: !!myWallet(), self: true }];
+    var now = Date.now();
+    peers.forEach(function(p){
+      if(now - p.last > PEER_TTL_MS) return;
+      out.push({ handle: p.handle || 'player', seat: p.seat || 'guest', isWallet: !!p.isWallet, self: false });
+    });
+    return out;
+  }
+  function seatColor(s){ return SEAT_COLORS[s] || SEAT_COLORS.guest; }
+
   if(params){ setTimeout(connect, 1400); }        // let auth + chart settle first
 
   return {
@@ -34287,11 +34302,56 @@ window.crRoom = (function(){
     chat:         chat,
     handle:       myHandle,
     seat:         mySeat,
+    roster:       roster,
+    seatColor:    seatColor,
     isSpectator:  function(){ return spectator; },
     peerCount:    function(){ return peers.size; },
     leave:        leave,
     _connect:     connect,
   };
+})();
+
+/* ── v1.0.431 — Online-players roster panel (multiplayer maps only) ───────────
+   A compact top-right corner panel that lists everyone live in the current room
+   (self + peers) by name, seat-colored (★ creator gold · wallet green · guest
+   blue). Visible ONLY while crRoom.active() (i.e. opened via a ?room= map link);
+   hidden everywhere else. Pure DOM overlay, pointer-events:none so it never
+   blocks the chart. Ticks at 1 Hz off the roster API. Never throws. */
+(function crRoomRosterPanel(){
+  if(typeof document === 'undefined') return;
+  var el = null;
+  function ensure(){
+    if(el) return el;
+    el = document.createElement('div');
+    el.id = 'crRoomRoster';
+    el.style.cssText = 'position:fixed;top:54px;right:12px;z-index:62;min-width:144px;max-width:230px;'
+      + 'background:rgba(10,12,20,.86);border:1px solid rgba(255,255,255,.14);border-radius:11px;'
+      + 'padding:9px 11px;font:600 12px ui-monospace,Menlo,Consolas,monospace;color:#e9ebf2;'
+      + 'backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);box-shadow:0 8px 24px rgba(0,0,0,.45);'
+      + 'pointer-events:none;display:none';
+    (document.body || document.documentElement).appendChild(el);
+    return el;
+  }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>]/g, function(c){ return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'; }); }
+  function tick(){
+    try {
+      var active = !!(window.crRoom && crRoom.active && crRoom.active());
+      var e = ensure();
+      if(!active){ if(e.style.display !== 'none') e.style.display = 'none'; return; }
+      var list = (crRoom.roster ? crRoom.roster() : []) || [];
+      var rows = list.map(function(p){
+        var col = (crRoom.seatColor ? crRoom.seatColor(p.seat) : '#7aa2ff');
+        var nm  = (p.seat === 'creator' ? '★ ' : '') + esc(p.handle || 'player') + (p.self ? ' <span style="color:#6a6f7a">(you)</span>' : '');
+        return '<div style="display:flex;align-items:center;gap:8px;margin-top:5px;overflow:hidden">'
+          + '<span style="width:8px;height:8px;border-radius:50%;flex:none;background:' + col + ';box-shadow:0 0 6px ' + col + '"></span>'
+          + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + nm + '</span></div>';
+      }).join('');
+      e.innerHTML = '<div style="display:flex;align-items:center;gap:7px;color:#9aa0a6;font-size:10px;letter-spacing:.6px;text-transform:uppercase">'
+        + '<span style="width:6px;height:6px;border-radius:50%;background:#14f195;box-shadow:0 0 6px #14f195"></span>Online · ' + list.length + '</div>' + rows;
+      e.style.display = 'block';
+    } catch(_){}
+  }
+  setInterval(tick, 1000);
 })();
 
 // ======= Loop =======
@@ -71030,8 +71090,8 @@ const crL3 = (function(){
             <div class="row">
               <span class="ago">${fmtAgo(m.t)}</span>
               <span class="acts">
-                <button class="share" data-id="${m.id}" title="Copy share link (snapshot)">↗</button>
-                <button class="room"  data-id="${m.id}" title="Create LIVE multiplayer room (needs wallet)">🛰</button>
+                <button class="share" data-id="${m.id}" title="Send — copy a snapshot link (no live connection)">send</button>
+                <button class="room"  data-id="${m.id}" title="Room — create a LIVE multiplayer room (needs wallet)">room</button>
                 <button class="del"   data-id="${m.id}" title="Delete">×</button>
               </span>
             </div>`;
