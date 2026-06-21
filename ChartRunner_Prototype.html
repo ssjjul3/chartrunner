@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.434
-     LAST UPDATED:    2026-06-21  ·  LIVE COUNTERS (social P1): "🔴 N live" runner total in the 🔍 Rooms browser header + a
-                      "live · N" badge on Maps cards with an active public room. Client-only (reads /rooms); no relay change.
+     CURRENT VERSION: v1.0.435
+     LAST UPDATED:    2026-06-21  ·  GLOBAL PRESENCE (social P2): wallet-connected clients heartbeat to the relay → app-wide
+                      online/offline. New relay /presence endpoints + window.crPresence (beat/isOnline/status). NEEDS RELAY REDEPLOY.
+     PREV (v1.0.434): LIVE COUNTERS (social P1) — "● N live" in 🔍 Rooms header + "live · N" badge on Maps cards.
      PREV (v1.0.433): PUBLIC ROOMS — search & join live rooms by player/map name (🔍 Rooms browser + relay /rooms directory).
      PREV (v1.0.432): THEME — Save-Map / confirm / prompt dialogs are theme-aware (--cd-* vars; Platinum + ascii/frontier/bw/mono).
      ALSO (v1.0.431): MULTIPLAYER MAPS — (1) online-players roster panel (top-right, lists self + peers by name, seat-colored);
@@ -13608,7 +13609,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.434",
+  VERSION: "1.0.435",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -34509,6 +34510,39 @@ window.crRoom = (function(){
     var b = e.target && e.target.closest && e.target.closest('#crFindRooms');
     if(b){ e.preventDefault(); e.stopPropagation(); open(); }
   });
+})();
+
+/* ── v1.0.435 — Global presence (social layer P2) ─────────────────────────────
+   App-wide online/offline, independent of rooms. While a WALLET is connected the
+   client POSTs a heartbeat (wallet + display name) to the relay every ~20s
+   (text/plain → no CORS preflight); the relay marks that wallet online for 35s.
+   Guests don't beat (presence keys off the registered/wallet identity, matching
+   the search-by-on-chain-name design). Exposes window.crPresence for P3/P4:
+     crPresence.beat()                  — force a heartbeat now
+     crPresence.isOnline(wallet)        — Promise<bool>
+     crPresence.status([wallets])       — Promise<[{wallet,name,online,lastSeen}]>  (omit arg = all online)
+   Never throws; no-ops when no wallet is connected. */
+(function crPresenceClient(){
+  if(typeof document === 'undefined') return;
+  var FB = 'https://chartrunner-relay.tail879ec.ts.net';
+  function http(){ try { return (window.crRoom && crRoom.relayHttp) ? crRoom.relayHttp() : FB; } catch(_){ return FB; } }
+  function wallet(){ try { return (window.crWallet && crWallet.get && crWallet.get()) ? String(crWallet.get()) : ''; } catch(_){ return ''; } }
+  function myName(){ try { var el = document.getElementById('crLpName'); var t = el && el.textContent ? el.textContent.trim() : ''; return t.slice(0,32); } catch(_){ return ''; } }
+  async function beat(){
+    var w = wallet(); if(!w) return false;
+    try { await fetch(http() + '/presence/beat', { method:'POST', headers:{ 'content-type':'text/plain' }, body: JSON.stringify({ wallet:w, name: myName() }), keepalive:true, cache:'no-store' }); return true; } catch(_){ return false; }
+  }
+  async function status(ids){
+    try {
+      var q = (Array.isArray(ids) && ids.length) ? ('?ids=' + encodeURIComponent(ids.join(','))) : '';
+      var r = await fetch(http() + '/presence' + q, { cache:'no-store' }); return await r.json();
+    } catch(_){ return []; }
+  }
+  async function isOnline(w){ try { var r = await fetch(http() + '/presence/' + encodeURIComponent(w), { cache:'no-store' }); var j = await r.json(); return !!(j && j.online); } catch(_){ return false; } }
+  window.crPresence = { beat: beat, status: status, isOnline: isOnline };
+  setTimeout(beat, 2500);
+  setInterval(beat, 20000);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) beat(); });
 })();
 
 // ======= Loop =======
