@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.409
-     LAST UPDATED:    2026-06-21  ·  Racing feel + HUD: (1) snappier gas + an always-rolling creep baseline so the
-     runner never sits dead; (2) a top HUD bar replaces the toolbar during a race — time/best/flips + progress
-     bar (% + distance) + a minimap (terrain · finish · runner). Chart toolbar hidden while racing.
-     ── earlier ── v1.0.408: Profile RUNNER/SNAKE tabs + Snake card are connect-exclusive.
+     CURRENT VERSION: v1.0.410
+     LAST UPDATED:    2026-06-21  ·  Racing: gaps are no longer lethal — NaN/null-candle guard in _ground + a hard
+     terrain-floor clamp + alive=true so a steep cliff / price gap can't drop the runner through the floor.
+     ── earlier ── v1.0.409: racing feel (creep baseline + snappy gas) + top HUD bar (progress + minimap).
+     v1.0.408: Profile RUNNER/SNAKE tabs + Snake card are connect-exclusive.
      v1.0.407: Racing moved to the FRONT as the first minigame card.
      v1.0.406: archived the BUBBLE MAPS tab from the chart/run token tab strip.
      v1.0.405: removed each vehicle's built-in rider figure (only the equipped ChartRunner rides).
@@ -13455,7 +13455,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.409",
+  VERSION: "1.0.410",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -36977,12 +36977,21 @@ window.crRacing = (function(){
   let st = null;
   function active(){ return !!(st && st.on); }
   function _ground(wx){
-    if(typeof candles === 'undefined' || !candles || !candles.length) return 0;
+    if(typeof candles === 'undefined' || !candles || !candles.length) return _lastGround || 0;
     let f = wx / STEP - 0.5, i = Math.floor(f), frac = f - i;
     i = Math.max(0, Math.min(candles.length - 1, i));
     const j = Math.max(0, Math.min(candles.length - 1, i + 1));
-    return candles[i].h + (candles[j].h - candles[i].h) * Math.max(0, Math.min(1, frac));
+    // v1.0.410 — NaN/null-candle guard: some loaded tokens have gaps/forming bars
+    // whose .h is missing; an undefined ground = NaN py = the runner falls through
+    // the terrain. Fall back to the nearest valid neighbour / last good ground.
+    let a = (candles[i] && isFinite(candles[i].h)) ? candles[i].h : null;
+    let b = (candles[j] && isFinite(candles[j].h)) ? candles[j].h : null;
+    if(a == null && b == null) return _lastGround || 0;
+    if(a == null) a = b;
+    if(b == null) b = a;
+    return (_lastGround = a + (b - a) * Math.max(0, Math.min(1, frac)));
   }
+  let _lastGround = 0;
   function _groundY(wx){ try { return priceToY(_ground(wx)); } catch(_){ return 0; } }
   function _slope(wx){
     const a = _groundY(wx - STEP*0.5), b = _groundY(wx + STEP*0.5);
@@ -37097,6 +37106,16 @@ window.crRacing = (function(){
       player.py = gNow; player.vy = 0; st.onGround = true; st.airTime = 0;
     } else {
       st.onGround = false; st.airTime += dt;
+    }
+    // v1.0.410 — gaps are NEVER lethal in a race: hard-clamp the runner onto the
+    // terrain so a steep cliff / price gap can't drop it through the floor, and
+    // keep it alive no matter what (racing has no death state).
+    {
+      const gFloor = _ground(player.wx);
+      if(!isFinite(player.py) || player.py < gFloor){
+        player.py = gFloor; player.vy = 0; st.onGround = true; st.airTime = 0;
+      }
+      player.alive = true;
     }
     // angle
     if(st.onGround){
