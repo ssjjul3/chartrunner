@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.411
-     LAST UPDATED:    2026-06-21  ·  Racing HUD: removed the green progress/tracking bar (kept % · distance text)
-     and now hide the in-game OS menu bar (#crOSBar) too during a race, so the HUD sits alone at toolbar level.
-     ── earlier ── v1.0.410: racing gaps no longer lethal (NaN/null-candle guard + terrain clamp).
+     CURRENT VERSION: v1.0.412
+     LAST UPDATED:    2026-06-21  ·  Racing HUD now lives INSIDE the game toolbar (#crTopBar): during a race the
+     toolbar shows ONLY the minigame content (time/best/flips · % · distance · minimap); standalone overlay deleted.
+     ── earlier ── v1.0.411: racing HUD dropped the green bar + hid the menu bar.
+     v1.0.410: racing gaps no longer lethal (NaN/null-candle guard + terrain clamp).
      v1.0.409: racing feel (creep baseline + snappy gas) + top HUD bar (progress + minimap).
      v1.0.408: Profile RUNNER/SNAKE tabs + Snake card are connect-exclusive.
      v1.0.407: Racing moved to the FRONT as the first minigame card.
@@ -13456,7 +13457,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.411",
+  VERSION: "1.0.412",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -34991,12 +34992,9 @@ function render(){
   // tool artifact doesn't float behind the runner. Same idea as suppressing
   // drawPlayer in racing.
   const _racing = (game.mode === 'racing' && window.crRacing && crRacing.active());
-  // v1.0.409 — toggle the racing top HUD bar (covers the toolbar during a race);
-  // hide it the moment a race isn't active so it never lingers after exit.
-  try {
-    document.body.classList.toggle('cr-racing-hud', !!_racing);
-    if(!_racing){ const _rh = document.getElementById('crRaceTopHud'); if(_rh && _rh.style.display !== 'none'){ _rh.style.display='none'; _rh.classList.remove('on'); } }
-  } catch(_){}
+  // v1.0.412 — body.cr-racing-hud drives the toolbar→HUD swap (#crTopBar shows
+  // only the minigame HUD during a race; reverts the moment a race isn't active).
+  try { document.body.classList.toggle('cr-racing-hud', !!_racing); } catch(_){}
   if(!_racing){
     drawTrendlines();
     // v0.8k#18 — drawRadar retired (Radar ability removed). New visual abilities:
@@ -37267,27 +37265,32 @@ window.crRacing = (function(){
       + '#crRaceUI .crRaceBtn.primary:hover{filter:brightness(1.08)}'
       + '#crRaceUI .crRaceBtn.ghost{background:transparent;color:var(--rc-dim)}';
     const s = document.createElement('style'); s.id = 'crRaceUICss'; s.textContent = css; document.head.appendChild(s);
-    // v1.0.409 — top HUD bar: covers the toolbar during a race with time/best/
-    // flips + a progress bar (% + distance) + a minimap (terrain · finish · runner).
-    const hud = document.createElement('div'); hud.id = 'crRaceTopHud';
+    // v1.0.412 — the racing HUD lives INSIDE the game toolbar (#crTopBar /
+    // .crChrome.top). During a race the toolbar shows ONLY the minigame content
+    // (time/best/flips · % · distance · minimap); its normal chart chrome is
+    // hidden. No separate overlay.
+    const hud = document.createElement('div'); hud.id = 'crRaceTbHud';
     hud.innerHTML =
       '<div class="rh-stats"><span class="rh-time" id="crRhTime">0.00s</span>'
       + '<span class="rh-sub" id="crRhSub">best — · flips 0</span></div>'
       + '<div class="rh-prog"><span class="rh-dist" id="crRhDist">0%</span></div>'
-      + '<canvas id="crRhMap" class="rh-map" width="240" height="30"></canvas>';
-    document.body.appendChild(hud);
+      + '<canvas id="crRhMap" class="rh-map" width="220" height="26"></canvas>';
+    const tb = document.getElementById('crTopBar');
+    if(tb) tb.appendChild(hud); else document.body.appendChild(hud);
     const hcss = document.createElement('style'); hcss.id = 'crRaceHudCss'; hcss.textContent = ''
-      + '#crRaceTopHud{position:fixed;top:0;left:0;right:0;height:46px;z-index:99060;display:none;align-items:center;gap:18px;padding:0 16px;background:#0a0f1c;border-bottom:1px solid rgba(20,241,149,.35);font-family:ui-monospace,Menlo,Consolas,monospace;color:#e9efff;box-shadow:0 2px 10px rgba(0,0,0,.5)}'
-      + '#crRaceTopHud.on{display:flex}'
-      + '#crRaceTopHud .rh-stats{display:flex;flex-direction:column;line-height:1.12;min-width:118px}'
-      + '#crRaceTopHud .rh-time{font-weight:800;font-size:18px;color:#ffd166}'
-      + '#crRaceTopHud .rh-time.best{color:#3ddc97}'
-      + '#crRaceTopHud .rh-sub{font-size:10px;color:#9fb3c8}'
-      + '#crRaceTopHud .rh-prog{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:10px;min-width:120px}'
-      + '#crRaceTopHud .rh-dist{font-size:13px;color:#cdd6e6;font-variant-numeric:tabular-nums;letter-spacing:.4px}'
-      + '#crRaceTopHud .rh-map{width:240px;height:30px;flex:none;border:1px solid rgba(255,255,255,.12);border-radius:5px;background:rgba(0,0,0,.3)}'
-      // v1.0.411 — hide BOTH the chart toolbar and the in-game OS menu bar during a
-      // race so the HUD bar sits alone at toolbar level (no second strip below it).
+      + '#crRaceTbHud{display:none;align-items:center;gap:18px;width:100%;height:100%;box-sizing:border-box;padding:0 14px;background:#0a0f1c;color:#e9efff;font-family:ui-monospace,Menlo,Consolas,monospace}'
+      + '#crRaceTbHud .rh-stats{display:flex;flex-direction:column;line-height:1.1;min-width:116px}'
+      + '#crRaceTbHud .rh-time{font-weight:800;font-size:16px;color:#ffd166}'
+      + '#crRaceTbHud .rh-time.best{color:#3ddc97}'
+      + '#crRaceTbHud .rh-sub{font-size:9.5px;color:#9fb3c8}'
+      + '#crRaceTbHud .rh-prog{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:10px;min-width:120px}'
+      + '#crRaceTbHud .rh-dist{font-size:13px;color:#cdd6e6;font-variant-numeric:tabular-nums;letter-spacing:.4px}'
+      + '#crRaceTbHud .rh-map{width:220px;height:26px;flex:none;border:1px solid rgba(255,255,255,.12);border-radius:5px;background:rgba(0,0,0,.3)}'
+      // during a race: reveal the toolbar (override auto-hide), pin it to the very
+      // top, and show ONLY the HUD child — the toolbar = the minigame HUD.
+      + 'body.cr-racing-hud #crTopBar{top:0!important;transform:none!important;opacity:1!important;pointer-events:auto!important}'
+      + 'body.cr-racing-hud #crTopBar > :not(#crRaceTbHud){display:none!important}'
+      + 'body.cr-racing-hud #crRaceTbHud{display:flex}'
       + 'body.cr-racing-hud .overlay.topbar{display:none!important}'
       + 'body.cr-racing-hud #crOSBar{display:none!important}';
     document.head.appendChild(hcss);
@@ -37318,13 +37321,12 @@ window.crRacing = (function(){
     if(again) again.addEventListener('click', () => { _showEnd(false); try { if(typeof restart === 'function') restart(); } catch(_){} });
     if(close) close.addEventListener('click', () => { _showEnd(false); });
   }
-  // v1.0.409 — DOM top-HUD updater (time/best/flips + progress + minimap).
+  // v1.0.412 — toolbar-HUD updater (time/best/flips + % · distance + minimap).
+  // Visibility is CSS-driven by body.cr-racing-hud (#crTopBar host); this only
+  // refreshes the values.
   function _updateTopHud(){
-    const hud = document.getElementById('crRaceTopHud'); if(!hud) return;
-    const show = !!(st && st.on && st.phase !== 'vehicle');
-    hud.classList.toggle('on', show);
-    hud.style.display = show ? 'flex' : 'none';
-    if(!show) return;
+    if(!st || !st.on) return;
+    if(!document.getElementById('crRaceTbHud')) return;
     const span = (typeof candles !== 'undefined' && candles.length) ? (candles.length-1)*STEP : 1;
     const fin = st.finishWx || span || 1;
     const prog = Math.max(0, Math.min(1, player.wx / fin));
