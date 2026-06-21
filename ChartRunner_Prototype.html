@@ -34092,7 +34092,17 @@ window.crRoom = (function(){
   // Deployed chartrunner-relay (Cloudflare Tunnel → relay.chartrunner.xyz, public WSS). Dev override:
   // localStorage.cr_relay_url = 'ws://127.0.0.1:8474'
   var DEFAULT_RELAY = 'wss://relay.chartrunner.xyz';
-  function relayUrl(){ try { return localStorage.getItem('cr_relay_url') || DEFAULT_RELAY; } catch(_){ return DEFAULT_RELAY; } }
+  // Override is DEV-ONLY: honored solely for localhost/127.0.0.1 so a stale value
+  // (e.g. an old quick-tunnel URL set during testing) can NEVER brick a real user.
+  // Any other stored value is purged → every client self-heals to DEFAULT_RELAY.
+  function relayUrl(){
+    try {
+      var o = localStorage.getItem('cr_relay_url');
+      if (o && /^wss?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/i.test(o)) return o;
+      if (o) { try { localStorage.removeItem('cr_relay_url'); } catch(_){ } }
+      return DEFAULT_RELAY;
+    } catch(_){ return DEFAULT_RELAY; }
+  }
 
   var POS_HZ      = 15;
   var PEER_TTL_MS = 12000;
