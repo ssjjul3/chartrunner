@@ -34909,8 +34909,15 @@ function update(dt){
   // player is within GRIND_PX screen px of a grindable line (trendline or
   // run-trail segment), their py snaps to the line's interpolated py so
   // they ride along its shape. Ride is disabled entirely in Monster Mode.
-  if(game.vehicle && game.vehicle !== 'none' && !game.monsterMode){
-    const veh = vehicleById(game.vehicle);
+  // Racing-style handling applies to the EQUIPPED loadout vehicle too (not just
+  // the legacy game.vehicle mount). Source loadout-first (unlocked only) so the
+  // run gets real momentum/glide/accel-ramp/friction + grind from this branch.
+  const _runVeh = (typeof playerLoadout !== 'undefined' && playerLoadout.vehicle && playerLoadout.vehicle !== 'none'
+                   && (typeof crVehicleUnlocked !== 'function' || crVehicleUnlocked(playerLoadout.vehicle)))
+                  ? playerLoadout.vehicle
+                  : ((game.vehicle && game.vehicle !== 'none') ? game.vehicle : null);
+  if(_runVeh && !game.monsterMode){
+    const veh = vehicleById(_runVeh);
     let aX = 0;
     if(keys['a']||keys['arrowleft'])  aX -= 1;
     if(keys['d']||keys['arrowright']) aX += 1;
@@ -35023,16 +35030,7 @@ function update(dt){
   const baseSpeed = player.flying ? 260 : (player.upsideDown ? 200 : 200);
   // v1.0.127 — progressive scroll accel on rapid Left/Right taps / sustained hold (+ tf-map spawn boost)
   let _crAccel = 1; try { if(window.crMove && typeof window.crMove.accelMul==='function') _crAccel = window.crMove.accelMul(); } catch(_){}
-  // Equipped vehicle (Profile loadout) scales run speed, matching racing's tiers
-  // (skateboard → jetski). 'none' (on foot) stays at the baseline 1.0.
-  let _vehSpeedMul = 1;
-  try {
-    if(typeof playerLoadout !== 'undefined' && playerLoadout.vehicle && playerLoadout.vehicle !== 'none' && typeof vehicleById === 'function'){
-      const _vv = vehicleById(playerLoadout.vehicle);
-      if(_vv && _vv.maxVel) _vehSpeedMul = 1.15 + Math.min(1, (_vv.maxVel - 380) / (900 - 380)) * 0.6;
-    }
-  } catch(_){}
-  const speed = baseSpeed * dashMul * _crAccel * _vehSpeedMul;
+  const speed = baseSpeed * dashMul * _crAccel;
   let ax = 0;
   if(!player._vehicleSkipGravity){
     if(keys['a']||keys['arrowleft'])  ax -= 1;
@@ -41063,7 +41061,8 @@ function drawPlayer(){
     // Regular-run vehicle now MATCHES racing: source from the Profile loadout
     // (playerLoadout.vehicle) and SEAT the equipped avatar on the deck (rider),
     // instead of replacing the sprite. Falls back to any in-run game.vehicle mount.
-    const _runVehId = (typeof playerLoadout !== 'undefined' && playerLoadout.vehicle && playerLoadout.vehicle !== 'none')
+    const _runVehId = (typeof playerLoadout !== 'undefined' && playerLoadout.vehicle && playerLoadout.vehicle !== 'none'
+                       && (typeof crVehicleUnlocked !== 'function' || crVehicleUnlocked(playerLoadout.vehicle)))
       ? playerLoadout.vehicle
       : ((game.vehicle && game.vehicle !== 'none') ? game.vehicle : null);
     const vehObj = _runVehId ? vehicleById(_runVehId) : null;
