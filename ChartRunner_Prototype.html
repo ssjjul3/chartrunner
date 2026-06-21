@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.400
-     LAST UPDATED:    2026-06-21  ·  Racing: the equipped avatar (Runner/cNFT) now also rides every vehicle in the
-     PICK YOUR RIDE picker icons (_drawVehIcon), matching the in-race look across all 6 rides.
-     ── earlier ── v1.0.399: campaign Coach card (#crCoachOverlay) is now theme-aware (--cc-* props).
+     CURRENT VERSION: v1.0.401
+     LAST UPDATED:    2026-06-21  ·  Racing: suppress ALL in-game trading-tool overlays during a race (a stale
+     green order zone was floating behind the runner), and the runner skin is now 3× bigger on the vehicle.
+     ── earlier ── v1.0.400: equipped avatar (Runner/cNFT) also rides every PICK YOUR RIDE picker icon.
+     v1.0.399: campaign Coach card (#crCoachOverlay) is now theme-aware (--cc-* props).
      v1.0.398: Run window opens at the clean cr-run-embed default (clears stale inline geometry).
      v1.0.397: START RUN adopts the neutral segmented-control shade (dark track + light ink).
      v1.0.396: Timeframe segmented track pinned with justify-self:start so it lines up with Asset.
@@ -13424,7 +13425,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.400",
+  VERSION: "1.0.401",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -34968,38 +34969,50 @@ function render(){
   // just flipped physics + flipped candle wicks.
   if(game.monsterMode) drawUpsideOverlay();
   drawRunTrail();
-  drawTrendlines();
-  // v0.8k#18 — drawRadar retired (Radar ability removed). New visual abilities:
-  drawAnchorLines();
-  drawTargetMarkers();
-  drawVwapAnchors();
-  drawRuneMarks();
-  if(typeof drawTvOverlays === 'function') drawTvOverlays();
+  // v1.0.401 — during a race the chart is just terrain; suppress ALL the in-game
+  // trading-tool overlays (trendlines / anchors / VWAP / runes / TV overlays /
+  // laser sights / setup guide / pickups / monsters / bullets / order zones /
+  // exec-graph / blue halos) so a stale green order zone (#14f195) or any other
+  // tool artifact doesn't float behind the runner. Same idea as suppressing
+  // drawPlayer in racing.
+  const _racing = (game.mode === 'racing' && window.crRacing && crRacing.active());
+  if(!_racing){
+    drawTrendlines();
+    // v0.8k#18 — drawRadar retired (Radar ability removed). New visual abilities:
+    drawAnchorLines();
+    drawTargetMarkers();
+    drawVwapAnchors();
+    drawRuneMarks();
+    if(typeof drawTvOverlays === 'function') drawTvOverlays();
+  }
   // v0.8k#24mz — Minigame chrome (finish lines, dots, ghosts, paddle, balls,
   // HUD). Renders above chart but below the player so the avatar stays on top.
   if(typeof drawMinigame === 'function') drawMinigame();
   // v0.8k#24cn — Update chart-anchored widgets every frame so they pan +
   // zoom with the chart plane instead of floating as a fixed overlay.
   if(typeof _chartAnchorTick === 'function') _chartAnchorTick();
-  drawLaserSight();
-  // v1.0.127 — Live-changes overlays: alarm laser/levels + cursor reticles.
-  try { if(window.crLiveDraw) window.crLiveDraw(); } catch(_){}
-  // v1.0.5 — Blue laser sight (mirrors drawLaserSight chrome, blue palette).
-  try { if(typeof drawBlueLaserSight === 'function') drawBlueLaserSight(); } catch(_){}
-  drawSetupGuide();   // v0.9.16 — Per-tool setup instruction card
-  drawLaserAnchorsAndPreview();
-  drawPickups();
-  drawMonsters();
-  drawBullets();
-  drawVisualOverlays();
+  if(!_racing){
+    drawLaserSight();
+    // v1.0.127 — Live-changes overlays: alarm laser/levels + cursor reticles.
+    try { if(window.crLiveDraw) window.crLiveDraw(); } catch(_){}
+    // v1.0.5 — Blue laser sight (mirrors drawLaserSight chrome, blue palette).
+    try { if(typeof drawBlueLaserSight === 'function') drawBlueLaserSight(); } catch(_){}
+    drawSetupGuide();   // v0.9.16 — Per-tool setup instruction card
+    drawLaserAnchorsAndPreview();
+    drawPickups();
+    drawMonsters();
+    drawBullets();
+    drawVisualOverlays();
+  }
   // v1.0.207 — Draw Chain Builder numbers/arrows and bracket TP Levels above
   // the underlying chart tools so Hotkey-4 routes remain readable in-game.
-  try { if(typeof drawExecGraphChartOverlays === 'function') drawExecGraphChartOverlays(); } catch(_){}
-  // v1.0.1 — Blue laser lightning halos around armed tools.
-  try { if(typeof drawBlueLaserHalos === 'function') drawBlueLaserHalos(); } catch(_){}
+  if(!_racing){
+    try { if(typeof drawExecGraphChartOverlays === 'function') drawExecGraphChartOverlays(); } catch(_){}
+    // v1.0.1 — Blue laser lightning halos around armed tools.
+    try { if(typeof drawBlueLaserHalos === 'function') drawBlueLaserHalos(); } catch(_){}
+  }
   // v1.0.385 — during a race the crRacing engine draws the rotating vehicle, so
-  // suppress the normal avatar render.
-  const _racing = (game.mode === 'racing' && window.crRacing && crRacing.active());
+  // suppress the normal avatar render (_racing computed above).
   if(game.running && !_racing) drawPlayer();
   // v1.0.382 — live price tag on the right axis, aligned to the avatar's height.
   if(game.running && !_racing) drawPlayerPriceTag();
@@ -37104,12 +37117,13 @@ window.crRacing = (function(){
     ctx.shadowBlur = 0;
     // v1.0.395 — the EQUIPPED avatar always rides the vehicle: the Runner (with
     // the player's skin tint) or their chosen cNFT pfp, via _drawLoadoutAvatar.
-    // Seated on the deck/top (deck ≈ -2*s), body above.
+    // v1.0.401 — runner skin 3× bigger (1.15 → 3.45); seated higher so the larger
+    // sprite still rests on the deck (deck ≈ -2*s).
     try {
       ctx.save();
-      ctx.translate(0, -2*s - 3);
-      if(typeof _drawLoadoutAvatar === 'function') _drawLoadoutAvatar(ctx, 1.15, {});
-      else if(typeof drawInvader === 'function') drawInvader(ctx, 1.15, col);
+      ctx.translate(0, -2*s - 21);
+      if(typeof _drawLoadoutAvatar === 'function') _drawLoadoutAvatar(ctx, 3.45, {});
+      else if(typeof drawInvader === 'function') drawInvader(ctx, 3.45, col);
       ctx.restore();
     } catch(_){}
     ctx.restore();
