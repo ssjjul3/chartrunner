@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.429
-     LAST UPDATED:    2026-06-21  ·  Minigame tab: hide the "Real candles · asset:" footer (minigames drop into a
-     random token, so it's meaningless there).
-     ── earlier ── v1.0.428: MOBILE pass 1 — desktop windows fit the phone (responsive @media).
+     CURRENT VERSION: v1.0.430
+     LAST UPDATED:    2026-06-21  ·  MOBILE pass 2: (1) on-screen TOUCH move-pad (◀ ▶ ↑ ↓) on phones during a run —
+     drives the same keys as the keyboard; (2) chart toolbar scrolls horizontally (all TF pills reachable);
+     (3) in-game Terminal renders in-frame; (4) coach welcome + chat render like the tutorial (full-width, text wraps).
+     ── earlier ── v1.0.429: Minigame tab hides the "Real candles · asset:" footer.
+     v1.0.428: MOBILE pass 1 — desktop windows fit the phone.
      v1.0.427: Configure Run Asset/Token/Timeframe bars uniform.
      v1.0.426: Configure Run window compact (560px, no empty spacing).
      v1.0.425: racing 𝕏 Share link → live /play/?mg=racing deep-link.
@@ -2414,7 +2416,34 @@
       width:calc(100vw - 12px) !important; max-width:calc(100vw - 12px) !important;
     }
     .cr-tut.cr-tut-invaderNarrator .cr-tut-terminal-bubble{ width:100% !important; max-width:100% !important; max-height:42vh !important; }
+    /* v1.0.430 — pass 2 ----------------------------------------------------- */
+    /* in-game chart toolbar: scroll horizontally so every TF pill is reachable */
+    #crTopBar{ overflow-x:auto !important; overflow-y:hidden !important; -webkit-overflow-scrolling:touch; }
+    #crTopBar > *{ flex:0 0 auto; }
+    /* in-game Terminal (chart surface) renders in-frame, not off-screen */
+    #win-terminal{ left:6px !important; right:6px !important; top:64px !important;
+      width:calc(100vw - 12px) !important; max-width:calc(100vw - 12px) !important;
+      max-height:calc(100vh - 110px) !important; }
+    /* coach welcome + chat render like the tutorial: full-width bottom sheet, text wraps */
+    .cr-widget.cr-coach-widget{ left:6px !important; right:6px !important; bottom:8px !important; top:auto !important;
+      width:calc(100vw - 12px) !important; max-width:calc(100vw - 12px) !important; }
+    #crCoachHubBubble .term-body, .cr-tut-terminal-bubble .term-body, .cr-widget.cr-coach-widget .wBody{
+      white-space:normal !important; word-break:break-word !important; }
+    /* touch move-pad (shown by JS on touch devices in-game) */
+    #crTouchPad{ display:flex !important; }
   }
+  /* v1.0.430 — on-screen touch controls for in-game movement (phones have no
+     keyboard). Hidden by default; the JS shows it on coarse-pointer devices while
+     a run is active. Transparent so it doesn't block the chart. */
+  #crTouchPad{ position:fixed; left:0; right:0; bottom:10px; z-index:99040; display:none;
+    justify-content:space-between; align-items:flex-end; padding:0 14px; pointer-events:none; gap:10px; }
+  #crTouchPad .tp-cluster{ display:flex; gap:10px; pointer-events:none; }
+  #crTouchPad .tp-btn{ pointer-events:auto; width:62px; height:62px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font:700 24px ui-monospace,Menlo,monospace;
+    color:#bff7df; background:rgba(10,20,16,.34); border:1px solid rgba(20,241,149,.45);
+    backdrop-filter:blur(2px); user-select:none; -webkit-user-select:none; touch-action:none; }
+  #crTouchPad .tp-btn:active{ background:rgba(20,241,149,.30); color:#06160d; }
+  #crTouchPad.cr-tp-hidden{ display:none !important; }
   /* v1.0.354 — Configure Run embedded inside the Play (Run) window's Regular tab.
      The same #win-configs node is reparented into #crRegularCfgHost and rendered
      inline (no floating-window chrome) instead of popping a second window. */
@@ -13533,7 +13562,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.429",
+  VERSION: "1.0.430",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -37579,6 +37608,47 @@ window.crRacing = (function(){
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
   else run();
+})();
+// v1.0.430 — on-screen touch move-pad for phones (no keyboard). Sets the same
+// `keys` state the game / racing engine read. Visible only on coarse-pointer
+// (touch) devices while a run is active; transparent so it doesn't block the chart.
+(function crTouchControls(){
+  function build(){
+    if(document.getElementById('crTouchPad')) return;
+    const pad = document.createElement('div'); pad.id = 'crTouchPad'; pad.className = 'cr-tp-hidden';
+    pad.innerHTML =
+      '<div class="tp-cluster">'
+      +   '<button class="tp-btn" data-k="arrowleft" aria-label="Move left / brake">◀</button>'
+      +   '<button class="tp-btn" data-k="arrowright" aria-label="Move right / gas">▶</button>'
+      + '</div>'
+      + '<div class="tp-cluster">'
+      +   '<button class="tp-btn" data-k="arrowdown" aria-label="Frontflip">↓</button>'
+      +   '<button class="tp-btn" data-k="arrowup" aria-label="Jump / backflip">↑</button>'
+      + '</div>';
+    document.body.appendChild(pad);
+    const set = (k, on) => { try { if(typeof keys !== 'undefined' && keys) keys[k] = on; } catch(_){} };
+    pad.querySelectorAll('.tp-btn').forEach(b => {
+      const k = b.getAttribute('data-k');
+      const down = (e) => { try{ e.preventDefault(); }catch(_){} set(k, true); };
+      const up   = (e) => { try{ e.preventDefault(); }catch(_){} set(k, false); };
+      b.addEventListener('touchstart', down, { passive:false });
+      b.addEventListener('touchend', up, { passive:false });
+      b.addEventListener('touchcancel', up, { passive:false });
+      b.addEventListener('mousedown', down);
+      b.addEventListener('mouseup', up);
+      b.addEventListener('mouseleave', up);
+    });
+  }
+  function isCoarse(){ try { return !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches); } catch(_){ return false; } }
+  function tick(){
+    const pad = document.getElementById('crTouchPad'); if(!pad) return;
+    let show = false;
+    try { show = !!(isCoarse() && typeof game !== 'undefined' && game.running && !document.body.classList.contains('crSplashUp')); } catch(_){}
+    pad.classList.toggle('cr-tp-hidden', !show);
+  }
+  function start(){ try { build(); setInterval(tick, 300); tick(); } catch(_){} }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();
 function crMinigameInit(){
   if(typeof game === 'undefined') return;
