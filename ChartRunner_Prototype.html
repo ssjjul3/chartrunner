@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.408
-     LAST UPDATED:    2026-06-21  ·  Connect-exclusive: the Profile RUNNER/SNAKE avatar tabs + the Snake minigame
-     card are now hidden for guests (body.cr-guest) and revealed on wallet connect.
-     ── earlier ── v1.0.407: Racing moved to the FRONT as the first minigame card.
+     CURRENT VERSION: v1.0.409
+     LAST UPDATED:    2026-06-21  ·  Racing feel + HUD: (1) snappier gas + an always-rolling creep baseline so the
+     runner never sits dead; (2) a top HUD bar replaces the toolbar during a race — time/best/flips + progress
+     bar (% + distance) + a minimap (terrain · finish · runner). Chart toolbar hidden while racing.
+     ── earlier ── v1.0.408: Profile RUNNER/SNAKE tabs + Snake card are connect-exclusive.
+     v1.0.407: Racing moved to the FRONT as the first minigame card.
      v1.0.406: archived the BUBBLE MAPS tab from the chart/run token tab strip.
      v1.0.405: removed each vehicle's built-in rider figure (only the equipped ChartRunner rides).
      v1.0.404: Terminal Engine panes pack into a full-width auto-fill grid (no blank areas).
@@ -13453,7 +13455,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.408",
+  VERSION: "1.0.409",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -34988,6 +34990,12 @@ function render(){
   // tool artifact doesn't float behind the runner. Same idea as suppressing
   // drawPlayer in racing.
   const _racing = (game.mode === 'racing' && window.crRacing && crRacing.active());
+  // v1.0.409 — toggle the racing top HUD bar (covers the toolbar during a race);
+  // hide it the moment a race isn't active so it never lingers after exit.
+  try {
+    document.body.classList.toggle('cr-racing-hud', !!_racing);
+    if(!_racing){ const _rh = document.getElementById('crRaceTopHud'); if(_rh && _rh.style.display !== 'none'){ _rh.style.display='none'; _rh.classList.remove('on'); } }
+  } catch(_){}
   if(!_racing){
     drawTrendlines();
     // v0.8k#18 — drawRadar retired (Radar ability removed). New visual abilities:
@@ -37030,14 +37038,23 @@ window.crRacing = (function(){
     const hop   = keys['arrowup'] || keys['w'] || keys[' '];
     const ps = (typeof priceScale === 'number' && priceScale > 0) ? priceScale : 1;
     const gP = G_PX / ps;   // gravity in price/s^2
-    // horizontal
+    // horizontal — v1.0.409: snappier gas + an always-rolling CREEP baseline so
+    // the runner never sits dead (the old model only advanced with keys HELD,
+    // which made the race feel sluggish/unresponsive).
     const thr = (right?1:0) - (left?1:0);
-    if(st.onGround && thr !== 0){
-      st.vx = Math.max(-maxVel*0.55, Math.min(maxVel, st.vx + thr * maxVel*3 * dt));
-      player.facing = thr < 0 ? -1 : 1;
-    } else if(st.onGround){
-      st.vx *= Math.pow(fric, dt*60);
-      if(Math.abs(st.vx) < 2) st.vx = 0;
+    const CREEP = maxVel * 0.30;            // idle forward roll
+    if(st.onGround){
+      if(thr > 0){
+        st.vx = Math.min(maxVel, st.vx + maxVel*4.6*dt);      // gas
+        player.facing = 1;
+      } else if(thr < 0){
+        st.vx = Math.max(-maxVel*0.5, st.vx - maxVel*4.6*dt); // brake / reverse
+        player.facing = -1;
+      } else if(st.vx < CREEP){
+        st.vx = Math.min(CREEP, st.vx + maxVel*1.4*dt);       // ease up to the creep baseline
+      } else {
+        st.vx *= Math.pow(fric, dt*60);                       // coast down from a sprint
+      }
     }
     player.wx += st.vx * dt;
     player.wx = Math.max(0, Math.min((candles.length-1)*STEP, player.wx));
@@ -37154,16 +37171,9 @@ window.crRacing = (function(){
       }
     }
     if(st.phase !== 'vehicle') _drawVehicle();
-    // HUD timer
-    if(st.phase === 'racing' || st.phase === 'finished'){
-      ctx.save();
-      ctx.fillStyle = 'rgba(10,15,28,0.82)'; ctx.fillRect(W/2 - 86, 34, 172, 36);
-      ctx.fillStyle = '#ffd166'; ctx.font = 'bold 20px ui-monospace,monospace'; ctx.textAlign = 'center';
-      ctx.fillText((st.timer||0).toFixed(2) + 's', W/2, 59);
-      ctx.fillStyle = 'rgba(155,170,200,.7)'; ctx.font = '10px ui-monospace,monospace';
-      ctx.fillText((st.best ? 'best ' + st.best.toFixed(2) + 's' : 'no best yet') + '  ·  flips ' + st.flips, W/2, 76);
-      ctx.textAlign = 'left'; ctx.restore();
-    }
+    // v1.0.409 — the timer/best/flips + progress + minimap now live in the DOM
+    // top HUD bar (over the toolbar), updated here instead of on the canvas.
+    _updateTopHud();
     // countdown
     if(st.phase === 'countdown'){
       const el = performance.now()/1000 - st.cdStart;
@@ -37237,6 +37247,31 @@ window.crRacing = (function(){
       + '#crRaceUI .crRaceBtn.primary:hover{filter:brightness(1.08)}'
       + '#crRaceUI .crRaceBtn.ghost{background:transparent;color:var(--rc-dim)}';
     const s = document.createElement('style'); s.id = 'crRaceUICss'; s.textContent = css; document.head.appendChild(s);
+    // v1.0.409 — top HUD bar: covers the toolbar during a race with time/best/
+    // flips + a progress bar (% + distance) + a minimap (terrain · finish · runner).
+    const hud = document.createElement('div'); hud.id = 'crRaceTopHud';
+    hud.innerHTML =
+      '<div class="rh-stats"><span class="rh-time" id="crRhTime">0.00s</span>'
+      + '<span class="rh-sub" id="crRhSub">best — · flips 0</span></div>'
+      + '<div class="rh-prog"><div class="rh-bar"><div class="rh-fill" id="crRhFill"></div></div>'
+      + '<span class="rh-dist" id="crRhDist">0%</span></div>'
+      + '<canvas id="crRhMap" class="rh-map" width="240" height="30"></canvas>';
+    document.body.appendChild(hud);
+    const hcss = document.createElement('style'); hcss.id = 'crRaceHudCss'; hcss.textContent = ''
+      + '#crRaceTopHud{position:fixed;top:0;left:0;right:0;height:46px;z-index:99060;display:none;align-items:center;gap:18px;padding:0 16px;background:#0a0f1c;border-bottom:1px solid rgba(20,241,149,.35);font-family:ui-monospace,Menlo,Consolas,monospace;color:#e9efff;box-shadow:0 2px 10px rgba(0,0,0,.5)}'
+      + '#crRaceTopHud.on{display:flex}'
+      + '#crRaceTopHud .rh-stats{display:flex;flex-direction:column;line-height:1.12;min-width:118px}'
+      + '#crRaceTopHud .rh-time{font-weight:800;font-size:18px;color:#ffd166}'
+      + '#crRaceTopHud .rh-time.best{color:#3ddc97}'
+      + '#crRaceTopHud .rh-sub{font-size:10px;color:#9fb3c8}'
+      + '#crRaceTopHud .rh-prog{flex:1 1 auto;display:flex;align-items:center;gap:10px;min-width:120px}'
+      + '#crRaceTopHud .rh-bar{flex:1 1 auto;height:8px;border-radius:6px;background:rgba(255,255,255,.10);overflow:hidden}'
+      + '#crRaceTopHud .rh-fill{height:100%;width:0%;background:linear-gradient(90deg,#3ddc97,#14f195);transition:width .08s linear}'
+      + '#crRaceTopHud .rh-dist{font-size:11px;color:#9fb3c8;min-width:78px;text-align:right;font-variant-numeric:tabular-nums}'
+      + '#crRaceTopHud .rh-map{width:240px;height:30px;flex:none;border:1px solid rgba(255,255,255,.12);border-radius:5px;background:rgba(0,0,0,.3)}'
+      // hide the chart toolbar's normal content during a race — the HUD bar takes its place.
+      + 'body.cr-racing-hud .overlay.topbar{display:none!important}';
+    document.head.appendChild(hcss);
     // build vehicle list
     const list = document.getElementById('crRaceVehList');
     if(list && typeof VEHICLES !== 'undefined'){
@@ -37263,6 +37298,41 @@ window.crRacing = (function(){
     if(mint)  mint.addEventListener('click', () => _mint(st ? st.best : 0));
     if(again) again.addEventListener('click', () => { _showEnd(false); try { if(typeof restart === 'function') restart(); } catch(_){} });
     if(close) close.addEventListener('click', () => { _showEnd(false); });
+  }
+  // v1.0.409 — DOM top-HUD updater (time/best/flips + progress + minimap).
+  function _updateTopHud(){
+    const hud = document.getElementById('crRaceTopHud'); if(!hud) return;
+    const show = !!(st && st.on && st.phase !== 'vehicle');
+    hud.classList.toggle('on', show);
+    hud.style.display = show ? 'flex' : 'none';
+    if(!show) return;
+    const span = (typeof candles !== 'undefined' && candles.length) ? (candles.length-1)*STEP : 1;
+    const fin = st.finishWx || span || 1;
+    const prog = Math.max(0, Math.min(1, player.wx / fin));
+    const remM = Math.max(0, Math.round((fin - player.wx) / STEP));
+    const tEl = document.getElementById('crRhTime');
+    const sEl = document.getElementById('crRhSub');
+    const fEl = document.getElementById('crRhFill');
+    const dEl = document.getElementById('crRhDist');
+    if(tEl){ tEl.textContent = (st.timer||0).toFixed(2)+'s'; tEl.classList.toggle('best', !!(st.best && st.timer < st.best)); }
+    if(sEl) sEl.textContent = (st.best ? 'best '+st.best.toFixed(2)+'s' : 'best —') + ' · flips ' + (st.flips||0);
+    if(fEl) fEl.style.width = (prog*100).toFixed(1)+'%';
+    if(dEl) dEl.textContent = st.phase==='finished' ? '✦ FINISH' : (Math.round(prog*100)+'% · '+remM+'m');
+    const cv = document.getElementById('crRhMap');
+    if(cv && cv.getContext && typeof candles !== 'undefined' && candles.length){
+      const c = cv.getContext('2d'); const W2 = cv.width, H2 = cv.height, n = candles.length;
+      c.clearRect(0,0,W2,H2);
+      let lo = Infinity, hi = -Infinity;
+      for(let i=0;i<n;i++){ const h = candles[i].h; if(h<lo) lo=h; if(h>hi) hi=h; }
+      const rng = (hi-lo) || 1;
+      c.strokeStyle = 'rgba(120,140,180,.55)'; c.lineWidth = 1; c.beginPath();
+      for(let x=0;x<W2;x++){ const idx = Math.min(n-1, Math.floor(x/W2*n)); const y = H2-2-((candles[idx].h-lo)/rng)*(H2-4); x===0 ? c.moveTo(x,y) : c.lineTo(x,y); }
+      c.stroke();
+      const fx = Math.round((fin/span)*W2);
+      c.strokeStyle = '#ffd166'; c.beginPath(); c.moveTo(fx,0); c.lineTo(fx,H2); c.stroke();
+      const rx = Math.max(2, Math.min(W2-2, Math.round((player.wx/span)*W2)));
+      c.fillStyle = '#14f195'; c.beginPath(); c.arc(rx, H2/2, 3, 0, Math.PI*2); c.fill();
+    }
   }
   function _showPicker(on){
     const el = document.getElementById('crRaceVehiclePicker'); if(!el) return;
