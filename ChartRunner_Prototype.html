@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.423
-     LAST UPDATED:    2026-06-21  ·  Racing CONTROLS fixed + remapped: removed the crest auto-launch (caused the
-     constant uncontrollable jumping); jump is now an edge-detected UP tap (no auto-bounce). Scheme: → forward ·
-     ← backward · UP tap = jump · hold UP = backflip · hold DOWN = frontflip (←/→ no longer air-spin).
-     ── earlier ── v1.0.422: BW theme in-game player profile inverted to dark.
+     CURRENT VERSION: v1.0.424
+     LAST UPDATED:    2026-06-21  ·  Racing: fancy end card — NEW BEST badge, Δ-vs-best, a stats grid (Vehicle ·
+     Market · Flips · Best) and an "𝕏 Share" button that opens a pre-filled X post; Mint/Race-again/Close kept.
+     ── earlier ── v1.0.423: racing controls fixed + remapped (no auto-jump; ↑ tap jump / ↑ hold backflip / ↓ hold frontflip).
+     v1.0.422: BW theme in-game player profile inverted to dark.
      v1.0.421: racing toolbar HUD shows TICKER · TIMEFRAME.
      v1.0.420: added a "⌂ Home" button to the racing toolbar HUD.
      v1.0.419: reverted the v1.0.417 Run-window pin (restored the compact frame).
@@ -13486,7 +13486,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.423",
+  VERSION: "1.0.424",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -37260,11 +37260,14 @@ window.crRacing = (function(){
       + '</div></div>'
       + '<div id="crRaceEndCard" class="crRaceOv" style="display:none">'
       + '<div class="crRaceCard" style="text-align:center">'
-      +   '<div class="crRaceTtl" style="font-size:18px">🏁 FINISH!</div>'
+      +   '<div id="crRaceEndBadge" class="crRaceBadge" style="display:none">🏆 NEW BEST</div>'
+      +   '<div class="crRaceTtl" style="font-size:18px">🏁 FINISH</div>'
       +   '<div id="crRaceEndTime" class="crRaceTime">0.00s</div>'
-      +   '<div id="crRaceEndSub" class="crRaceSub" style="text-align:center"></div>'
+      +   '<div id="crRaceEndDelta" class="crRaceSub" style="text-align:center;margin:-2px 0 2px"></div>'
+      +   '<div id="crRaceStats" class="crRaceStats"></div>'
       +   '<div class="crRaceActions">'
-      +     '<button id="crRaceMint" class="crRaceBtn primary">★ Mint record on-chain</button>'
+      +     '<button id="crRaceShare" class="crRaceBtn primary">𝕏 Share</button>'
+      +     '<button id="crRaceMint" class="crRaceBtn">★ Mint on-chain</button>'
       +     '<button id="crRaceAgain" class="crRaceBtn">↻ Race again</button>'
       +     '<button id="crRaceClose" class="crRaceBtn ghost">Close</button>'
       +   '</div>'
@@ -37299,7 +37302,13 @@ window.crRacing = (function(){
       + '#crRaceUI .crRaceBtn:hover{border-color:var(--rc-accent)}'
       + '#crRaceUI .crRaceBtn.primary{background:var(--rc-accent);color:var(--rc-ink);border-color:var(--rc-accent)}'
       + '#crRaceUI .crRaceBtn.primary:hover{filter:brightness(1.08)}'
-      + '#crRaceUI .crRaceBtn.ghost{background:transparent;color:var(--rc-dim)}';
+      + '#crRaceUI .crRaceBtn.ghost{background:transparent;color:var(--rc-dim)}'
+      // v1.0.424 — fancy end-card: NEW BEST badge + stats grid (theme-aware via --rc-*).
+      + '#crRaceUI .crRaceBadge{display:inline-block;font:800 10.5px ui-monospace,Menlo,monospace;letter-spacing:.9px;color:var(--rc-ink);background:var(--rc-accent);padding:3px 11px;border-radius:999px;margin-bottom:6px}'
+      + '#crRaceUI .crRaceStats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:12px 0 4px}'
+      + '#crRaceUI .crRaceStat{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 6px;border:1px solid var(--rc-veh-bd);border-radius:8px;background:var(--rc-veh-bg)}'
+      + '#crRaceUI .crRaceStat .k{font-size:8.5px;letter-spacing:.6px;color:var(--rc-dim);text-transform:uppercase}'
+      + '#crRaceUI .crRaceStat .v{font-size:13px;font-weight:800;color:var(--rc-fg)}';
     const s = document.createElement('style'); s.id = 'crRaceUICss'; s.textContent = css; document.head.appendChild(s);
     // v1.0.412 — the racing HUD lives INSIDE the game toolbar (#crTopBar /
     // .crChrome.top). During a race the toolbar shows ONLY the minigame content
@@ -37369,9 +37378,39 @@ window.crRacing = (function(){
     const mint = document.getElementById('crRaceMint');
     const again = document.getElementById('crRaceAgain');
     const close = document.getElementById('crRaceClose');
-    if(mint)  mint.addEventListener('click', () => _mint(st ? st.best : 0));
+    const share = document.getElementById('crRaceShare');
+    if(share) share.addEventListener('click', () => _shareX());
+    if(mint)  mint.addEventListener('click', () => _mint(st ? (st.timer || st.best) : 0));
     if(again) again.addEventListener('click', () => { _showEnd(false); try { if(typeof restart === 'function') restart(); } catch(_){} });
     if(close) close.addEventListener('click', () => { _showEnd(false); });
+  }
+  // v1.0.424 — collect the run's stats once (used by the end card + X share).
+  function _raceStats(){
+    let sym = '';
+    try { const a = (typeof currentAssetObj === 'function') ? currentAssetObj() : null; sym = (a && (a.nm || a.label)) || (typeof currentAsset !== 'undefined' && currentAsset) || ''; } catch(_){}
+    let veh = 'Skateboard';
+    try { const v = (typeof vehicleById === 'function') ? vehicleById((st && st.vehicleId) || 'skateboard') : null; veh = (v && v.nm) || veh; } catch(_){}
+    const tf = (typeof timeframe !== 'undefined' && timeframe) ? String(timeframe).toUpperCase() : '';
+    return {
+      time: (st && st.timer) || 0,
+      best: (st && st.best) || 0,
+      flips: (st && st.flips) || 0,
+      vehicle: veh, sym: String(sym).toUpperCase() || '—', tf
+    };
+  }
+  // v1.0.424 — open an X (Twitter) compose intent pre-filled with the result.
+  // Opens the share window only; the player reviews + posts it themselves.
+  function _shareX(){
+    try {
+      const s = _raceStats();
+      const text = '🏁 ChartRunner Racing — ' + s.sym + (s.tf ? (' · ' + s.tf) : '') + '\n'
+        + '⏱ ' + s.time.toFixed(2) + 's on the ' + s.vehicle
+        + (s.flips ? (' · ' + s.flips + ' flip' + (s.flips > 1 ? 's' : '') + ' 🌀') : '') + '\n'
+        + 'Beat my time 👇';
+      const url = 'https://chartrunner.xyz/racing';
+      const intent = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(url);
+      window.open(intent, '_blank', 'noopener,noreferrer,width=560,height=640');
+    } catch(_){}
   }
   // v1.0.412 — toolbar-HUD updater (time/best/flips + % · distance + minimap).
   // Visibility is CSS-driven by body.cr-racing-hud (#crTopBar host); this only
@@ -37426,9 +37465,24 @@ window.crRacing = (function(){
     const el = document.getElementById('crRaceEndCard'); if(!el) return;
     el.style.display = on ? 'flex' : 'none';
     if(on){
+      const s = _raceStats();
       const tEl = document.getElementById('crRaceEndTime'); if(tEl) tEl.textContent = (t||0).toFixed(2) + 's';
-      const sub = document.getElementById('crRaceEndSub');
-      if(sub) sub.textContent = (isBest ? '🏆 NEW BEST! · ' : '') + (flips ? (flips + ' flip' + (flips>1?'s':'') + ' · ') : '') + 'Anchor your time on Solana so it lands on the leaderboard.';
+      const badge = document.getElementById('crRaceEndBadge'); if(badge) badge.style.display = isBest ? 'inline-block' : 'none';
+      const dEl = document.getElementById('crRaceEndDelta');
+      if(dEl){
+        if(isBest) dEl.textContent = 'New personal best 🏆';
+        else if(s.best) dEl.textContent = '+' + Math.max(0, (t - s.best)).toFixed(2) + 's off your best (' + s.best.toFixed(2) + 's)';
+        else dEl.textContent = '';
+      }
+      const stats = document.getElementById('crRaceStats');
+      if(stats){
+        const cell = (k, v) => '<div class="crRaceStat"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>';
+        stats.innerHTML =
+          cell('Vehicle', s.vehicle)
+          + cell('Market', s.sym + (s.tf ? (' · ' + s.tf) : ''))
+          + cell('Flips', '🌀 ' + (flips || 0))
+          + cell('Best', s.best ? (s.best.toFixed(2) + 's') : '—');
+      }
     }
     el.classList.toggle('on', !!on);
   }
