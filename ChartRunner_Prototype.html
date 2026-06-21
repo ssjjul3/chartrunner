@@ -2,10 +2,13 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.421
-     LAST UPDATED:    2026-06-21  ·  Racing: the toolbar HUD now shows the TICKER · TIMEFRAME (e.g. BTC · 15M)
-     next to the time/best/flips.
-     ── earlier ── v1.0.420: added a "⌂ Home" button to the racing toolbar HUD.
+     CURRENT VERSION: v1.0.423
+     LAST UPDATED:    2026-06-21  ·  Racing CONTROLS fixed + remapped: removed the crest auto-launch (caused the
+     constant uncontrollable jumping); jump is now an edge-detected UP tap (no auto-bounce). Scheme: → forward ·
+     ← backward · UP tap = jump · hold UP = backflip · hold DOWN = frontflip (←/→ no longer air-spin).
+     ── earlier ── v1.0.422: BW theme in-game player profile inverted to dark.
+     v1.0.421: racing toolbar HUD shows TICKER · TIMEFRAME.
+     v1.0.420: added a "⌂ Home" button to the racing toolbar HUD.
      v1.0.419: reverted the v1.0.417 Run-window pin (restored the compact frame).
      v1.0.418: Terminal tab renamed from ENGINE; panes pack as masonry.
      v1.0.417 (reverted): Run window fixed-width !important pin.
@@ -4352,6 +4355,22 @@
   body[data-os-theme="bw"] #crLightProfile .lp-stat .v,
   body[data-os-theme="mono"] #crLightProfile .lp-name,
   body[data-os-theme="mono"] #crLightProfile .lp-stat .v{color:var(--ct-ink)!important}
+  /* v1.0.422 — BW (black-and-white) theme: INVERT the in-game player profile to
+     dark (light-on-dark) instead of the white card, so it matches the already-dark
+     mono profile and the rest of the in-game chrome. Re-scopes the monochrome vars
+     on the profile subtree so the shared rules above flip automatically. */
+  body[data-os-theme="bw"] #crLightProfile{
+    --ct-panel:#050505;--ct-panel-2:#151515;--ct-bg:#050505;--ct-bg-2:#151515;
+    --ct-ink:#ffffff;--ct-dim:#c4c4c4;--ct-line:#cfcfcf;--ct-active:#ffffff;--ct-active-ink:#050505;
+    background:#050505!important;color:#ffffff!important;border:1px solid #cfcfcf!important}
+  body[data-os-theme="bw"] #crLightProfile .lp-name,
+  body[data-os-theme="bw"] #crLightProfile .lp-stat .v,
+  body[data-os-theme="bw"] #crLightProfile .lp-role,
+  body[data-os-theme="bw"] #crLightProfile .lp-tab,
+  body[data-os-theme="bw"] #crLightProfile .lp-runbtn,
+  body[data-os-theme="bw"] #crLightProfile .lp-full{color:#ffffff!important}
+  body[data-os-theme="bw"] #crLightProfile .lp-runbtn{background:rgba(255,255,255,.08)!important;border-color:rgba(255,255,255,.30)!important}
+  body[data-os-theme="bw"] #crLightProfile .lp-tab.on{background:rgba(255,255,255,.14)!important;border-color:#ffffff!important}
 
   /* Solana — body-level chrome (in-game) */
   body[data-os-theme="solana"] #crOSBar{
@@ -13467,7 +13486,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.421",
+  VERSION: "1.0.423",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -37059,9 +37078,15 @@ window.crRacing = (function(){
     const veh = (typeof vehicleById === 'function') ? vehicleById(st.vehicleId || 'skateboard') : { maxVel:420, fric:0.95 };
     const maxVel = Math.max(360, veh.maxVel || 420);
     const fric = veh.fric || 0.95;
+    // v1.0.423 — control scheme: → forward · ← backward · UP tap = jump ·
+    // UP hold (airborne) = backflip · DOWN hold (airborne) = frontflip.
     const right = keys['arrowright'] || keys['d'];
     const left  = keys['arrowleft']  || keys['a'];
-    const hop   = keys['arrowup'] || keys['w'] || keys[' '];
+    const up    = keys['arrowup']    || keys['w'];
+    const down  = keys['arrowdown']  || keys['s'];
+    const jumpHeld = up || keys[' '];
+    const jumpEdge = jumpHeld && !st._jumpPrev;   // one jump per press — no auto-bounce
+    st._jumpPrev = jumpHeld;
     const ps = (typeof priceScale === 'number' && priceScale > 0) ? priceScale : 1;
     const gP = G_PX / ps;   // gravity in price/s^2
     // horizontal — v1.0.409: snappier gas + an always-rolling CREEP baseline so
@@ -37084,20 +37109,12 @@ window.crRacing = (function(){
     }
     player.wx += st.vx * dt;
     player.wx = Math.max(0, Math.min((candles.length-1)*STEP, player.wx));
-    // hop off the ground
-    if(st.onGround && hop){ player.vy = gP*0.46; st.onGround = false; }
-    // crest launch — driving fast over a convex peak pops you airborne
-    if(st.onGround){
-      const sl = _slope(player.wx);
-      if(st._prevSlope != null){
-        const crest = st._prevSlope - sl;   // >0 when the slope is dropping (a peak)
-        if(crest > 0.05 && Math.abs(st.vx) > maxVel*0.4){
-          player.vy = Math.min(gP*0.55, gP*0.18 + (Math.abs(st.vx)/maxVel)*crest*gP*1.2);
-          st.onGround = false;
-        }
-      }
-      st._prevSlope = sl;
-    }
+    // hop — UP tap only (edge-detected) so the vehicle never auto-bounces.
+    // v1.0.423 — REMOVED the v1.0.385 "crest launch" (auto-airborne over convex
+    // candle peaks): it fired constantly on the jagged candle terrain and made the
+    // ride uncontrollable ("jumps up all the time"). You only leave the ground now
+    // by tapping UP.
+    if(st.onGround && jumpEdge){ player.vy = gP*0.46; st.onGround = false; }
     // vertical integrate (price space; +py = up)
     player.vy = (player.vy || 0) - gP*dt;
     player.py += player.vy * dt;
@@ -37140,8 +37157,9 @@ window.crRacing = (function(){
       st.angle += Math.atan2(Math.sin(slope - st.angle), Math.cos(slope - st.angle)) * Math.min(1, dt*12);
       st.angVel = 0;
     } else {
-      // airborne flip control: gas = backflip (CCW), brake = frontflip (CW)
-      const torque = (right ? -1 : 0) + (left ? 1 : 0);
+      // v1.0.423 — airborne flips: hold UP = backflip (CCW), hold DOWN = frontflip
+      // (CW). ←/→ no longer spin in the air (they stay forward/back only).
+      const torque = (up ? -1 : 0) + (down ? 1 : 0);
       st.angVel += torque * 8 * dt;
       st.angVel *= Math.pow(0.985, dt*60);
       st.angVel = Math.max(-10, Math.min(10, st.angVel));
@@ -37237,7 +37255,7 @@ window.crRacing = (function(){
       '<div id="crRaceVehiclePicker" class="crRaceOv" style="display:none">'
       + '<div class="crRaceCard">'
       +   '<div class="crRaceTtl">🏁 PICK YOUR RIDE</div>'
-      +   '<div class="crRaceSub">Every ride flips. Gas = →, brake/reverse = ←, hop = ↑. In the air, ← / → to spin. Cross the finish fastest — flips shave time.</div>'
+      +   '<div class="crRaceSub">→ forward · ← backward · tap ↑ to jump. In the air: hold ↑ = backflip, hold ↓ = frontflip. Cross the finish fastest — flips shave time.</div>'
       +   '<div id="crRaceVehList" class="crRaceGrid"></div>'
       + '</div></div>'
       + '<div id="crRaceEndCard" class="crRaceOv" style="display:none">'
