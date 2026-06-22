@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.460
-     LAST UPDATED:    2026-06-22  ·  RACING minigame: no bot loadout (drawBotOrbs skipped while racing); ticker + timeframe HUD restyled to match the chart toolbar (dark ● ticker pill + 1m/5m/15m/1H segmented selector, current TF highlighted).
+     CURRENT VERSION: v1.0.461
+     LAST UPDATED:    2026-06-22  ·  RACING HUD now uses the EXACT original asset + timeframe controls — the real .crTvSymWrap + #crTvTfRow are moved into the HUD during a race (same layout/styling/behavior) and restored to the toolbar after.
+     PREV (v1.0.460): RACING minigame: no bot loadout (drawBotOrbs skipped while racing); ticker + timeframe HUD restyled to match the chart toolbar (dark ● ticker pill + 1m/5m/15m/1H segmented selector, current TF highlighted).
      PREV (v1.0.459): Bot proposal (e.g. SFP Hunter Build? Y/N) now blends directly into the terminal feed — stripped the floating-card chrome (bg/border/shadow/blur) + dropped the redundant "proposes…" banner; it reads as a plain terminal message.
      PREV (v1.0.458): Coach (welcome + chat SEND) buttons now use the SAME terminal button language as the tutorial nav (monospace, uppercase, green-on-dark; filled-green primary); removed the tutorial END button (header ✕ / Esc still end it).
      PREV (v1.0.457): MOBILE: coach welcome/tutorial/chat now spawn ABOVE the invader (bottom:104px) so the input row is reachable instead of being covered by him.
@@ -13760,7 +13761,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.460",
+  VERSION: "1.0.461",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -35849,7 +35850,16 @@ function render(){
   const _racing = (game.mode === 'racing' && window.crRacing && crRacing.active());
   // v1.0.412 — body.cr-racing-hud drives the toolbar→HUD swap (#crTopBar shows
   // only the minigame HUD during a race; reverts the moment a race isn't active).
-  try { document.body.classList.toggle('cr-racing-hud', !!_racing); } catch(_){}
+  try {
+    document.body.classList.toggle('cr-racing-hud', !!_racing);
+    // v1.0.461 — on race enter/exit, move the real asset+timeframe controls into the
+    // HUD (exact original layout) / restore them to the toolbar.
+    if(_racing !== window._crRacingHudPrev){
+      window._crRacingHudPrev = _racing;
+      if(_racing){ if(window._raceAdoptChartCtrls) window._raceAdoptChartCtrls(); }
+      else { if(window._raceReleaseChartCtrls) window._raceReleaseChartCtrls(); }
+    }
+  } catch(_){}
   if(!_racing){
     drawTrendlines();
     // v0.8k#18 — drawRadar retired (Radar ability removed). New visual abilities:
@@ -38137,8 +38147,7 @@ window.crRacing = (function(){
       '<button id="crRhHome" class="rh-home" type="button" title="Home — exit the race">⌂ Home</button>'
       + '<div class="rh-stats"><span class="rh-time" id="crRhTime">0.00s</span>'
       + '<span class="rh-sub" id="crRhSub">best — · flips 0</span></div>'
-      + '<span class="rh-tkr" id="crRhTkr"><span class="rh-dot"></span><span id="crRhTkrTxt">—</span></span>'
-      + '<div class="rh-tf" id="crRhTf"></div>'
+      + '<div class="rh-ctrls" id="crRhCtrls"></div>'
       + '<div class="rh-prog"><span class="rh-dist" id="crRhDist">0%</span></div>'
       + '<canvas id="crRhMap" class="rh-map" width="220" height="26"></canvas>';
     const tb = document.getElementById('crTopBar');
@@ -38162,12 +38171,10 @@ window.crRacing = (function(){
       + '#crRaceTbHud .rh-time{font-weight:800;font-size:16px;color:#ffd166}'
       + '#crRaceTbHud .rh-time.best{color:#3ddc97}'
       + '#crRaceTbHud .rh-sub{font-size:9.5px;color:#9fb3c8}'
-      // v1.0.460 — ticker pill + segmented timeframe selector styled like the chart toolbar.
-      + '#crRaceTbHud .rh-tkr{flex:none;display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:9px;background:#1b2233;border:1px solid rgba(255,255,255,.07);font:800 13px ui-monospace,Menlo,monospace;letter-spacing:.4px;color:#e9efff;white-space:nowrap}'
-      + '#crRaceTbHud .rh-tkr .rh-dot{width:7px;height:7px;border-radius:50%;background:#8b93a7;flex:none}'
-      + '#crRaceTbHud .rh-tf{flex:none;display:flex;align-items:center;gap:4px}'
-      + '#crRaceTbHud .rh-tf button{appearance:none;border:0;background:transparent;color:#8b93a7;font:700 12px ui-monospace,Menlo,monospace;letter-spacing:.3px;padding:5px 11px;border-radius:7px;cursor:default}'
-      + '#crRaceTbHud .rh-tf button.on{background:#e7ebf2;color:#0a0f1c}'
+      // v1.0.461 — the real chart-toolbar asset (.crTvSymWrap) + timeframe (#crTvTfRow)
+      // controls are moved into this slot during a race, so they render with the EXACT
+      // original layout/styling/behavior instead of a custom recreation.
+      + '#crRaceTbHud .rh-ctrls{flex:none;display:flex;align-items:center;gap:10px}'
       + '#crRaceTbHud .rh-prog{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:10px;min-width:120px}'
       + '#crRaceTbHud .rh-dist{font-size:13px;color:#cdd6e6;font-variant-numeric:tabular-nums;letter-spacing:.4px}'
       + '#crRaceTbHud .rh-map{width:220px;height:26px;flex:none;border:1px solid rgba(255,255,255,.12);border-radius:5px;background:rgba(0,0,0,.3)}'
@@ -38179,6 +38186,27 @@ window.crRacing = (function(){
       + 'body.cr-racing-hud .overlay.topbar{display:none!important}'
       + 'body.cr-racing-hud #crOSBar{display:none!important}';
     document.head.appendChild(hcss);
+    // v1.0.461 — relocate the REAL chart-toolbar asset (.crTvSymWrap) + timeframe
+    // (#crTvTfRow) controls into the HUD slot during a race so they show with the
+    // exact original layout/styling/behavior, then restore them to the toolbar after.
+    function _raceMoveCtrl(el, slot){
+      if(!el || !slot || el.parentNode === slot) return;
+      if(!el._crOrigParent){ el._crOrigParent = el.parentNode; el._crOrigNext = el.nextSibling; }
+      slot.appendChild(el);
+    }
+    window._raceAdoptChartCtrls = function(){
+      const slot = document.getElementById('crRhCtrls'); if(!slot) return;
+      _raceMoveCtrl(document.querySelector('.crTvSymWrap'), slot);
+      _raceMoveCtrl(document.getElementById('crTvTfRow'), slot);
+    };
+    window._raceReleaseChartCtrls = function(){
+      [document.querySelector('.crTvSymWrap'), document.getElementById('crTvTfRow')].forEach(function(el){
+        if(el && el._crOrigParent){
+          var ref = (el._crOrigNext && el._crOrigNext.parentNode === el._crOrigParent) ? el._crOrigNext : null;
+          try { el._crOrigParent.insertBefore(el, ref); } catch(_){ try { el._crOrigParent.appendChild(el); } catch(__){} }
+        }
+      });
+    };
     // build vehicle list
     const list = document.getElementById('crRaceVehList');
     if(list && typeof VEHICLES !== 'undefined'){
@@ -38256,26 +38284,8 @@ window.crRacing = (function(){
     if(sEl) sEl.textContent = (st.best ? 'best '+st.best.toFixed(2)+'s' : 'best —') + ' · flips ' + (st.flips||0);
     if(fEl) fEl.style.width = (prog*100).toFixed(1)+'%';
     if(dEl) dEl.textContent = st.phase==='finished' ? '✦ FINISH' : (Math.round(prog*100)+'% · '+remM+'m');
-    // v1.0.460 — ticker pill + timeframe segmented selector (matches the chart toolbar look).
-    const tkrEl = document.getElementById('crRhTkrTxt');
-    if(tkrEl){
-      let sym = '';
-      try { const a = (typeof currentAssetObj==='function') ? currentAssetObj() : null; sym = (a && (a.nm || a.label)) || (typeof game!=='undefined' && game.asset) || (typeof currentAsset!=='undefined' && currentAsset) || ''; } catch(_){}
-      tkrEl.textContent = String(sym).toUpperCase() || '—';
-    }
-    const tfWrap = document.getElementById('crRhTf');
-    if(tfWrap){
-      const cur = (typeof timeframe !== 'undefined' && timeframe) ? String(timeframe).toLowerCase() : '';
-      if(!tfWrap.dataset.built){
-        tfWrap.innerHTML = ['1m','5m','15m','1h'].map(function(t){
-          return '<button type="button" data-tf="' + t + '">' + (t === '1h' ? '1H' : t) + '</button>';
-        }).join('');
-        tfWrap.dataset.built = '1';
-      }
-      Array.prototype.forEach.call(tfWrap.querySelectorAll('button'), function(b){
-        b.classList.toggle('on', b.getAttribute('data-tf') === cur);
-      });
-    }
+    // v1.0.461 — asset + timeframe are the real chart-toolbar controls (moved into
+    // #crRhCtrls on race start); they update through the normal app logic, nothing to do here.
     const cv = document.getElementById('crRhMap');
     if(cv && cv.getContext && typeof candles !== 'undefined' && candles.length){
       const c = cv.getContext('2d'); const W2 = cv.width, H2 = cv.height, n = candles.length;
