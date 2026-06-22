@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.462
-     LAST UPDATED:    2026-06-22  ·  Minigame Home now plays the CRT/loading transition first (then tears down the race + goes to desktop inside the fade callback), so it exits with the same transition as the rest of the app instead of snapping back.
+     CURRENT VERSION: v1.0.463
+     LAST UPDATED:    2026-06-22  ·  RACING PICK YOUR RIDE now has TIMEFRAME (5m/15m/1H/4H) + ASSET choice (reloads chart data + rebuilds the track); the in-race asset/timeframe HUD displays are now STATIC (non-interactive).
+     PREV (v1.0.462): Minigame Home now plays the CRT/loading transition first (then tears down the race + goes to desktop inside the fade callback), so it exits with the same transition as the rest of the app instead of snapping back.
      PREV (v1.0.461): RACING HUD now uses the EXACT original asset + timeframe controls — the real .crTvSymWrap + #crTvTfRow are moved into the HUD during a race (same layout/styling/behavior) and restored to the toolbar after.
      PREV (v1.0.460): RACING minigame: no bot loadout (drawBotOrbs skipped while racing); ticker + timeframe HUD restyled to match the chart toolbar (dark ● ticker pill + 1m/5m/15m/1H segmented selector, current TF highlighted).
      PREV (v1.0.459): Bot proposal (e.g. SFP Hunter Build? Y/N) now blends directly into the terminal feed — stripped the floating-card chrome (bg/border/shadow/blur) + dropped the redundant "proposes…" banner; it reads as a plain terminal message.
@@ -13762,7 +13763,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.462",
+  VERSION: "1.0.463",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -38085,6 +38086,10 @@ window.crRacing = (function(){
       + '<div class="crRaceCard">'
       +   '<div class="crRaceTtl">🏁 PICK YOUR RIDE</div>'
       +   '<div class="crRaceSub">→ forward · ← backward · tap ↑ to jump. In the air: hold ↑ = backflip, hold ↓ = frontflip. Cross the finish fastest — flips shave time.</div>'
+      +   '<div class="crRaceOpts">'
+      +     '<div class="crRaceOptRow"><span class="crRaceOptLab">TIMEFRAME</span><div class="crRaceOptBtns" id="crRaceTfPick"></div></div>'
+      +     '<div class="crRaceOptRow"><span class="crRaceOptLab">ASSET</span><div class="crRaceOptBtns" id="crRaceAssetPick"></div></div>'
+      +   '</div>'
       +   '<div id="crRaceVehList" class="crRaceGrid"></div>'
       + '</div></div>'
       + '<div id="crRaceEndCard" class="crRaceOv" style="display:none">'
@@ -38125,6 +38130,14 @@ window.crRacing = (function(){
       + '#crRaceUI .crRaceVeh:hover{background:var(--rc-veh-hover);border-color:var(--rc-accent)}'
       + '#crRaceUI .crRaceVeh .vn{display:block;font-weight:800;font-size:12px;margin-bottom:2px}'
       + '#crRaceUI .crRaceVeh .vm{display:block;font-size:9.5px;color:var(--rc-dim)}'
+      // v1.0.463 — timeframe + asset choice rows in PICK YOUR RIDE.
+      + '#crRaceUI .crRaceOpts{display:flex;flex-direction:column;gap:9px;margin-bottom:14px}'
+      + '#crRaceUI .crRaceOptRow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}'
+      + '#crRaceUI .crRaceOptLab{font:700 9px ui-monospace,Menlo,monospace;letter-spacing:.9px;color:var(--rc-dim);min-width:74px}'
+      + '#crRaceUI .crRaceOptBtns{display:flex;gap:6px;flex-wrap:wrap}'
+      + '#crRaceUI .crRaceOptBtns button{appearance:none;cursor:pointer;border:1px solid var(--rc-veh-bd);border-radius:7px;background:var(--rc-veh-bg);color:var(--rc-fg);font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.3px;padding:6px 11px;transition:border-color .12s,background .12s}'
+      + '#crRaceUI .crRaceOptBtns button:hover{border-color:var(--rc-accent)}'
+      + '#crRaceUI .crRaceOptBtns button.on{background:var(--rc-accent);color:var(--rc-ink);border-color:var(--rc-accent)}'
       + '#crRaceUI .crRaceTime{font-size:40px;font-weight:800;color:var(--rc-time);text-align:center;margin:6px 0 2px}'
       + '#crRaceUI .crRaceActions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}'
       + '#crRaceUI .crRaceBtn{appearance:none;cursor:pointer;border:1px solid var(--rc-veh-bd);border-radius:8px;background:var(--rc-veh-bg);color:var(--rc-fg);font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.4px;padding:9px 14px}'
@@ -38193,7 +38206,10 @@ window.crRacing = (function(){
       + 'body.cr-racing-hud #crTopBar > :not(#crRaceTbHud){display:none!important}'
       + 'body.cr-racing-hud #crRaceTbHud{display:flex}'
       + 'body.cr-racing-hud .overlay.topbar{display:none!important}'
-      + 'body.cr-racing-hud #crOSBar{display:none!important}';
+      + 'body.cr-racing-hud #crOSBar{display:none!important}'
+      // v1.0.463 — in a race the asset + timeframe are chosen in PICK YOUR RIDE, so the
+      // HUD copies are a STATIC read-only display (no clicking to switch mid-race).
+      + 'body.cr-racing-hud #crRhCtrls{pointer-events:none!important}';
     document.head.appendChild(hcss);
     // v1.0.461 — relocate the REAL chart-toolbar asset (.crTvSymWrap) + timeframe
     // (#crTvTfRow) controls into the HUD slot during a race so they show with the
@@ -38235,6 +38251,27 @@ window.crRacing = (function(){
         list.appendChild(b);
       });
     }
+    // v1.0.463 — timeframe + asset pickers (PICK YOUR RIDE). Selecting one reloads
+    // the chart data (loadCandles) + rebuilds the race track; the in-race HUD then
+    // shows the chosen asset/timeframe as a STATIC display.
+    const tfPick = document.getElementById('crRaceTfPick');
+    if(tfPick){
+      tfPick.innerHTML = ['5m','15m','1h','4h'].map(function(t){
+        return '<button type="button" data-tf="' + t + '">' + (t === '1h' ? '1H' : t === '4h' ? '4H' : t) + '</button>';
+      }).join('');
+      Array.prototype.forEach.call(tfPick.querySelectorAll('button'), function(b){
+        b.addEventListener('click', function(){ _raceSetTfAsset(b.getAttribute('data-tf'), null); });
+      });
+    }
+    const asPick = document.getElementById('crRaceAssetPick');
+    if(asPick && typeof ASSETS !== 'undefined'){
+      asPick.innerHTML = ASSETS.filter(function(a){ return !a.solanaToken; })
+        .map(function(a){ return '<button type="button" data-asset="' + a.id + '">' + a.nm + '</button>'; }).join('');
+      Array.prototype.forEach.call(asPick.querySelectorAll('button'), function(b){
+        b.addEventListener('click', function(){ _raceSetTfAsset(null, b.getAttribute('data-asset')); });
+      });
+    }
+    _markPickerSel();
     // end-card buttons
     const mint = document.getElementById('crRaceMint');
     const again = document.getElementById('crRaceAgain');
@@ -38317,6 +38354,43 @@ window.crRacing = (function(){
     // which would otherwise beat the .on class's display:flex).
     el.classList.toggle('on', !!on);
     el.style.display = on ? 'flex' : 'none';
+    if(on){ try { _markPickerSel(); } catch(_){} }
+  }
+  // v1.0.463 — PICK YOUR RIDE timeframe/asset selection helpers.
+  function _markPickerSel(){
+    try {
+      const tf = (typeof timeframe !== 'undefined') ? String(timeframe).toLowerCase() : '';
+      Array.prototype.forEach.call(document.querySelectorAll('#crRaceTfPick button'), function(b){
+        b.classList.toggle('on', b.getAttribute('data-tf') === tf);
+      });
+      const as = (typeof currentAsset !== 'undefined') ? currentAsset : '';
+      Array.prototype.forEach.call(document.querySelectorAll('#crRaceAssetPick button'), function(b){
+        b.classList.toggle('on', b.getAttribute('data-asset') === as);
+      });
+    } catch(_){}
+  }
+  // Recompute the track (finish line + player start) from the freshly loaded candles,
+  // keeping the picker open so the player can still choose a ride.
+  function _raceReloadTrack(){
+    try {
+      if(typeof candles !== 'undefined' && candles && candles.length && st){
+        st.finishWx = Math.floor((candles.length - 1) * FINISH_FRAC) * STEP;
+        st.phase = 'vehicle';
+        player.wx = STEP * 0.6; player.py = _ground(player.wx);
+        player.vy = 0; player.onGround = true; player.alive = true;
+        try { camera.wx = player.wx - W * 0.30; camera.panX = 0; camera.panY = 0; } catch(_){}
+      }
+    } catch(_){}
+  }
+  // Set timeframe / asset, reload the chart data, then rebuild the track + re-highlight.
+  function _raceSetTfAsset(tf, assetId){
+    try { if(assetId && typeof currentAsset !== 'undefined') currentAsset = assetId; } catch(_){}
+    const useTf = tf || ((typeof timeframe !== 'undefined' && timeframe) ? timeframe : '15m');
+    const done = function(){ _raceReloadTrack(); _markPickerSel(); };
+    try {
+      if(typeof loadCandles === 'function'){ Promise.resolve(loadCandles(useTf)).then(done).catch(done); }
+      else done();
+    } catch(_){ done(); }
   }
   function _showEnd(on, t, isBest, flips){
     const el = document.getElementById('crRaceEndCard'); if(!el) return;
