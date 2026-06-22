@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.485
-     LAST UPDATED:    2026-06-22  ·  FIX tutorial "says nothing": v1.0.479 wrote the title+body via a `.cr-tut-terminal-bubble .term-body` selector that matched the WELCOME bubble (shares the class), leaving the tutorial's #crTutLine empty. Now writes #crTutLine directly + guards step against undefined.
+     CURRENT VERSION: v1.0.486
+     LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
+     PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
      PREV (v1.0.483): No bot loadout in ANY minigame (racing · monster · snake).
      PREV (v1.0.482): Racing end card: removed FLIPS tile; Close exits to desktop (CRT-fade Home flow).
@@ -13842,7 +13843,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.485",
+  VERSION: "1.0.486",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -25471,7 +25472,8 @@ window.addEventListener('keydown', e=>{
   // 1 Trails · 2 Red Laser · 3 Blue Orders · 4 Blue route activator (window.cr.blueLaser.toggle, below).
   // Key 1 (Trails): tap = toggle, hold (>320ms) = materialize. Everything else
   // fires directly on keydown.
-  if(e.key==='1'){ if(e.repeat) return; start1Hold(); return; }
+  // v1.0.486 — hotkey 1 = VEHICLE (tap = mount/dismount, hold = picker). Trails moved to 0.
+  if(e.key==='1'){ if(bracketEditor.open || ladderEditor.open) return; if(e.repeat) return; startVHold(); return; }
   if(['2','3'].includes(e.key)){ useAbility(+e.key, e); return; }
   // v1.0.1 — Hotkey 4: Blue route activator. Toggles a cursor mode
   // where any click on a placed tool/primitive/indicator opens a config
@@ -25497,8 +25499,10 @@ window.addEventListener('keydown', e=>{
   // v0.7b-chart — interval step keys (never during bracket/ladder edit — reload would strand editor state)
   if(e.key==='-' || e.key==='_'){ if(bracketEditor.open||ladderEditor.open) return; e.preventDefault(); stepInterval(-1); return; }
   if(e.key==='=' || e.key==='+'){ if(bracketEditor.open||ladderEditor.open) return; e.preventDefault(); stepInterval(+1); return; }
-  // Reset manual pan/zoom
-  if(k==='0'){ if(bracketEditor.open||ladderEditor.open) return; camera.panX=0; camera.panY=0; camera.zoomX=1; camera.zoomY=1; camera.manualUntil=0; toast('Chart reset'); return; }
+  // v1.0.486 — hotkey 0 = TRAILS (moved off 1). Tap toggles the run trail, hold materializes it.
+  if(e.key==='0'){ if(bracketEditor.open||ladderEditor.open) return; if(e.repeat) return; start1Hold(); return; }
+  // Reset manual pan/zoom — moved from 0 → backtick (`).
+  if(e.key==='`'){ if(bracketEditor.open||ladderEditor.open) return; camera.panX=0; camera.panY=0; camera.zoomX=1; camera.zoomY=1; camera.manualUntil=0; toast('Chart reset'); return; }
   // v0.8M#1 — R (restart) hotkey retired. Use phone keypad-4 (press M, then 4).
   // if(k==='r'){ restart(); return; }
   // v0.9.8i — F (fly toggle / surface from upside-down) hotkey retired per user.
@@ -25676,7 +25680,9 @@ window.addEventListener('keyup', e=>{
   keys[e.key.toLowerCase()]=false;
   // v0.8k#24d — hold-3 (bracket editor) retired along with the bracket hotbar
   // slot. Bracket now drops from the Laser spawn menu (key 2 → click).
-  if(e.key==='1'){ end1Hold(); }
+  // v1.0.486 — 1 = vehicle (endVHold), 0 = trails (end1Hold).
+  if(e.key==='1'){ endVHold(); }
+  if(e.key==='0'){ end1Hold(); }
   if(e.key.toLowerCase()==='v'){ endVHold(); }
 });
 /* v0.8e #V — `T` tap vs hold discriminator.
@@ -35305,10 +35311,10 @@ function update(dt){
   // Racing-style handling applies to the EQUIPPED loadout vehicle too (not just
   // the legacy game.vehicle mount). Source loadout-first (unlocked only) so the
   // run gets real momentum/glide/accel-ramp/friction + grind from this branch.
-  const _runVeh = (typeof playerLoadout !== 'undefined' && playerLoadout.vehicle && playerLoadout.vehicle !== 'none'
-                   && (typeof crVehicleUnlocked !== 'function' || crVehicleUnlocked(playerLoadout.vehicle)))
-                  ? playerLoadout.vehicle
-                  : ((game.vehicle && game.vehicle !== 'none') ? game.vehicle : null);
+  // v1.0.486 — the vehicle is active ONLY when explicitly MOUNTED (hotkey 1 / V →
+  // game.vehicle). The equipped-loadout vehicle no longer auto-rides (that blocked
+  // on-foot flight and made arrows drive a vehicle the player never mounted).
+  const _runVeh = (game.vehicle && game.vehicle !== 'none') ? game.vehicle : null;
   if(_runVeh && !game.monsterMode && !player._vehAir){   // v1.0.484 — skip the grind-snap while mid vehicle-jump
     const veh = vehicleById(_runVeh);
     let aX = 0;
@@ -41726,10 +41732,8 @@ function drawPlayer(){
     // Regular-run vehicle now MATCHES racing: source from the Profile loadout
     // (playerLoadout.vehicle) and SEAT the equipped avatar on the deck (rider),
     // instead of replacing the sprite. Falls back to any in-run game.vehicle mount.
-    const _runVehId = (typeof playerLoadout !== 'undefined' && playerLoadout.vehicle && playerLoadout.vehicle !== 'none'
-                       && (typeof crVehicleUnlocked !== 'function' || crVehicleUnlocked(playerLoadout.vehicle)))
-      ? playerLoadout.vehicle
-      : ((game.vehicle && game.vehicle !== 'none') ? game.vehicle : null);
+    // v1.0.486 — render the ride only when MOUNTED (game.vehicle), matching the physics.
+    const _runVehId = (game.vehicle && game.vehicle !== 'none') ? game.vehicle : null;
     const vehObj = _runVehId ? vehicleById(_runVehId) : null;
     if(vehObj && vehObj.draw){
       // Vehicles ALWAYS face right-side up (horizontal facing only).
