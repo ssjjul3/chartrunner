@@ -2,13 +2,12 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.437
-     LAST UPDATED:    2026-06-22  ·  RELAY + LEVELING + GATING BUNDLE: relay moved to Cloudflare Tunnel (relay.chartrunner.xyz, self-
-                      healing cr_relay_url override) for public multiplayer; campaign LEVEL system (PL 1–10) + chapter-gated features
-                      (blue laser/activation/leverage/broker @ch.40 · alarm laser/alarm tab/journal @ch.41); run vehicles use racing
-                      physics + gated to On-foot/Skateboard; bots 3-starter+3-campaign=6 (locked hidden from picker); skins yellow/purple
-                      archived + Diamond@PL10; terminal Solana/CEX views use Engine masonry; maps live-badge reflow fix; guest connect-
-                      exclusive gating on tool/indicator settings; archived Signed-Devnet-Demo card. Design: docs/architecture/2026-06-22-player-level-system-and-tokenomics.md
+     CURRENT VERSION: v1.0.438
+     LAST UPDATED:    2026-06-22  ·  PROFILE FIXES: vehicle "On foot" preview no longer doubles the avatar; bot equip picker shows each
+                      bot's own icon (in its color) + a stats line describing what it does (✓ when equipped).
+     PREV (v1.0.437): RELAY → Cloudflare Tunnel (public MP, self-healing override) + campaign LEVEL system (PL 1–10) + chapter gates
+                      (ch.40/41) + vehicles racing physics/On-foot+Skateboard gate + bots 3+3=6 + skins archived/Diamond@PL10 + terminal
+                      Solana/CEX masonry + maps live-badge fix + guest gating. Design: docs/architecture/2026-06-22-player-level-system-and-tokenomics.md
      PREV (v1.0.436): SOCIAL P3+P4 — Profile 🔍 SEARCH players + profile pages/backlinks (window.crSocial).
      PREV (v1.0.435): GLOBAL PRESENCE (P2) — wallet heartbeat → app-wide online/offline (window.crPresence + relay /presence).
      PREV (v1.0.434): LIVE COUNTERS (social P1) — "● N live" in 🔍 Rooms header + "live · N" badge on Maps cards.
@@ -13694,7 +13693,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.437",
+  VERSION: "1.0.438",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -32150,15 +32149,18 @@ function _drawVehIcon(cv, vehId){
   var c=cv.getContext('2d'); c.clearRect(0,0,cv.width,cv.height);
   c.save(); c.translate(cv.width/2, cv.height/2+4);
   var v=vehicleById(vehId==='cart'?'miningcart':vehId);
-  try { if(v && v.draw) v.draw(c, 0.7); else drawInvader(c, 1.0, '#14f195'); } catch(_){}
-  // v1.0.403 — seat the ORIGINAL ChartRunner (canonical invader, green) clearly
-  // on the ride in the picker icon — recognizable, not a tiny blob.
-  try {
-    c.save();
-    c.translate(0, -10);
-    if(typeof drawInvader === 'function') drawInvader(c, 0.9, '#14f195');
-    c.restore();
-  } catch(_){}
+  var _hasVeh = !!(v && v.draw);
+  try { if(_hasVeh) v.draw(c, 0.7); else drawInvader(c, 1.0, '#14f195'); } catch(_){}
+  // Seat the ChartRunner ON TOP of an actual vehicle only. On foot (no vehicle)
+  // shows a SINGLE avatar — drawing the rider again caused the "doubling".
+  if(_hasVeh){
+    try {
+      c.save();
+      c.translate(0, -10);
+      if(typeof drawInvader === 'function') drawInvader(c, 0.9, '#14f195');
+      c.restore();
+    } catch(_){}
+  }
   c.restore();
 }
 try { window._drawVehIcon=_drawVehIcon; } catch(_){}
@@ -46945,9 +46947,13 @@ function _openPlayerSlotPop(anchor, options, currentId, onPick){
       b.innerHTML = '<span style="margin-right:8px;display:inline-block;vertical-align:middle"><canvas class="skIcCv" width="34" height="20" style="width:28px;height:16px;vertical-align:middle"></canvas></span>' + (opt.nm || opt.id);
       try{ _drawSkinIcon(b.querySelector('canvas'), opt.id); }catch(_){}
     } else {
-      b.innerHTML = '<span style="margin-right:8px">' + (opt.ic || '○') + '</span>' + (opt.nm || opt.id);
+      var _icC = opt.iconColor ? (';color:' + opt.iconColor + ';text-shadow:0 0 6px ' + opt.iconColor + '66') : '';
+      var _nameLine = '<span style="margin-right:8px;font-size:15px' + _icC + '">' + (opt.ic || '○') + '</span>' + (opt.nm || opt.id);
+      b.innerHTML = opt.sub
+        ? ('<div>' + _nameLine + '</div><div style="margin-left:25px;color:#7a8290;font-size:10px;line-height:1.35;white-space:normal">' + opt.sub + '</div>')
+        : _nameLine;
     }
-    b.title = opt.desc || '';
+    b.title = opt.desc || opt.sub || '';
     b.addEventListener('click', (ev) => {
       ev.stopPropagation();
       onPick(opt);
@@ -47092,7 +47098,15 @@ function _renderPlayerTab(){
       allBots.forEach(b => {
         const owned = (typeof crBotOwned === 'function') ? crBotOwned(b.id) : _crBotGuestOk(b.id);
         if(!owned) return;   // locked/unowned bots are hidden from the picker — buy them in the marketplace
-        list.push({ id:b.id, ic:'▣', nm:b.name || b.id, desc:(b.role || 'bot') + ((eq.indexOf(b.id) >= 0) ? ' · already equipped' : '') });
+        const _eqd = eq.indexOf(b.id) >= 0;
+        list.push({
+          id: b.id,
+          ic: b.icon || '▣',
+          iconColor: b.color || '',
+          nm: (b.name || b.id) + (_eqd ? '  ✓' : ''),
+          sub: (typeof CR_BOT_BLURB !== 'undefined' && CR_BOT_BLURB[b.id]) || ((typeof WB_BOT_ROLES !== 'undefined' && WB_BOT_ROLES[b.role] && WB_BOT_ROLES[b.role].desc)) || 'Auto-scans for its pattern.',
+          desc: b.name || b.id
+        });
       });
       const cur = equipId || '__empty';
       _openPlayerSlotPop(card, list, cur, (opt) => {
@@ -49284,6 +49298,15 @@ function _crBotGuestOk(id){ return CR_GUEST_BOT_IDS.has(String(id || '')); }
 // ── Connected-player bot progression: start 3 (same as guest) → +3 via campaign
 //    (CCV/H&S/Divergence on completing their chapters) → rest bought with $RUN. ──
 const CR_STARTER_BOT_IDS = ['det_sfp', 'det_climax', 'det_vwap'];
+// Short "what it does" blurbs shown under each bot in the equip picker.
+const CR_BOT_BLURB = {
+  det_sfp:    'Rings swing-failure sweeps — fades the trapped side.',
+  det_climax: 'Flags volume-climax exhaustion — fades the blow-off.',
+  det_vwap:   'Catches VWAP reclaim/reject — trades back to the mean.',
+  det_ccv:    'Consolidation + Champion + Volume confluence (~80% win).',
+  det_hs:     'Rings the H&S neckline break — fade the head, ride the reversal.',
+  det_div:    'Price–RSI divergence — trades against dying momentum.',
+};
 const CR_CAMPAIGN_BOT_BY_CH = { 29: 'det_ccv', 30: 'det_hs', 33: 'det_div' };
 const CR_BOT_PRICE_RUN = 25;
 const _CR_OWNED_BOTS_KEY = 'cr_owned_bots_v1';
