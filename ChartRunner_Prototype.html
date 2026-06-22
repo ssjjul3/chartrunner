@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.495
+     CURRENT VERSION: v1.0.496
      LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -13850,7 +13850,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.495",
+  VERSION: "1.0.496",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -66164,6 +66164,43 @@ function log(msg){
     const btn    = document.getElementById('crCoachHubBtn');
     const bubble = document.getElementById('crCoachHubBubble');
     if(!hub || !btn || !bubble) return;
+    // v1.0.496 — when a desktop app/sub-window is open and the player taps COACH.llm,
+    // describe the CURRENT window (then they can Chat about it right beside the bubble).
+    const _crCoachDefaultLine = (function(){ try { var l = document.getElementById('crCoachHubLine'); return l ? l.textContent : ''; } catch(_){ return ''; } })();
+    const CR_WIN_DESC = {
+      'win-run':       ['Play (Run)',      'launch a run here — pick Regular, a Campaign chapter, or a Minigame (Racing / Monster / Snake), set asset + timeframe, and Start.'],
+      'win-terminal':  ['Terminal',        'the live chart + market terminal — flip between the chart, token INFO and the recent TXN feed, and read the on-chart signals.'],
+      'win-tokenterm': ['Token Research',  'scan a token — price, liquidity, holders and recent trades — before you run its chart.'],
+      'win-profile':   ['Profile',         'your loadout HQ — equip skin, vehicle, weapon and gear, manage bots, and set up your tools + COACH model.'],
+      'win-journal':   ['Journal',         'your trade journal — manual notes, paper trades, alerts and run P&L in one place.'],
+      'win-maps':      ['Maps',            'save, open, edit and share your annotated chart maps.'],
+      'win-wallet':    ['Wallet',          'your on-chain wallet — balances, mints and transactions.'],
+      'win-shop':      ['Shop',            'spend your in-game currency on vehicles, gear and unlocks.'],
+      'win-stats':     ['Stats',           'your career stats — best times, distance, win/loss and run history.'],
+      'win-configs':   ['Configure Run',   'tune the run setup — asset, timeframe, indicators and tools — before you Start.'],
+      'win-workbench': ['Workbench',       'build and backtest bots, primitives, strategies and indicators.']
+    };
+    function _crTopOpenWindow(){
+      try {
+        var wins = Array.prototype.slice.call(document.querySelectorAll('.os-window.on'))
+          .filter(function(w){ return w && w.offsetParent !== null && CR_WIN_DESC[w.id]; });
+        if(!wins.length) return null;
+        wins.sort(function(a,b){ return (parseInt(getComputedStyle(a).zIndex,10)||0) - (parseInt(getComputedStyle(b).zIndex,10)||0); });
+        return wins[wins.length - 1];
+      } catch(_){ return null; }
+    }
+    function _crCoachDescribeWindow(){
+      try {
+        var line = document.getElementById('crCoachHubLine'); if(!line) return;
+        var w = _crTopOpenWindow();
+        if(w && CR_WIN_DESC[w.id]){
+          var d = CR_WIN_DESC[w.id];
+          line.textContent = 'You’ve got ' + d[0] + ' open — ' + d[1] + '  Tap Chat to ask me anything about it.';
+        } else {
+          line.textContent = _crCoachDefaultLine;   // bare desktop → default welcome
+        }
+      } catch(_){}
+    }
     function show(on){
       if(on){
         // v1.0.372 — dock the welcome bubble into the THIRD right-column slot
@@ -66185,6 +66222,7 @@ function log(msg){
             bubble.style.width = _bubW + 'px';
           }
         } catch(_){}
+        try { _crCoachDescribeWindow(); } catch(_){}   // v1.0.496 — describe the open window
         bubble.style.display = 'flex';
         try { document.body.classList.add('cr-coach-bubble-open'); } catch(_){}
         try { if(window.crCoachSpeak) window.crCoachSpeak(1500); } catch(_){}
