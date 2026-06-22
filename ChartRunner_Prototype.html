@@ -2,12 +2,13 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.438
-     LAST UPDATED:    2026-06-22  ·  PROFILE FIXES: vehicle "On foot" preview no longer doubles the avatar; bot equip picker shows each
-                      bot's own icon (in its color) + a stats line describing what it does (✓ when equipped).
+     CURRENT VERSION: v1.0.439
+     LAST UPDATED:    2026-06-22  ·  BOT ORBS: bots render as high-tech orbs (glowing sphere in the bot's colour + orbital ring + icon
+                      core) in the loadout slots AND the equip picker — replacing the generic square glyph.
+     PREV (v1.0.438): PROFILE FIXES — vehicle "On foot" preview no longer doubles the avatar; bot equip picker shows each bot's icon +
+                      stats line describing what it does (✓ when equipped).
      PREV (v1.0.437): RELAY → Cloudflare Tunnel (public MP, self-healing override) + campaign LEVEL system (PL 1–10) + chapter gates
-                      (ch.40/41) + vehicles racing physics/On-foot+Skateboard gate + bots 3+3=6 + skins archived/Diamond@PL10 + terminal
-                      Solana/CEX masonry + maps live-badge fix + guest gating. Design: docs/architecture/2026-06-22-player-level-system-and-tokenomics.md
+                      (ch.40/41) + vehicles racing physics + bots 3+3=6 + skins archived/Diamond@PL10 + terminal masonry + maps fix + guest gating.
      PREV (v1.0.436): SOCIAL P3+P4 — Profile 🔍 SEARCH players + profile pages/backlinks (window.crSocial).
      PREV (v1.0.435): GLOBAL PRESENCE (P2) — wallet heartbeat → app-wide online/offline (window.crPresence + relay /presence).
      PREV (v1.0.434): LIVE COUNTERS (social P1) — "● N live" in 🔍 Rooms header + "live · N" badge on Maps cards.
@@ -13693,7 +13694,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.438",
+  VERSION: "1.0.439",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -32168,6 +32169,38 @@ try { window._drawVehIcon=_drawVehIcon; } catch(_){}
 function _isSkinId(id){ return /^invader-(green|red|yellow|purple)$/.test(id||''); }
 function _skinTint(id){ return ({'invader-green':'#14f195','invader-red':'#ff4d6d','invader-yellow':'#ffd166','invader-purple':'#9945FF','invader-diamond':'#b9f2ff'})[id] || '#14f195'; }
 function _drawSkinIcon(cv, skinId){ if(!cv||!cv.getContext) return; var c=cv.getContext('2d'); c.clearRect(0,0,cv.width,cv.height); c.save(); c.translate(cv.width/2, cv.height/2); try{ drawInvader(c, 1.3, _skinTint(skinId)); }catch(_){} c.restore(); }
+// High-tech bot ORB: glowing sphere in the bot's color + orbital ring + the bot's
+// icon as the core. Matches the orbital-orb the bot becomes in-game.
+function _drawBotOrb(cv, bot){
+  if(!cv || !cv.getContext) return;
+  var c = cv.getContext('2d'); var w = cv.width, h = cv.height; c.clearRect(0,0,w,h);
+  var cx = w/2, cy = h/2, R = Math.min(w,h) * 0.34;
+  var col = (bot && bot.color) || '#7aa2ff';
+  c.save();
+  // outer glow
+  var g0 = c.createRadialGradient(cx,cy,R*0.2,cx,cy,R*1.9);
+  g0.addColorStop(0, col+'99'); g0.addColorStop(1, col+'00');
+  c.fillStyle = g0; c.beginPath(); c.arc(cx,cy,R*1.9,0,Math.PI*2); c.fill();
+  // orbital ring (behind the sphere)
+  c.save(); c.translate(cx,cy); c.rotate(-0.5);
+  c.strokeStyle = col+'cc'; c.lineWidth = Math.max(1, R*0.07);
+  c.beginPath(); c.ellipse(0,0,R*1.45,R*0.52,0,0,Math.PI*2); c.stroke();
+  c.restore();
+  // sphere body (top-left lit)
+  var g1 = c.createRadialGradient(cx-R*0.4,cy-R*0.45,R*0.1,cx,cy,R);
+  g1.addColorStop(0,'#ffffff'); g1.addColorStop(0.22,col); g1.addColorStop(1,'#0a0c14');
+  c.fillStyle = g1; c.beginPath(); c.arc(cx,cy,R,0,Math.PI*2); c.fill();
+  // rim
+  c.lineWidth = Math.max(1, R*0.09); c.strokeStyle = col; c.globalAlpha = 0.95;
+  c.beginPath(); c.arc(cx,cy,R,0,Math.PI*2); c.stroke(); c.globalAlpha = 1;
+  // core icon glyph
+  if(bot && bot.icon){
+    c.fillStyle = '#0a0c14'; c.font = 'bold ' + Math.round(R*0.95) + 'px ui-monospace,Menlo,monospace';
+    c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(bot.icon, cx, cy + R*0.04);
+  }
+  c.restore();
+}
+try { window._drawBotOrb = _drawBotOrb; } catch(_){}
 try { window._drawSkinIcon=_drawSkinIcon; } catch(_){}
 // v0.8k#13 — Belt-and-suspenders: walk VEHICLES after it's defined and mark every
 // id as owned in game.ownedVehicles. This guarantees future-added tiers are
@@ -46943,7 +46976,11 @@ function _openPlayerSlotPop(anchor, options, currentId, onPick){
     const b = document.createElement('button');
     b.type = 'button';
     if(opt.id === currentId) b.classList.add('active');
-    if(_isSkinId(opt.id)){
+    if(opt.orb){
+      var _onl = '<span style="margin-right:8px;display:inline-block;vertical-align:middle"><canvas class="botOrbCv" width="40" height="40" style="width:26px;height:26px;vertical-align:middle"></canvas></span><span style="vertical-align:middle">' + (opt.nm || opt.id) + '</span>';
+      b.innerHTML = opt.sub ? (_onl + '<div style="margin-left:34px;color:#7a8290;font-size:10px;line-height:1.35;white-space:normal">' + opt.sub + '</div>') : _onl;
+      try { _drawBotOrb(b.querySelector('canvas'), opt.orb); } catch(_){}
+    } else if(_isSkinId(opt.id)){
       b.innerHTML = '<span style="margin-right:8px;display:inline-block;vertical-align:middle"><canvas class="skIcCv" width="34" height="20" style="width:28px;height:16px;vertical-align:middle"></canvas></span>' + (opt.nm || opt.id);
       try{ _drawSkinIcon(b.querySelector('canvas'), opt.id); }catch(_){}
     } else {
@@ -47073,7 +47110,8 @@ function _renderPlayerTab(){
     const equipBot = equipId ? allBots.find(b => b.id === equipId) : null;
     if(!card) continue;
     if(equipBot){
-      ic.textContent = '▣';
+      ic.innerHTML = '<canvas class="botOrbCv" width="40" height="40" style="width:30px;height:30px;vertical-align:middle"></canvas>';
+      try { _drawBotOrb(ic.firstChild, equipBot); } catch(_){ ic.textContent = equipBot.icon || '▣'; }
       nm.textContent = equipBot.name || 'bot';
       card.classList.remove('empty');
       if(frame){ frame.classList.add('ps-frame-bot'); frame.classList.remove('ps-frame-empty'); }
@@ -47101,6 +47139,7 @@ function _renderPlayerTab(){
         const _eqd = eq.indexOf(b.id) >= 0;
         list.push({
           id: b.id,
+          orb: b,
           ic: b.icon || '▣',
           iconColor: b.color || '',
           nm: (b.name || b.id) + (_eqd ? '  ✓' : ''),
