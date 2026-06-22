@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.446
-     LAST UPDATED:    2026-06-22  ·  GEAR PICKER matches the bot layout — colored icon + name (✓ equipped) + a description line.
-     PREV (v1.0.445): GEAR — Thrust Pack (stronger jump), Pickup Magnet (marketplace, $RUN), NEW Rubber Ball (bouncy ball).
-     PREV (v1.0.444): SNAKE MINIGAME back — removed connect-exclusive gate on the Snake card.
+     CURRENT VERSION: v1.0.448
+     LAST UPDATED:    2026-06-22  ·  WEAPONS now functional — Default/Laser/Spread/Beam each fire differently on Space (rewired to the loadout
+                      weapon; distinct fire-rate/speed/pierce/pellets + bullet visuals: laser thin streak, spread 3-way fan, beam thick short-range).
+     PREV (v1.0.447): FIX — RUNNER/SNAKE avatar tabs actually hidden (specificity fix).
+     PREV (v1.0.446): GEAR PICKER matches the bot layout.
      PREV (v1.0.437): RELAY → Cloudflare Tunnel (public MP, self-healing override) + campaign LEVEL system (PL 1–10) + chapter gates
                       (ch.40/41) + vehicles racing physics + bots 3+3=6 + skins archived/Diamond@PL10 + terminal masonry + maps fix + guest gating.
      PREV (v1.0.436): SOCIAL P3+P4 — Profile 🔍 SEARCH players + profile pages/backlinks (window.crSocial).
@@ -478,8 +479,10 @@
     display:flex;flex-direction:column;gap:10px;align-items:center}
   .player-altar-avatar{display:flex;flex-direction:column;gap:6px;width:100%;align-items:center}
   .player-altar-avatar-tabs{display:flex;gap:6px;justify-content:center}
-  /* RUNNER / SNAKE avatar tabs ARCHIVED — hidden for everyone (avatar stays Runner). */
-  .player-altar-avatar-tabs{display:none!important}
+  /* RUNNER / SNAKE avatar tabs ARCHIVED — hidden for everyone (avatar stays Runner).
+     `body ` prefix raises specificity to beat the later `.player-altar-avatar-tabs
+     {display:flex !important}` tab-styling rule (~L5191) that was un-hiding them. */
+  body .player-altar-avatar-tabs{display:none!important}
   .player-altar-avatar-tabs .paa-tab{
     background:rgba(10,15,28,0.6);border:1px solid var(--line);color:var(--dim);
     padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:.4px;
@@ -13700,7 +13703,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.446",
+  VERSION: "1.0.448",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -32328,13 +32331,14 @@ function spawnMonster(){
 // gear-shop unlocks (laser/shotgun/etc.) just add entries here and let the
 // Profile UI swap the active id.
 const WEAPONS = [
-  { id:'pistol',  nm:'Pistol',   cd:0.18, speed:1100, size:3, color:'#ffd166', pierce:1 },
-  { id:'laser',   nm:'Laser',    cd:0.10, speed:1600, size:2, color:'#14f195', pierce:3 },
-  { id:'shotgun', nm:'Shotgun',  cd:0.42, speed:900,  size:4, color:'#ff5b7f', pierce:1, spread:0.32, pellets:3 },
-  { id:'cannon',  nm:'Cannon',   cd:0.65, speed:780,  size:7, color:'#9945ff', pierce:6, splash:1 },
+  { id:'default', nm:'Default', cd:0.18, speed:1100, size:3, color:'#ffd166', pierce:1, shape:'dot',    life:0.9  },
+  { id:'laser',   nm:'Laser',   cd:0.09, speed:1850, size:2, color:'#14f195', pierce:2, shape:'streak', life:0.8  },  // fast, thin, pierces
+  { id:'spread',  nm:'Spread',  cd:0.40, speed:980,  size:4, color:'#ff5b7f', pierce:1, shape:'dot',    life:0.7, pellets:3, spread:0.5 }, // 3-way fan
+  { id:'beam',    nm:'Beam',    cd:0.06, speed:2400, size:6, color:'#7be3f3', pierce:4, shape:'beam',   life:0.32 },  // continuous, short range, thick
 ];
-let currentWeapon = 'pistol';
-function currentWeaponObj(){ return WEAPONS.find(w => w.id === currentWeapon) || WEAPONS[0]; }
+// Active weapon = the Profile loadout weapon (falls back to default).
+let currentWeapon = 'default';
+function currentWeaponObj(){ var id = (typeof playerLoadout !== 'undefined' && playerLoadout.weapon) || currentWeapon; return WEAPONS.find(w => w.id === id) || WEAPONS[0]; }
 
 function shoot(){
   const now = performance.now()/1000;
@@ -32367,11 +32371,12 @@ function shoot(){
       sx: playerSx + ux*18,
       sy: playerSy + uy*18,
       type: w.id,
+      shape: w.shape,
       color: w.color,
       size: w.size,
       pierce: w.pierce,
       hits: new Set(),
-      life: 0.9,
+      life: w.life || 0.9,
     });
   }
   // Shotgun: 3 pellets in a cone
@@ -33174,7 +33179,7 @@ function drawBullets(){
     // Direction unit vector (for trail length aligned to velocity)
     const vlen = Math.hypot(b.vxPx || 0, b.vyPx || 0) || 1;
     const ux = -(b.vxPx || 0) / vlen, uy = -(b.vyPx || 0) / vlen;
-    const tailLen = 12 + size * 2;
+    const tailLen = (12 + size * 2) * (b.shape === 'beam' ? 2.4 : b.shape === 'streak' ? 1.8 : 1);
     ctx.save();
     ctx.shadowColor = color;
     ctx.shadowBlur = 10;
