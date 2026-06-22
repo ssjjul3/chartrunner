@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.482
-     LAST UPDATED:    2026-06-22  ·  Racing end card: removed the FLIPS stat tile; Close now exits to the desktop (CRT-fade Home flow) instead of just dismissing the card.
+     CURRENT VERSION: v1.0.484
+     LAST UPDATED:    2026-06-22  ·  REGULAR mode now JUMPS on a vehicle: single ↑ does a plain jump (same as monster/on-foot) via a _vehAir flag that lets the normal gravity/landing physics run, instead of the old no-op (grind-hop removed; triple-tap flight kept).
+     PREV (v1.0.483): No bot loadout in ANY minigame (racing · monster · snake).
+     PREV (v1.0.482): Racing end card: removed FLIPS tile; Close exits to desktop (CRT-fade Home flow).
      PREV (v1.0.481): PICK YOUR RIDE: removed title; 2×2 vehicle grid (Bike·Surfboard / Mining cart·Lambo).
      PREV (v1.0.480): Minigame cards: Snake → "SNAKE" (green), Monster → "MONSTER MODE" (red).
      PREV (v1.0.479): Tutorial narrator: removed "Loading…"; the term-body now opens with a per-step TITLE ("> Hello, <name>" on step 1, else the step title, else "Tutorial") + body in ONE .term-body block, matching the welcome bubble's size/font/colour. (+ cross-bike art + minigame wordmark names from v1.0.478.)
@@ -13839,7 +13841,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.482",
+  VERSION: "1.0.484",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -25557,9 +25559,14 @@ window.addEventListener('keydown', e=>{
         prevUpDown = 0; lastUpDown = 0;
         return;
       }
-      if(d1 < 320){
-        // Double tap: hop to the next grind line ABOVE.
-        try { if(typeof hopVehicleGrind === 'function') hopVehicleGrind(+1); } catch(_){}
+      // v1.0.484 — single ↑ now JUMPS the vehicle (same plain jump as monster/on-foot),
+      // so regular mode jumps. (Old 2x↑ grind-hop removed; 3x↑ flight kept above.)
+      if(player.onGround || game.coyote>0){
+        player.vy = -640 * ((typeof playerLoadout!=='undefined' && playerLoadout.gear==='thrust') ? 2 : 1);
+        player.onGround = false; game.coyote = 0; player._vehAir = true;
+        try { game.vehicleGrind = null; } catch(_){}
+      } else {
+        game.jumpBufferUntil = (now/1000) + 0.12;
       }
       prevUpDown = lastUpDown;
       lastUpDown = now;
@@ -35301,7 +35308,7 @@ function update(dt){
                    && (typeof crVehicleUnlocked !== 'function' || crVehicleUnlocked(playerLoadout.vehicle)))
                   ? playerLoadout.vehicle
                   : ((game.vehicle && game.vehicle !== 'none') ? game.vehicle : null);
-  if(_runVeh && !game.monsterMode){
+  if(_runVeh && !game.monsterMode && !player._vehAir){   // v1.0.484 — skip the grind-snap while mid vehicle-jump
     const veh = vehicleById(_runVeh);
     let aX = 0;
     if(keys['a']||keys['arrowleft'])  aX -= 1;
@@ -35408,7 +35415,10 @@ function update(dt){
     // (Implementation: use a flag to skip the gravity block.)
     player._vehicleSkipGravity = true;
   } else {
+    // On foot, OR mid vehicle-jump: run the normal gravity/landing physics.
     player._vehicleSkipGravity = false;
+    // v1.0.484 — once the vehicle-jump has landed, resume normal riding (re-grind).
+    if(player._vehAir && player.onGround) player._vehAir = false;
   }
 
   // Horizontal — only via arrows, no auto movement
@@ -56679,9 +56689,9 @@ window.addEventListener('keydown', (e) => {
 
 let _wbBotTickT = 0;
 function drawBotOrbs(){
-  // v1.0.460 — the racing minigame has NO bot loadout: skip the orb render +
-  // detector scan/propose entirely while a race is active.
-  try { if(typeof game !== 'undefined' && game.mode === 'racing') return; } catch(_){}
+  // v1.0.460/483 — minigames (racing · monster · snake) have NO bot loadout: skip the
+  // orb render + detector scan/propose entirely while a minigame is active.
+  try { if(typeof game !== 'undefined' && (game.mode === 'racing' || game.mode === 'monster' || game.mode === 'snake')) return; } catch(_){}
   const equipped = _wbEquippedBots();
   if(!equipped.length) return;
   const px = sX(player.wx);
