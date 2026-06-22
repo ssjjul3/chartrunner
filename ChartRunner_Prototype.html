@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.494
+     CURRENT VERSION: v1.0.495
      LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -13850,7 +13850,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.494",
+  VERSION: "1.0.495",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -33967,6 +33967,18 @@ function endRun(reason){
   try{ if(window.ChartRunner && window.ChartRunner._emit) window.ChartRunner._emit('episode.end', Object.assign({reason: reason}, window.ChartRunner.getRunSummary())); }catch(_){}
   // track run-end distance so osStats.bestDist can read it
   game.dist = Math.floor(player.wx/STEP);
+  // v1.0.495 — Monster Mode is a minigame: show the racing-style end card (not the P&L card).
+  if(game.monsterMode){
+    try {
+      var _secs = Math.max(0, Math.round((performance.now() - (game._runStartTs || performance.now())) / 1000));
+      var _fmt  = function(s){ return s >= 60 ? (Math.floor(s/60) + 'm ' + (s%60) + 's') : (s + 's'); };
+      var _best = _secs; try { _best = Math.max(_secs, parseInt(localStorage.getItem('cr_monster_best') || '0', 10) || 0); localStorage.setItem('cr_monster_best', String(_best)); } catch(_){}
+      crMiniEnd.show('monster', { won:false, big:_fmt(_secs), bigLabel:'SURVIVED', tag:'☠ GAME OVER',
+        stats:[['Bears', (game.kills || 0)], ['Distance', (game.dist || 0) + 'm'], ['Best', _fmt(_best)]] });
+    } catch(e){ console.error('mini end', e); }
+    try{ osRecordRunEnd(); }catch(_){}
+    return;
+  }
   document.getElementById('endSub').textContent = reason || 'You survived the volatility.';
   // v0.9.18 — Render the P&L card (replaces the old 4-cell stat grid).
   try { _crPaintPnlCard(reason); } catch(e){ console.error('pnl card', e); }
@@ -38816,6 +38828,101 @@ window.crRacing = (function(){
   return { init, pick, tick, draw, active };
 })();
 
+// v1.0.495 — Shared MINIGAME end card (Snake + Monster) in the Racing end-card style.
+// Self-contained: its own overlay + CSS (a focused copy of the .crRace* card look), so it
+// renders identically without depending on the racing module being initialized. Per-mode
+// neon wordmark (CHART RUNNER + SNAKE green / MONSTER red), big primary stat, stat tiles,
+// and Play again / Close (→ desktop) actions like Racing's end card.
+window.crMiniEnd = (function(){
+  var MODES = {
+    snake:   { word:'SNAKE',        wc:'#9dff5b', wsh:'rgba(157,255,91,.6)' },
+    monster: { word:'MONSTER MODE', wc:'#ff5b7f', wsh:'rgba(255,91,127,.6)' }
+  };
+  function _ensure(){
+    if(document.getElementById('crMiniEndUI')) return;
+    var wrap = document.createElement('div'); wrap.id = 'crMiniEndUI';
+    wrap.innerHTML =
+      '<div id="crMiniEndCard" class="crMeOv">'
+      + '<div class="crMeCard">'
+      +   '<div class="crMeLogo"><span class="crMeMain"><span class="c">CHART</span> <span class="r">RUNNER</span></span><span class="crMeSub" id="crMeWord">SNAKE</span></div>'
+      +   '<div class="crMeTag" id="crMeTag">GAME OVER</div>'
+      +   '<div class="crMeBig" id="crMeBig">0</div>'
+      +   '<div class="crMeBigLab" id="crMeBigLab"></div>'
+      +   '<div class="crMeStats" id="crMeStats"></div>'
+      +   '<div class="crMeActions">'
+      +     '<button id="crMeAgain" type="button" class="crMeBtn primary">↻ Play again</button>'
+      +     '<button id="crMeClose" type="button" class="crMeBtn ghost">Close</button>'
+      +   '</div>'
+      + '</div></div>';
+    document.body.appendChild(wrap);
+    var st = document.createElement('style'); st.id = 'crMiniEndCss'; st.textContent = ''
+      + '#crMiniEndUI .crMeCard{--rc-ov:rgba(20,28,44,.42);--rc-bg:linear-gradient(180deg,#ffffff,#eef1f6);--rc-bd:#c4ccd8;--rc-fg:#1b2331;--rc-dim:#5d6b7e;--rc-accent:#12a766;--rc-ink:#06160d;--rc-veh-bg:#ffffff;--rc-veh-bd:#d4dae4;--rc-shadow:0 24px 64px rgba(20,30,50,.28)}'
+      + 'body[data-os-theme="ascii"] #crMiniEndUI .crMeCard{--rc-ov:rgba(0,0,0,.82);--rc-bg:linear-gradient(180deg,#001a0c,#000400);--rc-bd:#14f195;--rc-fg:#c6ffd9;--rc-dim:#5aa97f;--rc-accent:#14f195;--rc-ink:#02160a;--rc-veh-bg:rgba(0,30,12,.6);--rc-veh-bd:rgba(20,241,149,.4);--rc-shadow:0 24px 64px rgba(0,0,0,.7)}'
+      + 'body[data-os-theme="frontier"] #crMiniEndUI .crMeCard{--rc-ov:rgba(4,8,18,.78);--rc-bg:linear-gradient(180deg,#0c1424,#070b16);--rc-bd:rgba(20,241,149,.42);--rc-fg:#e9efff;--rc-dim:#9fb3c8;--rc-accent:#3ddc97;--rc-ink:#06160d;--rc-veh-bg:rgba(10,15,28,.6);--rc-veh-bd:rgba(120,140,180,.4);--rc-shadow:0 24px 64px rgba(0,0,0,.7)}'
+      + 'body[data-os-theme="bw"] #crMiniEndUI .crMeCard{--rc-ov:rgba(0,0,0,.5);--rc-bg:#ffffff;--rc-bd:#000;--rc-fg:#000;--rc-dim:#555;--rc-accent:#000;--rc-ink:#fff;--rc-veh-bg:#fff;--rc-veh-bd:#000;--rc-shadow:0 24px 64px rgba(0,0,0,.4)}'
+      + 'body[data-os-theme="mono"] #crMiniEndUI .crMeCard{--rc-ov:rgba(0,0,0,.82);--rc-bg:#111;--rc-bd:#888;--rc-fg:#e8e8e8;--rc-dim:#999;--rc-accent:#e8e8e8;--rc-ink:#111;--rc-veh-bg:#1a1a1a;--rc-veh-bd:#555;--rc-shadow:0 24px 64px rgba(0,0,0,.7)}'
+      + '#crMiniEndUI .crMeOv{position:fixed;inset:0;z-index:99560;display:none;align-items:center;justify-content:center;background:var(--rc-ov,rgba(4,8,18,.78));backdrop-filter:blur(4px)}'
+      + '#crMiniEndUI .crMeOv.on{display:flex}'
+      + '#crMiniEndUI .crMeCard{width:min(440px,calc(100% - 32px));max-height:calc(100vh - 28px);overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--rc-bg);border:1px solid var(--rc-bd);border-radius:14px;box-shadow:var(--rc-shadow);padding:18px 18px 16px;color:var(--rc-fg);font-family:ui-monospace,Menlo,Consolas,monospace;text-align:center}'
+      + '#crMiniEndUI .crMeLogo{display:flex;flex-direction:column;align-items:center;gap:1px;margin:2px 0 9px;user-select:none;line-height:1}'
+      + '#crMiniEndUI .crMeMain{font:900 italic 22px/1 "Arial Black",Impact,system-ui,sans-serif;letter-spacing:1.5px;white-space:nowrap}'
+      + '#crMiniEndUI .crMeMain .c{color:#7ee787;text-shadow:0 1px 0 #06140c,0 0 12px rgba(126,231,135,.75)}'
+      + '#crMiniEndUI .crMeMain .r{color:#7be3f3;text-shadow:0 1px 0 #06140c,0 0 12px rgba(123,227,243,.75)}'
+      + '#crMiniEndUI .crMeSub{font:900 italic 11px/1 "Arial Black",Impact,system-ui,sans-serif;letter-spacing:5px;margin-top:4px;padding-left:5px}'
+      + '#crMiniEndUI .crMeTag{font:800 12px ui-monospace,Menlo,monospace;letter-spacing:2px;margin:2px 0 -2px}'
+      + '#crMiniEndUI .crMeBig{font:800 italic 42px/1 "Arial Black",Impact,system-ui,sans-serif;letter-spacing:1px;text-align:center;margin:8px 0 0}'
+      + '#crMiniEndUI .crMeBigLab{font:700 9px ui-monospace,Menlo,monospace;letter-spacing:1.4px;color:var(--rc-dim);text-transform:uppercase;margin:3px 0 0}'
+      + '#crMiniEndUI .crMeStats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin:13px 0 4px}'
+      + '#crMiniEndUI .crMeStat{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 6px;border:1px solid var(--rc-veh-bd);border-radius:8px;background:var(--rc-veh-bg)}'
+      + '#crMiniEndUI .crMeStat::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;opacity:.75;background:var(--rc-accent)}'
+      + '#crMiniEndUI .crMeStat .k{font-size:8.5px;letter-spacing:.6px;color:var(--rc-dim);text-transform:uppercase}'
+      + '#crMiniEndUI .crMeStat .v{font-size:13px;font-weight:800;color:var(--rc-fg)}'
+      + '#crMiniEndUI .crMeActions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:15px}'
+      + '#crMiniEndUI .crMeBtn{appearance:none;cursor:pointer;border:1px solid var(--rc-veh-bd);border-radius:8px;background:var(--rc-veh-bg);color:var(--rc-fg);font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.4px;padding:9px 14px}'
+      + '#crMiniEndUI .crMeBtn:hover{border-color:var(--rc-accent)}'
+      + '#crMiniEndUI .crMeBtn.primary{background:var(--rc-accent);color:var(--rc-ink);border-color:var(--rc-accent)}'
+      + '#crMiniEndUI .crMeBtn.ghost{background:transparent;color:var(--rc-dim)}'
+      + '@media (max-width:720px){#crMiniEndUI .crMeCard{width:calc(100% - 18px);padding:14px}#crMiniEndUI .crMeBig{font-size:36px}#crMiniEndUI .crMeStats{gap:6px}}';
+    document.head.appendChild(st);
+    var ag = document.getElementById('crMeAgain');
+    if(ag) ag.addEventListener('click', function(){ hide(); try { if(typeof restart === 'function') restart(); } catch(_){} });
+    var cl = document.getElementById('crMeClose');
+    if(cl) cl.addEventListener('click', _close);
+  }
+  function _close(){
+    var go = function(){
+      try { if(typeof game !== 'undefined'){ game.mode = ''; game.running = false; if(game.minigame) game.minigame.mode = null; game.monsterMode = false; } } catch(_){}
+      hide();
+      try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
+      try { var u = new URL(window.location.href); if(u.search || u.hash) window.history.replaceState({}, '', u.origin + u.pathname); } catch(_){}
+      setTimeout(function(){ try { if(typeof crCrtFadeIn === 'function') crCrtFadeIn(); } catch(_){} }, 260);
+    };
+    if(typeof crCrtFadeOut === 'function') crCrtFadeOut(go); else go();
+  }
+  function show(mode, opts){
+    opts = opts || {}; _ensure();
+    var m = MODES[mode] || MODES.snake;
+    var ov = document.getElementById('crMiniEndCard'); if(!ov) return;
+    var sub = document.getElementById('crMeWord');
+    if(sub){ sub.textContent = m.word; sub.style.color = m.wc; sub.style.textShadow = '0 0 10px ' + m.wsh; }
+    var win = !!opts.won;
+    var tag = document.getElementById('crMeTag');
+    if(tag){ tag.textContent = opts.tag || (win ? '★ CLEARED' : '☠ GAME OVER'); tag.style.color = win ? '#7ee787' : '#ff8aa6'; tag.style.textShadow = '0 0 10px ' + (win ? 'rgba(126,231,135,.5)' : 'rgba(255,91,127,.5)'); }
+    var big = document.getElementById('crMeBig');
+    if(big){ big.textContent = (opts.big != null ? opts.big : '—'); big.style.color = m.wc; big.style.textShadow = '0 2px 0 #06140c,0 0 20px ' + m.wsh; }
+    var lab = document.getElementById('crMeBigLab'); if(lab) lab.textContent = opts.bigLabel || '';
+    var stats = document.getElementById('crMeStats');
+    if(stats){
+      var cells = opts.stats || [];
+      stats.innerHTML = cells.map(function(c){ return '<div class="crMeStat"><span class="k">' + c[0] + '</span><span class="v">' + c[1] + '</span></div>'; }).join('');
+      stats.style.display = cells.length ? 'grid' : 'none';
+    }
+    ov.classList.add('on');
+  }
+  function hide(){ var ov = document.getElementById('crMiniEndCard'); if(ov) ov.classList.remove('on'); }
+  return { show: show, hide: hide };
+})();
+
 // v1.0.394 — Merge DEXTRACKER → SOLANATRACKER. The DEXTRACKER tab is archived
 // in markup; relocate its panes (phxWhales/phxFunding/phxOI/phxBook/phxFlight/
 // phxStatus) into the SOLANATRACKER grid so their live refreshers keep running
@@ -38939,7 +39046,10 @@ function crMinigameTick(dt){
     m.score = (game.snakeLen || 1) - 1;
     if(m.score >= _MINIGAME_PICKUP_GOAL){
       m.won = true;
-      try { showBanner?.('SNAKE · WIN', 'You reached length ' + (m.score + 1)); toast('Win! Restart to play again'); } catch(_){}
+      game.running = false;   // freeze the run behind the end card
+      var _len = (m.score || 0) + 1;
+      var _best = _len; try { _best = Math.max(_len, parseInt(localStorage.getItem('cr_snake_best') || '0', 10) || 0); localStorage.setItem('cr_snake_best', String(_best)); } catch(_){}
+      try { crMiniEnd.show('snake', { won:true, big:_len, bigLabel:'LENGTH', tag:'★ CLEARED', stats:[['Goal', (_MINIGAME_PICKUP_GOAL + 1)], ['Coins', (m.score || 0)], ['Best', _best]] }); } catch(_){}
     }
     // Lose: snake head intersects its own trail (skip the freshest segments).
     const trail = game.snakeTrail || [];
@@ -38951,7 +39061,10 @@ function crMinigameTick(dt){
         const dy = (t.py - headPy) * priceScale / STEP;
         if(dx*dx + dy*dy < 0.04){
           m.lost = true;
-          try { showBanner?.('SNAKE · GAME OVER', 'You ate yourself'); toast('Lose · Restart from the topbar'); } catch(_){}
+          game.running = false;   // freeze the run behind the end card
+          var _len = (m.score || 0) + 1;
+          var _best = 0; try { _best = parseInt(localStorage.getItem('cr_snake_best') || '0', 10) || 0; } catch(_){}
+          try { crMiniEnd.show('snake', { won:false, big:_len, bigLabel:'LENGTH', tag:'☠ GAME OVER', stats:[['Goal', (_MINIGAME_PICKUP_GOAL + 1)], ['Coins', (m.score || 0)], ['Best', _best]] }); } catch(_){}
           break;
         }
       }
