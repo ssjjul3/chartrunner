@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.451
-     LAST UPDATED:    2026-06-22  ·  Removed the tokenomics Entry-fees / Supply / M1-note rows from the public build (all 3 surfaces).
-     PREV (v1.0.450): WEAPON polish — badge off the avatar; weapon slot + picker use the orb design language.
-     PREV (v1.0.449): MOBILE Profile loadout keeps the desktop 3-column grid.
+     CURRENT VERSION: v1.0.452
+     LAST UPDATED:    2026-06-22  ·  WEAPON icons restored as ELECTRIFIED glyphs — each weapon's original icon, neon-glowing in its own
+                      colour (bloom + white-hot core + electric arcs), like the lasers. Slot card + picker.
+     PREV (v1.0.451): Removed tokenomics Entry-fees/Supply/M1-note rows from public.
+     PREV (v1.0.450): WEAPON — badge off the avatar; orb design (now superseded by electrified icons).
      PREV (v1.0.437): RELAY → Cloudflare Tunnel (public MP, self-healing override) + campaign LEVEL system (PL 1–10) + chapter gates
                       (ch.40/41) + vehicles racing physics + bots 3+3=6 + skins archived/Diamond@PL10 + terminal masonry + maps fix + guest gating.
      PREV (v1.0.436): SOCIAL P3+P4 — Profile 🔍 SEARCH players + profile pages/backlinks (window.crSocial).
@@ -13705,7 +13706,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.451",
+  VERSION: "1.0.452",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -32215,6 +32216,42 @@ try { window._drawBotOrb = _drawBotOrb; } catch(_){}
 // Weapon color (matches the WEAPONS config) — used to render weapons as orbs.
 function _weaponColor(id){ try { var w = (typeof WEAPONS !== 'undefined') ? WEAPONS.find(function(x){ return x.id === id; }) : null; return (w && w.color) || '#ffd166'; } catch(_){ return '#ffd166'; } }
 try { window._weaponColor = _weaponColor; } catch(_){}
+// Electrified weapon icon — the weapon's glyph rendered with a neon bloom + white-hot
+// core + electric arcs, tinted the weapon's color (same energy as the laser beams).
+function _drawWeaponIcon(cv, id){
+  if(!cv || !cv.getContext) return;
+  var c = cv.getContext('2d'); var w = cv.width, h = cv.height; c.clearRect(0,0,w,h);
+  var cx = w/2, cy = h/2, R = Math.min(w,h);
+  var col = (typeof _weaponColor === 'function') ? _weaponColor(id) : '#ffd166';
+  var opt = (typeof PLAYER_OPTIONS !== 'undefined' && PLAYER_OPTIONS.weapon) ? PLAYER_OPTIONS.weapon.find(function(o){ return o.id === id; }) : null;
+  var glyph = (opt && opt.ic) || '•';
+  c.save();
+  // soft radial aura
+  var g = c.createRadialGradient(cx, cy, 1, cx, cy, R*0.5);
+  g.addColorStop(0, col+'55'); g.addColorStop(1, col+'00');
+  c.fillStyle = g; c.beginPath(); c.arc(cx, cy, R*0.5, 0, Math.PI*2); c.fill();
+  // electric arcs around the glyph
+  c.strokeStyle = col; c.lineWidth = 1; c.globalAlpha = 0.75; c.shadowColor = col; c.shadowBlur = 6;
+  for(var i=0;i<3;i++){ var a = (i/3)*Math.PI*2 + 0.4; var r0 = R*0.30, r1 = R*0.46;
+    c.beginPath();
+    c.moveTo(cx+Math.cos(a)*r0, cy+Math.sin(a)*r0);
+    c.lineTo(cx+Math.cos(a+0.18)*((r0+r1)/2), cy+Math.sin(a+0.18)*((r0+r1)/2));
+    c.lineTo(cx+Math.cos(a)*r1, cy+Math.sin(a)*r1);
+    c.stroke();
+  }
+  c.globalAlpha = 1;
+  // glyph: double-draw for neon bloom, then white-hot core
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillStyle = col; c.shadowColor = col;
+  c.font = 'bold ' + Math.round(R*0.5) + 'px ui-monospace,Menlo,monospace';
+  c.shadowBlur = 14; c.fillText(glyph, cx, cy);
+  c.shadowBlur = 24; c.fillText(glyph, cx, cy);
+  c.shadowBlur = 4; c.fillStyle = '#ffffff'; c.globalAlpha = 0.92;
+  c.font = 'bold ' + Math.round(R*0.42) + 'px ui-monospace,Menlo,monospace';
+  c.fillText(glyph, cx, cy);
+  c.restore();
+}
+try { window._drawWeaponIcon = _drawWeaponIcon; } catch(_){}
 try { window._drawSkinIcon=_drawSkinIcon; } catch(_){}
 // v0.8k#13 — Belt-and-suspenders: walk VEHICLES after it's defined and mark every
 // id as owned in game.ownedVehicles. This guarantees future-added tiers are
@@ -47016,7 +47053,11 @@ function _openPlayerSlotPop(anchor, options, currentId, onPick){
     const b = document.createElement('button');
     b.type = 'button';
     if(opt.id === currentId) b.classList.add('active');
-    if(opt.veh){
+    if(opt.wico){
+      var _wnl = '<span style="margin-right:8px;display:inline-block;vertical-align:middle"><canvas class="wpIcCv" width="44" height="44" style="width:28px;height:28px;vertical-align:middle"></canvas></span><span style="vertical-align:middle">' + (opt.nm || opt.id) + '</span>';
+      b.innerHTML = opt.sub ? (_wnl + '<div style="margin-left:36px;color:#7a8290;font-size:10px;line-height:1.35;white-space:normal">' + opt.sub + '</div>') : _wnl;
+      try { _drawWeaponIcon(b.querySelector('canvas'), opt.wico); } catch(_){}
+    } else if(opt.veh){
       b.innerHTML = '<span style="margin-right:8px;display:inline-block;vertical-align:middle"><canvas class="vIcCv" width="52" height="34" style="width:40px;height:26px;vertical-align:middle"></canvas></span><span style="vertical-align:middle">' + (opt.nm || opt.id) + '</span>';
       try { _drawVehIcon(b.querySelector('canvas'), opt.veh); } catch(_){}
     } else if(opt.orb){
@@ -47054,7 +47095,7 @@ function _renderPlayerTab(){
     if(ic){
       if(slotKey==='vehicle' && opt){ ic.innerHTML='<canvas class="vIcCv" width="52" height="34" style="width:44px;height:28px"></canvas>'; try{ _drawVehIcon(ic.firstChild, opt.id); }catch(_){ ic.textContent=(opt&&opt.ic)||'?'; } }
       else if(slotKey==='skin' && opt){ ic.innerHTML='<canvas class="skIcCv" width="52" height="32" style="width:44px;height:26px"></canvas>'; try{ _drawSkinIcon(ic.firstChild, opt.id); }catch(_){ ic.textContent=(opt&&opt.ic)||'?'; } }
-      else if(slotKey==='weapon' && opt){ ic.innerHTML='<canvas class="wpOrbCv" width="40" height="40" style="width:30px;height:30px"></canvas>'; try{ _drawBotOrb(ic.firstChild, { color:(typeof _weaponColor==='function'?_weaponColor(opt.id):'#ffd166'), icon:opt.ic }); }catch(_){ ic.textContent=(opt&&opt.ic)||'?'; } }
+      else if(slotKey==='weapon' && opt){ ic.innerHTML='<canvas class="wpIcCv" width="44" height="44" style="width:34px;height:34px"></canvas>'; try{ _drawWeaponIcon(ic.firstChild, opt.id); }catch(_){ ic.textContent=(opt&&opt.ic)||'?'; } }
       else ic.textContent = (opt && opt.ic) || '?';
     }
     if(nm) nm.textContent = (opt && opt.nm) || '—';
@@ -47127,7 +47168,7 @@ function _renderPlayerTab(){
   };
   // Weapons use the orb design language (like bots): colored orb + glyph core + desc.
   wireSlot('weapon',  PLAYER_OPTIONS.weapon.map(function(o){
-    return Object.assign({}, o, { orb:{ color:(typeof _weaponColor==='function'?_weaponColor(o.id):'#ffd166'), icon:o.ic }, sub:o.desc });
+    return Object.assign({}, o, { wico:o.id, sub:o.desc });
   }),  'default');
   // Gear picker mirrors the bot layout: colored icon + name (✓ equipped) + a
   // description line. Pickup Magnet is a marketplace item — locked until bought.
