@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.493
+     CURRENT VERSION: v1.0.494
      LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -13850,7 +13850,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.493",
+  VERSION: "1.0.494",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -34249,8 +34249,12 @@ function syncStrategySection(){
 // (game.monsterMode must be false). Mounting exits flying/upside-down and
 // resets glide velocity. Dismounting preserves the current py so you don't
 // fall off the chart when stepping off the board.
+// v1.0.494 — modes where vehicles are fully disabled: Monster Mode AND Snake.
+// No mount, no hotkey, and the Profile vehicle loadout never loads in these modes.
+function _crNoVehicles(){ try { return !!(game && (game.monsterMode || game.mode === 'snake')); } catch(_){ return false; } }
+try { window._crNoVehicles = _crNoVehicles; } catch(_){}
 function mountVehicle(id){
-  if(game.monsterMode){ toast('Stash the board — Monster Mode is hot'); return false; }
+  if(_crNoVehicles()){ toast(game.monsterMode ? 'Stash the board — Monster Mode is hot' : 'No vehicles in Snake'); return false; }
   const v = vehicleById(id);
   if(!v || v.id === 'none'){ game.vehicle = 'none'; return false; }
   if(!game.ownedVehicles[v.id]){ toast(v.nm+' not owned'); return false; }
@@ -34278,7 +34282,7 @@ function dismountVehicle(opts){
   return true;
 }
 function toggleVehicle(){
-  if(game.monsterMode){ toast('Vehicles disabled in Monster Mode'); return; }
+  if(_crNoVehicles()){ toast(game.monsterMode ? 'Vehicles disabled in Monster Mode' : 'Vehicles disabled in Snake'); return; }
   if(game.vehicle && game.vehicle !== 'none'){ dismountVehicle(); return; }
   // v1.0.487 — picker archived: mount the ride equipped in Profile (playerLoadout.vehicle).
   var eq = (typeof playerLoadout !== 'undefined' && playerLoadout.vehicle && playerLoadout.vehicle !== 'none') ? playerLoadout.vehicle : null;
@@ -38901,6 +38905,9 @@ function crMinigameInit(){
   if(game.mode === 'snake'){
     // Force the avatar to Snake while in this mode.
     if(typeof playerLoadout !== 'undefined') playerLoadout.avatar = 'snake';
+    // v1.0.494 — Snake disables vehicles entirely: drop any ride mounted before
+    // entering, so the Profile vehicle loadout never carries into Snake.
+    try { game.vehicle = 'none'; game.vehicleVel = 0; game.vehicleGrind = null; } catch(_){}
     game.minigame.candleOffsets = candles.map(() => ({ y: 0, vy: 0 }));
     if(typeof toast === 'function') toast('Snake · eat ' + _MINIGAME_PICKUP_GOAL + ' coins to win');
   } else if(game.mode === 'racing'){
