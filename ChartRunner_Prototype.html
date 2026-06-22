@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.507
+     CURRENT VERSION: v1.0.508
      LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -13921,7 +13921,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.507",
+  VERSION: "1.0.508",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -51711,20 +51711,30 @@ function _wbRenderTools(){
       el.onclick = () => _wbToggleTool(t.id);
       return el;
     };
-    if(eqZone){
-      eqZone.innerHTML = '';
-      const eqTools = toolDefs.filter(t => _wbToolEquipped(t.id));
-      if(!eqTools.length){
-        eqZone.innerHTML = '<div style="font-size:11px;color:#ff5b7f;font-style:italic">Laser is empty — equip a tool below (the spawn menu will only show Cancel).</div>';
-      } else eqTools.forEach(t => eqZone.appendChild(tile(t)));
-    }
-    if(avZone){
-      avZone.innerHTML = '';
-      const avTools = toolDefs.filter(t => !_wbToolEquipped(t.id));
-      if(!avTools.length){
-        avZone.innerHTML = '<div style="font-size:11px;color:var(--dim);font-style:italic">Everything is equipped.</div>';
-      } else avTools.forEach(t => avZone.appendChild(tile(t)));
-    }
+    // v1.0.508 — tiles grouped by category (full-width header breaks the flex-wrap row).
+    const fillZone = (zoneEl, wantEq) => {
+      if(!zoneEl) return;
+      zoneEl.innerHTML = '';
+      let any = false;
+      WB_TOOL_CATEGORIES.forEach(cat => {
+        const tools = toolDefs.filter(t => t.cat === cat.id && (_wbToolEquipped(t.id) === wantEq));
+        if(!tools.length) return;
+        any = true;
+        const h = document.createElement('div');
+        h.style.cssText = 'width:100%;display:flex;align-items:center;gap:6px;margin:4px 0 2px;font:700 9px ui-monospace,Menlo,monospace;letter-spacing:.5px;text-transform:uppercase;color:var(--dim)';
+        h.innerHTML = '<span style="font-size:11px">' + cat.ic + '</span>' + cat.label
+          + '<span style="margin-left:auto;font-weight:400;opacity:.7">(' + tools.length + ')</span>';
+        zoneEl.appendChild(h);
+        tools.forEach(t => zoneEl.appendChild(tile(t)));
+      });
+      if(!any){
+        zoneEl.innerHTML = wantEq
+          ? '<div style="font-size:11px;color:#ff5b7f;font-style:italic">Laser is empty — equip a tool below (the spawn menu will only show Cancel).</div>'
+          : '<div style="font-size:11px;color:var(--dim);font-style:italic">Everything is equipped.</div>';
+      }
+    };
+    fillZone(eqZone, true);
+    fillZone(avZone, false);
     return;
   }
   const list = document.getElementById('wbToolList');
