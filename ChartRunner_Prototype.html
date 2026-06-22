@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.444
-     LAST UPDATED:    2026-06-22  ·  SNAKE MINIGAME back — removed the connect-exclusive gate on the Snake card; shown for everyone.
+     CURRENT VERSION: v1.0.445
+     LAST UPDATED:    2026-06-22  ·  GEAR: Thrust Pack (stronger jump), Pickup Magnet (pulls coins in · marketplace item, buy w/ $RUN),
+                      + NEW Rubber Ball gear (avatar becomes a bouncy ball that bounces on landing).
+     PREV (v1.0.444): SNAKE MINIGAME back — removed connect-exclusive gate on the Snake card.
      PREV (v1.0.443): ARCHIVED RUNNER/SNAKE avatar tabs in Profile (avatar stays Runner).
-     PREV (v1.0.442): VEHICLE PICKER ART — vehicle dropdown renders the real vehicle picture instead of a glyph.
      PREV (v1.0.437): RELAY → Cloudflare Tunnel (public MP, self-healing override) + campaign LEVEL system (PL 1–10) + chapter gates
                       (ch.40/41) + vehicles racing physics + bots 3+3=6 + skins archived/Diamond@PL10 + terminal masonry + maps fix + guest gating.
      PREV (v1.0.436): SOCIAL P3+P4 — Profile 🔍 SEARCH players + profile pages/backlinks (window.crSocial).
@@ -13700,7 +13701,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.444",
+  VERSION: "1.0.445",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -25450,7 +25451,7 @@ window.addEventListener('keydown', e=>{
       // jumping up from the player's flipped POV).
       // Arrow Up here just falls through (no action).
     } else if(player.onGround || game.coyote>0){
-      player.vy = -640; player.onGround=false; game.coyote=0;
+      player.vy = -640 * ((typeof playerLoadout!=='undefined' && playerLoadout.gear==='thrust') ? 1.4 : 1); player.onGround=false; game.coyote=0;
     } else {
       // Jump buffer — queue the intent, consume on next landing (120ms window)
       game.jumpBufferUntil = (now/1000) + 0.12;
@@ -25500,7 +25501,7 @@ window.addEventListener('keydown', e=>{
       // (Inverted gravity: pushing "down" in screen space is "up" in the
       // player's flipped frame.) Mirror of the regular Arrow-Up jump.
       if(player.onGround || game.coyote>0){
-        player.vy = 640; player.onGround=false; game.coyote=0;
+        player.vy = 640 * ((typeof playerLoadout!=='undefined' && playerLoadout.gear==='thrust') ? 1.4 : 1); player.onGround=false; game.coyote=0;
       } else {
         game.jumpBufferUntil = (now/1000) + 0.12;
       }
@@ -35342,7 +35343,11 @@ function update(dt){
           camera.shake=16; return endRun('Fatal volatility fall.');
         }
       } else {
-        player.py = groundPy; player.vy=0; player.onGround=true; game.coyote=0.1;
+        var _vyIn = player.vy; player.py = groundPy;
+        if(typeof playerLoadout !== 'undefined' && playerLoadout.gear === 'rubberball' && Math.abs(_vyIn) > 130){
+          player.vy = -_vyIn * 0.6; player.onGround = false;   // rubber-ball bounce
+        } else { player.vy = 0; player.onGround = true; }
+        game.coyote=0.1;
         // v0.8M#15 — Track indicator-ground status so the avatar shows the
         // indicator ring (drawPlayer reads _onIndicator) and the magnet stays.
         if(groundIndicatorId){
@@ -35373,6 +35378,7 @@ function update(dt){
     updateCoinSpawner(dt);
   }
   // v0.8f — Magnez removed. $CHART pickups are now collected passively.
+  var _crMagnetOn = (typeof playerLoadout !== 'undefined' && playerLoadout.gear === 'magnet' && (typeof crGearOwned !== 'function' || crGearOwned('magnet')));
   for(const pk of game.pickups){
     if(pk.taken) continue;
     // v0.8k#11 — Coins toggle gates both rendering and collection of tick/creds pickups.
@@ -35383,6 +35389,11 @@ function update(dt){
     if(sx<-40||sx>W+40) continue;
     const dxPhys = (sx - playerSx) / camera.zoomX;
     const dyPhys = (sy - playerSy) / camera.zoomY;
+    // Pickup Magnet (owned): pull nearby coins toward the player so they fly in.
+    if(_crMagnetOn && (dxPhys*dxPhys + dyPhys*dyPhys) < 130*130){
+      pk.wx += (player.wx - pk.wx) * 0.20;
+      pk.py += (player.py - pk.py) * 0.20;
+    }
     if(dxPhys*dxPhys + dyPhys*dyPhys < 24*24){
       pk.taken=true;
       if(pk.kind==='tick'){
@@ -41140,7 +41151,7 @@ function drawPlayer(){
       ctx.translate(0, Math.sin(performance.now()/200)*1.5);
       ctx.scale(player.facing, player.upsideDown ? -1 : 1);
     } else if(typeof _drawLoadoutAvatar === 'function'){
-      _drawLoadoutAvatar(ctx, 2, { upsideDown: player.upsideDown, forceTint: _forceTintFlight, snakeLen: game.snakeLen });
+      _drawLoadoutAvatar(ctx, 2, { upsideDown: player.upsideDown, forceTint: _forceTintFlight, snakeLen: game.snakeLen, self:true });
     } else {
       drawInvader(ctx, 2, _forceTintFlight);
     }
@@ -41208,7 +41219,7 @@ function drawPlayer(){
         ctx.save(); ctx.translate(sx, sy);
         ctx.scale(player.facing, player.upsideDown ? -1 : 1);
       } else if(typeof _drawLoadoutAvatar === 'function'){
-        _drawLoadoutAvatar(ctx, 1.6, { upsideDown: player.upsideDown, forceTint: _forceTintRunner, snakeLen: game.snakeLen });
+        _drawLoadoutAvatar(ctx, 1.6, { upsideDown: player.upsideDown, forceTint: _forceTintRunner, snakeLen: game.snakeLen, self:true });
       } else {
         drawInvader(ctx, 1.6, _forceTintRunner);
       }
@@ -46808,7 +46819,8 @@ const PLAYER_OPTIONS = {
     { id:'none',     ic:'∅',  nm:'None',          desc:'Default movement' },
     { id:'kevlar',   ic:'⬡', nm:'Kevlar Skin',    desc:'+25% HP buffer' },
     { id:'thrust',   ic:'⇡', nm:'Thrust Pack',    desc:'Faster flight rise' },
-    { id:'magnet',   ic:'∪', nm:'Pickup Magnet',  desc:'Larger pickup radius' },
+    { id:'magnet',   ic:'∪', nm:'Pickup Magnet',  desc:'Pulls nearby coins in · marketplace' },
+    { id:'rubberball', ic:'●', nm:'Rubber Ball',  desc:'Avatar becomes a bouncy ball' },
   ],
   vehicle: [
     { id:'none',         ic:'Λ', nm:'On foot',       desc:'Default · jump + dash' },
@@ -46858,6 +46870,7 @@ const GEAR_GLOW = {
   kevlar: { color: '#7be3f3', radius: 12 }, // cyan shield
   thrust: { color: '#ffa94d', radius: 14 }, // orange flame
   magnet: { color: '#e879f9', radius: 13 }, // magenta aura
+  rubberball: { color: '#ff8c42', radius: 12 }, // bouncy-ball glow
 };
 const WEAPON_BADGE = {
   default: null,
@@ -46878,6 +46891,18 @@ function _drawLoadoutAvatar(ctx, scale, opts){
   // Skin tint resolves last: explicit forceTint overrides (e.g. red for the
   // upside-down combat sprite). Falls back to the player's chosen skin.
   const tint = opts.forceTint || _loadoutSkinTint();
+  // Rubber Ball gear — the LOCAL player's avatar becomes a bouncy ball (opts.self).
+  if(opts.self && (typeof playerLoadout !== 'undefined') && playerLoadout.gear === 'rubberball'){
+    var _br = 9 * scale;
+    ctx.save();
+    var _bg = ctx.createRadialGradient(-_br*0.35, -_br*0.4, _br*0.15, 0, 0, _br);
+    _bg.addColorStop(0, '#ffffff'); _bg.addColorStop(0.3, tint); _bg.addColorStop(1, '#0a0c14');
+    ctx.fillStyle = _bg; ctx.beginPath(); ctx.arc(0, 0, _br, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = tint; ctx.lineWidth = Math.max(1, _br*0.12); ctx.globalAlpha = 0.92; ctx.beginPath(); ctx.arc(0,0,_br,0,Math.PI*2); ctx.stroke();
+    ctx.globalAlpha = 0.85; ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(-_br*0.34, -_br*0.4, _br*0.22, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    return;
+  }
   // v0.9.50 — Gear-glow halo removed (was a radial-gradient ring drawn behind
   // the sprite, controlled by GEAR_GLOW[lo.gear]). The aura cluttered the
   // sprite on the desktop and in-game; gear is now signalled by the badge +
@@ -47070,6 +47095,7 @@ function _renderPlayerTab(){
       ev.stopPropagation();
       const cur = playerLoadout[slotKey];
       _openPlayerSlotPop(card, list, cur, (opt) => {
+        if(opt && opt._buyGear){ if(typeof crBuyGear === 'function' && crBuyGear(opt._buyGear)){ try { _renderPlayerTab(); } catch(_){} } return; }
         if(opt && opt._locked){ if(typeof toast === 'function') toast((opt.nm || 'This') + ' unlocks at a higher level'); return; }
         // Click the same option = clear back to default; otherwise activate.
         const next = (opt.id === cur) ? defaultId : opt.id;
@@ -47090,7 +47116,12 @@ function _renderPlayerTab(){
     };
   };
   wireSlot('weapon',  PLAYER_OPTIONS.weapon,  'default');
-  wireSlot('gear',    PLAYER_OPTIONS.gear,    'none');
+  // Pickup Magnet is a marketplace item — locked until bought with $RUN.
+  wireSlot('gear',    PLAYER_OPTIONS.gear.map(function(g){
+    return (typeof crGearOwned === 'function' && !crGearOwned(g.id))
+      ? Object.assign({}, g, { _buyGear:g.id, desc:'Locked · buy in marketplace · ' + ((typeof CR_GEAR_PRICE!=='undefined' && CR_GEAR_PRICE[g.id]) || 40) + ' $RUN' })
+      : g;
+  }),    'none');
   // Yellow + purple skins archived — hidden from the picker; clamp back to green.
   try { if(playerLoadout.skin === 'invader-yellow' || playerLoadout.skin === 'invader-purple'){ playerLoadout.skin = 'invader-green'; _savePlayerLoadout(); } } catch(_){}
   wireSlot('skin',    PLAYER_OPTIONS.skin.filter(function(s){
@@ -49379,6 +49410,24 @@ function crBuyBot(id){
   return true;
 }
 try { window.crBotOwned = crBotOwned; window.crUnlockBot = crUnlockBot; window.crBuyBot = crBuyBot; } catch(_){}
+// Gear ownership — only PRICED gear (marketplace) must be bought; the rest are free.
+const _CR_OWNED_GEAR_KEY = 'cr_owned_gear_v1';
+const CR_GEAR_PRICE = { magnet: 40 };   // $RUN — Pickup Magnet is a marketplace item
+let CR_OWNED_GEAR = (function(){ try { var s = JSON.parse(localStorage.getItem(_CR_OWNED_GEAR_KEY) || 'null'); if(Array.isArray(s)) return new Set(s); } catch(_){} return new Set(); })();
+function _crSaveOwnedGear(){ try { localStorage.setItem(_CR_OWNED_GEAR_KEY, JSON.stringify(Array.from(CR_OWNED_GEAR))); } catch(_){} }
+function crGearOwned(id){ id = String(id || ''); if(!(id in CR_GEAR_PRICE)) return true; return CR_OWNED_GEAR.has(id); }
+function crBuyGear(id){
+  id = String(id || ''); var price = CR_GEAR_PRICE[id]; if(price == null) return false;
+  if(crGearOwned(id)){ try { if(typeof toast === 'function') toast('Already owned'); } catch(_){} return false; }
+  var bal = (typeof game !== 'undefined' && game.run) ? (game.run | 0) : 0;
+  if(bal < price){ try { if(typeof toast === 'function') toast('Need ' + price + ' $RUN for this gear (you have ' + bal + ')'); } catch(_){} return false; }
+  try { game.run = bal - price; var el = document.getElementById('run'); if(el) el.textContent = String(game.run | 0); } catch(_){}
+  CR_OWNED_GEAR.add(id); _crSaveOwnedGear();
+  try { if(typeof spawnFloat === 'function') spawnFloat(window.innerWidth/2, 150, 'GEAR BOUGHT · -' + price + ' $RUN', '#e879f9'); } catch(_){}
+  try { if(typeof toast === 'function') toast('Gear unlocked'); } catch(_){}
+  return true;
+}
+try { window.crGearOwned = crGearOwned; window.crBuyGear = crBuyGear; } catch(_){}
 try { window.CR_GUEST_BOT_IDS = CR_GUEST_BOT_IDS; } catch(_){}
 // Seed detector bots into wb.bots if not already present. Idempotent — runs
 // after _wbLoad on every boot, so adding a new DETECTOR_BOTS entry in a
