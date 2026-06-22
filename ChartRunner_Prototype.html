@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.489
+     CURRENT VERSION: v1.0.490
      LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -13850,7 +13850,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.489",
+  VERSION: "1.0.490",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -47438,7 +47438,7 @@ const PLAYER_OPTIONS = {
     { id:'jetski',       ic:'≋', nm:'Jetski',        desc:'Liquid run on candle bodies' },
   ],
   weapon: [
-    { id:'default',  ic:'•',  nm:'Default',        desc:'Standard projectile' },
+    { id:'default',  ic:'•',  nm:'Fireball',       desc:'Standard fireball shot' },
     { id:'laser',    ic:'⌖', nm:'Laser',          desc:'Faster fire · pierces 1 line' },
     { id:'spread',   ic:'≡',  nm:'Spread',         desc:'3-way fan' },
     { id:'beam',     ic:'⫘',  nm:'Beam',           desc:'Continuous · short range' },
@@ -47704,6 +47704,8 @@ function _openPlayerSlotPop(anchor, options, currentId, onPick){
         : _nameLine;
     }
     b.title = opt.desc || opt.sub || '';
+    // v1.0.490 — locked level-up loot: visible but dimmed (click → toast, no equip).
+    if(opt._locked){ b.style.opacity = '.5'; b.style.cursor = 'help'; }
     b.addEventListener('click', (ev) => {
       ev.stopPropagation();
       onPick(opt);
@@ -47797,8 +47799,20 @@ function _renderPlayerTab(){
     };
   };
   // Weapons use the orb design language (like bots): colored orb + glyph core + desc.
+  // v1.0.490 — Fireball is the default; Laser/Spread/Beam are level-up loot unlocked at
+  // Player Level 3 / 5 / 10. Locked weapons stay visible (dimmed + 🔒 · unlock level).
+  var _wpUnlock = { laser:3, spread:5, beam:10 };
+  var _wpl = (typeof crPlayerLevel === 'function') ? crPlayerLevel() : 1;
+  try { var _eqReq = _wpUnlock[playerLoadout.weapon]; if(_eqReq && _wpl < _eqReq){ playerLoadout.weapon = 'default'; _savePlayerLoadout(); } } catch(_){}
   wireSlot('weapon',  PLAYER_OPTIONS.weapon.map(function(o){
-    return Object.assign({}, o, { wico:o.id, sub:o.desc });
+    var _req = _wpUnlock[o.id] || 0;
+    var _lk  = !!(_req && _wpl < _req);
+    return Object.assign({}, o, {
+      wico: o.id,
+      nm:   (o.nm || o.id) + (_lk ? '  🔒' : ''),
+      sub:  o.desc + (_lk ? ' · unlocks at Level ' + _req : ''),
+      _locked: _lk
+    });
   }),  'default');
   // Gear picker mirrors the bot layout: colored icon + name (✓ equipped) + a
   // description line. v1.0.468 gating: guests get only None + Jetpack; Kevlar is
