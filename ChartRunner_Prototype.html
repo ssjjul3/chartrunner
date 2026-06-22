@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.472
-     LAST UPDATED:    2026-06-22  ·  HARDCORE: candles now LITERALLY fall — drawCandles offsets a dropped candle's Y (gravity) via window._crHcDrop, so the real candle drops off-screen leaving the gap the runner falls through (replaces the red void-column overlay).
+     CURRENT VERSION: v1.0.474
+     LAST UPDATED:    2026-06-22  ·  RACING branding pass: CHART RUNNER RACING neon wordmark replaces the PICK YOUR RIDE controls description AND the FINISH end-card title (small wordmark + neon FINISH tag, glowing time, colour-accented stat tiles); Racing minigame card name is the tri-colour wordmark; in-game command console (.crNotify) hidden during a race. (Logo is a lightweight CSS wordmark — the uploaded PNG can't be embedded in the single-file build.)
+     PREV (v1.0.473): GEAR None+Jetpack w/ canvas icon (_drawGearIcon); PICK YOUR RIDE mobile horizontal vehicle strip.
+     PREV (v1.0.473): GEAR None+Jetpack w/ canvas icon (_drawGearIcon); PICK YOUR RIDE mobile horizontal vehicle strip.
+     PREV (v1.0.472): HARDCORE candles literally fall (drawCandles drop offset via _crHcDrop).
      PREV (v1.0.471): PICK YOUR RIDE fits the frame (bounded card + compact content); removed HARDCORE note.
      PREV (v1.0.470): PICK YOUR RIDE cleanup — centered vehicle cards w/ subtle per-vehicle top accent, uniform theme chrome + hover lift, VEHICLE section label/divider.
      PREV (v1.0.469): PvP tab archived until Player Level 10.
@@ -11631,7 +11634,7 @@
                   <rect x="14" y="10" width="3.5" height="3.5" fill="var(--accent)"/>
                   <rect x="10.5" y="13.5" width="3.5" height="3.5" fill="var(--accent)"/>
                 </svg></div>
-                <div class="modeName">Racing</div>
+                <div class="modeName" style="font-style:italic;letter-spacing:.3px"><span style="color:#7ee787;text-shadow:0 0 8px rgba(126,231,135,.5)">CHART</span> <span style="color:#7be3f3;text-shadow:0 0 8px rgba(123,227,243,.5)">RUNNER</span> <span style="color:#ff5b7f;text-shadow:0 0 8px rgba(255,91,127,.5)">RACING</span></div>
                 <div class="modeDesc">Sprint the chart from start to finish. Best time wins.</div>
                 <div class="modeTag on">LIVE</div>
               </button>
@@ -13823,7 +13826,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.472",
+  VERSION: "1.0.474",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -32394,6 +32397,42 @@ function _drawWeaponIcon(cv, id){
 }
 try { window._drawWeaponIcon = _drawWeaponIcon; } catch(_){}
 try { window._drawSkinIcon=_drawSkinIcon; } catch(_){}
+// v1.0.473 — canvas GEAR icon (Jetpack): two thruster canisters + flames + aura,
+// matching the weapon-icon / bot-orb polish. Falls back to a glyph for other gear.
+function _gearCap(c,x,y,wd,ht,r){ c.beginPath(); c.moveTo(x+r,y); c.lineTo(x+wd-r,y); c.arc(x+wd-r,y+r,r,-Math.PI/2,0); c.lineTo(x+wd,y+ht-r); c.arc(x+wd-r,y+ht-r,r,0,Math.PI/2); c.lineTo(x+r,y+ht); c.arc(x+r,y+ht-r,r,Math.PI/2,Math.PI); c.lineTo(x,y+r); c.arc(x+r,y+r,r,Math.PI,-Math.PI/2); c.closePath(); }
+function _drawGearIcon(cv, id){
+  if(!cv || !cv.getContext) return;
+  var c = cv.getContext('2d'); var w=cv.width, h=cv.height; c.clearRect(0,0,w,h);
+  var cx=w/2, cy=h/2, R=Math.min(w,h);
+  if(id !== 'thrust'){
+    var opt = (typeof PLAYER_OPTIONS!=='undefined' && PLAYER_OPTIONS.gear) ? PLAYER_OPTIONS.gear.find(function(o){return o.id===id;}) : null;
+    c.save(); c.textAlign='center'; c.textBaseline='middle'; c.fillStyle='#9fb3c8';
+    c.font='bold '+Math.round(R*0.5)+'px ui-monospace,Menlo,monospace'; c.fillText((opt&&opt.ic)||'○', cx, cy); c.restore(); return;
+  }
+  var col='#ffa94d', hot='#ffd166';
+  c.save();
+  var g=c.createRadialGradient(cx,cy,1,cx,cy,R*0.5); g.addColorStop(0,col+'55'); g.addColorStop(1,col+'00');
+  c.fillStyle=g; c.beginPath(); c.arc(cx,cy,R*0.5,0,Math.PI*2); c.fill();
+  var tw=R*0.20, th=R*0.40, gap=R*0.08, topY=cy-R*0.24;
+  // flames first (behind tanks)
+  [-1,1].forEach(function(s){ var sx=cx + s*(gap/2+tw/2); var fy=topY+th;
+    var fg=c.createLinearGradient(0,fy,0,fy+R*0.24); fg.addColorStop(0,'#ffffff'); fg.addColorStop(0.35,hot); fg.addColorStop(1,col+'00');
+    c.fillStyle=fg; c.beginPath(); c.moveTo(sx-tw*0.34,fy); c.lineTo(sx+tw*0.34,fy); c.lineTo(sx, fy+R*0.24); c.closePath(); c.fill();
+  });
+  // canisters
+  c.shadowColor=col; c.shadowBlur=8;
+  [-1,1].forEach(function(s){ var sx=cx + s*(gap/2+tw/2);
+    c.fillStyle='#d7dde6'; _gearCap(c, sx-tw/2, topY, tw, th, tw*0.42); c.fill();
+    c.fillStyle=col; _gearCap(c, sx-tw/2, topY, tw, th*0.34, tw*0.42); c.fill();
+  });
+  c.shadowBlur=0;
+  // launch arrow
+  c.strokeStyle='#ffffff'; c.globalAlpha=0.9; c.lineWidth=Math.max(1,R*0.055); c.lineCap='round'; c.lineJoin='round';
+  c.beginPath(); c.moveTo(cx, topY-R*0.16); c.lineTo(cx, topY-R*0.02);
+  c.moveTo(cx-R*0.08, topY-R*0.08); c.lineTo(cx, topY-R*0.18); c.lineTo(cx+R*0.08, topY-R*0.08); c.stroke();
+  c.restore();
+}
+try { window._drawGearIcon = _drawGearIcon; } catch(_){}
 // v0.8k#13 — Belt-and-suspenders: walk VEHICLES after it's defined and mark every
 // id as owned in game.ownedVehicles. This guarantees future-added tiers are
 // unlocked too, even if the inline literal above misses them.
@@ -38238,7 +38277,7 @@ window.crRacing = (function(){
       '<div id="crRaceVehiclePicker" class="crRaceOv" style="display:none">'
       + '<div class="crRaceCard">'
       +   '<div class="crRaceTtl">🏁 PICK YOUR RIDE</div>'
-      +   '<div class="crRaceSub">→ forward · ← backward · tap ↑ to jump. In the air: hold ↑ = backflip, hold ↓ = frontflip. Cross the finish fastest — flips shave time.</div>'
+      +   '<div class="crRaceLogo" aria-label="ChartRunner Racing"><span class="crLogoMain"><span class="c">CHART</span> <span class="r">RUNNER</span></span><span class="crLogoSub">▰▰ RACING ▰▰</span></div>'
       +   '<div class="crRaceOpts">'
       +     '<div class="crRaceOptRow"><span class="crRaceOptLab">TIMEFRAME</span><div class="crRaceOptBtns" id="crRaceTfPick"></div></div>'
       +     '<div class="crRaceOptRow"><span class="crRaceOptLab">ASSET</span><div class="crRaceOptBtns" id="crRaceAssetPick"></div></div>'
@@ -38249,8 +38288,9 @@ window.crRacing = (function(){
       + '</div></div>'
       + '<div id="crRaceEndCard" class="crRaceOv" style="display:none">'
       + '<div class="crRaceCard" style="text-align:center">'
+      +   '<div class="crRaceLogo crRaceLogoSm" aria-label="ChartRunner Racing"><span class="crLogoMain"><span class="c">CHART</span> <span class="r">RUNNER</span></span><span class="crLogoSub">▰▰ RACING ▰▰</span></div>'
       +   '<div id="crRaceEndBadge" class="crRaceBadge" style="display:none">🏆 NEW BEST</div>'
-      +   '<div class="crRaceTtl" style="font-size:18px">🏁 FINISH</div>'
+      +   '<div class="crRaceFinishTag">🏁 FINISH</div>'
       +   '<div id="crRaceEndTime" class="crRaceTime">0.00s</div>'
       +   '<div id="crRaceEndDelta" class="crRaceSub" style="text-align:center;margin:-2px 0 2px"></div>'
       +   '<div id="crRaceStats" class="crRaceStats"></div>'
@@ -38282,6 +38322,19 @@ window.crRacing = (function(){
       + '#crRaceUI .crRaceCard{width:min(540px,calc(100% - 32px));max-height:calc(100vh - 28px);overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--rc-bg);border:1px solid var(--rc-bd);border-radius:14px;box-shadow:var(--rc-shadow);padding:15px 17px;color:var(--rc-fg);font-family:ui-monospace,Menlo,Consolas,monospace}'
       + '#crRaceUI .crRaceTtl{font-weight:800;color:var(--rc-accent);letter-spacing:.6px;margin-bottom:5px}'
       + '#crRaceUI .crRaceSub{font-size:10.5px;color:var(--rc-dim);line-height:1.45;margin-bottom:11px}'
+      // v1.0.474 — CHART RUNNER RACING wordmark (neon green/blue/red) in place of the
+      // controls description.
+      + '#crRaceUI .crRaceLogo{display:flex;flex-direction:column;align-items:center;gap:1px;margin:4px 0 13px;user-select:none;line-height:1}'
+      + '#crRaceUI .crRaceLogo .crLogoMain{font:900 italic 27px/1 "Arial Black",Impact,system-ui,sans-serif;letter-spacing:1.5px;white-space:nowrap}'
+      + '#crRaceUI .crRaceLogo .crLogoMain .c{color:#7ee787;text-shadow:0 1px 0 #06140c,0 0 12px rgba(126,231,135,.75)}'
+      + '#crRaceUI .crRaceLogo .crLogoMain .r{color:#7be3f3;text-shadow:0 1px 0 #06140c,0 0 12px rgba(123,227,243,.75)}'
+      + '#crRaceUI .crRaceLogo .crLogoSub{font:900 italic 12px/1 "Arial Black",Impact,system-ui,sans-serif;letter-spacing:6px;color:#ff5b7f;text-shadow:0 0 10px rgba(255,91,127,.65);margin-top:4px;padding-left:6px}'
+      // v1.0.474 — end-card in the racing-logo style: small wordmark, neon FINISH tag,
+      // glowing time, colour-accented stat tiles.
+      + '#crRaceUI .crRaceLogoSm{margin:0 0 7px}'
+      + '#crRaceUI .crRaceLogoSm .crLogoMain{font-size:22px}'
+      + '#crRaceUI .crRaceLogoSm .crLogoSub{font-size:10px;letter-spacing:5px}'
+      + '#crRaceUI .crRaceFinishTag{font:800 12px ui-monospace,Menlo,monospace;letter-spacing:2px;color:#7ee787;text-shadow:0 0 10px rgba(126,231,135,.55);margin:0 0 -2px}'
       // v1.0.470 — cleaner vehicle cards: centered layout, a subtle per-vehicle top
       // accent (--vc) instead of a loud full-colour border, uniform theme chrome.
       + '#crRaceUI .crRaceGridLab{font:700 9px ui-monospace,Menlo,monospace;letter-spacing:.9px;color:var(--rc-dim);display:block;margin:0 0 8px;padding-top:10px;border-top:1px solid var(--rc-veh-bd)}'
@@ -38308,7 +38361,7 @@ window.crRacing = (function(){
       + '@keyframes crHcPulse{0%,100%{box-shadow:0 0 10px rgba(255,91,127,.40)}50%{box-shadow:0 0 18px rgba(255,91,127,.75)}}'
       + '#crRaceUI .crRaceHcNote{font:600 9.5px ui-monospace,Menlo,monospace;color:var(--rc-dim);display:none}'
       + '#crRaceUI .crRaceHc.on ~ .crRaceHcNote{display:inline;color:#ff8aa6}'
-      + '#crRaceUI .crRaceTime{font-size:40px;font-weight:800;color:var(--rc-time);text-align:center;margin:6px 0 2px}'
+      + '#crRaceUI .crRaceTime{font:800 italic 42px/1 "Arial Black",Impact,system-ui,sans-serif;letter-spacing:1px;color:#9dffba;text-shadow:0 2px 0 #06140c,0 0 20px rgba(126,231,135,.55);text-align:center;margin:7px 0 3px}'
       + '#crRaceUI .crRaceActions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}'
       + '#crRaceUI .crRaceBtn{appearance:none;cursor:pointer;border:1px solid var(--rc-veh-bd);border-radius:8px;background:var(--rc-veh-bg);color:var(--rc-fg);font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.4px;padding:9px 14px}'
       + '#crRaceUI .crRaceBtn:hover{border-color:var(--rc-accent)}'
@@ -38318,9 +38371,27 @@ window.crRacing = (function(){
       // v1.0.424 — fancy end-card: NEW BEST badge + stats grid (theme-aware via --rc-*).
       + '#crRaceUI .crRaceBadge{display:inline-block;font:800 10.5px ui-monospace,Menlo,monospace;letter-spacing:.9px;color:var(--rc-ink);background:var(--rc-accent);padding:3px 11px;border-radius:999px;margin-bottom:6px}'
       + '#crRaceUI .crRaceStats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:12px 0 4px}'
-      + '#crRaceUI .crRaceStat{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 6px;border:1px solid var(--rc-veh-bd);border-radius:8px;background:var(--rc-veh-bg)}'
+      + '#crRaceUI .crRaceStat{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 6px;border:1px solid var(--rc-veh-bd);border-radius:8px;background:var(--rc-veh-bg)}'
+      + '#crRaceUI .crRaceStat::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;opacity:.75}'
+      + '#crRaceUI .crRaceStat:nth-child(1)::before{background:#7ee787}'
+      + '#crRaceUI .crRaceStat:nth-child(2)::before{background:#7be3f3}'
+      + '#crRaceUI .crRaceStat:nth-child(3)::before{background:#ffd166}'
+      + '#crRaceUI .crRaceStat:nth-child(4)::before{background:#ff5b7f}'
       + '#crRaceUI .crRaceStat .k{font-size:8.5px;letter-spacing:.6px;color:var(--rc-dim);text-transform:uppercase}'
-      + '#crRaceUI .crRaceStat .v{font-size:13px;font-weight:800;color:var(--rc-fg)}';
+      + '#crRaceUI .crRaceStat .v{font-size:13px;font-weight:800;color:var(--rc-fg)}'
+      // v1.0.473 — mobile-optimized PICK YOUR RIDE: wider card, and the vehicle picker
+      // becomes a single horizontal scroll strip (flows sideways, much shorter) so the
+      // whole window fits a phone without a tall vertical grid.
+      + '@media (max-width:720px){'
+      +   '#crRaceUI .crRaceCard{width:calc(100% - 18px);max-height:calc(100vh - 18px);padding:13px 13px}'
+      +   '#crRaceUI .crRaceSub{display:none}'
+      +   '#crRaceUI .crRaceLogo{margin:2px 0 10px}'
+      +   '#crRaceUI .crRaceLogo .crLogoMain{font-size:21px}'
+      +   '#crRaceUI .crRaceLogo .crLogoSub{font-size:10px;letter-spacing:5px}'
+      +   '#crRaceUI .crRaceOpts{gap:8px}'
+      +   '#crRaceUI .crRaceGrid{display:flex;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:8px;padding-bottom:6px;scroll-snap-type:x mandatory}'
+      +   '#crRaceUI .crRaceVeh{flex:0 0 118px;scroll-snap-align:start}'
+      + '}';
     const s = document.createElement('style'); s.id = 'crRaceUICss'; s.textContent = css; document.head.appendChild(s);
     // v1.0.412 — the racing HUD lives INSIDE the game toolbar (#crTopBar /
     // .crChrome.top). During a race the toolbar shows ONLY the minigame content
@@ -38377,6 +38448,8 @@ window.crRacing = (function(){
       + 'body.cr-racing-hud #crRaceTbHud{display:flex}'
       + 'body.cr-racing-hud .overlay.topbar{display:none!important}'
       + 'body.cr-racing-hud #crOSBar{display:none!important}'
+      // v1.0.474 — no in-game command console / terminal feed during a race.
+      + 'body.cr-racing-hud .crNotify{display:none!important}'
       // v1.0.463 — in a race the asset + timeframe are chosen in PICK YOUR RIDE, so the
       // HUD copies are a STATIC read-only display (no clicking to switch mid-race).
       + 'body.cr-racing-hud #crRhCtrls{pointer-events:none!important}'
@@ -47503,6 +47576,10 @@ function _openPlayerSlotPop(anchor, options, currentId, onPick){
     } else if(opt.veh){
       b.innerHTML = '<span style="margin-right:8px;display:inline-block;vertical-align:middle"><canvas class="vIcCv" width="52" height="34" style="width:40px;height:26px;vertical-align:middle"></canvas></span><span style="vertical-align:middle">' + (opt.nm || opt.id) + '</span>';
       try { _drawVehIcon(b.querySelector('canvas'), opt.veh); } catch(_){}
+    } else if(opt.gico){
+      var _gnl = '<span style="margin-right:8px;display:inline-block;vertical-align:middle"><canvas class="grIcCv" width="44" height="44" style="width:28px;height:28px;vertical-align:middle"></canvas></span><span style="vertical-align:middle">' + (opt.nm || opt.id) + '</span>';
+      b.innerHTML = opt.sub ? (_gnl + '<div style="margin-left:36px;color:#7a8290;font-size:10px;line-height:1.35;white-space:normal">' + opt.sub + '</div>') : _gnl;
+      try { _drawGearIcon(b.querySelector('canvas'), opt.gico); } catch(_){}
     } else if(opt.orb){
       var _onl = '<span style="margin-right:8px;display:inline-block;vertical-align:middle"><canvas class="botOrbCv" width="40" height="40" style="width:26px;height:26px;vertical-align:middle"></canvas></span><span style="vertical-align:middle">' + (opt.nm || opt.id) + '</span>';
       b.innerHTML = opt.sub ? (_onl + '<div style="margin-left:34px;color:#7a8290;font-size:10px;line-height:1.35;white-space:normal">' + opt.sub + '</div>') : _onl;
@@ -47539,6 +47616,7 @@ function _renderPlayerTab(){
       if(slotKey==='vehicle' && opt){ ic.innerHTML='<canvas class="vIcCv" width="52" height="34" style="width:44px;height:28px"></canvas>'; try{ _drawVehIcon(ic.firstChild, opt.id); }catch(_){ ic.textContent=(opt&&opt.ic)||'?'; } }
       else if(slotKey==='skin' && opt){ ic.innerHTML='<canvas class="skIcCv" width="52" height="32" style="width:44px;height:26px"></canvas>'; try{ _drawSkinIcon(ic.firstChild, opt.id); }catch(_){ ic.textContent=(opt&&opt.ic)||'?'; } }
       else if(slotKey==='weapon' && opt){ ic.innerHTML='<canvas class="wpIcCv" width="44" height="44" style="width:34px;height:34px"></canvas>'; try{ _drawWeaponIcon(ic.firstChild, opt.id); }catch(_){ ic.textContent=(opt&&opt.ic)||'?'; } }
+      else if(slotKey==='gear' && opt && opt.id==='thrust'){ ic.innerHTML='<canvas class="grIcCv" width="44" height="44" style="width:34px;height:34px"></canvas>'; try{ _drawGearIcon(ic.firstChild, opt.id); }catch(_){ ic.textContent=(opt&&opt.ic)||'?'; } }
       else ic.textContent = (opt && opt.ic) || '?';
     }
     if(nm) nm.textContent = (opt && opt.nm) || '—';
@@ -47619,21 +47697,14 @@ function _renderPlayerTab(){
   // Clamp the equipped gear back to a legal option if it's no longer available.
   var _guest = (typeof crIsGuest === 'function' && crIsGuest());
   var _pl    = (typeof crPlayerLevel === 'function') ? crPlayerLevel() : 1;
-  var _gearAllowed = function(id){
-    if(id === 'none' || id === 'thrust') return true;        // free / guest
-    if(_guest) return false;                                  // guests: only None + Jetpack
-    if(id === 'rubberball') return _pl >= 10;                 // PL10 reward
-    return true;                                              // kevlar (connect) + magnet (shop)
-  };
+  // v1.0.473 — gear list is currently just None + Jetpack (Kevlar/Magnet/Rubber
+  // hidden until they're ready). Jetpack gets a canvas icon (gico) like weapons/orbs.
+  var _gearAllowed = function(id){ return id === 'none' || id === 'thrust'; };
   try { if(typeof playerLoadout !== 'undefined' && !_gearAllowed(playerLoadout.gear)){ playerLoadout.gear = 'none'; _savePlayerLoadout(); } } catch(_){}
   wireSlot('gear',    PLAYER_OPTIONS.gear.filter(function(g){ return _gearAllowed(g.id); }).map(function(g){
-    var _col = (typeof GEAR_GLOW !== 'undefined' && GEAR_GLOW[g.id] && GEAR_GLOW[g.id].color) || '';
     var _eqd = (typeof playerLoadout !== 'undefined' && playerLoadout.gear === g.id);
     var _nm  = (g.nm || g.id) + (_eqd ? '  ✓' : '');
-    if(typeof crGearOwned === 'function' && !crGearOwned(g.id)){
-      return Object.assign({}, g, { _buyGear:g.id, iconColor:_col, nm:_nm, sub:'Locked · buy in shop · ' + ((typeof CR_GEAR_PRICE!=='undefined' && CR_GEAR_PRICE[g.id]) || 40) + ' $RUN' });
-    }
-    return Object.assign({}, g, { iconColor:_col, nm:_nm, sub:g.desc });
+    return Object.assign({}, g, (g.id === 'thrust' ? { gico:g.id } : {}), { nm:_nm, sub:g.desc });
   }),    'none');
   // Yellow + purple skins archived — hidden from the picker; clamp back to green.
   try { if(playerLoadout.skin === 'invader-yellow' || playerLoadout.skin === 'invader-purple'){ playerLoadout.skin = 'invader-green'; _savePlayerLoadout(); } } catch(_){}
