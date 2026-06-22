@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.465
-     LAST UPDATED:    2026-06-22  ·  MOBILE coach windows (welcome/tutorial/chat) all render as the tutorial's clean full-width bottom sheet: back at bottom:8 + the persistent invader is hidden while a coach window is open (so it never overlaps).
+     CURRENT VERSION: v1.0.466
+     LAST UPDATED:    2026-06-22  ·  CAMPAIGN: added the missing chapters 40 (Activation Laser + Leverage + Broker) & 41 (Alarm Laser + Journal) the feature gates point at (features now actually unlock; playable during their own chapter); swapped dead campaign bots H&S/BARR/FA → live canon Volume Climax/VWAP Reclaim/Order Block Retest (+ fixed the bot grant map); chapters now lock the chart to their asset (always) + timeframe (except ch.38).
+     PREV (v1.0.465): MOBILE coach windows (welcome/tutorial/chat) all render as the tutorial's clean full-width bottom sheet: back at bottom:8 + the persistent invader is hidden while a coach window is open (so it never overlaps).
      PREV (v1.0.464): Racing asset choice curated to BTC/ETH/SOL/JUP/DOGE; in-race timeframe bar shows only 5m/15m/1H/4H.
      PREV (v1.0.463): RACING PICK YOUR RIDE now has TIMEFRAME (5m/15m/1H/4H) + ASSET choice (reloads chart data + rebuilds the track); the in-race asset/timeframe HUD displays are now STATIC (non-interactive).
      PREV (v1.0.462): Minigame Home now plays the CRT/loading transition first (then tears down the race + goes to desktop inside the fade callback), so it exits with the same transition as the rest of the app instead of snapping back.
@@ -2667,6 +2668,11 @@
   body.cr-lock-journal .os-icon[data-prog="journal"],
   body.cr-lock-journal #crOSDockFixed .dockBtn[data-prog="journal"],
   body.cr-lock-journal .dockBtn[data-prog="journal"]{display:none!important}
+  /* v1.0.466 — during a campaign chapter the chart is pinned to the chapter's asset +
+     timeframe (the lesson loads them). Disable the toolbar asset switcher always, and the
+     timeframe pills except in ch.38 (which teaches TF switching). Dim slightly to signal. */
+  body.cr-campaign-lock .crChrome.top .tvSym{pointer-events:none!important;opacity:.55!important;cursor:default!important}
+  body.cr-campaign-lock-tf .crChrome.top .tvTfRow{pointer-events:none!important;opacity:.55!important}
   /* Guests can't change the tool loadout (all force-equipped) — hide the bulk-equip buttons. */
   body.cr-guest #wbToolEquipStars,
   body.cr-guest #wbToolEquipAll,
@@ -13772,7 +13778,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.465",
+  VERSION: "1.0.466",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -32209,7 +32215,7 @@ function crPlayerLevel(){ try { var c = Object.keys(_crClaimedChapters()).length
 // Feature → required completed campaign chapter (Julian's spec; tune freely).
 const CR_FEATURE_GATE = { activation:40, leverage:40, broker:40, laser3:40, alarm:41, laser4:41, journal:41 };
 function crFeatureUnlockLv(feat){ try { return CR_FEATURE_GATE[feat] || 0; } catch(_){ return 0; } }
-function crFeatureLevelOk(feat){ try { var ch = CR_FEATURE_GATE[feat]; return (ch == null) ? true : crChapterDone(ch); } catch(_){ return false; } }
+function crFeatureLevelOk(feat){ try { var ch = CR_FEATURE_GATE[feat]; if(ch == null) return true; if(crChapterDone(ch)) return true; if(typeof game !== 'undefined' && game.campaignChapter === ch) return true; /* v1.0.466 — playable during its own teaching chapter */ return false; } catch(_){ return false; } }
 try { window.crPlayerLevel = crPlayerLevel; window.crChapterDone = crChapterDone; window.crFeatureLevelOk = crFeatureLevelOk; window.crFeatureUnlockLv = crFeatureUnlockLv; } catch(_){}
 // Apply chapter-based gates to the Broker profile tab (ch.40) + Journal dock (ch.41)
 // by toggling body classes the CSS keys on. Cheap; re-runs to track campaign progress.
@@ -32218,6 +32224,12 @@ function crApplyLevelGates(){
     var b = document.body; if(!b) return;
     b.classList.toggle('cr-lock-broker',  !(typeof crFeatureLevelOk === 'function' && crFeatureLevelOk('broker')));
     b.classList.toggle('cr-lock-journal', !(typeof crFeatureLevelOk === 'function' && crFeatureLevelOk('journal')));
+    // v1.0.466 — campaign chapters lock the chart to the chapter's asset + timeframe.
+    // Asset is never taught, so it's always locked in a chapter; timeframe is locked
+    // except in ch.38 (Multi-Timeframe Analysis), which teaches switching.
+    var _inCh = !!(typeof game !== 'undefined' && game.campaignChapter);
+    b.classList.toggle('cr-campaign-lock',    _inCh);
+    b.classList.toggle('cr-campaign-lock-tf', _inCh && game.campaignChapter !== 38);
   } catch(_){}
 }
 try { window.crApplyLevelGates = crApplyLevelGates; } catch(_){}
@@ -41934,25 +41946,27 @@ window.crLaunchMinigameRandom = crLaunchMinigameRandom;
         { kind:'execute', text:'Place a bracket inside a CCV-ringed setup, or let the bot auto-build.',
           complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'bracket').length > (b.brackets||0); } catch(_){ return false; } } },
       ],
+      // v1.0.466 — ch.30/31/32 rewritten around LIVE canon bots (Volume Climax,
+      // VWAP Reclaim, Order Block Retest) — the old H&S/BARR/FA detectors were dead.
       30: [
-        { kind:'explain', text:'H&S Hunter watches for Head & Shoulders patterns — three swings where the middle (head) tops or bottoms the other two (shoulders). Classic reversal. Neckline break = trigger.' },
-        { kind:'explain', text:'The bot doesn\'t just spot the shape — it waits for the neckline to break, THEN highlights. Earlier versions of you spot pre-breakout; the bot only fires after the trap is sprung.' },
-        { kind:'choose',  text:'H&S Hunter is auto-active. Watch for a ringed neckline break.' },
-        { kind:'execute', text:'Place a bracket fading the head — let the neckline-break carry it.',
+        { kind:'explain', text:'Volume Climax watches for a blow-off: price accelerates while volume spikes to an extreme, then the side driving it is exhausted. The bot rings the climax candle.' },
+        { kind:'explain', text:'A climax is the crowd\'s last push. Fade it — once the exhaustion candle prints, the move usually mean-reverts. Stop just beyond the climax wick.' },
+        { kind:'choose',  text:'Volume Climax is auto-active for this chapter (volume is auto-loaded). Watch for a ringed exhaustion candle.' },
+        { kind:'execute', text:'Place a bracket fading the climax, or let the bot auto-build. One bracket clears the chapter.',
           complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'bracket').length > (b.brackets||0); } catch(_){ return false; } } },
       ],
       31: [
-        { kind:'explain', text:'BARR Hunter = Bump and Run Reversal. A steep, parabolic move runs out of buyers (or sellers), pauses, then mean-reverts. The bot rings the parabola exhaustion candle.' },
-        { kind:'explain', text:'BARR is unforgiving for late longs/shorts. The bot\'s edge is timing — it rings AFTER the exhaustion candle prints, before the reversion finishes. Trade against the parabola.' },
-        { kind:'choose',  text:'BARR Hunter is auto-active. Watch for an exhaustion ring.' },
-        { kind:'execute', text:'Place a bracket against the parabolic direction — let mean-reversion do the work.',
+        { kind:'explain', text:'VWAP Reclaim watches the session VWAP — the volume-weighted average price the whole market anchors to. When price loses VWAP then reclaims it (or rejects from below), a mean move usually follows.' },
+        { kind:'explain', text:'The bot rings the reclaim/reject candle. Trade back toward the mean: long on a reclaim from below, short on a reject from above.' },
+        { kind:'choose',  text:'VWAP Reclaim is auto-active. Watch for a ringed reclaim/reject at VWAP.' },
+        { kind:'execute', text:'Place a bracket in the reclaim direction, or accept the bot\'s auto-build.',
           complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'bracket').length > (b.brackets||0); } catch(_){ return false; } } },
       ],
       32: [
-        { kind:'explain', text:'FA Hunter = Failed Auction. Price tries to take out a level → fails → returns to range. The bot rings the failed-auction candle and proposes a mean-reversion bracket.' },
-        { kind:'explain', text:'Failed Auction is the cleanest "fade the false breakout" trade. The bot picks them out by watching for swing extremes that don\'t hold their breakout candle close.' },
-        { kind:'choose',  text:'FA Hunter is auto-active. Wait for a ringed failed-auction.' },
-        { kind:'execute', text:'Place a bracket back into the range, or accept the bot\'s auto-build.',
+        { kind:'explain', text:'Order Block Retest finds the candle where institutions loaded up — the last opposite candle before a strong move — then waits for price to return and retest it. That block often holds.' },
+        { kind:'explain', text:'The bot rings the retest. Trade in the block\'s direction: the retest is your low-risk entry, with a stop just past the block.' },
+        { kind:'choose',  text:'Order Block Retest is auto-active. Watch for a ringed retest of a marked block.' },
+        { kind:'execute', text:'Place a bracket on the retest in the block\'s direction, or let the bot auto-build.',
           complete:(b)=> { try { return (sdk.openOrders||[]).filter(o => o.type === 'bracket').length > (b.brackets||0); } catch(_){ return false; } } },
       ],
       33: [
@@ -42046,6 +42060,22 @@ window.crLaunchMinigameRandom = crLaunchMinigameRandom;
               return liveOn && placed;
             } catch(_){ return false; }
           } },
+      ],
+      // ── EXECUTION (Ch.40–41) ───────────────────────────────────────────
+      // v1.0.466 — feature-unlock chapters. The gated feature is playable during its
+      // own chapter (crFeatureLevelOk allows it when game.campaignChapter === gate).
+      40: [
+        { kind:'explain', text:'You\'ve placed orders all campaign. The Activation Laser turns a placed tool into a LIVE order — armed, leveraged, and routed to a broker. This is the bridge from drawing to executing.' },
+        { kind:'explain', text:'Press 3 — the Activation Laser. Click any placed bracket to arm it: a config pane opens (buy/sell, size, and the Leverage row). The tool gains a blue lightning halo when armed.' },
+        { kind:'choose',  text:'Press 3 to enter activation mode. (If you have no bracket yet, place one with hotkey 2 first, then click it with the laser.)',
+          complete:()=> { try { return !!(window.cr && window.cr.blueLaser && window.cr.blueLaser.active); } catch(_){ return false; } } },
+        { kind:'explain', text:'In the config pane, the Leverage row sizes you beyond spot, and the Broker tab (Profile → Broker) picks the venue that fills it. Clearing this chapter unlocks the Activation Laser, Leverage, and Broker for good.' },
+      ],
+      41: [
+        { kind:'explain', text:'The final unlock: alerts + your record. The Alarm Laser (hotkey 4) drops a price alarm on any level — it pings you when price tags it, even when you\'re away from the chart.' },
+        { kind:'explain', text:'Press 4 to arm the Alarm Laser, then click a level to set an alarm. Alarms are non-destructive — they only watch and notify.' },
+        { kind:'explain', text:'Everything you do is logged in the Journal (the dock): orders, fills, P&L, and alarms in one performance record. Review it to learn from every run.' },
+        { kind:'explain', text:'That completes the toolkit — Activation Laser, Leverage, Broker, Alarms, and the Journal are all unlocked. Training ground cleared. Go run live.' },
       ],
       // ── LEGACY KEYS (archived chapters — kept for restore) ───────────
       // The pre-v0.9.41 numbering left these scripts behind. They are
@@ -42508,9 +42538,11 @@ window.crLaunchMinigameRandom = crLaunchMinigameRandom;
     // place trades manually following the bot's lead.
     28: { goal:'Trade an SFP Hunter highlight on BTC 15m.',          tip:'SFP Hunter rings swing-failures. Place a bracket against the failed wick.',                  asset:'btc', tf:'15m', indicators:[],                   loadout:['bracket'],   probes:['sfpCheck'],  bot:'det_sfp' },
     29: { goal:'Trade a CCV Hunter highlight on BTC 15m.',           tip:'CCV Hunter rings setups where Consolidation + Champion + Volume all fire. ~80% win rate.',  asset:'btc', tf:'15m', indicators:['reflevels','vrvp'], loadout:['bracket'],   probes:['ccvCheck'],  bot:'det_ccv' },
-    30: { goal:'Trade an H&S Hunter highlight on BTC 1h.',           tip:'H&S Hunter rings the neckline-break. Fade the head, ride the reversal.',                    asset:'btc', tf:'1h',  indicators:['reflevels'],        loadout:['bracket'],   probes:['hsCheck'],   bot:'det_hs' },
-    31: { goal:'Trade a BARR Hunter highlight on BTC 1h.',           tip:'BARR Hunter rings parabola-exhaustion candles. Trade against the parabolic move.',          asset:'btc', tf:'1h',  indicators:['reflevels'],        loadout:['bracket'],   probes:['barrCheck'], bot:'det_barr' },
-    32: { goal:'Trade an FA Hunter highlight on BTC 1h.',            tip:'FA Hunter rings failed-auction candles. Mean-revert back into the range.',                  asset:'btc', tf:'1h',  indicators:['reflevels'],        loadout:['bracket'],   probes:['faCheck'],   bot:'det_fa' },
+    // v1.0.466 — swapped dead detectors (H&S/BARR/FA) for LIVE canon bots: ch.30 Volume
+    // Climax, ch.31 VWAP Reclaim (both starter bots), ch.32 Order Block Retest (grant).
+    30: { goal:'Trade a Volume Climax exhaustion on BTC 1h.',        tip:'Volume Climax rings blow-off candles where volume spikes into exhaustion. Fade the climax with a bracket.', asset:'btc', tf:'1h',  indicators:['vol'],              loadout:['bracket'],   probes:[],            bot:'det_climax' },
+    31: { goal:'Trade a VWAP Reclaim on BTC 15m.',                   tip:'VWAP Reclaim rings price reclaiming or rejecting the session VWAP. Trade back toward the mean.',          asset:'btc', tf:'15m', indicators:[],                   loadout:['bracket'],   probes:[],            bot:'det_vwap' },
+    32: { goal:'Trade an Order Block Retest on BTC 1h.',             tip:'Order Block Retest rings price returning to an institutional order block. Trade in the block\'s direction.', asset:'btc', tf:'1h',  indicators:['reflevels'],        loadout:['bracket'],   probes:[],            bot:'det_orderblock' },
     33: { goal:'Trade a Divergence Hunter highlight on BTC 15m.',    tip:'Divergence Hunter rings price–RSI disagreement. Trade against the dying momentum.',         asset:'btc', tf:'15m', indicators:['rsi'],              loadout:['bracket'],   probes:['divCheck'],  bot:'det_div' },
     // ── FOUNDATION ─────────────────────────────────────────────────────
     // Renumbered from 28-32 → 34-38 in v0.9.66.
@@ -42523,6 +42555,13 @@ window.crLaunchMinigameRandom = crLaunchMinigameRandom;
     // v0.9.67 — Phoenix gateway chapter. Introduces the Live (Phoenix)
     // overlay panel + the multiplier reward shape.
     39: { goal:'Open the Live panel, flip 2+ overlays on, place a bracket.', tip:'Topbar → green "Live" button → flip switches → bracket as usual. Stacking 2+ overlays earns a $CHART multiplier.', asset:'btc', tf:'15m', indicators:[], loadout:['bracket'], probes:[], live:true },
+    // ── EXECUTION (Ch.40–41) ───────────────────────────────────────────
+    // v1.0.466 — the unlock chapters the feature gates point at (CR_FEATURE_GATE).
+    // Ch.40 unlocks the Activation Laser (hotkey 3) + Leverage + Broker tab; Ch.41
+    // unlocks the Alarm Laser (hotkey 4) + Alarm tab + Journal. Each gated feature is
+    // playable DURING its own teaching chapter (see crFeatureLevelOk).
+    40: { goal:'Arm a placed order with the Activation Laser (hotkey 3).', tip:'Hotkey 3 = Activation Laser. Click a placed bracket to arm it — the Leverage row + Broker tab unlock here.', asset:'btc', tf:'15m', indicators:[], loadout:['bracket'], probes:[] },
+    41: { goal:'Set a price Alarm (hotkey 4) and review it in the Journal.', tip:'Hotkey 4 = Alarm Laser. Click a level to arm an alarm — the Alarm tab + Journal unlock here.', asset:'btc', tf:'15m', indicators:[], loadout:[], probes:[] },
   };
   // v1.0.107 — Runroom step 5: campaign dispatch wrapper.
   // The original chapter launcher takes a numeric chapter id (1-39); the
@@ -49620,7 +49659,10 @@ const CR_BOT_BLURB = {
   det_hs:     'Rings the H&S neckline break — fade the head, ride the reversal.',
   det_div:    'Price–RSI divergence — trades against dying momentum.',
 };
-const CR_CAMPAIGN_BOT_BY_CH = { 29: 'det_ccv', 30: 'det_hs', 33: 'det_div' };
+// v1.0.466 — campaign grants the 3 non-starter bots: CCV (ch.29), Order Block (ch.32),
+// Divergence (ch.33). Ch.30/31 teach Volume Climax / VWAP Reclaim, which are starter bots
+// the player already owns, so they need no grant. (Was: ch.30 → dead det_hs.)
+const CR_CAMPAIGN_BOT_BY_CH = { 29: 'det_ccv', 32: 'det_orderblock', 33: 'det_div' };
 const CR_BOT_PRICE_RUN = 25;
 const _CR_OWNED_BOTS_KEY = 'cr_owned_bots_v1';
 let CR_OWNED_BOTS = (function(){
