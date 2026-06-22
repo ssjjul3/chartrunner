@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.471
-     LAST UPDATED:    2026-06-22  ·  PICK YOUR RIDE fits the frame: card bounded to the viewport (max-height + internal scroll) and content compacted (tighter options + smaller vehicle cards) so all vehicles stay inside the modal; removed the HARDCORE "candles drop…" note.
+     CURRENT VERSION: v1.0.472
+     LAST UPDATED:    2026-06-22  ·  HARDCORE: candles now LITERALLY fall — drawCandles offsets a dropped candle's Y (gravity) via window._crHcDrop, so the real candle drops off-screen leaving the gap the runner falls through (replaces the red void-column overlay).
+     PREV (v1.0.471): PICK YOUR RIDE fits the frame (bounded card + compact content); removed HARDCORE note.
      PREV (v1.0.470): PICK YOUR RIDE cleanup — centered vehicle cards w/ subtle per-vehicle top accent, uniform theme chrome + hover lift, VEHICLE section label/divider.
      PREV (v1.0.469): PvP tab archived until Player Level 10.
      PREV (v1.0.468): RACING: removed JUP; skateboard→Bike; archived rollercoaster+jetski; HARDCORE toggle (candles drop → fall through & die). GEAR: Thrust→Jetpack (2× launch), guest=None+Jetpack, Kevlar=connect, Magnet=shop, Rubber Ball=PL10 (cursor-kick ball in preview). CAMPAIGN: archived level 39.
@@ -13822,7 +13823,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.471",
+  VERSION: "1.0.472",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -36419,8 +36420,10 @@ function drawCandles(){
   for(let i=firstIdx;i<=lastIdx;i++){
     const c = candles[i];
     const x = sX(i*STEP);
-    const yO = priceToY(c.o), yC = priceToY(c.c);
-    const yH = priceToY(c.h), yL = priceToY(c.l);
+    // v1.0.472 — HARDCORE: dropped candles literally fall down (offset every y coord).
+    let _dy = 0; try { if(game.mode==='racing' && window._crHcDrop) _dy = window._crHcDrop(i); } catch(_){}
+    const yO = priceToY(c.o)+_dy, yC = priceToY(c.c)+_dy;
+    const yH = priceToY(c.h)+_dy, yL = priceToY(c.l)+_dy;
     const bull = c.c >= c.o;
     ctx.strokeStyle = bull ? '#26a69a' : '#ef5350';
     ctx.lineWidth = 1;
@@ -37958,14 +37961,24 @@ window.crRacing = (function(){
   function _hcTickPits(){
     if(!st || !st.hardcore || typeof candles === 'undefined' || !candles) return;
     if(!st.pits) st.pits = new Set();
+    if(!st.pitBorn) st.pitBorn = {};
     const nowS = performance.now() / 1000;
     if(nowS < (st.pitT || 0)) return;
     st.pitT = nowS + 1.4 + Math.random() * 2.2;          // next gap in 1.4–3.6s
     const here = Math.floor(player.wx / STEP);
     const start = here + 10 + Math.floor(Math.random() * 8);
     const w = 2 + Math.floor(Math.random() * 2);          // 2–3 candles wide
-    for(let k = 0; k < w; k++){ if(start + k < candles.length - 2) st.pits.add(start + k); }
+    for(let k = 0; k < w; k++){ const ii = start + k; if(ii < candles.length - 2){ st.pits.add(ii); if(!(ii in st.pitBorn)) st.pitBorn[ii] = performance.now(); } }
   }
+  // v1.0.472 — drop offset (px) for a candle index while a HARDCORE pit is active,
+  // so drawCandles can make the real candle LITERALLY fall down. 0 when not a pit.
+  function _crHcDrop(i){
+    if(!st || !st.hardcore || !st.pits || !st.pits.has(i) || !st.pitBorn) return 0;
+    const born = st.pitBorn[i]; if(!born) return 0;
+    const t = (performance.now() - born) / 1000;
+    return 0.5 * 1500 * t * t;   // gravity fall in px
+  }
+  try { window._crHcDrop = _crHcDrop; } catch(_){}
   function _drawHardcorePits(){
     if(!st || !st.hardcore || !st.pits || !st.pits.size || typeof sX !== 'function') return;
     ctx.save();
@@ -38008,7 +38021,7 @@ window.crRacing = (function(){
       finishWx: Math.floor((candles.length-1) * FINISH_FRAC) * STEP,
       vx:0, angle:0, angVel:0, onGround:true, airTime:0, rotAccum:0,
       timer:0, startT:0, cdStart:0, flips:0, _prevSlope:null,
-      hardcore:_hcPref, pits:new Set(), pitT:0,   // v1.0.468 — HARDCORE
+      hardcore:_hcPref, pits:new Set(), pitT:0, pitBorn:{},   // v1.0.468 — HARDCORE
       best:(()=>{ try { return parseFloat(localStorage.getItem('cr_racing_best')||'0')||0; } catch(_){ return 0; } })()
     };
     player.wx = STEP*0.6;
@@ -38192,7 +38205,8 @@ window.crRacing = (function(){
         ctx.restore();
       }
     }
-    _drawHardcorePits();   // v1.0.468 — HARDCORE void columns at dropped candles
+    // v1.0.472 — HARDCORE: dropped candles fall via drawCandles (the real candle
+    // offset), so the red void-column overlay is no longer drawn.
     if(st.phase !== 'vehicle') _drawVehicle();
     // v1.0.409 — the timer/best/flips + progress + minimap now live in the DOM
     // top HUD bar (over the toolbar), updated here instead of on the canvas.
