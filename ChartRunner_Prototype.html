@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.461
-     LAST UPDATED:    2026-06-22  ·  RACING HUD now uses the EXACT original asset + timeframe controls — the real .crTvSymWrap + #crTvTfRow are moved into the HUD during a race (same layout/styling/behavior) and restored to the toolbar after.
+     CURRENT VERSION: v1.0.462
+     LAST UPDATED:    2026-06-22  ·  Minigame Home now plays the CRT/loading transition first (then tears down the race + goes to desktop inside the fade callback), so it exits with the same transition as the rest of the app instead of snapping back.
+     PREV (v1.0.461): RACING HUD now uses the EXACT original asset + timeframe controls — the real .crTvSymWrap + #crTvTfRow are moved into the HUD during a race (same layout/styling/behavior) and restored to the toolbar after.
      PREV (v1.0.460): RACING minigame: no bot loadout (drawBotOrbs skipped while racing); ticker + timeframe HUD restyled to match the chart toolbar (dark ● ticker pill + 1m/5m/15m/1H segmented selector, current TF highlighted).
      PREV (v1.0.459): Bot proposal (e.g. SFP Hunter Build? Y/N) now blends directly into the terminal feed — stripped the floating-card chrome (bg/border/shadow/blur) + dropped the redundant "proposes…" banner; it reads as a plain terminal message.
      PREV (v1.0.458): Coach (welcome + chat SEND) buttons now use the SAME terminal button language as the tutorial nav (monospace, uppercase, green-on-dark; filled-green primary); removed the tutorial END button (header ✕ / Esc still end it).
@@ -13761,7 +13762,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.461",
+  VERSION: "1.0.462",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -38152,15 +38153,23 @@ window.crRacing = (function(){
       + '<canvas id="crRhMap" class="rh-map" width="220" height="26"></canvas>';
     const tb = document.getElementById('crTopBar');
     if(tb) tb.appendChild(hud); else document.body.appendChild(hud);
-    // v1.0.420 — Home button: clear the race state (so the toolbar HUD reverts)
-    // then run the normal Home exit flow (CRT fade → desktop).
+    // v1.0.462 — Home button: play the CRT/loading transition FIRST (covering the
+    // exit), then tear the race down + go to the desktop INSIDE the fade callback —
+    // so the minigame exits with the same loading-screen transition as the rest of
+    // the app, instead of snapping back to the desktop before the fade.
     try {
       const hb = document.getElementById('crRhHome');
       if(hb) hb.addEventListener('click', () => {
-        try { if(typeof game !== 'undefined'){ game.mode = ''; if(game.minigame) game.minigame.mode = null; } } catch(_){}
-        try { document.body.classList.remove('cr-racing-hud'); } catch(_){}
-        try { const f = document.getElementById('crBarFile'); if(f){ f.click(); return; } } catch(_){}
-        try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
+        const _finish = () => {
+          try { if(typeof game !== 'undefined'){ game.mode = ''; game.running = false; if(game.minigame) game.minigame.mode = null; } } catch(_){}
+          try { document.body.classList.remove('cr-racing-hud'); } catch(_){}
+          try { window._crRacingHudPrev = false; if(window._raceReleaseChartCtrls) window._raceReleaseChartCtrls(); } catch(_){}
+          try { if(typeof showSplash === 'function') showSplash(); } catch(_){}
+          try { const u = new URL(window.location.href); if(u.search || u.hash) window.history.replaceState({}, '', u.origin + u.pathname); } catch(_){}
+          setTimeout(() => { try { if(typeof crCrtFadeIn === 'function') crCrtFadeIn(); } catch(_){} }, 260);
+        };
+        if(typeof crCrtFadeOut === 'function') crCrtFadeOut(_finish);
+        else _finish();
       });
     } catch(_){}
     const hcss = document.createElement('style'); hcss.id = 'crRaceHudCss'; hcss.textContent = ''
