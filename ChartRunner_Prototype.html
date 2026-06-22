@@ -2,9 +2,14 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.436
-     LAST UPDATED:    2026-06-21  ·  SOCIAL P3+P4: Profile → 🔍 SEARCH players (presence-backed online/offline cards) + PROFILE
-                      pages w/ backlink chartrunner.xyz/player/<name> (?player= opens it; wallet address wallet-gated). window.crSocial.
+     CURRENT VERSION: v1.0.437
+     LAST UPDATED:    2026-06-22  ·  RELAY + LEVELING + GATING BUNDLE: relay moved to Cloudflare Tunnel (relay.chartrunner.xyz, self-
+                      healing cr_relay_url override) for public multiplayer; campaign LEVEL system (PL 1–10) + chapter-gated features
+                      (blue laser/activation/leverage/broker @ch.40 · alarm laser/alarm tab/journal @ch.41); run vehicles use racing
+                      physics + gated to On-foot/Skateboard; bots 3-starter+3-campaign=6 (locked hidden from picker); skins yellow/purple
+                      archived + Diamond@PL10; terminal Solana/CEX views use Engine masonry; maps live-badge reflow fix; guest connect-
+                      exclusive gating on tool/indicator settings; archived Signed-Devnet-Demo card. Design: docs/architecture/2026-06-22-player-level-system-and-tokenomics.md
+     PREV (v1.0.436): SOCIAL P3+P4 — Profile 🔍 SEARCH players + profile pages/backlinks (window.crSocial).
      PREV (v1.0.435): GLOBAL PRESENCE (P2) — wallet heartbeat → app-wide online/offline (window.crPresence + relay /presence).
      PREV (v1.0.434): LIVE COUNTERS (social P1) — "● N live" in 🔍 Rooms header + "live · N" badge on Maps cards.
      PREV (v1.0.433): PUBLIC ROOMS — search & join live rooms by player/map name (🔍 Rooms browser + relay /rooms directory).
@@ -2592,6 +2597,12 @@
   body.cr-guest #win-wallet .crTerm-tab[data-profview="bal"],
   body.cr-guest #win-wallet .crTerm-tab[data-profview="broker"],
   body.cr-guest #win-wallet .crTerm-tab[data-profview="coach"]{display:none!important}
+  /* Chapter-based level gates (toggled by crApplyLevelGates): Broker tab → ch.40,
+     Journal → ch.41. Hidden for EVERYONE until that campaign chapter is completed. */
+  body.cr-lock-broker #win-wallet .crTerm-tab[data-profview="broker"]{display:none!important}
+  body.cr-lock-journal .os-icon[data-prog="journal"],
+  body.cr-lock-journal #crOSDockFixed .dockBtn[data-prog="journal"],
+  body.cr-lock-journal .dockBtn[data-prog="journal"]{display:none!important}
   /* Guests can't change the tool loadout (all force-equipped) — hide the bulk-equip buttons. */
   body.cr-guest #wbToolEquipStars,
   body.cr-guest #wbToolEquipAll,
@@ -11876,7 +11887,7 @@
             <!-- v1.0.288 — TOOLS tab moved here from the archived Workbench app. -->
             <button class="crTerm-tab" data-profview="tools" type="button">TOOLS</button>
             <!-- v1.0.359 — BROKER tab moved here from Configure Run. Connect once here. -->
-            <button class="crTerm-tab" data-profview="broker" type="button" style="display:none">BROKER</button>
+            <button class="crTerm-tab" data-profview="broker" type="button">BROKER</button>
             <!-- v1.0.364 — COACH model config moved here from the COACH.llm chat popup. -->
             <button class="crTerm-tab" data-profview="coach" type="button" style="display:none">COACH</button>
             <button class="crTerm-tab" data-profview="stats" type="button" style="display:none">STATS</button>
@@ -13683,7 +13694,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.436",
+  VERSION: "1.0.437",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -32110,15 +32121,29 @@ function vehicleById(id){ return VEHICLES.find(v => v.id === id) || VEHICLES[0];
 // + early game). Higher tiers unlock by level later. Single source of truth.
 function crVehicleUnlocked(id){ id = String(id || ''); return id === 'none' || id === 'skateboard'; }
 try { window.crVehicleUnlocked = crVehicleUnlocked; } catch(_){}
-// ── Minimal campaign LEVEL system ───────────────────────────────────────────
-// Player level = number of campaign chapters completed (claimed). Advanced
-// features unlock at the levels below — tune CR_FEATURE_UNLOCK_LV freely. Until
-// a player reaches the level, the feature is hidden/blocked for EVERYONE.
-function crPlayerLevel(){ try { var c = JSON.parse(localStorage.getItem('cr_campaign_claimed_v1') || '{}') || {}; return Object.keys(c).length; } catch(_){ return 0; } }
-const CR_FEATURE_UNLOCK_LV = { leverage: 3, activation: 5, alarm: 7 };
-function crFeatureUnlockLv(feat){ try { return CR_FEATURE_UNLOCK_LV[feat] || 0; } catch(_){ return 0; } }
-function crFeatureLevelOk(feat){ try { var n = CR_FEATURE_UNLOCK_LV[feat]; return (n == null) ? true : (crPlayerLevel() >= n); } catch(_){ return false; } }
-try { window.crPlayerLevel = crPlayerLevel; window.crFeatureLevelOk = crFeatureLevelOk; window.crFeatureUnlockLv = crFeatureUnlockLv; } catch(_){}
+// ── Campaign chapters + Player Level (PL 1–10) ──────────────────────────────
+// Design: docs/architecture/2026-06-22-player-level-system-and-tokenomics.md
+// Features gate on COMPLETING specific campaign chapters; PL 1–10 is the (soon
+// on-chain) per-wallet rank. First 42 chapters → PL7; PL10 → Diamond skin.
+function _crClaimedChapters(){ try { return JSON.parse(localStorage.getItem('cr_campaign_claimed_v1') || '{}') || {}; } catch(_){ return {}; } }
+function crChapterDone(n){ try { return !!_crClaimedChapters()[n]; } catch(_){ return false; } }
+function crPlayerLevel(){ try { var c = Object.keys(_crClaimedChapters()).length; return Math.max(1, Math.min(7, 1 + Math.floor(c / 6))); } catch(_){ return 1; } }
+// Feature → required completed campaign chapter (Julian's spec; tune freely).
+const CR_FEATURE_GATE = { activation:40, leverage:40, broker:40, laser3:40, alarm:41, laser4:41, journal:41 };
+function crFeatureUnlockLv(feat){ try { return CR_FEATURE_GATE[feat] || 0; } catch(_){ return 0; } }
+function crFeatureLevelOk(feat){ try { var ch = CR_FEATURE_GATE[feat]; return (ch == null) ? true : crChapterDone(ch); } catch(_){ return false; } }
+try { window.crPlayerLevel = crPlayerLevel; window.crChapterDone = crChapterDone; window.crFeatureLevelOk = crFeatureLevelOk; window.crFeatureUnlockLv = crFeatureUnlockLv; } catch(_){}
+// Apply chapter-based gates to the Broker profile tab (ch.40) + Journal dock (ch.41)
+// by toggling body classes the CSS keys on. Cheap; re-runs to track campaign progress.
+function crApplyLevelGates(){
+  try {
+    var b = document.body; if(!b) return;
+    b.classList.toggle('cr-lock-broker',  !(typeof crFeatureLevelOk === 'function' && crFeatureLevelOk('broker')));
+    b.classList.toggle('cr-lock-journal', !(typeof crFeatureLevelOk === 'function' && crFeatureLevelOk('journal')));
+  } catch(_){}
+}
+try { window.crApplyLevelGates = crApplyLevelGates; } catch(_){}
+try { if(typeof document !== 'undefined'){ if(document.body) crApplyLevelGates(); document.addEventListener('DOMContentLoaded', crApplyLevelGates); setInterval(crApplyLevelGates, 2000); } } catch(_){}
 // v1.0.127 — draw a vehicle's game-art onto a small canvas (no emoji). 'none' shows the canon avatar.
 function _drawVehIcon(cv, vehId){
   if(!cv || !cv.getContext) return;
@@ -32139,7 +32164,7 @@ function _drawVehIcon(cv, vehId){
 try { window._drawVehIcon=_drawVehIcon; } catch(_){}
 // v1.0.127 — skin icon = canon invader, tinted per variant (no emoji).
 function _isSkinId(id){ return /^invader-(green|red|yellow|purple)$/.test(id||''); }
-function _skinTint(id){ return ({'invader-green':'#14f195','invader-red':'#ff4d6d','invader-yellow':'#ffd166','invader-purple':'#9945FF'})[id] || '#14f195'; }
+function _skinTint(id){ return ({'invader-green':'#14f195','invader-red':'#ff4d6d','invader-yellow':'#ffd166','invader-purple':'#9945FF','invader-diamond':'#b9f2ff'})[id] || '#14f195'; }
 function _drawSkinIcon(cv, skinId){ if(!cv||!cv.getContext) return; var c=cv.getContext('2d'); c.clearRect(0,0,cv.width,cv.height); c.save(); c.translate(cv.width/2, cv.height/2); try{ drawInvader(c, 1.3, _skinTint(skinId)); }catch(_){} c.restore(); }
 try { window._drawSkinIcon=_drawSkinIcon; } catch(_){}
 // v0.8k#13 — Belt-and-suspenders: walk VEHICLES after it's defined and mark every
@@ -46736,6 +46761,7 @@ const PLAYER_OPTIONS = {
     { id:'invader-red',    ic:'⊡', nm:'Runner · Red',    desc:'Upside-down combat skin' },
     { id:'invader-yellow', ic:'⊡', nm:'Runner · Yellow', desc:'Hot-streak gold' },
     { id:'invader-purple', ic:'⊡', nm:'Runner · Purple', desc:'Solana cypherpunk' },
+    { id:'invader-diamond', ic:'◇', nm:'Runner · Diamond', desc:'PL10 reward · finish all 10 levels' },
   ],
   gear: [
     { id:'none',     ic:'∅',  nm:'None',          desc:'Default movement' },
@@ -46784,6 +46810,7 @@ const SKIN_TINTS = {
   'invader-red':    '#ff5b7f',
   'invader-yellow': '#ffd166',
   'invader-purple': '#9945ff',
+  'invader-diamond': '#b9f2ff',
 };
 const GEAR_GLOW = {
   none:   null,
@@ -47014,7 +47041,11 @@ function _renderPlayerTab(){
   wireSlot('gear',    PLAYER_OPTIONS.gear,    'none');
   // Yellow + purple skins archived — hidden from the picker; clamp back to green.
   try { if(playerLoadout.skin === 'invader-yellow' || playerLoadout.skin === 'invader-purple'){ playerLoadout.skin = 'invader-green'; _savePlayerLoadout(); } } catch(_){}
-  wireSlot('skin',    PLAYER_OPTIONS.skin.filter(function(s){ return s.id !== 'invader-yellow' && s.id !== 'invader-purple'; }),    'invader-green');
+  wireSlot('skin',    PLAYER_OPTIONS.skin.filter(function(s){
+    if(s.id === 'invader-yellow' || s.id === 'invader-purple') return false;       // archived
+    if(s.id === 'invader-diamond') return (typeof crPlayerLevel === 'function') && crPlayerLevel() >= 10;  // PL10 reward
+    return true;
+  }),    'invader-green');
   // Vehicles: only On foot + Skateboard unlocked until levels exist; others 🔒.
   // Clamp any previously-equipped locked vehicle back to On foot.
   try { if(typeof crVehicleUnlocked === 'function' && !crVehicleUnlocked(playerLoadout.vehicle)){ playerLoadout.vehicle = 'none'; _savePlayerLoadout(); } } catch(_){}
