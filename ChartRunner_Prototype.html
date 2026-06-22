@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.509
+     CURRENT VERSION: v1.0.510
      LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -13949,7 +13949,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.509",
+  VERSION: "1.0.510",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -32724,9 +32724,11 @@ const WEAPONS = [
 // Active weapon = the Profile loadout weapon (falls back to default).
 let currentWeapon = 'default';
 function currentWeaponObj(){
-  var id = (typeof playerLoadout !== 'undefined' && playerLoadout.weapon) || currentWeapon;
-  // v1.0.506 — Spread is Monster-Mode-only; anywhere else it falls back to Fireball.
-  if(id === 'spread' && !(typeof game !== 'undefined' && game.monsterMode)) id = 'default';
+  // v1.0.510 — a boss-loot weapon (game.runWeapon, picked up in Monster Mode) overrides the
+  // equipped loadout for the rest of the run; otherwise use the Profile weapon.
+  var id = (typeof game !== 'undefined' && game.runWeapon)
+    ? game.runWeapon
+    : ((typeof playerLoadout !== 'undefined' && playerLoadout.weapon) || currentWeapon);
   return WEAPONS.find(w => w.id === id) || WEAPONS[0];
 }
 
@@ -33420,9 +33422,15 @@ function updateCombat(dt){
             spawnFloat(sx+24, sy-10, '+100', '#e9efff');
             hitStop(120);
             screenFlash();
-            try { showBanner?.('BOSS DOWN', 'Loot dropped — grab the cyan orb.', 1600); } catch(_){}
+            try { showBanner?.('BOSS DOWN', 'Loot + a weapon dropped — grab the orbs.', 1600); } catch(_){}
             // Spawn loot pickup at the boss's death position.
             game.pickups.push({ wx: m.wx, py: m.py, kind:'loot', taken:false });
+            // v1.0.510 — bosses also drop one of the different lasers (Laser / Spread / Beam)
+            // as a weapon pickup that arms the player for the rest of the run.
+            try {
+              var _wDrop = ['laser','spread','beam'][Math.floor(Math.random()*3)];
+              game.pickups.push({ wx: m.wx + STEP*0.7, py: m.py, kind:'weapon', weapon:_wDrop, taken:false });
+            } catch(_){}
           } else {
             // v0.8h — Regular grunts drop $CHART, never $RUN. RUN is gated to
             // boss/winning-trade/mission. Grunt still gives score so the combat
@@ -33908,6 +33916,7 @@ try { if(_crIsDevHost() && /[?&]dev=1/.test(location.search) && window.ChartRunn
   player.onGround = true;
   camera.wx = player.wx - W*0.35;
   game.run=0; game.chart=0; game.score=0; game.kills=0;
+  game.runWeapon = null;   // v1.0.510 — clear any boss-loot weapon from the previous run
   game.visualLadders.length=0; game.visualBrackets.length=0; game.visualOCO.length=0;
   game.selectedOverlay = null;
   game.runTrail.length = 0;
@@ -35868,6 +35877,15 @@ function update(dt){
         spawnParticles(sx, sy, '#22d3ee', 16, 220);
         spawnParticles(sx, sy, '#9b8cff', 8, 140);
         try { showBanner?.('LOOT', 'All items +2 charge · +20 $CHART', 1400); } catch(_){}
+      } else if(pk.kind==='weapon'){
+        // v1.0.510 — boss weapon drop: arm this run with the dropped laser.
+        var _wid = pk.weapon || 'laser';
+        if(typeof game !== 'undefined') game.runWeapon = _wid;
+        var _wdef = WEAPONS.find(w => w.id === _wid);
+        var _wc = _wdef ? _wdef.color : '#14f195';
+        spawnFloat(sx, sy-10, '⚡ ' + (_wdef ? _wdef.nm : _wid).toUpperCase(), _wc);
+        spawnParticles(sx, sy, _wc, 20, 260);
+        try { showBanner?.('WEAPON DROP', (_wdef ? _wdef.nm : _wid) + ' — armed for this run', 1500); } catch(_){}
       } else if(pk.kind==='restock'){
         // v0.7b-items v1 — refill +1 charge on every ability that isn't already at max.
         let refilled = 0;
@@ -41689,6 +41707,19 @@ function drawPickups(){
       ctx.fillStyle = 'rgba(0,0,0,0.8)';
       ctx.font = 'bold 10px ui-monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText('L', 0, 0.5);
+    } else if(pk.kind==='weapon'){
+      // v1.0.510 — boss weapon drop orb, tinted to the dropped weapon's colour.
+      const _wdef = WEAPONS.find(w => w.id === pk.weapon);
+      const _wc = _wdef ? _wdef.color : '#14f195';
+      const pulse = 1 + 0.25*Math.sin(performance.now()/130 + pk.wx);
+      ctx.shadowColor = _wc; ctx.shadowBlur = 24+glow*1.8;
+      ctx.strokeStyle = _wc; ctx.globalAlpha = 0.6; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.arc(0,0, 13*pulse, 0, Math.PI*2); ctx.stroke();
+      ctx.globalAlpha = 1; ctx.fillStyle = _wc;
+      ctx.beginPath(); ctx.arc(0,0, 6.5*pulse, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.font = 'bold 11px ui-monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('⚡', 0, 0.5);
     } else {
       // v1.0.384 — $CHART coin. Both economy kinds (tick/creds) render as a
       // pleasant minted disc — rim + face + top highlight — and ALL show "C"
@@ -48048,30 +48079,23 @@ function _renderPlayerTab(){
       });
     };
   };
-  // Weapons (v1.0.506 gating): Fireball is the free default for guests. A connected wallet
-  // unlocks Laser. Spread is a Monster-Mode-only weapon (selectable when connected; it only
-  // fires in Monster Mode — see currentWeaponObj). Beam unlocks at Player Level 10.
+  // Weapons (v1.0.510): the picker only SHOWS weapons the player can actually equip —
+  //   • Fireball: always (free default)
+  //   • Laser:    only with a connected wallet (HIDDEN for guests)
+  //   • Spread:   never shown here — it's a Monster-Mode boss-loot weapon, not equippable
+  //   • Beam:     only shown once Player Level 10 is reached (and connected)
   var _wpl = (typeof crPlayerLevel === 'function') ? crPlayerLevel() : 1;
   var _wpGuest = (typeof crIsGuest === 'function') ? crIsGuest() : false;
-  // returns a lock reason (string) if the weapon can't be equipped, else null
-  var _wpLock = function(id){
-    if(id === 'default') return null;
-    if(_wpGuest) return 'Connect a wallet';      // guests: only Fireball
-    if(id === 'beam' && _wpl < 10) return 'Unlocks at Level 10';
-    return null;                                  // laser + spread equippable once connected
+  var _wpVisible = function(id){
+    if(id === 'default') return true;
+    if(id === 'spread')  return false;            // boss-loot only (Monster Mode)
+    if(_wpGuest)         return false;            // guests: only Fireball
+    if(id === 'beam')    return _wpl >= 10;       // PL10 reward
+    return true;                                  // laser (connected)
   };
-  var _wpTag = function(id){ return id === 'spread' ? 'Monster Mode only' : ''; };
-  try { if(_wpLock(playerLoadout.weapon)){ playerLoadout.weapon = 'default'; _savePlayerLoadout(); } } catch(_){}
-  wireSlot('weapon',  PLAYER_OPTIONS.weapon.map(function(o){
-    var _reason = _wpLock(o.id);
-    var _lk  = !!_reason;
-    var _tag = _wpTag(o.id);
-    return Object.assign({}, o, {
-      wico: o.id,
-      nm:   (o.nm || o.id) + (_lk ? '  🔒' : ''),
-      sub:  o.desc + (_lk ? (' · ' + _reason) : (_tag ? (' · ' + _tag) : '')),
-      _locked: _lk
-    });
+  try { if(!_wpVisible(playerLoadout.weapon)){ playerLoadout.weapon = 'default'; _savePlayerLoadout(); } } catch(_){}
+  wireSlot('weapon',  PLAYER_OPTIONS.weapon.filter(function(o){ return _wpVisible(o.id); }).map(function(o){
+    return Object.assign({}, o, { wico: o.id, sub: o.desc });
   }),  'default');
   // Gear picker mirrors the bot layout: colored icon + name (✓ equipped) + a
   // description line. v1.0.468 gating: guests get only None + Jetpack; Kevlar is
