@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.474
-     LAST UPDATED:    2026-06-22  ·  RACING branding pass: CHART RUNNER RACING neon wordmark replaces the PICK YOUR RIDE controls description AND the FINISH end-card title (small wordmark + neon FINISH tag, glowing time, colour-accented stat tiles); Racing minigame card name is the tri-colour wordmark; in-game command console (.crNotify) hidden during a race. (Logo is a lightweight CSS wordmark — the uploaded PNG can't be embedded in the single-file build.)
+     CURRENT VERSION: v1.0.475
+     LAST UPDATED:    2026-06-22  ·  HARDCORE death FIXED: falling into a hole now kills (price-space check — runner dropped below the pit's platform edge) instead of being clamped onto the auto-refit chart; pits widened to 3–5 candles so you must jump to clear them.
+     PREV (v1.0.474): RACING branding — CHART RUNNER RACING wordmark in PICK YOUR RIDE + logo-style end card; Racing card wordmark; hide command console in race.
      PREV (v1.0.473): GEAR None+Jetpack w/ canvas icon (_drawGearIcon); PICK YOUR RIDE mobile horizontal vehicle strip.
      PREV (v1.0.473): GEAR None+Jetpack w/ canvas icon (_drawGearIcon); PICK YOUR RIDE mobile horizontal vehicle strip.
      PREV (v1.0.472): HARDCORE candles literally fall (drawCandles drop offset via _crHcDrop).
@@ -13826,7 +13827,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.474",
+  VERSION: "1.0.475",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -38006,7 +38007,7 @@ window.crRacing = (function(){
     st.pitT = nowS + 1.4 + Math.random() * 2.2;          // next gap in 1.4–3.6s
     const here = Math.floor(player.wx / STEP);
     const start = here + 10 + Math.floor(Math.random() * 8);
-    const w = 2 + Math.floor(Math.random() * 2);          // 2–3 candles wide
+    const w = 3 + Math.floor(Math.random() * 3);          // 3–5 candles wide (must jump to clear)
     for(let k = 0; k < w; k++){ const ii = start + k; if(ii < candles.length - 2){ st.pits.add(ii); if(!(ii in st.pitBorn)) st.pitBorn[ii] = performance.now(); } }
   }
   // v1.0.472 — drop offset (px) for a candle index while a HARDCORE pit is active,
@@ -38167,9 +38168,19 @@ window.crRacing = (function(){
       }
       player.alive = true;
     } else {
-      if(!isFinite(player.py) || (typeof priceToY === 'function' && priceToY(player.py) > H + 40)){
-        player.alive = false; _raceDie(); return;
+      // v1.0.475 — HARDCORE death in PRICE space (zoom-independent — the racing
+      // auto-refit follows the falling runner, so an on-screen/offscreen test never
+      // fires). If the runner has dropped below a pit's platform edge, it fell in → die.
+      let _dead = !isFinite(player.py);
+      if(!_dead && st.pits){
+        const _idx = Math.floor(player.wx / STEP);
+        if(st.pits.has(_idx)){
+          const _c = (typeof candles !== 'undefined' && candles) ? candles[_idx] : null;
+          const _edge = (_c && isFinite(_c.h)) ? _c.h : (_lastGround || 0);
+          if(player.py < _edge - (40 / ps)) _dead = true;   // ~40px below the platform = fell through
+        }
       }
+      if(_dead){ player.alive = false; _raceDie(); return; }
     }
     // angle
     if(st.onGround){
