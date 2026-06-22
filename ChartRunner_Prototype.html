@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.505
+     CURRENT VERSION: v1.0.506
      LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -644,6 +644,10 @@
     border:1px solid #6a6a62!important;border-radius:0!important;
     box-shadow:2px 3px 0 rgba(0,0,0,.3),inset 1px 1px 0 #fff!important;
     color:#1a1a18!important;font-family:Geneva,Verdana,sans-serif!important}
+  /* v1.0.506 — platinum: every picker option NAME is black (the name span inherited a light
+     --fg; the desc keeps its own grey). Also overrides the active option's light-green. */
+  body[data-os-theme="platinum"] .player-slot-pop button,
+  body[data-os-theme="platinum"] .player-slot-pop button > span{color:#1a1a18!important}
   body[data-os-theme="ascii"] .player-slot-pop{
     background:#000!important;border:1px solid #33ff66!important;
     color:#33ff66!important;font-family:Monaco,monospace!important}
@@ -13918,7 +13922,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.505",
+  VERSION: "1.0.506",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -32692,7 +32696,12 @@ const WEAPONS = [
 ];
 // Active weapon = the Profile loadout weapon (falls back to default).
 let currentWeapon = 'default';
-function currentWeaponObj(){ var id = (typeof playerLoadout !== 'undefined' && playerLoadout.weapon) || currentWeapon; return WEAPONS.find(w => w.id === id) || WEAPONS[0]; }
+function currentWeaponObj(){
+  var id = (typeof playerLoadout !== 'undefined' && playerLoadout.weapon) || currentWeapon;
+  // v1.0.506 — Spread is Monster-Mode-only; anywhere else it falls back to Fireball.
+  if(id === 'spread' && !(typeof game !== 'undefined' && game.monsterMode)) id = 'default';
+  return WEAPONS.find(w => w.id === id) || WEAPONS[0];
+}
 
 function shoot(){
   const now = performance.now()/1000;
@@ -32733,8 +32742,26 @@ function shoot(){
       life: w.life || 0.9,
     });
   }
-  // Shotgun: 3 pellets in a cone
-  if(w.pellets){
+  // v1.0.506 — BEAM: a real continuous beam (like the hotkey laser). Instead of one
+  // projectile, lay a dense line of short-lived, piercing segments straight along the aim
+  // so it reads as a solid beam and hits everything on the line. Re-fired each tiny cooldown.
+  if(w.id === 'beam'){
+    const dx = (mx - playerSx), dy = (my - playerSy), len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const ppd = Math.max(0.001, pxPerDollarAt(player.py));
+    const REACH = 640, SEG = 24;
+    for(let d = 16; d <= REACH; d += SEG){
+      game.bullets.push({
+        wx: player.wx + (ux * d) / Math.max(0.001, camera.zoomX || 1),
+        py: player.py - (uy * d) / ppd,
+        vxPx: ux * 160, vyPx: uy * 160,        // slight drift so it shimmers, not frozen
+        sx: playerSx + ux * d, sy: playerSy + uy * d,
+        type: 'beam', shape: 'beam', color: w.color, size: w.size,
+        pierce: 999, hits: new Set(), life: 0.07,
+      });
+    }
+  } else if(w.pellets){
+    // Shotgun: pellets in a cone
     const half = (w.spread || 0.3) / 2;
     for(let i = 0; i < w.pellets; i++){
       const t = w.pellets > 1 ? (i / (w.pellets - 1)) : 0.5;
@@ -47994,19 +48021,28 @@ function _renderPlayerTab(){
       });
     };
   };
-  // Weapons use the orb design language (like bots): colored orb + glyph core + desc.
-  // v1.0.490 — Fireball is the default; Laser/Spread/Beam are level-up loot unlocked at
-  // Player Level 3 / 5 / 10. Locked weapons stay visible (dimmed + 🔒 · unlock level).
-  var _wpUnlock = { laser:3, spread:5, beam:10 };
+  // Weapons (v1.0.506 gating): Fireball is the free default for guests. A connected wallet
+  // unlocks Laser. Spread is a Monster-Mode-only weapon (selectable when connected; it only
+  // fires in Monster Mode — see currentWeaponObj). Beam unlocks at Player Level 10.
   var _wpl = (typeof crPlayerLevel === 'function') ? crPlayerLevel() : 1;
-  try { var _eqReq = _wpUnlock[playerLoadout.weapon]; if(_eqReq && _wpl < _eqReq){ playerLoadout.weapon = 'default'; _savePlayerLoadout(); } } catch(_){}
+  var _wpGuest = (typeof crIsGuest === 'function') ? crIsGuest() : false;
+  // returns a lock reason (string) if the weapon can't be equipped, else null
+  var _wpLock = function(id){
+    if(id === 'default') return null;
+    if(_wpGuest) return 'Connect a wallet';      // guests: only Fireball
+    if(id === 'beam' && _wpl < 10) return 'Unlocks at Level 10';
+    return null;                                  // laser + spread equippable once connected
+  };
+  var _wpTag = function(id){ return id === 'spread' ? 'Monster Mode only' : ''; };
+  try { if(_wpLock(playerLoadout.weapon)){ playerLoadout.weapon = 'default'; _savePlayerLoadout(); } } catch(_){}
   wireSlot('weapon',  PLAYER_OPTIONS.weapon.map(function(o){
-    var _req = _wpUnlock[o.id] || 0;
-    var _lk  = !!(_req && _wpl < _req);
+    var _reason = _wpLock(o.id);
+    var _lk  = !!_reason;
+    var _tag = _wpTag(o.id);
     return Object.assign({}, o, {
       wico: o.id,
       nm:   (o.nm || o.id) + (_lk ? '  🔒' : ''),
-      sub:  o.desc + (_lk ? ' · unlocks at Level ' + _req : ''),
+      sub:  o.desc + (_lk ? (' · ' + _reason) : (_tag ? (' · ' + _tag) : '')),
       _locked: _lk
     });
   }),  'default');
