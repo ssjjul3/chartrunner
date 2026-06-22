@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.467
-     LAST UPDATED:    2026-06-22  ·  CAMPAIGN MENU: the Run-window chapter cards are hardcoded HTML — added an EXECUTION section with cards for ch.40 (Activation Laser) + ch.41 (Alarm Laser), bumped _CAMPAIGN_MAX 39→41 so they bind+launch, and updated the ch.30/31/32 cards to the live bots (Volume Climax / VWAP Reclaim / Order Block). (v1.0.466 fixed the gameplay/gates behind these.)
+     CURRENT VERSION: v1.0.468
+     LAST UPDATED:    2026-06-22  ·  RACING: removed JUP asset; skateboard→Bike (new art); archived rollercoaster+jetski; added HARDCORE toggle (candles randomly drop → runner falls through & dies). GEAR: Thrust Pack→Jetpack (2× launch), guests get only None+Jetpack, Kevlar=connect, Magnet=shop, Rubber Ball=PL10; Rubber Ball is now a cursor-kickable ball bouncing in the profile preview frame. CAMPAIGN: archived level 39 (Live).
+     PREV (v1.0.467): CAMPAIGN MENU added EXECUTION section (ch.40/41 cards) + _CAMPAIGN_MAX 39→41 + live-bot cards (Volume Climax / VWAP Reclaim / Order Block).
      PREV (v1.0.466): CAMPAIGN: added chapters 40 (Activation Laser + Leverage + Broker) & 41 (Alarm Laser + Journal) the feature gates point at; swapped dead campaign bots H&S/BARR/FA → live canon Volume Climax/VWAP Reclaim/Order Block Retest (+ fixed grant map); chapters lock the chart to their asset (always) + timeframe (except ch.38).
      PREV (v1.0.465): MOBILE coach windows (welcome/tutorial/chat) all render as the tutorial's clean full-width bottom sheet: back at bottom:8 + the persistent invader is hidden while a coach window is open (so it never overlaps).
      PREV (v1.0.464): Racing asset choice curated to BTC/ETH/SOL/JUP/DOGE; in-race timeframe bar shows only 5m/15m/1H/4H.
@@ -11560,7 +11561,9 @@
                    through opening the Live overlay panel via the topbar
                    button, flipping 2+ overlays on, and placing a bracket
                    while the multiplier is active. -->
-              <div class="modeSection" data-cat="campaign">
+              <!-- v1.0.468 — LIVE section archived (Ch.39 archived). Header hidden;
+                   the card itself auto-hides via the archived flag in _crPaintCampaignStars. -->
+              <div class="modeSection" data-cat="campaign" style="display:none">
                 <span class="msIcon">↯</span>
                 <span class="msTitle">Live</span>
                 <span class="msSub">· Phoenix overlays</span>
@@ -13811,7 +13814,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.467",
+  VERSION: "1.0.468",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -25561,7 +25564,7 @@ window.addEventListener('keydown', e=>{
       // jumping up from the player's flipped POV).
       // Arrow Up here just falls through (no action).
     } else if(player.onGround || game.coyote>0){
-      player.vy = -640 * ((typeof playerLoadout!=='undefined' && playerLoadout.gear==='thrust') ? 1.4 : 1); player.onGround=false; game.coyote=0;
+      player.vy = -640 * ((typeof playerLoadout!=='undefined' && playerLoadout.gear==='thrust') ? 2 : 1); player.onGround=false; game.coyote=0;
     } else {
       // Jump buffer — queue the intent, consume on next landing (120ms window)
       game.jumpBufferUntil = (now/1000) + 0.12;
@@ -25611,7 +25614,7 @@ window.addEventListener('keydown', e=>{
       // (Inverted gravity: pushing "down" in screen space is "up" in the
       // player's flipped frame.) Mirror of the regular Arrow-Up jump.
       if(player.onGround || game.coyote>0){
-        player.vy = 640 * ((typeof playerLoadout!=='undefined' && playerLoadout.gear==='thrust') ? 1.4 : 1); player.onGround=false; game.coyote=0;
+        player.vy = 640 * ((typeof playerLoadout!=='undefined' && playerLoadout.gear==='thrust') ? 2 : 1); player.onGround=false; game.coyote=0;
       } else {
         game.jumpBufferUntil = (now/1000) + 0.12;
       }
@@ -32103,16 +32106,36 @@ const TRAIL_TTL = 4;
 // player's foot position; sprites should draw with the foot at y=0 and
 // the body extending upward (negative y).
 function _vDrawSkateboard(ctx, s){
+  // v1.0.468 — the free starter vehicle is now a BIKE (id kept as 'skateboard'
+  // internally to avoid breaking saved loadouts/refs). Two spoked wheels + frame
+  // + handlebar + seat. Origin: wheels sit at y≈2*s (the ground line).
   s = s || 2;
-  // Board
-  ctx.fillStyle = '#3a2418';
-  ctx.fillRect(-12*s, -2*s, 24*s, 3*s);
-  // Wheels
-  ctx.fillStyle = '#1a1a1a';
-  ctx.beginPath(); ctx.arc(-9*s, 2*s, 2*s, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(9*s, 2*s, 2*s, 0, Math.PI*2); ctx.fill();
-  // v1.0.405 — built-in rider figure removed; the equipped ChartRunner/cNFT is
-  // drawn on top by _drawVehicle / _drawVehIcon, so this stub double-figure is gone.
+  var wy = 2*s, wr = 3.2*s, wx = 8*s;
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // wheels
+  ctx.strokeStyle = '#cfe9dc'; ctx.lineWidth = 1.3*s;
+  ctx.beginPath(); ctx.arc(-wx, wy, wr, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc( wx, wy, wr, 0, Math.PI*2); ctx.stroke();
+  // hubs
+  ctx.fillStyle = '#7be3f3';
+  ctx.beginPath(); ctx.arc(-wx, wy, 0.9*s, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc( wx, wy, 0.9*s, 0, Math.PI*2); ctx.fill();
+  // frame
+  ctx.strokeStyle = '#14f195'; ctx.lineWidth = 1.5*s;
+  ctx.beginPath();
+  ctx.moveTo(-wx, wy);        // rear hub
+  ctx.lineTo(-1*s, -4*s);     // seat post top
+  ctx.lineTo( wx, wy);        // front hub
+  ctx.lineTo(-1*s, wy);       // bottom bracket
+  ctx.lineTo(-1*s, -4*s);     // up the seat tube
+  ctx.stroke();
+  // handlebar / fork to front wheel
+  ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(6.5*s, -5*s); ctx.lineTo(9*s, -5*s); ctx.stroke();
+  // seat
+  ctx.fillStyle = '#14f195';
+  ctx.fillRect(-3*s, -5*s, 4*s, 1.2*s);
+  ctx.restore();
 }
 function _vDrawSurfboard(ctx, s){
   s = s || 2;
@@ -32226,12 +32249,12 @@ function _vDrawJetski(ctx, s){
 }
 const VEHICLES = [
   { id:'none',         nm:'On foot',       cost:0,    ic:'Λ', maxVel:0,    fric:0,    free:true,  draw:null },
-  { id:'skateboard',   nm:'Skateboard',    cost:0,    ic:'═', maxVel:380,  fric:0.92, free:true,  draw:_vDrawSkateboard },
+  { id:'skateboard',   nm:'Bike',          cost:0,    ic:'⊚', maxVel:380,  fric:0.92, free:true,  draw:_vDrawSkateboard },
   { id:'surfboard',    nm:'Surfboard',     cost:5,    ic:'≈', maxVel:440,  fric:0.94, free:false, draw:_vDrawSurfboard },
-  { id:'rollercoaster',nm:'Rollercoaster', cost:10,   ic:'↝', maxVel:520,  fric:0.95, free:false, draw:_vDrawRollercoaster },
+  { id:'rollercoaster',nm:'Rollercoaster', cost:10,   ic:'↝', maxVel:520,  fric:0.95, free:false, archived:true, draw:_vDrawRollercoaster },
   { id:'miningcart',   nm:'Mining cart',   cost:50,   ic:'⊔', maxVel:620, fric:0.96, free:false, draw:_vDrawMiningCart },
   { id:'lambo',        nm:'Lambo',         cost:100,  ic:'≫', maxVel:720, fric:0.97, free:false, draw:_vDrawLambo },
-  { id:'jetski',       nm:'Jetski',        cost:1000, ic:'≋', maxVel:900,  fric:0.98, free:false, draw:_vDrawJetski },
+  { id:'jetski',       nm:'Jetski',        cost:1000, ic:'≋', maxVel:900,  fric:0.98, free:false, archived:true, draw:_vDrawJetski },
 ];
 function vehicleById(id){ return VEHICLES.find(v => v.id === id) || VEHICLES[0]; }
 // Until the level system exists, only On foot + Skateboard are unlocked (guests
@@ -37909,9 +37932,54 @@ window.crRacing = (function(){
     if(a == null && b == null) return _lastGround || 0;
     if(a == null) a = b;
     if(b == null) b = a;
-    return (_lastGround = a + (b - a) * Math.max(0, Math.min(1, frac)));
+    let g = a + (b - a) * Math.max(0, Math.min(1, frac));
+    _lastGround = g;
+    // v1.0.468 — HARDCORE pits: the terrain at a dropped candle index falls away
+    // (~1.6 screens down) so the runner free-falls through and dies if not jumped.
+    if(st && st.hardcore && st.pits && (st.pits.has(i) || st.pits.has(j))){
+      const _ps = (typeof priceScale === 'number' && priceScale > 0) ? priceScale : 1;
+      return g - (H / _ps) * 1.6;
+    }
+    return g;
   }
   let _lastGround = 0;
+  // v1.0.468 — HARDCORE state + helpers. _hcPref persists the toggle across re-inits.
+  let _hcPref = false;
+  function _hcTickPits(){
+    if(!st || !st.hardcore || typeof candles === 'undefined' || !candles) return;
+    if(!st.pits) st.pits = new Set();
+    const nowS = performance.now() / 1000;
+    if(nowS < (st.pitT || 0)) return;
+    st.pitT = nowS + 1.4 + Math.random() * 2.2;          // next gap in 1.4–3.6s
+    const here = Math.floor(player.wx / STEP);
+    const start = here + 10 + Math.floor(Math.random() * 8);
+    const w = 2 + Math.floor(Math.random() * 2);          // 2–3 candles wide
+    for(let k = 0; k < w; k++){ if(start + k < candles.length - 2) st.pits.add(start + k); }
+  }
+  function _drawHardcorePits(){
+    if(!st || !st.hardcore || !st.pits || !st.pits.size || typeof sX !== 'function') return;
+    ctx.save();
+    st.pits.forEach(function(idx){
+      const x = sX(idx * STEP);
+      if(x < -30 || x > W + 30) return;
+      const top = (function(){ try { return priceToY(_ground(idx * STEP - STEP)); } catch(_){ return 0; } })();
+      const wpx = (CANDLE_W + CANDLE_GAP) * (camera && camera.zoomX ? camera.zoomX : 1) + 2;
+      const grd = ctx.createLinearGradient(0, Math.max(0, top), 0, H);
+      grd.addColorStop(0, 'rgba(255,91,127,.0)'); grd.addColorStop(0.15, 'rgba(255,91,127,.22)'); grd.addColorStop(1, 'rgba(255,91,127,.06)');
+      ctx.fillStyle = grd; ctx.fillRect(x - wpx / 2, 0, wpx, H);
+      ctx.strokeStyle = 'rgba(255,91,127,.5)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x - wpx / 2, 0); ctx.lineTo(x - wpx / 2, H); ctx.moveTo(x + wpx / 2, 0); ctx.lineTo(x + wpx / 2, H); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    ctx.restore();
+  }
+  function _raceDie(){
+    if(!st) return;
+    st.phase = 'finished';
+    try { if(typeof toast === 'function') toast('💀 HARDCORE — you fell into the void'); } catch(_){}
+    try { spawnParticles && spawnParticles(sX(player.wx), H * 0.55, '#ff5b7f', 28, 220); } catch(_){}
+    _showEnd(true, st.timer || 0, false, st.flips || 0);
+  }
   function _groundY(wx){ try { return priceToY(_ground(wx)); } catch(_){ return 0; } }
   function _slope(wx){
     const a = _groundY(wx - STEP*0.5), b = _groundY(wx + STEP*0.5);
@@ -37930,6 +37998,7 @@ window.crRacing = (function(){
       finishWx: Math.floor((candles.length-1) * FINISH_FRAC) * STEP,
       vx:0, angle:0, angVel:0, onGround:true, airTime:0, rotAccum:0,
       timer:0, startT:0, cdStart:0, flips:0, _prevSlope:null,
+      hardcore:_hcPref, pits:new Set(), pitT:0,   // v1.0.468 — HARDCORE
       best:(()=>{ try { return parseFloat(localStorage.getItem('cr_racing_best')||'0')||0; } catch(_){ return 0; } })()
     };
     player.wx = STEP*0.6;
@@ -37959,6 +38028,7 @@ window.crRacing = (function(){
     if(st.phase === 'finished'){ _followCam(dt, false); return; }
     // ---- racing ----
     st.timer = now - st.startT;
+    _hcTickPits();   // v1.0.468 — HARDCORE: spawn random candle drops ahead
     const veh = (typeof vehicleById === 'function') ? vehicleById(st.vehicleId || 'skateboard') : { maxVel:420, fric:0.95 };
     const maxVel = Math.max(360, veh.maxVel || 420);
     const fric = veh.fric || 0.95;
@@ -38025,15 +38095,19 @@ window.crRacing = (function(){
     } else {
       st.onGround = false; st.airTime += dt;
     }
-    // v1.0.410 — gaps are NEVER lethal in a race: hard-clamp the runner onto the
-    // terrain so a steep cliff / price gap can't drop it through the floor, and
-    // keep it alive no matter what (racing has no death state).
-    {
+    // v1.0.410 — normal race: gaps are NEVER lethal — hard-clamp onto terrain.
+    // v1.0.468 — HARDCORE: gaps ARE lethal — the runner free-falls through dropped
+    // candles; falling off the bottom of the screen = death.
+    if(!st.hardcore){
       const gFloor = _ground(player.wx);
       if(!isFinite(player.py) || player.py < gFloor){
         player.py = gFloor; player.vy = 0; st.onGround = true; st.airTime = 0;
       }
       player.alive = true;
+    } else {
+      if(!isFinite(player.py) || (typeof priceToY === 'function' && priceToY(player.py) > H + 40)){
+        player.alive = false; _raceDie(); return;
+      }
     }
     // angle
     if(st.onGround){
@@ -38108,6 +38182,7 @@ window.crRacing = (function(){
         ctx.restore();
       }
     }
+    _drawHardcorePits();   // v1.0.468 — HARDCORE void columns at dropped candles
     if(st.phase !== 'vehicle') _drawVehicle();
     // v1.0.409 — the timer/best/flips + progress + minimap now live in the DOM
     // top HUD bar (over the toolbar), updated here instead of on the canvas.
@@ -38143,6 +38218,7 @@ window.crRacing = (function(){
       +   '<div class="crRaceOpts">'
       +     '<div class="crRaceOptRow"><span class="crRaceOptLab">TIMEFRAME</span><div class="crRaceOptBtns" id="crRaceTfPick"></div></div>'
       +     '<div class="crRaceOptRow"><span class="crRaceOptLab">ASSET</span><div class="crRaceOptBtns" id="crRaceAssetPick"></div></div>'
+      +     '<div class="crRaceOptRow"><span class="crRaceOptLab">MODE</span><button type="button" id="crRaceHardcore" class="crRaceHc">⚠ HARDCORE ⚠</button><span class="crRaceHcNote">candles drop — fall through and you die</span></div>'
       +   '</div>'
       +   '<div id="crRaceVehList" class="crRaceGrid"></div>'
       + '</div></div>'
@@ -38192,6 +38268,13 @@ window.crRacing = (function(){
       + '#crRaceUI .crRaceOptBtns button{appearance:none;cursor:pointer;border:1px solid var(--rc-veh-bd);border-radius:7px;background:var(--rc-veh-bg);color:var(--rc-fg);font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.3px;padding:6px 11px;transition:border-color .12s,background .12s}'
       + '#crRaceUI .crRaceOptBtns button:hover{border-color:var(--rc-accent)}'
       + '#crRaceUI .crRaceOptBtns button.on{background:var(--rc-accent);color:var(--rc-ink);border-color:var(--rc-accent)}'
+      // v1.0.468 — HARDCORE toggle (danger styling).
+      + '#crRaceUI .crRaceHc{appearance:none;cursor:pointer;border:1px solid rgba(255,91,127,.6);border-radius:7px;background:rgba(255,91,127,.10);color:#ff8aa6;font:800 11px ui-monospace,Menlo,monospace;letter-spacing:.6px;padding:6px 12px;transition:all .12s}'
+      + '#crRaceUI .crRaceHc:hover{background:rgba(255,91,127,.18);border-color:rgba(255,91,127,.85)}'
+      + '#crRaceUI .crRaceHc.on{background:linear-gradient(180deg,#ff5b7f,#e03a5f);color:#fff;border-color:#ff5b7f;box-shadow:0 0 14px rgba(255,91,127,.55);animation:crHcPulse 1.1s ease-in-out infinite}'
+      + '@keyframes crHcPulse{0%,100%{box-shadow:0 0 10px rgba(255,91,127,.40)}50%{box-shadow:0 0 18px rgba(255,91,127,.75)}}'
+      + '#crRaceUI .crRaceHcNote{font:600 9.5px ui-monospace,Menlo,monospace;color:var(--rc-dim);display:none}'
+      + '#crRaceUI .crRaceHc.on ~ .crRaceHcNote{display:inline;color:#ff8aa6}'
       + '#crRaceUI .crRaceTime{font-size:40px;font-weight:800;color:var(--rc-time);text-align:center;margin:6px 0 2px}'
       + '#crRaceUI .crRaceActions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}'
       + '#crRaceUI .crRaceBtn{appearance:none;cursor:pointer;border:1px solid var(--rc-veh-bd);border-radius:8px;background:var(--rc-veh-bg);color:var(--rc-fg);font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.4px;padding:9px 14px}'
@@ -38291,7 +38374,7 @@ window.crRacing = (function(){
     // build vehicle list
     const list = document.getElementById('crRaceVehList');
     if(list && typeof VEHICLES !== 'undefined'){
-      VEHICLES.filter(v => v.id !== 'none').forEach(v => {
+      VEHICLES.filter(v => v.id !== 'none' && !v.archived).forEach(v => {  // v1.0.468 — hide archived (rollercoaster/jetski)
         const b = document.createElement('button');
         b.type = 'button'; b.className = 'crRaceVeh';
         b.style.borderColor = (VCOLOR[v.id] || '#14f195');
@@ -38321,13 +38404,22 @@ window.crRacing = (function(){
     }
     const asPick = document.getElementById('crRaceAssetPick');
     if(asPick && typeof ASSETS !== 'undefined'){
-      // v1.0.464 — racing asset choice is curated to BTC, ETH, SOL, JUP, DOGE.
-      asPick.innerHTML = ['btc','eth','sol','jup','doge']
+      // v1.0.468 — racing asset choice: BTC, ETH, SOL, DOGE (JUP removed).
+      asPick.innerHTML = ['btc','eth','sol','doge']
         .map(function(id){ return ASSETS.find(function(a){ return a.id === id; }); })
         .filter(Boolean)
         .map(function(a){ return '<button type="button" data-asset="' + a.id + '">' + a.nm + '</button>'; }).join('');
       Array.prototype.forEach.call(asPick.querySelectorAll('button'), function(b){
         b.addEventListener('click', function(){ _raceSetTfAsset(null, b.getAttribute('data-asset')); });
+      });
+    }
+    // v1.0.468 — HARDCORE toggle.
+    const hcBtn = document.getElementById('crRaceHardcore');
+    if(hcBtn){
+      hcBtn.addEventListener('click', function(){
+        _hcPref = !_hcPref;
+        if(st){ st.hardcore = _hcPref; if(!st.pits) st.pits = new Set(); }
+        hcBtn.classList.toggle('on', _hcPref);
       });
     }
     _markPickerSel();
@@ -38426,6 +38518,8 @@ window.crRacing = (function(){
       Array.prototype.forEach.call(document.querySelectorAll('#crRaceAssetPick button'), function(b){
         b.classList.toggle('on', b.getAttribute('data-asset') === as);
       });
+      const hc = document.getElementById('crRaceHardcore');
+      if(hc) hc.classList.toggle('on', !!_hcPref);   // v1.0.468 — reflect HARDCORE pref
     } catch(_){}
   }
   // Recompute the track (finish line + player start) from the freshly loaded candles,
@@ -42587,7 +42681,7 @@ window.crLaunchMinigameRandom = crLaunchMinigameRandom;
     // ── LIVE ───────────────────────────────────────────────────────────
     // v0.9.67 — Phoenix gateway chapter. Introduces the Live (Phoenix)
     // overlay panel + the multiplier reward shape.
-    39: { goal:'Open the Live panel, flip 2+ overlays on, place a bracket.', tip:'Topbar → green "Live" button → flip switches → bracket as usual. Stacking 2+ overlays earns a $CHART multiplier.', asset:'btc', tf:'15m', indicators:[], loadout:['bracket'], probes:[], live:true },
+    39: { goal:'Open the Live panel, flip 2+ overlays on, place a bracket.', tip:'Topbar → green "Live" button → flip switches → bracket as usual. Stacking 2+ overlays earns a $CHART multiplier.', asset:'btc', tf:'15m', indicators:[], loadout:['bracket'], probes:[], live:true, archived:true /* v1.0.468 — archived */ },
     // ── EXECUTION (Ch.40–41) ───────────────────────────────────────────
     // v1.0.466 — the unlock chapters the feature gates point at (CR_FEATURE_GATE).
     // Ch.40 unlocks the Activation Laser (hotkey 3) + Leverage + Broker tab; Ch.41
@@ -47110,14 +47204,17 @@ const PLAYER_OPTIONS = {
   ],
   gear: [
     { id:'none',     ic:'∅',  nm:'None',          desc:'Default movement' },
-    { id:'kevlar',   ic:'⬡', nm:'Kevlar Skin',    desc:'+25% HP buffer' },
-    { id:'thrust',   ic:'⇡', nm:'Thrust Pack',    desc:'Faster flight rise' },
-    { id:'magnet',   ic:'∪', nm:'Pickup Magnet',  desc:'Pulls nearby coins in · marketplace' },
-    { id:'rubberball', ic:'●', nm:'Rubber Ball',  desc:'Avatar becomes a bouncy ball' },
+    // v1.0.468 — gear content pass. Jetpack (was Thrust Pack) is the free/guest gear:
+    // 2× acceleration on all movement. Kevlar = wallet-connect. Magnet = shop. Rubber
+    // Ball = PL10 reward (cursor-kickable ball in the profile preview).
+    { id:'thrust',   ic:'⇡', nm:'Jetpack',       desc:'2× launch — jump & flight twice as strong' },
+    { id:'kevlar',   ic:'⬡', nm:'Kevlar Skin',    desc:'+25% HP buffer — survive one extra hit' },
+    { id:'magnet',   ic:'∪', nm:'Pickup Magnet',  desc:'Pulls nearby coins straight to you' },
+    { id:'rubberball', ic:'●', nm:'Rubber Ball',  desc:'Avatar becomes a bouncy ball — kick it with your cursor' },
   ],
   vehicle: [
     { id:'none',         ic:'Λ', nm:'On foot',       desc:'Default · jump + dash' },
-    { id:'skateboard',   ic:'═', nm:'Skateboard',    desc:'Free · faster ground glide' },
+    { id:'skateboard',   ic:'⊚', nm:'Bike',          desc:'Free · pedal-powered glide' },
     { id:'surfboard',    ic:'≈', nm:'Surfboard',     desc:'Wave-ride volatility' },
     { id:'rollercoaster',ic:'↝', nm:'Rollercoaster', desc:'Auto-rail along trendlines' },
     { id:'cart',         ic:'⊔', nm:'Mining Cart',   desc:'Heavy chassis · ground only' },
@@ -47165,6 +47262,71 @@ const GEAR_GLOW = {
   magnet: { color: '#e879f9', radius: 13 }, // magenta aura
   rubberball: { color: '#ff8c42', radius: 12 }, // bouncy-ball glow
 };
+// v1.0.468 — Rubber Ball gear: the profile preview becomes an interactive bouncy
+// ball. The cursor "kicks" it by passing near it; it falls under gravity and
+// bounces off the visible preview frame. Runs only while the gear is equipped.
+let _crRbState = null;
+function _crRubberBallStop(){
+  if(!_crRbState) return;
+  try { cancelAnimationFrame(_crRbState.raf); } catch(_){}
+  try { _crRbState.pv.removeEventListener('mousemove', _crRbState.onMove); } catch(_){}
+  try { _crRbState.pv.removeEventListener('mouseleave', _crRbState.onLeave); } catch(_){}
+  _crRbState = null;
+}
+function _crRubberBallStart(pv, tint){
+  if(!pv) return;
+  if(_crRbState && _crRbState.pv === pv){ _crRbState.tint = tint || _crRbState.tint; return; }
+  _crRubberBallStop();
+  const c = pv.getContext('2d'); if(!c) return;
+  const W2 = pv.width, H2 = pv.height, R = 22;
+  const s = { pv:pv, c:c, tint:tint || '#ff8c42', x:W2/2, y:H2*0.32, vx:(Math.random()*2-1)*70, vy:0,
+    mx:-999, my:-999, pmx:-999, pmy:-999, raf:0, last:performance.now() };
+  s.onMove = function(e){
+    const r = pv.getBoundingClientRect();
+    s.pmx = s.mx; s.pmy = s.my;
+    s.mx = (e.clientX - r.left) * (W2 / Math.max(1, r.width));
+    s.my = (e.clientY - r.top)  * (H2 / Math.max(1, r.height));
+  };
+  s.onLeave = function(){ s.mx = -999; s.my = -999; s.pmx = -999; s.pmy = -999; };
+  pv.addEventListener('mousemove', s.onMove);
+  pv.addEventListener('mouseleave', s.onLeave);
+  function frame(now){
+    const dt = Math.min(0.04, Math.max(0.001, (now - s.last) / 1000)); s.last = now;
+    s.vy += 1100 * dt;                                   // gravity
+    if(s.mx > -500 && s.pmx > -500){                     // cursor kick
+      const dx = s.x - s.mx, dy = s.y - s.my, d = Math.hypot(dx, dy);
+      if(d < R + 18){
+        const cvx = (s.mx - s.pmx) / dt, cvy = (s.my - s.pmy) / dt, nd = d || 1;
+        s.vx += (dx / nd) * 240 + cvx * 0.45;
+        s.vy += (dy / nd) * 240 + cvy * 0.45;
+      }
+    }
+    s.vx = Math.max(-1200, Math.min(1200, s.vx));
+    s.vy = Math.max(-1200, Math.min(1200, s.vy));
+    s.x += s.vx * dt; s.y += s.vy * dt;
+    const D = 0.82;                                      // bounce damping off the frame
+    if(s.x < R){ s.x = R; s.vx = Math.abs(s.vx) * D; }
+    if(s.x > W2 - R){ s.x = W2 - R; s.vx = -Math.abs(s.vx) * D; }
+    if(s.y < R){ s.y = R; s.vy = Math.abs(s.vy) * D; }
+    if(s.y > H2 - R){ s.y = H2 - R; s.vy = -Math.abs(s.vy) * D; s.vx *= 0.96; }
+    s.vx *= Math.pow(0.55, dt);                          // air drag
+    c.setTransform(1,0,0,1,0,0); c.clearRect(0,0,W2,H2);
+    c.fillStyle = 'rgba(155,140,255,0.06)';
+    for(let i=0;i<12;i++){ c.fillRect(0,(H2/12)*i,W2,1); }
+    c.strokeStyle = 'rgba(255,140,66,.25)'; c.lineWidth = 2; c.strokeRect(1,1,W2-2,H2-2);
+    c.save(); c.translate(s.x, s.y);
+    const g = c.createRadialGradient(-R*0.35,-R*0.4,R*0.15,0,0,R);
+    g.addColorStop(0,'#ffffff'); g.addColorStop(0.3,s.tint); g.addColorStop(1,'#0a0c14');
+    c.fillStyle = g; c.beginPath(); c.arc(0,0,R,0,Math.PI*2); c.fill();
+    c.strokeStyle = s.tint; c.lineWidth = 2; c.globalAlpha = .9; c.beginPath(); c.arc(0,0,R,0,Math.PI*2); c.stroke();
+    c.globalAlpha = .85; c.fillStyle = 'rgba(255,255,255,.85)'; c.beginPath(); c.arc(-R*0.34,-R*0.4,R*0.22,0,Math.PI*2); c.fill();
+    c.restore();
+    s.raf = requestAnimationFrame(frame);
+  }
+  _crRbState = s;
+  s.raf = requestAnimationFrame(frame);
+}
+try { window._crRubberBallStart = _crRubberBallStart; window._crRubberBallStop = _crRubberBallStop; } catch(_){}
 const WEAPON_BADGE = {
   default: null,
   laser:   { stroke: '#ff5b7f', kind: 'dot' },
@@ -47418,13 +47580,24 @@ function _renderPlayerTab(){
     return Object.assign({}, o, { wico:o.id, sub:o.desc });
   }),  'default');
   // Gear picker mirrors the bot layout: colored icon + name (✓ equipped) + a
-  // description line. Pickup Magnet is a marketplace item — locked until bought.
-  wireSlot('gear',    PLAYER_OPTIONS.gear.map(function(g){
+  // description line. v1.0.468 gating: guests get only None + Jetpack; Kevlar is
+  // wallet-connect; Pickup Magnet is a shop item; Rubber Ball unlocks at PL10.
+  // Clamp the equipped gear back to a legal option if it's no longer available.
+  var _guest = (typeof crIsGuest === 'function' && crIsGuest());
+  var _pl    = (typeof crPlayerLevel === 'function') ? crPlayerLevel() : 1;
+  var _gearAllowed = function(id){
+    if(id === 'none' || id === 'thrust') return true;        // free / guest
+    if(_guest) return false;                                  // guests: only None + Jetpack
+    if(id === 'rubberball') return _pl >= 10;                 // PL10 reward
+    return true;                                              // kevlar (connect) + magnet (shop)
+  };
+  try { if(typeof playerLoadout !== 'undefined' && !_gearAllowed(playerLoadout.gear)){ playerLoadout.gear = 'none'; _savePlayerLoadout(); } } catch(_){}
+  wireSlot('gear',    PLAYER_OPTIONS.gear.filter(function(g){ return _gearAllowed(g.id); }).map(function(g){
     var _col = (typeof GEAR_GLOW !== 'undefined' && GEAR_GLOW[g.id] && GEAR_GLOW[g.id].color) || '';
     var _eqd = (typeof playerLoadout !== 'undefined' && playerLoadout.gear === g.id);
     var _nm  = (g.nm || g.id) + (_eqd ? '  ✓' : '');
     if(typeof crGearOwned === 'function' && !crGearOwned(g.id)){
-      return Object.assign({}, g, { _buyGear:g.id, iconColor:_col, nm:_nm, sub:'Locked · buy in marketplace · ' + ((typeof CR_GEAR_PRICE!=='undefined' && CR_GEAR_PRICE[g.id]) || 40) + ' $RUN' });
+      return Object.assign({}, g, { _buyGear:g.id, iconColor:_col, nm:_nm, sub:'Locked · buy in shop · ' + ((typeof CR_GEAR_PRICE!=='undefined' && CR_GEAR_PRICE[g.id]) || 40) + ' $RUN' });
     }
     return Object.assign({}, g, { iconColor:_col, nm:_nm, sub:g.desc });
   }),    'none');
@@ -47540,7 +47713,11 @@ function _renderPlayerTab(){
   // skin tint stays consistent. Equipped chips below name the choices.
   try {
     const pv = document.getElementById('crPlayerPreview');
-    if(pv){
+    if(pv && playerLoadout.gear === 'rubberball'){
+      // v1.0.468 — Rubber Ball: preview is an interactive bouncy ball (cursor kicks it).
+      try { _crRubberBallStart(pv, (typeof _loadoutSkinTint === 'function') ? _loadoutSkinTint() : '#ff8c42'); } catch(_){}
+    } else if(pv){
+      try { _crRubberBallStop(); } catch(_){}
       const pc = pv.getContext('2d');
       const W2 = pv.width, H2 = pv.height;
       pc.setTransform(1, 0, 0, 1, 0, 0);
