@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.533
+     CURRENT VERSION: v1.0.534
      LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -14054,7 +14054,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.533",
+  VERSION: "1.0.534",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -64678,6 +64678,61 @@ cv.addEventListener('wheel', e=>{
   // v0.7b-ui2 — once the user manually pans/zooms, auto-refocus is OFF until they press `0` to reset.
   camera.manualUntil = Infinity;
 }, {passive:false});
+// v1.0.534 — MOBILE chart gestures: 1-finger drag = pan (X + Y), 2-finger pinch = zoom (X + Y),
+// pivoting around the pinch midpoint — like TradingView / Dexscreener. Manual control disables
+// auto-follow until the chart is reset (backtick / Home). The topbar is a separate element so it
+// stays static. The on-screen move-pad buttons keep their own touch handlers (they sit above).
+(function crChartTouchGestures(){
+  if(typeof cv === 'undefined' || !cv) return;
+  var pan = null, pinch = null;
+  function pt(t){ var r = cv.getBoundingClientRect(); return { x:t.clientX - r.left, y:t.clientY - r.top }; }
+  function clampZ(z){ return Math.max(0.2, Math.min(10, z)); }
+  cv.addEventListener('touchstart', function(e){
+    try {
+      if(bracketEditor.open || ladderEditor.open) return;
+      if(e.touches.length === 2){
+        var a = pt(e.touches[0]), b = pt(e.touches[1]);
+        pinch = { d0:(Math.hypot(a.x-b.x, a.y-b.y) || 1), mx:(a.x+b.x)/2, my:(a.y+b.y)/2,
+                  zx0:(camera.zoomX||1), zy0:(camera.zoomY||1), wx0:camera.wx, panY0:(camera.panY||0), panX0:(camera.panX||0) };
+        pan = null;
+      } else if(e.touches.length === 1){
+        var p = pt(e.touches[0]);
+        pan = { sx:p.x, sy:p.y, startCamWx:camera.wx, startPanY:(camera.panY||0), moved:false };
+        pinch = null;
+      }
+    } catch(_){}
+  }, { passive:true });
+  cv.addEventListener('touchmove', function(e){
+    try {
+      if(pinch && e.touches.length === 2){
+        var a = pt(e.touches[0]), b = pt(e.touches[1]);
+        var f = (Math.hypot(a.x-b.x, a.y-b.y) || 1) / pinch.d0;
+        // X zoom — pivot around the pinch midpoint
+        var worldX = (pinch.mx - pinch.panX0) / pinch.zx0 + pinch.wx0;
+        camera.zoomX = clampZ(pinch.zx0 * f);
+        camera.wx = worldX - (pinch.mx - (camera.panX||0)) / camera.zoomX;
+        // Y zoom — pivot around the pinch midpoint
+        var relY = (pinch.my - H*0.5 - pinch.panY0) / pinch.zy0;
+        camera.zoomY = clampZ(pinch.zy0 * f);
+        camera.panY = pinch.my - H*0.5 - relY * camera.zoomY;
+        camera.manualUntil = Infinity;
+        e.preventDefault();
+      } else if(pan && e.touches.length === 1){
+        var p = pt(e.touches[0]);
+        var dx = p.x - pan.sx, dy = p.y - pan.sy;
+        if(!pan.moved && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) pan.moved = true;
+        if(pan.moved){
+          camera.wx = pan.startCamWx - dx / (camera.zoomX || 1);
+          camera.panY = pan.startPanY + dy;
+          camera.manualUntil = Infinity;
+          e.preventDefault();
+        }
+      }
+    } catch(_){}
+  }, { passive:false });
+  cv.addEventListener('touchend', function(e){ try { if(e.touches.length === 0){ pan = null; pinch = null; } else if(e.touches.length < 2){ pinch = null; } } catch(_){} }, { passive:true });
+  cv.addEventListener('touchcancel', function(){ pan = null; pinch = null; }, { passive:true });
+})();
 function hideSplash(){
   splash.style.display='none';
   try{ osCloseAllWindows(); }catch{}
