@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.531
+     CURRENT VERSION: v1.0.533
      LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -14054,7 +14054,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.531",
+  VERSION: "1.0.533",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -55571,7 +55571,13 @@ const crTokLists = (function(){
   function rename(id, name){ const s = _ensure(); const l = s.lists.find(x => x.id === id); if(l){ l.name = String(name || l.name).trim() || l.name; _persist(); try { if(typeof _tokRenderList === 'function') _tokRenderList(); } catch(_){} } }
   function remove(id){ const s = _ensure(); if(s.lists.length <= 1) return false; s.lists = s.lists.filter(x => x.id !== id); if(s.activeId === id) s.activeId = s.lists[0].id; _persist(); _mirror(); _syncStateFromActive(); return true; }
   function writeActiveItems(items){ const a = active(); if(a){ a.items = Array.from(items || []); _persist(); _mirror(); } }
-  return { lists, active, activeId, setActive, create, rename, remove, writeActiveItems, _ensure, _mirror };
+  // v1.0.533 — per-list membership so the row star can offer a "which list?" picker.
+  function hasIn(listId, id){ const l = _ensure().lists.find(x => x.id === listId); return !!(l && l.items.indexOf(id) >= 0); }
+  function inAny(id){ return _ensure().lists.some(l => l.items.indexOf(id) >= 0); }
+  function addTo(listId, id){ const l = _ensure().lists.find(x => x.id === listId); if(l && l.items.indexOf(id) < 0){ l.items.push(id); _persist(); _mirror(); _syncStateFromActive(); } }
+  function removeFrom(listId, id){ const l = _ensure().lists.find(x => x.id === listId); if(l){ const i = l.items.indexOf(id); if(i >= 0){ l.items.splice(i, 1); _persist(); _mirror(); _syncStateFromActive(); } } }
+  function toggleIn(listId, id){ if(hasIn(listId, id)) removeFrom(listId, id); else addTo(listId, id); }
+  return { lists, active, activeId, setActive, create, rename, remove, writeActiveItems, hasIn, inAny, addTo, removeFrom, toggleIn, _ensure, _mirror };
 })();
 try { window.crTokLists = crTokLists; } catch(_){}
 function _tokLoadWatchlist(){
@@ -55599,6 +55605,53 @@ function _tokToggleWatch(id){
   try { if(typeof window._crRepaintEngineWatchlists === 'function') window._crRepaintEngineWatchlists(); } catch(_){}
 }
 window._tokToggleWatch = _tokToggleWatch;
+
+// v1.0.533 — clicking a row star opens this picker: choose which named watchlist(s) to pin the
+// token to (multi-list), with a ＋ New list option. Each row toggles membership in that list.
+let _tokWlPickerEl = null;
+function _tokCloseWlPicker(){ try { if(_tokWlPickerEl && _tokWlPickerEl.parentNode) _tokWlPickerEl.parentNode.removeChild(_tokWlPickerEl); } catch(_){} _tokWlPickerEl = null; try { document.removeEventListener('mousedown', _tokWlPickerOutside, true); } catch(_){} }
+function _tokWlPickerOutside(e){ if(_tokWlPickerEl && !_tokWlPickerEl.contains(e.target)) _tokCloseWlPicker(); }
+function _tokOpenWlPicker(def, anchor){
+  _tokCloseWlPicker();
+  const pop = document.createElement('div');
+  const r = anchor.getBoundingClientRect();
+  pop.style.cssText = 'position:fixed;z-index:100020;min-width:210px;max-width:260px;max-height:60vh;overflow-y:auto;'
+    + 'background:linear-gradient(180deg,rgba(18,26,48,.99),rgba(10,15,28,.99));border:1px solid var(--line);'
+    + 'border-radius:8px;box-shadow:0 14px 32px rgba(0,0,0,.6);padding:6px;font:11px ui-monospace,Menlo,Consolas,monospace;color:var(--fg);'
+    + 'left:' + Math.round(Math.min(Math.max(8, r.left), window.innerWidth - 220)) + 'px;top:' + Math.round(r.bottom + 4) + 'px';
+  const hd = document.createElement('div');
+  hd.style.cssText = 'font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--dim);padding:4px 8px 6px';
+  hd.textContent = 'Pin ' + def.tag + ' to…';
+  pop.appendChild(hd);
+  const render = () => {
+    Array.from(pop.querySelectorAll('.cr-wl-row,.cr-wl-new')).forEach(n => n.remove());
+    const nb0 = null;
+    crTokLists.lists().forEach(l => {
+      const on = crTokLists.hasIn(l.id, def.id);
+      const row = document.createElement('button');
+      row.type = 'button'; row.className = 'cr-wl-row';
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;text-align:left;appearance:none;'
+        + 'border:1px solid ' + (on ? 'rgba(255,209,102,.5)' : 'transparent') + ';background:' + (on ? 'rgba(255,209,102,.10)' : 'transparent')
+        + ';color:var(--fg);padding:7px 8px;border-radius:5px;cursor:pointer;font:inherit;margin-bottom:2px';
+      row.innerHTML = '<span style="font-size:14px;color:' + (on ? '#ffd166' : '#5b6470') + '">' + (on ? '★' : '☆') + '</span>'
+        + '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700">' + l.name + '</span>'
+        + '<span style="font-size:8.5px;color:var(--dim)">' + l.items.length + '</span>';
+      row.addEventListener('click', (e) => { e.stopPropagation(); crTokLists.toggleIn(l.id, def.id); render(); });
+      pop.appendChild(row);
+    });
+    const nb = document.createElement('button');
+    nb.type = 'button'; nb.className = 'cr-wl-new';
+    nb.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;text-align:left;appearance:none;border:0;background:transparent;color:#7ee787;padding:7px 8px;border-radius:5px;cursor:pointer;font:inherit;border-top:1px solid var(--line);margin-top:4px';
+    nb.innerHTML = '<span style="font-size:13px">＋</span><span>New list…</span>';
+    nb.addEventListener('click', (e) => { e.stopPropagation(); const n = prompt('New watchlist name:', 'List ' + (crTokLists.lists().length + 1)); if(n !== null){ const id = crTokLists.create(n || undefined); crTokLists.addTo(id, def.id); render(); } });
+    pop.appendChild(nb);
+  };
+  render();
+  document.body.appendChild(pop);
+  _tokWlPickerEl = pop;
+  setTimeout(() => document.addEventListener('mousedown', _tokWlPickerOutside, true), 0);
+}
+try { window._tokOpenWlPicker = _tokOpenWlPicker; } catch(_){}
 
 function _tokCategorize(snaps, tab){
   const sorted = snaps.slice();
@@ -56273,23 +56326,25 @@ function _tokRenderList(){
     // v0.9.44 — Watchlist star button. Filled gold when pinned, hollow grey
     // when not. Click toggles. stopPropagation so the row click (selectedId)
     // doesn't fire alongside it.
-    const wlOn = !!(_tokState.watchlist && _tokState.watchlist.has(def.id));
+    // v1.0.533 — bigger, more prominent star; GOLD when the token is in ANY watchlist.
+    // Click opens a picker to choose which list(s) to pin it to (multi-list).
+    const wlOn = (function(){ try { return !!crTokLists.inAny(def.id); } catch(_){ return !!(_tokState.watchlist && _tokState.watchlist.has(def.id)); } })();
     const star = document.createElement('button');
     star.type = 'button';
-    star.title = wlOn ? 'Remove from Watchlist' : 'Add to Watchlist';
+    star.title = 'Watchlists — pick which list(s) to pin ' + def.tag + ' to';
     star.textContent = wlOn ? '★' : '☆';
     star.style.cssText = [
-      'appearance:none;background:transparent;border:0;padding:2px;cursor:pointer',
-      'font-size:14px;line-height:1',
-      'color:' + (wlOn ? '#ffd166' : '#5b6470'),
-      'text-shadow:' + (wlOn ? '0 0 8px rgba(255,209,102,.7)' : 'none'),
-      'transition:color .15s, transform .15s'
+      'appearance:none;background:transparent;border:0;padding:2px 4px;cursor:pointer',
+      'font-size:19px;line-height:1;width:26px;text-align:center',
+      'color:' + (wlOn ? '#ffd166' : '#8a93a3'),
+      'text-shadow:' + (wlOn ? '0 0 10px rgba(255,209,102,.85)' : 'none'),
+      'transition:color .15s, transform .12s'
     ].join(';');
-    star.addEventListener('mouseenter', () => { star.style.transform = 'scale(1.18)'; });
-    star.addEventListener('mouseleave', () => { star.style.transform = 'scale(1)'; });
+    star.addEventListener('mouseenter', () => { star.style.transform = 'scale(1.22)'; if(!wlOn) star.style.color = '#ffd166'; });
+    star.addEventListener('mouseleave', () => { star.style.transform = 'scale(1)'; if(!wlOn) star.style.color = '#8a93a3'; });
     star.addEventListener('click', (e) => {
       e.stopPropagation();
-      _tokToggleWatch(def.id);
+      try { _tokOpenWlPicker(def, star); } catch(_){ try { _tokToggleWatch(def.id); } catch(__){} }
     });
     const head = document.createElement('div');
     head.style.cssText = 'display:flex;flex-direction:column;min-width:0';
@@ -56372,7 +56427,7 @@ function _tokRenderProfile(){
       '</div>' +
     '</div>' +
     // v1.0.519 — RUN button moved to the TOP (right under the ticker + price header).
-    '<button type="button" data-tok-run="' + def.id + '" style="width:100%;box-sizing:border-box;margin:0 0 10px;padding:11px;border:1px solid #14f195;border-radius:8px;background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.06));color:#bff7df;font:700 13px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer">▶ RUN ' + def.tag + ' · ' + String(s.tf||'').toUpperCase() + '</button>' +
+    '<button type="button" data-tok-run="' + def.id + '" style="width:100%;box-sizing:border-box;margin:0 0 10px;padding:11px;border:1px solid #14f195!important;border-radius:8px!important;background:linear-gradient(180deg,#1ff6a3,#10c97f)!important;color:#06160d!important;font:700 13px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;text-shadow:none!important;box-shadow:0 0 14px rgba(20,241,149,.35)!important">▶ RUN ' + def.tag + ' · ' + String(s.tf||'').toUpperCase() + '</button>' +
     // TF picker + sparkline panel
     '<div style="margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4)">' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
