@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.530
+     CURRENT VERSION: v1.0.531
      LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -2766,14 +2766,25 @@
      a run is active. Transparent so it doesn't block the chart. */
   /* v1.0.488 — base is flex so the pad works in ANY orientation (portrait + landscape);
      visibility is owned by JS via .cr-tp-hidden (coarse-pointer + run-active gate). */
-  #crTouchPad{ position:fixed; left:0; right:0; bottom:10px; z-index:99040; display:flex;
-    justify-content:space-between; align-items:flex-end; padding:0 14px; pointer-events:none; gap:10px; }
-  #crTouchPad .tp-cluster{ display:flex; gap:10px; pointer-events:none; }
-  #crTouchPad .tp-btn{ pointer-events:auto; width:62px; height:62px; border-radius:50%;
-    display:flex; align-items:center; justify-content:center; font:700 24px ui-monospace,Menlo,monospace;
-    color:#bff7df; background:rgba(10,20,16,.34); border:1px solid rgba(20,241,149,.45);
-    backdrop-filter:blur(2px); user-select:none; -webkit-user-select:none; touch-action:none; }
-  #crTouchPad .tp-btn:active{ background:rgba(20,241,149,.30); color:#06160d; }
+  /* v1.0.531 — modern mobile control layout: LEFT thumb = move (◀ ▶); RIGHT thumb = a big
+     JUMP (↑) with ↓ beside it and the ability buttons (1 vehicle · 2 laser) stacked above.
+     Buttons are transparent (just a glowing ring) so they don't block the chart. */
+  #crTouchPad{ position:fixed; left:0; right:0; bottom:14px; z-index:99040; display:flex;
+    justify-content:space-between; align-items:flex-end; padding:0 16px; pointer-events:none; gap:10px; }
+  #crTouchPad .tp-cluster{ display:flex; gap:12px; pointer-events:none; align-items:flex-end; }
+  #crTouchPad .tp-right{ display:flex; flex-direction:column; align-items:flex-end; gap:10px; pointer-events:none; }
+  #crTouchPad .tp-btn{ pointer-events:auto; width:60px; height:60px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font:800 24px ui-monospace,Menlo,monospace;
+    color:#bff7df; background:transparent; border:1.5px solid rgba(20,241,149,.5);
+    box-shadow:0 0 12px rgba(20,241,149,.14), inset 0 0 10px rgba(20,241,149,.06);
+    backdrop-filter:blur(1.5px); user-select:none; -webkit-user-select:none; touch-action:none;
+    transition:background .08s, transform .08s; }
+  #crTouchPad .tp-btn:active{ background:rgba(20,241,149,.22); transform:scale(.94); }
+  #crTouchPad .tp-btn.tp-sm{ width:46px; height:46px; font-size:17px;
+    border-color:rgba(155,140,255,.55); color:#cdbcff; box-shadow:0 0 10px rgba(155,140,255,.16); }
+  #crTouchPad .tp-btn.tp-sm:active{ background:rgba(155,140,255,.22); }
+  #crTouchPad .tp-btn.tp-jump{ width:70px; height:70px; border-color:rgba(20,241,149,.78);
+    box-shadow:0 0 18px rgba(20,241,149,.30), inset 0 0 12px rgba(20,241,149,.10); }
   #crTouchPad.cr-tp-hidden{ display:none !important; }
   /* v1.0.354 — Configure Run embedded inside the Play (Run) window's Regular tab.
      The same #win-configs node is reparented into #crRegularCfgHost and rendered
@@ -14043,7 +14054,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.530",
+  VERSION: "1.0.531",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -38818,7 +38829,7 @@ window.crRacing = (function(){
       + 'body.cr-racing-hud #crRhCtrls #crTvSymTxt{color:#e9efff!important;font-weight:700}'
       + 'body.cr-racing-hud #crRhCtrls .tvSym .dot{display:none!important}'
       // v1.0.488 — racing has no downward jump, so drop the ↓ pad button (only ◀ ▶ ↑).
-      + 'body.cr-racing-hud #crTouchPad .tp-btn[data-k="arrowdown"]{display:none!important}'
+      + 'body.cr-racing-hud #crTouchPad .tp-btn[data-key="ArrowDown"],body.cr-racing-hud #crTouchPad .tp-btn[data-key="1"],body.cr-racing-hud #crTouchPad .tp-btn[data-key="2"]{display:none!important}'
       // v1.0.488 — VERTICAL (portrait) racing top bar: tighten gaps, shed the wide stats
       // min-width, and hide the 220px minimap so the whole HUD fits the phone width
       // instead of overflowing / scrolling the ⌂ home button off-screen. The dist % stays.
@@ -39211,21 +39222,36 @@ window.crMiniEnd = (function(){
   function build(){
     if(document.getElementById('crTouchPad')) return;
     const pad = document.createElement('div'); pad.id = 'crTouchPad'; pad.className = 'cr-tp-hidden';
+    // v1.0.531 — left = movement, right = jump + abilities (modern thumb layout).
     pad.innerHTML =
-      '<div class="tp-cluster">'
-      +   '<button class="tp-btn" data-k="arrowleft" aria-label="Move left / brake">◀</button>'
-      +   '<button class="tp-btn" data-k="arrowright" aria-label="Move right / gas">▶</button>'
+      '<div class="tp-cluster tp-left">'
+      +   '<button class="tp-btn" data-key="ArrowLeft"  aria-label="Move left / brake">◀</button>'
+      +   '<button class="tp-btn" data-key="ArrowRight" aria-label="Move right / gas">▶</button>'
       + '</div>'
-      + '<div class="tp-cluster">'
-      +   '<button class="tp-btn" data-k="arrowdown" aria-label="Frontflip">↓</button>'
-      +   '<button class="tp-btn" data-k="arrowup" aria-label="Jump / backflip">↑</button>'
+      + '<div class="tp-right">'
+      +   '<div class="tp-cluster">'
+      +     '<button class="tp-btn tp-sm" data-key="1" aria-label="Vehicle (hotkey 1)">1</button>'
+      +     '<button class="tp-btn tp-sm" data-key="2" aria-label="Laser (hotkey 2)">2</button>'
+      +   '</div>'
+      +   '<div class="tp-cluster">'
+      +     '<button class="tp-btn" data-key="ArrowDown" aria-label="Down / upside-down">↓</button>'
+      +     '<button class="tp-btn tp-jump" data-key="ArrowUp" aria-label="Jump / fly">↑</button>'
+      +   '</div>'
       + '</div>';
     document.body.appendChild(pad);
-    const set = (k, on) => { try { if(typeof keys !== 'undefined' && keys) keys[k] = on; } catch(_){} };
+    // v1.0.531 — dispatch REAL keyboard events so the game's edge-triggered actions fire
+    // (jump on ↑ tap, flight on ↑↑, upside-down on ↓↓, vehicle on 1, laser on 2). Just setting
+    // keys[] (the old behaviour) only drove continuous movement and never triggered these.
+    const CODE = { ArrowUp:'ArrowUp', ArrowDown:'ArrowDown', ArrowLeft:'ArrowLeft', ArrowRight:'ArrowRight', '1':'Digit1', '2':'Digit2' };
+    const press = (key, on) => {
+      try { document.dispatchEvent(new KeyboardEvent(on ? 'keydown' : 'keyup', { key:key, code:(CODE[key]||key), bubbles:true, cancelable:true })); } catch(_){}
+      // keep held-state in sync for continuous left/right movement
+      try { if(typeof keys !== 'undefined' && keys && key.indexOf('Arrow') === 0) keys[key.toLowerCase()] = on; } catch(_){}
+    };
     pad.querySelectorAll('.tp-btn').forEach(b => {
-      const k = b.getAttribute('data-k');
-      const down = (e) => { try{ e.preventDefault(); }catch(_){} set(k, true); };
-      const up   = (e) => { try{ e.preventDefault(); }catch(_){} set(k, false); };
+      const key = b.getAttribute('data-key');
+      const down = (e) => { try{ e.preventDefault(); }catch(_){} press(key, true); };
+      const up   = (e) => { try{ e.preventDefault(); }catch(_){} press(key, false); };
       b.addEventListener('touchstart', down, { passive:false });
       b.addEventListener('touchend', up, { passive:false });
       b.addEventListener('touchcancel', up, { passive:false });
