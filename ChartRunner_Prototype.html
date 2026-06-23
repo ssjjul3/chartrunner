@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.542
-     LAST UPDATED:    2026-06-23  ·  COACH per-tab copy: the COACH.llm bubble now describes the ACTIVE tab inside each app (Token ALL/Winners/Losers/Watchlist · Profile Player/Wallet/Tools/Broker/Coach · Play Regular/Campaign/Minigame/PVP · Terminal/SolanaTracker/CexTracker · Journal Manual/Paper/Alerts/P&L…) and re-narrates live as you flip tabs. Token-research RUN button is now transparent green instead of a solid fill.
+     CURRENT VERSION: v1.0.543
+     LAST UPDATED:    2026-06-23  ·  COACH bubble now STAYS OPEN while you switch apps/tabs (re-narrates the new context) instead of closing on every switch — only a bare-desktop click dismisses it.  PREV (v1.0.542): COACH per-tab copy (Token/Profile/Play/Terminal/Journal active-tab description, live re-narrate) + transparent-green RUN button.
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
      PREV (v1.0.483): No bot loadout in ANY minigame (racing · monster · snake).
@@ -14057,7 +14057,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.542",
+  VERSION: "1.0.543",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -66889,8 +66889,21 @@ function log(msg){
     if(tutBtn)   tutBtn.addEventListener('click',   function(){ show(false); try { if(window.crCoachTutorial) window.crCoachTutorial(true, 'os'); } catch(_){} });
     if(chatBtn)  chatBtn.addEventListener('click',  function(){ show(false); try { if(window.crOpenCoachChat) window.crOpenCoachChat(); } catch(_){} });
     if(closeBtn) closeBtn.addEventListener('click', function(){ show(false); });
-    // Click anywhere outside the hub closes the bubble.
-    document.addEventListener('click', function(e){ if(!hub.contains(e.target)) show(false); });
+    // v1.0.543 — keep the bubble OPEN while the player navigates apps/tabs so it
+    // can re-narrate the new context (the 300ms poll updates the text). Only a click
+    // on the bare desktop (not an app icon, window, tab, menubar or toolbar popup)
+    // dismisses it; the × / Tutorial / Chat buttons still close it explicitly.
+    document.addEventListener('click', function(e){
+      try {
+        var t = e.target;
+        if(hub.contains(t)) return;                       // inside the coach hub
+        if(t && t.closest && t.closest('.os-icon, .os-window, .os-menubar, .crTerm-tab, .modecard, .os-more-pop, .crTvSymMenu, #crTvTfMore')) {
+          try { _crCoachDescribeWindow(); } catch(_){}     // re-narrate the new app/tab
+          return;                                          // navigation → keep open
+        }
+      } catch(_){}
+      show(false);                                         // bare-desktop click → dismiss
+    });
     // v1.0.368 — Auto-open the welcome bubble ONCE per browser so new players
     // discover Tutorial / Chat; afterward it stays closed until clicked. Waits
     // for the boot cover to clear and skips if the guided tutorial is running.
