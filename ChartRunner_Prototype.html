@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.544
-     LAST UPDATED:    2026-06-23  ·  TUTORIAL run-lock: while the guided tutorial is open you can no longer launch a run behind it — mode cards (Regular/Campaign/Minigame/Arena), the random-launch dice, Configure-Run START and the Token-research RUN button are all blocked until you finish or close the tutorial.  PREV (v1.0.543): COACH bubble stays open across app/tab switches.
+     CURRENT VERSION: v1.0.545
+     LAST UPDATED:    2026-06-23  ·  TUTORIAL rewrite: new connected + guest slide copy (RUN LAUNCHER/PROFILE/MAPS+rooms/TERMINAL/TOKEN TERMINAL), archived CONFIGURE RUN/RUN-TUBE/PLAYER AVATAR/TO THE FLOOR, Journal compacted + level-gated (PL≥3). Titles now render ">_NAME" with a non-stop blinking cursor. INTERACTIVE LAYER: while the tutorial is open, clicking any tab inside an app window makes COACH explain that tab live. Guest tour spells out what's guest vs wallet-gated.  PREV (v1.0.544): tutorial run-lock.
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
      PREV (v1.0.483): No bot loadout in ANY minigame (racing · monster · snake).
@@ -1855,6 +1855,12 @@
     min-height: 48px;
     white-space: pre-wrap;
   }
+  /* v1.0.545 — the tutorial line renders its own ">_NAME" title (blinking cursor),
+     so suppress the auto "> " prefix here; the welcome bubble keeps it. */
+  #crTutLine::before { content: none !important; }
+  #crTutLine .crTutTtl { color:#3ddc97; font-weight:700; letter-spacing:.5px; }
+  #crTutLine .crTutCur { display:inline-block; color:#3ddc97; animation:crTutBlink 1.05s steps(1,end) infinite; }
+  @keyframes crTutBlink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
   .cr-tut-terminal-bubble .term-body::before {
     content: "> ";
     opacity: 0.65;
@@ -11049,7 +11055,7 @@
       <div id="crCoachHub">
         <div id="crCoachHubBubble" class="cr-tut-terminal-bubble crCoachWin" role="dialog" aria-label="COACH.llm" style="display:none">
           <div class="term-head"><span class="cr-coach-asset-icon" aria-hidden="true"></span><span class="cw-nm">COACH.llm</span><span class="cw-dot" aria-hidden="true">●</span><button class="cw-x" id="crCoachHubClose" type="button" title="Close" aria-label="Close">✕</button></div>
-          <div class="term-body" id="crCoachHubLine">COACH.llm online. Take the guided tour, or just chat with me about ChartRunner, risk, brackets, and signals.</div>
+          <div class="term-body" id="crCoachHubLine">COACH.llm online. Take the guided tour, or just chat with me about ChartRunner, tokens, signals and risk.</div>
           <div class="crCoachHubActions">
             <button class="cr-go" id="crCoachHubTut" type="button">▶ Tutorial</button>
             <button class="cr-go" id="crCoachHubChat" type="button">Chat</button>
@@ -14057,7 +14063,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.544",
+  VERSION: "1.0.545",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -66838,6 +66844,24 @@ function log(msg){
       } catch(_){}
       return '';
     }
+    // v1.0.545 — expose the per-tab copy so the guided tutorial's interactive
+    // layer can explain whatever tab the player clicks. Given a clicked tab
+    // element, returns { name, text } or null.
+    try {
+      window.CR_WIN_TAB_DESC = CR_WIN_TAB_DESC;
+      window._crExplainTabEl = function(el){
+        try {
+          if(!el || !el.closest) return null;
+          var tab = el.closest('[data-toktab],[data-profview],[data-termview],[data-jrntab],[data-cat]');
+          if(!tab) return null;
+          var win = tab.closest('.os-window'); if(!win) return null;
+          var cfg = CR_WIN_TAB_DESC[win.id]; if(!cfg) return null;
+          var key = tab.getAttribute(cfg.attr); if(!key || !cfg.map[key]) return null;
+          var nm = (tab.textContent || '').trim().replace(/^[★☆]\s*/,'') || key;
+          return { name: nm, text: cfg.map[key] };
+        } catch(_){ return null; }
+      };
+    } catch(_){}
     function _crTopOpenWindow(){
       try {
         var wins = Array.prototype.slice.call(document.querySelectorAll('.os-window.on'))
@@ -67589,28 +67613,28 @@ function log(msg){
   // Terminal, Player avatar shoot, Wallet (renamed from Balances), Workbench
   // sub-categories, Quick Builders. Total: 14 OS steps.
   const TUTORIAL_OS_STEPS = [
-    { phase:'connected', prog:null, icon:'✦', name:'WELCOME',     kind:'INTRO',       line:"Welcome back to ChartRunnerOS — I'm COACH.llm.",                                                            hint:"Wallet connected — this walkthrough covers every desktop app. Use ◀ Back / Next ▶ or ← / → keys." },
-    { phase:'guest', prog:null, icon:'✦', name:'WELCOME · GUEST', kind:'INTRO',       line:"Welcome to ChartRunnerOS — I'm COACH.llm. You're exploring as a guest.",                                  hint:"These apps are open to everyone. Connect a wallet to unlock Maps, Journal, RUN-tube, your full Profile, bots and lasers. Use ◀ Back / Next ▶ or ← / → keys." },
-    { prog:'run',       icon:'▶',  name:'RUN LAUNCHER', kind:'DESKTOP',    line:"Pick a mode: Time-Is-Money or Monster Mode.",                                                          hint:"Time-Is-Money = pure trading, no hostiles. Monster Mode = bears spawn on volatility." },
-    { prog:'configs',   icon:'⊛',  name:'CONFIGURE RUN',kind:'DESKTOP',    line:"Pick asset, paste a Solana token mint if needed, then choose timeframe and broker.",          hint:"Perspective lives in the topbar/lite controls; indicators + strategies live in Workbench and the in-run side panel." },
+    { phase:'connected', prog:null, icon:'✦', name:'WELCOME',     kind:'INTRO',       line:"Welcome back to ChartRunnerOS — I'm COACH.llm.",                                                            hint:"Wallet connected — this walkthrough covers every desktop app." },
+    { phase:'guest', prog:null, icon:'✦', name:'WELCOME · GUEST', kind:'INTRO',       line:"Welcome to ChartRunnerOS — I'm COACH.llm. You're exploring as a guest.",                                  hint:"Guests get Play, Terminal, Token Terminal and a preview Profile. Connect a wallet to unlock Maps, Journal, RUN-tube, the full Profile, bots and lasers." },
+    { prog:'run',       icon:'▶',  name:'RUN LAUNCHER', kind:'DESKTOP',    line:"Pick a mode: run any chart, learn charting in Campaign, or race on-chain and play other minigames.",                                                          hint:"Pick any asset, any token, any timeframe." },
+    { archived:true, prog:'configs',   icon:'⊛',  name:'CONFIGURE RUN',kind:'DESKTOP',    line:"Pick asset, paste a Solana token mint if needed, then choose timeframe and broker.",          hint:"Perspective lives in the topbar/lite controls; indicators + strategies live in Workbench and the in-run side panel." },
     { prog:'workbench', icon:'⋔', name:'WORKBENCH',    kind:'DESKTOP', archived:true,   line:"Build your loadout: Tools and Primitives stay public; Bots and Terminal builders are local/private.",          hint:"Live /play keeps Workbench focused on playable loadouts. Local files can restore the private builder tabs." },
-    { phase:'connected', prog:'wallet',    icon:'◉', name:'PROFILE',      kind:'DESKTOP',    line:"Player tab swaps avatar / skin / gear / vehicle / weapon / 3 bot slots. Click any to change.",        hint:"Tools tab = laser loadout. Wallet tab = SOL/USDC/RUN holdings + custom tokens. Broker = exchange APIs. Coach = COACH.llm model. Stats tracks every run." },
-    { phase:'guest', prog:'wallet',    icon:'◉', name:'PROFILE',      kind:'DESKTOP',    line:"Profile is open to guests — but only the Player and Tools tabs.",        hint:"Player shows your avatar (guests fly the green Runner). Tools shows your laser loadout (all equipped + locked as a guest). Connect a wallet to customize tools and unlock the Wallet · Broker · Coach tabs." },
+    { phase:'connected', prog:'wallet',    icon:'◉', name:'PROFILE',      kind:'DESKTOP',    line:"Gear up before a run — equip your avatar, skin, vehicle, weapon and up to 3 bot slots.",        hint:"Tools = your Red Laser loadout. Wallet · Broker · Coach tabs handle holdings, exchanges and your COACH.llm model. Click any tab and I'll explain it." },
+    { phase:'guest', prog:'wallet',    icon:'◉', name:'PROFILE',      kind:'DESKTOP',    line:"Gear up for a run — as a guest you can preview the Player and Tools tabs.",        hint:"Guests fly the green Runner with locked tools. Connect a wallet to customize tools and unlock the Wallet · Broker · Coach tabs." },
     // v0.9.59 — Marketplace / Bot Terminal / SDK tutorial slides archived
     // (those apps are either gated by feature-flag or out of scope for the
     // demo). Restore by removing `archived: true`.
     { archived:true, prog:'shop',  icon:'⊓', name:'MARKETPLACE',  kind:'DESKTOP', line:"Game Shop ($RUN) + P2P ($SOL). Buy bots, maps, strategies, gear, vehicles, skins.", hint:"Anything bought here lands in the matching Workbench tab under the Purchased sub-category." },
-    { phase:'connected', prog:'maps',      icon:'⊠', name:'MAPS',         kind:'DESKTOP',    line:"Saved chart setups — every tool, indicator, overlay preserved.",                                       hint:"Drag a map onto the desktop to pin a live read-only widget. Double-click loads it back. (Wallet-only app.)" },
-    { prog:'terminal',  icon:'⌨',  name:'TERMINAL',     kind:'DESKTOP',    line:"Trading console: Engine · HyperTracker · SolanaTracker · CEXTracker · Strategies.",                   hint:"+ spawns custom widgets built in Workbench → Terminal. Drag any pane to desktop or chart." },
-    { prog:'tokenterm', icon:'◎', name:'TOKEN TERMINAL',kind:'DESKTOP',   line:"Live Binance data per token. ★ Winners default. Pick a TF (15m/1h/4h/1D/1W) per coin.",                hint:"Drag any row to pin its profile + sparkline as a desktop or chart widget." },
+    { phase:'connected', prog:'maps',      icon:'⊠', name:'MAPS',         kind:'DESKTOP',    line:"Saved chart setups — every tool, indicator and overlay preserved.",                                       hint:"Save a Map, then open public or private rooms to play with your friends. (Wallet-only app.)" },
+    { prog:'terminal',  icon:'⌨',  name:'TERMINAL',     kind:'DESKTOP',    line:"Your live trading console — chart engine, on-chain + CEX trackers and strategies in one place.",                   hint:"Drag any pane onto the chart or desktop to pin it live. Tap a tab and I'll explain it." },
+    { prog:'tokenterm', icon:'◎', name:'TOKEN TERMINAL',kind:'DESKTOP',   line:"Your favorite tokens all in one place — monitor any token and $RUN.",                hint:"Drag any row to pin its profile." },
     // v1.0.362 — RUN-tube coverage (it's a floating PIP, not a window, so prog:null — no spotlight, just narration).
-    { phase:'connected', prog:null, icon:'▶', name:'RUN-TUBE',     kind:'DESKTOP',   line:"RUN-tube is a pop-out PIP: float your webcam or a screen capture over the desktop or a live run to record / stream your sessions.",          hint:"Click the RUN-tube icon to toggle the floating window; drag it anywhere. Great for clipping a run. (Wallet-only.)" },
+    { archived:true, phase:'connected', prog:null, icon:'▶', name:'RUN-TUBE',     kind:'DESKTOP',   line:"RUN-tube is a pop-out PIP: float your webcam or a screen capture over the desktop or a live run to record / stream your sessions.",          hint:"Click the RUN-tube icon to toggle the floating window; drag it anywhere. Great for clipping a run. (Wallet-only.)" },
     { archived:true, prog:'bot',   icon:'▣', name:'BOT TERMINAL', kind:'DESKTOP', line:"Wire agents: Claude · Telegram · Lobster · OpenClaw.", hint:"Drag an agent row onto the desktop to keep that chat one click away. COACH.llm lives in the pinned widget / toolbar now." },
-    { phase:'connected', prog:'journal',   icon:'❏', name:'JOURNAL',      kind:'DESKTOP',    line:"Auto-logs every order: score · side · entry · SL · TP · ref levels · checklist snapshot.",            hint:"Tabs: Manual (auto from SDK) · Paper (discretionary) · Alerts (COMPACT/DETAILED toggle) · P&L (incl. stats). Bot / Sessions / Notes / Alert V2 archived (v1.0.291-292). (Wallet-only app.)" },
+    { phase:'connected', minLevel:3, prog:'journal',   icon:'❏', name:'JOURNAL',      kind:'DESKTOP',    line:"Auto-logs every trade — entry, stop, target and your checklist.",            hint:"Tabs: Manual · Paper · Alerts · P&L. (Wallet-only app.)" },
     { archived:true, prog:'sdk',   icon:'⫘',  name:'SDK',          kind:'DESKTOP', line:"Every order routes through ChartRunnerSDK: bracket · ladder · oco · hedge · radar · rescue.", hint:"Same call shape drops onto Dexscreener / TradingView in Phase 1, Solana in Phase 2." },
-    { prog:null,        icon:'⌖', name:'PLAYER AVATAR',kind:'DESKTOP',    line:"Click 'Player' in the menubar to spawn your avatar on the desktop. Press SPACE to shoot widgets/windows.",hint:"Apps stay immune. Drag the avatar to reposition. Player menu again to dismiss." },
-    { phase:'connected', prog:null,        icon:'⌅', name:'TO THE FLOOR', kind:'OUTRO',      line:"That's your full desktop. Start a run, then open the in-game Tutorial and I'll gate each step on you doing the move.",hint:"Or just press ▶ Run on any mode card to start playing." },
-    { phase:'guest', prog:null,        icon:'⌅', name:'CONNECT TO UNLOCK', kind:'OUTRO',      line:"That's the guest desktop. Connect a Solana wallet to unlock Maps, Journal, RUN-tube, your full Profile (Wallet · Broker · Coach), bots and the Blue + Alarm lasers.",hint:"Click Connect in the menubar — or just press ▶ Run on a mode card to play as a guest right now." },
+    { archived:true, prog:null,        icon:'⌖', name:'PLAYER AVATAR',kind:'DESKTOP',    line:"Click 'Player' in the menubar to spawn your avatar on the desktop. Press SPACE to shoot widgets/windows.",hint:"Apps stay immune. Drag the avatar to reposition. Player menu again to dismiss." },
+    { archived:true, phase:'connected', prog:null,        icon:'⌅', name:'TO THE FLOOR', kind:'OUTRO',      line:"That's your full desktop. Start a run, then open the in-game Tutorial and I'll gate each step on you doing the move.",hint:"Or just press ▶ Run on any mode card to start playing." },
+    { phase:'guest', prog:null,        icon:'⌅', name:'CONNECT TO UNLOCK', kind:'OUTRO',      line:"That's the guest desktop. Connect a Solana wallet to unlock the rest.",hint:"Wallet unlocks: Maps · Journal · RUN-tube · full Profile (Wallet · Broker · Coach) · bots · Blue + Alarm lasers. Click Connect in the menubar — or press ▶ Run to play as a guest now." },
   ];
   // v0.9.47 — Each step gets icon · name · kind · line · hint. Coverage
   // extended: Hotkey 3 (Blue Laser Orders), detector bots, confluence score,
@@ -67800,7 +67824,10 @@ function log(msg){
     let connected = true;
     try { connected = (typeof window.crConnected === 'function') ? !!window.crConnected() : true; } catch(_){ connected = true; }
     const phase = connected ? 'connected' : 'guest';
-    return raw.filter(s => !s.archived && (!s.phase || s.phase === 'both' || s.phase === phase));
+    // v1.0.545 — optional `minLevel` gates a slide behind the player level
+    // (crPlayerLevel 1–7); below that level the slide is hidden entirely.
+    let lvl = 1; try { lvl = (typeof window.crPlayerLevel === 'function') ? (window.crPlayerLevel() || 1) : 1; } catch(_){ lvl = 1; }
+    return raw.filter(s => !s.archived && (!s.phase || s.phase === 'both' || s.phase === phase) && (!s.minLevel || lvl >= s.minLevel));
   }
   // v1.0.102 — _drawTutorialPortrait removed. Tutorial now uses the exact
   // shared pixel-invader asset in the terminal-style narrator surfaces.
@@ -67867,11 +67894,14 @@ function log(msg){
     // v1.0.479 — the term-body opens with a per-step TITLE ("> Hello, <name>" on the
     // first step, else the step's title / context, else "Tutorial"), then the step body,
     // all in one .term-body block so it matches the welcome bubble's size/font/colour.
-    var _nm = ''; try { _nm = ((document.getElementById('crLpName') || {}).textContent || '').trim(); } catch(_){}
-    if(!_nm) _nm = 'runner';
-    var _ttl = (_TUT.idx === 0) ? ('Hello, ' + _nm) : (step.title || step.name || 'Tutorial');
+    var _ttl = (step.title || step.name || 'COACH.llm');
     var _bdy = [step.line, step.hint].filter(Boolean).join('  ');
-    if(termBody) termBody.textContent = _ttl + (_bdy ? ('\n\n' + _bdy) : '');
+    // v1.0.545 — terminal-style title: >_NAME with a non-stop blinking underscore.
+    var _esc = function(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+    if(termBody){
+      termBody.innerHTML = '<span class="crTutTtl">&gt;<span class="crTutCur">_</span>' + _esc(_ttl).toUpperCase() + '</span>'
+                         + (_bdy ? ('<br><br>' + _esc(_bdy)) : '');
+    }
     try { window.crCoachSpeak(1300); } catch(_) {}   // glasses glow animation
 
     // Graceful handling for old elements (some may no longer exist in new layout)
@@ -68065,6 +68095,24 @@ function log(msg){
     }
   });
   window.crCoachTutorial = crCoachTutorial;
+
+  // v1.0.545 — Interactive tutorial layer: while the guided tutorial is open, any
+  // tab the player clicks inside an app window is explained right in the narrator
+  // line (same ">_NAME" blinking-cursor format). Bubble phase so the tab switches
+  // first, then COACH narrates it. Re-rendering the step (Back/Next) restores the
+  // step's own copy.
+  document.addEventListener('click', function(e){
+    try {
+      const root = document.getElementById('crTutorial');
+      if(!root || root.style.display === 'none' || root.offsetParent === null) return;
+      if(typeof window._crExplainTabEl !== 'function') return;
+      const info = window._crExplainTabEl(e.target); if(!info) return;
+      const line = document.getElementById('crTutLine'); if(!line) return;
+      const esc = function(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+      line.innerHTML = '<span class="crTutTtl">&gt;<span class="crTutCur">_</span>' + esc(info.name).toUpperCase() + '</span><br><br>' + esc(info.text);
+      try { window.crCoachSpeak(1100); } catch(_){}
+    } catch(_){}
+  }, false);
 
   // ---- Multi-window manager -------------------------------------------
   // List of all known program ids — original 6 + new 6.
