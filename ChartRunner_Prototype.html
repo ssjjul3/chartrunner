@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.543
-     LAST UPDATED:    2026-06-23  ·  COACH bubble now STAYS OPEN while you switch apps/tabs (re-narrates the new context) instead of closing on every switch — only a bare-desktop click dismisses it.  PREV (v1.0.542): COACH per-tab copy (Token/Profile/Play/Terminal/Journal active-tab description, live re-narrate) + transparent-green RUN button.
+     CURRENT VERSION: v1.0.544
+     LAST UPDATED:    2026-06-23  ·  TUTORIAL run-lock: while the guided tutorial is open you can no longer launch a run behind it — mode cards (Regular/Campaign/Minigame/Arena), the random-launch dice, Configure-Run START and the Token-research RUN button are all blocked until you finish or close the tutorial.  PREV (v1.0.543): COACH bubble stays open across app/tab switches.
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
      PREV (v1.0.483): No bot loadout in ANY minigame (racing · monster · snake).
@@ -14057,7 +14057,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.543",
+  VERSION: "1.0.544",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -39354,6 +39354,34 @@ window.crMiniEnd = (function(){
   document.addEventListener('pointerdown', onClick, true);
   document.addEventListener('mousedown', onClick, true);
   document.addEventListener('click', onClick, true);
+})();
+// v1.0.544 — Tutorial run-lock: while the guided tutorial (#crTutorial) is open, the
+// player must not be able to launch a run behind it. Block (capture phase, before the
+// real handlers fire) clicks on the mode cards (regular / campaign / minigame / arena),
+// the per-mode random-launch dice, the Configure-Run START button, and the Token-research
+// RUN button — and nudge the player to finish or close the tutorial first.
+(function crTutorialRunLock(){
+  function tutOpen(){
+    try {
+      var t = document.getElementById('crTutorial');
+      return !!(t && t.style.display !== 'none' && t.offsetParent !== null);
+    } catch(_){ return false; }
+  }
+  var _warnT = 0;
+  function block(e){
+    try {
+      if(!tutOpen()) return;
+      var t = e.target; if(!t || !t.closest) return;
+      if(!t.closest('.modecard, .modeRoll, [data-tok-run], #crCfgStart')) return;
+      e.preventDefault(); e.stopPropagation();
+      if(typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+      var now = Date.now();
+      if(now - _warnT > 1200){ _warnT = now; try { toast('Finish or close the tutorial first'); } catch(_){} }
+    } catch(_){}
+  }
+  document.addEventListener('pointerdown', block, true);
+  document.addEventListener('mousedown', block, true);
+  document.addEventListener('click', block, true);
 })();
 function crMinigameInit(){
   if(typeof game === 'undefined') return;
