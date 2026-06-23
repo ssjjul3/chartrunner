@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.541
-     LAST UPDATED:    2026-06-22  ·  CONTROLS FIX: vehicle no longer auto-rides from the equipped loadout (broke flight + arrows drove an unmounted vehicle) — it's active only when MOUNTED. Vehicle moved to hotkey 1 (tap mount/dismount · hold picker); Trails moved 1→0; chart-reset moved 0→backtick. Flight works again on foot (↑↑).
+     CURRENT VERSION: v1.0.542
+     LAST UPDATED:    2026-06-23  ·  COACH per-tab copy: the COACH.llm bubble now describes the ACTIVE tab inside each app (Token ALL/Winners/Losers/Watchlist · Profile Player/Wallet/Tools/Broker/Coach · Play Regular/Campaign/Minigame/PVP · Terminal/SolanaTracker/CexTracker · Journal Manual/Paper/Alerts/P&L…) and re-narrates live as you flip tabs. Token-research RUN button is now transparent green instead of a solid fill.
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
      PREV (v1.0.483): No bot loadout in ANY minigame (racing · monster · snake).
@@ -14057,7 +14057,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.541",
+  VERSION: "1.0.542",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -39339,9 +39339,13 @@ window.crMiniEnd = (function(){
   function onClick(e){
     try {
       if(!(typeof game !== 'undefined' && game.monsterMode)) return;
-      var bar = document.getElementById('crTopBar'); if(!bar) return;
-      var t = e.target;
-      if(!(t && bar.contains(t)) && !(t && t.closest && t.closest('.crTvSymMenu, #crTvTfMore, .os-more-pop'))) return;
+      var bar = document.getElementById('crTopBar');
+      var t = e.target; if(!t || !t.closest) return;
+      // v1.0.542 — match the chart toolbar by id OR class (.crChrome) and the
+      // floating symbol/timeframe/more popups, so the stamp fires no matter which
+      // toolbar element the run actually mounts.
+      var hit = (bar && bar.contains(t)) || t.closest('#crTopBar, .crChrome, .crTvSymMenu, #crTvTfMore, .os-more-pop');
+      if(!hit) return;
       flash();   // let the control open; just slam the warning stamp over it
     } catch(_){}
   }
@@ -56446,7 +56450,7 @@ function _tokRenderProfile(){
       '</div>' +
     '</div>' +
     // v1.0.519 — RUN button moved to the TOP (right under the ticker + price header).
-    '<button type="button" data-tok-run="' + def.id + '" style="width:100%;box-sizing:border-box;margin:0 0 10px;padding:11px;border:1px solid #14f195!important;border-radius:8px!important;background:linear-gradient(180deg,#1ff6a3,#10c97f)!important;color:#06160d!important;font:700 13px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;text-shadow:none!important;box-shadow:0 0 14px rgba(20,241,149,.35)!important">▶ RUN ' + def.tag + ' · ' + String(s.tf||'').toUpperCase() + '</button>' +
+    '<button type="button" data-tok-run="' + def.id + '" style="width:100%;box-sizing:border-box;margin:0 0 10px;padding:11px;border:1px solid #14f195!important;border-radius:8px!important;background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.06))!important;color:#bff7df!important;font:700 13px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;text-shadow:none!important;box-shadow:0 0 14px rgba(20,241,149,.20)!important">▶ RUN ' + def.tag + ' · ' + String(s.tf||'').toUpperCase() + '</button>' +
     // TF picker + sparkline panel
     '<div style="margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4)">' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
@@ -66741,6 +66745,71 @@ function log(msg){
       'win-configs':   ['Configure Run',   'tune the run setup — asset, timeframe, indicators and tools — before you Start.'],
       'win-workbench': ['Workbench',       'build and backtest bots, primitives, strategies and indicators.']
     };
+    // v1.0.542 — per-TAB coach copy: when a multi-tab app is open the bubble
+    // describes the ACTIVE tab and re-narrates as the player flips tabs.
+    const CR_WIN_TAB_DESC = {
+      'win-tokenterm': { attr:'data-toktab', map:{
+        all:      'ALL — every token by market cap. Tap a row to scan it, the ★ to pin it to a watchlist.',
+        winners:  'WINNERS — today’s top gainers. Chase momentum, but check liquidity before you run one.',
+        losers:   'LOSERS — the day’s biggest drops. Falling knife or reversal? Read the chart first.',
+        watchlist:'WATCHLIST — your pinned tokens. Hit the ★ on any row to pick which lists it sits in.'
+      }},
+      'win-wallet':  { attr:'data-profview', map:{
+        player:  'PLAYER — your loadout: skin, vehicle, weapon and gear that drop into every run.',
+        bal:     'WALLET — your on-chain balances, holdings and transactions.',
+        tools:   'TOOLS — your Red Laser loadout: tap a tile to equip it, double-tap to ★ favourite.',
+        broker:  'BROKER — link a CEX/DEX once, then route trades through it from in-game.',
+        coach:   'COACH — pick the model that powers me: Claude, OpenAI, Ollama or your own MCP.',
+        stats:   'STATS — your career record: best times, distance, win/loss and run history.',
+        missions:'MISSIONS — track your active objectives and their rewards.'
+      }},
+      'win-profile': { attr:'data-profview', map:{
+        player:  'PLAYER — your loadout: skin, vehicle, weapon and gear that drop into every run.',
+        bal:     'WALLET — your on-chain balances, holdings and transactions.',
+        tools:   'TOOLS — your Red Laser loadout: tap a tile to equip it, double-tap to ★ favourite.',
+        broker:  'BROKER — link a CEX/DEX once, then route trades through it from in-game.',
+        coach:   'COACH — pick the model that powers me: Claude, OpenAI, Ollama or your own MCP.',
+        stats:   'STATS — your career record: best times, distance, win/loss and run history.',
+        missions:'MISSIONS — track your active objectives and their rewards.'
+      }},
+      'win-terminal':{ attr:'data-termview', map:{
+        darkflow:'TERMINAL — the live chart with on-chart signals, exploit score and market regime.',
+        solana:  'SOLANATRACKER — on-chain Solana flow: whales, tokens and wallet activity.',
+        cex:     'CEXTRACKER — centralised-exchange flow: funding, open interest and whale prints.',
+        phoenix: 'PHOENIX — the experimental live liquidity + whale overlay.'
+      }},
+      'win-run':     { attr:'data-cat', map:{
+        regular: 'REGULAR — pick any asset + timeframe and run real candles freely.',
+        campaign:'CAMPAIGN — story chapters that teach one trading tool per mission.',
+        minigame:'MINIGAME — arcade modes: Racing, Monster Mode and Snake.',
+        pvp:     'PVP — race another runner head-to-head on the same chart.'
+      }},
+      'win-journal': { attr:'data-jrntab', map:{
+        manual:  'MANUAL — log trades by hand with entry, exit, size and notes.',
+        paper:   'PAPER — practice trades tracked live with no real risk.',
+        alerts:  'ALERTS — your price + signal alarms; toggle compact or detailed rows.',
+        pnl:     'P&L — realised and open profit across your runs and trades.',
+        bot:     'BOT — your automated-bot trade log.',
+        sessions:'SESSIONS — runs grouped by trading session.',
+        notes:   'NOTES — free-form trading notes.',
+        stats:   'STATS — aggregate journal statistics.',
+        alertv2: 'ALERT V2 — the next-gen alert builder.'
+      }}
+    };
+    function _crActiveTabText(w){
+      try {
+        var cfg = w && CR_WIN_TAB_DESC[w.id]; if(!cfg) return '';
+        var tabs = w.querySelectorAll('['+cfg.attr+']');
+        for(var i=0;i<tabs.length;i++){
+          var t = tabs[i];
+          if((t.classList.contains('active') || t.classList.contains('on')) && t.offsetParent !== null){
+            var key = t.getAttribute(cfg.attr);
+            if(cfg.map[key]) return cfg.map[key];
+          }
+        }
+      } catch(_){}
+      return '';
+    }
     function _crTopOpenWindow(){
       try {
         var wins = Array.prototype.slice.call(document.querySelectorAll('.os-window.on'))
@@ -66756,12 +66825,29 @@ function log(msg){
         var w = _crTopOpenWindow();
         if(w && CR_WIN_DESC[w.id]){
           var d = CR_WIN_DESC[w.id];
-          line.textContent = 'You’ve got ' + d[0] + ' open — ' + d[1] + '  Tap Chat to ask me anything about it.';
+          var tabTxt = _crActiveTabText(w);   // v1.0.542 — prefer the active-tab copy
+          if(tabTxt){
+            line.textContent = 'You’ve got ' + d[0] + ' open — ' + tabTxt + '  Tap Chat to ask me about it.';
+          } else {
+            line.textContent = 'You’ve got ' + d[0] + ' open — ' + d[1] + '  Tap Chat to ask me anything about it.';
+          }
         } else {
           line.textContent = _crCoachDefaultLine;   // bare desktop → default welcome
         }
       } catch(_){}
     }
+    try { window._crCoachDescribeWindow = _crCoachDescribeWindow; } catch(_){}
+    // v1.0.542 — while the welcome bubble is open, re-narrate as the player
+    // switches tabs inside the open app (cheap; only writes when text changes).
+    try {
+      setInterval(function(){
+        try {
+          if(!document.body.classList.contains('cr-coach-bubble-open')) return;
+          if(bubble.style.display === 'none') return;
+          _crCoachDescribeWindow();
+        } catch(_){}
+      }, 300);
+    } catch(_){}
     function show(on){
       if(on){
         // v1.0.372 — dock the welcome bubble into the THIRD right-column slot
