@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.549
-     LAST UPDATED:    2026-06-23  ·  Mode billboard: regular run now reads "CHARTRUNNER" instead of "TIME IS MONEY".  PREV (v1.0.548): MULTIPLAYER: the room ONLINE roster is now a Terminal tab (◍ ONLINE, shown only in a live room) instead of only a floating panel; the Terminal title reads "· ChartRunner Multiplayer" while in a room; the lite-profile mode billboard reads "MULTIPLAYER" in every mode (Time is Money / Monster / Racing / Snake) while in a room. Floating roster still shows during runs when the Terminal is closed.  PREV (v1.0.547): Maps archived the "ALL MAPS · N" overview header.  v1.0.546: deleted the ＋Save button + map-name input; moved Rooms into the folder sidebar above "All maps" (folder-row styling); search is now a 🔍 toggle at the right of the ALL/BTC/ETH/SOL/＋ row that filters maps by name.  PREV (v1.0.545): tutorial rewrite + interactive tab layer.
+     CURRENT VERSION: v1.0.551
+     LAST UPDATED:    2026-06-23  ·  MONSTER AI FIX: monsters pursue in screen space now, so one sitting directly above/below the player no longer freezes. (Old code normalized a vector mixing world-px with price units + a price-unit epsilon, which collapsed the vertical component when horizontally aligned.)  PREV (v1.0.550): Monster CRITICAL WARNING stamp display fix. (root cause found via live test): the CRITICAL WARNING stamp's guard fired correctly all along + added the .on class, but the element's inline `display:none` outranked the `.on{display:flex}` class rule, so it never showed. Made it `display:flex!important`. The stamp now appears when you tap the toolbar mid-Monster-run.  PREV (v1.0.549): regular run billboard reads "CHARTRUNNER". MULTIPLAYER: the room ONLINE roster is now a Terminal tab (◍ ONLINE, shown only in a live room) instead of only a floating panel; the Terminal title reads "· ChartRunner Multiplayer" while in a room; the lite-profile mode billboard reads "MULTIPLAYER" in every mode (Time is Money / Monster / Racing / Snake) while in a room. Floating roster still shows during runs when the Terminal is closed.  PREV (v1.0.547): Maps archived the "ALL MAPS · N" overview header.  v1.0.546: deleted the ＋Save button + map-name input; moved Rooms into the folder sidebar above "All maps" (folder-row styling); search is now a 🔍 toggle at the right of the ALL/BTC/ETH/SOL/＋ row that filters maps by name.  PREV (v1.0.545): tutorial rewrite + interactive tab layer.
      ── earlier ──  v1.0.545  ·  TUTORIAL rewrite: new connected + guest slide copy (RUN LAUNCHER/PROFILE/MAPS+rooms/TERMINAL/TOKEN TERMINAL), archived CONFIGURE RUN/RUN-TUBE/PLAYER AVATAR/TO THE FLOOR, Journal compacted + level-gated (PL≥3). Titles now render ">_NAME" with a non-stop blinking cursor. INTERACTIVE LAYER: while the tutorial is open, clicking any tab inside an app window makes COACH explain that tab live. Guest tour spells out what's guest vs wallet-gated.  PREV (v1.0.544): tutorial run-lock.
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -14081,7 +14081,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.549",
+  VERSION: "1.0.551",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -33469,11 +33469,21 @@ function updateCombat(dt){
   // monster-only constraint. Collision is computed in screen space so the
   // visible wall is the physical wall (what you see is what they hit).
   for(const m of game.monsters){
-    const dx = player.wx - m.wx;
-    const dy = player.py - m.py;
-    const dist = Math.hypot(dx,dy)+1;
-    const stepWx = (dx/dist)*m.speed*dt;
-    const stepPy = (dy/dist)*m.speed*dt / Math.max(0.001, pxPerDollarAt(m.py)) * 0.45;
+    // v1.0.551 — pursue in SCREEN space so the monster closes vertical and
+    // horizontal distance at a balanced rate. The old vector normalized world-px
+    // (dx) against price units (dy) with a +1 price epsilon; when a monster sat
+    // directly above/below the player (dx≈0) the tiny price delta + that epsilon
+    // collapsed the vertical component, so it froze in place. Screen space keeps
+    // the units consistent, then we convert the step back to world-x / price.
+    const dx  = player.wx - m.wx;                            // world-x (facing only)
+    const zx  = camera.zoomX || 1;
+    const pxd = Math.max(0.001, pxPerDollarAt(m.py));
+    const dxs = sX(player.wx) - sX(m.wx);                    // screen px
+    const dys = priceToY(player.py) - priceToY(m.py);        // screen px
+    const distS = Math.hypot(dxs, dys) + 1;                  // px epsilon (consistent units)
+    const spd  = m.speed * zx;                               // m.speed is world-x/s → screen px/s
+    const stepWx = ((dxs / distS) * spd * dt) / zx;          // back to world-x
+    const stepPy = ((dys / distS) * spd * dt * 0.6) / pxd;   // back to price (mild vertical damping)
     const newWx = m.wx + stepWx;
     const newPy = m.py + stepPy;
     let tMax = 1;
@@ -39371,7 +39381,7 @@ window.crMiniEnd = (function(){
     st.textContent = ''
       + '#crMonsterStamp .cms-stamp{font:900 italic 7vw/0.9 "Arial Black",Impact,system-ui,sans-serif;letter-spacing:3px;text-transform:uppercase;color:#ff2b4e;border:5px solid #ff2b4e;border-radius:12px;padding:14px 30px;transform:rotate(-11deg);text-shadow:0 0 18px rgba(255,43,78,.6);box-shadow:0 0 30px rgba(255,43,78,.5),inset 0 0 20px rgba(255,43,78,.28);background:rgba(40,0,8,.40);white-space:nowrap}'
       + '#crMonsterStamp .cms-sub{font:800 clamp(13px,2.4vw,20px) ui-monospace,Menlo,monospace;letter-spacing:2px;color:#ff8aa0;text-transform:uppercase;text-shadow:0 0 10px rgba(255,43,78,.55)}'
-      + '#crMonsterStamp.on{display:flex;animation:cmsPop .16s ease-out}'
+      + '#crMonsterStamp.on{display:flex!important;animation:cmsPop .16s ease-out}'
       + '@keyframes cmsPop{0%{transform:scale(1.25);opacity:0}100%{transform:scale(1);opacity:1}}';
     document.head.appendChild(st);
     return el;
