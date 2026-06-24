@@ -1,9 +1,88 @@
 <!doctype html>
 <html lang="en">
 <head>
+<!-- #5 — meta-level hardening that GitHub Pages (no custom headers) can honor.
+     Reduces referrer leakage and shuts off the cheap injection vectors
+     (plugins via <object>, <base>-tag hijack, cross-origin form posts) WITHOUT
+     constraining the large inline app's own scripts/fetches. Header-only items
+     — frame-ancestors, HSTS, Permissions-Policy, and a full nonce-based CSP —
+     need server/CDN config and are tracked in SECURITY.md. -->
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'self'; form-action 'self'">
+<script>
+/* === ChartRunner security helpers — redirect-trust hardening (#1) ============
+   Bind every /solana-connect/ redirect round-trip to a per-tab, single-use
+   intent. A crafted external link carrying regAction/sig can no longer fake
+   on-chain / marketplace / license state, because it won't match an intent
+   THIS tab actually issued. sessionStorage survives same-tab same-origin
+   navigation, but is NOT carried in from an external link or a fresh tab. ===*/
+(function(){
+  var PEND='cr_reg_pending_v1', TTL=10*60*1000;        // 10-minute freshness
+  window.crRegGo=function(url){                          // outbound: mark intent
+    try{
+      var m=/[?&]action=([^&]+)/.exec(url), nm=/[?&]name=([^&]+)/.exec(url);
+      if(m) sessionStorage.setItem(PEND, JSON.stringify({
+        action:decodeURIComponent(m[1]),
+        name:nm?decodeURIComponent(nm[1]):'',
+        at:Date.now()
+      }));
+    }catch(_){}
+    window.location.href=url;
+  };
+  window.crRegConsume=function(regAction, regName){      // inbound: verify+consume
+    try{
+      var raw=sessionStorage.getItem(PEND);
+      if(!raw) return false;
+      sessionStorage.removeItem(PEND);                  // single-use, even on mismatch
+      var p=JSON.parse(raw);
+      if(!p||!p.action) return false;
+      if(Date.now()-(p.at||0)>TTL) return false;
+      if(String(p.action)!==String(regAction||'')) return false;
+      if(p.name && regName && String(p.name)!==String(regName)) return false;
+      return true;
+    }catch(_){ return false; }
+  };
+  window._crRegOk=function(regAction, regName, u){       // gate + clean on reject
+    if(window.crRegConsume && window.crRegConsume(regAction, regName)) return true;
+    try{ ['regAction','regType','regName','sig','matchPda'].forEach(function(p){ u.searchParams.delete(p); });
+         window.history.replaceState({}, '', u.toString()); }catch(_){}
+    try{ setTimeout(function(){ try{ if(window.toast) window.toast('⚠ Ignored an unverified on-chain redirect'); }catch(_){} }, 800); }catch(_){}
+    return false;
+  };
+  /* Agent/bridge endpoint gate (#3): a link can ask to point COACH/agent/event
+     traffic at an arbitrary server. Allow only http(s)/ws(s); pass same-origin
+     and localhost through silently; require an explicit confirm for any external
+     host before the URL is persisted. Returns the normalized URL or '' (reject). */
+  window.crConfirmExternalEndpoint=function(raw, label){
+    try{
+      var s=String(raw||'').trim(); if(!s) return '';
+      var u=new URL(s, location.href);
+      if(!/^(https?:|wss?:)$/i.test(u.protocol)) return '';   // no javascript:/data:/file:
+      var host=(u.hostname||'').toLowerCase();
+      if(host==='localhost'||host==='127.0.0.1'||host==='[::1]'||u.origin===location.origin) return u.toString();
+      var ok=window.confirm('⚠ A link is trying to point ChartRunner’s '+(label||'agent endpoint')+
+        ' at an EXTERNAL server:\n\n'+u.origin+u.pathname+
+        '\n\nOnly continue if you trust whoever sent this link. Route '+(label||'agent traffic')+' there?');
+      return ok ? u.toString() : '';
+    }catch(_){ return ''; }
+  };
+  /* Key-purge control (#4): COACH/provider keys + the agent bridge token live in
+     this browser and are sent directly from the page, so any injected script or
+     extension could read them. There's no backend proxy in the single-file build,
+     so the mitigation is a one-call wipe the UI (and the user) can invoke. */
+  window.crPurgeApiKeys=function(){
+    var keys=['cr_coingecko_key','cr_birdeye_key_v1','cr_goldrush_key_v1','cr_agent_bridge_token'], n=0;
+    keys.forEach(function(k){ try{ if(localStorage.getItem(k)!=null){ localStorage.removeItem(k); n++; } }catch(_){} });
+    try{ var raw=localStorage.getItem('cr_coach_provider_v1');
+      if(raw){ var c=JSON.parse(raw); if(c && c.apiKey){ c.apiKey=''; localStorage.setItem('cr_coach_provider_v1', JSON.stringify(c)); n++; } }
+    }catch(_){}
+    return n;
+  };
+})();
+</script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.564
-     LAST UPDATED:    2026-06-24  ·  FIRST-RUN FUNNEL popup now uses the EXACT COACH.llm bubble layout + positioning on desktop AND phone: it reuses the .cr-tut-terminal-bubble + .crCoachWin chrome (invader + COACH.llm header + dot + ✕), the .crCoachHubActions Tutorial/Chat-style buttons, docks bottom-right like #crCoachHub on desktop, and becomes the full-width bottom sheet (var(--crm-dock-h)) like #crCoachHubBubble on mobile.  PREV (v1.0.563): FIRST-RUN ONBOARDING FUNNEL (crFirstRun): cookie-gated (localStorage cr_onboarding_v1) guided tour that auto-launches ONCE for new players, resumes across sessions, and is always skippable. Additive on the COACH identity: a dim+spotlight mask frames the current target, a pulsing beacon + click-ripple + bouncing arrow point at it, and a COACH terminal popup (Skip/Back/Next + progress dots) explains every desktop surface (Play, Terminal, Token, Profile, Maps, Journal, Marketplace, Bots, Workbench, RUN-tube, Connect), then hands off into a run where the in-game COACH tutorial continues. Data-driven STEPS — easy to extend. window.crFirstRun = {start,reset,next,skip}.  PREV (v1.0.562): MOBILE tutorial spotlight now EXTENDS down to just above the COACH tutorial bubble so the ring's lower dashed line is visible in the gap (was hidden behind the bubble). Measures the visible .cr-tut-card (not the collapsed #crTutorial root).  PREV (v1.0.561): TUTORIAL: the WELCOME (first) step now hides the ◀ Back button — there's nothing to go back to, so the nav shows only NEXT. Back reappears automatically from step 2 on.  PREV (v1.0.560): MOBILE tutorial spotlight now frames the window EXACTLY within the display: the dashed highlight ring clamps to all four viewport edges (below the top menubar, above the bottom tutorial bubble) instead of spilling off-screen right/bottom and under the menubar. box-sizing:border-box so the dashed border stays inside the bounds.  PREV (v1.0.559): BATCH: (1) chat SEND button now uses the unified ▶RUN/Tutorial/Chat treatment. (2) Setup Calculator locked-box ARCHIVED — the Fib/bracket/VWAP calculator decks (drawing + setting the tool) render again; routing/arming stays gated by the Activation Laser + level system (the "Order activation unlocks…" note communicates state). (3) Token-research star icon +30%. (4) Monster Mode no-vehicle gate extended to the mobile "1" button (body.cr-monster-on). (5) Mobile controls: arrows are white/transparent, up+down same size, 1&2 are smaller squares stacked vertically on the right.  PREV (v1.0.558): MONSTER MODE toolbar fully INERT: clicking the chart toolbar (or its symbol/timeframe/indicator popups) mid-fight no longer opens or changes anything — the click is swallowed at document-capture and the only response is the CRITICAL WARNING stamp. (Was: control opened + warning overlaid.)  PREV (v1.0.557): THEMED TOOLTIPS: a single custom tooltip (.cr-tip) replaces the plain native browser title popups everywhere — dark terminal card, green accent border + glow, monospace #bff7df text, with the "Name — Action" form (e.g. Play — Configure Run) emphasising the name in bright green. A delegated controller intercepts any [title] on hover, suppresses the OS tooltip, and renders the styled card; covers all current + future DOM with zero per-element wiring.  PREV (v1.0.556): VEHICLES RIDE THE UPSIDE-DOWN WORLD: the v0.9.31 "upper-world-only" rule is lifted. A mounted ride now survives world flips, glides the candle BOTTOMS with mirrored gravity, and the rig renders vertically flipped. Controls mirror on-foot: ↓↓ flips down, ↑↑ surfaces, single ↓ jumps while flipped; ↑↑↑ still dismounts into flight. Monster Mode still force-dismounts (no combat vehicles).  PREV (v1.0.555): NEXT/BACK buttons unified: the tutorial nav (◀ Back / Next ▶) and the COACH walkthrough "Next" now use the EXACT token "▶ RUN" / Tutorial / Chat treatment — transparent-green fill, #14f195 border, #bff7df text, soft glow. No more filled-primary Next; Back + Next are identical.  PREV (v1.0.554): ALL SETUP CALCULATORS gated behind activation: the bracket Competition risk / Fee hurdle / TP profit deck AND the VWAP reclaim calculator are now archived the same way as the Fib calculator — they only render once the object's route is armed with the Activation Laser (hotkey 3). Until then a compact "⚡ Setup calculator · locked" hint shows.  PREV (v1.0.553): SETUP CALCULATOR gated: the fib retracement/extension/channel/circle calculator deck in an object's Inputs tab is now archived behind activation — it only renders once the object's route is armed with the Activation Laser (hotkey 3). Until then a compact "locked" hint shows.  PREV (v1.0.552): COACH welcome buttons match RUN button. Tutorial + Chat now use the EXACT same style as the token "▶ RUN" button (transparent-green fill, #14f195 border, #bff7df text, glow) — Tutorial is no longer a solid-green slab.  PREV (v1.0.551): Monster AI screen-space pursuit fix.: monsters pursue in screen space now, so one sitting directly above/below the player no longer freezes. (Old code normalized a vector mixing world-px with price units + a price-unit epsilon, which collapsed the vertical component when horizontally aligned.)  PREV (v1.0.550): Monster CRITICAL WARNING stamp display fix. (root cause found via live test): the CRITICAL WARNING stamp's guard fired correctly all along + added the .on class, but the element's inline `display:none` outranked the `.on{display:flex}` class rule, so it never showed. Made it `display:flex!important`. The stamp now appears when you tap the toolbar mid-Monster-run.  PREV (v1.0.549): regular run billboard reads "CHARTRUNNER". MULTIPLAYER: the room ONLINE roster is now a Terminal tab (◍ ONLINE, shown only in a live room) instead of only a floating panel; the Terminal title reads "· ChartRunner Multiplayer" while in a room; the lite-profile mode billboard reads "MULTIPLAYER" in every mode (Time is Money / Monster / Racing / Snake) while in a room. Floating roster still shows during runs when the Terminal is closed.  PREV (v1.0.547): Maps archived the "ALL MAPS · N" overview header.  v1.0.546: deleted the ＋Save button + map-name input; moved Rooms into the folder sidebar above "All maps" (folder-row styling); search is now a 🔍 toggle at the right of the ALL/BTC/ETH/SOL/＋ row that filters maps by name.  PREV (v1.0.545): tutorial rewrite + interactive tab layer.
+     CURRENT VERSION: v1.0.567
+     LAST UPDATED:    2026-06-24  ·  SNAKE ROUNDS (10% round campaign for Snake): the same round-based treatment applied to Snake. New crSnakeRounds module wraps the legacy single-goal Snake (eat N coins) in a 7-round trading-discipline campaign — FIRST FEED · WICK WALL · GREED TAIL · TREND COMBO · OVEREXTENSION · CHOP SNAKE · REVERSAL HUNT — each round = grow to a TARGET LENGTH, then an electric-blue EXIT GATE opens downrange that you must run to in order to "take profit" and clear (decide: exit, or chase greed coins). The growing tail stays your growing risk (self-collision still kills). COACH narrates each round + lesson; clears fire confetti + CLEAN EXIT float + hit-stop, final round shows a CAMPAIGN CLEAR endcard. crMinigameTick delegates win/advance to the module; drawMinigame draws the gate + a centered ROUND/CONDITION/LEN HUD. Legacy single-goal behavior preserved as the fallback when the campaign isn't active.  PREV (v1.0.566): WICK BITER (first chart-triggered enemy family): Monster Rounds now spawns a telegraphed vertical-ambush enemy anchored to a real long-wick candle near the player. crMonsterRounds.findWickCandle() scans ±6 candles for the longest upper/lower wick (vs body + ATR); maybeWickSpawn() returns one with high probability on the WICK BITE round, low elsewhere — only when a genuine long wick exists, so the enemy is always chart-justified. Motion is a warn→strike→spent state machine (crUpdateWickBiter): a 0.55s pulsing red danger line + tip chevron telegraph (drawWickBiter) reads BEFORE the dart snaps down the wick to the candle body — obeying the "telegraph before contact" rule that got the old regime monsters cut. Shootable during the telegraph; contact damage reuses the shared monster-vs-player check. Additive — spawnMonster falls through to the classic grunt/boss field when no wick spawn is produced.  PREV (v1.0.565): MONSTER ROUNDS (10% round-based survival): Monster Mode is now a round loop instead of an endless field. New crMonsterRounds module wraps the existing grunt/boss combat — each round has a market CONDITION (FIRST BEAR · WICK BITE · RED STAIRCASE · CHOP ROOM · VOLUME BRUTE · BREAKOUT ALARM · FALSE BREAK · MOMENTUM SWARM · LIQUIDATION · MONSTER MARKET), an OBJECTIVE (survive Ns / kill N / hunt the boss), a countdown HUD top-left, a final PANIC phase (faster spawns + screen-flash pulse) on survive rounds, and a CLEAR endcard (field wiped, confetti, XP float, hit-stop, COACH lesson line). Round 10 loops into an escalating endless LIVE RAID. Spawn pacing + cap + boss-bias now read from the round def (updateCombat falls back to the classic 1.8s/5-cap field when inactive). No new enemy types. game.bossKills added as the boss objective tracker.  PREV (v1.0.564): FIRST-RUN FUNNEL popup now uses the EXACT COACH.llm bubble layout + positioning on desktop AND phone: it reuses the .cr-tut-terminal-bubble + .crCoachWin chrome (invader + COACH.llm header + dot + ✕), the .crCoachHubActions Tutorial/Chat-style buttons, docks bottom-right like #crCoachHub on desktop, and becomes the full-width bottom sheet (var(--crm-dock-h)) like #crCoachHubBubble on mobile.  PREV (v1.0.563): FIRST-RUN ONBOARDING FUNNEL (crFirstRun): cookie-gated (localStorage cr_onboarding_v1) guided tour that auto-launches ONCE for new players, resumes across sessions, and is always skippable. Additive on the COACH identity: a dim+spotlight mask frames the current target, a pulsing beacon + click-ripple + bouncing arrow point at it, and a COACH terminal popup (Skip/Back/Next + progress dots) explains every desktop surface (Play, Terminal, Token, Profile, Maps, Journal, Marketplace, Bots, Workbench, RUN-tube, Connect), then hands off into a run where the in-game COACH tutorial continues. Data-driven STEPS — easy to extend. window.crFirstRun = {start,reset,next,skip}.  PREV (v1.0.562): MOBILE tutorial spotlight now EXTENDS down to just above the COACH tutorial bubble so the ring's lower dashed line is visible in the gap (was hidden behind the bubble). Measures the visible .cr-tut-card (not the collapsed #crTutorial root).  PREV (v1.0.561): TUTORIAL: the WELCOME (first) step now hides the ◀ Back button — there's nothing to go back to, so the nav shows only NEXT. Back reappears automatically from step 2 on.  PREV (v1.0.560): MOBILE tutorial spotlight now frames the window EXACTLY within the display: the dashed highlight ring clamps to all four viewport edges (below the top menubar, above the bottom tutorial bubble) instead of spilling off-screen right/bottom and under the menubar. box-sizing:border-box so the dashed border stays inside the bounds.  PREV (v1.0.559): BATCH: (1) chat SEND button now uses the unified ▶RUN/Tutorial/Chat treatment. (2) Setup Calculator locked-box ARCHIVED — the Fib/bracket/VWAP calculator decks (drawing + setting the tool) render again; routing/arming stays gated by the Activation Laser + level system (the "Order activation unlocks…" note communicates state). (3) Token-research star icon +30%. (4) Monster Mode no-vehicle gate extended to the mobile "1" button (body.cr-monster-on). (5) Mobile controls: arrows are white/transparent, up+down same size, 1&2 are smaller squares stacked vertically on the right.  PREV (v1.0.558): MONSTER MODE toolbar fully INERT: clicking the chart toolbar (or its symbol/timeframe/indicator popups) mid-fight no longer opens or changes anything — the click is swallowed at document-capture and the only response is the CRITICAL WARNING stamp. (Was: control opened + warning overlaid.)  PREV (v1.0.557): THEMED TOOLTIPS: a single custom tooltip (.cr-tip) replaces the plain native browser title popups everywhere — dark terminal card, green accent border + glow, monospace #bff7df text, with the "Name — Action" form (e.g. Play — Configure Run) emphasising the name in bright green. A delegated controller intercepts any [title] on hover, suppresses the OS tooltip, and renders the styled card; covers all current + future DOM with zero per-element wiring.  PREV (v1.0.556): VEHICLES RIDE THE UPSIDE-DOWN WORLD: the v0.9.31 "upper-world-only" rule is lifted. A mounted ride now survives world flips, glides the candle BOTTOMS with mirrored gravity, and the rig renders vertically flipped. Controls mirror on-foot: ↓↓ flips down, ↑↑ surfaces, single ↓ jumps while flipped; ↑↑↑ still dismounts into flight. Monster Mode still force-dismounts (no combat vehicles).  PREV (v1.0.555): NEXT/BACK buttons unified: the tutorial nav (◀ Back / Next ▶) and the COACH walkthrough "Next" now use the EXACT token "▶ RUN" / Tutorial / Chat treatment — transparent-green fill, #14f195 border, #bff7df text, soft glow. No more filled-primary Next; Back + Next are identical.  PREV (v1.0.554): ALL SETUP CALCULATORS gated behind activation: the bracket Competition risk / Fee hurdle / TP profit deck AND the VWAP reclaim calculator are now archived the same way as the Fib calculator — they only render once the object's route is armed with the Activation Laser (hotkey 3). Until then a compact "⚡ Setup calculator · locked" hint shows.  PREV (v1.0.553): SETUP CALCULATOR gated: the fib retracement/extension/channel/circle calculator deck in an object's Inputs tab is now archived behind activation — it only renders once the object's route is armed with the Activation Laser (hotkey 3). Until then a compact "locked" hint shows.  PREV (v1.0.552): COACH welcome buttons match RUN button. Tutorial + Chat now use the EXACT same style as the token "▶ RUN" button (transparent-green fill, #14f195 border, #bff7df text, glow) — Tutorial is no longer a solid-green slab.  PREV (v1.0.551): Monster AI screen-space pursuit fix.: monsters pursue in screen space now, so one sitting directly above/below the player no longer freezes. (Old code normalized a vector mixing world-px with price units + a price-unit epsilon, which collapsed the vertical component when horizontally aligned.)  PREV (v1.0.550): Monster CRITICAL WARNING stamp display fix. (root cause found via live test): the CRITICAL WARNING stamp's guard fired correctly all along + added the .on class, but the element's inline `display:none` outranked the `.on{display:flex}` class rule, so it never showed. Made it `display:flex!important`. The stamp now appears when you tap the toolbar mid-Monster-run.  PREV (v1.0.549): regular run billboard reads "CHARTRUNNER". MULTIPLAYER: the room ONLINE roster is now a Terminal tab (◍ ONLINE, shown only in a live room) instead of only a floating panel; the Terminal title reads "· ChartRunner Multiplayer" while in a room; the lite-profile mode billboard reads "MULTIPLAYER" in every mode (Time is Money / Monster / Racing / Snake) while in a room. Floating roster still shows during runs when the Terminal is closed.  PREV (v1.0.547): Maps archived the "ALL MAPS · N" overview header.  v1.0.546: deleted the ＋Save button + map-name input; moved Rooms into the folder sidebar above "All maps" (folder-row styling); search is now a 🔍 toggle at the right of the ALL/BTC/ETH/SOL/＋ row that filters maps by name.  PREV (v1.0.545): tutorial rewrite + interactive tab layer.
      ── earlier ──  v1.0.545  ·  TUTORIAL rewrite: new connected + guest slide copy (RUN LAUNCHER/PROFILE/MAPS+rooms/TERMINAL/TOKEN TERMINAL), archived CONFIGURE RUN/RUN-TUBE/PLAYER AVATAR/TO THE FLOOR, Journal compacted + level-gated (PL≥3). Titles now render ">_NAME" with a non-stop blinking cursor. INTERACTIVE LAYER: while the tutorial is open, clicking any tab inside an app window makes COACH explain that tab live. Guest tour spells out what's guest vs wallet-gated.  PREV (v1.0.544): tutorial run-lock.
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -15097,7 +15176,7 @@ window.crRegistry = (function(){
               + '&hash='     + hashHex
               + '&royalty='  + (royaltyBps|0)
               + '&return='   + encodeURIComponent('/play/');
-      window.location.href = url;
+      crRegGo(url);
       return true;
     } catch(err){
       try { toast && toast('On-chain save failed: ' + (err.message || err)); } catch(_){}
@@ -15129,7 +15208,7 @@ window.crRegistry = (function(){
             + '&name='   + encodeURIComponent(name)
             + '&price='  + lamports.toString()
             + '&return=' + encodeURIComponent('/play/');
-    window.location.href = url;
+    crRegGo(url);
     return true;
   }
   function buyFromMarket(type, name, sellerAddr, priceSol, maxPriceSol){
@@ -15150,7 +15229,7 @@ window.crRegistry = (function(){
             + '&price='    + lamports.toString()
             + '&maxPrice=' + maxLamports.toString()
             + '&return='   + encodeURIComponent('/play/');
-    window.location.href = url;
+    crRegGo(url);
     return true;
   }
   function cancelListing(type, name){
@@ -15159,7 +15238,7 @@ window.crRegistry = (function(){
             + '&type='   + encodeURIComponent(type)
             + '&name='   + encodeURIComponent(name)
             + '&return=' + encodeURIComponent('/play/');
-    window.location.href = url;
+    crRegGo(url);
     return true;
   }
   // v0.9.8h — On-chain unanchor. Calls delete_entity in the registry program;
@@ -15178,7 +15257,7 @@ window.crRegistry = (function(){
             + '&type='   + encodeURIComponent(type)
             + '&name='   + encodeURIComponent(name)
             + '&return=' + encodeURIComponent('/play/');
-    window.location.href = url;
+    crRegGo(url);
     return true;
   }
   // v0.9.7 — Record a completed run on-chain. Fires the record_run ix in
@@ -15313,7 +15392,7 @@ window.crRegistry = (function(){
             + '&runMapHash='      + encodeURIComponent(mapHashHex)
             + '&runNonce='        + encodeURIComponent(nonce)
             + '&return='          + encodeURIComponent('/play/');
-	    window.location.href = url;
+	    crRegGo(url);
 	    return true;
 	  }
 
@@ -15371,7 +15450,7 @@ window.crRegistry = (function(){
 	            + '&botScore='             + encodeURIComponent(score)
 	            + '&botMaxDrawdownBps='    + encodeURIComponent(String(maxDrawdownBps))
 	            + '&return='               + encodeURIComponent('/play/');
-	    window.location.href = url;
+	    crRegGo(url);
 	    return true;
 	  }
 
@@ -15393,7 +15472,7 @@ window.crRegistry = (function(){
     var url = '../solana-connect/?action=claim-name'
             + '&name='   + encodeURIComponent(h)
             + '&return=' + encodeURIComponent('/play/');
-    window.location.href = url;
+    crRegGo(url);
     return true;
   }
 
@@ -15415,7 +15494,7 @@ window.crRegistry = (function(){
             + '&entity=' + encodeURIComponent(entityPda)
             + '&price='  + lamports.toString()
             + '&return=' + encodeURIComponent('/play/');
-    window.location.href = url;
+    crRegGo(url);
     return true;
   }
   function buyLicense(entityPda, sellerAddr, creatorAddr, priceSol, maxPriceSol){
@@ -15427,7 +15506,7 @@ window.crRegistry = (function(){
             + '&creator='  + encodeURIComponent(creatorAddr)
             + '&maxPrice=' + maxLamports.toString()
             + '&return='   + encodeURIComponent('/play/');
-    window.location.href = url;
+    crRegGo(url);
     return true;
   }
   function cancelLicenseListing(entityPda){
@@ -15435,7 +15514,7 @@ window.crRegistry = (function(){
     var url = '../solana-connect/?action=cancel-license-listing'
             + '&entity=' + encodeURIComponent(entityPda)
             + '&return=' + encodeURIComponent('/play/');
-    window.location.href = url;
+    crRegGo(url);
     return true;
   }
 
@@ -15446,7 +15525,7 @@ window.crRegistry = (function(){
     var regType   = u.searchParams.get('regType');
     var regName   = u.searchParams.get('regName');
     var sig       = u.searchParams.get('sig');
-    if (regAction && regType != null && regName && sig){
+    if (regAction && regType != null && regName && sig && _crRegOk(regAction, regName, u)){
       var t = parseInt(regType, 10);
       var label = ENTITY_LABELS[t] || 'entity';
       var patch = {};
@@ -16182,7 +16261,7 @@ window.crMatch = (function(){
             + '&timeframe='  + encodeURIComponent(_tf())
             + '&maxPlayers=' + mp
             + '&return='     + encodeURIComponent('/play/');
-    window.location.href = url;
+    crRegGo(url);
     return true;
   }
   // Join a match by its code (the MatchState PDA, base58).
@@ -16193,7 +16272,7 @@ window.crMatch = (function(){
     var url = '../solana-connect/?action=match-join'
             + '&matchPda=' + encodeURIComponent(code)
             + '&return='   + encodeURIComponent('/play/');
-    window.location.href = url;
+    crRegGo(url);
     return true;
   }
   function joinPrompt(){
@@ -16574,7 +16653,7 @@ window.crChainSave = (function(){
               + '&name=' + encodeURIComponent(name)
               + '&hash=' + hashHex
               + '&return=' + encodeURIComponent('/play/');
-      window.location.href = url;
+      crRegGo(url);
       return true;
     } catch(err){
       try { toast && toast('On-chain save failed: ' + (err.message || err)); } catch(_){}
@@ -16612,10 +16691,25 @@ window.crChainSave = (function(){
   // string length budgets. The query param `?sharedMap=1` is just the
   // bootstrap signal so this handler runs.
   async function _ungzipB64(b64){
+    // #6 — bound both the compressed and decompressed size so a crafted share
+    // link can't OOM the tab with a decompression bomb. Caps: 256 KB in,
+    // 2 MB out (a real map snapshot is a few KB).
+    if (typeof b64 !== 'string' || b64.length > 256 * 1024)
+      throw new Error('shared map payload too large (compressed)');
     var bin = atob(b64);
     var arr = Uint8Array.from(bin, function(c){ return c.charCodeAt(0); });
     var stream = new Blob([arr]).stream().pipeThrough(new DecompressionStream('gzip'));
-    return await new Response(stream).text();
+    var reader = stream.getReader();
+    var MAX = 2 * 1024 * 1024, total = 0, out = '', dec = new TextDecoder();
+    for(;;){
+      var r = await reader.read();
+      if (r.done) break;
+      total += r.value.length;
+      if (total > MAX){ try { reader.cancel(); } catch(_){} throw new Error('shared map too large (decompressed)'); }
+      out += dec.decode(r.value, { stream: true });
+    }
+    out += dec.decode();
+    return out;
   }
   try {
     var u2 = new URL(window.location.href);
@@ -16638,16 +16732,19 @@ window.crChainSave = (function(){
             // snapshot's canonical hash BEFORE mutating the map and compare. Match ⇒
             // the snapshot is exactly the creator's anchored map; mismatch ⇒ drift
             // (still importable, just flagged). Verdict stashed for the room badge.
+            var _verified = false;   // #6 — gates auto-open + login bypass below
             try {
               if (parts.h) {
                 var _expect = String(parts.h).toLowerCase();
                 var _actual = (await sha256Hex(canonicalJson(map))).toLowerCase();
-                var _ok = (_actual === _expect);
-                window.crRoomMapVerify = { name: map.name, verified: _ok, expected: _expect, actual: _actual, at: Date.now() };
+                _verified = (_actual === _expect);
+                window.crRoomMapVerify = { name: map.name, verified: _verified, expected: _expect, actual: _actual, at: Date.now() };
                 if (typeof crNotify === 'function') {
-                  crNotify(_ok ? '✓ Map verified — matches the creator’s anchored hash'
-                               : '⚠ Map differs from the shared hash (content drift)');
+                  crNotify(_verified ? '✓ Map verified — matches the creator’s anchored hash'
+                                     : '⚠ Map differs from the shared hash (content drift) — won’t auto-open');
                 }
+              } else if (typeof crNotify === 'function') {
+                crNotify('⚠ Share link carries no integrity hash — imported to Maps only');
               }
             } catch(_){}
             // Re-id locally so the recipient owns this copy.
@@ -16673,7 +16770,11 @@ window.crChainSave = (function(){
             // deep-links are live: a shared chart link should drop you onto the
             // chart, not just silently import to Maps + leave you on the desktop.
             try {
-              if (u2.searchParams.get('room') || window.CR_DEEPLINK) {
+              // #6 — only auto-open into the chart AND auto-create a guest
+              // session / dismiss the login gate for a link whose content hash
+              // verified. Unverified links still import to Maps for manual open,
+              // but never silently authenticate the opener.
+              if ((u2.searchParams.get('room') || window.CR_DEEPLINK) && _verified) {
                 try {
                   if (localStorage.getItem('cr_stealth_auth_v1') !== '1') {
                     var _h = localStorage.getItem('cr_profile_name_v1') || ('guest-' + Math.random().toString(36).slice(2, 6));
@@ -32933,6 +33034,195 @@ function hitStop(ms){
  * Combat — monsters spawn in upside-down world; player shoots gun (walking)
  * or laser (flying).
  * =======================================================================*/
+// ── v1.0.565 — Monster Rounds (10% round-based survival adaptation) ──────────
+// Wraps the existing grunt/boss combat in a round loop: each round has a market
+// CONDITION, an OBJECTIVE (survive Ns / kill N / hunt the boss), a countdown, a
+// final PANIC phase, and a CLEAR endcard with juice. No new enemy types — this
+// reuses spawnMonster(); it only scales spawn pacing and adds structure + COACH
+// narration. updateCombat() reads spawnInterval()/spawnCap() from here; render()
+// calls drawHud(); restart() calls begin(); update() calls tick().
+const crMonsterRounds = (function(){
+  // Compact round table adapted from the round-based evolution script. spawn =
+  // seconds between spawns (fight phase), cap = max concurrent bears.
+  const ROUNDS = [
+    { cond:'FIRST BEAR',     obj:'kill',    target:3, dur:30, spawn:1.9, cap:4, coach:'That pink bear is pressure. Move before it prices you in.', lesson:'Bearish pressure chases indecision.' },
+    { cond:'WICK BITE',      obj:'survive', target:0, dur:26, spawn:1.7, cap:4, coach:'Long wicks are failed attacks. They still have teeth.',      lesson:'Wicks mark danger zones.' },
+    { cond:'RED STAIRCASE',  obj:'kill',    target:5, dur:34, spawn:1.5, cap:5, coach:'Red streak. Do not fight downhill without a plan.',          lesson:'Trend changes your escape routes.' },
+    { cond:'CHOP ROOM',      obj:'survive', target:0, dur:30, spawn:1.5, cap:5, coach:'This is chop. The monster is the box.',                       lesson:'Ranges punish random movement.' },
+    { cond:'VOLUME BRUTE',   obj:'boss',    target:1, dur:40, spawn:1.6, cap:5, coach:'That candle has weight. Respect it.',                         lesson:'Volume turns movement into commitment.' },
+    { cond:'BREAKOUT ALARM', obj:'survive', target:0, dur:28, spawn:1.3, cap:6, coach:'Breakout. Decide now.',                                      lesson:'Expansion compresses reaction time.' },
+    { cond:'FALSE BREAK',    obj:'kill',    target:6, dur:34, spawn:1.3, cap:6, coach:'It broke out. It did not hold. Move back inside.',           lesson:'Failed acceptance is a trap door.' },
+    { cond:'MOMENTUM SWARM', obj:'kill',    target:8, dur:36, spawn:1.1, cap:7, coach:'Momentum is real. Greed is still optional.',                 lesson:'Momentum helps until it folds.' },
+    { cond:'LIQUIDATION',    obj:'survive', target:0, dur:34, spawn:1.0, cap:7, coach:'Do not trade from the edge of the screen.',                  lesson:'Positioning is risk management.' },
+    { cond:'MONSTER MARKET', obj:'boss',    target:1, dur:60, spawn:0.9, cap:8, coach:'Everything you learned is active. Read first, shoot second.', lesson:'Monster Market cleared — you read the chart.' },
+  ];
+  const PANIC = 10;        // last N seconds of a survive round = panic phase
+  let st = null;
+  const nowS  = ()=> performance.now()/1000;
+  const def   = ()=> st ? ROUNDS[Math.min(st.idx, ROUNDS.length-1)] : null;
+  const kills = ()=> (game.kills|0);
+  const bossK = ()=> (game.bossKills|0);
+  function objText(d){
+    if(d.obj==='boss') return 'HUNT THE BOSS';
+    if(d.obj==='kill') return 'SURVIVE · KILL '+d.target+' BEARS';
+    return 'SURVIVE '+d.dur+'s';
+  }
+  function coach(line){ try{ crNotify('COACH: '+line); }catch(_){} }
+  function reset(){ st = null; }
+  function active(){ return !!st; }
+  function begin(){
+    st = { idx:0, phase:'idle', loop:0, startAt:0, clearAt:0, killAt:0, bossAt:0, panicOn:false, flashAt:0 };
+    if(typeof game!=='undefined') game.bossKills = 0;
+    startRound(0, 1.6);   // brief lead-in so the splash settles before bears come
+  }
+  function startRound(idx, delay){
+    const d = ROUNDS[Math.min(idx, ROUNDS.length-1)];
+    st.idx = idx; st.phase='brief'; st.startAt = nowS() + (delay||0);
+    st.killAt = kills(); st.bossAt = bossK(); st.panicOn=false;
+    const label = (idx < ROUNDS.length) ? ('ROUND '+String(idx+1).padStart(2,'0')) : 'LIVE RAID';
+    try { crNotify(label+' · '+d.cond, 'good'); } catch(_){}
+    try { showBanner(label+' · '+d.cond, objText(d)); } catch(_){}
+    coach(d.coach);
+  }
+  function metObjective(d, elapsed){
+    if(d.obj==='kill') return (kills() - st.killAt) >= d.target;
+    if(d.obj==='boss') return (bossK() - st.bossAt) >= d.target;
+    return elapsed >= d.dur;   // survive
+  }
+  function clearRound(){
+    const d = def();
+    st.phase='clear'; st.clearAt = nowS();
+    // Endcard juice: clear the field, confetti + banner over the avatar, lesson.
+    try { game.monsters.length = 0; } catch(_){}
+    const sx = (typeof sX==='function') ? sX(player.wx) : (W*0.4);
+    const sy = (typeof priceToY==='function') ? priceToY(player.py) : (H*0.4);
+    try { confettiBurst(sx, sy, '#3ddc97'); } catch(_){}
+    try { spawnFloat(sx, sy-30, '+'+(40 + st.idx*8)+' XP', '#ffd166'); } catch(_){}
+    try { hitStop(90); screenFlash(); } catch(_){}
+    try { showBanner('ROUND CLEAR', 'HP '+player.hp+'/'+player.hpMax); } catch(_){}
+    coach(d.lesson);
+  }
+  function tick(dt){
+    if(!st || !game.monsterMode || !player.alive) return;
+    const t = nowS();
+    if(st.phase==='clear'){
+      if(t - st.clearAt > 2.4){
+        let next = st.idx + 1;
+        if(next >= ROUNDS.length){ next = ROUNDS.length - 1; st.loop = (st.loop||0)+1; } // endless Live Raid loop
+        startRound(next, 1.2);
+      }
+      return;
+    }
+    if(st.phase==='brief'){
+      if(t >= st.startAt) st.phase='fight';
+      return;
+    }
+    // fight
+    const d = def();
+    const elapsed = t - st.startAt;
+    // Panic phase on survive-style rounds: last PANIC seconds ramp the danger.
+    const inPanic = (elapsed >= d.dur - PANIC);
+    if(inPanic && !st.panicOn){
+      st.panicOn = true;
+      try { crNotify('PANIC PHASE · volatility spike', 'bad'); } catch(_){}
+      coach('Final seconds. Read the danger, reach safe structure.');
+    }
+    if(st.panicOn && t - st.flashAt > 0.85){ st.flashAt = t; try { screenFlash(); } catch(_){} }
+    if(metObjective(d, elapsed)) clearRound();
+  }
+  // ── Spawn pacing read by updateCombat() ──
+  function spawnInterval(){
+    if(!st || st.phase!=='fight') return 9999;          // no spawns during brief/clear
+    const d = def();
+    let s = d.spawn;
+    if(st.panicOn) s *= 0.6;                              // panic = faster spawns
+    if(st.loop) s *= Math.max(0.5, 1 - st.loop*0.08);    // Live Raid escalation
+    return s;
+  }
+  function spawnCap(){
+    if(!st || st.phase!=='fight') return 0;
+    const d = def();
+    return d.cap + (st.panicOn ? 1 : 0) + (st.loop||0);
+  }
+  // Bias boss spawns on boss-objective rounds (else default 10%).
+  function bossChance(){
+    if(!st || st.phase!=='fight') return 0.10;
+    return def().obj==='boss' ? 0.40 : 0.10;
+  }
+  // ── Chart-triggered Wick Biter ──
+  // Scan candles within ±span of the player for the longest wick (upper or
+  // lower). Returns the anchor (tip price + body-base price + world-x) or null.
+  function findWickCandle(px){
+    if(typeof candles==='undefined' || !candles.length || typeof STEP==='undefined') return null;
+    const ci = Math.max(0, Math.min(candles.length-1, Math.floor(px/STEP)));
+    const span = 6;
+    let best=null, bestLen=0;
+    for(let i=Math.max(1,ci-span); i<=Math.min(candles.length-1, ci+span); i++){
+      const c = candles[i]; if(!c) continue;
+      const body = Math.abs(c.c - c.o);
+      const up = c.h - Math.max(c.o,c.c);     // upper wick length (price units)
+      const dn = Math.min(c.o,c.c) - c.l;     // lower wick length
+      const side = up>=dn ? 'up' : 'down';
+      const wlen = Math.max(up, dn);
+      const ref  = Math.max(body*1.2, (game.atr||1)*0.5);   // "long" threshold
+      if(wlen>ref && wlen>bestLen){
+        bestLen = wlen;
+        best = { i, side, wx: i*STEP + STEP/2,
+                 tipPy:  side==='up' ? c.h : c.l,
+                 basePy: side==='up' ? Math.max(c.o,c.c) : Math.min(c.o,c.c) };
+      }
+    }
+    return best;
+  }
+  // Maybe produce a Wick Biter monster object (caller pushes it). High chance on
+  // the WICK BITE round, low chance elsewhere — but ONLY when a real long wick
+  // sits near the player, so the enemy is always chart-justified + telegraphed.
+  function maybeWickSpawn(px){
+    if(!st || st.phase!=='fight') return null;
+    const d = def();
+    const chance = (d.cond==='WICK BITE') ? 0.85 : 0.18;
+    if(Math.random() > chance) return null;
+    const w = findWickCandle(px);
+    if(!w) return null;
+    const now = performance.now()/1000;
+    return {
+      kind:'wick', hp:1, isBoss:false, speed:0,
+      wx:w.wx, py:w.tipPy,
+      wickTipPy:w.tipPy, wickBasePy:w.basePy, wickSide:w.side,
+      phase:'warn', warnUntil: now + 0.55,
+      bob:Math.random()*Math.PI*2, facing:1,
+    };
+  }
+  // ── HUD ──
+  function drawHud(){
+    if(!st) return;
+    const d = def();
+    const x = 14, y = 16;
+    const label = (st.idx < ROUNDS.length) ? ('ROUND '+(st.idx+1)+'/'+ROUNDS.length) : 'LIVE RAID';
+    let prog;
+    if(st.phase==='brief')      prog = 'GET READY';
+    else if(st.phase==='clear') prog = 'CLEARED';
+    else if(d.obj==='kill')     prog = 'BEARS '+Math.min(d.target, kills()-st.killAt)+'/'+d.target;
+    else if(d.obj==='boss')     prog = (bossK()-st.bossAt)>0 ? 'BOSS DOWN' : 'BOSS LOOSE';
+    else {
+      const left = Math.max(0, Math.ceil(d.dur - (nowS()-st.startAt)));
+      prog = '0:'+String(left).padStart(2,'0');
+    }
+    ctx.save();
+    ctx.font = 'bold 12px ui-monospace,monospace';
+    const line1 = label + (st.loop ? ' ·x'+(st.loop+1) : '') + '  ·  ' + d.cond;
+    const line2 = prog + (st.phase==='fight' && st.panicOn ? '  ·  PANIC' : '');
+    const wBox = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + 18;
+    ctx.fillStyle = 'rgba(10,15,28,.82)';
+    ctx.strokeStyle = st.panicOn ? 'rgba(255,91,127,.9)' : 'rgba(155,140,255,.55)';
+    ctx.fillRect(x, y, wBox, 34); ctx.strokeRect(x+0.5, y+0.5, wBox-1, 33);
+    ctx.fillStyle = '#ff5b7f'; ctx.fillText(line1, x+9, y+14);
+    ctx.fillStyle = st.panicOn ? '#ffd166' : '#bff7df'; ctx.fillText(line2, x+9, y+28);
+    ctx.restore();
+  }
+  return { begin, reset, tick, drawHud, spawnInterval, spawnCap, bossChance, maybeWickSpawn, active };
+})();
+
 function spawnMonster(){
   // v0.8e #U — Essential Combat. Strip the menagerie back to just two monsters:
   //   grunt (90%) — boxy, predictable, approaches the player
@@ -32943,6 +33233,16 @@ function spawnMonster(){
   // two shapes, one tactic (keep distance, shoot, don't touch), no hidden
   // rules. If regime variants come back later they'll need visual telegraphs
   // that read *before* the player gets clipped.
+  // v1.0.566 — Wick Biter: a chart-triggered vertical-ambush enemy that obeys
+  // the "telegraph before contact" rule (0.55s red warning line along the wick).
+  // Additive: when the rounds module hands one back we spawn it INSTEAD of a
+  // grunt this tick; otherwise fall through to the classic grunt/boss spawn.
+  try {
+    if(crMonsterRounds.active()){
+      const wk = crMonsterRounds.maybeWickSpawn(player.wx);
+      if(wk){ game.monsters.push(wk); return; }
+    }
+  } catch(_){}
   const dir = Math.random()<0.5 ? -1 : 1;
   const dist = 260 + Math.random()*320;   // slightly further spawn distance
   const wx = player.wx + dir*dist;
@@ -32951,7 +33251,10 @@ function spawnMonster(){
   const fromAbove = Math.random()<0.5;
   const py = fromAbove ? c.h + (60 + Math.random()*120)/Math.max(0.001,pxPerDollarAt(c.h))
                        : c.l - (60 + Math.random()*120)/Math.max(0.001,pxPerDollarAt(c.l));
-  const kind = Math.random() < 0.10 ? 'boss' : 'grunt';
+  // v1.0.565 — boss spawn chance is biased up on boss-objective rounds.
+  let _bossP = 0.10;
+  try { if(crMonsterRounds.active()) _bossP = crMonsterRounds.bossChance(); } catch(_){}
+  const kind = Math.random() < _bossP ? 'boss' : 'grunt';
   const hp    = kind === 'boss' ? 6 : 1;
   const speed = kind === 'boss' ? 45 : 70;
   game.monsters.push({
@@ -32961,6 +33264,56 @@ function spawnMonster(){
     facing: -dir,
     isBoss: kind === 'boss',
   });
+}
+// v1.0.566 — Wick Biter motion: warn (telegraph) → strike (snap along wick) →
+// spent (brief settle, then despawn). Contact damage is handled by the shared
+// monster-vs-player check, so a strike that catches the player still bites.
+function crUpdateWickBiter(m, dt, now){
+  if(m.phase==='warn'){
+    if(now >= m.warnUntil){
+      m.phase='strike'; m.strikeT=0;
+      m.strikeFrom = m.wickTipPy; m.strikeTo = m.wickBasePy;
+      try { spawnParticles(sX(m.wx), priceToY(m.wickTipPy), '#ff5b7f', 6, 120); } catch(_){}
+    }
+    return;
+  }
+  if(m.phase==='strike'){
+    m.strikeT += dt;
+    const k = Math.min(1, m.strikeT/0.18);
+    m.py = m.strikeFrom + (m.strikeTo - m.strikeFrom)*k;
+    if(k>=1){ m.phase='spent'; m.spentUntil = now + 0.12; }
+    return;
+  }
+  // spent
+  if(now >= (m.spentUntil||0)){
+    m.dead = true;
+    try { spawnParticles(sX(m.wx), priceToY(m.py), '#9b8cff', 5, 90); } catch(_){}
+  }
+}
+// v1.0.566 — Wick Biter render: pulsing red danger line along the wick during
+// the warn phase (the telegraph), then a fanged red dart that snaps to the body.
+function drawWickBiter(m, sx, sy){
+  const tipY = priceToY(m.wickTipPy), baseY = priceToY(m.wickBasePy);
+  const t = performance.now()/1000;
+  const dir = m.wickSide==='up' ? 1 : -1;   // strike direction (toward the body)
+  ctx.save();
+  if(m.phase==='warn'){
+    const pulse = 0.35 + 0.45*Math.abs(Math.sin(t*8));
+    ctx.globalAlpha = pulse;
+    ctx.strokeStyle = '#ff5b7f'; ctx.lineWidth = 3; ctx.setLineDash([4,3]);
+    ctx.shadowColor = '#ff5b7f'; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.moveTo(sx, tipY); ctx.lineTo(sx, baseY); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffd166';   // warning chevron at the tip, pointing inward
+    ctx.beginPath(); ctx.moveTo(sx-5, tipY); ctx.lineTo(sx+5, tipY); ctx.lineTo(sx, tipY+8*dir); ctx.closePath(); ctx.fill();
+  }
+  ctx.translate(sx, sy);
+  ctx.fillStyle = m.phase==='strike' ? '#ff2d5e' : '#ff5b7f';
+  ctx.shadowColor = '#ff5b7f'; ctx.shadowBlur = m.phase==='strike' ? 14 : 6;
+  ctx.beginPath(); ctx.moveTo(-7,0); ctx.lineTo(7,0); ctx.lineTo(0,10*dir); ctx.closePath(); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#0a0f1c'; ctx.fillRect(-3,-2,2,2); ctx.fillRect(1,-2,2,2);
+  ctx.restore();
 }
 // v0.8M#14 — Weapon gear catalog. Each entry has cooldown / speed / size /
 // color / pierce. Defaults to the basic 'pistol' on game start; future
@@ -33576,7 +33929,16 @@ function updateCombat(dt){
   if(now < (game.monsterGraceUntil||0)) return;
   // Spawn loop — cap concurrent monsters (lowered from 8 → 5 to keep combat
   // legible; 8 on-screen bears was too much visual noise to read a bracket).
-  if(now - game.lastSpawn > 1.8 && game.monsters.length<5){
+  // v1.0.565 — spawn pacing/cap driven by the Monster Rounds module when active
+  // (falls back to the classic 1.8s / 5-cap continuous field otherwise).
+  let _spawnGap = 1.8, _spawnCap = 5;
+  try {
+    if(crMonsterRounds.active()){
+      _spawnGap = crMonsterRounds.spawnInterval();
+      _spawnCap = crMonsterRounds.spawnCap();
+    }
+  } catch(_){}
+  if(now - game.lastSpawn > _spawnGap && game.monsters.length < _spawnCap){
     spawnMonster(); game.lastSpawn = now;
   }
   // v0.8e #U — Move monsters toward player. Single tracking rule for all
@@ -33588,6 +33950,9 @@ function updateCombat(dt){
   // monster-only constraint. Collision is computed in screen space so the
   // visible wall is the physical wall (what you see is what they hit).
   for(const m of game.monsters){
+    // v1.0.566 — Wick Biter runs its own warn→strike→spent motion (vertical
+    // ambush along the wick), not the shared pursuit. Skip the chaser logic.
+    if(m.kind==='wick'){ crUpdateWickBiter(m, dt, now); continue; }
     // v1.0.551 — pursue in SCREEN space so the monster closes vertical and
     // horizontal distance at a balanced rate. The old vector normalized world-px
     // (dx) against price units (dy) with a +1 price epsilon; when a monster sat
@@ -33672,6 +34037,7 @@ function updateCombat(dt){
         if(m.hp<=0){
           m.dead=true; game.kills++;
           if(m.isBoss){
+            game.bossKills = (game.bossKills||0)+1;   // v1.0.565 — round objective tracker
             // v0.8h — Boss kill: +1 $RUN (scarce), +8 $CHART, loot drop + banner.
             // RUN scarcity rule: only boss, winning trade, and mission rewards mint RUN.
             game.run += 1; game.score += 100; game.chart += 8;
@@ -33737,6 +34103,7 @@ function updateCombat(dt){
       if(m.hp <= 0){
         m.dead = true; game.kills++;
         if(m.isBoss){
+          game.bossKills = (game.bossKills||0)+1;   // v1.0.565 — round objective tracker
           game.run += 1; game.score += 100; game.chart += 8;
           try { log('kill BOSS via bracket (+1 $RUN, +8 $CHART)'); } catch(_){}
           try { spawnParticles(sxh, syh, '#14f195', 22, 300); } catch(_){}
@@ -33804,6 +34171,7 @@ function drawMonsters(){
     const sx = sX(m.wx);
     const sy = priceToY(m.py);
     if(sx<-40||sx>W+40) continue;
+    if(m.kind==='wick'){ drawWickBiter(m, sx, sy); continue; }   // v1.0.566
     ctx.save(); ctx.translate(sx, sy + Math.sin(m.bob)*2);
     ctx.scale(m.facing, 1);
     if(m.kind==='boss'){
@@ -34264,6 +34632,12 @@ try { if(_crIsDevHost() && /[?&]dev=1/.test(location.search) && window.ChartRunn
   // `monsterGraceUntil` below, first bear appears ~3s after restart.
   game.lastSpawn = performance.now()/1000;
   game.monsterGraceUntil = performance.now()/1000 + 3;
+  // v1.0.565 — start (or clear) the Monster Rounds loop for this run.
+  game.bossKills = 0;
+  try {
+    if(game.monsterMode) crMonsterRounds.begin();
+    else                 crMonsterRounds.reset();
+  } catch(_){}
   game.particles.length=0; game.floats.length=0; game.firstBlood=false;
   game.hitStopUntil = 0;
   game.pnl = { realized: 0, unrealized: 0 };
@@ -36375,6 +36749,9 @@ function update(dt){
   // Combat
   updateCombat(dt);
 
+  // v1.0.565 — Monster Rounds loop (round timer, panic phase, clear endcard).
+  if(game.monsterMode){ try { crMonsterRounds.tick(dt); } catch(_){} }
+
   // Missions + tutorial
   // v0.8k#24i — missions.tick disabled along with missions.start (see run
   // start). Without a start call, `current()` returns the list[0] state but
@@ -36587,6 +36964,7 @@ function render(){
   if(game.running && typeof drawBotOrbs === 'function') drawBotOrbs();
   // v0.8e #B — HP bar shows whenever the player is in combat, not just upside-down.
   if(game.monsterMode) drawHpBar();
+  if(game.monsterMode){ try { crMonsterRounds.drawHud(); } catch(_){} }
   if(bracketEditor.open) drawBracketGhost();
   drawParticles();
   drawFloats();
@@ -39582,8 +39960,109 @@ window.crMiniEnd = (function(){
   document.addEventListener('mousedown', block, true);
   document.addEventListener('click', block, true);
 })();
+// ── v1.0.567 — Snake Rounds (10% round campaign for Snake) ───────────────────
+// Mirrors crMonsterRounds. The legacy Snake is a single goal (eat N coins).
+// This wraps it in a campaign: each round = grow to a TARGET LENGTH, then an
+// EXIT GATE opens downrange — reach it to "take profit" and clear. Self-collision
+// still kills (your tail = your risk). COACH narrates; clears juice + advance.
+// crMinigameTick delegates win/advance here; drawMinigame draws the gate + HUD.
+const crSnakeRounds = (function(){
+  const ROUNDS = [
+    { cond:'FIRST FEED',    target:3,  coach:'Eat the signal, then leave.',              lesson:'A plan has a target.' },
+    { cond:'WICK WALL',     target:5,  coach:'Not every price touch is safe terrain.',   lesson:'Respect wick rejection.' },
+    { cond:'GREED TAIL',    target:7,  coach:'Winning positions can trap you.',          lesson:'Your tail is your risk.' },
+    { cond:'TREND COMBO',   target:9,  coach:'Trend following is timing plus direction.',lesson:'Ride the continuation.' },
+    { cond:'OVEREXTENSION', target:12, coach:'More is not always better.',               lesson:'Exit before the reversal.' },
+    { cond:'CHOP SNAKE',    target:14, coach:'Range markets punish over-movement.',       lesson:'Stillness is a position.' },
+    { cond:'REVERSAL HUNT', target:16, coach:'Trend changes require changing the plan.',  lesson:'Adapt the route, then exit.' },
+  ];
+  let st = null;
+  const nowS = ()=> performance.now()/1000;
+  const def  = ()=> st ? ROUNDS[Math.min(st.idx, ROUNDS.length-1)] : null;
+  const len  = ()=> (game.snakeLen|0) || 1;
+  const active = ()=> !!st;
+  const reset  = ()=> { st = null; };
+  function coach(line){ try { crNotify('COACH: '+line); } catch(_){} }
+  function announce(){
+    const d = def();
+    try { crNotify('ROUND '+(st.idx+1)+' · '+d.cond, 'good'); } catch(_){}
+    try { showBanner('ROUND '+(st.idx+1)+' · '+d.cond, 'GROW TO LENGTH '+d.target+', THEN EXIT'); } catch(_){}
+    coach(d.coach);
+  }
+  function begin(){ st = { idx:0, phase:'grow', gateWx:0, clearAt:0 }; announce(); }
+  function openGate(){
+    st.phase='gate'; st.gateWx = player.wx + 560;   // gate appears downrange
+    try { showBanner('EXIT GATE OPEN', 'Reach the gate to take profit'); } catch(_){}
+    try { screenFlash(); } catch(_){}
+    coach('Gate is open. More coins are greed now.');
+  }
+  function clearRound(){
+    const d = def(); st.phase='clear'; st.clearAt = nowS();
+    const sx = (typeof sX==='function')?sX(player.wx):W*0.4;
+    const sy = (typeof priceToY==='function')?priceToY(player.py):H*0.4;
+    try { confettiBurst(sx, sy, '#7be3f3'); } catch(_){}
+    try { spawnFloat(sx, sy-30, 'CLEAN EXIT', '#7be3f3'); } catch(_){}
+    try { hitStop(90); } catch(_){}
+    try { showBanner('ROUND CLEAR', 'Length '+len()+' · plan followed'); } catch(_){}
+    coach(d.lesson);
+  }
+  function finish(){
+    const m = game.minigame; if(m) m.won = true;
+    game.running = false;
+    let best = len();
+    try { best = Math.max(len(), parseInt(localStorage.getItem('cr_snake_best')||'0',10)||0); localStorage.setItem('cr_snake_best', String(best)); } catch(_){}
+    try { crMiniEnd.show('snake', { won:true, big:ROUNDS.length, bigLabel:'ROUNDS CLEARED', tag:'★ CAMPAIGN CLEAR', stats:[['Length', len()],['Rounds', ROUNDS.length],['Best', best]] }); } catch(_){}
+  }
+  function tick(){
+    if(!st || !game.running) return;
+    const d = def();
+    if(st.phase==='grow'){ if(len() >= d.target) openGate(); return; }
+    if(st.phase==='gate'){ if(player.wx >= st.gateWx - 24) clearRound(); return; }
+    if(st.phase==='clear'){
+      if(nowS() - st.clearAt > 2.0){
+        if(st.idx+1 >= ROUNDS.length){ finish(); return; }
+        st.idx++; st.phase='grow'; announce();
+      }
+    }
+  }
+  function drawGate(){
+    if(!st || st.phase!=='gate') return;
+    const gx = sX(st.gateWx);
+    if(gx < -40 || gx > W+40) return;
+    const t = performance.now()/1000;
+    const pulse = 0.55 + 0.45*Math.abs(Math.sin(t*4));
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.strokeStyle = '#7be3f3'; ctx.shadowColor = '#7be3f3'; ctx.shadowBlur = 18; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(gx, 60); ctx.lineTo(gx, H-60); ctx.stroke();
+    ctx.fillStyle = '#7be3f3'; ctx.fillRect(gx-8, 56, 16, 8); ctx.fillRect(gx-8, H-64, 16, 8);
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    ctx.font = 'bold 11px ui-monospace,monospace'; ctx.textAlign='center';
+    ctx.fillText('EXIT', gx, 50); ctx.textAlign='left';
+    ctx.restore();
+  }
+  function drawHud(){
+    if(!st) return;
+    const d = def(); const y = 36;
+    ctx.save();
+    ctx.fillStyle = 'rgba(10,15,28,0.85)'; ctx.fillRect(W/2-90, y, 180, 30);
+    ctx.textAlign='center';
+    ctx.fillStyle = st.phase==='gate' ? '#7be3f3' : '#9dff5b';
+    ctx.font = 'bold 12px ui-monospace,monospace';
+    ctx.fillText('R'+(st.idx+1)+'/'+ROUNDS.length+' · '+d.cond, W/2, y+13);
+    ctx.font = 'bold 11px ui-monospace,monospace'; ctx.fillStyle = '#cfe';
+    const sub = (st.phase==='grow') ? ('LEN '+len()+' / '+d.target)
+              : (st.phase==='gate') ? '➜ REACH EXIT GATE'
+              : 'CLEARED';
+    ctx.fillText(sub, W/2, y+25); ctx.textAlign='left';
+    ctx.restore();
+  }
+  return { begin, reset, tick, drawGate, drawHud, active };
+})();
+
 function crMinigameInit(){
   if(typeof game === 'undefined') return;
+  try { crSnakeRounds.reset(); } catch(_){}
   game.minigame = {
     mode:    game.mode,
     score:   0,
@@ -39609,7 +40088,9 @@ function crMinigameInit(){
     // entering, so the Profile vehicle loadout never carries into Snake.
     try { game.vehicle = 'none'; game.vehicleVel = 0; game.vehicleGrind = null; } catch(_){}
     game.minigame.candleOffsets = candles.map(() => ({ y: 0, vy: 0 }));
-    if(typeof toast === 'function') toast('Snake · eat ' + _MINIGAME_PICKUP_GOAL + ' coins to win');
+    // v1.0.567 — start the round campaign (grow to target → exit gate → clear).
+    try { crSnakeRounds.begin(); } catch(_){}
+    if(typeof toast === 'function') toast('Snake Circuit · grow, then exit at target');
   } else if(game.mode === 'racing'){
     // v1.0.385 — Racing v2: the crRacing engine owns spawn, vehicle pick,
     // countdown, physics, finish + end card. update() hands it the loop.
@@ -39637,7 +40118,12 @@ function crMinigameTick(dt){
     }
     // Win condition — coins collected.
     m.score = (game.snakeLen || 1) - 1;
-    if(m.score >= _MINIGAME_PICKUP_GOAL){
+    // v1.0.567 — when the round campaign is active it owns win/advance (grow →
+    // exit gate → clear → next round → final campaign-clear endcard). Legacy
+    // single-goal win is the fallback when the campaign isn't running.
+    if(crSnakeRounds.active()){
+      try { crSnakeRounds.tick(); } catch(_){}
+    } else if(m.score >= _MINIGAME_PICKUP_GOAL){
       m.won = true;
       game.running = false;   // freeze the run behind the end card
       var _len = (m.score || 0) + 1;
@@ -39674,16 +40160,22 @@ function drawMinigame(){
     // v1.0.385 — Racing v2 render (vehicle, countdown, HUD, finish post).
     try { if(window.crRacing && crRacing.draw) crRacing.draw(); } catch(_){}
   } else if(m.mode === 'snake'){
-    // Snake HUD — coin count + goal.
-    ctx.save();
-    ctx.fillStyle = 'rgba(10,15,28,0.85)';
-    ctx.fillRect(W/2 - 80, 36, 160, 28);
-    ctx.fillStyle = '#3ddc97';
-    ctx.font = 'bold 14px ui-monospace,monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('Length ' + ((game.snakeLen || 1)) + ' / ' + (_MINIGAME_PICKUP_GOAL + 1), W/2, 56);
-    ctx.textAlign = 'left';
-    ctx.restore();
+    // v1.0.567 — round campaign draws its own gate + HUD; legacy Length HUD is
+    // the fallback when the campaign isn't active.
+    if(crSnakeRounds.active()){
+      try { crSnakeRounds.drawGate(); crSnakeRounds.drawHud(); } catch(_){}
+    } else {
+      // Snake HUD — coin count + goal.
+      ctx.save();
+      ctx.fillStyle = 'rgba(10,15,28,0.85)';
+      ctx.fillRect(W/2 - 80, 36, 160, 28);
+      ctx.fillStyle = '#3ddc97';
+      ctx.font = 'bold 14px ui-monospace,monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('Length ' + ((game.snakeLen || 1)) + ' / ' + (_MINIGAME_PICKUP_GOAL + 1), W/2, 56);
+      ctx.textAlign = 'left';
+      ctx.restore();
+    }
   }
   // v0.8k#24mz — pacman + pong draw branches retired.
 }
@@ -53252,6 +53744,8 @@ function _crTermPickerDocsHtml(){
     + '<li><span class="lskey">cr_qvac_*</span> — bridgeUrl, model, engine_pref for the QVAC adapter.</li>'
     + '<li><span class="lskey">cr_guest_users_v1</span> / <span class="lskey">cr_guest_session_v1</span> — Continue-as-Guest auth records.</li>'
     + '</ul>'
+    + '<div class="tip" style="border-color:#f5a14f;color:#f5d29a">⚠ API keys (Birdeye, GoldRush, CoinGecko, COACH provider) and the agent bridge token are stored in <b>this browser</b> and sent directly from the page — any malicious extension or injected script could read them. Use a scoped, short-lived key and purge it when you\'re done.</div>'
+    + '<div class="api-row"><div class="sig"><button type="button" onclick="if(window.crPurgeApiKeys){var n=window.crPurgeApiKeys();alert(\'Cleared \'+n+\' stored key(s)/token(s) from this browser. Reload to apply.\');}">Forget all API keys</button></div><div class="desc">Wipes every stored provider key + the agent bridge token from this browser. Also callable as <code>window.crPurgeApiKeys()</code>.</div></div>'
 
     + '<h3>5 · Diagnostics</h3>'
     + '<p>Run in DevTools console to inspect runtime state:</p>'
@@ -70151,6 +70645,7 @@ function log(msg){
     };
   }
 
+
   function _onWalletPillClick(){
     if(typeof crWallet === 'undefined') return;
     crWallet.connect();
@@ -75128,13 +75623,19 @@ const crL3 = (function(){
 	    }
 	    function _syncFromUrl(){
 	      const qs = _query();
-	      const eventsUrl = qs.get('crAgentEventsUrl') || '';
+	      const rawEventsUrl = qs.get('crAgentEventsUrl') || '';
 	      const channelId = qs.get('crAgentChannelId') || qs.get('crAgentEventsChannel') || '';
 	      const token = qs.get('crAgentBridgeToken') || qs.get('crAgentEventsToken') || '';
 	      const enabled = qs.get('crAgentEventsPoll') || '';
-	      if(eventsUrl) _set(LS_URL, eventsUrl);
-	      if(channelId) _set(LS_CHANNEL, _safeId(channelId));
-	      if(token) _set(LS_TOKEN, token);
+	      // #3 — confirm + protocol-allowlist external event feeds; only bind a
+	      // token/channel once its endpoint has been approved by the user.
+	      const eventsUrl = rawEventsUrl && window.crConfirmExternalEndpoint
+	        ? window.crConfirmExternalEndpoint(rawEventsUrl, 'agent event feed') : '';
+	      if(eventsUrl){
+	        _set(LS_URL, eventsUrl);
+	        if(token) _set(LS_TOKEN, token);
+	        if(channelId) _set(LS_CHANNEL, _safeId(channelId));
+	      }
 	      if(enabled) _set(LS_ENABLED, enabled === '0' || enabled === 'off' ? '0' : '1');
 	    }
 	    function _deriveEventsUrl(){
@@ -82622,8 +83123,11 @@ window.crQvac = (function(){
   (function _syncBridgeParamsFromUrl(){
     try {
       const qs = new URLSearchParams(location.search || '');
-      const bridgeUrl = qs.get('crAgentBridgeUrl') || qs.get('crQvacBridgeUrl') || '';
+      const rawBridge = qs.get('crAgentBridgeUrl') || qs.get('crQvacBridgeUrl') || '';
       const engine = qs.get('crAgentBridgeEngine') || qs.get('crQvacEngine') || '';
+      // #3 — confirm + protocol-allowlist any external bridge before persisting.
+      const bridgeUrl = rawBridge && window.crConfirmExternalEndpoint
+        ? window.crConfirmExternalEndpoint(rawBridge, 'agent bridge') : '';
       if(bridgeUrl) _setCfg(LS_BRIDGE, bridgeUrl);
       if(engine) _setCfg(LS_PREF, engine);
       if(bridgeUrl || engine){
