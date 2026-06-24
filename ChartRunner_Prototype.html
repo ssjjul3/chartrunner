@@ -2470,7 +2470,9 @@
      target; a pulsing beacon + bouncing "click" arrow point at it; a COACH terminal popup
      narrates each surface with Skip/Next; clicking the target or Next advances. */
   #crFrMask{position:fixed;inset:0;z-index:2147483400;pointer-events:none;display:none}
-  #crFrMask.on{display:block}
+  /* v1.0 — while the tour is up the mask swallows desktop clicks so the player
+     can't start a run (or touch anything) mid-tutorial; the popup sits above it. */
+  #crFrMask.on{display:block;pointer-events:auto}
   .cr-fr-ring{position:fixed;box-sizing:border-box;border:2px dashed rgba(20,241,149,.95);border-radius:14px;
     box-shadow:0 0 0 9999px rgba(4,8,12,.62), 0 0 30px rgba(20,241,149,.55) inset, 0 0 26px rgba(20,241,149,.4);
     transition:left .28s ease,top .28s ease,width .28s ease,height .28s ease;pointer-events:none;background:rgba(20,241,149,.05)}
@@ -84883,6 +84885,21 @@ window.crQvac = (function(){
     document.addEventListener('mousedown', hide, true);
     window.addEventListener('scroll', hide, true);
     window.addEventListener('blur', hide);
+    // v1.0 — public API so the onboarding tour can pop a target's themed tooltip
+    // programmatically (the dimming mask suppresses normal hover during the tour).
+    window.crTip = {
+      show: function(el){
+        if(!el) return;
+        var t = (el.getAttribute('title') || el.__crTitle || '').trim();
+        if(!t) return;
+        hide();
+        cur = el;
+        if(el.getAttribute('title')){ el.__crTitle = t; el.removeAttribute('title'); }
+        tip.innerHTML = fmt(t);
+        place(el); tip.classList.add('on');
+      },
+      hide: hide
+    };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
@@ -84910,16 +84927,22 @@ window.crQvac = (function(){
     { sel:'.os-icon[data-prog="chartrunner"]', ttl:'Play',     body:"Your run launcher. Pick an asset / token / timeframe and START a run on real candles." },
     { sel:'.os-icon[data-prog="terminal"]',    ttl:'Terminal', body:"Live trading console — chart engine, on-chain + CEX trackers and strategies. Drag any pane onto the chart to pin it live." },
     { sel:'.os-icon[data-prog="wallet"]',      ttl:'Profile',  body:"Your loadout — weapon, skin, vehicle, bots and tools. Gear up before a run." },
+    // Maps is connect-gated: auto-skips for guests (icon hidden), shows once a wallet is connected.
+    { sel:'.os-icon[data-prog="maps"]',        ttl:'Maps',     body:"Save and load chart setups — every tool, indicator and overlay preserved. Run a map solo or open rooms with friends." },
     { sel:'.os-icon[data-prog="tokenterm"]',   ttl:'Token',    body:"Research any token, star favourites into watchlists, and $RUN it as a chart." },
     // Auto-skips while Journal is level-gated (icon hidden); shows once unlocked.
     { sel:'.os-icon[data-prog="journal"]',     ttl:'Journal',  body:"Auto-logs every trade — entry, stop, target and your checklist. Tabs: Manual · Paper · Alerts · P&L." },
     { sel:'#crCoachHubBtn',                    ttl:'Coach.llm',body:"That's me — COACH.llm. Take the guided tour or just chat, any time, from the desktop invader or the toolbar. Same brain as the in-game Quant." },
-    { sel:'#crMenuConnect',                    ttl:'Connect',  body:"Connect a Solana wallet to unlock Maps, Journal, bots, lasers and the full Profile." }
+    { sel:'#crMenuConnect',                    ttl:'Connect',  body:"Connect a Solana wallet to unlock Maps, Journal, bots, lasers and the full Profile.", guestOnly:true }
   ];
   var mask, ring, beacon, arrow, pop, ttlEl, stepEl, bodyEl, dotsEl, backBtn, nextBtn, skipBtn, idx=0, active=false, clickHandler=null, built=false;
   function visible(el){ try { return !!(el && el.offsetParent !== null && el.getBoundingClientRect().width > 1); } catch(_){ return false; } }
   function targetFor(i){ var st=STEPS[i]; if(!st||!st.sel) return null; var el=document.querySelector(st.sel); return visible(el)?el:null; }
-  function nextRenderable(i, dir){ while(i>=0 && i<STEPS.length){ var st=STEPS[i]; if(!st.sel || targetFor(i)) return i; i += dir; } return -1; }
+  // v1.0 — phase gating. Connect is guest-only (dropped once a wallet is connected);
+  // Maps / Journal gate themselves by icon visibility (handled in targetFor).
+  function _frConnected(){ try { return (typeof window.crConnected==='function') ? !!window.crConnected() : false; } catch(_){ return false; } }
+  function _stepAllowed(st){ if(!st) return false; if(st.guestOnly && _frConnected()) return false; if(st.connectedOnly && !_frConnected()) return false; return true; }
+  function nextRenderable(i, dir){ while(i>=0 && i<STEPS.length){ var st=STEPS[i]; if(_stepAllowed(st) && (!st.sel || targetFor(i))) return i; i += dir; } return -1; }
   function build(){
     if(built) return; built=true;
     mask = document.createElement('div'); mask.id='crFrMask';
@@ -84969,6 +84992,16 @@ window.crQvac = (function(){
     if(backBtn) backBtn.style.display = idx>0 ? '' : 'none';
     nextBtn.textContent = (idx>=STEPS.length-1) ? 'Done ▶' : 'Next ▶';
     mask.classList.add('on'); pop.classList.add('on'); reposition();
+    // v1.0 — pop the highlighted element's own themed tooltip during the tour, for
+    // every step EXCEPT Token (per spec). The mask blocks normal hover, so we drive
+    // it programmatically; .cr-tip layers above the mask.
+    try {
+      var _tgt = (st && st.sel) ? targetFor(idx) : null;
+      if(window.crTip){
+        if(_tgt && st.ttl !== 'Token') window.crTip.show(_tgt);
+        else window.crTip.hide();
+      }
+    } catch(_){}
   }
   function go(to){
     if(to>=STEPS.length){ finish(false); return; }
@@ -84981,6 +85014,7 @@ window.crQvac = (function(){
   function persist(){ var o=load(); o.idx=idx; o.ts=Date.now(); save(o); }
   function finish(skipped){
     active=false;
+    try { if(window.crTip) window.crTip.hide(); } catch(_){}
     if(pop) pop.classList.remove('on'); if(mask) mask.classList.remove('on');
     if(ring) ring.style.display='none'; if(beacon) beacon.style.display='none'; if(arrow) arrow.style.display='none';
     var o=load(); o.done=true; o.skipped=!!skipped; o.ts=Date.now(); save(o);
