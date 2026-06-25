@@ -34465,6 +34465,26 @@ const crCoinSpawn = {
 };
 try { window.crCoinSpawn = crCoinSpawn; } catch(_){}
 
+// v1.0 — Front-loaded per-run $CHART issuance for GRIND coins (tick/creds). Fixes the
+// "unlimited money" exploit: on a high timeframe with few candles (short chart) the
+// player could camp one spot and collect respawning coins forever for flat +2 each.
+// Now grind-coin $CHART is full-value until ~200 issued, then tapers to a hard 500 cap
+// per run; past the cap coins still score / grow the snake but mint no $CHART. Boss
+// loot (+20) and kill rewards are unaffected — they aren't farmable on a static chart.
+// The counter resets every run in restart().
+const CHART_GRIND_FULL = 200, CHART_GRIND_CAP = 500;
+function _grindChartAward(base){
+  base = base || 2;
+  let issued = game._grindChart || 0;
+  if(issued >= CHART_GRIND_CAP) return 0;
+  let mult = issued <= CHART_GRIND_FULL ? 1 : Math.max(0, (CHART_GRIND_CAP - issued) / (CHART_GRIND_CAP - CHART_GRIND_FULL));
+  let award = Math.round(base * mult);
+  if(award < 1) award = 1;                                   // gentle taper floor…
+  if(issued + award > CHART_GRIND_CAP) award = CHART_GRIND_CAP - issued;  // …still bounded by the cap
+  game._grindChart = issued + award;
+  return award;
+}
+
 /* ───────────────────────────────────────────────────────────────────────────
    BOT-FRIENDLY automation namespace — quick-wins tier.
    See docs/architecture/BOT-FRIENDLINESS.md. Additive, single-file,
@@ -34614,7 +34634,7 @@ try { if(_crIsDevHost() && /[?&]dev=1/.test(location.search) && window.ChartRunn
   player.vy = 0;
   player.onGround = true;
   camera.wx = player.wx - W*0.35;
-  game.run=0; game.chart=0; game.score=0; game.kills=0;
+  game.run=0; game.chart=0; game.score=0; game.kills=0; game._grindChart=0;
   game.runWeapon = null;   // v1.0.510 — clear any boss-loot weapon from the previous run
   game.visualLadders.length=0; game.visualBrackets.length=0; game.visualOCO.length=0;
   game.selectedOverlay = null;
@@ -36614,11 +36634,11 @@ function update(dt){
       if(pk.kind==='tick'){
         // v0.8h — Tick pickups now drop $CHART, not $RUN. Overworld grind produces
         // CHART; RUN only mints on boss kills, winning trades, and mission completions.
-        game.chart+=2; game.score+=10;
+        var _ca = _grindChartAward(2); game.chart += _ca; game.score+=10;
         // v0.8k#24bt — Snake grows on every coin pickup. Capped at 60 so a
         // long run doesn't stretch the snake past the visible area.
         game.snakeLen = Math.min(60, (game.snakeLen || 1) + 1);
-        spawnFloat(sx, sy-10, '+2 $CHART', '#9b8cff');
+        spawnFloat(sx, sy-10, _ca > 0 ? ('+' + _ca + ' $CHART') : 'CHART maxed', '#9b8cff');
         spawnParticles(sx, sy, '#9b8cff', 6, 110);
       } else if(pk.kind==='loot'){
         // v0.7b-items v2 — BOSS LOOT: +2 charges on every non-max item + 20 $CHART.
@@ -36656,10 +36676,10 @@ function update(dt){
         spawnParticles(sx, sy, '#14f195', 10, 160);
         try { showBanner?.('RESTOCK', 'All items +1 charge', 1200); } catch(_){}
       } else {
-        game.chart+=2; game.score+=4;
+        var _cb = _grindChartAward(2); game.chart += _cb; game.score+=4;
         // v0.8k#24bt — Same snake growth rule on the default coin path.
         game.snakeLen = Math.min(60, (game.snakeLen || 1) + 1);
-        spawnFloat(sx, sy-10, '+2 $CHART', '#9b8cff');
+        spawnFloat(sx, sy-10, _cb > 0 ? ('+' + _cb + ' $CHART') : 'CHART maxed', '#9b8cff');
         spawnParticles(sx, sy, '#9b8cff', 6, 110);
       }
       log('pickup '+pk.kind);
