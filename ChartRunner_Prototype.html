@@ -2470,9 +2470,10 @@
      target; a pulsing beacon + bouncing "click" arrow point at it; a COACH terminal popup
      narrates each surface with Skip/Next; clicking the target or Next advances. */
   #crFrMask{position:fixed;inset:0;z-index:2147483400;pointer-events:none;display:none}
-  /* v1.0 — while the tour is up the mask swallows desktop clicks so the player
-     can't start a run (or touch anything) mid-tutorial; the popup sits above it. */
-  #crFrMask.on{display:block;pointer-events:auto}
+  /* v1.0 — the tour dims the desktop (ring shadow) but stays CLICK-THROUGH so the player
+     can hover/click items to learn them; entering a run/level is gated in JS instead
+     (see crFirstRun clickHandler). The popup sits above the dim. */
+  #crFrMask.on{display:block;pointer-events:none}
   .cr-fr-ring{position:fixed;box-sizing:border-box;border:2px dashed rgba(20,241,149,.95);border-radius:14px;
     box-shadow:0 0 0 9999px rgba(4,8,12,.62), 0 0 30px rgba(20,241,149,.55) inset, 0 0 26px rgba(20,241,149,.4);
     transition:left .28s ease,top .28s ease,width .28s ease,height .28s ease;pointer-events:none;background:rgba(20,241,149,.05)}
@@ -85212,9 +85213,37 @@ window.crQvac = (function(){
     nextBtn.addEventListener('click', function(){ go(idx+1); });
     skipBtn.addEventListener('click', function(){ finish(true); });
     clickHandler = function(e){
-      if(!active) return; var st=STEPS[idx]; if(!st||!st.gateClick||!st.sel) return;
-      var tgt=document.querySelector(st.sel); if(!tgt) return;
-      if(e.target && (e.target===tgt || (e.target.closest && e.target.closest(st.sel)))) setTimeout(function(){ if(active) finish(false); }, 150);
+      if(!active) return;
+      var t = e.target;
+      // v1.0 — GATE entering a run/level while the tour is up: block the launcher and
+      // explain it instead (mode/level cards, Configure-Run START, token RUN, lite run buttons).
+      var launcher = t && t.closest && t.closest('.modecard, #crCfgStart, [data-tok-run], .lp-runbtn, .run-card');
+      if(launcher){
+        e.preventDefault(); e.stopPropagation();
+        try {
+          if(window.crTip){
+            var explain = launcher.getAttribute && launcher.getAttribute('title');
+            if(!explain){
+              var h = launcher.querySelector && launcher.querySelector('h3,h4,strong');
+              var p = launcher.querySelector && launcher.querySelector('p');
+              explain = ((((h&&h.textContent)||'').trim()) + (p?(' — '+((((p.textContent)||'').trim()))):'')).trim();
+              if(explain) launcher.setAttribute('title', explain);
+            }
+            if(explain) window.crTip.show(launcher);
+          }
+        } catch(_){}
+        try { if(typeof toast === 'function') toast('Finish the quick tour first to enter a run.'); } catch(_){}
+        return;
+      }
+      // v1.0 — responsive learning: clicking any titled / interactive item explains it.
+      var tip = t && t.closest && t.closest('[title]');
+      if(tip){ try { if(window.crTip) window.crTip.show(tip); } catch(_){} }
+      // original gateClick advance (kept for any gateClick step).
+      var st=STEPS[idx];
+      if(st && st.gateClick && st.sel){
+        var tgt=document.querySelector(st.sel);
+        if(tgt && t && (t===tgt || (t.closest && t.closest(st.sel)))) setTimeout(function(){ if(active) finish(false); }, 150);
+      }
     };
     document.addEventListener('click', clickHandler, true);
     window.addEventListener('resize', reposition);
@@ -85317,7 +85346,9 @@ window.crQvac = (function(){
   function start(force){
     build(); var o=load();
     if(!force && o.done) return;
-    if(!onDesktop() || !document.querySelector('.os-icon[data-prog]')) return;
+    // v1.0 — require the desktop icons to be VISIBLE (not just present in the DOM), so the
+    // tour never opens over a live run/minigame where the icons are hidden behind the chart.
+    if(!onDesktop() || !visible(document.querySelector('.os-icon[data-prog="chartrunner"]'))) return;
     try { var hb=document.getElementById('crCoachHubBubble'); if(hb) hb.style.display='none'; } catch(_){}
     active=true;
     idx = (!force && typeof o.idx==='number' && o.idx>0 && o.idx<STEPS.length) ? o.idx : 0;
@@ -85332,7 +85363,7 @@ window.crQvac = (function(){
     // (was 40 tries ≈ 20s, which gave up before slow first-timers reached the desktop).
     var iv=setInterval(function(){ tries++;
       if(load().done){ clearInterval(iv); return; }
-      if(onDesktop() && document.querySelector('.os-icon[data-prog]')){ clearInterval(iv); start(false); }
+      if(onDesktop() && visible(document.querySelector('.os-icon[data-prog="chartrunner"]'))){ clearInterval(iv); start(false); }
       else if(tries>1200){ clearInterval(iv); }   // ~10 min safety bound
     }, 500);
   }
