@@ -2487,6 +2487,35 @@
   .cr-fr-arrow{position:fixed;pointer-events:none;color:#14f195;font:900 26px ui-monospace,Menlo,monospace;
     text-shadow:0 0 12px rgba(20,241,149,.8);animation:crFrBob 1s ease-in-out infinite}
   @keyframes crFrBob{0%,100%{transform:translateY(0)}50%{transform:translateY(7px)}}
+  /* v1.0 — DESKTOP-ONLY guided drag-and-drop demo for the Terminal / Token tour steps:
+     a ghost "pane" + a cursor symbol drags from the highlighted app toward a dashed
+     drop-zone on the chart, teaching that panes/rows can be dragged out and pinned.
+     Skipped on phones (drag-drop is a desktop affordance). */
+  #crFrDragDemo{position:fixed;inset:0;z-index:2147483550;pointer-events:none;display:none}
+  #crFrDragDemo.on{display:block}
+  .cr-fr-drag-ghost{position:fixed;left:0;top:0;display:inline-flex;align-items:center;gap:5px;
+    padding:6px 10px;border-radius:8px;background:rgba(13,17,25,.96);border:1px solid #14f195;
+    color:#bff7df;font:700 11px ui-monospace,Menlo,monospace;white-space:nowrap;
+    box-shadow:0 8px 22px rgba(0,0,0,.5),0 0 14px rgba(20,241,149,.35);
+    transform:translate(var(--sx),var(--sy)) scale(1);
+    animation:crFrDragMove 2.3s cubic-bezier(.45,.05,.4,1) infinite}
+  .cr-fr-drag-ghost::after{content:'↖';position:absolute;right:-15px;bottom:-17px;
+    font-size:22px;color:#fff;text-shadow:0 0 6px rgba(0,0,0,.85)}
+  @keyframes crFrDragMove{
+    0%{transform:translate(var(--sx),var(--sy)) scale(.6);opacity:0}
+    10%{transform:translate(var(--sx),var(--sy)) scale(1);opacity:1}
+    18%{transform:translate(var(--sx),var(--sy)) scale(.9)}
+    68%{transform:translate(var(--ex),var(--ey)) scale(1)}
+    80%{transform:translate(var(--ex),var(--ey)) scale(.9)}
+    92%{transform:translate(var(--ex),var(--ey)) scale(1);opacity:1}
+    100%{transform:translate(var(--ex),var(--ey)) scale(1);opacity:0}}
+  .cr-fr-drop{position:fixed;left:0;top:0;width:130px;height:84px;margin:-42px 0 0 -65px;
+    border:2px dashed rgba(20,241,149,.7);border-radius:12px;box-shadow:0 0 18px rgba(20,241,149,.22) inset;
+    transform:translate(var(--ex),var(--ey));animation:crFrDropPulse 2.3s ease-in-out infinite}
+  .cr-fr-drop::after{content:'drop to pin';position:absolute;left:0;right:0;bottom:-18px;text-align:center;
+    font:700 9px ui-monospace,Menlo,monospace;letter-spacing:.4px;color:#7ee787}
+  @keyframes crFrDropPulse{0%,55%{opacity:.18}78%{opacity:.95;border-color:#14f195}100%{opacity:.18}}
+  @media (max-width:680px){ #crFrDragDemo{display:none !important} }
   /* v1.0.564 — funnel popup uses the EXACT COACH.llm bubble chrome + dock position.
      Desktop: fixed bottom-right, width 380 (mirrors #crCoachHub / the welcome bubble).
      Mobile: full-width bottom sheet (#crFrPop .cr-fr-win added to the #crCoachHubBubble
@@ -36149,6 +36178,8 @@ window.crRoom = (function(){
   }
   async function joinRoom(id){
     try {
+      // v1.0 — choose a name before joining a multiplayer room (if one isn't set yet).
+      try { if(window.crRunnerName && !crRunnerName.has()){ var _jn = prompt('Choose a name to join this room as:'); if(_jn) crRunnerName.set(_jn); } } catch(_){}
       var r = await fetch(http()+'/rooms/'+encodeURIComponent(id), {cache:'no-store'}); if(!r.ok) throw 0; var rm = await r.json(); if(!rm||!rm.id) throw 0;
       var url = location.origin + location.pathname + '?sharedMap=1&room=' + encodeURIComponent(rm.id)
         + (rm.host?'&host='+encodeURIComponent(rm.host):'') + (rm.asset?'&asset='+encodeURIComponent(rm.asset):'') + (rm.tf?'&tf='+encodeURIComponent(rm.tf):'') + (rm.snapshot?('#m='+rm.snapshot):'');
@@ -47998,6 +48029,20 @@ function osRefreshShop(){
     });
   }
   window._crPlayerNameApply = applyName;
+  // v1.0 — lightweight local runner handle for the onboarding name prompt and the
+  // multiplayer room join. Separate from the on-chain name claim above; just a display
+  // name persisted locally and mirrored onto the name surfaces + the MP handle (myName
+  // reads #crLpName).
+  window.crRunnerName = (function(){
+    var KEY = 'cr_runner_name';
+    function get(){ try { return (localStorage.getItem(KEY) || '').trim(); } catch(_){ return ''; } }
+    function norm(n){ return String(n || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20); }
+    function set(n){ n = norm(n); if(!n) return '';
+      try { localStorage.setItem(KEY, n); } catch(_){}
+      try { ['crLpName','crLpBbText','osProfileName','crProfilePlayerName'].forEach(function(id){ var el = document.getElementById(id); if(el) el.textContent = n; }); } catch(_){}
+      return n; }
+    return { get:get, set:set, has:function(){ var g = get(); return !!g && g !== 'anon_runner'; } };
+  })();
 
   // Inject CSS once.
   function injectCss(){
@@ -85110,6 +85155,8 @@ window.crQvac = (function(){
   // once Journal is no longer gated. No manual flag flip needed.
   // Titles render as >_NAME with a blinking underscore (see render()).
   var STEPS = [
+    // v1.0 — "What's your name" opener: a local handle for leaderboards + MP rooms.
+    { sel:null, ttl:'Your name', body:'', nameInput:true },
     { sel:'.os-icon[data-prog="chartrunner"]', ttl:'Play',     body:"Your run launcher. Pick an asset / token / timeframe and START a run on real candles." },
     { sel:'.os-icon[data-prog="terminal"]',    ttl:'Terminal', body:"Live trading console — chart engine, on-chain + CEX trackers and strategies. Drag any pane onto the chart to pin it live." },
     { sel:'.os-icon[data-prog="wallet"]',      ttl:'Profile',  body:"Your loadout — weapon, skin, vehicle, bots and tools. Gear up before a run." },
@@ -85121,7 +85168,7 @@ window.crQvac = (function(){
     { sel:'#crCoachHubBtn',                    ttl:'Coach.llm',body:"That's me — COACH.llm. Take the guided tour or just chat, any time, from the desktop invader or the toolbar. Same brain as the in-game Quant." },
     { sel:'#crMenuConnect',                    ttl:'Connect',  body:"Connect a Solana wallet to unlock Maps, Journal, bots, lasers and the full Profile.", guestOnly:true }
   ];
-  var mask, ring, beacon, arrow, pop, ttlEl, stepEl, bodyEl, dotsEl, backBtn, nextBtn, skipBtn, idx=0, active=false, clickHandler=null, built=false;
+  var mask, ring, beacon, arrow, pop, ttlEl, stepEl, bodyEl, dotsEl, backBtn, nextBtn, skipBtn, idx=0, active=false, clickHandler=null, built=false, _frDragDemoEl=null;
   function visible(el){ try { return !!(el && el.offsetParent !== null && el.getBoundingClientRect().width > 1); } catch(_){ return false; } }
   function targetFor(i){ var st=STEPS[i]; if(!st||!st.sel) return null; var el=document.querySelector(st.sel); return visible(el)?el:null; }
   // v1.0 — phase gating. Connect is guest-only (dropped once a wallet is connected);
@@ -85170,11 +85217,53 @@ window.crQvac = (function(){
     } else { ring.style.display='none'; beacon.style.display='none'; arrow.style.display='none'; }
   }
   function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  // v1.0 — DESKTOP-ONLY guided drag-and-drop demo. Drags a ghost "pane" + cursor from
+  // the highlighted app toward a dashed drop-zone on the chart, looping while the
+  // Terminal / Token step is open. Skipped on phones.
+  function _frDragDemoClear(){ try { if(_frDragDemoEl && _frDragDemoEl.parentNode) _frDragDemoEl.parentNode.removeChild(_frDragDemoEl); } catch(_){} _frDragDemoEl = null; }
+  function _frDragDemo(anchor, label){
+    _frDragDemoClear();
+    if(window.innerWidth <= 680) return;   // desktop-only affordance
+    var sx, sy;
+    if(anchor){ var r = anchor.getBoundingClientRect(); sx = r.left + r.width/2; sy = r.bottom + 14; }
+    else { sx = window.innerWidth*0.18; sy = window.innerHeight*0.30; }
+    var ex = Math.round(window.innerWidth*0.46), ey = Math.round(window.innerHeight*0.55);
+    var wrap = document.createElement('div'); wrap.id = 'crFrDragDemo';
+    var drop = document.createElement('div'); drop.className = 'cr-fr-drop';
+    drop.style.setProperty('--ex', ex+'px'); drop.style.setProperty('--ey', ey+'px');
+    var ghost = document.createElement('div'); ghost.className = 'cr-fr-drag-ghost'; ghost.textContent = '▦ ' + (label || 'pane');
+    ghost.style.setProperty('--sx', Math.round(sx)+'px'); ghost.style.setProperty('--sy', Math.round(sy)+'px');
+    ghost.style.setProperty('--ex', ex+'px'); ghost.style.setProperty('--ey', ey+'px');
+    wrap.appendChild(drop); wrap.appendChild(ghost);
+    document.body.appendChild(wrap);
+    _frDragDemoEl = wrap;
+    requestAnimationFrame(function(){ try { wrap.classList.add('on'); } catch(_){} });
+  }
   function render(){
     var st=STEPS[idx]||{};
     // terminal-style body: "> SURFACE" title in green, then the explanation (mirrors the
     // COACH welcome bubble / tutorial narrator term-body format).
-    bodyEl.innerHTML = '<span class="crTutTtl">&gt;<span class="crTutCur">_</span>'+esc((st.ttl||'COACH').toUpperCase())+'</span><br><br>'+esc(st.body||'');
+    if(st.nameInput){
+      // v1.0 — name-entry opener: an inline handle field wired to window.crRunnerName.
+      var _cur = (window.crRunnerName && crRunnerName.get()) || '';
+      bodyEl.innerHTML = '<span class="crTutTtl">&gt;<span class="crTutCur">_</span>YOUR NAME</span><br><br>'
+        + "What should we call you? Pick a handle for the leaderboards and multiplayer rooms."
+        + '<div style="display:flex;gap:6px;margin-top:10px">'
+        +   '<input id="crFrNameInput" type="text" maxlength="20" placeholder="your_name" value="' + esc(_cur) + '" style="flex:1;min-width:0;box-sizing:border-box;background:rgba(8,14,22,.7);border:1px solid #14f195;border-radius:6px;color:#bff7df;font:600 12px ui-monospace,Menlo,monospace;padding:8px 9px">'
+        +   '<button id="crFrNameSet" type="button" class="cr-go" style="flex:0 0 auto">Set</button>'
+        + '</div>';
+      setTimeout(function(){
+        var inp = document.getElementById('crFrNameInput'), b = document.getElementById('crFrNameSet');
+        function commit(){ try { if(inp && window.crRunnerName){ var v = crRunnerName.set(inp.value); if(v){ inp.value = v; if(typeof toast === 'function') toast('Name set · ' + v); } } } catch(_){} }
+        if(b && !b.__w){ b.__w = 1; b.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); commit(); }); }
+        if(inp && !inp.__w){ inp.__w = 1;
+          inp.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); commit(); } });
+          inp.addEventListener('click', function(e){ e.stopPropagation(); });
+        }
+      }, 0);
+    } else {
+      bodyEl.innerHTML = '<span class="crTutTtl">&gt;<span class="crTutCur">_</span>'+esc((st.ttl||'COACH').toUpperCase())+'</span><br><br>'+esc(st.body||'');
+    }
     if(backBtn) backBtn.style.display = idx>0 ? '' : 'none';
     nextBtn.textContent = (idx>=STEPS.length-1) ? 'Done ▶' : 'Next ▶';
     mask.classList.add('on'); pop.classList.add('on'); reposition();
@@ -85187,6 +85276,11 @@ window.crQvac = (function(){
         if(_tgt && st.ttl !== 'Token') window.crTip.show(_tgt);
         else window.crTip.hide();
       }
+    } catch(_){}
+    // v1.0 — desktop-only guided drag-drop demo on the Terminal / Token steps.
+    try {
+      if((st.ttl === 'Terminal' || st.ttl === 'Token') && window.innerWidth > 680) _frDragDemo((st && st.sel) ? targetFor(idx) : null, st.ttl === 'Token' ? 'token' : 'pane');
+      else _frDragDemoClear();
     } catch(_){}
   }
   function go(to){
@@ -85201,6 +85295,7 @@ window.crQvac = (function(){
   function finish(skipped){
     active=false;
     try { if(window.crTip) window.crTip.hide(); } catch(_){}
+    try { _frDragDemoClear(); } catch(_){}
     if(pop) pop.classList.remove('on'); if(mask) mask.classList.remove('on');
     if(ring) ring.style.display='none'; if(beacon) beacon.style.display='none'; if(arrow) arrow.style.display='none';
     var o=load(); o.done=true; o.skipped=!!skipped; o.ts=Date.now(); save(o);
