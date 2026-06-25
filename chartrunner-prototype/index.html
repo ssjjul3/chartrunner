@@ -19,7 +19,14 @@
   {"@context":"https://schema.org","@graph":[
   {"@type":["VideoGame","SoftwareApplication"],"@id":"https://chartrunner.xyz/#app","name":"ChartRunner","url":"https://chartrunner.xyz/","description":"A free browser trading game played on real market charts. Racing, Monster Mode, Snake, Time is Money and a Campaign. No install, no sign-up; in-game trades are simulated and not financial advice.","applicationCategory":"GameApplication","operatingSystem":"Any (web browser)","genre":["Arcade","Educational game","Trading game"],"playMode":"SinglePlayer","inLanguage":"en","image":"https://chartrunner.xyz/og-card.png","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"isAccessibleForFree":true,"publisher":{"@id":"https://chartrunner.xyz/#org"}},
   {"@type":"Organization","@id":"https://chartrunner.xyz/#org","name":"ChartRunner","url":"https://chartrunner.xyz/","logo":"https://chartrunner.xyz/LOGO.png","sameAs":["https://x.com/ChartRunner_xyz","https://github.com/ssjjul3/chartrunner"]},
-  {"@type":"WebSite","@id":"https://chartrunner.xyz/#website","name":"ChartRunner","url":"https://chartrunner.xyz/","publisher":{"@id":"https://chartrunner.xyz/#org"}}
+  {"@type":"WebSite","@id":"https://chartrunner.xyz/#website","name":"ChartRunner","url":"https://chartrunner.xyz/","publisher":{"@id":"https://chartrunner.xyz/#org"}},
+  {"@type":"FAQPage","@id":"https://chartrunner.xyz/#faq","mainEntity":[
+    {"@type":"Question","name":"Is ChartRunner free?","acceptedAnswer":{"@type":"Answer","text":"Yes. Press Play and you are in. No install, no sign-up, no ads, and no pay-to-win."}},
+    {"@type":"Question","name":"Do I need a wallet?","acceptedAnswer":{"@type":"Answer","text":"No. Play everything as a guest. A Solana wallet is optional and only for saving your profile or recording a best run if you choose."}},
+    {"@type":"Question","name":"Is this real trading?","acceptedAnswer":{"@type":"Answer","text":"No. Every trade inside ChartRunner is simulated. It does not touch real funds and is not financial advice."}},
+    {"@type":"Question","name":"Does it work on mobile?","acceptedAnswer":{"@type":"Answer","text":"Yes. ChartRunner runs in the mobile browser with on-screen touch controls."}},
+    {"@type":"Question","name":"Will I learn anything?","acceptedAnswer":{"@type":"Answer","text":"That is the point: the gameplay mirrors price, volatility, and risk so market instincts become physical."}}
+  ]}
   ]}
   </script>
 
@@ -33,6 +40,41 @@
     }
     .osbar nav { flex-wrap: wrap; row-gap: 5px; }
     .osbar a:hover { color: #064b31; }
+
+    /* ---- CRT boot overlay (once per session) ---- */
+    #boot {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: #010304;
+      color: var(--signal);
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: opacity .45s ease;
+      /* safety net: if JS never runs, fade the overlay out anyway so the page is never blocked */
+      animation: crBootFailsafe .4s ease 3s forwards;
+    }
+    @keyframes crBootFailsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
+    #boot .boot-logo { font-size: clamp(22px, 6vw, 40px); text-shadow: 0 0 24px rgba(32,255,154,.5); }
+    #boot .boot-line { font-size: 12px; color: var(--muted); min-height: 16px; }
+    #boot .boot-bar { width: min(260px, 64vw); height: 8px; border: 1px solid var(--line); background: #000; }
+    #boot .boot-bar i { display: block; height: 100%; width: 0; background: var(--signal); transition: width .12s linear; }
+    #boot.gone { opacity: 0; pointer-events: none; }
+
+    /* blinking cursor on terminal prompts */
+    .prompt::after {
+      content: "_";
+      margin-left: 4px;
+      animation: crBlink 1.05s steps(1) infinite;
+    }
+    @keyframes crBlink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+
     .hero {
       position: relative;
       min-height: calc(92svh - 25px);
@@ -42,18 +84,29 @@
         url("assets/game-runner-flight.png") center / cover no-repeat;
       border-bottom: 1px solid rgba(32,255,154,.3);
     }
+    /* live attract-mode canvas sits over the still, under the gradient veil + copy */
+    #heroCanvas {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      opacity: .9;
+      mix-blend-mode: screen;
+    }
     .hero::after {
       content: "";
       position: absolute;
       inset: 0;
+      z-index: 2;
       background:
-        radial-gradient(circle at 58% 23%, rgba(32,255,154,.22), transparent 18%),
-        linear-gradient(115deg, transparent 0 54%, rgba(240,239,230,.62) 54.2% 54.5%, transparent 54.8%);
-      opacity: .78;
+        linear-gradient(90deg, rgba(1,3,4,.92), rgba(1,3,4,.55) 46%, rgba(1,3,4,0) 78%),
+        radial-gradient(circle at 58% 23%, rgba(32,255,154,.16), transparent 22%);
+      pointer-events: none;
     }
     .hero-inner {
       position: relative;
-      z-index: 2;
+      z-index: 3;
       display: grid;
       grid-template-columns: minmax(0, 1fr) 370px;
       gap: 44px;
@@ -113,6 +166,41 @@
       gap: 12px;
     }
     .coach-list p { margin: 0; }
+
+    /* ---- live ticker (real prices) ---- */
+    .ticker .tk-quote { display: inline-flex; align-items: baseline; gap: 8px; padding: 14px 24px; white-space: nowrap; }
+    .ticker .tk-sym { color: var(--paper); font-weight: 900; }
+    .ticker .tk-px { color: var(--signal); font-weight: 900; }
+    .ticker .tk-chg.up { color: var(--signal2); }
+    .ticker .tk-chg.down { color: var(--red); }
+    .ticker .tk-live { color: var(--cyan); font-size: 11px; letter-spacing: 1px; }
+
+    /* ---- deep-link "run a live market" cards ---- */
+    .run-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 34px;
+    }
+    .run-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border: 1px solid rgba(32,255,154,.32);
+      background: rgba(4,7,12,.78);
+      padding: 20px;
+      transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+    }
+    .run-card:hover { transform: translateY(-3px); border-color: var(--signal); box-shadow: 0 0 28px rgba(32,255,154,.18); }
+    .run-card .rc-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .run-card .rc-sym { color: var(--paper); font-size: 26px; font-weight: 900; text-transform: uppercase; }
+    .run-card .rc-px { color: var(--signal); font-size: 16px; font-weight: 900; }
+    .run-card .rc-chg { font-size: 13px; font-weight: 900; }
+    .run-card .rc-chg.up { color: var(--signal2); }
+    .run-card .rc-chg.down { color: var(--red); }
+    .run-card .rc-cta { margin-top: auto; color: var(--signal); font-size: 13px; font-weight: 900; text-transform: uppercase; }
+    .run-card .rc-spark { width: 100%; height: 42px; display: block; }
+
     .link-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -125,7 +213,9 @@
       border: 1px solid rgba(32,255,154,.28);
       background: rgba(4,7,12,.72);
       padding: 15px;
+      transition: transform .12s ease, border-color .12s ease;
     }
+    .link-card:hover { transform: translateY(-2px); border-color: var(--signal); }
     .link-card strong {
       display: block;
       color: var(--signal);
@@ -146,12 +236,28 @@
       margin-top: 34px;
     }
     .mode-card {
+      position: relative;
       border: 1px solid rgba(32,255,154,.28);
       background: rgba(4,7,12,.72);
       padding: 22px;
       min-height: 190px;
+      overflow: hidden;
+      transition: transform .12s ease, border-color .12s ease;
     }
+    .mode-card:hover { transform: translateY(-3px); border-color: var(--signal); }
+    .mode-card .mc-canvas {
+      position: absolute;
+      inset: auto 0 0 0;
+      width: 100%;
+      height: 64px;
+      opacity: .32;
+      transition: opacity .2s ease;
+      pointer-events: none;
+    }
+    .mode-card:hover .mc-canvas { opacity: .7; }
     .mode-card strong {
+      position: relative;
+      z-index: 1;
       display: inline-flex;
       min-width: 38px;
       min-height: 34px;
@@ -162,12 +268,16 @@
       margin-bottom: 16px;
     }
     .mode-card h3 {
+      position: relative;
+      z-index: 1;
       margin: 0;
       font-size: 24px;
       line-height: 1.05;
       text-transform: uppercase;
     }
     .mode-card p {
+      position: relative;
+      z-index: 1;
       margin: 14px 0 0;
       color: var(--muted);
       font-size: 15px;
@@ -199,6 +309,23 @@
       color: var(--muted);
       line-height: 1.5;
     }
+
+    /* ---- trust row ---- */
+    .trust {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 30px;
+    }
+    .trust a, .trust div {
+      border: 1px solid rgba(32,255,154,.24);
+      background: rgba(4,7,12,.7);
+      padding: 16px;
+    }
+    .trust strong { display: block; color: var(--signal); font-size: 14px; text-transform: uppercase; }
+    .trust span { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .trust a:hover { border-color: var(--signal); }
+
     .legal-band {
       border: 1px solid rgba(255,200,74,.42);
       background: rgba(255,200,74,.08);
@@ -225,6 +352,21 @@
       color: var(--muted);
       line-height: 1.5;
     }
+
+    /* ---- sticky CTA (appears after hero) ---- */
+    #stickyCta {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 60;
+      opacity: 0;
+      transform: translateY(14px);
+      pointer-events: none;
+      transition: opacity .25s ease, transform .25s ease;
+      box-shadow: 0 8px 30px rgba(0,0,0,.55), 0 0 24px rgba(32,255,154,.35);
+    }
+    #stickyCta.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
     footer {
       border-top: 1px solid rgba(32,255,154,.28);
       padding: 46px 28px 58px;
@@ -266,8 +408,10 @@
       h1 { font-size: 44px; }
       .lede { font-size: 19px; }
       .actions { flex-direction: column; }
-      .link-grid, .modes, .quick-steps, .footer-grid { grid-template-columns: 1fr; }
+      .link-grid, .modes, .quick-steps, .run-grid, .trust, .footer-grid { grid-template-columns: 1fr; }
       .mode-card, .quick-step, .link-card { min-height: 0; }
+      #stickyCta { left: 14px; right: 14px; bottom: 14px; }
+      #stickyCta .btn { width: 100%; }
       .osbar {
         align-items: flex-start;
         gap: 8px;
@@ -276,9 +420,21 @@
       .osbar strong { padding-top: 1px; }
       .section, .split, .final { padding: 56px 20px; }
     }
+    @media (prefers-reduced-motion: reduce) {
+      #heroCanvas, .mode-card .mc-canvas { display: none; }
+      .prompt::after { animation: none; }
+      .ticker div { animation: none; }
+      #boot { display: none; }
+    }
   </style>
 </head>
 <body>
+  <div id="boot" aria-hidden="true">
+    <div class="boot-logo">ChartRunnerOS</div>
+    <div class="boot-bar"><i></i></div>
+    <div class="boot-line">booting runtime…</div>
+  </div>
+
   <header class="osbar">
     <nav aria-label="Primary">
       <a href="https://chartrunner.xyz/">Home</a>
@@ -292,6 +448,7 @@
 
   <main>
     <section class="hero">
+      <canvas id="heroCanvas" aria-hidden="true"></canvas>
       <div class="hero-inner">
         <div>
           <div class="kicker-row" aria-label="Highlights">
@@ -300,7 +457,7 @@
             <span class="mini-chip">Guest mode</span>
             <span class="mini-chip">Real candles</span>
           </div>
-          <p class="prompt">&gt; arcade_run :: live_site_content</p>
+          <p class="prompt">&gt; press ▶ to run the chart</p>
           <h1>Ride the chart.</h1>
           <p class="lede">A free trading game where the market becomes the level. Sprint the candles, dodge volatility, race for best time, and learn how price moves by playing.</p>
           <p class="note">Works in your browser on phone and desktop. Press Play, continue as guest, and you are in. Connect a Solana wallet later only if you want to save progress or record a best run.</p>
@@ -323,17 +480,17 @@
       </div>
     </section>
 
-    <section class="ticker">
-      <div>
+    <section class="ticker" aria-label="Live market prices">
+      <div id="tickerTrack">
         <span>RUN // JUMP // FLIGHT // RACING // MONSTER MODE // SNAKE // CAMPAIGN // COACH.llm // REAL CANDLES //</span>
         <span>RUN // JUMP // FLIGHT // RACING // MONSTER MODE // SNAKE // CAMPAIGN // COACH.llm // REAL CANDLES //</span>
       </div>
     </section>
 
     <section class="section" id="loop">
-      <p class="prompt">&gt; playable_truth</p>
+      <p class="prompt">&gt; the loop</p>
       <h2>The platformer where the level is the market.</h2>
-      <p>ChartRunner keeps the live page promise but makes it feel like the arcade-mobile layout: fast above the fold, terminal copy, Coach explaining the loop, and every public link kept visible. No sign-up, no ads, no pay-to-win. Just run the chart.</p>
+      <p>Price is the terrain. Candle bodies are platforms, wicks are hazards, and trend is the slope you run. Read the chart with your hands instead of a textbook — no sign-up, no ads, no pay-to-win. Just press Play and run.</p>
       <div class="link-grid">
         <a class="link-card" href="https://chartrunner.xyz/play/"><strong>▶</strong><span>Play the game</span></a>
         <a class="link-card" href="https://chartrunner.xyz/play/?mg=racing"><strong>01</strong><span>Racing mode</span></a>
@@ -342,10 +499,36 @@
       </div>
     </section>
 
+    <section class="section" id="run-live">
+      <p class="prompt">&gt; pick a live market</p>
+      <h2>Run a real market, right now.</h2>
+      <p>These are live prices, not screenshots. Tap a market and drop straight into a run on those exact candles. Same feed, same volatility — now it is a level.</p>
+      <div class="run-grid" id="runGrid">
+        <a class="run-card" href="https://chartrunner.xyz/play/?symbol=BINANCE:BTCUSDT&tf=15m" data-cg="bitcoin" data-sym="BTC">
+          <div class="rc-top"><span class="rc-sym">BTC</span><span class="rc-px">—</span></div>
+          <span class="rc-chg">·</span>
+          <canvas class="rc-spark" aria-hidden="true"></canvas>
+          <span class="rc-cta">▶ run BTC →</span>
+        </a>
+        <a class="run-card" href="https://chartrunner.xyz/play/?symbol=BINANCE:SOLUSDT&tf=15m" data-cg="solana" data-sym="SOL">
+          <div class="rc-top"><span class="rc-sym">SOL</span><span class="rc-px">—</span></div>
+          <span class="rc-chg">·</span>
+          <canvas class="rc-spark" aria-hidden="true"></canvas>
+          <span class="rc-cta">▶ run SOL →</span>
+        </a>
+        <a class="run-card" href="https://chartrunner.xyz/play/?symbol=BINANCE:ETHUSDT&tf=15m" data-cg="ethereum" data-sym="ETH">
+          <div class="rc-top"><span class="rc-sym">ETH</span><span class="rc-px">—</span></div>
+          <span class="rc-chg">·</span>
+          <canvas class="rc-spark" aria-hidden="true"></canvas>
+          <span class="rc-cta">▶ run ETH →</span>
+        </a>
+      </div>
+    </section>
+
     <section class="split">
-      <div class="shot"><img src="assets/game-mode-picker.png" alt="ChartRunner mode picker"></div>
+      <div class="shot"><img src="assets/game-run-candles.png" alt="ChartRunner gameplay: the runner sprints live BTC candles, collecting coins past fib levels" loading="lazy" decoding="async" width="1400" height="910"></div>
       <div class="copy">
-        <p class="prompt">&gt; choose_run</p>
+        <p class="prompt">&gt; choose your run</p>
         <h2>Five ways to play.</h2>
         <p>Jump into a 20-second arcade dash, survive bears in Monster Mode, weave through candles in Snake, run the classic Time is Money loop, or let COACH.llm teach one market idea at a time in Campaign.</p>
         <div class="actions">
@@ -356,29 +539,29 @@
     </section>
 
     <section class="section" id="modes">
-      <p class="prompt">&gt; mode_select</p>
-      <h2>Modes from the live page, rebuilt as arcade cards.</h2>
+      <p class="prompt">&gt; mode select</p>
+      <h2>Five ways to run price action.</h2>
       <div class="modes">
-        <article class="mode-card"><strong>🏁</strong><h3>Racing</h3><p>Pick a ride, hit the countdown, sprint the chart to the finish. Flips shave time. Best lap wins.</p></article>
-        <article class="mode-card"><strong>👾</strong><h3>Monster Mode</h3><p>The chart turns hostile and volatility sends bears after you. Shoot, dodge, and survive the run.</p></article>
-        <article class="mode-card"><strong>∿</strong><h3>Snake</h3><p>Eat coins to grow as you weave between moving candles. One wrong turn and the run is done.</p></article>
-        <article class="mode-card"><strong>⏱</strong><h3>Time is Money</h3><p>The classic loop: ride candles, place brackets, and bank a clean score before the clock runs out.</p></article>
-        <article class="mode-card"><strong>🎓</strong><h3>Campaign</h3><p>Bite-size chapters with COACH.llm teaching one idea at a time through hands-on play.</p></article>
-        <article class="mode-card"><strong>▣</strong><h3>Terminal & Bots</h3><p>A research desk and helper bots scan the chart, explain setups, and help you read the run.</p></article>
+        <article class="mode-card"><canvas class="mc-canvas" data-mode="race" aria-hidden="true"></canvas><strong>🏁</strong><h3>Racing</h3><p>Pick a ride, hit the countdown, sprint the chart to the finish. Flips shave time. Best lap wins.</p></article>
+        <article class="mode-card"><canvas class="mc-canvas" data-mode="monster" aria-hidden="true"></canvas><strong>👾</strong><h3>Monster Mode</h3><p>The chart turns hostile and volatility sends bears after you. Shoot, dodge, and survive the run.</p></article>
+        <article class="mode-card"><canvas class="mc-canvas" data-mode="snake" aria-hidden="true"></canvas><strong>∿</strong><h3>Snake</h3><p>Eat coins to grow as you weave between moving candles. One wrong turn and the run is done.</p></article>
+        <article class="mode-card"><canvas class="mc-canvas" data-mode="time" aria-hidden="true"></canvas><strong>⏱</strong><h3>Time is Money</h3><p>The classic loop: ride candles, place brackets, and bank a clean score before the clock runs out.</p></article>
+        <article class="mode-card"><canvas class="mc-canvas" data-mode="campaign" aria-hidden="true"></canvas><strong>🎓</strong><h3>Campaign</h3><p>Bite-size chapters with COACH.llm teaching one idea at a time through hands-on play.</p></article>
+        <article class="mode-card"><canvas class="mc-canvas" data-mode="terminal" aria-hidden="true"></canvas><strong>▣</strong><h3>Terminal & Bots</h3><p>A research desk and helper bots scan the chart, explain setups, and help you read the run.</p></article>
       </div>
     </section>
 
     <section class="split reverse" id="how">
       <div class="copy">
-        <p class="prompt">&gt; tutorial_boot</p>
+        <p class="prompt">&gt; boot the tutorial</p>
         <h2>In the game in 10 seconds.</h2>
         <p>Press Play, continue as guest, pick a mode, and run. Arrow keys or on-screen controls move and jump. The game is simple enough for a phone tap but deep enough to teach price, volatility, and risk.</p>
       </div>
-      <div class="shot"><img src="assets/game-start-run.png" alt="ChartRunner start run screen"></div>
+      <div class="shot"><img src="assets/game-terminal-run.png" alt="ChartRunner in-run terminal: live positions, risk snapshot, and bracket placement on real candles" loading="lazy" decoding="async" width="1400" height="972"></div>
     </section>
 
     <section class="section">
-      <p class="prompt">&gt; coach_steps</p>
+      <p class="prompt">&gt; coach steps</p>
       <h2>Coach explains the loop.</h2>
       <div class="quick-steps">
         <div class="quick-step"><strong>01</strong><h3>Press Play</h3><p>Open the game in-browser. No app store, no install, no account wall.</p></div>
@@ -388,8 +571,19 @@
       <div class="legal-band"><strong>Coach note:</strong> ChartRunner is entertainment and education. In-game trades are simulated. It is not a broker, exchange, financial service, or financial advice. Markets are risky; learn here before touching real money.</div>
     </section>
 
+    <section class="section" id="trust">
+      <p class="prompt">&gt; under the hood</p>
+      <h2>Open, free, and built in the open.</h2>
+      <div class="trust">
+        <a href="https://github.com/ssjjul3/chartrunner" target="_blank" rel="noopener"><strong>Open source ↗</strong><span>The game and SDK live on GitHub. Read the code, file issues, build on it.</span></a>
+        <div><strong>Built on Solana</strong><span>Optional on-chain best runs and profiles. Wallet stays opt-in — guests never need one.</span></div>
+        <div><strong>Real market data</strong><span>Levels are generated from real candles, so what you learn maps to real charts.</span></div>
+        <div><strong>No sign-up · no ads</strong><span>Press Play and run. No account wall, no tracking funnel, no pay-to-win.</span></div>
+      </div>
+    </section>
+
     <section class="section faq" id="faq">
-      <p class="prompt">&gt; faq_cache</p>
+      <p class="prompt">&gt; faq cache</p>
       <h2>Quick answers.</h2>
       <details open><summary>Is ChartRunner free?</summary><p>Yes. Press Play and you are in. No install, no sign-up, no ads, and no pay-to-win.</p></details>
       <details><summary>Do I need a wallet?</summary><p>No. Play everything as a guest. A Solana wallet is optional and only for saving your profile or recording a best run if you choose.</p></details>
@@ -400,12 +594,14 @@
 
     <section class="final">
       <div>
-        <p class="prompt">&gt; final_command</p>
+        <p class="prompt">&gt; final command</p>
         <h2>Run price action like a level.</h2>
       </div>
       <a class="btn primary" href="https://chartrunner.xyz/play/">play now</a>
     </section>
   </main>
+
+  <a id="stickyCta" class="btn primary" href="https://chartrunner.xyz/play/">▶ start run</a>
 
   <footer>
     <div class="footer-grid">
@@ -442,5 +638,236 @@
     </div>
     <div class="fine-print">ChartRunner is an entertainment and educational game. In-game trades are simulated. ChartRunner is not a financial service, broker, or exchange, and nothing on this site or in the game is financial, investment, legal, or tax advice. Trading real assets carries risk, including loss of capital. Always do your own research and consult a licensed professional before making real-money decisions.</div>
   </footer>
+
+  <script>
+  (function () {
+    "use strict";
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    /* ---------- 6. CRT boot sequence (once per session) ---------- */
+    (function boot() {
+      var el = document.getElementById("boot");
+      if (!el) return;
+      var seen = false;
+      try { seen = sessionStorage.getItem("cr_booted") === "1"; } catch (e) {}
+      if (reduce || seen) { el.parentNode && el.parentNode.removeChild(el); return; }
+      try { sessionStorage.setItem("cr_booted", "1"); } catch (e) {}
+      var bar = el.querySelector(".boot-bar i");
+      var line = el.querySelector(".boot-line");
+      var steps = ["booting runtime…", "loading real candles…", "calibrating volatility…", "coach.llm online", "ready"];
+      var p = 0, i = 0;
+      var t = setInterval(function () {
+        p = Math.min(100, p + 18 + Math.random() * 14);
+        if (bar) bar.style.width = p + "%";
+        if (line && p > (i + 1) * 20 && i < steps.length - 1) { i++; line.textContent = steps[i]; }
+        if (p >= 100) {
+          clearInterval(t);
+          if (line) line.textContent = "ready";
+          setTimeout(function () {
+            el.classList.add("gone");
+            setTimeout(function () { el.parentNode && el.parentNode.removeChild(el); }, 500);
+          }, 240);
+        }
+      }, 130);
+    })();
+
+    /* ---------- 2. Live attract-mode hero canvas ---------- */
+    (function heroCanvas() {
+      var cv = document.getElementById("heroCanvas");
+      if (!cv || reduce) return;
+      var ctx = cv.getContext("2d");
+      var W = 0, H = 0, dpr = 1, step = 26, candles = [], runnerY = 0, t = 0;
+      var GREEN = "#20ff9a", RED = "#ff405a";
+
+      function resize() {
+        dpr = Math.min(2, window.devicePixelRatio || 1);
+        W = cv.clientWidth; H = cv.clientHeight;
+        cv.width = Math.max(1, W * dpr); cv.height = Math.max(1, H * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        seed();
+      }
+      function seed() {
+        candles = [];
+        var n = Math.ceil(W / step) + 4;
+        var price = H * 0.55, vol = H * 0.05;
+        for (var i = 0; i < n; i++) candles.push(makeCandle(price = walk(price, vol), vol));
+      }
+      function walk(p, vol) {
+        p += (Math.random() - 0.48) * vol * 1.4;
+        return Math.max(H * 0.22, Math.min(H * 0.82, p));
+      }
+      function makeCandle(close, vol) {
+        var open = walk(close, vol * 0.7);
+        var hi = Math.min(open, close) - Math.random() * vol;
+        var lo = Math.max(open, close) + Math.random() * vol;
+        return { o: open, c: close, h: hi, l: lo, up: close <= open };
+      }
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+        var bw = step * 0.56;
+        for (var i = 0; i < candles.length; i++) {
+          var c = candles[i];
+          var x = i * step - (t % step);
+          var col = c.up ? GREEN : RED;
+          ctx.strokeStyle = col; ctx.fillStyle = col;
+          ctx.globalAlpha = 0.85;
+          ctx.beginPath(); ctx.moveTo(x + bw / 2, c.h); ctx.lineTo(x + bw / 2, c.l); ctx.stroke();
+          var top = Math.min(c.o, c.c), h = Math.max(2, Math.abs(c.c - c.o));
+          ctx.fillRect(x, top, bw, h);
+        }
+        ctx.globalAlpha = 1;
+        // runner rides the candle bodies near 30% width
+        var rx = W * 0.3;
+        var idx = Math.floor((rx + (t % step)) / step);
+        var ref = candles[Math.max(0, Math.min(candles.length - 1, idx))];
+        var targetY = Math.min(ref.o, ref.c) - 13;
+        runnerY += (targetY - runnerY) * 0.18;
+        var bob = Math.sin(t * 0.13) * 4;
+        var ry = runnerY + bob;
+        ctx.fillStyle = "#eafff5";
+        ctx.shadowColor = GREEN; ctx.shadowBlur = 16;
+        ctx.fillRect(rx - 5, ry - 12, 10, 12);
+        ctx.fillStyle = GREEN;
+        ctx.fillRect(rx - 5, ry, 10, 3);
+        ctx.shadowBlur = 0;
+      }
+      function tick() {
+        if (document.hidden) { raf = requestAnimationFrame(tick); return; }
+        t += 1.05;
+        if (t >= step) {
+          t -= step;
+          candles.shift();
+          var last = candles[candles.length - 1];
+          candles.push(makeCandle(walk(last.c, H * 0.05), H * 0.05));
+        }
+        draw();
+        raf = requestAnimationFrame(tick);
+      }
+      var raf;
+      window.addEventListener("resize", resize);
+      resize();
+      raf = requestAnimationFrame(tick);
+    })();
+
+    /* ---------- 3 + 5. Live prices: ticker + run cards ---------- */
+    (function livePrices() {
+      var ids = "bitcoin,ethereum,solana";
+      var url = "https://api.coingecko.com/api/v3/simple/price?ids=" + ids +
+                "&vs_currencies=usd&include_24hr_change=true";
+      function fmt(n) {
+        if (n >= 1000) return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+        if (n >= 1) return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+        return "$" + n.toFixed(4);
+      }
+      function spark(canvas, up) {
+        if (!canvas) return;
+        var ctx = canvas.getContext("2d");
+        var w = canvas.clientWidth || 200, h = canvas.clientHeight || 42;
+        var dpr = Math.min(2, window.devicePixelRatio || 1);
+        canvas.width = w * dpr; canvas.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        var pts = [], p = h * 0.5;
+        for (var i = 0; i < 40; i++) { p += (Math.random() - (up ? 0.42 : 0.58)) * h * 0.16; p = Math.max(4, Math.min(h - 4, p)); pts.push(p); }
+        ctx.strokeStyle = up ? "#57ff96" : "#ff405a"; ctx.lineWidth = 1.6; ctx.beginPath();
+        pts.forEach(function (y, i) { var x = i / (pts.length - 1) * w; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+        ctx.stroke();
+      }
+      function render(data) {
+        var map = { BTC: data.bitcoin, ETH: data.ethereum, SOL: data.solana };
+        // run cards
+        document.querySelectorAll("#runGrid .run-card").forEach(function (card) {
+          var d = data[card.getAttribute("data-cg")];
+          if (!d) return;
+          var up = (d.usd_24h_change || 0) >= 0;
+          card.querySelector(".rc-px").textContent = fmt(d.usd);
+          var chg = card.querySelector(".rc-chg");
+          chg.textContent = (up ? "▲ " : "▼ ") + Math.abs(d.usd_24h_change || 0).toFixed(2) + "% 24h";
+          chg.className = "rc-chg " + (up ? "up" : "down");
+          spark(card.querySelector(".rc-spark"), up);
+        });
+        // live ticker
+        var track = document.getElementById("tickerTrack");
+        if (track && map.BTC) {
+          var seq = ["BTC", "ETH", "SOL"], html = "";
+          function quote() {
+            return seq.map(function (s) {
+              var d = map[s]; if (!d) return "";
+              var up = (d.usd_24h_change || 0) >= 0;
+              return '<span class="tk-quote"><span class="tk-sym">' + s + '</span>' +
+                     '<span class="tk-px">' + fmt(d.usd) + '</span>' +
+                     '<span class="tk-chg ' + (up ? "up" : "down") + '">' + (up ? "▲" : "▼") +
+                     Math.abs(d.usd_24h_change || 0).toFixed(2) + '%</span></span>';
+            }).join('<span class="tk-quote tk-live">LIVE //</span>');
+          }
+          var one = quote() + '<span class="tk-quote tk-live">REAL CANDLES //</span>';
+          track.innerHTML = "<div>" + one + one + "</div>";
+          track.firstChild.style.cssText = "display:flex;width:max-content;animation:ticker 34s linear infinite";
+        }
+      }
+      fetch(url, { cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+        .then(render)
+        .catch(function () { /* leave word ticker + em-dash run cards as graceful fallback */ });
+    })();
+
+    /* ---------- 4. Animated mode-card mini-charts ---------- */
+    (function modeCards() {
+      if (reduce) return;
+      var cvs = [].slice.call(document.querySelectorAll(".mc-canvas"));
+      if (!cvs.length) return;
+      var io = new IntersectionObserver(function (ents) {
+        ents.forEach(function (e) {
+          if (e.isIntersecting) { start(e.target); io.unobserve(e.target); }
+        });
+      }, { threshold: 0.1 });
+      cvs.forEach(function (c) { io.observe(c); });
+
+      function start(cv) {
+        var ctx = cv.getContext("2d");
+        var mode = cv.getAttribute("data-mode");
+        var w, h, dpr = Math.min(2, window.devicePixelRatio || 1);
+        function size() { w = cv.clientWidth; h = cv.clientHeight; cv.width = w * dpr; cv.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+        size();
+        var t = 0, pts = [], p = h * 0.5;
+        for (var i = 0; i < 60; i++) { p += (Math.random() - 0.5) * h * 0.14; p = Math.max(6, Math.min(h - 6, p)); pts.push(p); }
+        function frame() {
+          if (document.hidden) { requestAnimationFrame(frame); return; }
+          t += 0.6;
+          ctx.clearRect(0, 0, w, h);
+          // scrolling line/candle terrain shared base
+          var off = t % 8;
+          ctx.strokeStyle = "#20ff9a"; ctx.lineWidth = 1.4; ctx.beginPath();
+          for (var i = 0; i < pts.length; i++) {
+            var x = i / (pts.length - 1) * (w + 16) - off;
+            i ? ctx.lineTo(x, pts[i]) : ctx.moveTo(x, pts[i]);
+          }
+          ctx.stroke();
+          // per-mode flourish riding the line
+          var ix = Math.floor(pts.length * 0.5 + Math.sin(t * 0.05) * pts.length * 0.3);
+          ix = Math.max(0, Math.min(pts.length - 1, ix));
+          var rx = ix / (pts.length - 1) * (w + 16) - off, ry = pts[ix];
+          if (mode === "monster") { ctx.fillStyle = "#ff405a"; ctx.fillRect(rx - 4, ry - 4, 8, 8); }
+          else if (mode === "snake") { ctx.fillStyle = "#4ee8ff"; for (var k = 0; k < 4; k++) { ctx.globalAlpha = 1 - k * 0.22; ctx.fillRect(rx - 4 - k * 7, ry - 3, 6, 6); } ctx.globalAlpha = 1; }
+          else if (mode === "time") { ctx.fillStyle = "#ffc84a"; ctx.fillRect(rx - 3, ry - 3, 6, 6); }
+          else if (mode === "campaign") { ctx.fillStyle = "#57ff96"; ctx.beginPath(); ctx.arc(rx, ry, 4, 0, 6.28); ctx.fill(); }
+          else if (mode === "terminal") { ctx.fillStyle = "#20ff9a"; ctx.fillRect(rx - 4, ry - 3, 3, 6); ctx.fillRect(rx + 1, ry - 3, 3, 6); }
+          else { ctx.fillStyle = "#eafff5"; ctx.fillRect(rx - 4, ry - 8 + Math.sin(t * 0.2) * 2, 8, 8); } // race runner
+          requestAnimationFrame(frame);
+        }
+        window.addEventListener("resize", size);
+        requestAnimationFrame(frame);
+      }
+    })();
+
+    /* ---------- 5. Sticky CTA after hero ---------- */
+    (function stickyCta() {
+      var cta = document.getElementById("stickyCta");
+      var hero = document.querySelector(".hero");
+      if (!cta || !hero || !("IntersectionObserver" in window)) return;
+      new IntersectionObserver(function (ents) {
+        cta.classList.toggle("show", !ents[0].isIntersecting);
+      }, { threshold: 0 }).observe(hero);
+    })();
+  })();
+  </script>
 </body>
 </html>
