@@ -2,7 +2,7 @@
 
 ChartRunner is a playable browser prototype for a gamified trading SDK. The public build focuses on game mechanics, paper/sandbox primitives, wallet handoff, and devnet-verifiable on-chain source.
 
-Current public prototype version: `v1.0.255`.
+Current public prototype version: `v1.0.568`.
 
 ## Public Surfaces
 
@@ -24,13 +24,15 @@ Bot Terminal public demo work has been archived to `chartrunner-private-ops`; li
 
 `v1.0.255` is the public object alarms and bracket tools release. Tools, primitives, indicators, Blue Laser object cards, and TradingView-style settings can save local per-level alarms into Journal Alert V2 progression rows; Bracket, ladder, OCO, HLine, VWAP, Fib Retracement, Fib Extension, and indicator settings share Inputs / Style / Alarm / Coordinates / Visibility where applicable. Fib Extension projected levels are hittable/configurable again, Bracket remains accessible after resolution and shootable without destructive removal feedback, and Bracket Inputs now include trade size, leverage, round-trip fee, fee hurdle, and TP net-profit estimates. No broker routing, signing, or live execution was added.
 
+`v1.0.565`-`v1.0.568` is an onboarding, in-game terminal, and economy pass. The first-run onboarding tour is rebuilt as a clean guided sequence (Play → Terminal → Profile → Token → Coach.llm → Connect; Maps is inserted for connected wallets; a Journal stop stays archived until the app is unlocked) that opens with a "What's your name" handle prompt, renders terminal-style `>_NAME` titles with a blinking cursor, pops each surface's own tooltip as it highlights it, runs a desktop-only guided drag-and-drop demo on the Terminal/Token steps, drops the Back button and step counter, and locks the desktop so no run can start mid-tour. Joining a multiplayer room now prompts for a name. The in-game command console shows only the latest single command, with a green toggle moved into the chart toolbar (one line ↔ hidden) and a new `⌘ COMMAND` tab in the Terminal app that holds the full run command tape and lets players answer a bot `Build? Y/N` they missed (it executes only if the setup is still valid). The Token terminal renames its `Buy`/`Strong Buy` signals to `UP`/`MOON`, squares up the watchlist star as a gold button, and labels the in-run swap router `offline router · 100:1`; on phones the toolbar collapses `12H`+ timeframes behind a dropdown after `4H`; the RUN buttons gain a blinking CTA glow. Economy: per-run grind-coin `$CHART` is front-loaded and hard-capped per run, closing an unlimited-`$CHART` exploit on short high-timeframe charts, and small-cap coins that are not on Binance now fall back to seeded candles fast (candle fetches abort after 7s) instead of hanging. No broker routing, signing, or live execution was added.
+
 ## Local Use
 
 Open `ChartRunner_Prototype.html` in a browser, or use the live public build at `https://chartrunner.xyz/play/`.
 
 ## Mobile / Tablet Play
 
-`/play/` includes an adaptive mobile shell for phones and tablets: portrait uses compact top-bar commands, a bottom-left collapsible HOT tray for hotkeys, bottom-right runner controls, mobile app sheets, tap-to-run movement, two-finger chart movement, and one-active-laser routing. Landscape phone and tablet layouts keep more desktop chrome while preserving the touch controls.
+`/play/` includes an adaptive mobile shell for phones and tablets: portrait uses compact top-bar commands, a bottom-left collapsible HOT tray for hotkeys, bottom-right runner controls, mobile app sheets, tap-to-run movement, two-finger chart movement, one-active-laser routing, and a `12H`+ timeframe dropdown (after `4H`) that keeps the toolbar on a single row. The desktop-only guided drag-and-drop tour demo is suppressed on phones. Landscape phone and tablet layouts keep more desktop chrome while preserving the touch controls.
 
 Mobile regression smoke:
 
