@@ -2923,6 +2923,9 @@
        the SAME bottom-sheet box so the welcome sits exactly where the tutorial does.
        border-box + min-width:0 stop the right-edge overflow the welcome/chat had. */
     #crCoachHub{ left:0 !important; right:0 !important; bottom:0 !important; align-items:stretch !important; }
+    /* v1.0 — keep the COACH invader on the RIGHT (next to the "?" replay badge) on
+       phones; the full-width hub above otherwise left-aligns the fixed-width button. */
+    #crCoachHubBtn{ align-self:flex-end !important; margin-right:10px !important; }
     /* v1.0.517 — coach sheet fills the bottom DOCK zone edge-to-edge (flush), so the window
        above it and the sheet are perfectly complementary (no overlap, no desktop, no peek). */
     #crCoachHubBubble, #crFrPop .cr-fr-win{ box-sizing:border-box !important; min-width:0 !important; z-index:20 !important;
@@ -69215,6 +69218,22 @@ function log(msg){
     }
     // Repaint the laser menu / loadout surfaces if they're open.
     try { if(typeof renderLaserMenu === 'function') renderLaserMenu(); } catch(_){}
+    // v1.0 — first wallet connect → prompt an ON-CHAIN name claim (once per session)
+    // when the connected wallet hasn't claimed a runner name yet.
+    try { _crMaybePromptNameClaim(); } catch(_){}
+  }
+  function _crMaybePromptNameClaim(){
+    try {
+      if(window._crNamePromptedSession) return;
+      if(typeof crGuest === 'function' && crGuest()) return;        // a wallet must be connected
+      var nm = (window.crPlayerName && typeof crPlayerName.get === 'function') ? crPlayerName.get() : '';
+      if(nm && nm !== 'anon_runner') return;                        // already claimed for this wallet
+      if(document.body.classList.contains('cr-in-run')) return;     // not mid-run
+      var fr = document.getElementById('crFrPop');
+      if(fr && fr.classList.contains('on')) return;                 // not during the onboarding tour
+      window._crNamePromptedSession = true;
+      setTimeout(function(){ try { if(window.crPlayerName && typeof crPlayerName.open === 'function') crPlayerName.open(); } catch(_){} }, 700);
+    } catch(_){}
   }
   try { window.crApplyAccessGates = crApplyAccessGates; } catch(_){}
   try { if(window.crWallet && typeof crWallet.on === 'function') crWallet.on(crApplyAccessGates); else crApplyAccessGates(); } catch(_){ try { crApplyAccessGates(); } catch(__){} }
@@ -85308,10 +85327,13 @@ window.crQvac = (function(){
   window.crFirstRun = { start:start, reset:reset, next:function(){go(idx+1);}, skip:function(){finish(true);} };
   function boot(){
     if(load().done) return; var tries=0;
+    // v1.0 — keep polling long enough that the tour auto-opens on first visit even
+    // when the login / "Continue as Guest" gate keeps the desktop hidden for a while
+    // (was 40 tries ≈ 20s, which gave up before slow first-timers reached the desktop).
     var iv=setInterval(function(){ tries++;
       if(load().done){ clearInterval(iv); return; }
       if(onDesktop() && document.querySelector('.os-icon[data-prog]')){ clearInterval(iv); start(false); }
-      else if(tries>40){ clearInterval(iv); }
+      else if(tries>1200){ clearInterval(iv); }   // ~10 min safety bound
     }, 500);
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
