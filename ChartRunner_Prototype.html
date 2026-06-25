@@ -8246,6 +8246,12 @@
     border:1px solid var(--line);box-shadow:0 12px 30px rgba(0,0,0,.5);min-width:84px}
   .crTvTfMoreMenu.open{display:flex}
   .crTvTfMoreMenu .tvTf{width:100%;text-align:center}
+  /* v1.0 — blinking CTA glow for the primary RUN buttons (Configure Run + token terminal).
+     Uses filter so it layers over each button's own inline box-shadow; pauses on hover. */
+  @keyframes crCtaBlink{0%,100%{filter:drop-shadow(0 0 3px rgba(20,241,149,.30))}50%{filter:drop-shadow(0 0 13px rgba(20,241,149,.9))}}
+  .cr-cta-blink{animation:crCtaBlink 1.3s ease-in-out infinite}
+  .cr-cta-blink:hover{animation-play-state:paused}
+  @media (prefers-reduced-motion:reduce){ .cr-cta-blink{animation:none} }
   /* v1.0.459 — bot proposal blends straight into the terminal feed instead of
      reading as a floating card: no card bg/border/radius/shadow/blur/max-width.
      A thin top rule just separates it as a feed entry, like other terminal lines. */
@@ -12329,7 +12335,7 @@
                commits the pending mode and calls restart(). -->
           <div class="os-run-foot" style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
             <button class="brBtn ghost" id="crCfgBack" type="button">← Back to modes</button>
-            <button class="brBtn" id="crCfgStart" type="button">▶ Start Run</button>
+            <button class="brBtn cr-cta-blink" id="crCfgStart" type="button">▶ Start Run</button>
           </div>
         </div>
       </div>
@@ -24230,12 +24236,23 @@ window.crCgMarkets = crCgMarkets;
    [t,o,h,l,c] (no volume); granularity is auto by the `days` window, which we map
    from the selected timeframe. Never returns < 5 bars (throws so the caller can
    fall through). */
+// v1.0 — fetch with a hard timeout. Small-cap coins (not on Binance) route to the
+// slow/rate-limited CoinGecko OHLC endpoint; without an abort the run hangs ("times
+// out") instead of falling back to seeded candles. Aborting fast keeps loads snappy.
+async function crFetchTimeout(url, opts, ms){
+  ms = ms || 7000;
+  var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timer = ctl ? setTimeout(function(){ try { ctl.abort(); } catch(_){} }, ms) : null;
+  try { return await fetch(url, Object.assign({}, opts || {}, ctl ? { signal: ctl.signal } : {})); }
+  finally { if(timer) clearTimeout(timer); }
+}
+try { window.crFetchTimeout = crFetchTimeout; } catch(_){}
 async function crFetchCgOhlc(cgId, tf){
   if(!cgId) throw new Error('cg-ohlc-no-id');
   var daysMap = { '1m':1, '5m':1, '15m':1, '30m':1, '1h':7, '2h':14, '4h':14, '6h':30, '8h':30, '12h':90, '1d':180, '3d':365, '1w':365, '1M':365 };
   var days = daysMap[tf] || 30;
   var url = CR_CG_BASE + '/coins/' + encodeURIComponent(cgId) + '/ohlc?vs_currency=usd&days=' + days;
-  var resp = await fetch(url, { headers: crCgHeaders() });
+  var resp = await crFetchTimeout(url, { headers: crCgHeaders() }, 7000);
   if(!resp.ok) throw new Error('cg-ohlc-http-' + resp.status);
   var arr = await resp.json();
   if(!Array.isArray(arr) || arr.length < 5) throw new Error('cg-ohlc-empty');
@@ -25383,7 +25400,7 @@ async function loadCandles(tf){
   // Live Binance path (public play / default, or fallback for DEX-selected non-Solana assets)
   const url = `https://api.binance.com/api/v3/klines?symbol=${asset.sym}&interval=${interval}&limit=1000`;
   try{
-    const resp = await fetch(url);
+    const resp = await crFetchTimeout(url, {}, 7000);
     if(!resp.ok) throw new Error('status '+resp.status);
     const data = await resp.json();
     candles = data.map(k=>({t:k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], v:+k[5]}));
@@ -57266,7 +57283,7 @@ function _tokRenderProfile(){
       '</div>' +
     '</div>' +
     // v1.0.519 — RUN button moved to the TOP (right under the ticker + price header).
-    '<button type="button" data-tok-run="' + def.id + '" style="width:100%;box-sizing:border-box;margin:0 0 10px;padding:11px;border:1px solid #14f195!important;border-radius:8px!important;background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.06))!important;color:#bff7df!important;font:700 13px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;text-shadow:none!important;box-shadow:0 0 14px rgba(20,241,149,.20)!important">▶ RUN ' + def.tag + ' · ' + String(s.tf||'').toUpperCase() + '</button>' +
+    '<button type="button" class="cr-cta-blink" data-tok-run="' + def.id + '" style="width:100%;box-sizing:border-box;margin:0 0 10px;padding:11px;border:1px solid #14f195!important;border-radius:8px!important;background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.06))!important;color:#bff7df!important;font:700 13px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;text-shadow:none!important;box-shadow:0 0 14px rgba(20,241,149,.20)!important">▶ RUN ' + def.tag + ' · ' + String(s.tf||'').toUpperCase() + '</button>' +
     // TF picker + sparkline panel
     '<div style="margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4)">' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
