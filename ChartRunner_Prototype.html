@@ -36176,7 +36176,7 @@ window.crRoom = (function(){
   async function joinRoom(id){
     try {
       // v1.0 — choose a name before joining a multiplayer room (if one isn't set yet).
-      try { if(window.crRunnerName && !crRunnerName.has()){ var _jn = prompt('Choose a name to join this room as:'); if(_jn) crRunnerName.set(_jn); } } catch(_){}
+      try { if(typeof window.crHasName === 'function' && !window.crHasName()){ var _jn = prompt('Choose a name to join this room as:'); if(_jn && window.crRunnerName) crRunnerName.set(_jn); } } catch(_){}
       var r = await fetch(http()+'/rooms/'+encodeURIComponent(id), {cache:'no-store'}); if(!r.ok) throw 0; var rm = await r.json(); if(!rm||!rm.id) throw 0;
       var url = location.origin + location.pathname + '?sharedMap=1&room=' + encodeURIComponent(rm.id)
         + (rm.host?'&host='+encodeURIComponent(rm.host):'') + (rm.asset?'&asset='+encodeURIComponent(rm.asset):'') + (rm.tf?'&tf='+encodeURIComponent(rm.tf):'') + (rm.snapshot?('#m='+rm.snapshot):'');
@@ -48040,6 +48040,16 @@ function osRefreshShop(){
       return n; }
     return { get:get, set:set, has:function(){ var g = get(); return !!g && g !== 'anon_runner'; } };
   })();
+  // v1.0 — unified "does the player already have a name?" check across the local handle,
+  // the on-chain claim, and the visible lite-profile name. Single source of truth so the
+  // three name prompts (onboarding step · MP join · on-connect on-chain claim) never
+  // double up or re-fire for someone who already has a name.
+  window.crHasName = function(){
+    try { if(window.crRunnerName && typeof crRunnerName.has === 'function' && crRunnerName.has()) return true; } catch(_){}
+    try { if(window.crPlayerName && typeof crPlayerName.get === 'function'){ var n = crPlayerName.get(); if(n && n !== 'anon_runner') return true; } } catch(_){}
+    try { var el = document.getElementById('crLpName'); var t = el && el.textContent ? el.textContent.trim() : ''; if(t && t !== 'anon_runner') return true; } catch(_){}
+    return false;
+  };
 
   // Inject CSS once.
   function injectCss(){
@@ -69227,13 +69237,14 @@ function log(msg){
     try {
       if(window._crNamePromptedSession) return;
       if(typeof crGuest === 'function' && crGuest()) return;        // a wallet must be connected
-      var nm = (window.crPlayerName && typeof crPlayerName.get === 'function') ? crPlayerName.get() : '';
-      if(nm && nm !== 'anon_runner') return;                        // already claimed for this wallet
+      if(typeof window.crHasName === 'function' && window.crHasName()) return;  // already has ANY name → never prompt
       if(document.body.classList.contains('cr-in-run')) return;     // not mid-run
       var fr = document.getElementById('crFrPop');
-      if(fr && fr.classList.contains('on')) return;                 // not during the onboarding tour
+      if(fr && fr.classList.contains('on')) return;                 // not during the onboarding tour…
+      try { var ob = JSON.parse(localStorage.getItem('cr_onboarding_v1') || '{}'); if(!ob.done) return; } catch(_){}  // …and not before the tour has run (it names first)
+      try { if(new URLSearchParams(location.search).get('room')) return; } catch(_){}  // never on a multiplayer room join (avoids doubling with the room name prompt)
       window._crNamePromptedSession = true;
-      setTimeout(function(){ try { if(window.crPlayerName && typeof crPlayerName.open === 'function') crPlayerName.open(); } catch(_){} }, 700);
+      setTimeout(function(){ try { if(window.crHasName && window.crHasName()) return; if(window.crPlayerName && typeof crPlayerName.open === 'function') crPlayerName.open(); } catch(_){} }, 700);
     } catch(_){}
   }
   try { window.crApplyAccessGates = crApplyAccessGates; } catch(_){}
@@ -85195,7 +85206,8 @@ window.crQvac = (function(){
   // v1.0 — phase gating. Connect is guest-only (dropped once a wallet is connected);
   // Maps / Journal gate themselves by icon visibility (handled in targetFor).
   function _frConnected(){ try { return (typeof window.crConnected==='function') ? !!window.crConnected() : false; } catch(_){ return false; } }
-  function _stepAllowed(st){ if(!st) return false; if(st.guestOnly && _frConnected()) return false; if(st.connectedOnly && !_frConnected()) return false; return true; }
+  function _stepAllowed(st){ if(!st) return false; if(st.nameInput && typeof window.crHasName === 'function' && window.crHasName()) return false; if(st.guestOnly && _frConnected()) return false; if(st.connectedOnly && !_frConnected()) return false; return true; }
+  function _frInRoom(){ try { return !!new URLSearchParams(location.search).get('room'); } catch(_){ return false; } }
   function nextRenderable(i, dir){ while(i>=0 && i<STEPS.length){ var st=STEPS[i]; if(_stepAllowed(st) && (!st.sel || targetFor(i))) return i; i += dir; } return -1; }
   function build(){
     if(built) return; built=true;
@@ -85354,6 +85366,7 @@ window.crQvac = (function(){
   function start(force){
     build(); var o=load();
     if(!force && o.done) return;
+    if(!force && _frInRoom()) return;  // don't auto-run the desktop onboarding tour on a multiplayer room link
     // v1.0 — require the desktop icons to be VISIBLE (not just present in the DOM), so the
     // tour never opens over a live run/minigame where the icons are hidden behind the chart.
     if(!onDesktop() || !visible(document.querySelector('.os-icon[data-prog="chartrunner"]'))) return;
