@@ -1,88 +1,9 @@
 <!doctype html>
 <html lang="en">
 <head>
-<!-- #5 — meta-level hardening that GitHub Pages (no custom headers) can honor.
-     Reduces referrer leakage and shuts off the cheap injection vectors
-     (plugins via <object>, <base>-tag hijack, cross-origin form posts) WITHOUT
-     constraining the large inline app's own scripts/fetches. Header-only items
-     — frame-ancestors, HSTS, Permissions-Policy, and a full nonce-based CSP —
-     need server/CDN config and are tracked in SECURITY.md. -->
-<meta name="referrer" content="strict-origin-when-cross-origin">
-<meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'self'; form-action 'self'">
-<script>
-/* === ChartRunner security helpers — redirect-trust hardening (#1) ============
-   Bind every /solana-connect/ redirect round-trip to a per-tab, single-use
-   intent. A crafted external link carrying regAction/sig can no longer fake
-   on-chain / marketplace / license state, because it won't match an intent
-   THIS tab actually issued. sessionStorage survives same-tab same-origin
-   navigation, but is NOT carried in from an external link or a fresh tab. ===*/
-(function(){
-  var PEND='cr_reg_pending_v1', TTL=10*60*1000;        // 10-minute freshness
-  window.crRegGo=function(url){                          // outbound: mark intent
-    try{
-      var m=/[?&]action=([^&]+)/.exec(url), nm=/[?&]name=([^&]+)/.exec(url);
-      if(m) sessionStorage.setItem(PEND, JSON.stringify({
-        action:decodeURIComponent(m[1]),
-        name:nm?decodeURIComponent(nm[1]):'',
-        at:Date.now()
-      }));
-    }catch(_){}
-    window.location.href=url;
-  };
-  window.crRegConsume=function(regAction, regName){      // inbound: verify+consume
-    try{
-      var raw=sessionStorage.getItem(PEND);
-      if(!raw) return false;
-      sessionStorage.removeItem(PEND);                  // single-use, even on mismatch
-      var p=JSON.parse(raw);
-      if(!p||!p.action) return false;
-      if(Date.now()-(p.at||0)>TTL) return false;
-      if(String(p.action)!==String(regAction||'')) return false;
-      if(p.name && regName && String(p.name)!==String(regName)) return false;
-      return true;
-    }catch(_){ return false; }
-  };
-  window._crRegOk=function(regAction, regName, u){       // gate + clean on reject
-    if(window.crRegConsume && window.crRegConsume(regAction, regName)) return true;
-    try{ ['regAction','regType','regName','sig','matchPda'].forEach(function(p){ u.searchParams.delete(p); });
-         window.history.replaceState({}, '', u.toString()); }catch(_){}
-    try{ setTimeout(function(){ try{ if(window.toast) window.toast('⚠ Ignored an unverified on-chain redirect'); }catch(_){} }, 800); }catch(_){}
-    return false;
-  };
-  /* Agent/bridge endpoint gate (#3): a link can ask to point COACH/agent/event
-     traffic at an arbitrary server. Allow only http(s)/ws(s); pass same-origin
-     and localhost through silently; require an explicit confirm for any external
-     host before the URL is persisted. Returns the normalized URL or '' (reject). */
-  window.crConfirmExternalEndpoint=function(raw, label){
-    try{
-      var s=String(raw||'').trim(); if(!s) return '';
-      var u=new URL(s, location.href);
-      if(!/^(https?:|wss?:)$/i.test(u.protocol)) return '';   // no javascript:/data:/file:
-      var host=(u.hostname||'').toLowerCase();
-      if(host==='localhost'||host==='127.0.0.1'||host==='[::1]'||u.origin===location.origin) return u.toString();
-      var ok=window.confirm('⚠ A link is trying to point ChartRunner’s '+(label||'agent endpoint')+
-        ' at an EXTERNAL server:\n\n'+u.origin+u.pathname+
-        '\n\nOnly continue if you trust whoever sent this link. Route '+(label||'agent traffic')+' there?');
-      return ok ? u.toString() : '';
-    }catch(_){ return ''; }
-  };
-  /* Key-purge control (#4): COACH/provider keys + the agent bridge token live in
-     this browser and are sent directly from the page, so any injected script or
-     extension could read them. There's no backend proxy in the single-file build,
-     so the mitigation is a one-call wipe the UI (and the user) can invoke. */
-  window.crPurgeApiKeys=function(){
-    var keys=['cr_coingecko_key','cr_birdeye_key_v1','cr_goldrush_key_v1','cr_agent_bridge_token'], n=0;
-    keys.forEach(function(k){ try{ if(localStorage.getItem(k)!=null){ localStorage.removeItem(k); n++; } }catch(_){} });
-    try{ var raw=localStorage.getItem('cr_coach_provider_v1');
-      if(raw){ var c=JSON.parse(raw); if(c && c.apiKey){ c.apiKey=''; localStorage.setItem('cr_coach_provider_v1', JSON.stringify(c)); n++; } }
-    }catch(_){}
-    return n;
-  };
-})();
-</script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.567
-     LAST UPDATED:    2026-06-24  ·  SNAKE ROUNDS (10% round campaign for Snake): the same round-based treatment applied to Snake. New crSnakeRounds module wraps the legacy single-goal Snake (eat N coins) in a 7-round trading-discipline campaign — FIRST FEED · WICK WALL · GREED TAIL · TREND COMBO · OVEREXTENSION · CHOP SNAKE · REVERSAL HUNT — each round = grow to a TARGET LENGTH, then an electric-blue EXIT GATE opens downrange that you must run to in order to "take profit" and clear (decide: exit, or chase greed coins). The growing tail stays your growing risk (self-collision still kills). COACH narrates each round + lesson; clears fire confetti + CLEAN EXIT float + hit-stop, final round shows a CAMPAIGN CLEAR endcard. crMinigameTick delegates win/advance to the module; drawMinigame draws the gate + a centered ROUND/CONDITION/LEN HUD. Legacy single-goal behavior preserved as the fallback when the campaign isn't active.  PREV (v1.0.566): WICK BITER (first chart-triggered enemy family): Monster Rounds now spawns a telegraphed vertical-ambush enemy anchored to a real long-wick candle near the player. crMonsterRounds.findWickCandle() scans ±6 candles for the longest upper/lower wick (vs body + ATR); maybeWickSpawn() returns one with high probability on the WICK BITE round, low elsewhere — only when a genuine long wick exists, so the enemy is always chart-justified. Motion is a warn→strike→spent state machine (crUpdateWickBiter): a 0.55s pulsing red danger line + tip chevron telegraph (drawWickBiter) reads BEFORE the dart snaps down the wick to the candle body — obeying the "telegraph before contact" rule that got the old regime monsters cut. Shootable during the telegraph; contact damage reuses the shared monster-vs-player check. Additive — spawnMonster falls through to the classic grunt/boss field when no wick spawn is produced.  PREV (v1.0.565): MONSTER ROUNDS (10% round-based survival): Monster Mode is now a round loop instead of an endless field. New crMonsterRounds module wraps the existing grunt/boss combat — each round has a market CONDITION (FIRST BEAR · WICK BITE · RED STAIRCASE · CHOP ROOM · VOLUME BRUTE · BREAKOUT ALARM · FALSE BREAK · MOMENTUM SWARM · LIQUIDATION · MONSTER MARKET), an OBJECTIVE (survive Ns / kill N / hunt the boss), a countdown HUD top-left, a final PANIC phase (faster spawns + screen-flash pulse) on survive rounds, and a CLEAR endcard (field wiped, confetti, XP float, hit-stop, COACH lesson line). Round 10 loops into an escalating endless LIVE RAID. Spawn pacing + cap + boss-bias now read from the round def (updateCombat falls back to the classic 1.8s/5-cap field when inactive). No new enemy types. game.bossKills added as the boss objective tracker.  PREV (v1.0.564): FIRST-RUN FUNNEL popup now uses the EXACT COACH.llm bubble layout + positioning on desktop AND phone: it reuses the .cr-tut-terminal-bubble + .crCoachWin chrome (invader + COACH.llm header + dot + ✕), the .crCoachHubActions Tutorial/Chat-style buttons, docks bottom-right like #crCoachHub on desktop, and becomes the full-width bottom sheet (var(--crm-dock-h)) like #crCoachHubBubble on mobile.  PREV (v1.0.563): FIRST-RUN ONBOARDING FUNNEL (crFirstRun): cookie-gated (localStorage cr_onboarding_v1) guided tour that auto-launches ONCE for new players, resumes across sessions, and is always skippable. Additive on the COACH identity: a dim+spotlight mask frames the current target, a pulsing beacon + click-ripple + bouncing arrow point at it, and a COACH terminal popup (Skip/Back/Next + progress dots) explains every desktop surface (Play, Terminal, Token, Profile, Maps, Journal, Marketplace, Bots, Workbench, RUN-tube, Connect), then hands off into a run where the in-game COACH tutorial continues. Data-driven STEPS — easy to extend. window.crFirstRun = {start,reset,next,skip}.  PREV (v1.0.562): MOBILE tutorial spotlight now EXTENDS down to just above the COACH tutorial bubble so the ring's lower dashed line is visible in the gap (was hidden behind the bubble). Measures the visible .cr-tut-card (not the collapsed #crTutorial root).  PREV (v1.0.561): TUTORIAL: the WELCOME (first) step now hides the ◀ Back button — there's nothing to go back to, so the nav shows only NEXT. Back reappears automatically from step 2 on.  PREV (v1.0.560): MOBILE tutorial spotlight now frames the window EXACTLY within the display: the dashed highlight ring clamps to all four viewport edges (below the top menubar, above the bottom tutorial bubble) instead of spilling off-screen right/bottom and under the menubar. box-sizing:border-box so the dashed border stays inside the bounds.  PREV (v1.0.559): BATCH: (1) chat SEND button now uses the unified ▶RUN/Tutorial/Chat treatment. (2) Setup Calculator locked-box ARCHIVED — the Fib/bracket/VWAP calculator decks (drawing + setting the tool) render again; routing/arming stays gated by the Activation Laser + level system (the "Order activation unlocks…" note communicates state). (3) Token-research star icon +30%. (4) Monster Mode no-vehicle gate extended to the mobile "1" button (body.cr-monster-on). (5) Mobile controls: arrows are white/transparent, up+down same size, 1&2 are smaller squares stacked vertically on the right.  PREV (v1.0.558): MONSTER MODE toolbar fully INERT: clicking the chart toolbar (or its symbol/timeframe/indicator popups) mid-fight no longer opens or changes anything — the click is swallowed at document-capture and the only response is the CRITICAL WARNING stamp. (Was: control opened + warning overlaid.)  PREV (v1.0.557): THEMED TOOLTIPS: a single custom tooltip (.cr-tip) replaces the plain native browser title popups everywhere — dark terminal card, green accent border + glow, monospace #bff7df text, with the "Name — Action" form (e.g. Play — Configure Run) emphasising the name in bright green. A delegated controller intercepts any [title] on hover, suppresses the OS tooltip, and renders the styled card; covers all current + future DOM with zero per-element wiring.  PREV (v1.0.556): VEHICLES RIDE THE UPSIDE-DOWN WORLD: the v0.9.31 "upper-world-only" rule is lifted. A mounted ride now survives world flips, glides the candle BOTTOMS with mirrored gravity, and the rig renders vertically flipped. Controls mirror on-foot: ↓↓ flips down, ↑↑ surfaces, single ↓ jumps while flipped; ↑↑↑ still dismounts into flight. Monster Mode still force-dismounts (no combat vehicles).  PREV (v1.0.555): NEXT/BACK buttons unified: the tutorial nav (◀ Back / Next ▶) and the COACH walkthrough "Next" now use the EXACT token "▶ RUN" / Tutorial / Chat treatment — transparent-green fill, #14f195 border, #bff7df text, soft glow. No more filled-primary Next; Back + Next are identical.  PREV (v1.0.554): ALL SETUP CALCULATORS gated behind activation: the bracket Competition risk / Fee hurdle / TP profit deck AND the VWAP reclaim calculator are now archived the same way as the Fib calculator — they only render once the object's route is armed with the Activation Laser (hotkey 3). Until then a compact "⚡ Setup calculator · locked" hint shows.  PREV (v1.0.553): SETUP CALCULATOR gated: the fib retracement/extension/channel/circle calculator deck in an object's Inputs tab is now archived behind activation — it only renders once the object's route is armed with the Activation Laser (hotkey 3). Until then a compact "locked" hint shows.  PREV (v1.0.552): COACH welcome buttons match RUN button. Tutorial + Chat now use the EXACT same style as the token "▶ RUN" button (transparent-green fill, #14f195 border, #bff7df text, glow) — Tutorial is no longer a solid-green slab.  PREV (v1.0.551): Monster AI screen-space pursuit fix.: monsters pursue in screen space now, so one sitting directly above/below the player no longer freezes. (Old code normalized a vector mixing world-px with price units + a price-unit epsilon, which collapsed the vertical component when horizontally aligned.)  PREV (v1.0.550): Monster CRITICAL WARNING stamp display fix. (root cause found via live test): the CRITICAL WARNING stamp's guard fired correctly all along + added the .on class, but the element's inline `display:none` outranked the `.on{display:flex}` class rule, so it never showed. Made it `display:flex!important`. The stamp now appears when you tap the toolbar mid-Monster-run.  PREV (v1.0.549): regular run billboard reads "CHARTRUNNER". MULTIPLAYER: the room ONLINE roster is now a Terminal tab (◍ ONLINE, shown only in a live room) instead of only a floating panel; the Terminal title reads "· ChartRunner Multiplayer" while in a room; the lite-profile mode billboard reads "MULTIPLAYER" in every mode (Time is Money / Monster / Racing / Snake) while in a room. Floating roster still shows during runs when the Terminal is closed.  PREV (v1.0.547): Maps archived the "ALL MAPS · N" overview header.  v1.0.546: deleted the ＋Save button + map-name input; moved Rooms into the folder sidebar above "All maps" (folder-row styling); search is now a 🔍 toggle at the right of the ALL/BTC/ETH/SOL/＋ row that filters maps by name.  PREV (v1.0.545): tutorial rewrite + interactive tab layer.
+     CURRENT VERSION: v1.0.565
+     LAST UPDATED:    2026-06-28  ·  SECURITY: closed a stored-XSS in shared-map import — _crMapThumbHTML now strict-validates the thumb as a base64 image data-URI before embedding it in the <img src> (old check only tested the `data:image` prefix, so a crafted ?sharedMap= thumb like `data:image/x" onerror=…` broke out of the attribute). Also hardened the Public Rooms browser: relay-supplied `players` counts are Number()-coerced before innerHTML (rooms header, room row, live badge).  PREV (v1.0.564): FIRST-RUN FUNNEL popup now uses the EXACT COACH.llm bubble layout + positioning on desktop AND phone: it reuses the .cr-tut-terminal-bubble + .crCoachWin chrome (invader + COACH.llm header + dot + ✕), the .crCoachHubActions Tutorial/Chat-style buttons, docks bottom-right like #crCoachHub on desktop, and becomes the full-width bottom sheet (var(--crm-dock-h)) like #crCoachHubBubble on mobile.  PREV (v1.0.563): FIRST-RUN ONBOARDING FUNNEL (crFirstRun): cookie-gated (localStorage cr_onboarding_v1) guided tour that auto-launches ONCE for new players, resumes across sessions, and is always skippable. Additive on the COACH identity: a dim+spotlight mask frames the current target, a pulsing beacon + click-ripple + bouncing arrow point at it, and a COACH terminal popup (Skip/Back/Next + progress dots) explains every desktop surface (Play, Terminal, Token, Profile, Maps, Journal, Marketplace, Bots, Workbench, RUN-tube, Connect), then hands off into a run where the in-game COACH tutorial continues. Data-driven STEPS — easy to extend. window.crFirstRun = {start,reset,next,skip}.  PREV (v1.0.562): MOBILE tutorial spotlight now EXTENDS down to just above the COACH tutorial bubble so the ring's lower dashed line is visible in the gap (was hidden behind the bubble). Measures the visible .cr-tut-card (not the collapsed #crTutorial root).  PREV (v1.0.561): TUTORIAL: the WELCOME (first) step now hides the ◀ Back button — there's nothing to go back to, so the nav shows only NEXT. Back reappears automatically from step 2 on.  PREV (v1.0.560): MOBILE tutorial spotlight now frames the window EXACTLY within the display: the dashed highlight ring clamps to all four viewport edges (below the top menubar, above the bottom tutorial bubble) instead of spilling off-screen right/bottom and under the menubar. box-sizing:border-box so the dashed border stays inside the bounds.  PREV (v1.0.559): BATCH: (1) chat SEND button now uses the unified ▶RUN/Tutorial/Chat treatment. (2) Setup Calculator locked-box ARCHIVED — the Fib/bracket/VWAP calculator decks (drawing + setting the tool) render again; routing/arming stays gated by the Activation Laser + level system (the "Order activation unlocks…" note communicates state). (3) Token-research star icon +30%. (4) Monster Mode no-vehicle gate extended to the mobile "1" button (body.cr-monster-on). (5) Mobile controls: arrows are white/transparent, up+down same size, 1&2 are smaller squares stacked vertically on the right.  PREV (v1.0.558): MONSTER MODE toolbar fully INERT: clicking the chart toolbar (or its symbol/timeframe/indicator popups) mid-fight no longer opens or changes anything — the click is swallowed at document-capture and the only response is the CRITICAL WARNING stamp. (Was: control opened + warning overlaid.)  PREV (v1.0.557): THEMED TOOLTIPS: a single custom tooltip (.cr-tip) replaces the plain native browser title popups everywhere — dark terminal card, green accent border + glow, monospace #bff7df text, with the "Name — Action" form (e.g. Play — Configure Run) emphasising the name in bright green. A delegated controller intercepts any [title] on hover, suppresses the OS tooltip, and renders the styled card; covers all current + future DOM with zero per-element wiring.  PREV (v1.0.556): VEHICLES RIDE THE UPSIDE-DOWN WORLD: the v0.9.31 "upper-world-only" rule is lifted. A mounted ride now survives world flips, glides the candle BOTTOMS with mirrored gravity, and the rig renders vertically flipped. Controls mirror on-foot: ↓↓ flips down, ↑↑ surfaces, single ↓ jumps while flipped; ↑↑↑ still dismounts into flight. Monster Mode still force-dismounts (no combat vehicles).  PREV (v1.0.555): NEXT/BACK buttons unified: the tutorial nav (◀ Back / Next ▶) and the COACH walkthrough "Next" now use the EXACT token "▶ RUN" / Tutorial / Chat treatment — transparent-green fill, #14f195 border, #bff7df text, soft glow. No more filled-primary Next; Back + Next are identical.  PREV (v1.0.554): ALL SETUP CALCULATORS gated behind activation: the bracket Competition risk / Fee hurdle / TP profit deck AND the VWAP reclaim calculator are now archived the same way as the Fib calculator — they only render once the object's route is armed with the Activation Laser (hotkey 3). Until then a compact "⚡ Setup calculator · locked" hint shows.  PREV (v1.0.553): SETUP CALCULATOR gated: the fib retracement/extension/channel/circle calculator deck in an object's Inputs tab is now archived behind activation — it only renders once the object's route is armed with the Activation Laser (hotkey 3). Until then a compact "locked" hint shows.  PREV (v1.0.552): COACH welcome buttons match RUN button. Tutorial + Chat now use the EXACT same style as the token "▶ RUN" button (transparent-green fill, #14f195 border, #bff7df text, glow) — Tutorial is no longer a solid-green slab.  PREV (v1.0.551): Monster AI screen-space pursuit fix.: monsters pursue in screen space now, so one sitting directly above/below the player no longer freezes. (Old code normalized a vector mixing world-px with price units + a price-unit epsilon, which collapsed the vertical component when horizontally aligned.)  PREV (v1.0.550): Monster CRITICAL WARNING stamp display fix. (root cause found via live test): the CRITICAL WARNING stamp's guard fired correctly all along + added the .on class, but the element's inline `display:none` outranked the `.on{display:flex}` class rule, so it never showed. Made it `display:flex!important`. The stamp now appears when you tap the toolbar mid-Monster-run.  PREV (v1.0.549): regular run billboard reads "CHARTRUNNER". MULTIPLAYER: the room ONLINE roster is now a Terminal tab (◍ ONLINE, shown only in a live room) instead of only a floating panel; the Terminal title reads "· ChartRunner Multiplayer" while in a room; the lite-profile mode billboard reads "MULTIPLAYER" in every mode (Time is Money / Monster / Racing / Snake) while in a room. Floating roster still shows during runs when the Terminal is closed.  PREV (v1.0.547): Maps archived the "ALL MAPS · N" overview header.  v1.0.546: deleted the ＋Save button + map-name input; moved Rooms into the folder sidebar above "All maps" (folder-row styling); search is now a 🔍 toggle at the right of the ALL/BTC/ETH/SOL/＋ row that filters maps by name.  PREV (v1.0.545): tutorial rewrite + interactive tab layer. FIRST-RUN FUNNEL popup now uses the EXACT COACH.llm bubble layout + positioning on desktop AND phone: it reuses the .cr-tut-terminal-bubble + .crCoachWin chrome (invader + COACH.llm header + dot + ✕), the .crCoachHubActions Tutorial/Chat-style buttons, docks bottom-right like #crCoachHub on desktop, and becomes the full-width bottom sheet (var(--crm-dock-h)) like #crCoachHubBubble on mobile.  PREV (v1.0.563): FIRST-RUN ONBOARDING FUNNEL (crFirstRun): cookie-gated (localStorage cr_onboarding_v1) guided tour that auto-launches ONCE for new players, resumes across sessions, and is always skippable. Additive on the COACH identity: a dim+spotlight mask frames the current target, a pulsing beacon + click-ripple + bouncing arrow point at it, and a COACH terminal popup (Skip/Back/Next + progress dots) explains every desktop surface (Play, Terminal, Token, Profile, Maps, Journal, Marketplace, Bots, Workbench, RUN-tube, Connect), then hands off into a run where the in-game COACH tutorial continues. Data-driven STEPS — easy to extend. window.crFirstRun = {start,reset,next,skip}.  PREV (v1.0.562): MOBILE tutorial spotlight now EXTENDS down to just above the COACH tutorial bubble so the ring's lower dashed line is visible in the gap (was hidden behind the bubble). Measures the visible .cr-tut-card (not the collapsed #crTutorial root).  PREV (v1.0.561): TUTORIAL: the WELCOME (first) step now hides the ◀ Back button — there's nothing to go back to, so the nav shows only NEXT. Back reappears automatically from step 2 on.  PREV (v1.0.560): MOBILE tutorial spotlight now frames the window EXACTLY within the display: the dashed highlight ring clamps to all four viewport edges (below the top menubar, above the bottom tutorial bubble) instead of spilling off-screen right/bottom and under the menubar. box-sizing:border-box so the dashed border stays inside the bounds.  PREV (v1.0.559): BATCH: (1) chat SEND button now uses the unified ▶RUN/Tutorial/Chat treatment. (2) Setup Calculator locked-box ARCHIVED — the Fib/bracket/VWAP calculator decks (drawing + setting the tool) render again; routing/arming stays gated by the Activation Laser + level system (the "Order activation unlocks…" note communicates state). (3) Token-research star icon +30%. (4) Monster Mode no-vehicle gate extended to the mobile "1" button (body.cr-monster-on). (5) Mobile controls: arrows are white/transparent, up+down same size, 1&2 are smaller squares stacked vertically on the right.  PREV (v1.0.558): MONSTER MODE toolbar fully INERT: clicking the chart toolbar (or its symbol/timeframe/indicator popups) mid-fight no longer opens or changes anything — the click is swallowed at document-capture and the only response is the CRITICAL WARNING stamp. (Was: control opened + warning overlaid.)  PREV (v1.0.557): THEMED TOOLTIPS: a single custom tooltip (.cr-tip) replaces the plain native browser title popups everywhere — dark terminal card, green accent border + glow, monospace #bff7df text, with the "Name — Action" form (e.g. Play — Configure Run) emphasising the name in bright green. A delegated controller intercepts any [title] on hover, suppresses the OS tooltip, and renders the styled card; covers all current + future DOM with zero per-element wiring.  PREV (v1.0.556): VEHICLES RIDE THE UPSIDE-DOWN WORLD: the v0.9.31 "upper-world-only" rule is lifted. A mounted ride now survives world flips, glides the candle BOTTOMS with mirrored gravity, and the rig renders vertically flipped. Controls mirror on-foot: ↓↓ flips down, ↑↑ surfaces, single ↓ jumps while flipped; ↑↑↑ still dismounts into flight. Monster Mode still force-dismounts (no combat vehicles).  PREV (v1.0.555): NEXT/BACK buttons unified: the tutorial nav (◀ Back / Next ▶) and the COACH walkthrough "Next" now use the EXACT token "▶ RUN" / Tutorial / Chat treatment — transparent-green fill, #14f195 border, #bff7df text, soft glow. No more filled-primary Next; Back + Next are identical.  PREV (v1.0.554): ALL SETUP CALCULATORS gated behind activation: the bracket Competition risk / Fee hurdle / TP profit deck AND the VWAP reclaim calculator are now archived the same way as the Fib calculator — they only render once the object's route is armed with the Activation Laser (hotkey 3). Until then a compact "⚡ Setup calculator · locked" hint shows.  PREV (v1.0.553): SETUP CALCULATOR gated: the fib retracement/extension/channel/circle calculator deck in an object's Inputs tab is now archived behind activation — it only renders once the object's route is armed with the Activation Laser (hotkey 3). Until then a compact "locked" hint shows.  PREV (v1.0.552): COACH welcome buttons match RUN button. Tutorial + Chat now use the EXACT same style as the token "▶ RUN" button (transparent-green fill, #14f195 border, #bff7df text, glow) — Tutorial is no longer a solid-green slab.  PREV (v1.0.551): Monster AI screen-space pursuit fix.: monsters pursue in screen space now, so one sitting directly above/below the player no longer freezes. (Old code normalized a vector mixing world-px with price units + a price-unit epsilon, which collapsed the vertical component when horizontally aligned.)  PREV (v1.0.550): Monster CRITICAL WARNING stamp display fix. (root cause found via live test): the CRITICAL WARNING stamp's guard fired correctly all along + added the .on class, but the element's inline `display:none` outranked the `.on{display:flex}` class rule, so it never showed. Made it `display:flex!important`. The stamp now appears when you tap the toolbar mid-Monster-run.  PREV (v1.0.549): regular run billboard reads "CHARTRUNNER". MULTIPLAYER: the room ONLINE roster is now a Terminal tab (◍ ONLINE, shown only in a live room) instead of only a floating panel; the Terminal title reads "· ChartRunner Multiplayer" while in a room; the lite-profile mode billboard reads "MULTIPLAYER" in every mode (Time is Money / Monster / Racing / Snake) while in a room. Floating roster still shows during runs when the Terminal is closed.  PREV (v1.0.547): Maps archived the "ALL MAPS · N" overview header.  v1.0.546: deleted the ＋Save button + map-name input; moved Rooms into the folder sidebar above "All maps" (folder-row styling); search is now a 🔍 toggle at the right of the ALL/BTC/ETH/SOL/＋ row that filters maps by name.  PREV (v1.0.545): tutorial rewrite + interactive tab layer.
      ── earlier ──  v1.0.545  ·  TUTORIAL rewrite: new connected + guest slide copy (RUN LAUNCHER/PROFILE/MAPS+rooms/TERMINAL/TOKEN TERMINAL), archived CONFIGURE RUN/RUN-TUBE/PLAYER AVATAR/TO THE FLOOR, Journal compacted + level-gated (PL≥3). Titles now render ">_NAME" with a non-stop blinking cursor. INTERACTIVE LAYER: while the tutorial is open, clicking any tab inside an app window makes COACH explain that tab live. Guest tour spells out what's guest vs wallet-gated.  PREV (v1.0.544): tutorial run-lock.
      PREV (v1.0.485): fix tutorial empty body (write #crTutLine directly).
      PREV (v1.0.484): REGULAR mode now JUMPS on a vehicle (single ↑ = plain jump via _vehAir).
@@ -1947,9 +1868,9 @@
   }
   /* v1.0.545 — the tutorial line renders its own ">_NAME" title (blinking cursor),
      so suppress the auto "> " prefix here; the welcome bubble keeps it. */
-  #crTutLine::before, #crFrBody::before { content: none !important; }
-  #crTutLine .crTutTtl, #crFrBody .crTutTtl { color:#3ddc97; font-weight:700; letter-spacing:.5px; }
-  #crTutLine .crTutCur, #crFrBody .crTutCur { display:inline-block; color:#3ddc97; animation:crTutBlink 1.05s steps(1,end) infinite; }
+  #crTutLine::before { content: none !important; }
+  #crTutLine .crTutTtl { color:#3ddc97; font-weight:700; letter-spacing:.5px; }
+  #crTutLine .crTutCur { display:inline-block; color:#3ddc97; animation:crTutBlink 1.05s steps(1,end) infinite; }
   @keyframes crTutBlink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
   .cr-tut-terminal-bubble .term-body::before {
     content: "> ";
@@ -2086,21 +2007,6 @@
     color:#dffbee;background:linear-gradient(180deg,rgba(20,241,149,.30),rgba(20,241,149,.10));border-color:#14f195;box-shadow:0 0 18px rgba(20,241,149,.35)}
   #crCoachHubBubble .crCoachHubActions .cr-go:active{transform:translateY(1px)}
   #crCoachHubBubble .crCoachHubActions .cr-go:focus-visible{outline:none;border-color:rgba(20,241,149,.95);box-shadow:0 0 0 2px rgba(20,241,149,.35)}
-  /* Shared green "go" button — identical look to the COACH Tutorial/Chat buttons
-     above, sized down for utility actions (Claim name · Add token · Rooms ·
-     All maps · New folder). !important so it overrides each button's old inline
-     styling. */
-  .cr-gobtn{
-    flex:0 0 auto;appearance:none!important;-webkit-appearance:none!important;width:auto!important;
-    display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:5px!important;
-    font:700 11px ui-monospace,Menlo,monospace!important;letter-spacing:.6px!important;text-transform:uppercase!important;
-    padding:7px 13px!important;border-radius:8px!important;cursor:pointer!important;text-shadow:none!important;
-    color:#bff7df!important;background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.06))!important;
-    border:1px solid #14f195!important;box-shadow:0 0 14px rgba(20,241,149,.20)!important;
-    transition:background .12s ease,border-color .12s ease,color .12s ease,transform .06s ease,box-shadow .12s ease!important}
-  .cr-gobtn:hover{color:#dffbee!important;background:linear-gradient(180deg,rgba(20,241,149,.30),rgba(20,241,149,.10))!important;border-color:#14f195!important;box-shadow:0 0 18px rgba(20,241,149,.35)!important}
-  .cr-gobtn:active{transform:translateY(1px)!important}
-  .cr-gobtn:focus-visible{outline:none!important;border-color:rgba(20,241,149,.95)!important;box-shadow:0 0 0 2px rgba(20,241,149,.35)!important}
   /* v1.0.371 — Shared COACH window chrome. Mirrors the .cr-coach-widget chat
      window EXACTLY (header bar = invader icon + COACH.llm + status dot + ×, dark
      terminal body, bottom-right resize-handle decoration, no comic tail) so all
@@ -2470,10 +2376,7 @@
      target; a pulsing beacon + bouncing "click" arrow point at it; a COACH terminal popup
      narrates each surface with Skip/Next; clicking the target or Next advances. */
   #crFrMask{position:fixed;inset:0;z-index:2147483400;pointer-events:none;display:none}
-  /* v1.0 — the tour dims the desktop (ring shadow) but stays CLICK-THROUGH so the player
-     can hover/click items to learn them; entering a run/level is gated in JS instead
-     (see crFirstRun clickHandler). The popup sits above the dim. */
-  #crFrMask.on{display:block;pointer-events:none}
+  #crFrMask.on{display:block}
   .cr-fr-ring{position:fixed;box-sizing:border-box;border:2px dashed rgba(20,241,149,.95);border-radius:14px;
     box-shadow:0 0 0 9999px rgba(4,8,12,.62), 0 0 30px rgba(20,241,149,.55) inset, 0 0 26px rgba(20,241,149,.4);
     transition:left .28s ease,top .28s ease,width .28s ease,height .28s ease;pointer-events:none;background:rgba(20,241,149,.05)}
@@ -2488,35 +2391,6 @@
   .cr-fr-arrow{position:fixed;pointer-events:none;color:#14f195;font:900 26px ui-monospace,Menlo,monospace;
     text-shadow:0 0 12px rgba(20,241,149,.8);animation:crFrBob 1s ease-in-out infinite}
   @keyframes crFrBob{0%,100%{transform:translateY(0)}50%{transform:translateY(7px)}}
-  /* v1.0 — DESKTOP-ONLY guided drag-and-drop demo for the Terminal / Token tour steps:
-     a ghost "pane" + a cursor symbol drags from the highlighted app toward a dashed
-     drop-zone on the chart, teaching that panes/rows can be dragged out and pinned.
-     Skipped on phones (drag-drop is a desktop affordance). */
-  #crFrDragDemo{position:fixed;inset:0;z-index:2147483550;pointer-events:none;display:none}
-  #crFrDragDemo.on{display:block}
-  .cr-fr-drag-ghost{position:fixed;left:0;top:0;display:inline-flex;align-items:center;gap:5px;
-    padding:6px 10px;border-radius:8px;background:rgba(13,17,25,.96);border:1px solid #14f195;
-    color:#bff7df;font:700 11px ui-monospace,Menlo,monospace;white-space:nowrap;
-    box-shadow:0 8px 22px rgba(0,0,0,.5),0 0 14px rgba(20,241,149,.35);
-    transform:translate(var(--sx),var(--sy)) scale(1);
-    animation:crFrDragMove 2.3s cubic-bezier(.45,.05,.4,1) infinite}
-  .cr-fr-drag-ghost::after{content:'↖';position:absolute;right:-15px;bottom:-17px;
-    font-size:22px;color:#fff;text-shadow:0 0 6px rgba(0,0,0,.85)}
-  @keyframes crFrDragMove{
-    0%{transform:translate(var(--sx),var(--sy)) scale(.6);opacity:0}
-    10%{transform:translate(var(--sx),var(--sy)) scale(1);opacity:1}
-    18%{transform:translate(var(--sx),var(--sy)) scale(.9)}
-    68%{transform:translate(var(--ex),var(--ey)) scale(1)}
-    80%{transform:translate(var(--ex),var(--ey)) scale(.9)}
-    92%{transform:translate(var(--ex),var(--ey)) scale(1);opacity:1}
-    100%{transform:translate(var(--ex),var(--ey)) scale(1);opacity:0}}
-  .cr-fr-drop{position:fixed;left:0;top:0;width:130px;height:84px;margin:-42px 0 0 -65px;
-    border:2px dashed rgba(20,241,149,.7);border-radius:12px;box-shadow:0 0 18px rgba(20,241,149,.22) inset;
-    transform:translate(var(--ex),var(--ey));animation:crFrDropPulse 2.3s ease-in-out infinite}
-  .cr-fr-drop::after{content:'drop to pin';position:absolute;left:0;right:0;bottom:-18px;text-align:center;
-    font:700 9px ui-monospace,Menlo,monospace;letter-spacing:.4px;color:#7ee787}
-  @keyframes crFrDropPulse{0%,55%{opacity:.18}78%{opacity:.95;border-color:#14f195}100%{opacity:.18}}
-  @media (max-width:680px){ #crFrDragDemo{display:none !important} }
   /* v1.0.564 — funnel popup uses the EXACT COACH.llm bubble chrome + dock position.
      Desktop: fixed bottom-right, width 380 (mirrors #crCoachHub / the welcome bubble).
      Mobile: full-width bottom sheet (#crFrPop .cr-fr-win added to the #crCoachHubBubble
@@ -2924,9 +2798,6 @@
        the SAME bottom-sheet box so the welcome sits exactly where the tutorial does.
        border-box + min-width:0 stop the right-edge overflow the welcome/chat had. */
     #crCoachHub{ left:0 !important; right:0 !important; bottom:0 !important; align-items:stretch !important; }
-    /* v1.0 — keep the COACH invader on the RIGHT (next to the "?" replay badge) on
-       phones; the full-width hub above otherwise left-aligns the fixed-width button. */
-    #crCoachHubBtn{ align-self:flex-end !important; margin-right:10px !important; }
     /* v1.0.517 — coach sheet fills the bottom DOCK zone edge-to-edge (flush), so the window
        above it and the sheet are perfectly complementary (no overlap, no desktop, no peek). */
     #crCoachHubBubble, #crFrPop .cr-fr-win{ box-sizing:border-box !important; min-width:0 !important; z-index:20 !important;
@@ -2949,12 +2820,6 @@
     /* in-game chart toolbar: scroll horizontally so every TF pill is reachable */
     #crTopBar{ overflow-x:auto !important; overflow-y:hidden !important; -webkit-overflow-scrolling:touch; }
     #crTopBar > *{ flex:0 0 auto; }
-    /* v1.0 — collapse 12H+ timeframes behind the dropdown arrow on phones. */
-    #crTvTfRow .tvTfExtra{ display:none !important; }
-    #crTvTfMoreWrap{ display:inline-flex !important; }
-    /* v1.0 — cap the lite profile/wallet panel so it scrolls internally instead of
-       running under the bottom runner controls (◀ ▶ ↓ ↑ + keypad) on phones. */
-    #crLightProfile{ max-height: calc(100dvh - 176px) !important; overflow-y:auto !important; }
     /* v1.0.526 — drop the Binance/broker venue label from the symbol pill on phones so the
        toolbar (pair + timeframes) fits cleanly without overflow. */
     #crTvVenueWrap{ display:none !important; }
@@ -8216,7 +8081,7 @@
      scattered toast() / canvas-drawn HUD banners during execution
      contexts (laser aim, fib anchor placement, bot fires, etc.). */
   .crNotify{
-    position:fixed;top:64px;right:18px;bottom:auto;z-index:9700;
+    position:fixed;bottom:18px;right:18px;z-index:9700;
     display:flex;flex-direction:column;gap:3px;
     pointer-events:none;max-width:360px;
     font:600 11px ui-monospace,Menlo,Consolas,monospace;
@@ -8255,39 +8120,6 @@
   }
   .crNotify.compact .crNotifyMsg:not(.crNotifyLatest){display:none}
   .crNotify.compact .crNotifyMsg.crNotifyLatest{max-width:360px}
-  /* v1.0 — console is always latest-only (one command). The in-panel fold control is
-     retired; the toolbar toggle (#crTermBarToggle) now shows/hides the whole panel. */
-  .crNotifyFold{display:none!important}
-  .crNotify.cr-console-off{display:none!important}
-  #crTopBar .cr-term-toggle{color:#3ddc97;border:1px solid rgba(61,220,151,.45);background:rgba(8,14,22,.55);font:800 11px ui-monospace,Menlo,monospace;letter-spacing:.4px}
-  #crTopBar .cr-term-toggle:hover{color:#bff7df;border-color:rgba(61,220,151,.75);background:rgba(8,14,22,.85)}
-  #crTopBar .cr-term-toggle[aria-pressed="false"]{opacity:.75}
-  /* v1.0 — token-row watchlist star: a SQUARE button with a gold star that matches the
-     watchlist picker's golden star (14px · #ffd166). #win-tokenterm specificity + !important
-     beat the generic .os-window button styling that was painting it green in a wide frame. */
-  #win-tokenterm .cr-tok-star{box-sizing:border-box!important;width:24px!important;height:24px!important;
-    display:inline-flex!important;align-items:center!important;justify-content:center!important;padding:0!important;
-    border:1px solid rgba(126,231,135,.30)!important;border-radius:6px!important;background:transparent!important;
-    font-size:14px!important;line-height:1!important;color:#8a93a3!important;cursor:pointer;appearance:none!important;
-    transition:color .15s,transform .12s,border-color .15s,background .15s}
-  #win-tokenterm .cr-tok-star.on{color:#ffd166!important;border-color:rgba(255,209,102,.55)!important;
-    background:rgba(255,209,102,.10)!important;text-shadow:0 0 10px rgba(255,209,102,.85)}
-  #win-tokenterm .cr-tok-star:hover{color:#ffd166!important;transform:scale(1.12);border-color:rgba(255,209,102,.7)!important}
-  /* v1.0 — mobile timeframe overflow dropdown (12H+). Hidden on desktop; the topbar
-     mobile media query reveals it and hides the inline .tvTfExtra buttons. */
-  .crTvTfMoreWrap{display:none;position:relative}
-  .tvTfMoreBtn{white-space:nowrap}
-  .crTvTfMoreMenu{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:2147483300;
-    flex-direction:column;gap:2px;padding:5px;border-radius:8px;background:rgba(10,15,28,.97);
-    border:1px solid var(--line);box-shadow:0 12px 30px rgba(0,0,0,.5);min-width:84px}
-  .crTvTfMoreMenu.open{display:flex}
-  .crTvTfMoreMenu .tvTf{width:100%;text-align:center}
-  /* v1.0 — blinking CTA glow for the primary RUN buttons (Configure Run + token terminal).
-     Uses filter so it layers over each button's own inline box-shadow; pauses on hover. */
-  @keyframes crCtaBlink{0%,100%{filter:drop-shadow(0 0 3px rgba(20,241,149,.30))}50%{filter:drop-shadow(0 0 13px rgba(20,241,149,.9))}}
-  .cr-cta-blink{animation:crCtaBlink 1.3s ease-in-out infinite}
-  .cr-cta-blink:hover{animation-play-state:paused}
-  @media (prefers-reduced-motion:reduce){ .cr-cta-blink{animation:none} }
   /* v1.0.459 — bot proposal blends straight into the terminal feed instead of
      reading as a floating card: no card bg/border/radius/shadow/blur/max-width.
      A thin top rule just separates it as a feed entry, like other terminal lines. */
@@ -10039,27 +9871,15 @@
     <button class="tvTf" data-tf="15m">15m</button>
     <button class="tvTf" data-tf="1h">1H</button>
     <button class="tvTf" data-tf="4h">4H</button>
-    <button class="tvTf tvTfExtra" data-tf="12h">12H</button>
-    <button class="tvTf tvTfExtra" data-tf="1d">1D</button>
+    <button class="tvTf" data-tf="12h">12H</button>
+    <button class="tvTf" data-tf="1d">1D</button>
     <!-- v1.0.129 — 3D pill. Reconciles the toolbar with the Configure Run timeframe row
          (1m·5m·15m·1H·4H·12H·1D·3D·1W·1M), which already offers 3D at launch. Routes through the
          legacy #tfbox 3D button via the generic .tvTf → #tfbox click forwarder, so no JS change
          is needed. Order matches Configure. -->
-    <button class="tvTf tvTfExtra" data-tf="3d">3D</button>
-    <button class="tvTf tvTfExtra" data-tf="1w">1W</button>
-    <button class="tvTf tvTfExtra" data-tf="1M">1M</button>
-  </div>
-  <!-- v1.0 — MOBILE timeframe overflow: 12H+ collapse behind this arrow so the toolbar
-       stays one row. Shown only under the topbar mobile media query; desktop keeps all TFs. -->
-  <div class="crTvTfMoreWrap" id="crTvTfMoreWrap">
-    <button class="tvTf tvTfMoreBtn" id="crTvTfMoreBtn" type="button" aria-haspopup="true" aria-expanded="false" title="More timeframes">12H ▾</button>
-    <div class="crTvTfMoreMenu" id="crTvTfMoreMenu" role="menu">
-      <button class="tvTf" data-tf-more="12h" role="menuitem">12H</button>
-      <button class="tvTf" data-tf-more="1d" role="menuitem">1D</button>
-      <button class="tvTf" data-tf-more="3d" role="menuitem">3D</button>
-      <button class="tvTf" data-tf-more="1w" role="menuitem">1W</button>
-      <button class="tvTf" data-tf-more="1M" role="menuitem">1M</button>
-    </div>
+    <button class="tvTf" data-tf="3d">3D</button>
+    <button class="tvTf" data-tf="1w">1W</button>
+    <button class="tvTf" data-tf="1M">1M</button>
   </div>
   <div class="tvSep"></div>
   <!-- v0.8M#19 — Indicators wrapped behind a single toggle button.
@@ -10160,12 +9980,6 @@
     <span class="crTvLiveDot" id="crTvLiveDot" aria-hidden="true"></span>
   </button>
   <div class="tvSpacer"></div>
-  <!-- v1.0 — In-game command-console toggle, raised into the toolbar at the right end.
-       The console always shows just the latest single command; this flips it between
-       1 line and hidden (0 lines). Stays green. -->
-  <button class="tvIcon tvIconText cr-term-toggle" id="crTermBarToggle" title="Hide the command line" type="button" aria-pressed="true">
-    <span class="lbl">▾</span>
-  </button>
   <!-- v0.8k#24l — cleanup pass: removed #crTvLaunch stub. -->
 </div>
 
@@ -11058,7 +10872,7 @@
           <div class="lp-wcard-head">
             <span class="k">$CHART · this run</span>
             <button class="lp-fund" id="crLpFundBtn" type="button"
-                    title="offline router · 100:1">
+                    title="Swap $CHART → $RUN (mock router · 100:1)">
               Swap
             </button>
           </div>
@@ -11084,6 +10898,16 @@
               <div class="k">SOL</div>
               <div class="v" id="crLpWSol" style="color:#14f195">—</div>
               <div class="sub">Solana · gas + native</div>
+            </div>
+            <div class="lp-wcard-half">
+              <div class="k">USDT</div>
+              <div class="v" id="crLpWUsdt" style="color:#26a17b">—</div>
+              <div class="sub">Tether · Solana mint</div>
+            </div>
+            <div class="lp-wcard-half">
+              <div class="k">USDC</div>
+              <div class="v" id="crLpWUsdc" style="color:#2775ca">—</div>
+              <div class="sub">USD Coin · Solana mint</div>
             </div>
           </div>
         </div>
@@ -11128,6 +10952,7 @@
         <div class="cr-tut-hint" id="crTutHint" style="padding:4px 12px 8px;font-size:13px;line-height:1.45;color:#7ee787;font-family:ui-monospace,Menlo,monospace;"></div>
 
         <div class="cr-tut-foot" style="padding:6px 8px 8px;">
+          <button class="cr-go" id="crTutPrev" type="button">◀ Back</button>
           <button class="cr-go" id="crTutNext" type="button">Next ▶</button>
         </div>
       </div>
@@ -12361,7 +12186,7 @@
                commits the pending mode and calls restart(). -->
           <div class="os-run-foot" style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
             <button class="brBtn ghost" id="crCfgBack" type="button">← Back to modes</button>
-            <button class="brBtn cr-cta-blink" id="crCfgStart" type="button">▶ Start Run</button>
+            <button class="brBtn" id="crCfgStart" type="button">▶ Start Run</button>
           </div>
         </div>
       </div>
@@ -12748,7 +12573,7 @@
             <!-- Add-token form -->
             <div style="display:flex;gap:6px;margin:10px 0 4px;align-items:center">
               <input type="text" id="crWalletAddSym" placeholder="BONK, JUP, ETH…" maxlength="10" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace;text-transform:uppercase">
-              <button class="cr-go cr-gobtn" id="crWalletAddBtn" type="button">+ Add token</button>
+              <button class="cr-go" id="crWalletAddBtn" type="button" style="background:rgba(10,15,28,.8)!important;border:1px solid var(--line)!important;border-radius:8px!important;color:#7ee787!important;font:700 11px ui-monospace,Menlo,monospace!important;letter-spacing:.4px!important;text-transform:uppercase!important;text-shadow:none!important;box-shadow:none!important;padding:6px 12px!important;cursor:pointer!important">+ Add token</button>
             </div>
             <!-- v1.0.128 — Tokenomics block → collapsible explainer (.cr-tok). Full committed M1 model. Replaces the static Swap-rate / $RUN-supply two-card grid. -->
             <details class="cr-tok">
@@ -12941,8 +12766,6 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
           <!-- v0.8k#24s/#24t/#24u/#24ac — Tabs: Darkflow · trackers · Strategies. -->
           <div class="crTerm-tabs">
             <button class="crTerm-tab active" data-termview="darkflow" type="button">TERMINAL</button>
-            <!-- v1.0 — COMMAND tab: full in-run command log + any missed bot Build? Y/N. -->
-            <button class="crTerm-tab" data-termview="command" data-cr-chart-tab="1" type="button" title="All in-run commands + missed Build? Y/N (answer here; executes if still valid)">⌘ COMMAND</button>
             <!-- v1.0.340 — Stage 2: consolidated into ENGINE (run-useful panes already
                  live there). Tabs archived (reversible — remove data-cr-tab-archived).
                  Overlay-arc overlays belong in the toolbar indicator system (BB/EMA/…). -->
@@ -13000,9 +12823,6 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
             </button>
             <button class="crTerm-tab crTerm-foldBtn" id="crTermFoldBtn" type="button" title="Show latest command only" aria-label="Show latest terminal command only" aria-pressed="false">▾</button>
           </div>
-          <!-- v1.0 — COMMAND view: full in-run command log + any pending bot Build? Y/N
-               you may have missed in the one-line console (answer here; executes if still valid). -->
-          <div class="crTerm-view hidden" id="crTermViewCommand"></div>
           <!-- DARKFLOW VIEW -->
           <div class="crTerm-view" id="crTermViewDarkflow">
           <!-- Main grid: 3 columns -->
@@ -14351,7 +14171,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.564",
+  VERSION: "1.0.565",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -15277,7 +15097,7 @@ window.crRegistry = (function(){
               + '&hash='     + hashHex
               + '&royalty='  + (royaltyBps|0)
               + '&return='   + encodeURIComponent('/play/');
-      crRegGo(url);
+      window.location.href = url;
       return true;
     } catch(err){
       try { toast && toast('On-chain save failed: ' + (err.message || err)); } catch(_){}
@@ -15309,7 +15129,7 @@ window.crRegistry = (function(){
             + '&name='   + encodeURIComponent(name)
             + '&price='  + lamports.toString()
             + '&return=' + encodeURIComponent('/play/');
-    crRegGo(url);
+    window.location.href = url;
     return true;
   }
   function buyFromMarket(type, name, sellerAddr, priceSol, maxPriceSol){
@@ -15330,7 +15150,7 @@ window.crRegistry = (function(){
             + '&price='    + lamports.toString()
             + '&maxPrice=' + maxLamports.toString()
             + '&return='   + encodeURIComponent('/play/');
-    crRegGo(url);
+    window.location.href = url;
     return true;
   }
   function cancelListing(type, name){
@@ -15339,7 +15159,7 @@ window.crRegistry = (function(){
             + '&type='   + encodeURIComponent(type)
             + '&name='   + encodeURIComponent(name)
             + '&return=' + encodeURIComponent('/play/');
-    crRegGo(url);
+    window.location.href = url;
     return true;
   }
   // v0.9.8h — On-chain unanchor. Calls delete_entity in the registry program;
@@ -15358,7 +15178,7 @@ window.crRegistry = (function(){
             + '&type='   + encodeURIComponent(type)
             + '&name='   + encodeURIComponent(name)
             + '&return=' + encodeURIComponent('/play/');
-    crRegGo(url);
+    window.location.href = url;
     return true;
   }
   // v0.9.7 — Record a completed run on-chain. Fires the record_run ix in
@@ -15493,7 +15313,7 @@ window.crRegistry = (function(){
             + '&runMapHash='      + encodeURIComponent(mapHashHex)
             + '&runNonce='        + encodeURIComponent(nonce)
             + '&return='          + encodeURIComponent('/play/');
-	    crRegGo(url);
+	    window.location.href = url;
 	    return true;
 	  }
 
@@ -15551,7 +15371,7 @@ window.crRegistry = (function(){
 	            + '&botScore='             + encodeURIComponent(score)
 	            + '&botMaxDrawdownBps='    + encodeURIComponent(String(maxDrawdownBps))
 	            + '&return='               + encodeURIComponent('/play/');
-	    crRegGo(url);
+	    window.location.href = url;
 	    return true;
 	  }
 
@@ -15573,7 +15393,7 @@ window.crRegistry = (function(){
     var url = '../solana-connect/?action=claim-name'
             + '&name='   + encodeURIComponent(h)
             + '&return=' + encodeURIComponent('/play/');
-    crRegGo(url);
+    window.location.href = url;
     return true;
   }
 
@@ -15595,7 +15415,7 @@ window.crRegistry = (function(){
             + '&entity=' + encodeURIComponent(entityPda)
             + '&price='  + lamports.toString()
             + '&return=' + encodeURIComponent('/play/');
-    crRegGo(url);
+    window.location.href = url;
     return true;
   }
   function buyLicense(entityPda, sellerAddr, creatorAddr, priceSol, maxPriceSol){
@@ -15607,7 +15427,7 @@ window.crRegistry = (function(){
             + '&creator='  + encodeURIComponent(creatorAddr)
             + '&maxPrice=' + maxLamports.toString()
             + '&return='   + encodeURIComponent('/play/');
-    crRegGo(url);
+    window.location.href = url;
     return true;
   }
   function cancelLicenseListing(entityPda){
@@ -15615,7 +15435,7 @@ window.crRegistry = (function(){
     var url = '../solana-connect/?action=cancel-license-listing'
             + '&entity=' + encodeURIComponent(entityPda)
             + '&return=' + encodeURIComponent('/play/');
-    crRegGo(url);
+    window.location.href = url;
     return true;
   }
 
@@ -15626,7 +15446,7 @@ window.crRegistry = (function(){
     var regType   = u.searchParams.get('regType');
     var regName   = u.searchParams.get('regName');
     var sig       = u.searchParams.get('sig');
-    if (regAction && regType != null && regName && sig && _crRegOk(regAction, regName, u)){
+    if (regAction && regType != null && regName && sig){
       var t = parseInt(regType, 10);
       var label = ENTITY_LABELS[t] || 'entity';
       var patch = {};
@@ -16362,7 +16182,7 @@ window.crMatch = (function(){
             + '&timeframe='  + encodeURIComponent(_tf())
             + '&maxPlayers=' + mp
             + '&return='     + encodeURIComponent('/play/');
-    crRegGo(url);
+    window.location.href = url;
     return true;
   }
   // Join a match by its code (the MatchState PDA, base58).
@@ -16373,7 +16193,7 @@ window.crMatch = (function(){
     var url = '../solana-connect/?action=match-join'
             + '&matchPda=' + encodeURIComponent(code)
             + '&return='   + encodeURIComponent('/play/');
-    crRegGo(url);
+    window.location.href = url;
     return true;
   }
   function joinPrompt(){
@@ -16754,7 +16574,7 @@ window.crChainSave = (function(){
               + '&name=' + encodeURIComponent(name)
               + '&hash=' + hashHex
               + '&return=' + encodeURIComponent('/play/');
-      crRegGo(url);
+      window.location.href = url;
       return true;
     } catch(err){
       try { toast && toast('On-chain save failed: ' + (err.message || err)); } catch(_){}
@@ -16792,25 +16612,10 @@ window.crChainSave = (function(){
   // string length budgets. The query param `?sharedMap=1` is just the
   // bootstrap signal so this handler runs.
   async function _ungzipB64(b64){
-    // #6 — bound both the compressed and decompressed size so a crafted share
-    // link can't OOM the tab with a decompression bomb. Caps: 256 KB in,
-    // 2 MB out (a real map snapshot is a few KB).
-    if (typeof b64 !== 'string' || b64.length > 256 * 1024)
-      throw new Error('shared map payload too large (compressed)');
     var bin = atob(b64);
     var arr = Uint8Array.from(bin, function(c){ return c.charCodeAt(0); });
     var stream = new Blob([arr]).stream().pipeThrough(new DecompressionStream('gzip'));
-    var reader = stream.getReader();
-    var MAX = 2 * 1024 * 1024, total = 0, out = '', dec = new TextDecoder();
-    for(;;){
-      var r = await reader.read();
-      if (r.done) break;
-      total += r.value.length;
-      if (total > MAX){ try { reader.cancel(); } catch(_){} throw new Error('shared map too large (decompressed)'); }
-      out += dec.decode(r.value, { stream: true });
-    }
-    out += dec.decode();
-    return out;
+    return await new Response(stream).text();
   }
   try {
     var u2 = new URL(window.location.href);
@@ -16833,19 +16638,16 @@ window.crChainSave = (function(){
             // snapshot's canonical hash BEFORE mutating the map and compare. Match ⇒
             // the snapshot is exactly the creator's anchored map; mismatch ⇒ drift
             // (still importable, just flagged). Verdict stashed for the room badge.
-            var _verified = false;   // #6 — gates auto-open + login bypass below
             try {
               if (parts.h) {
                 var _expect = String(parts.h).toLowerCase();
                 var _actual = (await sha256Hex(canonicalJson(map))).toLowerCase();
-                _verified = (_actual === _expect);
-                window.crRoomMapVerify = { name: map.name, verified: _verified, expected: _expect, actual: _actual, at: Date.now() };
+                var _ok = (_actual === _expect);
+                window.crRoomMapVerify = { name: map.name, verified: _ok, expected: _expect, actual: _actual, at: Date.now() };
                 if (typeof crNotify === 'function') {
-                  crNotify(_verified ? '✓ Map verified — matches the creator’s anchored hash'
-                                     : '⚠ Map differs from the shared hash (content drift) — won’t auto-open');
+                  crNotify(_ok ? '✓ Map verified — matches the creator’s anchored hash'
+                               : '⚠ Map differs from the shared hash (content drift)');
                 }
-              } else if (typeof crNotify === 'function') {
-                crNotify('⚠ Share link carries no integrity hash — imported to Maps only');
               }
             } catch(_){}
             // Re-id locally so the recipient owns this copy.
@@ -16871,11 +16673,7 @@ window.crChainSave = (function(){
             // deep-links are live: a shared chart link should drop you onto the
             // chart, not just silently import to Maps + leave you on the desktop.
             try {
-              // #6 — only auto-open into the chart AND auto-create a guest
-              // session / dismiss the login gate for a link whose content hash
-              // verified. Unverified links still import to Maps for manual open,
-              // but never silently authenticate the opener.
-              if ((u2.searchParams.get('room') || window.CR_DEEPLINK) && _verified) {
+              if (u2.searchParams.get('room') || window.CR_DEEPLINK) {
                 try {
                   if (localStorage.getItem('cr_stealth_auth_v1') !== '1') {
                     var _h = localStorage.getItem('cr_profile_name_v1') || ('guest-' + Math.random().toString(36).slice(2, 6));
@@ -24262,23 +24060,12 @@ window.crCgMarkets = crCgMarkets;
    [t,o,h,l,c] (no volume); granularity is auto by the `days` window, which we map
    from the selected timeframe. Never returns < 5 bars (throws so the caller can
    fall through). */
-// v1.0 — fetch with a hard timeout. Small-cap coins (not on Binance) route to the
-// slow/rate-limited CoinGecko OHLC endpoint; without an abort the run hangs ("times
-// out") instead of falling back to seeded candles. Aborting fast keeps loads snappy.
-async function crFetchTimeout(url, opts, ms){
-  ms = ms || 7000;
-  var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-  var timer = ctl ? setTimeout(function(){ try { ctl.abort(); } catch(_){} }, ms) : null;
-  try { return await fetch(url, Object.assign({}, opts || {}, ctl ? { signal: ctl.signal } : {})); }
-  finally { if(timer) clearTimeout(timer); }
-}
-try { window.crFetchTimeout = crFetchTimeout; } catch(_){}
 async function crFetchCgOhlc(cgId, tf){
   if(!cgId) throw new Error('cg-ohlc-no-id');
   var daysMap = { '1m':1, '5m':1, '15m':1, '30m':1, '1h':7, '2h':14, '4h':14, '6h':30, '8h':30, '12h':90, '1d':180, '3d':365, '1w':365, '1M':365 };
   var days = daysMap[tf] || 30;
   var url = CR_CG_BASE + '/coins/' + encodeURIComponent(cgId) + '/ohlc?vs_currency=usd&days=' + days;
-  var resp = await crFetchTimeout(url, { headers: crCgHeaders() }, 7000);
+  var resp = await fetch(url, { headers: crCgHeaders() });
   if(!resp.ok) throw new Error('cg-ohlc-http-' + resp.status);
   var arr = await resp.json();
   if(!Array.isArray(arr) || arr.length < 5) throw new Error('cg-ohlc-empty');
@@ -25426,7 +25213,7 @@ async function loadCandles(tf){
   // Live Binance path (public play / default, or fallback for DEX-selected non-Solana assets)
   const url = `https://api.binance.com/api/v3/klines?symbol=${asset.sym}&interval=${interval}&limit=1000`;
   try{
-    const resp = await crFetchTimeout(url, {}, 7000);
+    const resp = await fetch(url);
     if(!resp.ok) throw new Error('status '+resp.status);
     const data = await resp.json();
     candles = data.map(k=>({t:k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], v:+k[5]}));
@@ -32083,7 +31870,7 @@ window.crMockSwap = (function(){
       +   '<b class="ms-title">SWAP · $CHART → $RUN</b>'
       +   '<button type="button" class="ms-close" data-cr-mockswap-close aria-label="Close">×</button>'
       + '</div>'
-      + '<div class="ms-note">offline router · ' + CHART_PER_RUN + ':1</div>'
+      + '<div class="ms-note">MOCK ROUTER · local only · rate locked ' + CHART_PER_RUN + ' $CHART = 1 $RUN</div>'
       + '<div class="ms-field">'
       +   '<div class="ms-field-hd"><span>You pay</span><span>Balance: <span data-cr-mockswap-bal>0</span> $CHART</span></div>'
       +   '<div class="ms-field-row">'
@@ -33146,196 +32933,6 @@ function hitStop(ms){
  * Combat — monsters spawn in upside-down world; player shoots gun (walking)
  * or laser (flying).
  * =======================================================================*/
-// ── v1.0.565 — Monster Rounds (10% round-based survival adaptation) ──────────
-// Wraps the existing grunt/boss combat in a round loop: each round has a market
-// CONDITION, an OBJECTIVE (survive Ns / kill N / hunt the boss), a countdown, a
-// final PANIC phase, and a CLEAR endcard with juice. No new enemy types — this
-// reuses spawnMonster(); it only scales spawn pacing and adds structure + COACH
-// narration. updateCombat() reads spawnInterval()/spawnCap() from here; render()
-// calls drawHud(); restart() calls begin(); update() calls tick().
-const crMonsterRounds = (function(){
-  // Compact round table adapted from the round-based evolution script. spawn =
-  // seconds between spawns (fight phase), cap = max concurrent bears.
-  const ROUNDS = [
-    { cond:'FIRST BEAR',     obj:'kill',    target:3, dur:30, spawn:1.9, cap:4, coach:'That pink bear is pressure. Move before it prices you in.', lesson:'Bearish pressure chases indecision.' },
-    { cond:'WICK BITE',      obj:'survive', target:0, dur:26, spawn:1.7, cap:4, coach:'Long wicks are failed attacks. They still have teeth.',      lesson:'Wicks mark danger zones.' },
-    { cond:'RED STAIRCASE',  obj:'kill',    target:5, dur:34, spawn:1.5, cap:5, coach:'Red streak. Do not fight downhill without a plan.',          lesson:'Trend changes your escape routes.' },
-    { cond:'CHOP ROOM',      obj:'survive', target:0, dur:30, spawn:1.5, cap:5, coach:'This is chop. The monster is the box.',                       lesson:'Ranges punish random movement.' },
-    { cond:'VOLUME BRUTE',   obj:'boss',    target:1, dur:40, spawn:1.6, cap:5, coach:'That candle has weight. Respect it.',                         lesson:'Volume turns movement into commitment.' },
-    { cond:'BREAKOUT ALARM', obj:'survive', target:0, dur:28, spawn:1.3, cap:6, coach:'Breakout. Decide now.',                                      lesson:'Expansion compresses reaction time.' },
-    { cond:'FALSE BREAK',    obj:'kill',    target:6, dur:34, spawn:1.3, cap:6, coach:'It broke out. It did not hold. Move back inside.',           lesson:'Failed acceptance is a trap door.' },
-    { cond:'MOMENTUM SWARM', obj:'kill',    target:8, dur:36, spawn:1.1, cap:7, coach:'Momentum is real. Greed is still optional.',                 lesson:'Momentum helps until it folds.' },
-    { cond:'LIQUIDATION',    obj:'survive', target:0, dur:34, spawn:1.0, cap:7, coach:'Do not trade from the edge of the screen.',                  lesson:'Positioning is risk management.' },
-    { cond:'MONSTER MARKET', obj:'boss',    target:1, dur:60, spawn:0.9, cap:8, coach:'Everything you learned is active. Read first, shoot second.', lesson:'Monster Market cleared — you read the chart.' },
-  ];
-  const PANIC = 10;        // last N seconds of a survive round = panic phase
-  let st = null;
-  const nowS  = ()=> performance.now()/1000;
-  const def   = ()=> st ? ROUNDS[Math.min(st.idx, ROUNDS.length-1)] : null;
-  const kills = ()=> (game.kills|0);
-  const bossK = ()=> (game.bossKills|0);
-  function objText(d){
-    if(d.obj==='boss') return 'HUNT THE BOSS';
-    if(d.obj==='kill') return 'SURVIVE · KILL '+d.target+' BEARS';
-    return 'SURVIVE '+d.dur+'s';
-  }
-  function coach(line){ try{ crNotify('COACH: '+line); }catch(_){} }
-  function reset(){ st = null; }
-  function active(){ return !!st; }
-  function begin(){
-    st = { idx:0, phase:'idle', loop:0, startAt:0, clearAt:0, killAt:0, bossAt:0, panicOn:false, flashAt:0 };
-    if(typeof game!=='undefined') game.bossKills = 0;
-    startRound(0, 1.6);   // brief lead-in so the splash settles before bears come
-  }
-  function startRound(idx, delay){
-    const d = ROUNDS[Math.min(idx, ROUNDS.length-1)];
-    st.idx = idx; st.phase='brief'; st.startAt = nowS() + (delay||0);
-    st.killAt = kills(); st.bossAt = bossK(); st.panicOn=false;
-    const label = (idx < ROUNDS.length) ? ('ROUND '+String(idx+1).padStart(2,'0')) : 'LIVE RAID';
-    try { crNotify(label+' · '+d.cond, 'good'); } catch(_){}
-    try { showBanner(label+' · '+d.cond, objText(d)); } catch(_){}
-    coach(d.coach);
-  }
-  function metObjective(d, elapsed){
-    if(d.obj==='kill') return (kills() - st.killAt) >= d.target;
-    if(d.obj==='boss') return (bossK() - st.bossAt) >= d.target;
-    return elapsed >= d.dur;   // survive
-  }
-  function clearRound(){
-    const d = def();
-    st.phase='clear'; st.clearAt = nowS();
-    // Endcard juice: clear the field, confetti + banner over the avatar, lesson.
-    try { game.monsters.length = 0; } catch(_){}
-    const sx = (typeof sX==='function') ? sX(player.wx) : (W*0.4);
-    const sy = (typeof priceToY==='function') ? priceToY(player.py) : (H*0.4);
-    try { confettiBurst(sx, sy, '#3ddc97'); } catch(_){}
-    try { spawnFloat(sx, sy-30, '+'+(40 + st.idx*8)+' XP', '#ffd166'); } catch(_){}
-    try { hitStop(90); screenFlash(); } catch(_){}
-    try { showBanner('ROUND CLEAR', 'HP '+player.hp+'/'+player.hpMax); } catch(_){}
-    coach(d.lesson);
-  }
-  function tick(dt){
-    if(!st || !game.monsterMode || !player.alive) return;
-    const t = nowS();
-    if(st.phase==='clear'){
-      if(t - st.clearAt > 2.4){
-        let next = st.idx + 1;
-        if(next >= ROUNDS.length){ next = ROUNDS.length - 1; st.loop = (st.loop||0)+1; } // endless Live Raid loop
-        startRound(next, 1.2);
-      }
-      return;
-    }
-    if(st.phase==='brief'){
-      if(t >= st.startAt) st.phase='fight';
-      return;
-    }
-    // fight
-    const d = def();
-    const elapsed = t - st.startAt;
-    // Panic phase on survive-style rounds: last PANIC seconds ramp the danger.
-    const inPanic = (elapsed >= d.dur - PANIC);
-    if(inPanic && !st.panicOn){
-      st.panicOn = true;
-      try { crNotify('PANIC PHASE · volatility spike', 'bad'); } catch(_){}
-      coach('Final seconds. Read the danger, reach safe structure.');
-    }
-    if(st.panicOn && t - st.flashAt > 0.85){ st.flashAt = t; try { screenFlash(); } catch(_){} }
-    if(metObjective(d, elapsed)) clearRound();
-  }
-  // ── Spawn pacing read by updateCombat() ──
-  function spawnInterval(){
-    if(!st || st.phase!=='fight') return 9999;          // no spawns during brief/clear
-    const d = def();
-    let s = d.spawn;
-    if(st.panicOn) s *= 0.6;                              // panic = faster spawns
-    if(st.loop) s *= Math.max(0.5, 1 - st.loop*0.08);    // Live Raid escalation
-    return s;
-  }
-  function spawnCap(){
-    if(!st || st.phase!=='fight') return 0;
-    const d = def();
-    return d.cap + (st.panicOn ? 1 : 0) + (st.loop||0);
-  }
-  // Bias boss spawns on boss-objective rounds (else default 10%).
-  function bossChance(){
-    if(!st || st.phase!=='fight') return 0.10;
-    return def().obj==='boss' ? 0.40 : 0.10;
-  }
-  // ── Chart-triggered Wick Biter ──
-  // Scan candles within ±span of the player for the longest wick (upper or
-  // lower). Returns the anchor (tip price + body-base price + world-x) or null.
-  function findWickCandle(px){
-    if(typeof candles==='undefined' || !candles.length || typeof STEP==='undefined') return null;
-    const ci = Math.max(0, Math.min(candles.length-1, Math.floor(px/STEP)));
-    const span = 6;
-    let best=null, bestLen=0;
-    for(let i=Math.max(1,ci-span); i<=Math.min(candles.length-1, ci+span); i++){
-      const c = candles[i]; if(!c) continue;
-      const body = Math.abs(c.c - c.o);
-      const up = c.h - Math.max(c.o,c.c);     // upper wick length (price units)
-      const dn = Math.min(c.o,c.c) - c.l;     // lower wick length
-      const side = up>=dn ? 'up' : 'down';
-      const wlen = Math.max(up, dn);
-      const ref  = Math.max(body*1.2, (game.atr||1)*0.5);   // "long" threshold
-      if(wlen>ref && wlen>bestLen){
-        bestLen = wlen;
-        best = { i, side, wx: i*STEP + STEP/2,
-                 tipPy:  side==='up' ? c.h : c.l,
-                 basePy: side==='up' ? Math.max(c.o,c.c) : Math.min(c.o,c.c) };
-      }
-    }
-    return best;
-  }
-  // Maybe produce a Wick Biter monster object (caller pushes it). High chance on
-  // the WICK BITE round, low chance elsewhere — but ONLY when a real long wick
-  // sits near the player, so the enemy is always chart-justified + telegraphed.
-  function maybeWickSpawn(px){
-    if(!st || st.phase!=='fight') return null;
-    const d = def();
-    const chance = (d.cond==='WICK BITE') ? 0.85 : 0.18;
-    if(Math.random() > chance) return null;
-    const w = findWickCandle(px);
-    if(!w) return null;
-    const now = performance.now()/1000;
-    return {
-      kind:'wick', hp:1, isBoss:false, speed:0,
-      wx:w.wx, py:w.tipPy,
-      wickTipPy:w.tipPy, wickBasePy:w.basePy, wickSide:w.side,
-      phase:'warn', warnUntil: now + 0.55,
-      bob:Math.random()*Math.PI*2, facing:1,
-    };
-  }
-  // ── HUD ──
-  function drawHud(){
-    if(!st) return;
-    const d = def();
-    // v1.0 — pushed down so the ROUND box clears the in-game menubar (was y=16).
-    const x = 14, y = 46;
-    const label = (st.idx < ROUNDS.length) ? ('ROUND '+(st.idx+1)+'/'+ROUNDS.length) : 'LIVE RAID';
-    let prog;
-    if(st.phase==='brief')      prog = 'GET READY';
-    else if(st.phase==='clear') prog = 'CLEARED';
-    else if(d.obj==='kill')     prog = 'BEARS '+Math.min(d.target, kills()-st.killAt)+'/'+d.target;
-    else if(d.obj==='boss')     prog = (bossK()-st.bossAt)>0 ? 'BOSS DOWN' : 'BOSS LOOSE';
-    else {
-      const left = Math.max(0, Math.ceil(d.dur - (nowS()-st.startAt)));
-      prog = '0:'+String(left).padStart(2,'0');
-    }
-    ctx.save();
-    ctx.font = 'bold 12px ui-monospace,monospace';
-    const line1 = label + (st.loop ? ' ·x'+(st.loop+1) : '') + '  ·  ' + d.cond;
-    const line2 = prog + (st.phase==='fight' && st.panicOn ? '  ·  PANIC' : '');
-    const wBox = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + 18;
-    ctx.fillStyle = 'rgba(10,15,28,.82)';
-    ctx.strokeStyle = st.panicOn ? 'rgba(255,91,127,.9)' : 'rgba(155,140,255,.55)';
-    ctx.fillRect(x, y, wBox, 34); ctx.strokeRect(x+0.5, y+0.5, wBox-1, 33);
-    ctx.fillStyle = '#ff5b7f'; ctx.fillText(line1, x+9, y+14);
-    ctx.fillStyle = st.panicOn ? '#ffd166' : '#bff7df'; ctx.fillText(line2, x+9, y+28);
-    ctx.restore();
-  }
-  return { begin, reset, tick, drawHud, spawnInterval, spawnCap, bossChance, maybeWickSpawn, active };
-})();
-
 function spawnMonster(){
   // v0.8e #U — Essential Combat. Strip the menagerie back to just two monsters:
   //   grunt (90%) — boxy, predictable, approaches the player
@@ -33346,16 +32943,6 @@ function spawnMonster(){
   // two shapes, one tactic (keep distance, shoot, don't touch), no hidden
   // rules. If regime variants come back later they'll need visual telegraphs
   // that read *before* the player gets clipped.
-  // v1.0.566 — Wick Biter: a chart-triggered vertical-ambush enemy that obeys
-  // the "telegraph before contact" rule (0.55s red warning line along the wick).
-  // Additive: when the rounds module hands one back we spawn it INSTEAD of a
-  // grunt this tick; otherwise fall through to the classic grunt/boss spawn.
-  try {
-    if(crMonsterRounds.active()){
-      const wk = crMonsterRounds.maybeWickSpawn(player.wx);
-      if(wk){ game.monsters.push(wk); return; }
-    }
-  } catch(_){}
   const dir = Math.random()<0.5 ? -1 : 1;
   const dist = 260 + Math.random()*320;   // slightly further spawn distance
   const wx = player.wx + dir*dist;
@@ -33364,10 +32951,7 @@ function spawnMonster(){
   const fromAbove = Math.random()<0.5;
   const py = fromAbove ? c.h + (60 + Math.random()*120)/Math.max(0.001,pxPerDollarAt(c.h))
                        : c.l - (60 + Math.random()*120)/Math.max(0.001,pxPerDollarAt(c.l));
-  // v1.0.565 — boss spawn chance is biased up on boss-objective rounds.
-  let _bossP = 0.10;
-  try { if(crMonsterRounds.active()) _bossP = crMonsterRounds.bossChance(); } catch(_){}
-  const kind = Math.random() < _bossP ? 'boss' : 'grunt';
+  const kind = Math.random() < 0.10 ? 'boss' : 'grunt';
   const hp    = kind === 'boss' ? 6 : 1;
   const speed = kind === 'boss' ? 45 : 70;
   game.monsters.push({
@@ -33377,56 +32961,6 @@ function spawnMonster(){
     facing: -dir,
     isBoss: kind === 'boss',
   });
-}
-// v1.0.566 — Wick Biter motion: warn (telegraph) → strike (snap along wick) →
-// spent (brief settle, then despawn). Contact damage is handled by the shared
-// monster-vs-player check, so a strike that catches the player still bites.
-function crUpdateWickBiter(m, dt, now){
-  if(m.phase==='warn'){
-    if(now >= m.warnUntil){
-      m.phase='strike'; m.strikeT=0;
-      m.strikeFrom = m.wickTipPy; m.strikeTo = m.wickBasePy;
-      try { spawnParticles(sX(m.wx), priceToY(m.wickTipPy), '#ff5b7f', 6, 120); } catch(_){}
-    }
-    return;
-  }
-  if(m.phase==='strike'){
-    m.strikeT += dt;
-    const k = Math.min(1, m.strikeT/0.18);
-    m.py = m.strikeFrom + (m.strikeTo - m.strikeFrom)*k;
-    if(k>=1){ m.phase='spent'; m.spentUntil = now + 0.12; }
-    return;
-  }
-  // spent
-  if(now >= (m.spentUntil||0)){
-    m.dead = true;
-    try { spawnParticles(sX(m.wx), priceToY(m.py), '#9b8cff', 5, 90); } catch(_){}
-  }
-}
-// v1.0.566 — Wick Biter render: pulsing red danger line along the wick during
-// the warn phase (the telegraph), then a fanged red dart that snaps to the body.
-function drawWickBiter(m, sx, sy){
-  const tipY = priceToY(m.wickTipPy), baseY = priceToY(m.wickBasePy);
-  const t = performance.now()/1000;
-  const dir = m.wickSide==='up' ? 1 : -1;   // strike direction (toward the body)
-  ctx.save();
-  if(m.phase==='warn'){
-    const pulse = 0.35 + 0.45*Math.abs(Math.sin(t*8));
-    ctx.globalAlpha = pulse;
-    ctx.strokeStyle = '#ff5b7f'; ctx.lineWidth = 3; ctx.setLineDash([4,3]);
-    ctx.shadowColor = '#ff5b7f'; ctx.shadowBlur = 10;
-    ctx.beginPath(); ctx.moveTo(sx, tipY); ctx.lineTo(sx, baseY); ctx.stroke();
-    ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.shadowBlur = 0;
-    ctx.fillStyle = '#ffd166';   // warning chevron at the tip, pointing inward
-    ctx.beginPath(); ctx.moveTo(sx-5, tipY); ctx.lineTo(sx+5, tipY); ctx.lineTo(sx, tipY+8*dir); ctx.closePath(); ctx.fill();
-  }
-  ctx.translate(sx, sy);
-  ctx.fillStyle = m.phase==='strike' ? '#ff2d5e' : '#ff5b7f';
-  ctx.shadowColor = '#ff5b7f'; ctx.shadowBlur = m.phase==='strike' ? 14 : 6;
-  ctx.beginPath(); ctx.moveTo(-7,0); ctx.lineTo(7,0); ctx.lineTo(0,10*dir); ctx.closePath(); ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = '#0a0f1c'; ctx.fillRect(-3,-2,2,2); ctx.fillRect(1,-2,2,2);
-  ctx.restore();
 }
 // v0.8M#14 — Weapon gear catalog. Each entry has cooldown / speed / size /
 // color / pierce. Defaults to the basic 'pistol' on game start; future
@@ -34042,16 +33576,7 @@ function updateCombat(dt){
   if(now < (game.monsterGraceUntil||0)) return;
   // Spawn loop — cap concurrent monsters (lowered from 8 → 5 to keep combat
   // legible; 8 on-screen bears was too much visual noise to read a bracket).
-  // v1.0.565 — spawn pacing/cap driven by the Monster Rounds module when active
-  // (falls back to the classic 1.8s / 5-cap continuous field otherwise).
-  let _spawnGap = 1.8, _spawnCap = 5;
-  try {
-    if(crMonsterRounds.active()){
-      _spawnGap = crMonsterRounds.spawnInterval();
-      _spawnCap = crMonsterRounds.spawnCap();
-    }
-  } catch(_){}
-  if(now - game.lastSpawn > _spawnGap && game.monsters.length < _spawnCap){
+  if(now - game.lastSpawn > 1.8 && game.monsters.length<5){
     spawnMonster(); game.lastSpawn = now;
   }
   // v0.8e #U — Move monsters toward player. Single tracking rule for all
@@ -34063,9 +33588,6 @@ function updateCombat(dt){
   // monster-only constraint. Collision is computed in screen space so the
   // visible wall is the physical wall (what you see is what they hit).
   for(const m of game.monsters){
-    // v1.0.566 — Wick Biter runs its own warn→strike→spent motion (vertical
-    // ambush along the wick), not the shared pursuit. Skip the chaser logic.
-    if(m.kind==='wick'){ crUpdateWickBiter(m, dt, now); continue; }
     // v1.0.551 — pursue in SCREEN space so the monster closes vertical and
     // horizontal distance at a balanced rate. The old vector normalized world-px
     // (dx) against price units (dy) with a +1 price epsilon; when a monster sat
@@ -34150,7 +33672,6 @@ function updateCombat(dt){
         if(m.hp<=0){
           m.dead=true; game.kills++;
           if(m.isBoss){
-            game.bossKills = (game.bossKills||0)+1;   // v1.0.565 — round objective tracker
             // v0.8h — Boss kill: +1 $RUN (scarce), +8 $CHART, loot drop + banner.
             // RUN scarcity rule: only boss, winning trade, and mission rewards mint RUN.
             game.run += 1; game.score += 100; game.chart += 8;
@@ -34216,7 +33737,6 @@ function updateCombat(dt){
       if(m.hp <= 0){
         m.dead = true; game.kills++;
         if(m.isBoss){
-          game.bossKills = (game.bossKills||0)+1;   // v1.0.565 — round objective tracker
           game.run += 1; game.score += 100; game.chart += 8;
           try { log('kill BOSS via bracket (+1 $RUN, +8 $CHART)'); } catch(_){}
           try { spawnParticles(sxh, syh, '#14f195', 22, 300); } catch(_){}
@@ -34284,7 +33804,6 @@ function drawMonsters(){
     const sx = sX(m.wx);
     const sy = priceToY(m.py);
     if(sx<-40||sx>W+40) continue;
-    if(m.kind==='wick'){ drawWickBiter(m, sx, sy); continue; }   // v1.0.566
     ctx.save(); ctx.translate(sx, sy + Math.sin(m.bob)*2);
     ctx.scale(m.facing, 1);
     if(m.kind==='boss'){
@@ -34508,26 +34027,6 @@ const crCoinSpawn = {
 };
 try { window.crCoinSpawn = crCoinSpawn; } catch(_){}
 
-// v1.0 — Front-loaded per-run $CHART issuance for GRIND coins (tick/creds). Fixes the
-// "unlimited money" exploit: on a high timeframe with few candles (short chart) the
-// player could camp one spot and collect respawning coins forever for flat +2 each.
-// Now grind-coin $CHART is full-value until ~200 issued, then tapers to a hard 500 cap
-// per run; past the cap coins still score / grow the snake but mint no $CHART. Boss
-// loot (+20) and kill rewards are unaffected — they aren't farmable on a static chart.
-// The counter resets every run in restart().
-const CHART_GRIND_FULL = 200, CHART_GRIND_CAP = 500;
-function _grindChartAward(base){
-  base = base || 2;
-  let issued = game._grindChart || 0;
-  if(issued >= CHART_GRIND_CAP) return 0;
-  let mult = issued <= CHART_GRIND_FULL ? 1 : Math.max(0, (CHART_GRIND_CAP - issued) / (CHART_GRIND_CAP - CHART_GRIND_FULL));
-  let award = Math.round(base * mult);
-  if(award < 1) award = 1;                                   // gentle taper floor…
-  if(issued + award > CHART_GRIND_CAP) award = CHART_GRIND_CAP - issued;  // …still bounded by the cap
-  game._grindChart = issued + award;
-  return award;
-}
-
 /* ───────────────────────────────────────────────────────────────────────────
    BOT-FRIENDLY automation namespace — quick-wins tier.
    See docs/architecture/BOT-FRIENDLINESS.md. Additive, single-file,
@@ -34677,7 +34176,7 @@ try { if(_crIsDevHost() && /[?&]dev=1/.test(location.search) && window.ChartRunn
   player.vy = 0;
   player.onGround = true;
   camera.wx = player.wx - W*0.35;
-  game.run=0; game.chart=0; game.score=0; game.kills=0; game._grindChart=0;
+  game.run=0; game.chart=0; game.score=0; game.kills=0;
   game.runWeapon = null;   // v1.0.510 — clear any boss-loot weapon from the previous run
   game.visualLadders.length=0; game.visualBrackets.length=0; game.visualOCO.length=0;
   game.selectedOverlay = null;
@@ -34765,12 +34264,6 @@ try { if(_crIsDevHost() && /[?&]dev=1/.test(location.search) && window.ChartRunn
   // `monsterGraceUntil` below, first bear appears ~3s after restart.
   game.lastSpawn = performance.now()/1000;
   game.monsterGraceUntil = performance.now()/1000 + 3;
-  // v1.0.565 — start (or clear) the Monster Rounds loop for this run.
-  game.bossKills = 0;
-  try {
-    if(game.monsterMode) crMonsterRounds.begin();
-    else                 crMonsterRounds.reset();
-  } catch(_){}
   game.particles.length=0; game.floats.length=0; game.firstBlood=false;
   game.hitStopUntil = 0;
   game.pnl = { realized: 0, unrealized: 0 };
@@ -35959,14 +35452,14 @@ window.crRoom = (function(){
       // v1.0.434 — live runner counter in the header.
       try {
         var _t = bd.querySelector('.crRoomsHead .t');
-        var _tot = (Array.isArray(arr) ? arr : []).reduce(function(s, x){ return s + (x.players || 0); }, 0);
+        var _tot = (Array.isArray(arr) ? arr : []).reduce(function(s, x){ return s + (Number(x.players) || 0); }, 0);
         if(_t) _t.innerHTML = '🛰 Public rooms · <span style="color:#ff5b7f">●</span> ' + _tot + ' live';
       } catch(_){}
       if(!Array.isArray(arr) || !arr.length){ listEl.innerHTML = '<div class="crRoomsEmpty">No public rooms right now.<br>Host one: open a map → <b>room</b> → <b>Public</b>.</div>'; return; }
       listEl.innerHTML = '';
       arr.forEach(function(rm){
         var row = document.createElement('div'); row.className = 'crRoomRow';
-        var sub = (rm.mapName ? esc(rm.mapName) + ' · ' : '') + esc(String(rm.asset||'').toUpperCase()) + (rm.tf ? ' · ' + esc(rm.tf) : '') + ' · ' + (rm.players||1) + ' online';
+        var sub = (rm.mapName ? esc(rm.mapName) + ' · ' : '') + esc(String(rm.asset||'').toUpperCase()) + (rm.tf ? ' · ' + esc(rm.tf) : '') + ' · ' + (Number(rm.players)||1) + ' online';
         row.innerHTML = '<div class="info"><div class="h">' + esc(rm.handle||'host') + '</div><div class="s">' + sub + '</div></div><button class="join">Join</button>';
         row.querySelector('.join').addEventListener('click', function(){ join(rm.id); });
         listEl.appendChild(row);
@@ -36000,7 +35493,7 @@ window.crRoom = (function(){
       var r = await fetch(http() + '/rooms', { cache:'no-store' });
       var arr = await r.json();
       var byName = {};
-      (Array.isArray(arr) ? arr : []).forEach(function(rm){ var k = String(rm.mapName||'').toLowerCase().trim(); if(k) byName[k] = (byName[k]||0) + (rm.players||0); });
+      (Array.isArray(arr) ? arr : []).forEach(function(rm){ var k = String(rm.mapName||'').toLowerCase().trim(); if(k) byName[k] = (byName[k]||0) + (Number(rm.players)||0); });
       [grid, ph].forEach(function(g){
         if(!g) return;
         Array.prototype.forEach.call(g.children, function(card){
@@ -36175,8 +35668,6 @@ window.crRoom = (function(){
   }
   async function joinRoom(id){
     try {
-      // v1.0 — choose a name before joining a multiplayer room (if one isn't set yet).
-      try { if(window.crRunnerName && !crRunnerName.has()){ var _jn = prompt('Choose a name to join this room as:'); if(_jn) crRunnerName.set(_jn); } } catch(_){}
       var r = await fetch(http()+'/rooms/'+encodeURIComponent(id), {cache:'no-store'}); if(!r.ok) throw 0; var rm = await r.json(); if(!rm||!rm.id) throw 0;
       var url = location.origin + location.pathname + '?sharedMap=1&room=' + encodeURIComponent(rm.id)
         + (rm.host?'&host='+encodeURIComponent(rm.host):'') + (rm.asset?'&asset='+encodeURIComponent(rm.asset):'') + (rm.tf?'&tf='+encodeURIComponent(rm.tf):'') + (rm.snapshot?('#m='+rm.snapshot):'');
@@ -36679,11 +36170,11 @@ function update(dt){
       if(pk.kind==='tick'){
         // v0.8h — Tick pickups now drop $CHART, not $RUN. Overworld grind produces
         // CHART; RUN only mints on boss kills, winning trades, and mission completions.
-        var _ca = _grindChartAward(2); game.chart += _ca; game.score+=10;
+        game.chart+=2; game.score+=10;
         // v0.8k#24bt — Snake grows on every coin pickup. Capped at 60 so a
         // long run doesn't stretch the snake past the visible area.
         game.snakeLen = Math.min(60, (game.snakeLen || 1) + 1);
-        spawnFloat(sx, sy-10, _ca > 0 ? ('+' + _ca + ' $CHART') : 'CHART maxed', '#9b8cff');
+        spawnFloat(sx, sy-10, '+2 $CHART', '#9b8cff');
         spawnParticles(sx, sy, '#9b8cff', 6, 110);
       } else if(pk.kind==='loot'){
         // v0.7b-items v2 — BOSS LOOT: +2 charges on every non-max item + 20 $CHART.
@@ -36721,10 +36212,10 @@ function update(dt){
         spawnParticles(sx, sy, '#14f195', 10, 160);
         try { showBanner?.('RESTOCK', 'All items +1 charge', 1200); } catch(_){}
       } else {
-        var _cb = _grindChartAward(2); game.chart += _cb; game.score+=4;
+        game.chart+=2; game.score+=4;
         // v0.8k#24bt — Same snake growth rule on the default coin path.
         game.snakeLen = Math.min(60, (game.snakeLen || 1) + 1);
-        spawnFloat(sx, sy-10, _cb > 0 ? ('+' + _cb + ' $CHART') : 'CHART maxed', '#9b8cff');
+        spawnFloat(sx, sy-10, '+2 $CHART', '#9b8cff');
         spawnParticles(sx, sy, '#9b8cff', 6, 110);
       }
       log('pickup '+pk.kind);
@@ -36883,9 +36374,6 @@ function update(dt){
 
   // Combat
   updateCombat(dt);
-
-  // v1.0.565 — Monster Rounds loop (round timer, panic phase, clear endcard).
-  if(game.monsterMode){ try { crMonsterRounds.tick(dt); } catch(_){} }
 
   // Missions + tutorial
   // v0.8k#24i — missions.tick disabled along with missions.start (see run
@@ -37099,7 +36587,6 @@ function render(){
   if(game.running && typeof drawBotOrbs === 'function') drawBotOrbs();
   // v0.8e #B — HP bar shows whenever the player is in combat, not just upside-down.
   if(game.monsterMode) drawHpBar();
-  if(game.monsterMode){ try { crMonsterRounds.drawHud(); } catch(_){} }
   if(bracketEditor.open) drawBracketGhost();
   drawParticles();
   drawFloats();
@@ -37330,8 +36817,7 @@ function drawTrendlines(){
   }
 }
 function drawHpBar(){
-  // v1.0 — moved down in step with the ROUND HUD box so they don't collide (was y=58).
-  const w = 120, h = 8, x = 14, y = 88;
+  const w = 120, h = 8, x = 14, y = 58;
   ctx.fillStyle='rgba(10,15,28,.8)'; ctx.strokeStyle='rgba(255,91,127,.6)';
   ctx.fillRect(x,y,w,h); ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);
   const pct = Math.max(0, player.hp/player.hpMax);
@@ -40096,109 +39582,8 @@ window.crMiniEnd = (function(){
   document.addEventListener('mousedown', block, true);
   document.addEventListener('click', block, true);
 })();
-// ── v1.0.567 — Snake Rounds (10% round campaign for Snake) ───────────────────
-// Mirrors crMonsterRounds. The legacy Snake is a single goal (eat N coins).
-// This wraps it in a campaign: each round = grow to a TARGET LENGTH, then an
-// EXIT GATE opens downrange — reach it to "take profit" and clear. Self-collision
-// still kills (your tail = your risk). COACH narrates; clears juice + advance.
-// crMinigameTick delegates win/advance here; drawMinigame draws the gate + HUD.
-const crSnakeRounds = (function(){
-  const ROUNDS = [
-    { cond:'FIRST FEED',    target:3,  coach:'Eat the signal, then leave.',              lesson:'A plan has a target.' },
-    { cond:'WICK WALL',     target:5,  coach:'Not every price touch is safe terrain.',   lesson:'Respect wick rejection.' },
-    { cond:'GREED TAIL',    target:7,  coach:'Winning positions can trap you.',          lesson:'Your tail is your risk.' },
-    { cond:'TREND COMBO',   target:9,  coach:'Trend following is timing plus direction.',lesson:'Ride the continuation.' },
-    { cond:'OVEREXTENSION', target:12, coach:'More is not always better.',               lesson:'Exit before the reversal.' },
-    { cond:'CHOP SNAKE',    target:14, coach:'Range markets punish over-movement.',       lesson:'Stillness is a position.' },
-    { cond:'REVERSAL HUNT', target:16, coach:'Trend changes require changing the plan.',  lesson:'Adapt the route, then exit.' },
-  ];
-  let st = null;
-  const nowS = ()=> performance.now()/1000;
-  const def  = ()=> st ? ROUNDS[Math.min(st.idx, ROUNDS.length-1)] : null;
-  const len  = ()=> (game.snakeLen|0) || 1;
-  const active = ()=> !!st;
-  const reset  = ()=> { st = null; };
-  function coach(line){ try { crNotify('COACH: '+line); } catch(_){} }
-  function announce(){
-    const d = def();
-    try { crNotify('ROUND '+(st.idx+1)+' · '+d.cond, 'good'); } catch(_){}
-    try { showBanner('ROUND '+(st.idx+1)+' · '+d.cond, 'GROW TO LENGTH '+d.target+', THEN EXIT'); } catch(_){}
-    coach(d.coach);
-  }
-  function begin(){ st = { idx:0, phase:'grow', gateWx:0, clearAt:0 }; announce(); }
-  function openGate(){
-    st.phase='gate'; st.gateWx = player.wx + 560;   // gate appears downrange
-    try { showBanner('EXIT GATE OPEN', 'Reach the gate to take profit'); } catch(_){}
-    try { screenFlash(); } catch(_){}
-    coach('Gate is open. More coins are greed now.');
-  }
-  function clearRound(){
-    const d = def(); st.phase='clear'; st.clearAt = nowS();
-    const sx = (typeof sX==='function')?sX(player.wx):W*0.4;
-    const sy = (typeof priceToY==='function')?priceToY(player.py):H*0.4;
-    try { confettiBurst(sx, sy, '#7be3f3'); } catch(_){}
-    try { spawnFloat(sx, sy-30, 'CLEAN EXIT', '#7be3f3'); } catch(_){}
-    try { hitStop(90); } catch(_){}
-    try { showBanner('ROUND CLEAR', 'Length '+len()+' · plan followed'); } catch(_){}
-    coach(d.lesson);
-  }
-  function finish(){
-    const m = game.minigame; if(m) m.won = true;
-    game.running = false;
-    let best = len();
-    try { best = Math.max(len(), parseInt(localStorage.getItem('cr_snake_best')||'0',10)||0); localStorage.setItem('cr_snake_best', String(best)); } catch(_){}
-    try { crMiniEnd.show('snake', { won:true, big:ROUNDS.length, bigLabel:'ROUNDS CLEARED', tag:'★ CAMPAIGN CLEAR', stats:[['Length', len()],['Rounds', ROUNDS.length],['Best', best]] }); } catch(_){}
-  }
-  function tick(){
-    if(!st || !game.running) return;
-    const d = def();
-    if(st.phase==='grow'){ if(len() >= d.target) openGate(); return; }
-    if(st.phase==='gate'){ if(player.wx >= st.gateWx - 24) clearRound(); return; }
-    if(st.phase==='clear'){
-      if(nowS() - st.clearAt > 2.0){
-        if(st.idx+1 >= ROUNDS.length){ finish(); return; }
-        st.idx++; st.phase='grow'; announce();
-      }
-    }
-  }
-  function drawGate(){
-    if(!st || st.phase!=='gate') return;
-    const gx = sX(st.gateWx);
-    if(gx < -40 || gx > W+40) return;
-    const t = performance.now()/1000;
-    const pulse = 0.55 + 0.45*Math.abs(Math.sin(t*4));
-    ctx.save();
-    ctx.globalAlpha = pulse;
-    ctx.strokeStyle = '#7be3f3'; ctx.shadowColor = '#7be3f3'; ctx.shadowBlur = 18; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(gx, 60); ctx.lineTo(gx, H-60); ctx.stroke();
-    ctx.fillStyle = '#7be3f3'; ctx.fillRect(gx-8, 56, 16, 8); ctx.fillRect(gx-8, H-64, 16, 8);
-    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
-    ctx.font = 'bold 11px ui-monospace,monospace'; ctx.textAlign='center';
-    ctx.fillText('EXIT', gx, 50); ctx.textAlign='left';
-    ctx.restore();
-  }
-  function drawHud(){
-    if(!st) return;
-    const d = def(); const y = 36;
-    ctx.save();
-    ctx.fillStyle = 'rgba(10,15,28,0.85)'; ctx.fillRect(W/2-90, y, 180, 30);
-    ctx.textAlign='center';
-    ctx.fillStyle = st.phase==='gate' ? '#7be3f3' : '#9dff5b';
-    ctx.font = 'bold 12px ui-monospace,monospace';
-    ctx.fillText('R'+(st.idx+1)+'/'+ROUNDS.length+' · '+d.cond, W/2, y+13);
-    ctx.font = 'bold 11px ui-monospace,monospace'; ctx.fillStyle = '#cfe';
-    const sub = (st.phase==='grow') ? ('LEN '+len()+' / '+d.target)
-              : (st.phase==='gate') ? '➜ REACH EXIT GATE'
-              : 'CLEARED';
-    ctx.fillText(sub, W/2, y+25); ctx.textAlign='left';
-    ctx.restore();
-  }
-  return { begin, reset, tick, drawGate, drawHud, active };
-})();
-
 function crMinigameInit(){
   if(typeof game === 'undefined') return;
-  try { crSnakeRounds.reset(); } catch(_){}
   game.minigame = {
     mode:    game.mode,
     score:   0,
@@ -40224,9 +39609,7 @@ function crMinigameInit(){
     // entering, so the Profile vehicle loadout never carries into Snake.
     try { game.vehicle = 'none'; game.vehicleVel = 0; game.vehicleGrind = null; } catch(_){}
     game.minigame.candleOffsets = candles.map(() => ({ y: 0, vy: 0 }));
-    // v1.0.567 — start the round campaign (grow to target → exit gate → clear).
-    try { crSnakeRounds.begin(); } catch(_){}
-    if(typeof toast === 'function') toast('Snake Circuit · grow, then exit at target');
+    if(typeof toast === 'function') toast('Snake · eat ' + _MINIGAME_PICKUP_GOAL + ' coins to win');
   } else if(game.mode === 'racing'){
     // v1.0.385 — Racing v2: the crRacing engine owns spawn, vehicle pick,
     // countdown, physics, finish + end card. update() hands it the loop.
@@ -40254,12 +39637,7 @@ function crMinigameTick(dt){
     }
     // Win condition — coins collected.
     m.score = (game.snakeLen || 1) - 1;
-    // v1.0.567 — when the round campaign is active it owns win/advance (grow →
-    // exit gate → clear → next round → final campaign-clear endcard). Legacy
-    // single-goal win is the fallback when the campaign isn't running.
-    if(crSnakeRounds.active()){
-      try { crSnakeRounds.tick(); } catch(_){}
-    } else if(m.score >= _MINIGAME_PICKUP_GOAL){
+    if(m.score >= _MINIGAME_PICKUP_GOAL){
       m.won = true;
       game.running = false;   // freeze the run behind the end card
       var _len = (m.score || 0) + 1;
@@ -40296,22 +39674,16 @@ function drawMinigame(){
     // v1.0.385 — Racing v2 render (vehicle, countdown, HUD, finish post).
     try { if(window.crRacing && crRacing.draw) crRacing.draw(); } catch(_){}
   } else if(m.mode === 'snake'){
-    // v1.0.567 — round campaign draws its own gate + HUD; legacy Length HUD is
-    // the fallback when the campaign isn't active.
-    if(crSnakeRounds.active()){
-      try { crSnakeRounds.drawGate(); crSnakeRounds.drawHud(); } catch(_){}
-    } else {
-      // Snake HUD — coin count + goal.
-      ctx.save();
-      ctx.fillStyle = 'rgba(10,15,28,0.85)';
-      ctx.fillRect(W/2 - 80, 36, 160, 28);
-      ctx.fillStyle = '#3ddc97';
-      ctx.font = 'bold 14px ui-monospace,monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('Length ' + ((game.snakeLen || 1)) + ' / ' + (_MINIGAME_PICKUP_GOAL + 1), W/2, 56);
-      ctx.textAlign = 'left';
-      ctx.restore();
-    }
+    // Snake HUD — coin count + goal.
+    ctx.save();
+    ctx.fillStyle = 'rgba(10,15,28,0.85)';
+    ctx.fillRect(W/2 - 80, 36, 160, 28);
+    ctx.fillStyle = '#3ddc97';
+    ctx.font = 'bold 14px ui-monospace,monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Length ' + ((game.snakeLen || 1)) + ' / ' + (_MINIGAME_PICKUP_GOAL + 1), W/2, 56);
+    ctx.textAlign = 'left';
+    ctx.restore();
   }
   // v0.8k#24mz — pacman + pong draw branches retired.
 }
@@ -48026,39 +47398,23 @@ function osRefreshShop(){
     });
   }
   window._crPlayerNameApply = applyName;
-  // v1.0 — lightweight local runner handle for the onboarding name prompt and the
-  // multiplayer room join. Separate from the on-chain name claim above; just a display
-  // name persisted locally and mirrored onto the name surfaces + the MP handle (myName
-  // reads #crLpName).
-  window.crRunnerName = (function(){
-    var KEY = 'cr_runner_name';
-    function get(){ try { return (localStorage.getItem(KEY) || '').trim(); } catch(_){ return ''; } }
-    function norm(n){ return String(n || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20); }
-    function set(n){ n = norm(n); if(!n) return '';
-      try { localStorage.setItem(KEY, n); } catch(_){}
-      try { ['crLpName','crLpBbText','osProfileName','crProfilePlayerName'].forEach(function(id){ var el = document.getElementById(id); if(el) el.textContent = n; }); } catch(_){}
-      return n; }
-    return { get:get, set:set, has:function(){ var g = get(); return !!g && g !== 'anon_runner'; } };
-  })();
 
   // Inject CSS once.
   function injectCss(){
     if (document.getElementById('crNameClaimCss')) return;
     const css = `
       .cr-name-btn{
-        display:inline-flex;align-items:center;justify-content:center;gap:5px;
-        background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.06));
-        border:1px solid #14f195;
-        color:#bff7df;
-        font:700 11px ui-monospace,Menlo,monospace;
-        letter-spacing:.6px;text-transform:uppercase;
-        padding:7px 13px;border-radius:8px;cursor:pointer;text-shadow:none;
-        box-shadow:0 0 14px rgba(20,241,149,.20);
+        display:inline-flex;align-items:center;gap:4px;
+        background:rgba(20,241,149,.08);
+        border:1px solid rgba(20,241,149,.45);
+        color:#7ee787;
+        font:700 10px ui-monospace,Menlo,Consolas,monospace;
+        letter-spacing:.04em;text-transform:uppercase;
+        padding:3px 9px;border-radius:5px;cursor:pointer;
         margin-left:6px;vertical-align:middle;
-        transition:background .12s ease,border-color .12s ease,color .12s ease,transform .06s ease,box-shadow .12s ease;
+        transition:all .12s ease;
       }
-      .cr-name-btn:hover{color:#dffbee;background:linear-gradient(180deg,rgba(20,241,149,.30),rgba(20,241,149,.10));border-color:#14f195;box-shadow:0 0 18px rgba(20,241,149,.35);}
-      .cr-name-btn:active{transform:translateY(1px);}
+      .cr-name-btn:hover{background:rgba(20,241,149,.16);color:#bff7df;}
       .cr-name-btn-claimed{
         background:rgba(153,69,255,.08);
         border-color:rgba(153,69,255,.45);
@@ -51940,7 +51296,7 @@ function _crBotSetupTerminalCardHTML(plan, surface){
   const buttons = plan.status === 'pending'
     ? '<div class="crBotSetupBtns"><button type="button" data-cr-bot-setup-action="build">Build Y</button><button class="danger" type="button" data-cr-bot-setup-action="reject">No N</button></div>'
     : '';
-  return '<div class="crBotSetupCard" id="' + (surface === 'notify' ? 'crBotSetupCard' : surface === 'command' ? 'crBotSetupCardCmd' : 'crBotSetupCardPane') + '" data-cr-bot-setup-id="' + esc(plan.id) + '">'
+  return '<div class="crBotSetupCard" id="' + (surface === 'notify' ? 'crBotSetupCard' : 'crBotSetupCardPane') + '" data-cr-bot-setup-id="' + esc(plan.id) + '">'
     + '<div class="crBotSetupTop"><div class="crBotSetupName">' + esc(plan.name) + '</div><div class="crBotSetupMeta">' + esc(status) + '</div></div>'
     + '<div class="crBotSetupLine">Build? ' + esc(side) + ' @ ' + esc(_crBotSetupPrice(plan.price)) + '</div>'
     + '<div class="crBotSetupBits">' + esc(_crBotSetupBits(plan)) + '</div>'
@@ -53896,8 +53252,6 @@ function _crTermPickerDocsHtml(){
     + '<li><span class="lskey">cr_qvac_*</span> — bridgeUrl, model, engine_pref for the QVAC adapter.</li>'
     + '<li><span class="lskey">cr_guest_users_v1</span> / <span class="lskey">cr_guest_session_v1</span> — Continue-as-Guest auth records.</li>'
     + '</ul>'
-    + '<div class="tip" style="border-color:#f5a14f;color:#f5d29a">⚠ API keys (Birdeye, GoldRush, CoinGecko, COACH provider) and the agent bridge token are stored in <b>this browser</b> and sent directly from the page — any malicious extension or injected script could read them. Use a scoped, short-lived key and purge it when you\'re done.</div>'
-    + '<div class="api-row"><div class="sig"><button type="button" onclick="if(window.crPurgeApiKeys){var n=window.crPurgeApiKeys();alert(\'Cleared \'+n+\' stored key(s)/token(s) from this browser. Reload to apply.\');}">Forget all API keys</button></div><div class="desc">Wipes every stored provider key + the agent bridge token from this browser. Also callable as <code>window.crPurgeApiKeys()</code>.</div></div>'
 
     + '<h3>5 · Diagnostics</h3>'
     + '<p>Run in DevTools console to inspect runtime state:</p>'
@@ -54787,7 +54141,6 @@ function _crTermSetMainView(view){
       phoenix: document.getElementById('crTermViewPhoenix'),
       solana: document.getElementById('crTermViewSolana'),
       cex: document.getElementById('crTermViewCex'),
-      command: document.getElementById('crTermViewCommand'),
     };
     Object.keys(views).forEach(k => {
       const el = views[k];
@@ -54800,7 +54153,7 @@ function _crTermSetMainView(view){
     if(typeof _crTermApplyChartViewWindows === 'function') _crTermApplyChartViewWindows(target);
     _crTermRenderChartRunViews();
     // v1.0.339 — render the token/run tabs on open
-    try{ if(target === 'info') crRenderTokenInfo(); else if(target === 'txn') crRenderTokenTxns(); else if(target === 'bubble') crRenderBubbleMap(); else if(target === 'command'){ if(typeof _crTermRenderCommandView === 'function') _crTermRenderCommandView(); } else if(target === 'online' && typeof window.crRenderRoomRoster === 'function') window.crRenderRoomRoster(); }catch(_){}
+    try{ if(target === 'info') crRenderTokenInfo(); else if(target === 'txn') crRenderTokenTxns(); else if(target === 'bubble') crRenderBubbleMap(); else if(target === 'online' && typeof window.crRenderRoomRoster === 'function') window.crRenderRoomRoster(); }catch(_){}
   } catch(_){}
 }
 // ─── v1.0.280 — Chart tabs display widget WINDOWS (Engine-style) ────────────
@@ -56399,7 +55752,7 @@ function _tokSnapshot(id){
   const momentumS = Math.max(0, ch24 / 30) + Math.max(0, ch7d / 80);
   const onchainS  = Math.max(0, (buyN - sellN) / 1000);
   const signalS   = Math.min(100, (momentumS * 25) + (social * 0.4) + (onchainS * 6));
-  const signal = signalS > 75 ? 'MOON' : signalS > 55 ? 'UP' : signalS > 35 ? 'WATCH' : signalS > 18 ? 'HOLD' : 'AVOID';
+  const signal = signalS > 75 ? 'STRONG BUY' : signalS > 55 ? 'BUY' : signalS > 35 ? 'WATCH' : signalS > 18 ? 'HOLD' : 'AVOID';
   // Volume spike vs avg: derived
   const volSpike = (rng() * 8 - 1).toFixed(2);
   // "isNew" = age < 30 days
@@ -57105,8 +56458,8 @@ function _tokFmtN(v){
   return String(v);
 }
 function _tokSignalColor(sig){
-  if(sig === 'MOON') return '#14F195';
-  if(sig === 'UP')   return '#3ddc97';
+  if(sig === 'STRONG BUY') return '#14F195';
+  if(sig === 'BUY')        return '#3ddc97';
   if(sig === 'WATCH')      return '#7ad6ff';
   if(sig === 'HOLD')       return '#ffd166';
   return '#ff5b7f';
@@ -57236,10 +56589,15 @@ function _tokRenderList(){
     star.type = 'button';
     star.title = 'Watchlists — pick which list(s) to pin ' + def.tag + ' to';
     star.textContent = wlOn ? '★' : '☆';
-    // v1.0 — square gold star button matching the watchlist picker's golden star
-    // (same 14px size + #ffd166 colour). Styled via class so the generic os-window
-    // button CSS can't override it back to a green rounded frame; hover lives in CSS.
-    star.className = 'cr-tok-star' + (wlOn ? ' on' : '');
+    star.style.cssText = [
+      'appearance:none;background:transparent;border:0;padding:2px 4px;cursor:pointer',
+      'font-size:25px;line-height:1;width:34px;text-align:center',  /* v1.0.559 — token star +30% */
+      'color:' + (wlOn ? '#ffd166' : '#8a93a3'),
+      'text-shadow:' + (wlOn ? '0 0 10px rgba(255,209,102,.85)' : 'none'),
+      'transition:color .15s, transform .12s'
+    ].join(';');
+    star.addEventListener('mouseenter', () => { star.style.transform = 'scale(1.22)'; if(!wlOn) star.style.color = '#ffd166'; });
+    star.addEventListener('mouseleave', () => { star.style.transform = 'scale(1)'; if(!wlOn) star.style.color = '#8a93a3'; });
     star.addEventListener('click', (e) => {
       e.stopPropagation();
       try { _tokOpenWlPicker(def, star); } catch(_){ try { _tokToggleWatch(def.id); } catch(__){} }
@@ -57325,7 +56683,7 @@ function _tokRenderProfile(){
       '</div>' +
     '</div>' +
     // v1.0.519 — RUN button moved to the TOP (right under the ticker + price header).
-    '<button type="button" class="cr-cta-blink" data-tok-run="' + def.id + '" style="width:100%;box-sizing:border-box;margin:0 0 10px;padding:11px;border:1px solid #14f195!important;border-radius:8px!important;background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.06))!important;color:#bff7df!important;font:700 13px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;text-shadow:none!important;box-shadow:0 0 14px rgba(20,241,149,.20)!important">▶ RUN ' + def.tag + ' · ' + String(s.tf||'').toUpperCase() + '</button>' +
+    '<button type="button" data-tok-run="' + def.id + '" style="width:100%;box-sizing:border-box;margin:0 0 10px;padding:11px;border:1px solid #14f195!important;border-radius:8px!important;background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.06))!important;color:#bff7df!important;font:700 13px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;text-shadow:none!important;box-shadow:0 0 14px rgba(20,241,149,.20)!important">▶ RUN ' + def.tag + ' · ' + String(s.tf||'').toUpperCase() + '</button>' +
     // TF picker + sparkline panel
     '<div style="margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4)">' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
@@ -65961,11 +65319,15 @@ function _crInGameTerminalMarkLatest(panel){
 function _crInGameTerminalApplyFold(){
   const panel = _crNotifyState.panel;
   if(panel) {
-    // v1.0 — the floating console is ALWAYS latest-only: it shows exactly one command.
-    // The full feed lives in the Terminal app's Command tab; the toolbar toggle
-    // (#crTermBarToggle) only flips this panel between 1 line and hidden (0 lines).
-    panel.classList.add('compact');
+    panel.classList.toggle('compact', !!crInGameTerminalLatestOnly);
     _crInGameTerminalMarkLatest(panel);
+  }
+  const btn = panel ? panel.querySelector('#crNotifyFold') : null;
+  if(btn){
+    btn.textContent = crInGameTerminalLatestOnly ? '▾' : '▴';
+    btn.title = crInGameTerminalLatestOnly ? 'Show full in-game terminal feed' : 'Show latest in-game terminal command only';
+    btn.setAttribute('aria-label', btn.title);
+    btn.setAttribute('aria-pressed', crInGameTerminalLatestOnly ? 'true' : 'false');
   }
 }
 function _crInGameTerminalSetLatestOnly(on){
@@ -66022,35 +65384,6 @@ function _softRefreshRunSessionWidgets(){
       else if(el.innerHTML !== html) el.innerHTML = html;
     });
   } catch(_){}
-  // v1.0 — keep the Terminal COMMAND tab live while it's the open view.
-  try {
-    const cv = document.getElementById('crTermViewCommand');
-    if(cv && !cv.classList.contains('hidden')) _crTermRenderCommandView();
-  } catch(_){}
-}
-// v1.0 — COMMAND tab renderer. Shows the full in-run command log (so Y/N prompts that
-// flashed past in the one-line console are recoverable) plus the pending bot proposal
-// card; answering Build executes it if still valid (see _crBotSetupBuild).
-function _crTermRenderCommandView(){
-  try {
-    const host = document.getElementById('crTermViewCommand');
-    if(!host) return;
-    const s = (typeof crInGameTerminalSession !== 'undefined' && crInGameTerminalSession) ? crInGameTerminalSession : {};
-    const events = Array.isArray(s.events) ? s.events.slice(-200) : [];
-    const esc = (typeof _crExecEsc === 'function') ? _crExecEsc : (x => String(x == null ? '' : x));
-    const log = events.length
-      ? events.map(e => '<div style="padding:1px 0;line-height:1.4"><span class="dim">' + new Date(Number(e.t) || Date.now()).toLocaleTimeString() + '</span>  ' + esc(e.line || '') + '</div>').join('')
-      : '<div class="dim">No commands yet this run.</div>';
-    const prop = window._crBotProposal;
-    const card = (prop && prop.status === 'pending' && typeof _crBotSetupTerminalCardHTML === 'function')
-      ? '<div style="margin-top:8px">' + _crBotSetupTerminalCardHTML(prop, 'command') + '</div>'
-      : '';
-    const html = '<div class="crTerm-pane" data-pane-id="crCommandHistory">'
-      + '<div class="crTerm-paneHd"><span>⌘ COMMAND</span><span class="hd-tag">all run commands · Y/N replay</span></div>'
-      + '<div class="crTerm-paneBd log" style="max-height:46vh;overflow:auto">' + log + card + '</div>'
-      + '</div>';
-    if(typeof crSafeHTML === 'function') crSafeHTML(host, html); else host.innerHTML = html;
-  } catch(_){}
 }
 try {
   window.crInGameTerminalSession = {
@@ -66084,42 +65417,8 @@ function _crNotifyEnsurePanel(){
   _crInGameTerminalApplyFold();
   try { _crChatEnsure(el); } catch(_){}
   try { _crChatSyncMode(); } catch(_){}
-  try { crConsoleApplyVisible(); } catch(_){}
   return el;
 }
-// v1.0 — Command-console visibility toggle (control now lives in the toolbar). The
-// console always shows just the latest single command; this flips the whole panel
-// between 1 line (shown) and 0 lines (hidden), persisted across runs.
-const CR_CONSOLE_HIDDEN_KEY = 'cr_ingame_console_hidden_v1';
-let crConsoleHidden = (() => { try { return localStorage.getItem(CR_CONSOLE_HIDDEN_KEY) === '1'; } catch(_){ return false; } })();
-function crConsoleApplyVisible(){
-  try {
-    const p = _crNotifyState.panel;
-    if(p) p.classList.toggle('cr-console-off', !!crConsoleHidden);
-    const btn = document.getElementById('crTermBarToggle');
-    if(btn){
-      const lbl = btn.querySelector('.lbl');
-      if(lbl) lbl.textContent = crConsoleHidden ? '▸' : '▾';
-      btn.setAttribute('aria-pressed', crConsoleHidden ? 'false' : 'true');
-      btn.title = crConsoleHidden ? 'Show the command line (latest command)' : 'Hide the command line';
-    }
-  } catch(_){}
-}
-function crConsoleToggleVisible(){
-  crConsoleHidden = !crConsoleHidden;
-  try { localStorage.setItem(CR_CONSOLE_HIDDEN_KEY, crConsoleHidden ? '1' : '0'); } catch(_){}
-  crConsoleApplyVisible();
-}
-try { window.crConsoleToggle = crConsoleToggleVisible; } catch(_){}
-(function(){
-  function boot(){
-    const b = document.getElementById('crTermBarToggle');
-    if(b && !b.__crWired){ b.__crWired = true; b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); crConsoleToggleVisible(); }); }
-    try { crConsoleApplyVisible(); } catch(_){}
-  }
-  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
-  try { setTimeout(boot, 800); } catch(_){}
-})();
 // ── v1.0.374 — Map chat (multiplayer) ───────────────────────────────────────
 // In a live map room the notification panel flips into a chat display: it shows
 // messages from all players in the map and hides command/event notifications.
@@ -68515,28 +67814,29 @@ function log(msg){
   // the in-game Setup Guide layout. Coverage extended: Trading Journal, Token
   // Terminal, Player avatar shoot, Wallet (renamed from Balances), Workbench
   // sub-categories, Quick Builders. Total: 14 OS steps.
-  // v1.0 — Tutorial restructured per user spec: a clean 6-stop desktop tour.
-  //   PLAY → TERMINAL → PROFILE → TOKEN → COACH.LLM → CONNECT
-  // Titles render as >_NAME with a blinking underscore (see _renderTutStep).
   const TUTORIAL_OS_STEPS = [
-    { prog:'run',       icon:'▶', name:'PLAY',      kind:'DESKTOP',
-      line:"Pick a mode — run any chart, learn charting in Campaign, or race on-chain and play minigames.",
-      hint:"Any asset, any token, any timeframe." },
-    { prog:'terminal',  icon:'⌨', name:'TERMINAL',  kind:'DESKTOP',
-      line:"Your live trading console — chart engine, on-chain + CEX trackers and strategies in one place.",
-      hint:"Drag any pane onto the chart or desktop to pin it live." },
-    { prog:'wallet',    icon:'◉', name:'PROFILE',   kind:'DESKTOP',
-      line:"Gear up before a run — equip your avatar, skin, vehicle, weapon and up to 3 bot slots.",
-      hint:"Tools · Wallet · Broker · Coach tabs handle your loadout, holdings, exchanges and COACH.llm model." },
-    { prog:'tokenterm', icon:'◎', name:'TOKEN',     kind:'DESKTOP',
-      line:"Your favorite tokens all in one place — monitor any token and $RUN.",
-      hint:"Drag any row to pin its profile." },
-    { prog:null,        icon:'✦', name:'COACH.LLM', kind:'DESKTOP',
-      line:"That's me — COACH.llm. Take the guided tour or just chat, any time, from the desktop invader or the toolbar.",
-      hint:"Same brain as the in-game Quant. Ask about tokens, signals and risk." },
-    { prog:null,        icon:'◎', name:'CONNECT',   kind:'OUTRO',
-      line:"Connect a Solana wallet to unlock Maps, Journal, RUN-tube, the full Profile, bots and lasers.",
-      hint:"Click Connect in the menubar — or press ▶ Run to play as a guest now." },
+    { phase:'connected', prog:null, icon:'✦', name:'WELCOME',     kind:'INTRO',       line:"Welcome back to ChartRunnerOS — I'm COACH.llm.",                                                            hint:"Wallet connected — this walkthrough covers every desktop app." },
+    { phase:'guest', prog:null, icon:'✦', name:'WELCOME · GUEST', kind:'INTRO',       line:"Welcome to ChartRunnerOS — I'm COACH.llm. You're exploring as a guest.",                                  hint:"Guests get Play, Terminal, Token Terminal and a preview Profile. Connect a wallet to unlock Maps, Journal, RUN-tube, the full Profile, bots and lasers." },
+    { prog:'run',       icon:'▶',  name:'RUN LAUNCHER', kind:'DESKTOP',    line:"Pick a mode: run any chart, learn charting in Campaign, or race on-chain and play other minigames.",                                                          hint:"Pick any asset, any token, any timeframe." },
+    { archived:true, prog:'configs',   icon:'⊛',  name:'CONFIGURE RUN',kind:'DESKTOP',    line:"Pick asset, paste a Solana token mint if needed, then choose timeframe and broker.",          hint:"Perspective lives in the topbar/lite controls; indicators + strategies live in Workbench and the in-run side panel." },
+    { prog:'workbench', icon:'⋔', name:'WORKBENCH',    kind:'DESKTOP', archived:true,   line:"Build your loadout: Tools and Primitives stay public; Bots and Terminal builders are local/private.",          hint:"Live /play keeps Workbench focused on playable loadouts. Local files can restore the private builder tabs." },
+    { phase:'connected', prog:'wallet',    icon:'◉', name:'PROFILE',      kind:'DESKTOP',    line:"Gear up before a run — equip your avatar, skin, vehicle, weapon and up to 3 bot slots.",        hint:"Tools = your Red Laser loadout. Wallet · Broker · Coach tabs handle holdings, exchanges and your COACH.llm model. Click any tab and I'll explain it." },
+    { phase:'guest', prog:'wallet',    icon:'◉', name:'PROFILE',      kind:'DESKTOP',    line:"Gear up for a run — as a guest you can preview the Player and Tools tabs.",        hint:"Guests fly the green Runner with locked tools. Connect a wallet to customize tools and unlock the Wallet · Broker · Coach tabs." },
+    // v0.9.59 — Marketplace / Bot Terminal / SDK tutorial slides archived
+    // (those apps are either gated by feature-flag or out of scope for the
+    // demo). Restore by removing `archived: true`.
+    { archived:true, prog:'shop',  icon:'⊓', name:'MARKETPLACE',  kind:'DESKTOP', line:"Game Shop ($RUN) + P2P ($SOL). Buy bots, maps, strategies, gear, vehicles, skins.", hint:"Anything bought here lands in the matching Workbench tab under the Purchased sub-category." },
+    { phase:'connected', prog:'maps',      icon:'⊠', name:'MAPS',         kind:'DESKTOP',    line:"Saved chart setups — every tool, indicator and overlay preserved.",                                       hint:"Save a Map, then open public or private rooms to play with your friends. (Wallet-only app.)" },
+    { prog:'terminal',  icon:'⌨',  name:'TERMINAL',     kind:'DESKTOP',    line:"Your live trading console — chart engine, on-chain + CEX trackers and strategies in one place.",                   hint:"Drag any pane onto the chart or desktop to pin it live. Tap a tab and I'll explain it." },
+    { prog:'tokenterm', icon:'◎', name:'TOKEN TERMINAL',kind:'DESKTOP',   line:"Your favorite tokens all in one place — monitor any token and $RUN.",                hint:"Drag any row to pin its profile." },
+    // v1.0.362 — RUN-tube coverage (it's a floating PIP, not a window, so prog:null — no spotlight, just narration).
+    { archived:true, phase:'connected', prog:null, icon:'▶', name:'RUN-TUBE',     kind:'DESKTOP',   line:"RUN-tube is a pop-out PIP: float your webcam or a screen capture over the desktop or a live run to record / stream your sessions.",          hint:"Click the RUN-tube icon to toggle the floating window; drag it anywhere. Great for clipping a run. (Wallet-only.)" },
+    { archived:true, prog:'bot',   icon:'▣', name:'BOT TERMINAL', kind:'DESKTOP', line:"Wire agents: Claude · Telegram · Lobster · OpenClaw.", hint:"Drag an agent row onto the desktop to keep that chat one click away. COACH.llm lives in the pinned widget / toolbar now." },
+    { phase:'connected', minLevel:3, prog:'journal',   icon:'❏', name:'JOURNAL',      kind:'DESKTOP',    line:"Auto-logs every trade — entry, stop, target and your checklist.",            hint:"Tabs: Manual · Paper · Alerts · P&L. (Wallet-only app.)" },
+    { archived:true, prog:'sdk',   icon:'⫘',  name:'SDK',          kind:'DESKTOP', line:"Every order routes through ChartRunnerSDK: bracket · ladder · oco · hedge · radar · rescue.", hint:"Same call shape drops onto Dexscreener / TradingView in Phase 1, Solana in Phase 2." },
+    { archived:true, prog:null,        icon:'⌖', name:'PLAYER AVATAR',kind:'DESKTOP',    line:"Click 'Player' in the menubar to spawn your avatar on the desktop. Press SPACE to shoot widgets/windows.",hint:"Apps stay immune. Drag the avatar to reposition. Player menu again to dismiss." },
+    { archived:true, phase:'connected', prog:null,        icon:'⌅', name:'TO THE FLOOR', kind:'OUTRO',      line:"That's your full desktop. Start a run, then open the in-game Tutorial and I'll gate each step on you doing the move.",hint:"Or just press ▶ Run on any mode card to start playing." },
+    { phase:'guest', prog:null,        icon:'⌅', name:'CONNECT TO UNLOCK', kind:'OUTRO',      line:"That's the guest desktop. Connect a Solana wallet to unlock the rest.",hint:"Wallet unlocks: Maps · Journal · RUN-tube · full Profile (Wallet · Broker · Coach) · bots · Blue + Alarm lasers. Click Connect in the menubar — or press ▶ Run to play as a guest now." },
   ];
   // v0.9.47 — Each step gets icon · name · kind · line · hint. Coverage
   // extended: Hotkey 3 (Blue Laser Orders), detector bots, confluence score,
@@ -68835,7 +68135,7 @@ function log(msg){
     if(iconEl) iconEl.textContent = step.icon || (step.inGame ? '⊞' : '▣');
     if(nameEl) nameEl.textContent = (step.name || (step.inGame ? 'IN-GAME' : (step.prog || 'COACH.llm'))).toUpperCase();
     const kind = step.kind || (step.inGame ? 'IN-GAME' : 'DESKTOP');
-    if(stepEl) stepEl.textContent = '';   // v1.0 — step "x/N" counter text removed per spec
+    if(stepEl) stepEl.textContent = 'STEP ' + (_TUT.idx + 1) + ' OF ' + steps.length + ' · ' + kind.toUpperCase();
     if(hintEl) hintEl.textContent = '';   // v1.0.479 — hint folded into the term-body (unified styling)
     // v1.0.561 — WELCOME (first step) has nothing to go back to: hide the Back button
     // on step 0 so the nav shows only NEXT. Re-shown automatically on later steps.
@@ -69219,22 +68519,6 @@ function log(msg){
     }
     // Repaint the laser menu / loadout surfaces if they're open.
     try { if(typeof renderLaserMenu === 'function') renderLaserMenu(); } catch(_){}
-    // v1.0 — first wallet connect → prompt an ON-CHAIN name claim (once per session)
-    // when the connected wallet hasn't claimed a runner name yet.
-    try { _crMaybePromptNameClaim(); } catch(_){}
-  }
-  function _crMaybePromptNameClaim(){
-    try {
-      if(window._crNamePromptedSession) return;
-      if(typeof crGuest === 'function' && crGuest()) return;        // a wallet must be connected
-      var nm = (window.crPlayerName && typeof crPlayerName.get === 'function') ? crPlayerName.get() : '';
-      if(nm && nm !== 'anon_runner') return;                        // already claimed for this wallet
-      if(document.body.classList.contains('cr-in-run')) return;     // not mid-run
-      var fr = document.getElementById('crFrPop');
-      if(fr && fr.classList.contains('on')) return;                 // not during the onboarding tour
-      window._crNamePromptedSession = true;
-      setTimeout(function(){ try { if(window.crPlayerName && typeof crPlayerName.open === 'function') crPlayerName.open(); } catch(_){} }, 700);
-    } catch(_){}
   }
   try { window.crApplyAccessGates = crApplyAccessGates; } catch(_){}
   try { if(window.crWallet && typeof crWallet.on === 'function') crWallet.on(crApplyAccessGates); else crApplyAccessGates(); } catch(_){ try { crApplyAccessGates(); } catch(__){} }
@@ -70867,7 +70151,6 @@ function log(msg){
     };
   }
 
-
   function _onWalletPillClick(){
     if(typeof crWallet === 'undefined') return;
     crWallet.connect();
@@ -71432,47 +70715,6 @@ function log(msg){
   syncTfActive();
   // Re-sync periodically in case TF changes through other paths (hotkey, etc.)
   setInterval(syncTfActive, 800);
-})();
-
-/* v1.0 — Mobile timeframe overflow dropdown (12H+). The 12H/1D/3D/1W/1M buttons stay in
- * #crTvTfRow (hidden on phones via CSS); this arrow lists them and forwards a pick to the
- * real row button so the existing #tfbox handler fires. The arrow also reflects the active
- * TF when it's a 12H+ one. */
-(function(){
-  function boot(){
-    const wrap = document.getElementById('crTvTfMoreWrap');
-    const btn  = document.getElementById('crTvTfMoreBtn');
-    const menu = document.getElementById('crTvTfMoreMenu');
-    if(!wrap || !btn || !menu || btn.__crWired) return;
-    btn.__crWired = true;
-    const EXTRAS = ['12h','1d','3d','1w','1M'];
-    const LABEL = { '12h':'12H','1d':'1D','3d':'3D','1w':'1W','1M':'1M' };
-    function close(){ menu.classList.remove('open'); btn.setAttribute('aria-expanded','false'); }
-    function open(){ menu.classList.add('open'); btn.setAttribute('aria-expanded','true'); }
-    btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); menu.classList.contains('open') ? close() : open(); });
-    menu.querySelectorAll('[data-tf-more]').forEach(mi => {
-      mi.addEventListener('click', e => {
-        e.preventDefault(); e.stopPropagation();
-        const tf = mi.getAttribute('data-tf-more');
-        const real = document.querySelector('#crTvTfRow .tvTf[data-tf="' + tf + '"]');
-        if(real) real.click();
-        close();
-      });
-    });
-    document.addEventListener('click', e => { if(!wrap.contains(e.target)) close(); }, true);
-    function sync(){
-      let active = '';
-      document.querySelectorAll('#crTvTfRow .tvTf').forEach(b => { if(b.classList.contains('active') || b.classList.contains('on')) active = b.dataset.tf; });
-      const isExtra = EXTRAS.indexOf(active) >= 0;
-      btn.textContent = (isExtra ? LABEL[active] : '12H') + ' ▾';
-      btn.classList.toggle('active', isExtra);
-      menu.querySelectorAll('[data-tf-more]').forEach(mi => mi.classList.toggle('active', mi.getAttribute('data-tf-more') === active));
-    }
-    sync();
-    setInterval(sync, 800);
-  }
-  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
-  try { setTimeout(boot, 800); } catch(_){}
 })();
 
 /* =========================================================================
@@ -74262,7 +73504,13 @@ const crL3 = (function(){
   // placeholder instead of the browser broken-image icon; a valid thumb
   // overlays the glyph, and onerror falls back to it.
   function _crMapThumbHTML(m){
-    const ok = m && typeof m.thumb === 'string' && m.thumb.indexOf('data:image') === 0;
+    // SECURITY (XSS): validate thumb as a STRICT base64 image data-URI before
+    // embedding it in the src attribute. The old guard only tested the
+    // `data:image` PREFIX, so a crafted shared-map thumb like
+    // `data:image/x" onerror="…` broke out of the attribute → XSS on import via
+    // ?sharedMap=. The strict charset below contains no quote, so it can't break out.
+    const ok = m && typeof m.thumb === 'string'
+      && /^data:image\/(?:png|jpe?g|webp|gif|bmp);base64,[A-Za-z0-9+/=]+$/.test(m.thumb);
     return '<div class="thumb" style="position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden">'
       + '<span style="font-size:20px;opacity:.30;line-height:1">▦</span>'
       + (ok ? '<img src="' + m.thumb + '" alt="" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display=\'none\'">' : '')
@@ -74390,8 +73638,6 @@ const crL3 = (function(){
       const baseBorder = sel ? 'rgba(106,203,58,.7)' : PAL.line;
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid ' + baseBorder + ';border-radius:7px;cursor:pointer;background:' + (sel ? PAL.selbg : PAL.rowbg) + ';font:600 11px ui-monospace,Menlo,monospace;color:' + (sel ? PAL.selfg : PAL.fg);
-      // v1.0 — "All maps" adopts the shared green "go" button look (Tutorial/Chat style).
-      if(key === 'all') row.classList.add('cr-gobtn');
       row.innerHTML = '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(label) + '</span><span style="color:' + (sel ? PAL.selfg : PAL.dim) + ';font-size:9px">' + count + '</span>';
       row.addEventListener('click', () => { _crMapFolderSel = key; renderMaps(); });
       if(opts.dropId !== undefined){
@@ -74415,17 +73661,15 @@ const crL3 = (function(){
     const roomsRow = document.createElement('button');
     roomsRow.type = 'button'; roomsRow.id = 'crFindRooms';
     roomsRow.title = 'Find & join public live rooms (search by player or map name)';
-    roomsRow.className = 'cr-gobtn';
-    roomsRow.style.cssText = 'margin-bottom:4px';
-    roomsRow.innerHTML = '<span>🔍 Rooms</span>';
+    roomsRow.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid ' + PAL.line + ';border-radius:7px;cursor:pointer;background:' + PAL.rowbg + ';font:600 11px ui-monospace,Menlo,monospace;color:' + PAL.fg + ';width:100%;text-align:left;margin-bottom:2px';
+    roomsRow.innerHTML = '<span style="flex:1">🔍 Rooms</span>';
     host.appendChild(roomsRow);
     // v1.0.360 — Unfiled folder removed; "All maps" is the drop target to un-file a map.
     mkRow('all', '🗂 All maps', total, { dropId: '' });
     folders.forEach(f => mkRow(f.id, '📁 ' + f.name, byId[f.id] || 0, { dropId: f.id, folderId: f.id, name: f.name }));
     const add = document.createElement('button');
     add.type = 'button'; add.textContent = '＋ New folder';
-    add.className = 'cr-gobtn';
-    add.style.cssText = 'margin-top:6px';
+    add.style.cssText = 'margin-top:4px;padding:6px 8px;border:1px dashed ' + PAL.line + ';border-radius:7px;background:transparent;color:' + PAL.dim + ';cursor:pointer;font:600 11px ui-monospace,Menlo,monospace;text-align:left';
     add.addEventListener('click', () => { const n = prompt('New folder name:'); if(n){ const id = crMaps.addFolder(n); _crMapFolderSel = id; renderMaps(); } });
     host.appendChild(add);
   }
@@ -75890,19 +75134,13 @@ const crL3 = (function(){
 	    }
 	    function _syncFromUrl(){
 	      const qs = _query();
-	      const rawEventsUrl = qs.get('crAgentEventsUrl') || '';
+	      const eventsUrl = qs.get('crAgentEventsUrl') || '';
 	      const channelId = qs.get('crAgentChannelId') || qs.get('crAgentEventsChannel') || '';
 	      const token = qs.get('crAgentBridgeToken') || qs.get('crAgentEventsToken') || '';
 	      const enabled = qs.get('crAgentEventsPoll') || '';
-	      // #3 — confirm + protocol-allowlist external event feeds; only bind a
-	      // token/channel once its endpoint has been approved by the user.
-	      const eventsUrl = rawEventsUrl && window.crConfirmExternalEndpoint
-	        ? window.crConfirmExternalEndpoint(rawEventsUrl, 'agent event feed') : '';
-	      if(eventsUrl){
-	        _set(LS_URL, eventsUrl);
-	        if(token) _set(LS_TOKEN, token);
-	        if(channelId) _set(LS_CHANNEL, _safeId(channelId));
-	      }
+	      if(eventsUrl) _set(LS_URL, eventsUrl);
+	      if(channelId) _set(LS_CHANNEL, _safeId(channelId));
+	      if(token) _set(LS_TOKEN, token);
 	      if(enabled) _set(LS_ENABLED, enabled === '0' || enabled === 'off' ? '0' : '1');
 	    }
 	    function _deriveEventsUrl(){
@@ -83390,11 +82628,8 @@ window.crQvac = (function(){
   (function _syncBridgeParamsFromUrl(){
     try {
       const qs = new URLSearchParams(location.search || '');
-      const rawBridge = qs.get('crAgentBridgeUrl') || qs.get('crQvacBridgeUrl') || '';
+      const bridgeUrl = qs.get('crAgentBridgeUrl') || qs.get('crQvacBridgeUrl') || '';
       const engine = qs.get('crAgentBridgeEngine') || qs.get('crQvacEngine') || '';
-      // #3 — confirm + protocol-allowlist any external bridge before persisting.
-      const bridgeUrl = rawBridge && window.crConfirmExternalEndpoint
-        ? window.crConfirmExternalEndpoint(rawBridge, 'agent bridge') : '';
       if(bridgeUrl) _setCfg(LS_BRIDGE, bridgeUrl);
       if(engine) _setCfg(LS_PREF, engine);
       if(bridgeUrl || engine){
@@ -84880,7 +84115,7 @@ window.crQvac = (function(){
       'z-index:14;background:rgba(8,11,20,.92);border:1px solid #2a3550;border-radius:8px;display:none;'+
       'box-shadow:0 -4px 24px rgba(0,0,0,.4);overflow:hidden';
     var label=document.createElement('div'); label.id='crTfMapLbl'; label.style.cssText='position:absolute;left:8px;top:4px;font:700 9px ui-monospace,Menlo;color:#7c8aa5;letter-spacing:.5px;pointer-events:none;z-index:2';
-    label.textContent='';
+    label.textContent='OVERVIEW · click a candle to spawn';
     var cnv=document.createElement('canvas'); cnv.id='crTfMapCanvas'; cnv.style.cssText='width:100%;height:100%;display:block;cursor:crosshair';
     box.appendChild(cnv); box.appendChild(label); document.body.appendChild(box);
     cnv.addEventListener('click', function(e){ try {
@@ -84928,7 +84163,7 @@ window.crQvac = (function(){
       (g.runeMarks||[]).forEach(function(o){ mark(o.wx,'#ffd166','✦'); });
       if(window.crAlarm){ crAlarm.alarms.forEach(function(a){ a.conditions.forEach(function(cd){ if(typeof cd.target==='number') mark(cd.target*STEP,'#ffb300','⏰'); }); }); }
     } catch(_){}
-    var lbl=q('crTfMapLbl'); if(lbl){ lbl.textContent=''; }
+    var lbl=q('crTfMapLbl'); if(lbl){ var tf=(typeof game!=='undefined'&&game.tf)?game.tf:''; lbl.textContent='OVERVIEW '+(tf?('· '+tf+' '):'')+'· tools/primitives shown · click a candle to spawn'; }
   }
   function _inGameTf(){ try { return !document.body.classList.contains('crSplashUp'); } catch(_){ return true; } }
   function _syncTfMapVis(){ var b=q('crTfMap'); if(!b) return; b.style.display = (crTfMap._wantOpen && _inGameTf()) ? 'block' : 'none'; }
@@ -85129,21 +84364,6 @@ window.crQvac = (function(){
     document.addEventListener('mousedown', hide, true);
     window.addEventListener('scroll', hide, true);
     window.addEventListener('blur', hide);
-    // v1.0 — public API so the onboarding tour can pop a target's themed tooltip
-    // programmatically (the dimming mask suppresses normal hover during the tour).
-    window.crTip = {
-      show: function(el){
-        if(!el) return;
-        var t = (el.getAttribute('title') || el.__crTitle || '').trim();
-        if(!t) return;
-        hide();
-        cur = el;
-        if(el.getAttribute('title')){ el.__crTitle = t; el.removeAttribute('title'); }
-        tip.innerHTML = fmt(t);
-        place(el); tip.classList.add('on');
-      },
-      hide: hide
-    };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
@@ -85160,35 +84380,25 @@ window.crQvac = (function(){
   var KEY = 'cr_onboarding_v1';
   function load(){ try { return JSON.parse(localStorage.getItem(KEY)||'{}')||{}; } catch(_){ return {}; } }
   function save(o){ try { localStorage.setItem(KEY, JSON.stringify(o)); } catch(_){} }
-  // v1.0 — Onboarding tour restructured per user spec: a clean 6-stop sequence.
-  //   PLAY → TERMINAL → PROFILE → TOKEN → COACH.LLM → CONNECT
-  // A JOURNAL stop sits after TOKEN but stays ARCHIVED while the app is level-gated:
-  // its sel target (the Journal icon) is hidden by CSS until unlocked, so
-  // nextRenderable's visible() check auto-skips the step — it reappears on its own
-  // once Journal is no longer gated. No manual flag flip needed.
-  // Titles render as >_NAME with a blinking underscore (see render()).
   var STEPS = [
-    // v1.0 — "What's your name" opener: a local handle for leaderboards + MP rooms.
-    { sel:null, ttl:'Your name', body:'', nameInput:true },
-    { sel:'.os-icon[data-prog="chartrunner"]', ttl:'Play',     body:"Your run launcher. Pick an asset / token / timeframe and START a run on real candles." },
-    { sel:'.os-icon[data-prog="terminal"]',    ttl:'Terminal', body:"Live trading console — chart engine, on-chain + CEX trackers and strategies. Drag any pane onto the chart to pin it live." },
-    { sel:'.os-icon[data-prog="wallet"]',      ttl:'Profile',  body:"Your loadout — weapon, skin, vehicle, bots and tools. Gear up before a run." },
-    // Maps is connect-gated: auto-skips for guests (icon hidden), shows once a wallet is connected.
-    { sel:'.os-icon[data-prog="maps"]',        ttl:'Maps',     body:"Save and load chart setups — every tool, indicator and overlay preserved. Run a map solo or open rooms with friends." },
-    { sel:'.os-icon[data-prog="tokenterm"]',   ttl:'Token',    body:"Research any token, star favourites into watchlists, and $RUN it as a chart." },
-    // Auto-skips while Journal is level-gated (icon hidden); shows once unlocked.
-    { sel:'.os-icon[data-prog="journal"]',     ttl:'Journal',  body:"Auto-logs every trade — entry, stop, target and your checklist. Tabs: Manual · Paper · Alerts · P&L." },
-    { sel:'#crCoachHubBtn',                    ttl:'Coach.llm',body:"That's me — COACH.llm. Take the guided tour or just chat, any time, from the desktop invader or the toolbar. Same brain as the in-game Quant." },
-    { sel:'#crMenuConnect',                    ttl:'Connect',  body:"Connect a Solana wallet to unlock Maps, Journal, bots, lasers and the full Profile.", guestOnly:true }
+    { sel:null, ttl:'Welcome', body:"I'm COACH.llm. ChartRunnerOS is a chart you can run on. I'll point at each app and explain it — tap NEXT to walk through, SKIP anytime." },
+    { sel:'.os-icon[data-prog="chartrunner"]', ttl:'Play', body:"Your run launcher. Pick an asset / token / timeframe and START a run on real candles." },
+    { sel:'.os-icon[data-prog="terminal"]', ttl:'Terminal', body:"Live trading console — chart engine, on-chain + CEX trackers and strategies. Drag any pane onto the chart to pin it live." },
+    { sel:'.os-icon[data-prog="tokenterm"]', ttl:'Token', body:"Research any token, star favourites into watchlists, and $RUN it as a chart." },
+    { sel:'.os-icon[data-prog="wallet"]', ttl:'Profile', body:"Your loadout — weapon, skin, vehicle, bots and tools. Gear up before a run." },
+    { sel:'.os-icon[data-prog="maps"]', ttl:'Maps', body:"Saved setups + multiplayer rooms — run a map solo or with friends." },
+    { sel:'.os-icon[data-prog="journal"]', ttl:'Journal', body:"Your trade log — every run and bracket, reviewable." },
+    { sel:'.os-icon[data-prog="shop"]', ttl:'Marketplace', body:"Trade skins, vehicles and tools on the P2P marketplace." },
+    { sel:'.os-icon[data-prog="bot"]', ttl:'Bot Terminal', body:"Build and run automated strategy bots on the live chart." },
+    { sel:'.os-icon[data-prog="workbench"]', ttl:'Workbench', body:"Compose your own dashboards and tool layouts." },
+    { sel:'.os-icon[data-prog="runtube"]', ttl:'RUN-tube', body:"Float your webcam or screen over a run to clip and stream sessions." },
+    { sel:'#crBarConnect', ttl:'Connect', body:"Connect a Solana wallet to unlock Maps, Journal, bots, lasers and the full Profile." },
+    { sel:'.os-icon[data-prog="chartrunner"]', ttl:'Your first run', body:"That's the tour. Open Play and hit START RUN — I'll keep coaching you in-game: move ←/→, jump ↑, and place your first bracket trade.", gateClick:true }
   ];
-  var mask, ring, beacon, arrow, pop, ttlEl, stepEl, bodyEl, dotsEl, backBtn, nextBtn, skipBtn, idx=0, active=false, clickHandler=null, built=false, _frDragDemoEl=null;
+  var mask, ring, beacon, arrow, pop, ttlEl, stepEl, bodyEl, dotsEl, backBtn, nextBtn, skipBtn, idx=0, active=false, clickHandler=null, built=false;
   function visible(el){ try { return !!(el && el.offsetParent !== null && el.getBoundingClientRect().width > 1); } catch(_){ return false; } }
   function targetFor(i){ var st=STEPS[i]; if(!st||!st.sel) return null; var el=document.querySelector(st.sel); return visible(el)?el:null; }
-  // v1.0 — phase gating. Connect is guest-only (dropped once a wallet is connected);
-  // Maps / Journal gate themselves by icon visibility (handled in targetFor).
-  function _frConnected(){ try { return (typeof window.crConnected==='function') ? !!window.crConnected() : false; } catch(_){ return false; } }
-  function _stepAllowed(st){ if(!st) return false; if(st.guestOnly && _frConnected()) return false; if(st.connectedOnly && !_frConnected()) return false; return true; }
-  function nextRenderable(i, dir){ while(i>=0 && i<STEPS.length){ var st=STEPS[i]; if(_stepAllowed(st) && (!st.sel || targetFor(i))) return i; i += dir; } return -1; }
+  function nextRenderable(i, dir){ while(i>=0 && i<STEPS.length){ var st=STEPS[i]; if(!st.sel || targetFor(i)) return i; i += dir; } return -1; }
   function build(){
     if(built) return; built=true;
     mask = document.createElement('div'); mask.id='crFrMask';
@@ -85204,46 +84414,19 @@ window.crQvac = (function(){
     pop.innerHTML = '<div class="cr-fr-win cr-tut-terminal-bubble crCoachWin" role="dialog" aria-label="COACH.llm">'
       + '<div class="term-head"><span class="cr-coach-asset-icon" aria-hidden="true"></span><span class="cw-nm">COACH.llm</span><span class="cw-dot" aria-hidden="true">●</span><button class="cw-x" id="crFrClose" type="button" title="Skip tour" aria-label="Skip tour">✕</button></div>'
       + '<div class="term-body" id="crFrBody"></div>'
-      + '<div class="crCoachHubActions"><button class="cr-go" id="crFrNext" type="button">Next ▶</button></div>'
+      + '<div class="cr-fr-stepline" id="crFrStep"></div>'
+      + '<div class="crCoachHubActions"><button class="cr-go" id="crFrBack" type="button">◀ Back</button><button class="cr-go" id="crFrNext" type="button">Next ▶</button></div>'
       + '<div class="cw-resize" aria-hidden="true"></div></div>';
     document.body.appendChild(pop);
     bodyEl=pop.querySelector('#crFrBody'); stepEl=pop.querySelector('#crFrStep');
     backBtn=pop.querySelector('#crFrBack'); nextBtn=pop.querySelector('#crFrNext'); skipBtn=pop.querySelector('#crFrClose');
-    if(backBtn) backBtn.addEventListener('click', function(){ go(idx-1); });
+    backBtn.addEventListener('click', function(){ go(idx-1); });
     nextBtn.addEventListener('click', function(){ go(idx+1); });
     skipBtn.addEventListener('click', function(){ finish(true); });
     clickHandler = function(e){
-      if(!active) return;
-      var t = e.target;
-      // v1.0 — GATE entering a run/level while the tour is up: block the launcher and
-      // explain it instead (mode/level cards, Configure-Run START, token RUN, lite run buttons).
-      var launcher = t && t.closest && t.closest('.modecard, #crCfgStart, [data-tok-run], .lp-runbtn, .run-card');
-      if(launcher){
-        e.preventDefault(); e.stopPropagation();
-        try {
-          if(window.crTip){
-            var explain = launcher.getAttribute && launcher.getAttribute('title');
-            if(!explain){
-              var h = launcher.querySelector && launcher.querySelector('h3,h4,strong');
-              var p = launcher.querySelector && launcher.querySelector('p');
-              explain = ((((h&&h.textContent)||'').trim()) + (p?(' — '+((((p.textContent)||'').trim()))):'')).trim();
-              if(explain) launcher.setAttribute('title', explain);
-            }
-            if(explain) window.crTip.show(launcher);
-          }
-        } catch(_){}
-        try { if(typeof toast === 'function') toast('Finish the quick tour first to enter a run.'); } catch(_){}
-        return;
-      }
-      // v1.0 — responsive learning: clicking any titled / interactive item explains it.
-      var tip = t && t.closest && t.closest('[title]');
-      if(tip){ try { if(window.crTip) window.crTip.show(tip); } catch(_){} }
-      // original gateClick advance (kept for any gateClick step).
-      var st=STEPS[idx];
-      if(st && st.gateClick && st.sel){
-        var tgt=document.querySelector(st.sel);
-        if(tgt && t && (t===tgt || (t.closest && t.closest(st.sel)))) setTimeout(function(){ if(active) finish(false); }, 150);
-      }
+      if(!active) return; var st=STEPS[idx]; if(!st||!st.gateClick||!st.sel) return;
+      var tgt=document.querySelector(st.sel); if(!tgt) return;
+      if(e.target && (e.target===tgt || (e.target.closest && e.target.closest(st.sel)))) setTimeout(function(){ if(active) finish(false); }, 150);
     };
     document.addEventListener('click', clickHandler, true);
     window.addEventListener('resize', reposition);
@@ -85258,71 +84441,15 @@ window.crQvac = (function(){
     } else { ring.style.display='none'; beacon.style.display='none'; arrow.style.display='none'; }
   }
   function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  // v1.0 — DESKTOP-ONLY guided drag-and-drop demo. Drags a ghost "pane" + cursor from
-  // the highlighted app toward a dashed drop-zone on the chart, looping while the
-  // Terminal / Token step is open. Skipped on phones.
-  function _frDragDemoClear(){ try { if(_frDragDemoEl && _frDragDemoEl.parentNode) _frDragDemoEl.parentNode.removeChild(_frDragDemoEl); } catch(_){} _frDragDemoEl = null; }
-  function _frDragDemo(anchor, label){
-    _frDragDemoClear();
-    if(window.innerWidth <= 680) return;   // desktop-only affordance
-    var sx, sy;
-    if(anchor){ var r = anchor.getBoundingClientRect(); sx = r.left + r.width/2; sy = r.bottom + 14; }
-    else { sx = window.innerWidth*0.18; sy = window.innerHeight*0.30; }
-    var ex = Math.round(window.innerWidth*0.46), ey = Math.round(window.innerHeight*0.55);
-    var wrap = document.createElement('div'); wrap.id = 'crFrDragDemo';
-    var drop = document.createElement('div'); drop.className = 'cr-fr-drop';
-    drop.style.setProperty('--ex', ex+'px'); drop.style.setProperty('--ey', ey+'px');
-    var ghost = document.createElement('div'); ghost.className = 'cr-fr-drag-ghost'; ghost.textContent = '▦ ' + (label || 'pane');
-    ghost.style.setProperty('--sx', Math.round(sx)+'px'); ghost.style.setProperty('--sy', Math.round(sy)+'px');
-    ghost.style.setProperty('--ex', ex+'px'); ghost.style.setProperty('--ey', ey+'px');
-    wrap.appendChild(drop); wrap.appendChild(ghost);
-    document.body.appendChild(wrap);
-    _frDragDemoEl = wrap;
-    requestAnimationFrame(function(){ try { wrap.classList.add('on'); } catch(_){} });
-  }
   function render(){
     var st=STEPS[idx]||{};
     // terminal-style body: "> SURFACE" title in green, then the explanation (mirrors the
     // COACH welcome bubble / tutorial narrator term-body format).
-    if(st.nameInput){
-      // v1.0 — name-entry opener: an inline handle field wired to window.crRunnerName.
-      var _cur = (window.crRunnerName && crRunnerName.get()) || '';
-      bodyEl.innerHTML = '<span class="crTutTtl">&gt;<span class="crTutCur">_</span>YOUR NAME</span><br><br>'
-        + "What should we call you? Pick a handle for the leaderboards and multiplayer rooms."
-        + '<div style="display:flex;gap:6px;margin-top:10px">'
-        +   '<input id="crFrNameInput" type="text" maxlength="20" placeholder="your_name" value="' + esc(_cur) + '" style="flex:1;min-width:0;box-sizing:border-box;background:rgba(8,14,22,.7);border:1px solid #14f195;border-radius:6px;color:#bff7df;font:600 12px ui-monospace,Menlo,monospace;padding:8px 9px">'
-        +   '<button id="crFrNameSet" type="button" class="cr-go" style="flex:0 0 auto">Set</button>'
-        + '</div>';
-      setTimeout(function(){
-        var inp = document.getElementById('crFrNameInput'), b = document.getElementById('crFrNameSet');
-        function commit(){ try { if(inp && window.crRunnerName){ var v = crRunnerName.set(inp.value); if(v){ inp.value = v; if(typeof toast === 'function') toast('Name set · ' + v); } } } catch(_){} }
-        if(b && !b.__w){ b.__w = 1; b.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); commit(); }); }
-        if(inp && !inp.__w){ inp.__w = 1;
-          inp.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); commit(); } });
-          inp.addEventListener('click', function(e){ e.stopPropagation(); });
-        }
-      }, 0);
-    } else {
-      bodyEl.innerHTML = '<span class="crTutTtl">&gt;<span class="crTutCur">_</span>'+esc((st.ttl||'COACH').toUpperCase())+'</span><br><br>'+esc(st.body||'');
-    }
-    if(backBtn) backBtn.style.display = idx>0 ? '' : 'none';
+    bodyEl.innerHTML = '<span style="color:#14f195;font-weight:800">'+esc((st.ttl||'COACH').toUpperCase())+'</span><br><br>'+esc(st.body||'');
+    stepEl.textContent = 'STEP '+(idx+1)+' / '+STEPS.length;
+    backBtn.style.display = idx>0 ? '' : 'none';
     nextBtn.textContent = (idx>=STEPS.length-1) ? 'Done ▶' : 'Next ▶';
     mask.classList.add('on'); pop.classList.add('on'); reposition();
-    // v1.0 — pop the highlighted element's own themed tooltip during the tour, for
-    // every step EXCEPT Token (per spec). The mask blocks normal hover, so we drive
-    // it programmatically; .cr-tip layers above the mask.
-    try {
-      var _tgt = (st && st.sel) ? targetFor(idx) : null;
-      if(window.crTip){
-        if(_tgt && st.ttl !== 'Token') window.crTip.show(_tgt);
-        else window.crTip.hide();
-      }
-    } catch(_){}
-    // v1.0 — desktop-only guided drag-drop demo on the Terminal / Token steps.
-    try {
-      if((st.ttl === 'Terminal' || st.ttl === 'Token') && window.innerWidth > 680) _frDragDemo((st && st.sel) ? targetFor(idx) : null, st.ttl === 'Token' ? 'token' : 'pane');
-      else _frDragDemoClear();
-    } catch(_){}
   }
   function go(to){
     if(to>=STEPS.length){ finish(false); return; }
@@ -85335,8 +84462,6 @@ window.crQvac = (function(){
   function persist(){ var o=load(); o.idx=idx; o.ts=Date.now(); save(o); }
   function finish(skipped){
     active=false;
-    try { if(window.crTip) window.crTip.hide(); } catch(_){}
-    try { _frDragDemoClear(); } catch(_){}
     if(pop) pop.classList.remove('on'); if(mask) mask.classList.remove('on');
     if(ring) ring.style.display='none'; if(beacon) beacon.style.display='none'; if(arrow) arrow.style.display='none';
     var o=load(); o.done=true; o.skipped=!!skipped; o.ts=Date.now(); save(o);
@@ -85346,9 +84471,7 @@ window.crQvac = (function(){
   function start(force){
     build(); var o=load();
     if(!force && o.done) return;
-    // v1.0 — require the desktop icons to be VISIBLE (not just present in the DOM), so the
-    // tour never opens over a live run/minigame where the icons are hidden behind the chart.
-    if(!onDesktop() || !visible(document.querySelector('.os-icon[data-prog="chartrunner"]'))) return;
+    if(!onDesktop() || !document.querySelector('.os-icon[data-prog]')) return;
     try { var hb=document.getElementById('crCoachHubBubble'); if(hb) hb.style.display='none'; } catch(_){}
     active=true;
     idx = (!force && typeof o.idx==='number' && o.idx>0 && o.idx<STEPS.length) ? o.idx : 0;
@@ -85358,63 +84481,15 @@ window.crQvac = (function(){
   window.crFirstRun = { start:start, reset:reset, next:function(){go(idx+1);}, skip:function(){finish(true);} };
   function boot(){
     if(load().done) return; var tries=0;
-    // v1.0 — keep polling long enough that the tour auto-opens on first visit even
-    // when the login / "Continue as Guest" gate keeps the desktop hidden for a while
-    // (was 40 tries ≈ 20s, which gave up before slow first-timers reached the desktop).
     var iv=setInterval(function(){ tries++;
       if(load().done){ clearInterval(iv); return; }
-      if(onDesktop() && visible(document.querySelector('.os-icon[data-prog="chartrunner"]'))){ clearInterval(iv); start(false); }
-      else if(tries>1200){ clearInterval(iv); }   // ~10 min safety bound
+      if(onDesktop() && document.querySelector('.os-icon[data-prog]')){ clearInterval(iv); start(false); }
+      else if(tries>40){ clearInterval(iv); }
     }, 500);
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 
 </script>
-<script>
-// v1.0.567 — M2-T3: "New here?" reopener. crFirstRun is otherwise one-shot
-// (localStorage cr_onboarding_v1). This adds a small, always-available "?" badge
-// on the persistent COACH hub invader (#crCoachHub) that replays the desktop
-// tour via window.crFirstRun.reset(). Because it lives INSIDE #crCoachHub it
-// inherits the hub's visibility rules — desktop-only, hidden in-run and during
-// the guided tutorial. Purely additive: no existing DOM, handler or CSS touched.
-(function crNewHereReopener(){
-  if(window._crNewHere) return; window._crNewHere = true;
-  function mount(){
-    var hub = document.getElementById('crCoachHub');
-    if(!hub) return false;
-    if(document.getElementById('crNewHereBadge')) return true;
-    var b = document.createElement('button');
-    b.id = 'crNewHereBadge';
-    b.type = 'button';
-    b.textContent = '?';
-    b.title = 'New here? — replay the COACH desktop tour';
-    b.setAttribute('aria-label', 'New here? Replay the desktop tour');
-    b.style.cssText = 'position:absolute;top:-6px;right:-6px;width:22px;height:22px;'
-      + 'border-radius:50%;border:1px solid #14f195;background:rgba(5,12,9,.92);'
-      + 'color:#bff7df;font:800 12px/20px ui-monospace,Menlo,monospace;text-align:center;'
-      + 'padding:0;cursor:pointer;z-index:99002;box-shadow:0 0 10px rgba(20,241,149,.55);'
-      + 'pointer-events:auto;transition:filter .12s ease';
-    b.addEventListener('mouseenter', function(){ b.style.filter='drop-shadow(0 0 8px rgba(20,241,149,.9))'; });
-    b.addEventListener('mouseleave', function(){ b.style.filter=''; });
-    b.addEventListener('click', function(e){
-      e.stopPropagation();              // don't also toggle the hub's welcome bubble
-      try {
-        if(window.crFirstRun && typeof window.crFirstRun.reset === 'function') window.crFirstRun.reset();
-        else if(window.crFirstRun && typeof window.crFirstRun.start === 'function') window.crFirstRun.start(true);
-        else if(typeof toast === 'function') toast('Tour unavailable');
-      } catch(_){}
-    });
-    hub.appendChild(b);
-    return true;
-  }
-  function boot(){
-    if(mount()) return;
-    var tries=0, iv=setInterval(function(){ tries++; if(mount() || tries>40) clearInterval(iv); }, 500);
-  }
-  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
-})();
-</script>
-
 </body>
 </html>
