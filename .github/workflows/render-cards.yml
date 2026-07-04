@@ -1,0 +1,43 @@
+name: render-cards
+
+# Proper render path: regenerates og-card.png (and any card PNGs) from their HTML sources.
+# The sandbox can't run Chromium (no sudo/system libs); GitHub's ubuntu runners can.
+# Triggers when a card source changes, or manually. Commits the rendered PNG with [skip ci].
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'chartrunner-prototype/share-card.html'
+      - 'chartrunner-prototype/tools/render-cards.mjs'
+      - 'chartrunner-prototype/cards/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Playwright + Chromium
+        run: |
+          npm i -D playwright
+          npx playwright install --with-deps chromium
+      - name: Render cards
+        run: node chartrunner-prototype/tools/render-cards.mjs
+      - name: Commit rendered cards
+        run: |
+          git config user.name "cr-render-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add chartrunner-prototype/og-card.png chartrunner-prototype/cards 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No card changes to commit."
+          else
+            git commit -m "chore(cards): render card PNGs from source [skip ci]"
+            git push
+          fi
