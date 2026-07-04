@@ -14,7 +14,7 @@
 
   // full canon content per type; value/sub override the live bits
   const T = {
-    general:     { general:true, prompt:'> PRESS PLAY TO RUN THE CHART _', hero:['RIDE THE','CHART.'],
+    general:     { general:true, prompt:'> PRESS PLAY TO RUN THE CHARTS _', hero:['RUN THE','CHARTS.'],
                    sub:'Trade the chart. Upside-down.', foot:'chartrunner.xyz · mobile + desktop', ftype:'GENERAL' },
     pnl:         { chip:'RUN RESULT · PAPER', prompt:'> RUN CLOSED _', lead:['Ride closed','in the green.'],
                    sub:'BTC · 5m · long · held 2h 12m', blabel:'PROFIT / LOSS', value:'+247.5%', size:1, color:'green',
