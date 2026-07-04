@@ -1,16 +1,15 @@
 name: render-cards
 
-# Proper render path: regenerates og-card.png (and any card PNGs) from their HTML sources.
-# The sandbox can't run Chromium (no sudo/system libs); GitHub's ubuntu runners can.
-# Triggers when a card source changes, or manually. Commits the rendered PNG with [skip ci].
+# Render path (no browser): regenerates og-card.png + cards/*.png from the canvas
+# renderer chartrunner-prototype/assets/cr-share-card.js via @napi-rs/canvas.
+# Triggers on card-source changes or manually; commits the PNGs with [skip ci].
 
 on:
   push:
     branches: [main]
     paths:
-      - 'chartrunner-prototype/share-card.html'
-      - '.github/scripts/render-cards.mjs'
-      - 'chartrunner-prototype/cards/**'
+      - 'chartrunner-prototype/assets/cr-share-card.js'
+      - '.github/scripts/render-cards.cjs'
   workflow_dispatch:
 
 permissions:
@@ -24,20 +23,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install Playwright + Chromium
-        run: |
-          npm i -D playwright
-          npx playwright install --with-deps chromium
+      - name: Install renderer
+        run: npm i @napi-rs/canvas @fontsource/archivo-black @fontsource/jetbrains-mono --no-audit --no-fund
       - name: Render cards
-        run: node .github/scripts/render-cards.mjs
+        run: node .github/scripts/render-cards.cjs
       - name: Commit rendered cards
         run: |
           git config user.name "cr-render-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add chartrunner-prototype/og-card.png chartrunner-prototype/cards 2>/dev/null || true
+          git add chartrunner-prototype/og-card.png chartrunner-prototype/cards
           if git diff --cached --quiet; then
             echo "No card changes to commit."
           else
-            git commit -m "chore(cards): render card PNGs from source [skip ci]"
+            git commit -m "chore(cards): render share cards from source [skip ci]"
             git push
           fi
