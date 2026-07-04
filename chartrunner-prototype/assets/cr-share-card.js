@@ -69,7 +69,7 @@
     // nav bar
     ctx.fillStyle=C.navbg; ctx.fillRect(0,0,W,58);
     ctx.textBaseline='middle'; ctx.textAlign='left'; ctx.fillStyle=C.navtx; ctx.font='800 19px '+MONO;
-    let nx=26; for(const it of ['Home','Tutorial','Play','Docs','Roadmap']){ ctx.fillText(it,nx,31); nx+=ctx.measureText(it).width+28; }
+    let nx=26; for(const it of ['Home','Play','Docs','Roadmap']){ ctx.fillText(it,nx,31); nx+=ctx.measureText(it).width+28; }
     // right: ChartRunnerOS + badge
     ctx.textAlign='right'; ctx.fillText('ChartRunnerOS', W-26, 31);
     const osW = ctx.measureText('ChartRunnerOS').width;
