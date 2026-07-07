@@ -14,7 +14,7 @@ require(path.resolve('chartrunner-prototype/assets/cr-share-card.js')); // sets 
 
 const outDir = 'chartrunner-prototype/cards';
 fs.mkdirSync(outDir, { recursive: true });
-const types = ['general', 'pnl', 'racing', 'monster', 'map', 'multiplayer', 'leaderboard', 'alert', 'version'];
+const types = ['general', 'pnl', 'racing', 'monster', 'map', 'multiplayer', 'leaderboard', 'alert', 'version', 'chart'];
 for (const t of types) {
   const c = createCanvas(1200, 630);
   globalThis.CRShareCard.render(c, { type: t });
@@ -26,8 +26,9 @@ globalThis.CRShareCard.render(og, { type: 'general' });
 fs.writeFileSync('chartrunner-prototype/og-card.png', og.toBuffer('image/png'));
 
 // per-type share stubs: /s/<type>.html -> correct og:image for crawlers, redirects humans to /share.html
-const TITLE = { general:'ride the chart', pnl:'run result', racing:'sprint time', monster:'boss down',
-  map:'shared map', multiplayer:'live room', leaderboard:'weekly board', alert:'level hit', version:'runtime update' };
+const TITLE = { general:'ride the chart', pnl:'run result', racing:'race time', monster:'boss down',
+  map:'shared map', multiplayer:'live room', leaderboard:'weekly board', alert:'level hit', version:'runtime update',
+  chart:'live chart' };
 fs.mkdirSync('chartrunner-prototype/s', { recursive: true });
 for (const t of types) {
   const html = `<!doctype html><html lang="en"><head>
