@@ -14,7 +14,7 @@
 
   // full canon content per type; value/sub override the live bits
   const T = {
-    general:     { general:true, prompt:'> PRESS PLAY TO RUN THE CHARTS _', hero:['RUN THE','CHARTS.'],
+    general:     { general:true, prompt:'> PRESS PLAY TO RUN THE CHARTS _', hero:['$RUN THE','CHARTS.'],
                    sub:'Trade the chart. Upside-down.', foot:'chartrunner.xyz · mobile + desktop', ftype:'GENERAL' },
     // v1.0.630 — richer PNL card: tag = SPOT / leverage× / ON-CHAIN (brainstormed set,
     // see docs prompt) rendered as the kind pill; sub now carries entry->exit price
