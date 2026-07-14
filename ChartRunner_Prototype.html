@@ -111,8 +111,37 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.630
-     LAST UPDATED:    2026-07-07  ·  RACING END-CARD + SHARE FIXES (v1.0.630): (1) crRaceStats grid was
+     CURRENT VERSION: v1.0.631
+     LAST UPDATED:    2026-07-14  ·  PLAYER LEVEL 1–10 + WEATHER STATION DELETED (v1.0.631):
+     (A) LEVEL-CAP FIX — crPlayerLevel() capped at 7 (1+floor(claimed/6)) while the PvP gate and the
+     Diamond invader skin both asked for PL10, so PvP could NEVER unlock for anybody. Cap raised to 10
+     and the divisor re-derived from the real campaign length: CAMPAIGN_CHAPTERS has 70 entries (ids
+     0–45, 47–70) and the claim path skips ch.0 + the two noClaim chapters (45, 47) → exactly 67
+     claimable chapters. Nine level-ups over 67 chapters = one rung per 67/9 ≈ 7.44 chapters, and NO
+     integer divisor lands PL10 on the last chapter (/7 maxes 4 chapters early, /8 never reaches 10) —
+     so the formula is the ratio itself: level = 1 + floor(claimed * 9 / 67), clamped 1..10 (0→1, 8→2,
+     15→3, 23→4, 30→5, 38→6, 45→7, 53→8, 60→9, 67→10 — lvl(66)=9, so PL10 lands EXACTLY on the final
+     chapter). CR_CAMPAIGN_CLAIMABLE is the single knob; the ladder rescales if chapters are added. (B) PERMANENT BADGE — the earned level is persisted as a
+     high-water mark (cr_player_level_best_v1) and crPlayerLevel() never returns below it, so a cleared
+     claim store can't demote a player who finished the campaign. (C) PL10 OPENS EVERYTHING —
+     crFeatureLevelOk() short-circuits true when crPlayerMaxed(), so every chapter-gated feature
+     (Activation/Alert lasers, Leverage, Broker tab, Journal) plus PvP is permanently open at PL10;
+     body.cr-pl-max carries the state for the UI. (D) SURFACED — a Player Level bar now sits at the top
+     of the Campaign tab in the Run window (#crPlLevelBar), built from the existing .modeSection divider
+     idiom (so the existing data-cat filter hides it elsewhere): level N/10, a progress meter, chapters
+     claimed, and the next-unlock line — "N more chapters → Level X · finish the campaign to reach PL10
+     and permanently unlock every feature". At PL10 the row goes gold and reads "★ BADGE EARNED · every
+     level gate is open". Painted by _crPaintCampaignStars(). CR_FEATURE_GATE (chapter-keyed) is
+     UNCHANGED — the one-unlock-per-level ladder is proposed for approval, not invented here.
+     (E) WEATHER STATION DELETED (in-game) — the WX app was already hidden on every live surface
+     (flags.weatherStation = !isLiveGameSurface), i.e. dead code. Removed: the #win-weather / .crWx* CSS
+     block, the ASCII-theme [WX] icon + dock glyphs, the live-game hide rule, the weatherStation flag,
+     the dock button, the desktop icon, the whole #win-weather window markup, 'weather' in NEW_PROGS,
+     the openProg guard + refresh branch, and the ChartRunnerWeatherStation IIFE (CR_WEATHER_ASSETS /
+     CR_WEATHER_TIMEFRAMES / crWeatherSnapshot / window.crWeatherStation). The competition-sandbox
+     data-job layer (docs/competition-sandbox/, refresh_competition_weather_payload.cjs, the payload
+     schema) is deliberately UNTOUCHED — that's a separate decision.
+     PREV  ·  RACING END-CARD + SHARE FIXES (v1.0.630): (1) crRaceStats grid was
      1fr 1fr (2-col) with 3 cells (Vehicle/Market/Best), wrapping Best onto its own row — now
      repeat(3,1fr), all three in one row (values shrunk + ellipsis-clipped with a title tooltip so long
      ones like "TRX · 1H" don't blow the cell out). (2) FOUND + FIXED a real bug: the racing "★ Mint
@@ -1152,6 +1181,21 @@ window.crShare = function (o) {
   .modegrid .modeSection .msTitle{font:700 10.5px ui-monospace,Menlo,monospace;letter-spacing:.7px;text-transform:uppercase;color:#bff7df}
   .modegrid .modeSection .msSub{font:500 9.5px ui-monospace,Menlo,monospace;letter-spacing:.5px;color:var(--dim)}
   .modegrid .modeSection .msRange{margin-left:auto;font:600 9px ui-monospace,Menlo,monospace;letter-spacing:.5px;color:var(--dim);padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:rgba(10,15,28,.45)}
+  /* v1.0.631 — Player Level bar. Reuses the .modeSection divider chrome (same row,
+     same type scale) and just adds a thin meter. Green while climbing; the whole
+     row goes gold once PL10 is earned (permanent badge — body.cr-pl-max). */
+  .modegrid .modeSection.cr-plbar{border-bottom-color:rgba(20,241,149,.28);background:rgba(20,241,149,.05);border-radius:8px;padding:8px 10px;margin-bottom:2px}
+  .modegrid .modeSection.cr-plbar .msIcon{color:#14f195;opacity:1}
+  .modegrid .modeSection.cr-plbar .msTitle{color:#bff7df}
+  .modegrid .modeSection .msMeter{margin-left:auto;width:120px;height:5px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden;flex:none}
+  .modegrid .modeSection .msMeter i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#14f195,#7be3f3);transition:width .35s ease}
+  .modegrid .modeSection.cr-plbar .msRange{margin-left:0;color:#bff7df;border-color:rgba(20,241,149,.3)}
+  body.cr-pl-max .modegrid .modeSection.cr-plbar{border-bottom-color:rgba(255,209,102,.45);background:rgba(255,209,102,.07)}
+  body.cr-pl-max .modegrid .modeSection.cr-plbar .msIcon,
+  body.cr-pl-max .modegrid .modeSection.cr-plbar .msTitle,
+  body.cr-pl-max .modegrid .modeSection.cr-plbar .msRange{color:#ffd166}
+  body.cr-pl-max .modegrid .modeSection.cr-plbar .msRange{border-color:rgba(255,209,102,.45)}
+  body.cr-pl-max .modegrid .modeSection.cr-plbar .msMeter i{background:linear-gradient(90deg,#ffd166,#ffb703)}
   /* v0.9.15 — Campaign coach overlay. Top-center floating banner with
      current step, progress dots, Skip + Next. Spotlight ring drawn around
      the targeted HUD element via the .crCoachSpotlit utility class. */
@@ -2374,61 +2418,11 @@ window.crShare = function (o) {
   .brRiskCell.bad .v{color:#ff5b7f}
   .brRiskCell.good .v{color:#14f195}
   .brRiskWhy{margin-top:7px;border-top:1px solid rgba(255,255,255,.08);padding-top:7px;font-size:10.5px;line-height:1.35;color:#cde8f2}
-  /* v1.0.153 — Weather Station app. Competition prep cockpit for Jupiter
-     Perps: one app window that summarizes BTC/ETH/SOL liquidity weather,
-     timeframe heat, catalyst context, and bracket-account posture. */
-  #win-weather .os-wbody{background:#07101b!important;color:#ecffef!important;padding:12px!important}
-  .crWx{font:11px ui-monospace,Menlo,monospace;color:#ecffef;display:flex;flex-direction:column;gap:10px}
-  .crWx *{box-sizing:border-box}
-  .crWxTop{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border:1px solid rgba(126,231,135,.28);background:linear-gradient(180deg,rgba(10,17,29,.98),rgba(7,13,24,.98));border-radius:8px;padding:10px 12px}
-  .crWxK{font-size:9px;letter-spacing:.8px;text-transform:uppercase;color:#7ee787}
-  .crWxTitle{font-size:16px;font-weight:800;line-height:1.25;color:#f1fff3}
-  .crWxSub{font-size:10px;line-height:1.4;color:#91c48c;margin-top:3px}
-  .crWxRounds{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-  .crWxBtn{appearance:none;border:1px solid rgba(126,231,135,.45);background:#0f141e;color:#dfffe3;border-radius:5px;padding:7px 10px;font:800 10px ui-monospace,Menlo,monospace;letter-spacing:.45px;cursor:pointer}
-  .crWxBtn:hover,.crWxBtn.on{border-color:#7ee787;background:rgba(126,231,135,.12);color:#7ee787}
-  .crWxStatus{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-  .crWxStat,.crWxPanel{border:1px solid rgba(126,231,135,.26);background:#0f141e;border-radius:7px;box-shadow:inset 0 0 0 1px rgba(126,231,135,.06)}
-  .crWxStat{padding:8px 9px;min-height:52px}
-  .crWxStat .k,.crWxMiniK{display:block;color:#78a874;font-size:9px;text-transform:uppercase;letter-spacing:.55px;margin-bottom:5px}
-  .crWxStat .v{display:block;color:#ecffef;font-size:13px;font-weight:800;line-height:1.18;font-variant-numeric:tabular-nums}
-  .crWxAssets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-  .crWxAsset{position:relative;border:1px solid rgba(126,231,135,.30);background:#0b1220;border-radius:7px;padding:10px;min-height:112px;overflow:hidden}
-  .crWxAsset::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--wx-accent,#7ee787)}
-  .crWxAsset.hot{--wx-accent:#ffcf5a}
-  .crWxAsset.storm{--wx-accent:#ff5b7f}
-  .crWxAsset.coil{--wx-accent:#7be3f3}
-  .crWxAsset.drift{--wx-accent:#9b8cff}
-  .crWxAsset .sym{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:15px;font-weight:900;color:#fff}
-  .crWxPill{border:1px solid color-mix(in srgb,var(--wx-accent,#7ee787) 62%,transparent);color:var(--wx-accent,#7ee787);border-radius:999px;padding:2px 7px;font-size:9px;text-transform:uppercase;letter-spacing:.45px}
-  .crWxAsset .meta{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:9px}
-  .crWxAsset .m{border:1px solid rgba(126,231,135,.16);background:rgba(255,255,255,.025);border-radius:5px;padding:5px 6px;min-width:0}
-  .crWxAsset .m b{display:block;color:#ecffef;font-size:11px;line-height:1.15;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-  .crWxAsset .m span{display:block;color:#78a874;font-size:8.5px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
-  .crWxMain{display:grid;grid-template-columns:1.1fr .9fr;gap:8px}
-  .crWxBottom{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .crWxPanel{padding:9px 10px;min-height:122px}
-  #win-weather .crWxPanel h4{margin:0 0 8px!important;color:#7ee787!important;font-size:10px!important;text-transform:uppercase;letter-spacing:.7px}
-  .crWxTfLadder{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px}
-  .crWxTf{border:1px solid rgba(126,231,135,.22);background:#080e19;border-radius:5px;padding:6px 4px;text-align:center;min-width:0}
-  .crWxTf .tf{display:block;color:#fff;font-size:10px;font-weight:900;line-height:1.1;overflow-wrap:anywhere}
-  .crWxTf .heat{display:block;color:#7ee787;font-size:9px;margin-top:4px;font-variant-numeric:tabular-nums}
-  .crWxBar{height:4px;border-radius:999px;background:rgba(126,231,135,.16);overflow:hidden;margin-top:5px}
-  .crWxBar i{display:block;height:100%;width:var(--w,50%);background:linear-gradient(90deg,#7ee787,#ffcf5a,#ff5b7f)}
-  .crWxList{display:flex;flex-direction:column;gap:6px}
-  .crWxRow{display:grid;grid-template-columns:minmax(70px,.8fr) minmax(0,1fr) auto;gap:8px;align-items:center;border-bottom:1px solid rgba(126,231,135,.11);padding-bottom:6px;color:#dfffe3}
-  .crWxRow:last-child{border-bottom:0;padding-bottom:0}
-  .crWxRow b{color:#fff;font-size:11px}
-  .crWxRow span{color:#91c48c;min-width:0;overflow-wrap:anywhere}
-  .crWxTag{border:1px solid rgba(255,207,90,.38);color:#ffcf5a;border-radius:4px;padding:2px 5px;font-size:9px;text-transform:uppercase;white-space:nowrap}
-  .crWxTape{display:grid;gap:6px}
-  .crWxTape div{border-left:2px solid #7be3f3;padding-left:8px;color:#dfffe3;line-height:1.35}
-  .crWxReplay{margin-top:8px;color:#91c48c;font-size:10px;line-height:1.45}
-  @media (max-width:900px){
-    .crWxTop,.crWxMain,.crWxBottom{grid-template-columns:1fr;display:grid}
-    .crWxStatus,.crWxAssets{grid-template-columns:1fr}
-    .crWxTfLadder{grid-template-columns:repeat(5,minmax(0,1fr))}
-  }
+  /* v1.0.631 — Weather Station (v1.0.153) DELETED. The WX app was hidden on every
+     live surface since the isLiveGameSurface flag landed, i.e. dead code. Its CSS
+     (#win-weather / .crWx*), icon, dock button, window markup and the
+     ChartRunnerWeatherStation IIFE are all gone. The competition-sandbox
+     data-job layer (docs/competition-sandbox/) is a separate thing and stays. */
   .brPrecise{display:none}
   .brPrecise.on{display:block}
   .brPrecise .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;margin-top:4px}
@@ -3687,7 +3681,6 @@ window.crShare = function (o) {
     letter-spacing:.2px;text-shadow:none}
   .splash[data-theme="ascii"] .os-icon[data-prog="chartrunner"] .ico::before{content:"[RUN]"}
   .splash[data-theme="ascii"] .os-icon[data-prog="terminal"] .ico::before{content:"[TRM]"}
-  .splash[data-theme="ascii"] .os-icon[data-prog="weather"] .ico::before{content:"[WX]"}
   .splash[data-theme="ascii"] .os-icon[data-prog="wallet"] .ico::before{content:"[ID]"}
   .splash[data-theme="ascii"] .os-icon[data-prog="shop"] .ico::before{content:"[$]"}
   .splash[data-theme="ascii"] .os-icon[data-prog="maps"] .ico::before{content:"[MAP]"}
@@ -3798,8 +3791,6 @@ window.crShare = function (o) {
   body[data-os-theme="ascii"] #crOSDockFixed .dockBtn[data-prog="workbench"]::before{content:"WRK"}
   .splash[data-theme="ascii"] .dockBtn[data-prog="terminal"]::before,
   body[data-os-theme="ascii"] #crOSDockFixed .dockBtn[data-prog="terminal"]::before{content:"TRM"}
-  .splash[data-theme="ascii"] .dockBtn[data-prog="weather"]::before,
-  body[data-os-theme="ascii"] #crOSDockFixed .dockBtn[data-prog="weather"]::before{content:"WX"}
   .splash[data-theme="ascii"] .dockBtn[data-prog="wallet"]::before,
   body[data-os-theme="ascii"] #crOSDockFixed .dockBtn[data-prog="wallet"]::before{content:"ID"}
   .splash[data-theme="ascii"] .dockBtn[data-prog="shop"]::before,
@@ -8229,9 +8220,9 @@ window.crShare = function (o) {
 
   /* — Private/local-only apps archived on live /play. Local files stay usable. — */
 	  html[data-cr-live-game="1"]:not([data-cr-labs-bot-terminal="1"]) [data-prog="bot"],
-	  html[data-cr-live-game="1"]:not([data-cr-labs-bot-terminal="1"]) #win-bot,
-  html[data-cr-live-game="1"] [data-prog="weather"],
-  html[data-cr-live-game="1"] #win-weather { display: none !important; }
+	  html[data-cr-live-game="1"]:not([data-cr-labs-bot-terminal="1"]) #win-bot { display: none !important; }
+  /* v1.0.631 — the Weather Station (data-prog="weather" / #win-weather) used to be
+     hidden here on live. The app is deleted outright now, so the rule is gone too. */
 
   /* v1.0.179 — Workbench Bots + Terminal are private/local-only again on
        live /play. The source panes stay intact for local demos, but public
@@ -9925,7 +9916,7 @@ window.crShare = function (o) {
     terminalStrats:   false,
     marketplace:      false,
 	    botTerminal:      !(window.cr && window.cr.isLiveGameSurface && !(window.cr.labs && window.cr.labs.botTerminal)),
-    weatherStation:   !(window.cr && window.cr.isLiveGameSurface),
+    /* v1.0.631 — weatherStation flag removed with the Weather Station app. */
     workbenchStrats:  false,
     workbenchInds:    false,
     workbenchTerm:    true,
@@ -10123,7 +10114,6 @@ window.crShare = function (o) {
   <button class="dockBtn" data-prog="chartrunner" title="Play">↗</button>
   <button class="dockBtn" data-prog="workbench"   title="Workbench">⋔</button>
   <button class="dockBtn" data-prog="terminal"    title="Terminal">⌨</button>
-  <button class="dockBtn" data-prog="weather"     title="Weather Station">WX</button>
   <div class="dockSep"></div>
   <button class="dockBtn" data-prog="wallet"      title="Wallet">▤</button>
   <button class="dockBtn" data-prog="shop"        title="Shop">⊓</button>
@@ -11596,23 +11586,7 @@ window.crShare = function (o) {
           <div class="lbl">Terminal</div>
           <div class="kbd">Trade · Backtest</div>
         </button>
-        <!-- v1.0.153 — Weather Station: competition cockpit for Jupiter Perps.
-             Function-first surface: BTC/ETH/SOL weather cards, timeframe heat,
-             liquidity hotspots, catalyst tape, and account posture handoff. -->
-        <button class="os-icon" data-prog="weather" title="Weather Station — Jupiter Perps liquidity weather cockpit">
-          <div class="ico"><svg class="cr-svg-ico" style="--accent:#7ee787;--accent2:#7be3f3" viewBox="0 0 32 32" aria-hidden="true">
-            <!-- weather station screen with pressure needle and liquidity bands -->
-            <rect class="a" x="4" y="5" width="24" height="18" rx="3" opacity=".18"/>
-            <rect x="4" y="5" width="24" height="18" rx="3" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
-            <path class="l" d="M8 19 q4-7 8-1 t8-3" stroke-width="1.6"/>
-            <path d="M8 12 h5 M19 12 h5 M8 16 h3 M21 16 h3" stroke="var(--accent2)" stroke-width="1.2" opacity=".75"/>
-            <circle class="b" cx="16" cy="14" r="2.3"/>
-            <path class="l" d="M16 14 l5-6" stroke-width="1.5"/>
-            <path d="M10 27 h12 M16 23 v4" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/>
-          </svg></div>
-          <div class="lbl">Weather</div>
-          <div class="kbd">BTC · ETH · SOL</div>
-        </button>
+        <!-- v1.0.631 — Weather Station desktop icon (v1.0.153) deleted with the app. -->
         <button class="os-icon" data-prog="wallet" title="Profile · Wallet — trader name, balances, Phantom (Phase 2)">
           <div class="ico"><svg class="cr-svg-ico" style="--accent:#9b8cff;--accent2:#e879f9" viewBox="0 0 32 32" aria-hidden="true">
             <!-- ID badge with avatar circle -->
@@ -11839,6 +11813,21 @@ window.crShare = function (o) {
                    Tools (1-9) / Primitives (10-19) / Indicators (20-27) /
                    Foundation (28-32). Stars system archived for renumbering. -->
 
+              <!-- v1.0.631 — PLAYER LEVEL bar. Sits at the top of the Campaign tab and
+                   states the deal plainly: the campaign IS the path to PL10, and PL10
+                   opens every level-gated feature (Broker, Journal, Activation/Alert
+                   lasers, Leverage, PvP, Diamond skin) permanently. Same .modeSection
+                   divider idiom as the Act/section headers below (so the existing
+                   data-cat filter hides it off the Campaign tab) — no new visual
+                   language, just an extra progress meter + a next-unlock hint.
+                   Painted by _crPaintCampaignStars(). -->
+              <div class="modeSection cr-plbar" data-cat="campaign" id="crPlLevelBar">
+                <span class="msIcon">★</span>
+                <span class="msTitle">Player Level <span id="crPlLvNum">1</span> / 10</span>
+                <span class="msSub" id="crPlLvSub">· finish the campaign to reach PL10 and unlock every feature</span>
+                <span class="msMeter" aria-hidden="true"><i id="crPlLvFill" style="width:0%"></i></span>
+                <span class="msRange" id="crPlLvCount">0 / 67</span>
+              </div>
               <!-- v1.0.593 — ACT I · READ & CONNECT (merged Act I+II: free charting → wallet edge). -->
               <div class="modeSection cr-act" data-cat="campaign">
                 <span class="msIcon">①</span>
@@ -13306,66 +13295,7 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
         </div>
       </div>
 
-      <!-- v1.0.153 — Weather Station app prototype. Competition-specific
-           cockpit for the Superteam qualifier/final: large caps only, manual
-           execution, risk always visible, and bracket account posture wired
-           through the existing competition bracket API. -->
-      <div class="os-window" id="win-weather" style="width:min(1040px,calc(100% - 60px));max-width:1040px">
-        <div class="os-wbar">
-          <div class="dots"><span class="dot red"></span><span class="dot yel"></span><span class="dot grn"></span></div>
-          <div class="ttl"><svg class="cr-svg-ico ttl-ico" style="--accent:#7ee787;--accent2:#7be3f3" viewBox="0 0 32 32" aria-hidden="true"><rect class="a" x="4" y="5" width="24" height="18" rx="3" opacity=".18"/><rect x="4" y="5" width="24" height="18" rx="3" fill="none" stroke="var(--accent)" stroke-width="1.6"/><path class="l" d="M8 19 q4-7 8-1 t8-3" stroke-width="1.6"/><path d="M8 12 h5 M19 12 h5 M8 16 h3 M21 16 h3" stroke="var(--accent2)" stroke-width="1.2" opacity=".75"/><circle class="b" cx="16" cy="14" r="2.3"/><path class="l" d="M16 14 l5-6" stroke-width="1.5"/><path d="M10 27 h12 M16 23 v4" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/></svg>Weather Station</div>
-          <div class="spacer"></div>
-          <button class="wclose" data-close>Close</button>
-        </div>
-        <div class="os-wbody">
-          <div class="crWx" id="crWxStation">
-            <div class="crWxTop">
-              <div>
-                <div class="crWxK">Jupiter Perps · Competition Weather</div>
-                <div class="crWxTitle">BTC / ETH / SOL liquidity station</div>
-                <div class="crWxSub">Offline prototype feed · designed for the 16:00 Berlin qualifier and 30m final handoff.</div>
-              </div>
-              <div class="crWxRounds" aria-label="Competition account mode">
-                <button class="crWxBtn on" data-wx-account="100" type="button">QUALIFIER $100</button>
-                <button class="crWxBtn" data-wx-account="1000" type="button">FINAL $1000</button>
-                <button class="crWxBtn" id="crWxRefresh" type="button">REFRESH</button>
-              </div>
-            </div>
-
-            <div class="crWxStatus">
-              <div class="crWxStat"><span class="k">Refresh</span><span class="v" id="crWxClock">--:--:--</span></div>
-              <div class="crWxStat"><span class="k">Round</span><span class="v" id="crWxRound">Qualifier · $100</span></div>
-              <div class="crWxStat"><span class="k">Venue</span><span class="v">Jupiter Perps</span></div>
-              <div class="crWxStat"><span class="k">Mandate</span><span class="v">Manual trade</span></div>
-            </div>
-
-            <div class="crWxAssets" id="crWxAssets" aria-label="BTC ETH SOL weather cards"></div>
-
-            <div class="crWxMain">
-              <section class="crWxPanel">
-                <h4>Timeframe Ladder</h4>
-                <div class="crWxTfLadder" id="crWxTfLadder" aria-label="Daily 4h 15m 5m 3m 1m 30s 5s 3s 1s ladder"></div>
-                <div class="crWxReplay" id="crWxReplay">Context replay: Daily -> 4h -> 15m -> 5m -> 3m -> 1m -> 30s -> 5s -> 3s -> 1s.</div>
-              </section>
-              <section class="crWxPanel">
-                <h4>Liquidity Hotspots</h4>
-                <div class="crWxList" id="crWxHotspots"></div>
-              </section>
-            </div>
-
-            <div class="crWxBottom">
-              <section class="crWxPanel">
-                <h4>Catalyst Tape</h4>
-                <div class="crWxTape" id="crWxContext"></div>
-              </section>
-              <section class="crWxPanel">
-                <h4>Execution Queue</h4>
-                <div class="crWxList" id="crWxQueue"></div>
-              </section>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- v1.0.631 — Weather Station window (#win-weather, v1.0.153) deleted with the app. -->
 
       <!-- v0.8M#6 — Terminal app: Darkflow Engine-style trading console.
            Dense multi-pane neon dashboard. All panes pull live from the
@@ -14798,7 +14728,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.630",
+  VERSION: "1.0.631",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -33455,15 +33385,64 @@ try { window.crVehicleUnlocked = crVehicleUnlocked; } catch(_){}
 // ── Campaign chapters + Player Level (PL 1–10) ──────────────────────────────
 // Design: docs/architecture/2026-06-22-player-level-system-and-tokenomics.md
 // Features gate on COMPLETING specific campaign chapters; PL 1–10 is the (soon
-// on-chain) per-wallet rank. First 42 chapters → PL7; PL10 → Diamond skin.
+// on-chain) per-wallet rank. Finishing the campaign IS the path to PL10.
+//
+// v1.0.631 — CAP RAISED 7 → 10 (Julian's spec). The old cap was 7 with a /6
+// divisor, while the PvP gate (and the Diamond skin) asked for PL10 — so PvP
+// could NEVER unlock for anybody. Arithmetic behind the new formula:
+//   CAMPAIGN_CHAPTERS has 70 entries (ids 0–45, 47–70; 46 was deleted in v1.0.585).
+//   The claim path (advance()) skips ch.0 AND any `noClaim` chapter (45, 47),
+//   so exactly 70 − 1 − 2 = 67 chapters can ever land in cr_campaign_claimed_v1.
+//   We want PL1 at 0 claimed and PL10 exactly on the 67th — i.e. 9 level-ups
+//   over 67 chapters → one rung every 67/9 ≈ 7.44 chapters. NO integer divisor
+//   hits that: /7 tops out at PL10 four chapters early (1+floor(63/7)=10) and /8
+//   never reaches PL10 at all (1+floor(67/8)=9). So the divisor is expressed as
+//   the ratio itself: level = 1 + floor(claimed * 9 / 67), clamped to 1..10.
+//   Sanity: 0→1, 8→2, 15→3, 23→4, 30→5, 38→6, 45→7, 53→8, 60→9, 67→10 — and
+//   lvl(66) = 9, so PL10 lands EXACTLY on the final chapter. ✔
+//   CR_CAMPAIGN_CLAIMABLE is the single knob — if chapters are added/removed the
+//   ladder rescales automatically and PL10 still lands on the last one.
+const CR_LEVEL_MAX = 10;
+const CR_CAMPAIGN_CLAIMABLE = 67;   // claimable chapters (ch.0 + noClaim 45/47 excluded)
 function _crClaimedChapters(){ try { return JSON.parse(localStorage.getItem('cr_campaign_claimed_v1') || '{}') || {}; } catch(_){ return {}; } }
 function crChapterDone(n){ try { return !!_crClaimedChapters()[n]; } catch(_){ return false; } }
-function crPlayerLevel(){ try { var c = Object.keys(_crClaimedChapters()).length; return Math.max(1, Math.min(7, 1 + Math.floor(c / 6))); } catch(_){ return 1; } }
+function crClaimedCount(){ try { return Object.keys(_crClaimedChapters()).length; } catch(_){ return 0; } }
+// Raw level straight from campaign progress (no badge floor).
+function _crPlayerLevelRaw(){
+  try {
+    var c = crClaimedCount();
+    var lv = 1 + Math.floor(c * (CR_LEVEL_MAX - 1) / CR_CAMPAIGN_CLAIMABLE);
+    return Math.max(1, Math.min(CR_LEVEL_MAX, lv));
+  } catch(_){ return 1; }
+}
+// v1.0.631 — PERMANENT BADGE: once a level is earned it never regresses. The
+// high-water mark is persisted, so a cleared/partial claim store (or a future
+// chapter re-key) can't demote a player who already finished the campaign.
+function crPlayerLevel(){
+  try {
+    var lv = _crPlayerLevelRaw(), best = 0;
+    try { best = parseInt(localStorage.getItem('cr_player_level_best_v1') || '0', 10) || 0; } catch(_){}
+    if(lv > best){ best = lv; try { localStorage.setItem('cr_player_level_best_v1', String(best)); } catch(_){} }
+    return Math.max(1, Math.min(CR_LEVEL_MAX, Math.max(lv, best)));
+  } catch(_){ return 1; }
+}
+// PL10 = campaign complete. The level becomes a permanent badge and EVERY level
+// gate opens — the player has access to all features from here on.
+function crPlayerMaxed(){ try { return crPlayerLevel() >= CR_LEVEL_MAX; } catch(_){ return false; } }
+// Chapters still owed before the next rung (0 when maxed).
+function crChaptersToNextLevel(){
+  try {
+    if(crPlayerMaxed()) return 0;
+    var lv = _crPlayerLevelRaw();
+    var need = Math.ceil(lv * CR_CAMPAIGN_CLAIMABLE / (CR_LEVEL_MAX - 1));   // claimed count that first yields lv+1
+    return Math.max(1, need - crClaimedCount());
+  } catch(_){ return 0; }
+}
 // Feature → required completed campaign chapter (Julian's spec; tune freely).
 const CR_FEATURE_GATE = { activation:40, leverage:40, broker:40, laser3:40, alarm:41, laser4:41, journal:41 };
 function crFeatureUnlockLv(feat){ try { return CR_FEATURE_GATE[feat] || 0; } catch(_){ return 0; } }
-function crFeatureLevelOk(feat){ try { var ch = CR_FEATURE_GATE[feat]; if(ch == null) return true; if(crChapterDone(ch)) return true; if(typeof game !== 'undefined' && game.campaignChapter === ch) return true; /* v1.0.466 — playable during its own teaching chapter */ return false; } catch(_){ return false; } }
-try { window.crPlayerLevel = crPlayerLevel; window.crChapterDone = crChapterDone; window.crFeatureLevelOk = crFeatureLevelOk; window.crFeatureUnlockLv = crFeatureUnlockLv; } catch(_){}
+function crFeatureLevelOk(feat){ try { if(crPlayerMaxed()) return true; /* v1.0.631 — PL10 opens every gate, permanently */ var ch = CR_FEATURE_GATE[feat]; if(ch == null) return true; if(crChapterDone(ch)) return true; if(typeof game !== 'undefined' && game.campaignChapter === ch) return true; /* v1.0.466 — playable during its own teaching chapter */ return false; } catch(_){ return false; } }
+try { window.crPlayerLevel = crPlayerLevel; window.crPlayerMaxed = crPlayerMaxed; window.crClaimedCount = crClaimedCount; window.crChaptersToNextLevel = crChaptersToNextLevel; window.crChapterDone = crChapterDone; window.crFeatureLevelOk = crFeatureLevelOk; window.crFeatureUnlockLv = crFeatureUnlockLv; window.CR_LEVEL_MAX = CR_LEVEL_MAX; window.CR_CAMPAIGN_CLAIMABLE = CR_CAMPAIGN_CLAIMABLE; } catch(_){}
 // Apply chapter-based gates to the Broker profile tab (ch.40) + Journal dock (ch.41)
 // by toggling body classes the CSS keys on. Cheap; re-runs to track campaign progress.
 function crApplyLevelGates(){
@@ -33472,7 +33451,10 @@ function crApplyLevelGates(){
     b.classList.toggle('cr-lock-broker',  !(typeof crFeatureLevelOk === 'function' && crFeatureLevelOk('broker')));
     b.classList.toggle('cr-lock-journal', !(typeof crFeatureLevelOk === 'function' && crFeatureLevelOk('journal')));
     // v1.0.469 — PvP archived until Player Level 10.
-    b.classList.toggle('cr-lock-pvp', !((typeof crPlayerLevel === 'function') && crPlayerLevel() >= 10));
+    // v1.0.631 — PL10 is now actually REACHABLE (cap was 7, so this never opened).
+    b.classList.toggle('cr-lock-pvp', !((typeof crPlayerMaxed === 'function') && crPlayerMaxed()));
+    // v1.0.631 — campaign complete: badge state for the UI (level bar, PvP copy).
+    b.classList.toggle('cr-pl-max', !!((typeof crPlayerMaxed === 'function') && crPlayerMaxed()));
     // v1.0.466 — campaign chapters lock the chart to the chapter's asset + timeframe.
     // Asset is never taught, so it's always locked in a chapter; timeframe is locked
     // except in ch.38 (Multi-Timeframe Analysis), which teaches switching.
@@ -36085,7 +36067,8 @@ const l3 = { toggle(){}, open(){}, close(){}, isOpen(){ return false; } };
  *   chart location regardless of each viewer's pan/zoom.
  *
  * Relay: docs/architecture/M-MP-relay-protocol-ops.md. Endpoint is the deployed
- *   Tailscale-Funnel wss host; override for dev via localStorage.cr_relay_url
+ *   Cloudflare-Tunnel wss host (relay.chartrunner.xyz → 127.0.0.1:8474);
+ *   override for dev via localStorage.cr_relay_url
  *   (e.g. "ws://127.0.0.1:8474"). Schema: docs/architecture/M-MP-roomid-schema.md.
  * =======================================================================*/
 window.crRoom = (function(){
@@ -45071,7 +45054,7 @@ window.crLaunchMinigameRandom = crLaunchMinigameRandom;
           const claimed = JSON.parse(localStorage.getItem(claimedKey) || '{}') || {};
           // v1.0.577 — Ch.0 (Trading Desk) + v1.0.587 noClaim basics (Move/Drag) are free
           // intros: they must NOT be recorded as claimed chapters, or they inflate
-          // crPlayerLevel (1+floor(n/6)) and give $RUN. Still show confetti + endcard below.
+          // crPlayerLevel (v1.0.631: 1+floor(n*9/67), cap 10) and give $RUN. Still show confetti + endcard below.
           if(chapter !== 0 && !(CAMPAIGN_CHAPTERS[chapter] && CAMPAIGN_CHAPTERS[chapter].noClaim) && !claimed[chapter]){
             claimed[chapter] = Date.now();
             localStorage.setItem(claimedKey, JSON.stringify(claimed));
@@ -45815,8 +45798,37 @@ window.crLaunchMinigameRandom = crLaunchMinigameRandom;
         // NEW ribbon until the player launches it (cleared in _launchCampaignChapterCore).
         try { var _nbc = JSON.parse(localStorage.getItem('cr_new_bot_chapters_v1') || '[]') || []; card.classList.toggle('crChNew', _nbc.indexOf(i) >= 0); } catch(_){}
       }
+      _crPaintPlayerLevelBar();
     } catch(_){}
   }
+  // v1.0.631 — paint the Player Level bar at the top of the Campaign tab. The
+  // campaign is the ONLY path to PL10, and PL10 permanently opens every level
+  // gate — so say that, right where the chapters are.
+  function _crPaintPlayerLevelBar(){
+    try {
+      var bar = document.getElementById('crPlLevelBar'); if(!bar) return;
+      var max  = Number(window.CR_LEVEL_MAX) || 10;
+      var tot  = Number(window.CR_CAMPAIGN_CLAIMABLE) || 67;
+      var lv   = (typeof window.crPlayerLevel === 'function') ? window.crPlayerLevel() : 1;
+      var done = (typeof window.crClaimedCount === 'function') ? window.crClaimedCount() : 0;
+      var maxed = (typeof window.crPlayerMaxed === 'function') && window.crPlayerMaxed();
+      var nEl = document.getElementById('crPlLvNum');   if(nEl) nEl.textContent = String(lv);
+      var cEl = document.getElementById('crPlLvCount'); if(cEl) cEl.textContent = maxed ? '★ BADGE EARNED' : (done + ' / ' + tot + ' chapters');
+      var fEl = document.getElementById('crPlLvFill');  if(fEl) fEl.style.width = Math.max(0, Math.min(100, Math.round(done / tot * 100))) + '%';
+      var sEl = document.getElementById('crPlLvSub');
+      if(sEl){
+        if(maxed){
+          sEl.textContent = '· campaign complete — PL10 is a permanent badge · every level gate is open (Broker · Journal · Lasers · Leverage · PvP)';
+        } else {
+          var need = (typeof window.crChaptersToNextLevel === 'function') ? window.crChaptersToNextLevel() : 0;
+          sEl.textContent = '· ' + need + ' more chapter' + (need === 1 ? '' : 's') + ' → Level ' + (lv + 1)
+                          + ' · finish the campaign to reach PL' + max + ' and permanently unlock every feature';
+        }
+      }
+      bar.classList.toggle('cr-plbar-max', maxed);
+    } catch(_){}
+  }
+  try { window._crPaintPlayerLevelBar = _crPaintPlayerLevelBar; } catch(_){}
   _crPaintCampaignStars();
   // Re-paint on splash show (covers the post-chapter return path).
   try { window._crPaintCampaignStars = _crPaintCampaignStars; } catch(_){}
@@ -70207,7 +70219,7 @@ function log(msg){
     try { connected = (typeof window.crConnected === 'function') ? !!window.crConnected() : true; } catch(_){ connected = true; }
     const phase = connected ? 'connected' : 'guest';
     // v1.0.545 — optional `minLevel` gates a slide behind the player level
-    // (crPlayerLevel 1–7); below that level the slide is hidden entirely.
+    // (crPlayerLevel 1–10); below that level the slide is hidden entirely.
     let lvl = 1; try { lvl = (typeof window.crPlayerLevel === 'function') ? (window.crPlayerLevel() || 1) : 1; } catch(_){ lvl = 1; }
     return raw.filter(s => !s.archived && (!s.phase || s.phase === 'both' || s.phase === phase) && (!s.minLevel || lvl >= s.minLevel));
   }
@@ -70528,7 +70540,7 @@ function log(msg){
   // List of all known program ids — original 6 + new 6.
   // Note: window.OS_PROGRAMS already exists from the v0.7b block; we
   // extend it in-place so the original close/refresh helpers still work.
-  const NEW_PROGS = ['chartrunner','missions','l3coach','wallet','sdk','mail','terminal','weather','maps','brokerconnect'];
+  const NEW_PROGS = ['chartrunner','missions','l3coach','wallet','sdk','mail','terminal','maps','brokerconnect'];   // v1.0.631 — 'weather' removed (app deleted)
   try{
     if(typeof OS_PROGRAMS !== 'undefined' && Array.isArray(OS_PROGRAMS)){
       NEW_PROGS.forEach(p => { if(!OS_PROGRAMS.includes(p)) OS_PROGRAMS.push(p); });
@@ -70554,7 +70566,7 @@ function log(msg){
   function isArchivedProgram(prog){
     if(!(window.cr && window.cr.flags)) return false;
     if(prog === 'bot') return window.cr.flags.botTerminal === false;
-    if(prog === 'weather') return window.cr.flags.weatherStation === false;
+    // v1.0.631 — the 'weather' guard is gone with the Weather Station app.
     return false;
   }
   function closeArchivedProgram(prog){
@@ -70802,7 +70814,6 @@ function log(msg){
     else if(prog === 'wallet')   refreshWallet();
     else if(prog === 'mail')     refreshMail();
     else if(prog === 'terminal') refreshTerminal();
-    else if(prog === 'weather'){ try { if(window.crWeatherStation && typeof window.crWeatherStation.refresh === 'function') window.crWeatherStation.refresh(); } catch(_){} }
     else if(prog === 'intel')    refreshIntelDesktop();
     // v0.8N#4 — Audit fix: shop/profile windows had no refresh hook
     else if(prog === 'shop'){ try{ if(typeof osRefreshShop === 'function') osRefreshShop(); }catch{} }
@@ -71512,198 +71523,9 @@ function log(msg){
   syncDock();
 })();
 
-/* =========================================================================
- * v1.0.153 — Weather Station app prototype
- * =========================================================================
- * Read-only competition cockpit for Jupiter Perps prep. The first version is
- * deterministic/offline: it renders the exact surface we will hydrate with
- * live feeds and backtest snapshots, while keeping trade placement on the
- * existing SDK/bracket path.
- * =======================================================================*/
-(function ChartRunnerWeatherStation(){
-  const CR_WEATHER_ASSETS = ['BTC','ETH','SOL'];
-  const CR_WEATHER_TIMEFRAMES = ['1D','4H','15M','5M','3M','1M','30S','5S','3S','1S'];
-  const CR_WEATHER_BASE = {
-    BTC: { price: 106400, vol: 0.72, bias: 0.18 },
-    ETH: { price: 3940,   vol: 0.88, bias: -0.08 },
-    SOL: { price: 168,    vol: 1.18, bias: 0.28 },
-  };
-  const state = { account: 100, snapshots: [], last: null };
-
-  function esc(v){
-    return String(v == null ? '' : v).replace(/[<>&"]/g, ch => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;', '"':'&quot;' }[ch]));
-  }
-  function fmtPct(v){ return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'; }
-  function displayTf(tf){
-    if(tf === '1D') return 'Daily';
-    return tf.toLowerCase();
-  }
-  function activeAsset(){
-    try {
-      if(typeof currentAsset !== 'undefined') return String(currentAsset || 'BTC').toUpperCase().replace(/USDT$/,'').slice(0, 3);
-    } catch(_){}
-    return 'BTC';
-  }
-  function activeTf(){
-    try {
-      if(typeof timeframe !== 'undefined') return String(timeframe || '15m');
-    } catch(_){}
-    return '15m';
-  }
-  function candleStats(sym){
-    try {
-      if(activeAsset() !== sym) return null;
-      if(typeof candles === 'undefined' || !Array.isArray(candles) || candles.length < 8) return null;
-      const rows = candles.slice(-40).filter(Boolean);
-      if(rows.length < 8) return null;
-      const first = Number(rows[0].close || rows[0].c || rows[0].open || rows[0].o);
-      const last = Number(rows[rows.length - 1].close || rows[rows.length - 1].c || rows[rows.length - 1].open || rows[rows.length - 1].o);
-      let hi = -Infinity, lo = Infinity;
-      rows.forEach(c => {
-        hi = Math.max(hi, Number(c.high || c.h || c.close || c.c || 0));
-        lo = Math.min(lo, Number(c.low || c.l || c.close || c.c || Infinity));
-      });
-      if(!Number.isFinite(first) || !Number.isFinite(last) || !Number.isFinite(hi) || !Number.isFinite(lo) || last <= 0) return null;
-      return { price:last, change:((last - first) / first) * 100, range:((hi - lo) / last) * 100 };
-    } catch(_){ return null; }
-  }
-  function assetWeather(sym, idx){
-    const now = Date.now();
-    const base = CR_WEATHER_BASE[sym] || CR_WEATHER_BASE.BTC;
-    const c = candleStats(sym);
-    const phase = Math.sin((now / 65000) + idx * 1.7);
-    const price = c ? c.price : base.price * (1 + phase * 0.0009);
-    const change = c ? c.change : (base.bias + phase * base.vol * 0.42);
-    const range = c ? c.range : Math.max(0.18, base.vol + Math.abs(phase) * 0.65 + idx * 0.06);
-    const heat = Math.max(8, Math.min(99, Math.round(24 + range * 34 + Math.abs(change) * 28 + (sym === 'SOL' ? 8 : 0))));
-    const className = heat >= 78 ? 'storm' : heat >= 58 ? 'hot' : Math.abs(change) >= 0.25 ? 'drift' : 'coil';
-    const regime = className === 'storm' ? 'storm' : className === 'hot' ? 'hot' : className === 'drift' ? 'drift' : 'coil';
-    const side = change > 0.16 ? 'LONG bias' : change < -0.16 ? 'SHORT bias' : 'FADE edges';
-    const hotspot = heat >= 70 ? 'liq sweep' : range >= 0.9 ? 'VWAP band' : 'range edge';
-    return { symbol:sym, price, change, range, heat, regime, side, hotspot };
-  }
-  function timeframeHeat(tf, idx, leaderHeat){
-    const fastBoost = idx >= 6 ? 10 + (idx - 6) * 4 : 0;
-    const prepDrag = idx <= 1 ? -8 : 0;
-    const heat = Math.max(5, Math.min(99, Math.round(leaderHeat * (0.78 + idx * 0.025) + fastBoost + prepDrag)));
-    const note = idx <= 1 ? 'prepared' : idx <= 5 ? 'trade map' : 'live render';
-    return { tf, label: displayTf(tf), heat, note };
-  }
-  function crWeatherSnapshot(){
-    const assets = CR_WEATHER_ASSETS.map(assetWeather).sort((a, b) => b.heat - a.heat);
-    const leader = assets[0] || assetWeather('BTC', 0);
-    const timeframes = CR_WEATHER_TIMEFRAMES.slice();
-    const timeframeRows = CR_WEATHER_TIMEFRAMES.map((tf, idx) => timeframeHeat(tf, idx, leader.heat));
-    const now = new Date();
-    return {
-      t: now.toISOString(),
-      account: state.account,
-      activeAsset: activeAsset(),
-      activeTf: activeTf(),
-      assets,
-      timeframes,
-      timeframeRows,
-      hotspots: assets.map((a, idx) => ({
-        asset: a.symbol,
-        trigger: idx === 0 ? a.hotspot + ' first' : a.hotspot,
-        note: a.side + ' · heat ' + a.heat,
-        tag: a.regime,
-      })),
-      context: [
-        '16:00 Berlin qualifier, then final around 17:00: weekend books can thin out fast.',
-        'News / Polymarket / X / funding feed slot: hydrate here before the Saturday execution test.',
-        'Watch oracle gap + JLP imbalance before sizing; bracket deck owns account-loss math.',
-      ],
-      queue: [
-        { asset: leader.symbol, rule: leader.side + ' only after 1m/30s agree', tag: 'primary' },
-        { asset: 'BTC', rule: 'Use as market beta anchor before chasing SOL', tag: 'anchor' },
-        { asset: 'ALL', rule: 'If no edge: min-volume bracket, tight max loss, reset scan', tag: 'fallback' },
-      ]
-    };
-  }
-  function paint(host, html){
-    if(!host) return;
-    if(typeof crSafeHTML === 'function') crSafeHTML(host, html);
-    else host.innerHTML = html;
-  }
-  function render(snapshot){
-    snapshot = snapshot || state.last || crWeatherSnapshot();
-    const setText = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
-    const d = new Date(snapshot.t);
-    setText('crWxClock', d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' }));
-    setText('crWxRound', (snapshot.account >= 1000 ? 'Final' : 'Qualifier') + ' · $' + snapshot.account);
-    paint(document.getElementById('crWxAssets'), snapshot.assets.map(a => (
-      '<article class="crWxAsset ' + esc(a.regime) + '">'
-      + '<div class="sym"><span>' + esc(a.symbol) + '</span><span class="crWxPill">' + esc(a.regime) + '</span></div>'
-      + '<div class="meta">'
-      + '<div class="m"><span>Price</span><b>$' + esc(a.price.toLocaleString(undefined, { maximumFractionDigits:a.price > 1000 ? 0 : 2 })) + '</b></div>'
-      + '<div class="m"><span>Delta</span><b>' + esc(fmtPct(a.change)) + '</b></div>'
-      + '<div class="m"><span>Range</span><b>' + esc(a.range.toFixed(2)) + '%</b></div>'
-      + '<div class="m"><span>Heat</span><b>' + esc(a.heat) + '/99</b></div>'
-      + '</div>'
-      + '<div class="crWxReplay"><span class="crWxMiniK">Read</span>' + esc(a.side + ' · ' + a.hotspot) + '</div>'
-      + '</article>'
-    )).join(''));
-    paint(document.getElementById('crWxTfLadder'), snapshot.timeframeRows.map(tf => (
-      '<div class="crWxTf"><span class="tf">' + esc(tf.label) + '</span><span class="heat">' + esc(tf.heat) + '</span><div class="crWxBar"><i style="--w:' + esc(tf.heat) + '%"></i></div><span class="crWxMiniK">' + esc(tf.note) + '</span></div>'
-    )).join(''));
-    setText('crWxReplay', 'Context replay: Daily -> 4h -> 15m -> 5m -> 3m -> 1m -> 30s -> 5s -> 3s -> 1s · snapshots stored: ' + state.snapshots.length + '.');
-    paint(document.getElementById('crWxHotspots'), snapshot.hotspots.map(h => (
-      '<div class="crWxRow"><b>' + esc(h.asset) + '</b><span>' + esc(h.trigger + ' · ' + h.note) + '</span><i class="crWxTag">' + esc(h.tag) + '</i></div>'
-    )).join(''));
-    paint(document.getElementById('crWxContext'), snapshot.context.map(line => '<div>' + esc(line) + '</div>').join(''));
-    paint(document.getElementById('crWxQueue'), snapshot.queue.map(q => (
-      '<div class="crWxRow"><b>' + esc(q.asset) + '</b><span>' + esc(q.rule) + '</span><i class="crWxTag">' + esc(q.tag) + '</i></div>'
-    )).join(''));
-  }
-  function refresh(){
-    const snap = crWeatherSnapshot();
-    state.last = snap;
-    state.snapshots.push(snap);
-    if(state.snapshots.length > 120) state.snapshots.shift();
-    render(snap);
-    return snap;
-  }
-  function setAccount(value){
-    const account = Math.max(1, Number(value) || 100);
-    state.account = account;
-    document.querySelectorAll('[data-wx-account]').forEach(btn => {
-      btn.classList.toggle('on', Number(btn.getAttribute('data-wx-account')) === account);
-    });
-    try { if(window.crCompetitionBracket && typeof window.crCompetitionBracket.setAccount === 'function') window.crCompetitionBracket.setAccount(account); } catch(_){}
-    refresh();
-    return account;
-  }
-  function boot(){
-    document.querySelectorAll('[data-wx-account]').forEach(btn => {
-      if(btn._crWxWired) return;
-      btn._crWxWired = true;
-      btn.addEventListener('click', () => setAccount(btn.getAttribute('data-wx-account')));
-    });
-    const refreshBtn = document.getElementById('crWxRefresh');
-    if(refreshBtn && !refreshBtn._crWxWired){
-      refreshBtn._crWxWired = true;
-      refreshBtn.addEventListener('click', refresh);
-    }
-    refresh();
-    setInterval(() => {
-      const win = document.getElementById('win-weather');
-      if(win && win.classList.contains('on')) refresh();
-    }, 5000);
-  }
-
-  window.crWeatherStation = {
-    state,
-    snapshot: crWeatherSnapshot,
-    refresh,
-    render,
-    setAccount,
-    history(){ return state.snapshots.slice(); }
-  };
-  window.crWeatherSnapshot = crWeatherSnapshot;
-  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
-})();
+/* v1.0.631 — the ChartRunnerWeatherStation IIFE (v1.0.153) is deleted with the app:
+   CR_WEATHER_ASSETS / CR_WEATHER_TIMEFRAMES / crWeatherSnapshot() / window.crWeatherStation.
+   The competition-sandbox weather-payload data job is separate and untouched. */
 
 /* =========================================================================
  * v0.8L#3 — TradingView-style chrome integration with ChartRunnerOS
