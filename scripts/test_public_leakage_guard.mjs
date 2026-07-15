@@ -66,26 +66,40 @@ function cleanup(root) {
 }
 
 {
+  // crAgentBridgeUrl reclassified PUBLIC 2026-07-15 — a public connectivity knob, now allowed.
   const root = makeRepo({
-    'docs/leak.md': 'Do not let crAgentBridgeUrl return to public docs.\n',
+    'docs/pub.md': 'crAgentBridgeUrl / crAgentEventsUrl are public agent-bridge connectivity knobs.\n',
   });
   try {
     const result = runLeakageCheck(root);
-    assert.equal(result.ok, false);
-    assert.match(result.messages.join('\n'), /crAgentBridgeUrl/);
+    assert.equal(result.ok, true, result.messages.join('\n'));
   } finally {
     cleanup(root);
   }
 }
 
 {
+  // QVAC is a PUBLIC bring-your-own-local-AI adapter 2026-07-15 — now allowed.
   const root = makeRepo({
-    'docs/leak.md': 'Do not let window.crQvac.ask() return to public docs.\n',
+    'docs/pub.md': 'window.crQvac.ask() routes through the public QVAC local-AI adapter.\n',
+  });
+  try {
+    const result = runLeakageCheck(root);
+    assert.equal(result.ok, true, result.messages.join('\n'));
+  } finally {
+    cleanup(root);
+  }
+}
+
+{
+  // New rule: nothing public may point at private home-server infra (umbrel / tail879ec / *.ts.net).
+  const root = makeRepo({
+    'docs/leak.md': 'Dev host reachable at dev.tail879ec.ts.net stays private.\n',
   });
   try {
     const result = runLeakageCheck(root);
     assert.equal(result.ok, false);
-    assert.match(result.messages.join('\n'), /crQvac/);
+    assert.match(result.messages.join('\n'), /tail879ec|\.ts\.net/);
   } finally {
     cleanup(root);
   }
@@ -105,13 +119,27 @@ function cleanup(root) {
 }
 
 {
+  // Bare Hermes / OpenClaw / Lobster personas are PUBLIC harness agents 2026-07-15 — allowed.
   const root = makeRepo({
-    'docs/leak.md': 'Hermes execution router stays private.\n',
+    'docs/pub.md': 'Agent personas: Claude, Telegram, Lobster, OpenClaw, Hermes answer in-character.\n',
+  });
+  try {
+    const result = runLeakageCheck(root);
+    assert.equal(result.ok, true, result.messages.join('\n'));
+  } finally {
+    cleanup(root);
+  }
+}
+
+{
+  // ...but a Hermes line that points at private home-server infra is still forbidden.
+  const root = makeRepo({
+    'docs/leak.md': 'Hermes routing pinned to an umbrel.local box stays private.\n',
   });
   try {
     const result = runLeakageCheck(root);
     assert.equal(result.ok, false);
-    assert.match(result.messages.join('\n'), /Hermes/);
+    assert.match(result.messages.join('\n'), /umbrel/);
   } finally {
     cleanup(root);
   }
@@ -133,13 +161,13 @@ function cleanup(root) {
 }
 
 {
+  // 0xLobster is a PUBLIC persona byline 2026-07-15 — now allowed in public docs.
   const root = makeRepo({
-    'docs/leak.md': 'Do not let 0xLobster persona details return to public docs.\n',
+    'docs/pub.md': 'Marketplace bot listed "by 0xLobster" — public persona byline.\n',
   });
   try {
     const result = runLeakageCheck(root);
-    assert.equal(result.ok, false);
-    assert.match(result.messages.join('\n'), /0xLobster/);
+    assert.equal(result.ok, true, result.messages.join('\n'));
   } finally {
     cleanup(root);
   }

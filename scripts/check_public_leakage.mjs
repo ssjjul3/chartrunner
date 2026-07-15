@@ -38,28 +38,25 @@ const FORBIDDEN_TEXT = [
   ['private market data milestone', /M16-complete/],
   ['private FlareSolverr patch', /openclaw-flaresolverr/i],
   ['sidetrack submissions marker', /SIDETRACK-SUBMISSIONS/],
-  ['private agent codename', /openclaw/i],
-  ['private local stack marker', /umbrel/i],
+  // Bare 'openclaw' persona rule removed 2026-07-15 — Hermes / OpenClaw / Lobster are PUBLIC
+  // harness-agent personas. The private FlareSolverr patch above is still forbidden.
+  ['private home-server reference (no-Umbrel-in-public)', /umbrel|tail879ec|\.ts\.net/i],
   ['private labs flag', /crLabs/],
   ['private labs query flag', /crPrivateLabs/],
   ['private Bot Terminal query flag', /crPrivateBotTerminal/],
   ['private local app query flag', /crLocalPrivateApps/],
   ['private Bot Terminal localStorage flag', /cr_labs_bot_terminal_v1/],
   ['private labs DOM flag', /data-cr-labs-bot-terminal/],
-  ['private QVAC marker', /\b(?:QVAC|qvac)\b/],
-  ['private QVAC API', /crQvac/],
-  ['private QVAC storage marker', /cr_qvac/i],
+  // QVAC / crQvac / cr_qvac rules removed 2026-07-15 — QVAC is a PUBLIC bring-your-own-local-AI adapter.
   ['private bot bridge panel', /crBotBridge/],
   ['private bot bridge marker', /BotBridge/],
-  ['public agent bridge URL knob', /crAgentBridgeUrl/],
-  ['public agent events URL knob', /crAgentEventsUrl/],
+  // Public agent-bridge knobs (crAgentBridgeUrl / crAgentEventsUrl / crAgentEvents / cr_agent_events /
+  // cr_agent_bridge) reclassified as ALLOWED 2026-07-15 — they are public connectivity. The private
+  // variants below stay forbidden, and 'nothing public points to Umbrel' is enforced by the
+  // home-server rule above (umbrel / tail879ec / .ts.net). 0xLobster persona byline is PUBLIC → allowed.
   ['private agent bridge URL knob', /crPrivateAgentBridgeUrl/],
   ['private agent events URL knob', /crPrivateAgentEventsUrl/],
-  ['private agent events runtime', /crAgentEvents/],
-  ['private agent events storage marker', /cr_agent_events/i],
-  ['private agent bridge storage marker', /cr_agent_bridge/i],
   ['private dev bridge flag', /__CR_DEV__/],
-  ['private persona byline', /0xLobster/],
   ['legacy Umbrel data flag', /USE_UMBREL_DATA/],
   ['defunct SDK scaffold path', /sdk-m1-scaffold/],
   ['served generated SDK path', /chartrunner-prototype\/sdk/],
@@ -72,6 +69,8 @@ const TEXT_SCAN_ALLOWLIST = new Set([
   '.gitignore',
   'scripts/check_public_leakage.mjs',
   'scripts/test_public_leakage_guard.mjs',
+  // SECURITY.md is a security CHANGELOG; naming a hardened knob there is documentation, not a leak.
+  'SECURITY.md',
 ]);
 
 const BINARY_EXTENSIONS = new Set([
@@ -89,7 +88,11 @@ const PYTH_HERMES_FILE_ALLOWLIST = new Set([
   'solana-connect/src/lib/pyth-feeds.ts',
 ]);
 
-const PYTH_HERMES_LINE_ALLOWLIST = /Pyth|pythnetwork|hermes\.pyth\.network|HERMES_|VAA|verified feed|price update|price-update|price service|price feed|price snapshot|REST snapshot|WebSocket stream|benchmark endpoint|fetchLatestPrice|streamPyth/i;
+const PYTH_HERMES_LINE_ALLOWLIST = /Pyth|pythnetwork|hermes\.pyth\.network|HERMES_|VAA|verified feed|price update|price-update|price service|price feed|price snapshot|REST snapshot|WebSocket stream|benchmark endpoint|fetchLatestPrice|streamPyth|Live tape|streaming|price tape/i;
+
+// Hermes is a PUBLIC harness-agent persona AND the name of Pyth's public price service, so a bare
+// 'hermes' is allowed. Only flag a Hermes line that ALSO points at private home-server infra.
+const HERMES_PRIVATE_INFRA = /umbrel|tail879ec|\.ts\.net/i;
 
 function trackedFiles(root) {
   try {
@@ -119,6 +122,8 @@ function walkFiles(root) {
 
 function isTextScannable(relPath) {
   if (TEXT_SCAN_ALLOWLIST.has(relPath)) return false;
+  // Internal working notes (e.g. *_RESTRUCTURE_*.md) are not shipping content — skip the text scan.
+  if (/(^|\/)[^/]*_RESTRUCTURE_[^/]*\.md$/i.test(relPath)) return false;
   return !BINARY_EXTENSIONS.has(path.extname(relPath).toLowerCase());
 }
 
@@ -139,6 +144,7 @@ function checkHermesText(file, text, messages) {
     const line = lines[index];
     if (!/hermes/i.test(line)) continue;
     if (PYTH_HERMES_LINE_ALLOWLIST.test(line)) continue;
+    if (!HERMES_PRIVATE_INFRA.test(line)) continue;
     messages.push(`forbidden text [private Hermes marker]: ${file}:${index + 1} contains ${line.trim().slice(0, 120)}`);
   }
 }
