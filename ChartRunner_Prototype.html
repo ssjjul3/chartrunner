@@ -111,8 +111,32 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.639
-     LAST UPDATED:    2026-07-16  ·  v1.0.639: P0 GUEST ROOMS — CODES, ROOMS-LITE, 2-DEPTH WIZARD, RUNTIME
+     CURRENT VERSION: v1.0.640
+     LAST UPDATED:    2026-07-16  ·  v1.0.640: MAPS APP REDESIGN — LIVE ROOMS FIRST-CLASS + SLEEK DATA-DENSE
+     CARDS (user feedback: "too many buttons, no live display of online players and volume", "rooms/map
+     window needs to look sleek and present rooms and maps properly with more data"). Wallet .crMapsFull
+     view only; the v639 guest Rooms-lite surface is untouched. (a) Map cards: ONE primary "▶ room"
+     action (exact v1.0.433 create-room flow incl. the public-listing confirm + snapshot fallback) + a
+     "⋯" overflow popover holding send / share-card / delete — same .share/.cardshare/.del classes and
+     handlers, delete keeps the v0.9.64 anchored-map unanchor confirm; menu closes on Esc/outside click,
+     one open at a time, and the 1.5s grid re-render skips while a menu is open so the popover survives.
+     (b) New ui-monospace live-data line per card: on/off-chain badge (source of truth = the share
+     builder's anchored check, crChainSave.findByName(name).contentHash), "● N" live players (sum over
+     that map's live PUBLIC rooms, dimmed at 0, tooltip "public rooms only") and an honest dim "Σ" (em
+     dash) volume slot (relay stats land in P1 — never fake numbers); meta+age merged into one quiet
+     line, tighter grid gutters. (c) LIVE ROOMS section at the top of the window replaces the v546
+     sidebar "🔍 Rooms" row: rows show map name · asset·tf · mode chip (payload has no mode field yet →
+     "public") · "● N" players · "Σ" slot · "▶ JOIN" (existing directory join: /rooms/<id> then rebuild
+     the canonical link with host/asset/tf + #m= snapshot); empty state links into the v639 room wizard;
+     header keeps "＋ start" (wizard) + "🔍 search" (the v433 public-rooms browser, absorbed but still
+     reachable). (d) Plumbing: new crMapsLiveDir module owns the /rooms cadence — poll on Maps-window
+     open + every 60s while open ONLY (1s transition watcher, timer cleared on close), cache-first,
+     failures silently dim the section (v637 rule); the v434 annotateMaps 7s self-poll + per-render
+     fetch are retired (it now consumes the shared cache, badges unchanged). Remote /rooms strings are
+     escaped, players Number()-coerced, list rendered through crSafeHTML (v568 precedent). Live payload
+     shape verified against relay.chartrunner.xyz: id/host/handle/mapName/asset/tf/players/ts.
+     Verified: node parse-check on every script block; div balance unchanged (1568/1568).
+     PRIOR (v1.0.639):    2026-07-16  ·  v1.0.639: P0 GUEST ROOMS — CODES, ROOMS-LITE, 2-DEPTH WIZARD, RUNTIME
      JOIN (docs/ROOM-CONFIG-DESIGN.md P0, game file only; zero relay change — an 8-char base58 CODE IS
      a relay room id, ROOM_RE accepts base58 3-88). (a) crRoom gains a RUNTIME join(id, opts): resets
      the closure params (boot-time ?room= capture untouched), stamps ?room=<code> via
@@ -7121,22 +7145,23 @@ window.crShare = function (o) {
 
   /* === v0.8N#3 — Maps app: gallery of saved chart setups === */
   .cr-mapGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
-    gap:10px}
-  .cr-mapCard{background:rgba(10,15,28,.6);border:1px solid var(--line);border-radius:8px;
+    gap:8px}
+  .cr-mapCard{background:rgba(10,15,28,.6);border:1px solid var(--line);border-radius:7px;
     overflow:hidden;cursor:pointer;transition:transform .12s ease, border-color .12s ease;
     display:flex;flex-direction:column;text-align:left;color:var(--fg);
     font-family:inherit;padding:0}
-  .cr-mapCard:hover{transform:translateY(-2px);border-color:#3ddc97}
+  .cr-mapCard:hover{transform:translateY(-1px);border-color:#3ddc97}
   .cr-mapCard .thumb{width:100%;height:90px;background:#05070d;display:block;
     object-fit:cover;border-bottom:1px solid var(--line)}
-  .cr-mapCard .meta{padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+  .cr-mapCard .meta{padding:7px 9px;display:flex;flex-direction:column;gap:2px}
   .cr-mapCard .nm{font-size:12px;font-weight:700;color:var(--fg);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .cr-mapCard .sub{font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums}
-  .cr-mapCard .row{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;
+  .cr-mapCard .sub{font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cr-mapCard .row{display:flex;justify-content:space-between;align-items:center;padding:5px 8px;
     border-top:1px solid var(--line);background:rgba(0,0,0,.2)}
   .cr-mapCard .row .ago{font-size:10px;color:var(--dim)}
-  .cr-mapCard .row .acts{display:flex;align-items:center;gap:2px}
+  .cr-mapCard .row .acts{display:flex;align-items:center;gap:4px;margin-left:auto;position:relative}
   .cr-mapCard .row .del,
   .cr-mapCard .row .room,
   .cr-mapCard .row .cardshare,
@@ -7155,6 +7180,56 @@ window.crShare = function (o) {
      dynamic preview (real room code) in a new tab. */
   .cr-mapCard .row .cardshare{color:#9b8cff}
   .cr-mapCard .row .cardshare:hover{background:rgba(155,140,255,.15)}
+  /* v1.0.640 — Maps redesign: LIVE ROOMS section + sleeker cards. Each card keeps ONE
+     primary ▶ room action; send / share-card / delete move into a ⋯ overflow menu
+     (same .share/.cardshare/.del classes, so the existing handlers stay untouched).
+     New per-card live-data line (.lv): on/off-chain badge + ● N online + Σ volume slot. */
+  .cr-mapCard .lv{display:flex;align-items:center;gap:7px;margin-top:2px;white-space:nowrap;
+    font:600 9.5px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.3px}
+  .cr-mapCard .lv .chain.on{color:#3ddc97}
+  .cr-mapCard .lv .chain.off{color:var(--dim);opacity:.75}
+  .cr-mapCard .lv .cr-onct{color:var(--dim);opacity:.55}
+  .cr-mapCard .lv .cr-onct.live{color:#ff5b7f;opacity:1}
+  .cr-mapCard .lv .vol{color:var(--dim);opacity:.55}
+  .cr-mapCard .row .room{font:700 10px ui-monospace,Menlo,Consolas,monospace;
+    border:1px solid rgba(142,202,230,.5);background:rgba(142,202,230,.08);
+    border-radius:6px;padding:3px 8px}
+  .cr-mapCard .row .more{appearance:none;border:1px solid transparent;background:transparent;
+    color:var(--dim);font-size:13px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:6px}
+  .cr-mapCard .row .more:hover{color:var(--fg);border-color:var(--line)}
+  .cr-mapCard .row .cr-cardMenu{display:none;position:absolute;right:0;bottom:calc(100% + 6px);
+    z-index:6;flex-direction:column;min-width:118px;background:#0d1322;border:1px solid var(--line);
+    border-radius:7px;padding:4px;box-shadow:0 8px 22px rgba(0,0,0,.45)}
+  .cr-mapCard .row .cr-cardMenu.on{display:flex}
+  .cr-mapCard .row .cr-cardMenu button{text-align:left;white-space:nowrap;border-radius:5px;
+    font:600 10.5px ui-monospace,Menlo,Consolas,monospace;padding:5px 8px}
+  #crRoomsLive{border:1px solid var(--line);border-radius:8px;background:rgba(10,15,28,.5);
+    padding:8px 10px;margin:0 0 10px;transition:opacity .3s ease}
+  #crRoomsLive .rl-head{display:flex;align-items:center;gap:8px;margin:0 0 6px}
+  #crRoomsLive .rl-t{font:700 11px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.6px;color:var(--fg)}
+  #crRoomsLive .rl-t .rl-dot{color:#ff5b7f}
+  #crRoomsLive #crRoomsLiveN{color:var(--dim);font-weight:600;margin-left:4px}
+  #crRoomsLive .rl-hbtn{appearance:none;border:1px solid var(--line);background:transparent;color:var(--dim);
+    font:600 10px ui-monospace,Menlo,Consolas,monospace;border-radius:6px;padding:3px 8px;cursor:pointer}
+  #crRoomsLive .rl-hbtn:hover{color:var(--fg);border-color:#3ddc97}
+  #crRoomsLiveList{display:flex;flex-direction:column;gap:4px}
+  #crRoomsLive .rl-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border:1px solid var(--line);
+    border-radius:6px;background:rgba(0,0,0,.18);color:var(--fg);
+    font:600 10.5px ui-monospace,Menlo,Consolas,monospace}
+  #crRoomsLive .rl-nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:34%}
+  #crRoomsLive .rl-sub{color:var(--dim)}
+  #crRoomsLive .rl-mode{border:1px solid rgba(61,220,151,.45);color:#3ddc97;border-radius:999px;
+    padding:1px 7px;font-size:9px;letter-spacing:.4px;text-transform:uppercase}
+  #crRoomsLive .rl-n{color:#ff5b7f;margin-left:auto}
+  #crRoomsLive .rl-vol{color:var(--dim);opacity:.7}
+  #crRoomsLive .rl-join{appearance:none;border:1px solid rgba(142,202,230,.5);background:rgba(142,202,230,.08);
+    color:#8ecae6;font:700 10px ui-monospace,Menlo,Consolas,monospace;border-radius:6px;padding:3px 9px;cursor:pointer}
+  #crRoomsLive .rl-join:hover{background:rgba(142,202,230,.18)}
+  #crRoomsLive .rl-empty{display:flex;align-items:center;gap:10px;color:var(--dim);
+    font:600 11px ui-monospace,Menlo,Consolas,monospace;padding:4px 2px}
+  #crRoomsLive .rl-empty .rl-start{appearance:none;border:1px solid rgba(61,220,151,.5);background:rgba(61,220,151,.08);
+    color:#3ddc97;font:700 10px ui-monospace,Menlo,Consolas,monospace;border-radius:6px;padding:3px 9px;cursor:pointer}
+  #crRoomsLive .rl-empty .rl-start:hover{background:rgba(61,220,151,.16)}
   /* Phone variant — single column list */
   #crPhone .ph-app-content #crPhMapList{display:flex;flex-direction:column;gap:6px}
   #crPhone .ph-mapCard{display:flex;gap:8px;padding:6px;background:rgba(255,255,255,.06);
@@ -14429,6 +14504,18 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
           </div>
           <!-- v1.0.546 — top row removed: map-name input + ＋Save deleted; Rooms moved
                into the folder sidebar (above All maps); search is now a 🔍 in the asset row. -->
+          <!-- v1.0.640 — LIVE ROOMS: first-class section at the top of the wallet Maps app
+               (replaces the sidebar 🔍 Rooms row). Rows come from the relay /rooms directory,
+               rendered by crMapsLiveDir (poll on window open + every 60s while open). -->
+          <div id="crRoomsLive" class="crMapsFull">
+            <div class="rl-head">
+              <span class="rl-t"><span class="rl-dot">●</span> LIVE ROOMS <span id="crRoomsLiveN"></span></span>
+              <span style="flex:1 1 auto"></span>
+              <button type="button" class="rl-hbtn rl-startTop" title="Start a room (private or public) — opens the room wizard">＋ start</button>
+              <button type="button" class="rl-hbtn rl-browse" title="Search public rooms by player or map name">🔍 search</button>
+            </div>
+            <div id="crRoomsLiveList"></div>
+          </div>
           <!-- v1.0.357 — Finder-style layout: folder tree on the left, map grid on
                the right. Folders live in cr_map_folders_v1; each map carries a folder id. -->
           <div class="crMapsFull" style="display:flex;gap:12px;align-items:flex-start">
@@ -14983,7 +15070,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.639",
+  VERSION: "1.0.640",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -37022,12 +37109,17 @@ window.crRoom = (function(){
 
   // v1.0.434 — live-room badges on Maps cards. Cross-refs the /rooms directory by
   // map name and stamps "🔴 live · N" on any card with an active public room.
-  async function annotateMaps(){
+  async function annotateMaps(arrIn){
     try {
       var grid = document.getElementById('crMapGrid'), ph = document.getElementById('crPhMapList');
       if((!grid || !grid.children.length) && (!ph || !ph.children.length)) return;
-      var r = await fetch(http() + '/rooms', { cache:'no-store' });
-      var arr = await r.json();
+      // v1.0.640 — consume the shared crMapsLiveDir cache (or a passed-in array) instead
+      // of re-fetching /rooms on every render tick; the network fetch only happens as a
+      // last-resort fallback when the directory module isn't available.
+      var arr = Array.isArray(arrIn) ? arrIn
+        : (window.crMapsLiveDir && typeof crMapsLiveDir.rooms === 'function') ? crMapsLiveDir.rooms()
+        : null;
+      if(!arr){ var r = await fetch(http() + '/rooms', { cache:'no-store' }); arr = await r.json(); }
       var byName = {};
       (Array.isArray(arr) ? arr : []).forEach(function(rm){ var k = String(rm.mapName||'').toLowerCase().trim(); if(k) byName[k] = (byName[k]||0) + (Number(rm.players)||0); });
       [grid, ph].forEach(function(g){
@@ -37052,9 +37144,12 @@ window.crRoom = (function(){
     } catch(_){}
   }
   window.crAnnotateLiveMaps = annotateMaps;
-  setInterval(function(){ try { var w = document.getElementById('win-maps'); if(w && w.classList.contains('on')) annotateMaps(); } catch(_){} }, 7000);
+  // v1.0.640 — the 7s self-poll is retired: crMapsLiveDir owns the /rooms cadence
+  // (poll on Maps-window open + every 60s while open) and calls annotateMaps(cache).
 
-  // Maps-window "🔍 Rooms" launcher (delegated; the button is rendered in markup).
+  // Maps-window "🔍 Rooms" launcher (delegated; kept as a safety net — the v1.0.546
+  // sidebar row was removed in v1.0.640 when rooms became the LIVE ROOMS section, so
+  // #crFindRooms normally no longer exists in the DOM).
   // v1.0.639 — the row now opens the 2-depth room wizard (guests land on the guest
   // step directly); this public-rooms browser stays reachable from the wizard's
   // connected step. Fallback: open the browser directly if the wizard is missing.
@@ -37062,6 +37157,148 @@ window.crRoom = (function(){
     var b = e.target && e.target.closest && e.target.closest('#crFindRooms');
     if(b){ e.preventDefault(); e.stopPropagation(); if(window.crRoomWizard && typeof crRoomWizard.open === 'function') crRoomWizard.open(); else open(); }
   });
+})();
+
+/* ── v1.0.640 — Maps live directory (crMapsLiveDir) ──────────────────────────
+   One owner for the relay /rooms cadence on the wallet Maps app: poll on Maps-
+   window open + every 60s while open ONLY (a 1s watcher interval detects the
+   open/close transitions; the 60s poll timer is cleared the tick the window
+   closes). Cache-first: the last good payload keeps rendering; a failed poll
+   just dims the LIVE ROOMS section (v1.0.637 rule — never a loud offline).
+   SECURITY: /rooms is REMOTE data — every string is escaped, players is
+   Number()-coerced, and the interval-driven list render goes through
+   crSafeHTML (v1.0.568 hardening precedent for exactly this surface). */
+(function crMapsLiveDir(){
+  if(typeof document === 'undefined') return;
+  var FALLBACK = 'https://relay.chartrunner.xyz';
+  function http(){ try { return (window.crRoom && crRoom.relayHttp) ? crRoom.relayHttp() : FALLBACK; } catch(_){ return FALLBACK; } }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+  var cache = [], stale = false, timer = null, lastOpen = false, inflight = false;
+  function rooms(){ return cache; }
+  // map-name (lowercase, trimmed — same key the pub share path advertises via
+  // ?pub=1&mn=<mapName> and annotateMaps already matches on) → summed players.
+  function byName(){
+    var m = {};
+    try {
+      cache.forEach(function(rm){
+        var k = String(rm && rm.mapName || '').toLowerCase().trim();
+        if(k) m[k] = (m[k] || 0) + (Number(rm.players) || 0);
+      });
+    } catch(_){}
+    return m;
+  }
+  async function poll(){
+    if(inflight) return;
+    inflight = true;
+    try {
+      var r = (typeof window.crFetchTimeout === 'function')
+        ? await window.crFetchTimeout(http() + '/rooms', { cache:'no-store' }, 8000)
+        : await fetch(http() + '/rooms', { cache:'no-store' });
+      var j = await r.json();
+      cache = Array.isArray(j) ? j : [];
+      stale = false;
+    } catch(_){ stale = true; }   // silent-dim: keep the last good cache
+    inflight = false;
+    render();
+  }
+  function render(){
+    try { renderSec(); } catch(_){}
+    try { updateCards(); } catch(_){}
+    try { if(typeof window.crAnnotateLiveMaps === 'function') window.crAnnotateLiveMaps(cache); } catch(_){}
+  }
+  function renderSec(){
+    var sec = document.getElementById('crRoomsLive'), host = document.getElementById('crRoomsLiveList');
+    if(!sec || !host) return;
+    sec.style.opacity = stale ? '.55' : '';
+    var list = (Array.isArray(cache) ? cache : []).slice(0, 24);
+    var tot = list.reduce(function(s, x){ return s + (Number(x && x.players) || 0); }, 0);
+    try {
+      var nEl = document.getElementById('crRoomsLiveN');
+      if(nEl) nEl.textContent = list.length ? ('· ' + list.length + ' room' + (list.length > 1 ? 's' : '') + ' · ' + tot + ' online') : '';
+    } catch(_){}
+    var html = '';
+    if(!list.length){
+      html = '<div class="rl-empty">no public rooms live — start one <button type="button" class="rl-start">▶ start a room</button></div>';
+    } else {
+      list.forEach(function(rm){
+        var n = Number(rm && rm.players) || 0;
+        html += '<div class="rl-row">'
+          + '<span class="rl-nm" title="' + esc(rm.mapName || '') + '">' + esc(rm.mapName || rm.handle || rm.id || 'room') + '</span>'
+          + '<span class="rl-sub">' + esc(String(rm.asset || '?').toUpperCase()) + (rm.tf ? ' · ' + esc(rm.tf) : '') + '</span>'
+          + '<span class="rl-mode">' + esc(String(rm.mode || 'public')) + '</span>'
+          + '<span class="rl-n" title="players online now">● ' + n + '</span>'
+          + '<span class="rl-vol" title="room volume · relay stats coming (P1)">Σ —</span>'
+          + '<button type="button" class="rl-join" data-rid="' + esc(String(rm.id || '')) + '">▶ JOIN</button>'
+          + '</div>';
+      });
+    }
+    if(typeof window.crSafeHTML === 'function') window.crSafeHTML(host, html); else host.innerHTML = html;
+  }
+  // In-place per-card ● N refresh between full renderMaps passes (textContent only,
+  // change-guarded — same no-flicker rationale as the v1.0.434 live badges).
+  function updateCards(){
+    var grid = document.getElementById('crMapGrid');
+    if(!grid) return;
+    var m = byName();
+    Array.prototype.forEach.call(grid.querySelectorAll('.cr-onct'), function(el){
+      var k = String(el.getAttribute('data-map-name') || '').toLowerCase().trim();
+      var n = Number(m[k]) || 0;
+      var txt = '● ' + n;
+      if(el.textContent !== txt) el.textContent = txt;
+      el.classList.toggle('live', n > 0);
+    });
+  }
+  // Join = the existing public-room join flow (crRoomsBrowser idiom): fetch the room
+  // snapshot record, rebuild the canonical link (host/asset/tf + #m= snapshot) and
+  // navigate — this restores the right MAP for the joiner, which a bare runtime
+  // crRoom.join(code) on the current chart would not.
+  async function joinById(id){
+    try {
+      if(!id) return;
+      var r = await fetch(http() + '/rooms/' + encodeURIComponent(id), { cache:'no-store' });
+      if(!r.ok) throw 0;
+      var rm = await r.json();
+      if(!rm || !rm.id) throw 0;
+      var origin = location.origin + location.pathname;
+      var url = origin + '?sharedMap=1&room=' + encodeURIComponent(rm.id)
+        + (rm.host  ? '&host='  + encodeURIComponent(rm.host)  : '')
+        + (rm.asset ? '&asset=' + encodeURIComponent(rm.asset) : '')
+        + (rm.tf    ? '&tf='    + encodeURIComponent(rm.tf)    : '')
+        + (rm.snapshot ? ('#m=' + rm.snapshot) : '');
+      location.href = url;
+    } catch(_){ try { if(typeof toast === 'function') toast('Could not join — that room may have closed'); } catch(__){} }
+  }
+  // Delegated clicks: JOIN rows, empty-state ▶ start + header ＋ start (v639 wizard),
+  // header 🔍 search (the v1.0.433 public-rooms browser stays reachable here).
+  document.addEventListener('click', function(e){
+    try {
+      var t = e.target;
+      if(!t || !t.closest) return;
+      var j = t.closest('#crRoomsLiveList .rl-join');
+      if(j){ e.preventDefault(); e.stopPropagation(); joinById(j.getAttribute('data-rid')); return; }
+      var s = t.closest('#crRoomsLive .rl-start, #crRoomsLive .rl-startTop');
+      if(s){ e.preventDefault(); e.stopPropagation(); if(window.crRoomWizard && typeof crRoomWizard.open === 'function') crRoomWizard.open(); return; }
+      var b = t.closest('#crRoomsLive .rl-browse');
+      if(b){ e.preventDefault(); e.stopPropagation(); if(window.crRoomsBrowser && typeof crRoomsBrowser.open === 'function') crRoomsBrowser.open(); return; }
+    } catch(_){}
+  });
+  // Lifecycle watcher: poll fires on the open transition + every 60s while open ONLY
+  // (guests see Rooms-lite, not this section — no reason to poll for them).
+  setInterval(function(){
+    try {
+      var w = document.getElementById('win-maps');
+      var open = !!(w && w.classList.contains('on')) && !document.body.classList.contains('cr-guest');
+      if(open && !lastOpen){
+        poll();
+        if(timer) clearInterval(timer);
+        timer = setInterval(poll, 60000);
+      } else if(!open && lastOpen && timer){
+        clearInterval(timer); timer = null;
+      }
+      lastOpen = open;
+    } catch(_){}
+  }, 1000);
+  window.crMapsLiveDir = { poll: poll, rooms: rooms, byName: byName, render: render };
 })();
 
 /* ── v1.0.639 — P0 guest rooms: code generator + 2-depth room wizard + code modal
@@ -76624,15 +76861,9 @@ const crL3 = (function(){
       }
       host.appendChild(row);
     };
-    // v1.0.546 — Rooms launcher sits ABOVE "All maps", styled like the folder rows.
-    // Keeps id #crFindRooms so the existing delegated open() handler fires.
-    const roomsRow = document.createElement('button');
-    roomsRow.type = 'button'; roomsRow.id = 'crFindRooms';
-    roomsRow.title = 'Find & join public live rooms (search by player or map name)';
-    roomsRow.className = 'cr-gobtn';
-    roomsRow.style.cssText = 'margin-bottom:4px';
-    roomsRow.innerHTML = '<span>🔍 Rooms</span>';
-    host.appendChild(roomsRow);
+    // v1.0.640 — the v1.0.546 sidebar "🔍 Rooms" launcher row is gone: rooms are now a
+    // first-class LIVE ROOMS section at the top of the window (#crRoomsLive, rendered by
+    // crMapsLiveDir). Its header keeps ＋ start (wizard) + 🔍 search (public-rooms browser).
     // v1.0.360 — Unfiled folder removed; "All maps" is the drop target to un-file a map.
     mkRow('all', '🗂 All maps', total, { dropId: '' });
     folders.forEach(f => mkRow(f.id, '📁 ' + f.name, byId[f.id] || 0, { dropId: f.id, folderId: f.id, name: f.name }));
@@ -76691,25 +76922,47 @@ const crL3 = (function(){
           const indCount = (m.indicators || []).length;
           const toolCount = (m.brackets||[]).length + (m.ladders||[]).length + (m.ocos||[]).length
                           + (m.hlines||[]).length + (m.trendlines||[]).length + (m.vwaps||[]).length;
+          // v1.0.640 — on-chain badge: SAME source of truth as the share builder's anchored
+          // check (crChainSave.findByName(name).contentHash — the registry knows the map).
+          let _anch = false;
+          try {
+            const _ae = (window.crChainSave && typeof crChainSave.findByName === 'function') ? crChainSave.findByName(m.name) : null;
+            _anch = !!(_ae && _ae.contentHash);
+          } catch(_){}
+          // v1.0.640 — live players on this map = sum across its live PUBLIC rooms (cached
+          // relay /rooms directory via crMapsLiveDir; 0 renders dimmed, never hidden).
+          let _liveN = 0;
+          try {
+            if(window.crMapsLiveDir && typeof crMapsLiveDir.byName === 'function'){
+              _liveN = Number(crMapsLiveDir.byName()[String(m.name||'').toLowerCase().trim()]) || 0;
+            }
+          } catch(_){}
           card.innerHTML = `
             ${_crMapThumbHTML(m)}
             <div class="meta">
               <div class="nm">${escapeHtml(m.name)}</div>
-              <div class="sub">${(m.asset||'?').toUpperCase()} · ${m.timeframe||'?'} · ${indCount} ind · ${toolCount} tools</div>
+              <div class="sub">${(m.asset||'?').toUpperCase()} · ${m.timeframe||'?'} · ${indCount} ind · ${toolCount} tools · ${fmtAgo(m.t)}</div>
+              <div class="lv">
+                <span class="chain ${_anch ? 'on' : 'off'}" title="${_anch ? 'anchored on-chain — the registry knows this map' : 'local only — not anchored on-chain'}">${_anch ? '⛓ on-chain' : '○ off-chain'}</span>
+                <span class="cr-onct ${_liveN > 0 ? 'live' : ''}" data-map-name="${escapeHtml(m.name)}" title="public rooms only">● ${_liveN}</span>
+                <span class="vol" title="room volume · relay stats coming (P1)">Σ —</span>
+              </div>
             </div>
             <div class="row">
-              <span class="ago">${fmtAgo(m.t)}</span>
               <span class="acts">
-                <button class="share" data-id="${m.id}" title="Send — copy a snapshot link (no live connection)">send</button>
-                <button class="room"  data-id="${m.id}" title="Room — create a LIVE multiplayer room (needs wallet)">room</button>
-                <button class="cardshare" data-id="${m.id}" title="Share card — opens a preview card showing the real room code, for posting (the room link itself still comes from Room)">🖼</button>
-                <button class="del"   data-id="${m.id}" title="Delete">×</button>
+                <button class="room" data-id="${m.id}" title="Room — create a LIVE multiplayer room on this map (needs wallet to host)">▶ room</button>
+                <button class="more" data-id="${m.id}" title="More actions" aria-haspopup="true">⋯</button>
+                <div class="cr-cardMenu">
+                  <button class="share" data-id="${m.id}" title="Send — copy a snapshot link (no live connection)">↗ send</button>
+                  <button class="cardshare" data-id="${m.id}" title="Share card — opens a preview card showing the real room code, for posting (the room link itself still comes from Room)">🖼 share card</button>
+                  <button class="del" data-id="${m.id}" title="Delete">× delete</button>
+                </div>
               </span>
             </div>`;
           card.addEventListener('click', e => {
-            // v0.9.63 — .del / .share / .room are action buttons; clicks on
-            // any of them should not bubble up to the card's open-the-map handler.
-            if(e.target.closest('.del') || e.target.closest('.share') || e.target.closest('.room')) return;
+            // v0.9.63 / v1.0.640 — everything inside .acts (▶ room, ⋯, and the overflow
+            // menu's send/share-card/delete) is an action; never open-the-map from there.
+            if(e.target.closest('.acts')) return;
             crMaps.load(m.id);
             renderMaps();
             // v0.8k#24n — Loading a map from the OS Desktop should drop the
@@ -76724,6 +76977,20 @@ const crL3 = (function(){
               }
             } catch(_){}
           });
+          // v1.0.640 — ⋯ overflow menu: one open at a time; item clicks close it via a
+          // CAPTURE listener (the item handlers below stopPropagation, so bubble never fires).
+          // Outside-click + Esc close is delegated once in the setup block further down.
+          const _moreBtn = card.querySelector('.more');
+          const _cardMenu = card.querySelector('.cr-cardMenu');
+          if(_moreBtn && _cardMenu){
+            _moreBtn.addEventListener('click', e => {
+              e.stopPropagation(); e.preventDefault();
+              const was = _cardMenu.classList.contains('on');
+              document.querySelectorAll('#crMapGrid .cr-cardMenu.on').forEach(el => el.classList.remove('on'));
+              if(!was) _cardMenu.classList.add('on');
+            });
+            _cardMenu.addEventListener('click', () => { _cardMenu.classList.remove('on'); }, true);
+          }
           card.querySelector('.del').addEventListener('click', e => {
             e.stopPropagation();
             // v0.9.64 — If the map is anchored on-chain, delete the
@@ -76926,6 +77193,18 @@ const crL3 = (function(){
     if(typeof toast === 'function') toast('Map saved: ' + m.name);
     renderMaps();
   }
+  // v1.0.640 — close any open card ⋯ menu on outside click / Esc (one delegated pair).
+  try {
+    document.addEventListener('click', e => {
+      try {
+        if(e.target && e.target.closest && e.target.closest('#crMapGrid .acts')) return;
+        document.querySelectorAll('#crMapGrid .cr-cardMenu.on').forEach(el => el.classList.remove('on'));
+      } catch(_){}
+    });
+    document.addEventListener('keydown', e => {
+      try { if(e.key === 'Escape') document.querySelectorAll('#crMapGrid .cr-cardMenu.on').forEach(el => el.classList.remove('on')); } catch(_){}
+    });
+  } catch(_){}
   setTimeout(() => {
     // v1.0.546 — desktop ＋Save + map-name input removed; wire the 🔍 search instead.
     const sTog = document.getElementById('crMapSearchToggle');
@@ -76948,7 +77227,10 @@ const crL3 = (function(){
   }, 0);
 
   // Refresh on Maps window open (desktop)
+  // v1.0.640 — skip the periodic re-render while a card ⋯ menu is open (a rebuild
+  // would silently wipe the popover out from under the pointer).
   setInterval(() => {
+    if(document.querySelector('#crMapGrid .cr-cardMenu.on')) return;
     const w = document.getElementById('win-maps');
     if(w && w.classList.contains('on')) renderMaps();
     const pa = document.querySelector('#crPhone .ph-screen-app[data-app-screen="maps"]');
