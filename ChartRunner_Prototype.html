@@ -111,8 +111,18 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.633
-     LAST UPDATED:    2026-07-16  ·  v1.0.633: TOKEN-TERMINAL RUN — CEX PATH GOES IN-APP (user report:
+     CURRENT VERSION: v1.0.634
+     LAST UPDATED:    2026-07-16  ·  v1.0.634: TOKEN RUN — NO-FEED COINS RUN ON A SEEDED CHART. v633's
+     deny-toast for coins without a Binance pair read as "RUN does nothing / chart not loading" (user
+     report, same session): the toast is transient and ~460 of the 476 catalog coins have no
+     TOK_BINANCE_PAIR entry, so the RUN button was dead for most of the list. Post-deploy live check
+     confirmed the v633 in-app paths DO work (BTC + dynamic ARB chart in place, FIGR_HELOC toasted the
+     deny). Now the no-feed branch runs anyway: dynamic ASSETS entry {noBinance:true, seed:s.px,
+     label:'<TAG> · SYNTH'} → switchAsset → loadCandles' existing noBinance path (seeded candles,
+     market source 'custom asset · seeded') → _crDlEnterRun. Toast says SYNTHETIC practice chart —
+     nothing fake is presented as live. Toast-only deny remains solely as the final fallback when
+     ASSETS/switchAsset are unavailable.
+     PRIOR (v1.0.633):    2026-07-16  ·  v1.0.633: TOKEN-TERMINAL RUN — CEX PATH GOES IN-APP (user report:
      "clicking RUN just buffers and does not load the token"). Live repro on v630 (Chrome ext): RUN on
      FIGR_HELOC reloaded to ?symbol=BINANCE:FIGR_HELOCUSDT — the "buffering" is the full page re-boot —
      and crApplyDeepLink's CEX branch then hit `if(!known) return false` (only the 9 built-in ASSETS ids
@@ -14745,7 +14755,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.633",
+  VERSION: "1.0.634",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -58816,8 +58826,29 @@ function _tokRenderProfile(){
             .catch(function(){ try { if(typeof window._crDlEnterRun === 'function') window._crDlEnterRun(); } catch(_){} });
           return;
         }
-        // No live market feed for this token (SYNTH profile data) — say so honestly
-        // instead of reloading into a 404 and stranding the player on the desktop.
+        // v1.0.634 — No live market feed (SYNTH profile data): still RUN, on a
+        // seeded practice chart via the existing asset.noBinance path in
+        // loadCandles ('custom asset · seeded'). v633's toast-only deny read as
+        // "RUN does nothing" (user report: "not loading the chart at all") —
+        // ~460 of the 476 catalog coins have no Binance pair, so the button was
+        // dead for most of the list. Honesty is preserved: the toast + market-
+        // source label both say SYNTHETIC; nothing fake is presented as live.
+        if(def && typeof ASSETS !== 'undefined' && typeof switchAsset === 'function'){
+          var _tag = String(def.tag || def.id).toUpperCase();
+          var _synAsset = null;
+          try { _synAsset = ASSETS.find(function(a){ return a.id === def.id; }); } catch(_){}
+          if(!_synAsset){
+            _synAsset = { id:def.id, nm:_tag, sym:_tag + 'USDT', label:_tag + ' · SYNTH', seed:(s && s.px) || 1, noBinance:true };
+            ASSETS.push(_synAsset);
+          }
+          try { if(typeof timeframe !== 'undefined') timeframe = _tf; } catch(_){}
+          try { if(typeof renderAssetOptions === 'function') renderAssetOptions(document.getElementById('assetSel')); } catch(_){}
+          try { if(typeof toast === 'function') toast('⚠ ' + _tag + ' has no live feed — running a SYNTHETIC practice chart'); } catch(_){}
+          Promise.resolve(switchAsset(_synAsset.id))
+            .then(function(){ try { if(typeof window._crDlEnterRun === 'function') window._crDlEnterRun(); } catch(_){} })
+            .catch(function(){ try { if(typeof window._crDlEnterRun === 'function') window._crDlEnterRun(); } catch(_){} });
+          return;
+        }
         try { if(typeof toast === 'function') toast('⚠ ' + ((def && def.tag) || 'This token') + ' has no live market feed yet — research only'); } catch(_){}
       } catch(_){}
     }); }
