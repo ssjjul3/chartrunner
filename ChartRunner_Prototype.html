@@ -111,8 +111,33 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.638
-     LAST UPDATED:    2026-07-16  ·  v1.0.638: RAIL DRAWER "▶ OPEN CHART" WORKS FROM THE DESKTOP (user
+     CURRENT VERSION: v1.0.639
+     LAST UPDATED:    2026-07-16  ·  v1.0.639: P0 GUEST ROOMS — CODES, ROOMS-LITE, 2-DEPTH WIZARD, RUNTIME
+     JOIN (docs/ROOM-CONFIG-DESIGN.md P0, game file only; zero relay change — an 8-char base58 CODE IS
+     a relay room id, ROOM_RE accepts base58 3-88). (a) crRoom gains a RUNTIME join(id, opts): resets
+     the closure params (boot-time ?room= capture untouched), stamps ?room=<code> via
+     history.replaceState so a reload reproduces the room (deep-link philosophy, NO navigation), then
+     connects; leave() cleans up first; a connect() socket guard keeps the boot timer and runtime joins
+     from ever holding two sockets. Join verdict on 'welcome': joining an EMPTY room by code = honest
+     "no live room on this code" toast + URL revert (the relay would happily open a dead room —
+     never a spinner); roster already at 8 = "room is full (8)" (guest cap, CLIENT-SIDE soft
+     enforcement only in P0); 9s welcome timeout = honest relay-unreachable toast. After a good join
+     the v638 guard pattern enters the chart (game.running check, _crDlEnterRun). (b) Rooms-lite:
+     guests may open Maps again (icon/dock unhidden, osOpenWindowMulti/Toggle gate now Journal-only);
+     body.cr-guest swaps the Maps body to a simple surface — JOIN A ROOM (8-char code input,
+     auto-uppercase-preserving-base58) / START A ROOM WITH FRIENDS (current chart, free) + an honest
+     lock line to the wallet picker. Full Maps app unchanged for wallet users. (c) Create room = 8-char
+     code from crypto.getRandomValues (rejection-sampled caps-subset alphabet, no I/O, ~40 bits) +
+     cd-*-themed code modal (Copy code / Copy link, link = ?room=<code>). (d) Code always shareable:
+     chat-footer "Online · N" bar gains a "· CODE XXXXXXXX ⧉" chip (click = copy, short ids only) +
+     the once-per-session "alone-ish" share toast (~10 min, ≤2 occupants). (e) 2-depth wizard on the
+     Maps Rooms row: depth 1 PLAY WITH FRIENDS / CONNECTED ROOM (guests land on the guest step
+     directly); guest step = join/start; connected step = PRIVATE + PUBLIC presets that work TODAY
+     (code room, optional ?pub=1 directory publish — existing path) + MODERATED/PAYWALL rendered
+     visible-but-locked with honest "P1/P2 · soon" tags; public-rooms browser linked from the footer.
+     Verified: node parse-check on every script block; div balance unchanged; boot-time room links +
+     runtime join traced in both init orders.
+     PRIOR (v1.0.638):    2026-07-16  ·  v1.0.638: RAIL DRAWER "▶ OPEN CHART" WORKS FROM THE DESKTOP (user
      report + screenshot: clicking Open chart in a pane drilldown, e.g. Funding Heatmap → STAR, did
      nothing). Root cause: the drawer handler called switchAsset() which swaps candles BEHIND the
      splash but never enters the chart — no hideSplash, no run, so from the desktop the click was
@@ -1417,6 +1442,64 @@ window.crShare = function (o) {
   #crRoomsBackdrop .crRoomRow .join{appearance:none;border:1px solid var(--cd-accent);background:color-mix(in srgb,var(--cd-accent) 16%,transparent);color:var(--cd-fg);font:700 11px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.4px;padding:7px 13px;border-radius:6px;cursor:pointer;flex:none}
   #crRoomsBackdrop .crRoomRow .join:hover{background:color-mix(in srgb,var(--cd-accent) 28%,transparent)}
   #crRoomsBackdrop .crRoomsEmpty{color:var(--cd-dim);text-align:center;padding:22px 8px;font-size:12px;line-height:1.6}
+  /* v1.0.639 — P0 guest rooms: 2-depth room wizard + room-code modal. Same cd-*
+     custom-property theming pattern as crConfirm/crRooms above (base = Platinum,
+     one override rule per body[data-os-theme]). */
+  #crRoomWizBackdrop, #crRoomCodeBackdrop{
+    --cd-bg:linear-gradient(180deg,#ffffff,#eef1f6);--cd-bd:#c4ccd8;
+    --cd-fg:#1b2331;--cd-dim:#5d6b7e;--cd-accent:#12a766;
+    --cd-btn-bd:#d4dae4;--cd-input-bg:#f5f7fa;--cd-shadow:0 16px 48px rgba(20,30,50,.30);
+    position:fixed;inset:0;z-index:100040;background:rgba(0,0,0,.45);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center}
+  body[data-os-theme="ascii"] #crRoomWizBackdrop, body[data-os-theme="ascii"] #crRoomCodeBackdrop{--cd-bg:linear-gradient(180deg,#001a0c,#000400);--cd-bd:#14f195;--cd-fg:#c6ffd9;--cd-dim:#5aa97f;--cd-accent:#14f195;--cd-btn-bd:rgba(20,241,149,.4);--cd-input-bg:rgba(0,22,10,.6);--cd-shadow:0 16px 48px rgba(0,0,0,.6)}
+  body[data-os-theme="frontier"] #crRoomWizBackdrop, body[data-os-theme="frontier"] #crRoomCodeBackdrop{--cd-bg:linear-gradient(180deg,rgba(20,30,55,.97),rgba(12,18,35,.98));--cd-bd:rgba(20,241,149,.45);--cd-fg:#e9efff;--cd-dim:#9fb3c8;--cd-accent:#3ddc97;--cd-btn-bd:rgba(120,140,180,.4);--cd-input-bg:rgba(10,15,28,.7);--cd-shadow:0 16px 48px rgba(0,0,0,.7)}
+  body[data-os-theme="bw"] #crRoomWizBackdrop, body[data-os-theme="bw"] #crRoomCodeBackdrop{--cd-bg:#ffffff;--cd-bd:#000000;--cd-fg:#000000;--cd-dim:#555555;--cd-accent:#000000;--cd-btn-bd:#000000;--cd-input-bg:#ffffff;--cd-shadow:0 16px 48px rgba(0,0,0,.4)}
+  body[data-os-theme="mono"] #crRoomWizBackdrop, body[data-os-theme="mono"] #crRoomCodeBackdrop{--cd-bg:#111111;--cd-bd:#888888;--cd-fg:#e8e8e8;--cd-dim:#999999;--cd-accent:#e8e8e8;--cd-btn-bd:#555555;--cd-input-bg:#1a1a1a;--cd-shadow:0 16px 48px rgba(0,0,0,.7)}
+  #crRoomWizBackdrop.on, #crRoomCodeBackdrop.on{display:flex;animation:crConfirmIn .18s ease-out}
+  #crRoomWizBackdrop .crWizCard{background:var(--cd-bg);border:1px solid var(--cd-bd);border-radius:12px;padding:16px 18px;color:var(--cd-fg);font:13px/1.5 ui-monospace,Menlo,monospace;width:410px;max-width:94vw;box-shadow:var(--cd-shadow)}
+  #crRoomWizBackdrop .crWizHead{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  #crRoomWizBackdrop .crWizHead .t{font-weight:700;font-size:11px;color:var(--cd-accent);letter-spacing:.6px;text-transform:uppercase;flex:1}
+  #crRoomWizBackdrop .crWizHead .x{appearance:none;border:0;background:transparent;color:var(--cd-dim);font-size:16px;cursor:pointer;line-height:1}
+  #crRoomWizBackdrop .crWizBig{display:block;width:100%;text-align:left;appearance:none;background:transparent;border:1px solid var(--cd-btn-bd);border-radius:9px;color:var(--cd-fg);font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.4px;padding:12px 14px;margin-top:8px;cursor:pointer;transition:all .12s ease}
+  #crRoomWizBackdrop .crWizBig:hover{border-color:var(--cd-accent);background:color-mix(in srgb,var(--cd-accent) 10%,transparent)}
+  #crRoomWizBackdrop .crWizBig .s{display:block;font:500 10.5px ui-monospace,Menlo,monospace;color:var(--cd-dim);margin-top:3px;letter-spacing:.2px;text-transform:none}
+  #crRoomWizBackdrop .crWizBig.locked{opacity:.55;cursor:default}
+  #crRoomWizBackdrop .crWizBig.locked:hover{border-color:var(--cd-btn-bd);background:transparent}
+  #crRoomWizBackdrop .crWizTag{float:right;font:700 9px ui-monospace,Menlo,monospace;color:#c9a227;border:1px solid rgba(201,162,39,.55);border-radius:999px;padding:2px 7px;letter-spacing:.5px}
+  #crRoomWizBackdrop .crWizSec{font-weight:700;font-size:11px;color:var(--cd-accent);letter-spacing:.5px;text-transform:uppercase;margin:13px 0 6px}
+  #crRoomWizBackdrop .crWizRow{display:flex;gap:8px}
+  #crRoomWizBackdrop .crWizInput{flex:1;min-width:0;background:var(--cd-input-bg);border:1px solid var(--cd-bd);border-radius:7px;color:var(--cd-fg);font:700 15px ui-monospace,Menlo,monospace;letter-spacing:3px;padding:9px 11px;outline:none;text-align:center}
+  #crRoomWizBackdrop .crWizInput:focus{border-color:var(--cd-accent)}
+  #crRoomWizBackdrop .crWizGo{appearance:none;border:1px solid var(--cd-accent);background:color-mix(in srgb,var(--cd-accent) 16%,transparent);color:var(--cd-fg);font:700 12px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.5px;padding:9px 15px;border-radius:7px;cursor:pointer;flex:none}
+  #crRoomWizBackdrop .crWizGo:hover{background:color-mix(in srgb,var(--cd-accent) 28%,transparent)}
+  #crRoomWizBackdrop .crWizLock{margin-top:14px;color:var(--cd-dim);font-size:11px;cursor:pointer}
+  #crRoomWizBackdrop .crWizLock:hover{color:var(--cd-fg)}
+  #crRoomWizBackdrop .crWizFoot{margin-top:12px;display:flex;align-items:center;gap:10px;font-size:10.5px;color:var(--cd-dim)}
+  #crRoomWizBackdrop .crWizFoot .lnk{cursor:pointer;text-decoration:underline}
+  #crRoomWizBackdrop .crWizFoot .lnk:hover{color:var(--cd-fg)}
+  #crRoomCodeBackdrop .crCodeCard{background:var(--cd-bg);border:1px solid var(--cd-bd);border-radius:12px;padding:16px 18px;color:var(--cd-fg);font:13px/1.5 ui-monospace,Menlo,monospace;width:360px;max-width:94vw;box-shadow:var(--cd-shadow);text-align:center}
+  #crRoomCodeBackdrop .crCodeHead{display:flex;align-items:center;gap:8px}
+  #crRoomCodeBackdrop .crCodeHead .t{font-weight:700;font-size:11px;color:var(--cd-accent);letter-spacing:.6px;text-transform:uppercase;flex:1;text-align:left}
+  #crRoomCodeBackdrop .crCodeHead .x{appearance:none;border:0;background:transparent;color:var(--cd-dim);font-size:16px;cursor:pointer;line-height:1}
+  #crRoomCodeBackdrop .crCodeBig{font:800 30px/1.2 ui-monospace,Menlo,monospace;letter-spacing:6px;color:var(--cd-accent);margin:16px 0 4px;user-select:all}
+  #crRoomCodeBackdrop .crCodeBtns{display:flex;gap:8px;justify-content:center;margin-top:12px}
+  #crRoomCodeBackdrop .crCodeBtn{appearance:none;border:1px solid var(--cd-btn-bd);background:transparent;color:var(--cd-dim);font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.4px;text-transform:uppercase;padding:7px 14px;border-radius:6px;cursor:pointer;transition:all .12s ease}
+  #crRoomCodeBackdrop .crCodeBtn:hover{color:var(--cd-fg);border-color:var(--cd-accent)}
+  #crRoomCodeBackdrop .crCodeBtn.primary{border-color:var(--cd-accent);color:var(--cd-fg);background:color-mix(in srgb,var(--cd-accent) 16%,transparent)}
+  #crRoomCodeBackdrop .crCodeBtn.primary:hover{background:color-mix(in srgb,var(--cd-accent) 26%,transparent)}
+  #crRoomCodeBackdrop .crCodeSub{color:var(--cd-dim);font-size:11px;margin-top:11px}
+  /* v1.0.639 — Rooms-lite: guests get a simple join/start surface inside the Maps
+     window; the full Maps app (.crMapsFull) stays wallet-only and is advertised
+     honestly (lock line) instead of hiding the desktop icon. */
+  #crMapsLite{display:none;padding:4px 2px 2px}
+  body.cr-guest #win-maps .crMapsFull{display:none!important}
+  body.cr-guest #crMapsLite{display:block}
+  #crMapsLite .lt-sec{font:700 13px ui-monospace,Menlo,monospace;color:var(--fg);letter-spacing:.4px;margin:0 0 8px}
+  #crMapsLite .lt-sec + .lt-sec{margin-top:16px}
+  #crMapsLite .lt-row{display:flex;gap:8px;max-width:340px;margin-bottom:4px}
+  #crMapsLite input{flex:1;min-width:0;background:rgba(10,15,28,.6);border:1px solid var(--line);border-radius:7px;color:var(--fg);font:700 15px ui-monospace,Menlo,monospace;letter-spacing:3px;padding:9px 11px;outline:none;text-align:center}
+  #crMapsLite input:focus{border-color:#14f195}
+  #crMapsLite .lt-lock{margin-top:16px;font-size:11px;color:var(--dim);cursor:pointer}
+  #crMapsLite .lt-lock:hover{color:var(--fg)}
   /* v1.0.434 — live-room badge on Maps cards + counter dot */
   /* v1.0.434 fix — absolute overlay so appearing/removing never reflows the card grid */
   .cr-live-badge{position:absolute;top:6px;right:6px;z-index:3;display:inline-flex;align-items:center;gap:5px;font:700 9.5px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.4px;text-transform:uppercase;color:#ff5b7f;background:rgba(10,12,20,.72);padding:2px 6px;border-radius:999px;pointer-events:none}
@@ -3369,13 +3452,12 @@ window.crShare = function (o) {
      v1.0.367 — connect-explicit apps = Maps / Journal / RUN-tube (hidden on desktop + dock).
      Profile (=wallet) is PUBLIC for guests but shows ONLY the Player + Tools tabs. Guests
      also have no Blue Laser HUD slot. Connecting a wallet removes .cr-guest and unlocks all. */
-  body.cr-guest .os-icon[data-prog="maps"],
+  /* v1.0.639 — Maps is visible to guests again: it opens the Rooms-lite surface
+     (join/start a room by code). Journal + RUN-tube stay wallet-gated. */
   body.cr-guest .os-icon[data-prog="journal"],
   body.cr-guest .os-icon[data-prog="runtube"],
-  body.cr-guest #crOSDockFixed .dockBtn[data-prog="maps"],
   body.cr-guest #crOSDockFixed .dockBtn[data-prog="journal"],
   body.cr-guest #crOSDockFixed .dockBtn[data-prog="runtube"],
-  body.cr-guest .dockBtn[data-prog="maps"],
   body.cr-guest .dockBtn[data-prog="journal"],
   body.cr-guest .dockBtn[data-prog="runtube"]{display:none!important}
   /* RUN-tube ARCHIVED — hidden for everyone (dock entries + the PIP widget). */
@@ -8682,6 +8764,9 @@ window.crShare = function (o) {
   .crNotify.cr-chat-mode .crChatOnline:hover{color:#bff7df;background:rgba(8,14,22,.85)}
   .crChatOnline .dot{width:6px;height:6px;border-radius:50%;background:#14f195;box-shadow:0 0 6px #14f195;flex:0 0 auto}
   .crChatOnline .lbl{flex:0 0 auto}
+  /* v1.0.639 — room CODE chip in the chat footer: always one click to copy. */
+  .crChatOnline .code{flex:0 0 auto;color:#9fe8c8;cursor:copy;letter-spacing:.4px;white-space:nowrap}
+  .crChatOnline .code:hover{color:#e9fff4}
   .crChatOnline .chev{margin-left:auto;opacity:.55;font-size:9px;letter-spacing:.4px}
   /* Players overview modal (opened by clicking the ONLINE bar). */
   #crRoomOverview{position:fixed;inset:0;z-index:99500;display:none;align-items:center;justify-content:center;
@@ -14329,11 +14414,24 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
           <button class="wclose" data-close>Close</button>
         </div>
         <div class="os-wbody">
+          <!-- v1.0.639 — Rooms-lite: the guest surface (body.cr-guest shows this and
+               hides .crMapsFull). Two big actions: JOIN A ROOM by 8-char code, or
+               START A ROOM WITH FRIENDS on the current chart. Wired in crRoomWiz. -->
+          <div id="crMapsLite">
+            <div class="lt-sec">▶ JOIN A ROOM</div>
+            <div class="lt-row">
+              <input id="crLiteCode" type="text" maxlength="88" placeholder="ROOM CODE" autocomplete="off" spellcheck="false" aria-label="Room code">
+              <button id="crLiteJoinBtn" class="cr-gobtn" type="button" title="Join a friend's live room by code"><span>JOIN</span></button>
+            </div>
+            <div class="lt-sec">▶ START A ROOM WITH FRIENDS</div>
+            <button id="crLiteStartBtn" class="cr-gobtn" type="button" style="max-width:340px" title="Open a live room on the current chart and get a code to share"><span>START ROOM · current chart · just charting · free</span></button>
+            <div class="lt-lock" id="crLiteWallet" title="Connect a wallet to unlock the full Maps app">🔒 Save maps · copy trades · earn → <u>Connect wallet</u></div>
+          </div>
           <!-- v1.0.546 — top row removed: map-name input + ＋Save deleted; Rooms moved
                into the folder sidebar (above All maps); search is now a 🔍 in the asset row. -->
           <!-- v1.0.357 — Finder-style layout: folder tree on the left, map grid on
                the right. Folders live in cr_map_folders_v1; each map carries a folder id. -->
-          <div style="display:flex;gap:12px;align-items:flex-start">
+          <div class="crMapsFull" style="display:flex;gap:12px;align-items:flex-start">
             <div id="crMapFolders" style="flex:0 0 170px;display:flex;flex-direction:column;gap:3px;max-height:470px;overflow-y:auto;padding-right:2px"></div>
             <div style="flex:1;min-width:0">
               <div class="os-section" style="margin:0">
@@ -14353,7 +14451,7 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
               </div>
             </div>
           </div>
-          <p style="margin:14px 0 0;font-size:11px;color:var(--dim)">Maps are saved from a live run (asset, timeframe, indicators, placed tools and primitives). Click any saved map to restore it, 🔍 to search by name, or open a Room to play it with friends. Use the folders on the left to organize — drag any map card onto a folder to move it there.</p>
+          <p class="crMapsFull" style="margin:14px 0 0;font-size:11px;color:var(--dim)">Maps are saved from a live run (asset, timeframe, indicators, placed tools and primitives). Click any saved map to restore it, 🔍 to search by name, or open a Room to play it with friends. Use the folders on the left to organize — drag any map card onto a folder to move it there.</p>
         </div>
       </div>
 
@@ -14885,7 +14983,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.638",
+  VERSION: "1.0.639",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -36347,6 +36445,11 @@ window.crRoom = (function(){
 
   function connect(){
     if(!params || typeof WebSocket==='undefined') return;
+    // v1.0.639 — runtime join(): never let two sockets coexist (the boot timer and a
+    // runtime join could otherwise race in the first ~1.4s). Detach before closing so
+    // the old socket's onclose can't schedule a reconnect against the NEW params.
+    try { if(ws && (ws.readyState === 0 || ws.readyState === 1)){ ws.onclose = null; ws.onmessage = null; ws.onerror = null; ws.close(); } } catch(_){}
+    ws = null;
     try { ws = new WebSocket(relayUrl()+'/?room='+encodeURIComponent(params.room)+'&v=1'); }
     catch(_){ scheduleReconnect(); return; }
     ws.onopen = function(){
@@ -36368,6 +36471,10 @@ window.crRoom = (function(){
   // the socket, and drop peers so no co-presence lingers on the desktop.
   function leave(){
     params = null;
+    // v1.0.639 — keep the exported live-params mirror + any pending runtime-join
+    // guard in sync (api/_joinGuard are hoisted vars from the join() section below).
+    try { api.params = null; } catch(_){}
+    try { if(_joinGuard){ clearTimeout(_joinGuard.timer); _joinGuard = null; } } catch(_){}
     try { stopPos(); } catch(_){}
     try { if(typeof stopBuilds === 'function') stopBuilds(); } catch(_){}
     try { if(ws){ ws.onclose = null; ws.onmessage = null; ws.onerror = null; ws.close(); } } catch(_){}
@@ -36397,6 +36504,25 @@ window.crRoom = (function(){
       case 'welcome':
         mySid = m.sessionId; spectator = !!m.spectator;
         (m.occupants||[]).forEach(addPeer);
+        // v1.0.639 — runtime join() verdict: the relay accepts ANY base58 id, so a
+        // wrong/dead CODE still "connects" — to an empty room. Joining (not creating)
+        // an empty room = dead code → honest toast, no spinner. Guest room cap 8 is
+        // CLIENT-SIDE soft enforcement in P0 (refuse when the roster already shows 8);
+        // nothing here is relay-enforced. Boot-time ?room= links skip all of this
+        // (_joinGuard is only set by join()).
+        if(_joinGuard){
+          var _g = _joinGuard; _joinGuard = null;
+          try { if(_g.timer) clearTimeout(_g.timer); } catch(_){}
+          var _occ = 0;
+          try { _occ = (m.occupants||[]).filter(function(o){ return o && o.sessionId !== mySid; }).length; } catch(_){}
+          if(_g.expectLive && _occ === 0){
+            _joinFail(_g, 'No live room on this code — ask your friend to re-share');
+          } else if(_occ >= 8){
+            _joinFail(_g, 'Room is full (8)');
+          } else {
+            try { if(typeof _g.onJoined === 'function') _g.onJoined(); } catch(_){}
+          }
+        }
         break;
       case 'roster': {
         var live = {}; (m.occupants||[]).forEach(function(o){ live[o.sessionId]=1; addPeer(o); });
@@ -36584,9 +36710,86 @@ window.crRoom = (function(){
   // v1.0.433 — HTTP base for the public Rooms directory (same host as the WS relay).
   function relayHttp(){ try { return relayUrl().replace(/^ws/, 'http').replace(/\/+$/, ''); } catch(_){ return 'https://relay.chartrunner.xyz'; } }
 
+  // ── v1.0.639 — RUNTIME join (P0 guest rooms) ────────────────────────────────
+  // Until now `params` was captured from the URL synchronously at load and the
+  // module stayed dormant otherwise — there was no runtime join. join(id, opts)
+  // (re)sets the closure params, stamps ?room=<code> into the URL via
+  // history.replaceState (a manual reload reproduces the room — deep-link
+  // philosophy, NO navigation/reload), and calls connect(). leave() cleans up
+  // first if already in a room. The boot-time ?room= path is untouched: it still
+  // captures params at load and connects on its 1.4s timer; the connect() socket
+  // guard makes the two paths safe in either init order.
+  var _joinGuard = null;
+  function roomIdFn(){ try { return params ? params.room : null; } catch(_){ return null; } }
+  function _stripRoomUrl(){
+    try {
+      var u = new URL(window.location.href);
+      ['room','host','asset','tf','pub','mn','sharedMap'].forEach(function(k){ u.searchParams.delete(k); });
+      var qs = u.searchParams.toString();
+      history.replaceState(null, '', u.pathname + (qs ? '?' + qs : '') + (u.hash || ''));
+    } catch(_){}
+  }
+  function _joinFail(g, msg){
+    try { leave(); } catch(_){}
+    _stripRoomUrl();
+    try { if(typeof toast === 'function') toast(msg); } catch(_){}
+    try { if(g && typeof g.onFail === 'function') g.onFail(msg); } catch(_){}
+  }
+  function join(id, opts){
+    opts = opts || {};
+    var code = String(id || '').trim();
+    if(!/^[1-9A-HJ-NP-Za-km-z]{3,88}$/.test(code)){
+      try { if(typeof toast === 'function') toast('That code is not valid — 8 letters/digits (no 0, O, I)'); } catch(_){}
+      try { if(typeof opts.onFail === 'function') opts.onFail('bad-code'); } catch(_){}
+      return false;
+    }
+    try {
+      if(params) leave();
+      if(_joinGuard){ try { clearTimeout(_joinGuard.timer); } catch(_){} _joinGuard = null; }
+      params = {
+        room:    code,
+        host:    opts.host || null,
+        asset:   opts.asset || ((typeof currentAsset !== 'undefined' && currentAsset) ? String(currentAsset) : null),
+        tf:      opts.tf || ((typeof timeframe !== 'undefined' && timeframe) ? String(timeframe) : null),
+        mapRef:  null,
+        pub:     !!opts.pub,
+        mapName: opts.mapName || null,
+        snapshot:'',
+      };
+      try { api.params = params; } catch(_){}
+      try {
+        var u = new URL(window.location.href);
+        ['sharedMap','map','symbol','mint','mg'].forEach(function(k){ u.searchParams.delete(k); });
+        u.searchParams.set('room', code);
+        if(params.host)  u.searchParams.set('host', params.host);   else u.searchParams.delete('host');
+        if(params.asset) u.searchParams.set('asset', params.asset); else u.searchParams.delete('asset');
+        if(params.tf)    u.searchParams.set('tf', params.tf);       else u.searchParams.delete('tf');
+        if(params.pub){ u.searchParams.set('pub','1'); if(params.mapName) u.searchParams.set('mn', params.mapName); }
+        else { u.searchParams.delete('pub'); u.searchParams.delete('mn'); }
+        // Drop any #m= snapshot hash — a reload must land on the LIVE room's chart,
+        // not re-import a stale map snapshot into the new room.
+        var hash = (u.hash && u.hash.indexOf('m=') >= 0) ? '' : (u.hash || '');
+        history.replaceState(null, '', u.pathname + '?' + u.searchParams.toString() + hash);
+      } catch(_){}
+      _joinGuard = {
+        expectLive: !opts.creating,
+        onJoined:   (typeof opts.onJoined === 'function') ? opts.onJoined : null,
+        onFail:     (typeof opts.onFail   === 'function') ? opts.onFail   : null,
+        timer: setTimeout(function(){
+          if(!_joinGuard) return;
+          var g = _joinGuard; _joinGuard = null;
+          _joinFail(g, 'Could not reach the room relay — check your connection and try again');
+        }, 9000),
+      };
+      backoff = 1000;
+      connect();
+      return true;
+    } catch(_){ return false; }
+  }
+
   if(params){ setTimeout(connect, 1400); }        // let auth + chart settle first
 
-  return {
+  var api = {
     active:       function(){ return !!params; },
     params:       params,
     render:       render,
@@ -36600,9 +36803,12 @@ window.crRoom = (function(){
     relayHttp:    relayHttp,
     isSpectator:  function(){ return spectator; },
     peerCount:    function(){ return peers.size; },
+    roomId:       roomIdFn,
+    join:         join,
     leave:        leave,
     _connect:     connect,
   };
+  return api;
 })();
 
 /* ── v1.0.431 — Online-players roster panel (multiplayer maps only) ───────────
@@ -36666,9 +36872,31 @@ window.crRoom = (function(){
       var e = ensure(); if(e.style.display !== 'none') e.style.display = 'none';
       var bar = document.querySelector('#crNotify .crChatOnline .lbl');
       if(bar){ bar.textContent = 'Online · ' + (active ? list.length : 1); }
+      // v1.0.639 — room CODE chip in the chat footer (click = copy). Shown for short
+      // room ids only (8-char codes); the long legacy map-room ids would flood the bar.
+      try {
+        var codeEl = document.querySelector('#crNotify .crChatOnline .code');
+        var rid = (active && crRoom.roomId) ? crRoom.roomId() : null;
+        var showC = !!(rid && rid.length <= 16);
+        if(codeEl){
+          if(showC && codeEl.getAttribute('data-code') !== rid){ codeEl.setAttribute('data-code', rid); codeEl.textContent = '· CODE ' + rid + ' ⧉'; }
+          if(!showC && codeEl.getAttribute('data-code')) codeEl.removeAttribute('data-code');
+          codeEl.style.display = showC ? '' : 'none';
+        }
+        // v1.0.639 — "alone-ish" share reminder: in a live room with ≤2 occupants,
+        // once per session, ~10 min in, dismissable (it is a normal fading toast).
+        if(active && showC){
+          if(!_aloneT0) _aloneT0 = Date.now();
+          if(!window._crAloneToastShown && (Date.now() - _aloneT0 > 600000) && list.length <= 2){
+            window._crAloneToastShown = true;
+            try { if(typeof toast === 'function') toast('Alone-ish in here — share code ' + rid + ' (click CODE in the chat bar to copy)'); } catch(_){}
+          }
+        } else { _aloneT0 = 0; }
+      } catch(_){}
       try { if(window._crRoomOverviewRefresh) window._crRoomOverviewRefresh(list, active); } catch(_){}
     } catch(_){}
   }
+  var _aloneT0 = 0;
   setInterval(tick, 1000);
 })();
 
@@ -36827,10 +37055,276 @@ window.crRoom = (function(){
   setInterval(function(){ try { var w = document.getElementById('win-maps'); if(w && w.classList.contains('on')) annotateMaps(); } catch(_){} }, 7000);
 
   // Maps-window "🔍 Rooms" launcher (delegated; the button is rendered in markup).
+  // v1.0.639 — the row now opens the 2-depth room wizard (guests land on the guest
+  // step directly); this public-rooms browser stays reachable from the wizard's
+  // connected step. Fallback: open the browser directly if the wizard is missing.
   document.addEventListener('click', function(e){
     var b = e.target && e.target.closest && e.target.closest('#crFindRooms');
-    if(b){ e.preventDefault(); e.stopPropagation(); open(); }
+    if(b){ e.preventDefault(); e.stopPropagation(); if(window.crRoomWizard && typeof crRoomWizard.open === 'function') crRoomWizard.open(); else open(); }
   });
+})();
+
+/* ── v1.0.639 — P0 guest rooms: code generator + 2-depth room wizard + code modal
+   + Rooms-lite wiring (guest Maps surface). Per docs/ROOM-CONFIG-DESIGN.md P0:
+   an 8-char base58 CODE **is** a relay room id (ROOM_RE accepts base58 3-88, zero
+   relay change). Guest tier = free, off-chain, client-side cap 8, no config.
+   Moderated/Paywall presets render visible-but-locked (P1/P2 · soon). Never throws. */
+(function crRoomWiz(){
+  if(typeof document === 'undefined') return;
+  var B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  // Codes are GENERATED from the caps subset (no I/O) so they survive the input
+  // auto-uppercase below; full base58 stays valid on input (long legacy ids paste OK).
+  var GEN = '123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  function genCode(){
+    var out = '';
+    try {
+      var buf = new Uint8Array(16);
+      while(out.length < 8){
+        (window.crypto || crypto).getRandomValues(buf);
+        for(var i = 0; i < buf.length && out.length < 8; i++){
+          // Rejection-sample: accept only bytes below 231 (= 7 × 33) so the
+          // modulo over the 33-char alphabet stays uniform.
+          if(buf[i] < 231) out += GEN.charAt(buf[i] % 33);
+        }
+      }
+    } catch(_){
+      while(out.length < 8) out += GEN.charAt(Math.floor(Math.random() * 33));
+    }
+    return out;
+  }
+  // Auto-uppercase-preserving-base58: uppercase each typed char when its uppercase
+  // form is in the alphabet (l→L, a→A); keep valid lowercase otherwise (i, o stay —
+  // I and O are not base58); drop everything else (0, spaces, punctuation).
+  function normCode(raw){
+    var s = String(raw || ''), out = '';
+    for(var i = 0; i < s.length && out.length < 88; i++){
+      var c = s.charAt(i), u = c.toUpperCase();
+      if(B58.indexOf(u) >= 0) out += u;
+      else if(B58.indexOf(c) >= 0) out += c;
+    }
+    return out;
+  }
+  function copyText(t){
+    function fallback(){
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = t; ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+        document.body.appendChild(ta); ta.select();
+        var ok = document.execCommand('copy'); ta.remove(); return !!ok;
+      } catch(_){ return false; }
+    }
+    return new Promise(function(res){
+      try {
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(t).then(function(){ res(true); }, function(){ res(fallback()); });
+          return;
+        }
+      } catch(_){}
+      res(fallback());
+    });
+  }
+  function roomLink(code){ return location.origin + location.pathname + '?room=' + encodeURIComponent(code); }
+  // Enter the chart via the established hand-off (v638 rail-drawer guard pattern):
+  // when no run is live, _crDlEnterRun closes the windows + starts a run on the
+  // current chart; when a run IS live, stay in place (presence just attaches).
+  function enterChart(){
+    var need = false;
+    try { need = (typeof game !== 'undefined') && !game.running; } catch(_){}
+    if(need){ try { if(typeof window._crDlEnterRun === 'function') window._crDlEnterRun(); } catch(_){} }
+  }
+  function say(m){ try { if(typeof toast === 'function') toast(m); } catch(_){} }
+
+  // ── Room-code modal (cd-* themed) ───────────────────────────────────────────
+  var cmBd = null;
+  function cmEnsure(){
+    if(cmBd) return cmBd;
+    cmBd = document.createElement('div'); cmBd.id = 'crRoomCodeBackdrop';
+    cmBd.innerHTML = '<div class="crCodeCard">'
+      + '<div class="crCodeHead"><span class="t">Room live</span><button class="x" type="button" title="Close">×</button></div>'
+      + '<div class="crCodeBig" id="crCodeBig"></div>'
+      + '<div class="crCodeBtns">'
+      + '<button class="crCodeBtn primary" id="crCodeCopy" type="button">⧉ Copy code</button>'
+      + '<button class="crCodeBtn" id="crCodeCopyLink" type="button">⧉ Copy link</button>'
+      + '</div>'
+      + '<div class="crCodeSub">anyone with this code joins your chart · guests free</div>'
+      + '</div>';
+    document.body.appendChild(cmBd);
+    cmBd.addEventListener('click', function(e){ if(e.target === cmBd) cmClose(); });
+    cmBd.querySelector('.x').addEventListener('click', cmClose);
+    cmBd.querySelector('#crCodeCopy').addEventListener('click', function(){
+      var c = cmBd.getAttribute('data-code') || '';
+      copyText(c).then(function(ok){ say(ok ? 'code copied' : 'copy failed — code: ' + c); });
+    });
+    cmBd.querySelector('#crCodeCopyLink').addEventListener('click', function(){
+      var c = cmBd.getAttribute('data-code') || '';
+      copyText(roomLink(c)).then(function(ok){ say(ok ? 'link copied' : 'copy failed — link: ' + roomLink(c)); });
+    });
+    return cmBd;
+  }
+  function cmClose(){ if(cmBd) cmBd.classList.remove('on'); }
+  function cmOpen(code){
+    cmEnsure();
+    cmBd.setAttribute('data-code', String(code || ''));
+    var big = cmBd.querySelector('#crCodeBig'); if(big) big.textContent = String(code || '');
+    cmBd.classList.add('on');
+  }
+  window.crRoomCodeModal = { open: cmOpen, close: cmClose };
+
+  // Footer CODE chip click lands here (chat bar, roster tick fills the chip).
+  window.crRoomCopyCode = function(){
+    try {
+      var rid = (window.crRoom && crRoom.roomId) ? crRoom.roomId() : null;
+      if(!rid) return;
+      copyText(rid).then(function(ok){ say(ok ? 'code copied' : 'copy failed — code: ' + rid); });
+    } catch(_){}
+  };
+
+  // ── Join / create (shared by wizard + Rooms-lite) ───────────────────────────
+  function doJoin(rawCode, done){
+    var c = normCode(rawCode);
+    if(c.length < 3){ say('Enter the 8-character room code'); if(done) done(false); return; }
+    if(!(window.crRoom && typeof crRoom.join === 'function')){ say('Rooms unavailable'); if(done) done(false); return; }
+    crRoom.join(c, {
+      onJoined: function(){
+        closeWiz();
+        say('Joined room ' + c);
+        enterChart();
+        if(done) done(true);
+      },
+      onFail: function(){ if(done) done(false); },
+    });
+  }
+  function doCreate(o){
+    o = o || {};
+    if(!(window.crRoom && typeof crRoom.join === 'function')){ say('Rooms unavailable'); return; }
+    var code = genCode();
+    var host = '';
+    try { if(o.wallet && window.crWallet && crWallet.get) host = String(crWallet.get() || ''); } catch(_){}
+    var mapName = '';
+    try {
+      if(o.pub) mapName = ((typeof currentAsset !== 'undefined' && currentAsset) ? String(currentAsset).toUpperCase() : 'CHART')
+        + ((typeof timeframe !== 'undefined' && timeframe) ? ' · ' + timeframe : '');
+    } catch(_){}
+    crRoom.join(code, {
+      creating: true,
+      host: host || null,
+      pub: !!o.pub,
+      mapName: mapName || null,
+      onJoined: function(){
+        closeWiz();
+        enterChart();
+        // Let the chart take over the screen first, then float the code on top.
+        setTimeout(function(){ cmOpen(code); }, 350);
+      },
+    });
+  }
+
+  // ── 2-depth wizard ──────────────────────────────────────────────────────────
+  var bd = null, bodyEl = null;
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>]/g, function(c){ return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'; }); }
+  function ensure(){
+    if(bd) return bd;
+    bd = document.createElement('div'); bd.id = 'crRoomWizBackdrop';
+    bd.innerHTML = '<div class="crWizCard">'
+      + '<div class="crWizHead"><span class="t" id="crWizTitle">Rooms</span><button class="x" type="button" title="Close">×</button></div>'
+      + '<div id="crWizBody"></div>'
+      + '</div>';
+    document.body.appendChild(bd);
+    bodyEl = bd.querySelector('#crWizBody');
+    bd.addEventListener('click', function(e){ if(e.target === bd) closeWiz(); });
+    bd.querySelector('.x').addEventListener('click', closeWiz);
+    return bd;
+  }
+  function closeWiz(){ if(bd) bd.classList.remove('on'); }
+  function isGuest(){ try { return (typeof window.crGuest === 'function') ? !!window.crGuest() : true; } catch(_){ return true; } }
+  function wireCodeInput(inp, go){
+    inp.addEventListener('input', function(){ var v = normCode(inp.value); if(inp.value !== v) inp.value = v; });
+    inp.addEventListener('keydown', function(e){ e.stopPropagation(); if(e.key === 'Enter'){ e.preventDefault(); go(); } });
+    inp.addEventListener('keyup', function(e){ e.stopPropagation(); });
+  }
+  function paint(step){
+    if(!bodyEl) return;
+    var title = bd.querySelector('#crWizTitle');
+    if(step === '1'){
+      if(title) title.textContent = 'Play together';
+      bodyEl.innerHTML = ''
+        + '<button class="crWizBig" type="button" data-wiz="2a">▶ PLAY WITH FRIENDS<span class="s">no wallet · local game with friends · just charting</span></button>'
+        + '<button class="crWizBig" type="button" data-wiz="2b">▶ CONNECTED ROOM<span class="s">wallet · private or public · moderation + paid rooms land on-chain</span></button>';
+      bodyEl.querySelector('[data-wiz="2a"]').addEventListener('click', function(){ paint('2a'); });
+      bodyEl.querySelector('[data-wiz="2b"]').addEventListener('click', function(){ paint('2b'); });
+      return;
+    }
+    if(step === '2a'){
+      if(title) title.textContent = 'Room with friends';
+      bodyEl.innerHTML = ''
+        + '<div class="crWizSec">▶ Join a room</div>'
+        + '<div class="crWizRow"><input class="crWizInput" id="crWizCode" type="text" maxlength="88" placeholder="ROOM CODE" autocomplete="off" spellcheck="false" aria-label="Room code"><button class="crWizGo" id="crWizJoin" type="button">Join</button></div>'
+        + '<div class="crWizSec">▶ Start a room with friends</div>'
+        + '<button class="crWizBig" id="crWizStart" type="button">START ROOM<span class="s">current chart · just charting · free · share the code</span></button>'
+        + (isGuest() ? '<div class="crWizLock" id="crWizLock">🔒 Save maps · copy trades · earn → Connect wallet</div>' : '')
+        + (isGuest() ? '' : '<div class="crWizFoot"><span class="lnk" id="crWizBack">◂ back</span></div>');
+      var inp = bodyEl.querySelector('#crWizCode');
+      var jb  = bodyEl.querySelector('#crWizJoin');
+      var go = function(){
+        if(jb.getAttribute('data-busy')) return;
+        jb.setAttribute('data-busy','1'); jb.textContent = '…';
+        doJoin(inp.value, function(){ try { jb.removeAttribute('data-busy'); jb.textContent = 'Join'; } catch(_){} });
+      };
+      wireCodeInput(inp, go);
+      jb.addEventListener('click', go);
+      bodyEl.querySelector('#crWizStart').addEventListener('click', function(){ doCreate({ wallet: !isGuest() }); });
+      var lk = bodyEl.querySelector('#crWizLock');
+      if(lk) lk.addEventListener('click', function(){ closeWiz(); try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){} });
+      var bk = bodyEl.querySelector('#crWizBack');
+      if(bk) bk.addEventListener('click', function(){ paint('1'); });
+      try { inp.focus(); } catch(_){}
+      return;
+    }
+    // 2b — connected: phase PRESETS. Private + Public work today (code room +
+    // optional ?pub=1 directory listing — the existing publish path). Moderated
+    // and Paywall are honest visible-but-locked presets (P1/P2 · soon).
+    if(title) title.textContent = 'Connected room';
+    bodyEl.innerHTML = ''
+      + '<div class="crWizSec">Room type · current chart</div>'
+      + '<button class="crWizBig" type="button" id="crWizPriv">PRIVATE<span class="s">code or link only · unlisted · you host</span></button>'
+      + '<button class="crWizBig" type="button" id="crWizPub">PUBLIC<span class="s">listed in the Rooms directory · anyone joins</span></button>'
+      + '<button class="crWizBig locked" type="button" tabindex="-1"><span class="crWizTag">P1 · soon</span>MODERATED<span class="s">relay-enforced host controls · kick / mute / curate</span></button>'
+      + '<button class="crWizBig locked" type="button" tabindex="-1"><span class="crWizTag">P2 · soon</span>PAYWALL<span class="s">SOL entry + copy-trading fees · on-chain rooms</span></button>'
+      + '<div class="crWizFoot"><span class="lnk" id="crWizBack">◂ back</span><span class="lnk" id="crWizBrowse">🔍 browse public rooms</span></div>';
+    bodyEl.querySelector('#crWizPriv').addEventListener('click', function(){ doCreate({ wallet: true }); });
+    bodyEl.querySelector('#crWizPub').addEventListener('click', function(){ doCreate({ wallet: true, pub: true }); });
+    var bk2 = bodyEl.querySelector('#crWizBack');
+    if(bk2) bk2.addEventListener('click', function(){ paint('1'); });
+    var br = bodyEl.querySelector('#crWizBrowse');
+    if(br) br.addEventListener('click', function(){ closeWiz(); try { if(window.crRoomsBrowser && crRoomsBrowser.open) crRoomsBrowser.open(); } catch(_){} });
+  }
+  function openWiz(){
+    ensure();
+    // Guests see the guest step directly — their depth-1 answer is implied.
+    paint(isGuest() ? '2a' : '1');
+    bd.classList.add('on');
+  }
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape' && bd && bd.classList.contains('on')) closeWiz(); });
+  window.crRoomWizard = { open: openWiz, close: closeWiz, join: doJoin, create: doCreate };
+
+  // ── Rooms-lite wiring (markup lives in #win-maps, CSS-gated on body.cr-guest) ──
+  try {
+    var liteInp   = document.getElementById('crLiteCode');
+    var liteJoin  = document.getElementById('crLiteJoinBtn');
+    var liteStart = document.getElementById('crLiteStartBtn');
+    var liteLock  = document.getElementById('crLiteWallet');
+    if(liteInp && liteJoin){
+      var liteGo = function(){
+        if(liteJoin.getAttribute('data-busy')) return;
+        liteJoin.setAttribute('data-busy','1');
+        doJoin(liteInp.value, function(){ try { liteJoin.removeAttribute('data-busy'); } catch(_){} });
+      };
+      wireCodeInput(liteInp, liteGo);
+      liteJoin.addEventListener('click', liteGo);
+    }
+    if(liteStart) liteStart.addEventListener('click', function(){ doCreate({}); });
+    if(liteLock) liteLock.addEventListener('click', function(){ try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){} });
+  } catch(_){}
 })();
 
 /* ── v1.0.435 — Global presence (social layer P2) ─────────────────────────────
@@ -68028,9 +68522,13 @@ function _crChatEnsure(panel){
   if(!panel.querySelector('.crChatOnline')){
     const ob = document.createElement('div');
     ob.className = 'crChatOnline';
-    ob.innerHTML = '<span class="dot"></span><span class="lbl">Online · 1</span><span class="chev">▸ overview</span>';
+    // v1.0.639 — the CODE chip sits between the count and the overview chevron;
+    // the roster tick fills it while crRoom.active(). Click = copy, not overview.
+    ob.innerHTML = '<span class="dot"></span><span class="lbl">Online · 1</span><span class="code" style="display:none"></span><span class="chev">▸ overview</span>';
     ob.addEventListener('click', e => {
       e.preventDefault(); e.stopPropagation();
+      const cd = e.target && e.target.closest ? e.target.closest('.code') : null;
+      if(cd){ try { if(typeof window.crRoomCopyCode === 'function') window.crRoomCopyCode(); } catch(_){} return; }
       try { if(typeof window.crRoomOverviewOpen === 'function') window.crRoomOverviewOpen(); } catch(_){}
     });
     panel.appendChild(ob);
@@ -70988,7 +71486,9 @@ function log(msg){
       prog = 'wallet';
       setTimeout(function(){ try { var t = document.querySelector('.crTerm-tab[data-profview="coach"]'); if(t) t.click(); } catch(_){} }, 0);
     }
-    if((prog === 'maps' || prog === 'journal') && typeof crGuest === 'function' && crGuest()){
+    // v1.0.639 — Maps opens for guests again: body.cr-guest swaps the window body
+    // to the Rooms-lite surface (join/start a room by code). Journal stays gated.
+    if(prog === 'journal' && typeof crGuest === 'function' && crGuest()){
       try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); else if(typeof toast === 'function') toast('Connect a wallet to use this'); } catch(_){}
       return;
     }
@@ -71037,7 +71537,8 @@ function log(msg){
       prog = 'wallet';
       setTimeout(function(){ try { var t = document.querySelector('.crTerm-tab[data-profview="coach"]'); if(t) t.click(); } catch(_){} }, 0);
     }
-    if((prog === 'maps' || prog === 'journal') && typeof crGuest === 'function' && crGuest()){
+    // v1.0.639 — Maps opens for guests again (Rooms-lite); Journal stays gated.
+    if(prog === 'journal' && typeof crGuest === 'function' && crGuest()){
       try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); else if(typeof toast === 'function') toast('Connect a wallet to use this'); } catch(_){}
       return;
     }
