@@ -111,8 +111,20 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.632
-     LAST UPDATED:    2026-07-15  ·  v1.0.632: SECURITY — scrub private-infra references from the public
+     CURRENT VERSION: v1.0.633
+     LAST UPDATED:    2026-07-16  ·  v1.0.633: TOKEN-TERMINAL RUN — CEX PATH GOES IN-APP (user report:
+     "clicking RUN just buffers and does not load the token"). Live repro on v630 (Chrome ext): RUN on
+     FIGR_HELOC reloaded to ?symbol=BINANCE:FIGR_HELOCUSDT — the "buffering" is the full page re-boot —
+     and crApplyDeepLink's CEX branch then hit `if(!known) return false` (only the 9 built-in ASSETS ids
+     resolve), silently stranding the player on the empty DESKTOP. Every catalog coin that is neither a
+     Solana mint nor one of those 9 ids was affected (FIGR_HELOC, RAIN, ARB, OP, TIA, PEPE, …). Fix:
+     (1) RUN's CEX branch now mirrors the Solana-mint in-app path — a coin with a real Binance pair
+     (TOK_BINANCE_PAIR) gets a dynamic ASSETS entry + broker cex/Binance, then switchAsset →
+     _crDlEnterRun, NO reload; (2) coins with NO live feed (SYNTH profile badge) deny with an honest
+     toast instead of reloading into a 404; (3) the ?symbol= boot's unknown-asset bail now toasts why
+     (v627 KNOWN FOLLOW-UP) instead of failing silently. The reload path in the RUN handler is gone.
+     Verified: SOL + BONK (mint path) still run in-place; JS parses (node --check).
+     PRIOR (v1.0.632):    2026-07-15  ·  v1.0.632: SECURITY — scrub private-infra references from the public
      build (private home-server naming, internal labs/dev flags, and internal scaffold/submission paths
      removed or renamed to neutral public-safe tokens); leakage guard tightened to forbid any private
      home-server reference in public and to stop flagging public product (agent personas, local-AI
@@ -14733,7 +14745,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.632",
+  VERSION: "1.0.633",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -25399,7 +25411,13 @@ async function crApplyDeepLink(res){
     // ── CEX known-asset (Phase 2) ──
     var assetId = String(res.asset || '').toLowerCase();
     var known = (typeof ASSETS !== 'undefined' && Array.isArray(ASSETS)) && ASSETS.some(function(a){ return String(a.id).toLowerCase() === assetId; });
-    if(!known) return false; // unknown asset → leave normal boot alone (Phase 5 sanitizes)
+    if(!known){
+      // v1.0.633 — KNOWN FOLLOW-UP from v627: a ?symbol= link whose asset the boot
+      // can't resolve used to strand the player on the desktop with NO feedback.
+      // Still leave normal boot alone, but SAY why (deferred so toast exists).
+      try { setTimeout(function(){ try { if(typeof toast === 'function') toast('⚠ Unknown symbol in link — pick an asset in Configure Run'); } catch(_){} }, 1200); } catch(_){}
+      return false; // unknown asset → leave normal boot alone (Phase 5 sanitizes)
+    }
     // broker venue — crBrokerSelection defaults to DEX/Jupiter, so a CEX symbol MUST set it.
     try {
       var venueName = (typeof CR_CEX_READONLY_LABELS !== 'undefined' && CR_CEX_READONLY_LABELS[res.venue]) ? CR_CEX_READONLY_LABELS[res.venue] : 'Binance';
@@ -58771,11 +58789,36 @@ function _tokRenderProfile(){
             return;
           }
         }
-        // CEX / known symbol — the ?symbol= deep-link works for these; keep the reload.
-        var _sym = 'BINANCE:' + String((def && def.tag) || 'BTC').toUpperCase() + 'USDT';
-        var _base = location.href.split('#')[0].split('?')[0];
-        try { if(typeof toast === 'function') toast('Spawning run · ' + ((def && def.tag) || '') + ' · ' + _tf.toUpperCase()); } catch(_){}
-        location.href = _base + '?symbol=' + encodeURIComponent(_sym) + '&tf=' + encodeURIComponent(_tf);
+        // v1.0.633 — CEX RUN goes IN-APP too (user report: RUN "buffers" then never
+        // loads the token). The old branch fabricated BINANCE:<TAG>USDT and did a
+        // full-page reload — but the ?symbol= boot resolver only accepts the 9
+        // built-in ASSETS ids, so EVERY other catalog coin (FIGR_HELOC, RAIN, ARB,
+        // PEPE, …) reloaded (the "buffering") and then silently dropped the player
+        // on the empty DESKTOP (reproduced live on v630, Chrome ext). Now: coins
+        // with a real Binance pair (TOK_BINANCE_PAIR) get a dynamic ASSETS entry
+        // and run IN PLACE via the same switchAsset → _crDlEnterRun sequence as
+        // Solana mints; coins with NO live feed (the profile's SYNTH badge) deny
+        // with an honest toast instead of a dead reload. No reload path remains.
+        var _pair = (def && typeof TOK_BINANCE_PAIR !== 'undefined' && TOK_BINANCE_PAIR[def.id]) ? String(TOK_BINANCE_PAIR[def.id]) : null;
+        if(_pair && typeof ASSETS !== 'undefined' && typeof switchAsset === 'function'){
+          var _cexAsset = null;
+          try { _cexAsset = ASSETS.find(function(a){ return a.id === def.id || a.sym === _pair; }); } catch(_){}
+          if(!_cexAsset){
+            _cexAsset = { id:def.id, nm:String(def.tag || def.id).toUpperCase(), sym:_pair, label:String(def.tag || def.id).toUpperCase() + '/USDT', seed:(s && s.px) || 1 };
+            ASSETS.push(_cexAsset);
+          }
+          try { if(typeof game !== 'undefined') game.broker = { type:'cex', name:'Binance' }; localStorage.setItem('cr_broker_v1', JSON.stringify({ type:'cex', name:'Binance' })); } catch(_){}
+          try { if(typeof timeframe !== 'undefined') timeframe = _tf; } catch(_){}
+          try { if(typeof renderAssetOptions === 'function') renderAssetOptions(document.getElementById('assetSel')); } catch(_){}
+          try { if(typeof toast === 'function') toast('Running · ' + (def.tag || '') + ' · ' + _tf.toUpperCase()); } catch(_){}
+          Promise.resolve(switchAsset(_cexAsset.id))
+            .then(function(){ try { if(typeof window._crDlEnterRun === 'function') window._crDlEnterRun(); } catch(_){} })
+            .catch(function(){ try { if(typeof window._crDlEnterRun === 'function') window._crDlEnterRun(); } catch(_){} });
+          return;
+        }
+        // No live market feed for this token (SYNTH profile data) — say so honestly
+        // instead of reloading into a 404 and stranding the player on the desktop.
+        try { if(typeof toast === 'function') toast('⚠ ' + ((def && def.tag) || 'This token') + ' has no live market feed yet — research only'); } catch(_){}
       } catch(_){}
     }); }
     const sparkCv = document.getElementById('tokSpark_' + def.id);
