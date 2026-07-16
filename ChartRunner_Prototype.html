@@ -111,8 +111,23 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.634
-     LAST UPDATED:    2026-07-16  ·  v1.0.634: TOKEN RUN — NO-FEED COINS RUN ON A SEEDED CHART. v633's
+     CURRENT VERSION: v1.0.635
+     LAST UPDATED:    2026-07-16  ·  v1.0.635: MP-LINK #56 — DETERMINISTIC ROOM/SNAPSHOT HAND-OFF (replaces
+     the v1.0.612 blind 3.5s safety net). Live repro (same-origin iframe probe, 2026-07-16): the share
+     builder only includes the &h= integrity hash when the map has an on-chain anchor, so a LIVE-room
+     link for any non-anchored (or content-drifted) map NEVER auto-opens — the importer silently skips
+     the open (_verified false), the invitee sits behind the boot cover until the 3.5s net launches a
+     bare chart (~7s of "long loading", map never applied); before v612 this landed on the empty
+     DESKTOP. Also: crMaps.load() catches internally and returns false instead of throwing, so the
+     v1.0.318 retry loop was dead code and a false return was counted as success (cover revealed over
+     the desktop). Fix: (1) the importer now emits exactly one 'cr-snapshot-settled' signal — ok:true
+     only when crMaps.load() returned true AND the run is actually up (else it retries, then settles
+     false; decode-fail / unverified / gate-off paths settle false immediately); (2) the deep-link room
+     fallback launches the bare-room chart the INSTANT a false settle arrives (event-driven; it clears
+     raw.hasSnapshot so crApplyDeepLink can't defer back to the importer) — the 3.5s timer is gone; a
+     10s backstop remains only for the unforeseen no-settle case. Solo boots and bare-room links are
+     untouched. Verified: node --check on every script block; live interleave of both variants traced.
+     PRIOR (v1.0.634):    2026-07-16  ·  v1.0.634: TOKEN RUN — NO-FEED COINS RUN ON A SEEDED CHART. v633's
      deny-toast for coins without a Binance pair read as "RUN does nothing / chart not loading" (user
      report, same session): the toast is transient and ~460 of the 476 catalog coins have no
      TOK_BINANCE_PAIR entry, so the RUN button was dead for most of the list. Post-deploy live check
@@ -14755,7 +14770,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.634",
+  VERSION: "1.0.635",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -17216,6 +17231,21 @@ window.crChainSave = (function(){
     out += dec.decode();
     return out;
   }
+  // v1.0.635 — #56 deterministic hand-off. The deep-link room fallback (see the
+  // CR_DEEPLINK block near crApplyDeepLink) used to guess with a blind 3.5s
+  // timer whether this importer had put the chart up. Now the importer emits
+  // EXACTLY ONE settle signal: ok:true ⇒ the map auto-open verifiably succeeded
+  // (crMaps.load returned true AND the run started); ok:false ⇒ this importer
+  // will NOT put a chart up (decode failed / link unverified so auto-open was
+  // skipped / load failed) and the fallback may launch immediately. One-shot;
+  // never throws. State mirror on window for listeners armed after the fact.
+  function _snapSettle(ok, why){
+    try {
+      if (window.__crSnapshotSettled) return;
+      window.__crSnapshotSettled = { ok: !!ok, why: String(why || ''), at: Date.now() };
+      window.dispatchEvent(new CustomEvent('cr-snapshot-settled', { detail: window.__crSnapshotSettled }));
+    } catch(_){}
+  }
   try {
     var u2 = new URL(window.location.href);
     if (u2.searchParams.get('sharedMap') === '1' && u2.hash){
@@ -17298,22 +17328,39 @@ window.crChainSave = (function(){
                 // throws — which (inside the single surrounding try) skipped
                 // hideSplash and stranded the opener on the splash/desktop. Retry
                 // until the load sticks, THEN hide the splash. crReport logs misses.
+                // v1.0.635 — #56: crMaps.load() catches internally and returns
+                // false instead of throwing, so the throw-retry here never
+                // actually retried AND a false return was counted as success —
+                // hideSplash + cover-reveal fired over an empty desktop. Success
+                // now = load() returned true AND the run actually started (the
+                // soft-start inside load() needs candles; on a cold boot they can
+                // still be in flight — a retry re-runs load, which re-checks).
                 (function _openImported(id, tries){
                   var ok = false;
-                  try { if (typeof crMaps !== 'undefined' && crMaps.load) { crMaps.load(id); ok = true; } }
+                  try { if (typeof crMaps !== 'undefined' && crMaps.load) ok = (crMaps.load(id) === true); }
                   catch(e){ try { if(window.crReport) crReport(e, 'snapshot/open#' + tries); } catch(_){} }
-                  if(ok){
+                  var up = true;
+                  try { up = (typeof game === 'undefined') || !!game.running; } catch(_){}
+                  if(ok && up){
                     try { if (typeof hideSplash === 'function') hideSplash(); else { var _wm = document.getElementById('win-maps'); if (_wm) _wm.classList.remove('on'); } } catch(_){}
                     // v1.0.320 — chart is up: drop the deep-link boot cover so the
                     // invitee lands directly on this chart (no desktop flash). Small
                     // delay lets the first chart frame paint under the cover first.
                     try { setTimeout(function(){ try{ window.crDlRevealChart && crDlRevealChart(); }catch(_){} }, 450); } catch(_){}
+                    _snapSettle(true, 'open');
                   } else if(tries < 6){
                     setTimeout(function(){ _openImported(id, tries + 1); }, 700);
+                  } else {
+                    _snapSettle(false, ok ? 'no-run' : 'load-failed');
                   }
                 })(map.id, 0);
+              } else {
+                // #56 — this link will NOT auto-open (unverified / no integrity
+                // hash / deep-links off): hand the chart launch to the deep-link
+                // room fallback NOW (the map stays imported in Maps either way).
+                _snapSettle(false, _verified ? 'no-gate' : 'unverified');
               }
-            } catch(_){}
+            } catch(_){ _snapSettle(false, 'open-error'); }
             // Collapse the just-imported copy against an identical local copy. Runs
             // AFTER the load above (so map.id was still present for it), and now
             // works because importedFrom is excluded from the dedupe canon.
@@ -17324,6 +17371,7 @@ window.crChainSave = (function(){
             } catch(_){}
           } catch(err){
             try { if (typeof toast === 'function') toast('Share-link decode failed'); } catch(_){}
+            _snapSettle(false, 'decode');   // #56 — importer is out; fallback may launch
           }
           // Clean URL so a refresh doesn't re-import.
           try {
@@ -25672,24 +25720,37 @@ try {
        || (_dlLaunch.intent === 'room' && !(_dlLaunch.raw && _dlLaunch.raw.hasSnapshot))){
       setTimeout(function(){ try { crApplyDeepLink(_dlLaunch); } catch(_){} }, 1200);
     }
-    // v1.0.612 — #56 SAFE HARDENING: a room link WITH a #m= snapshot is owned by the
-    // sharedMap importer (retry-based; can silently fail its first-load reveal → the
-    // invitee lands on the DESKTOP and has to RELOAD to see the room). Reloading works
-    // because by then the URL is cleaned to ?room=&asset=&tf= and crApplyDeepLink takes
-    // the reliable bare-room asset launch. Safety net: give the importer time, then ~3.5s
-    // in — if NO run/chart is up — run that exact reload path on the FIRST load too. Room
-    // presence (crRoom) connects on its own timer, so this only recovers the chart. No-op
-    // when the importer already succeeded (game.running true).
+    // v1.0.635 — #56 DETERMINISTIC HAND-OFF (replaces the v1.0.612 blind 3.5s net):
+    // a room link WITH a #m= snapshot is owned by the sharedMap importer, which now
+    // emits exactly one 'cr-snapshot-settled' signal (see _snapSettle there).
+    // ok:true ⇒ the map auto-open verifiably succeeded and the run is up — nothing
+    // to do. ok:false ⇒ the importer will NOT put a chart up (decode failed / the
+    // link carries no or a mismatching integrity hash so auto-open was skipped /
+    // crMaps.load failed) — run the bare-room asset launch (the exact path a manual
+    // RELOAD always took) IMMEDIATELY. Live-repro 2026-07-16: the share builder
+    // omits &h= for every non-anchored map, so those room links never auto-open;
+    // the invitee sat behind the boot cover ~7s before the timer net fired. Room
+    // presence (crRoom) connects on its own timer, so this only recovers the chart.
+    // A 10s backstop covers only the unforeseen case that no settle ever arrives.
     if(_dlLaunch.intent === 'room' && _dlLaunch.raw && _dlLaunch.raw.hasSnapshot && (_dlLaunch.asset || _dlLaunch.isMint)){
-      setTimeout(function(){
+      var _crRoomFb = function(){
         try {
+          if(_crRoomFb._did) return; _crRoomFb._did = true;
           if(typeof game !== 'undefined' && game.running) return;   // chart already up — leave it
           if(typeof crResolveDeepLink === 'function' && typeof crApplyDeepLink === 'function'){
-            var _rf = crResolveDeepLink();               // re-read the (now-cleaned) URL
+            var _rf = crResolveDeepLink();               // re-read the URL (usually cleaned by now)
+            // The importer has renounced ownership — a false settle can arrive
+            // BEFORE its URL cleanup, so clear the snapshot flag or
+            // crApplyDeepLink would defer right back to the importer.
+            if(_rf && _rf.raw) _rf.raw.hasSnapshot = false;
             if(_rf && (_rf.asset || _rf.isMint)) crApplyDeepLink(_rf);
           }
         } catch(_){}
-      }, 3500);
+      };
+      var _onSnapSettle = function(det){ if(det && det.ok){ _crRoomFb._did = true; return; } _crRoomFb(); };
+      if(window.__crSnapshotSettled) _onSnapSettle(window.__crSnapshotSettled);
+      else window.addEventListener('cr-snapshot-settled', function(ev){ _onSnapSettle(ev && ev.detail); }, { once:true });
+      setTimeout(function(){ if(!window.__crSnapshotSettled) _crRoomFb(); }, 10000);
     }
   }
 } catch(_){}
