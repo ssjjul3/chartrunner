@@ -111,8 +111,18 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.637
-     LAST UPDATED:    2026-07-16  ·  v1.0.637: TERMINAL — "OFFLINE" IS NEVER LOUD + 3 NEW SOLANATRACKER PANES
+     CURRENT VERSION: v1.0.638
+     LAST UPDATED:    2026-07-16  ·  v1.0.638: RAIL DRAWER "▶ OPEN CHART" WORKS FROM THE DESKTOP (user
+     report + screenshot: clicking Open chart in a pane drilldown, e.g. Funding Heatmap → STAR, did
+     nothing). Root cause: the drawer handler called switchAsset() which swaps candles BEHIND the
+     splash but never enters the chart — no hideSplash, no run, so from the desktop the click was
+     invisible. Fix mirrors the v633 token-terminal hand-off: when no run is live, the handler now
+     enters one after the switch (switchAsset → _crDlEnterRun); when a run IS live the old in-place
+     chart swap is kept (no restart). Also: the CEX-ticker branch now sets broker cex/Binance before
+     switching (same reason as v633 — DEX/Jupiter broker can't resolve a BINANCE:<TAG>USDT pair), and
+     the no-feed ticker still falls to the honest seeded chart via loadCandles. Applies to every rail
+     drawer (Funding Heatmap, Trending/New Pools, TVL Movers, all mint/ticker rows).
+     PRIOR (v1.0.637):    2026-07-16  ·  v1.0.637: TERMINAL — "OFFLINE" IS NEVER LOUD + 3 NEW SOLANATRACKER PANES
      (user report + screenshot, 2026-07-16: "offline should not be visible"). (a) Quiet failure states:
      _setHdTag's warn path no longer paints the red italic "offline — see console / Token Terminal
      Settings for API keys" box into pane bodies. A failed feed now shows ONE dim ⚙ hint line, any
@@ -14875,7 +14885,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.637",
+  VERSION: "1.0.638",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -83837,8 +83847,28 @@ window.crGoldRush = (function(){
           var dr = document.getElementById('crRailDrawer'); if(!dr) return;
           var mn = dr.getAttribute('data-mint'), tk = dr.getAttribute('data-ticker'), as = null;
           if(mn && typeof crEnsureCustomSolanaToken === 'function'){ as = crEnsureCustomSolanaToken(mn); try{ game.broker = { type:'dex', name:'Jupiter' }; localStorage.setItem('cr_broker_v1', JSON.stringify({ type:'dex', name:'Jupiter' })); }catch(_){} }
-          else if(tk && typeof crEnsureCexAsset === 'function'){ as = crEnsureCexAsset(tk); }
-          if(as){ try{ if(typeof renderAssetOptions === 'function') renderAssetOptions(document.getElementById('assetSel')); }catch(_){} try{ if(typeof switchAsset === 'function') switchAsset(as.id); }catch(_){} try{ if(typeof toast === 'function') toast('Chart: ' + (as.label || as.nm)); }catch(_){} }
+          else if(tk && typeof crEnsureCexAsset === 'function'){
+            as = crEnsureCexAsset(tk);
+            // v1.0.638 — a CEX ticker chart needs the broker on cex, or loadCandles
+            // takes the DEX/Jupiter branch and can't resolve the pair (mirrors the
+            // token-terminal RUN fix, v633).
+            if(as){ try{ game.broker = { type:'cex', name:'Binance' }; localStorage.setItem('cr_broker_v1', JSON.stringify({ type:'cex', name:'Binance' })); }catch(_){} }
+          }
+          if(as){
+            try{ if(typeof renderAssetOptions === 'function') renderAssetOptions(document.getElementById('assetSel')); }catch(_){}
+            try{ if(typeof toast === 'function') toast('Chart: ' + (as.label || as.nm)); }catch(_){}
+            // v1.0.638 — "▶ Open chart" did nothing from the DESKTOP (user report):
+            // switchAsset() swapped candles BEHIND the splash but never entered the
+            // chart — no window close, no hideSplash, no run. Mirror the v633
+            // token-terminal hand-off: when no run is up, enter one after the
+            // switch; when a run IS live, keep the old in-place chart swap.
+            var _rdNeedEnter = false;
+            try { _rdNeedEnter = (typeof game !== 'undefined') && !game.running; } catch(_){}
+            var _rdEnter = function(){ if(_rdNeedEnter){ try { if(typeof window._crDlEnterRun === 'function') window._crDlEnterRun(); } catch(_){} } };
+            try{
+              Promise.resolve((typeof switchAsset === 'function') ? switchAsset(as.id) : null).then(_rdEnter).catch(_rdEnter);
+            }catch(_){ _rdEnter(); }
+          }
           dr.classList.remove('on'); return;
         }
         var rr = t.closest('.crRailRow'); if(rr) _crOpenRailDrawer(rr);
