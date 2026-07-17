@@ -1,0 +1,61 @@
+/* ============================================================================
+   ChartRunnerOS — LIQUID theme reinforcement  (draft, 2026-07-17)
+   NOT a new theme. This hardens the EXISTING `[data-theme="liquid"]` surfaces
+   and shared OS functionality, using what the macos27.kimi.page teardown
+   confirmed as best practice. Same look, more consistent + one real fix.
+
+   STATUS: STAGED / NOT WIRED. Fable 5 merges these into the existing liquid
+   rules (they're keyed to the real selectors, so they reinforce in place).
+   Law: canvas stays pure — HUD/OS chrome only.
+
+   What's already good (leave it): the liquid theme already has the specular
+   top-edge (`inset 0 1px 0 rgba(255,255,255,.82)`), glass tokens, blur+saturate,
+   soft shadows, and the radial desktop. We are NOT restyling that.
+   ========================================================================== */
+
+/* 1) CONSISTENCY — tokenize the blur so every liquid surface pulls one scale
+      instead of hardcoding blur(24px)/28px and stray blur(22px)!important.
+      Values chosen to MATCH the current surfaces exactly → zero visual change,
+      just one source of truth + no more !important sprawl. */
+[data-theme="liquid"]{
+  --lg-blur-soft: 20px;    /* popovers / menus            */
+  --lg-blur-medium: 24px;  /* == current menubar value    */
+  --lg-blur-strong: 28px;  /* == current window value     */
+  --lg-saturate: 1.42;     /* midpoint of current 1.38–1.45 */
+  --lg-ease-ios: cubic-bezier(.32,.72,0,1);
+  --lg-dur-panel: .34s;    /* keeps COACH ≤ the 260–340ms budget */
+}
+[data-theme="liquid"] .os-menubar{
+  backdrop-filter:blur(var(--lg-blur-medium)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter:blur(var(--lg-blur-medium)) saturate(var(--lg-saturate));
+}
+[data-theme="liquid"] .os-window{
+  backdrop-filter:blur(var(--lg-blur-strong)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter:blur(var(--lg-blur-strong)) saturate(var(--lg-saturate));
+}
+
+/* 2) FUNCTIONALITY FIX — the COACH.llm panel currently "teleports" in:
+      @keyframes crCoachIn{from{opacity:0;translate -50%,8px}} .25s ease-out.
+      Reinforce it to match the polish of the rest of the liquid theme: a small
+      spatial scale-in on the iOS curve. Same panel, same tokens, just settles
+      instead of snapping. Only applied under the liquid theme. */
+@keyframes crCoachInLiquid{
+  from{ opacity:0; transform: translateX(-50%) translateY(14px) scale(.965); }
+  to  { opacity:1; transform: translateX(-50%) translateY(0)    scale(1);    }
+}
+[data-theme="liquid"] #crCoachOverlay{
+  animation: crCoachInLiquid var(--lg-dur-panel) var(--lg-ease-ios);
+  transform-origin: bottom center;
+}
+
+/* 3) INTERACTION FEEL — reinforce existing menubar items / dock icons / window
+      buttons with a light tactile press (theme-agnostic; opt-in via .os-press,
+      or map onto the existing interactive classes during merge). */
+.os-press{ transition: transform .12s cubic-bezier(.23,1,.32,1); }
+.os-press:active{ transform: scale(.96); }
+
+/* 4) ACCESSIBILITY — reinforce: never animate for reduced-motion users. */
+@media (prefers-reduced-motion: reduce){
+  [data-theme="liquid"] #crCoachOverlay{ animation: none; }
+  .os-press{ transition: none; }
+}
