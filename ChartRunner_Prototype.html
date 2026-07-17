@@ -111,8 +111,18 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.645
-     LAST UPDATED:    2026-07-17  ·  v1.0.645: ROOM PRESET RENAME — the connected-room P2 preset "PAYWALL" is now
+     CURRENT VERSION: v1.0.646
+     LAST UPDATED:    2026-07-17  ·  v1.0.646: ROOM P1 CLIENT — moderated/curated rooms (unlocks the MODERATED
+     preset + adds CURATED; EARN ON-CHAIN stays P2). Per docs/ROOM-P1-ROOMCFG-SPEC.md, paired with chartrunner-relay
+     v0.2.0. crWallet gains canSign + signMessage (base58, browser wallet / Runner Wallet). crRoom: on a moderated/
+     curated host, join DEFERS until the relay `hello` nonce, then joins with a wallet-signed roomCfg (canonical JSON
+     over cfg+nonce); 600ms fallback → plain join on an un-upgraded relay (cosmetic mode). onMsg handles hello / mode /
+     youAreHost / roommode / peer_mute / peer_submit / kicked+banned; roster carries sid/isHost/muted. New host-controls
+     panel (crRoomHostPanel): moderated <-> curated switch, hide-guest-chat toggle, per-peer mute/kick, and the curated
+     submit-to-approve tray. Wizard: MODERATED + CURATED presets (wallet-signing required, honest wallet-picker fall-
+     back) + a hide-guest-chat checkbox; doCreate threads mode + hideGuestChat. Guests get submit/host-only-chat
+     toasts. Fully backward compatible: old relay -> cosmetic labels; old client -> open rooms. No on-chain work.
+     PREV  ·  v1.0.645: ROOM PRESET RENAME — the connected-room P2 preset "PAYWALL" is now
      "EARN ON-CHAIN" (host-earns framing; matches the wallet-lock "Save maps · copy trades · earn" CTA; sub-line →
      "SOL entry + copy-trading fees · host earns"). Label-only; the preset stays visible-but-locked (P2 · soon)
      until the on-chain escrow + royalty-split ix + Chapter-52 gate ship per docs/ROOM-CONFIG-DESIGN.md §9. No
@@ -15263,7 +15273,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.645",
+  VERSION: "1.0.646",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -16005,7 +16015,32 @@ window.crWallet = (function(){
     Storage.prototype.setItem    = function(k, v){ return origSet.call(this, _ns(k), v); };
     Storage.prototype.removeItem = function(k){ return origRemove.call(this, _ns(k)); };
   } catch(_){}
+  // v1.0.646 (Room P1) — sign a message with the connected wallet so a host can
+  // prove ownership of its pubkey to the relay. Returns a base58 signature, or
+  // null if the wallet can't sign. pubkey is already base58 = get().
+  function _b58enc(bytes){
+    var A='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz', d=[0], i, j;
+    for(i=0;i<bytes.length;i++){ var c=bytes[i]; for(j=0;j<d.length;j++){ c+=d[j]<<8; d[j]=c%58; c=(c/58)|0; } while(c){ d.push(c%58); c=(c/58)|0; } }
+    var str=''; for(i=0;i<bytes.length && bytes[i]===0;i++) str+='1';
+    for(j=d.length-1;j>=0;j--) str+=A[d[j]]; return str;
+  }
+  function _signProvider(){
+    try { var p=_browserWalletProvider(); if(p && typeof p.signMessage==='function') return p; } catch(_){}
+    try { if(window.runner_wallet && typeof window.runner_wallet.signMessage==='function') return window.runner_wallet; } catch(_){}
+    return null;
+  }
+  function canSign(){ return !!(get() && _signProvider()); }
+  async function signMessage(bytes){
+    var p=_signProvider(); if(!p) return null;
+    try {
+      var res = await p.signMessage(bytes, 'utf8');
+      var sig = res && (res.signature || res.sig || res);
+      if(sig && sig.length!=null){ return _b58enc(sig instanceof Uint8Array ? sig : new Uint8Array(sig)); }
+    } catch(_){}
+    return null;
+  }
   return { get: get, adapter: adapter, isConnected: isConnected, runnerWalletSelected: runnerWalletSelected, truncated: truncated,
+           canSign: canSign, signMessage: signMessage,
            connect: connect, openWalletPicker: openWalletPicker, selectRunnerWallet: selectRunnerWallet,
            selectBrowserWallet: selectBrowserWallet, disconnect: disconnect, setConnected: setConnected, on: on };
 })();
@@ -38536,6 +38571,12 @@ window.crRoom = (function(){
   var peers = new Map();        // sid → {handle,seat,avatarClass,isWallet,wx,py,twx,tpy,vx,facing,builds,last}
   var posTimer = null, backoff = 1000;
   var buildsTimer = null, _lastBuildsHash = '';   // M-MP Pass 2 — live build-sync
+  // v1.0.646 (Room P1) — moderation state
+  var _roomMode = 'open', _youAreHost = false, _hostNonce = '';
+  var _pendingHostJoin = false, _helloFallback = null;
+  var _submissions = new Map();   // id -> {sid, handle, kind, payload, t}  (host review queue)
+  function _canonCfg(x){ if(Array.isArray(x)) return '['+x.map(_canonCfg).join(',')+']'; if(x && typeof x==='object') return '{'+Object.keys(x).sort().map(function(k){ return JSON.stringify(k)+':'+_canonCfg(x[k]); }).join(',')+'}'; return JSON.stringify(x); }
+  function _canSignHost(){ try { return !!(myWallet() && window.crWallet && crWallet.canSign && crWallet.canSign()); } catch(_){ return false; } }
 
   function myWallet(){ try { return (window.crWallet && crWallet.get && crWallet.get()) ? String(crWallet.get()) : ''; } catch(_){ return ''; } }
   function mySeat(){
@@ -38557,6 +38598,35 @@ window.crRoom = (function(){
 
   function send(o){ try { if(ws && ws.readyState===1) ws.send(JSON.stringify(o)); } catch(_){} }
 
+  // v1.0.646 (Room P1) — join send (plain, or with a wallet-signed roomCfg bundle).
+  function _doJoinSend(bundle){
+    var msg = { t:'join', handle: myHandle(), seat: mySeat(), avatarClass:'runner', isWallet: !!myWallet(), host: params && params.host };
+    if(bundle){ msg.cfg = bundle.cfg; msg.sig = bundle.sig; msg.pubkey = bundle.pubkey; }
+    send(msg);
+    startPos(); startBuilds();
+    try { if(params && params.pub) send({ t:'publish', public:true, mapName: params.mapName||'', asset: params.asset||'', tf: params.tf||'', host: params.host, snapshot: params.snapshot||'' }); } catch(_){}
+  }
+  function _buildHostCfg(nonce){
+    var host = (params && params.host) || myWallet();
+    if(!host || !params) return Promise.resolve(null);
+    var cfg = { v:1, room: params.room, host: host, mode: params.mode || 'moderated', iat: Math.floor(Date.now()/1000), flags: { hideGuestChat: params.hideGuestChat !== false } };
+    var bytes; try { bytes = new TextEncoder().encode(_canonCfg(cfg) + '\n' + String(nonce||'')); } catch(_){ return Promise.resolve(null); }
+    return Promise.resolve(crWallet.signMessage(bytes)).then(function(sig){ return sig ? { cfg:cfg, sig:sig, pubkey:host } : null; }).catch(function(){ return null; });
+  }
+  function _signAndJoin(nonce){
+    _buildHostCfg(nonce).then(function(bundle){
+      if(bundle){ try { if(typeof toast==='function') toast('Room config signed'); } catch(_){} _doJoinSend(bundle); }
+      else _doJoinSend(null);
+    });
+  }
+  // Host live mode change (moderated <-> curated) — re-sign + send a `cfg` command.
+  function _crRoomHostSetMode(mode, hideGuestChat){
+    if(!params) return;
+    params.mode = mode; if(hideGuestChat != null) params.hideGuestChat = !!hideGuestChat;
+    if(!_hostNonce){ try { if(typeof toast==='function') toast('Reconnect to change mode'); } catch(_){} return; }
+    _buildHostCfg(_hostNonce).then(function(bundle){ if(bundle) send({ t:'cfg', cfg:bundle.cfg, sig:bundle.sig, pubkey:bundle.pubkey }); });
+  }
+
   function connect(){
     if(!params || typeof WebSocket==='undefined') return;
     // v1.0.639 — runtime join(): never let two sockets coexist (the boot timer and a
@@ -38568,11 +38638,17 @@ window.crRoom = (function(){
     catch(_){ scheduleReconnect(); return; }
     ws.onopen = function(){
       backoff = 1000; _lastBuildsHash = '';
-      send({ t:'join', handle: myHandle(), seat: mySeat(), avatarClass:'runner', isWallet: !!myWallet(), host: params.host });
-      startPos(); startBuilds();
-      // v1.0.433 — if this host opened a PUBLIC room (?pub=1), advertise it to the
-      // directory (handle + map name + asset/tf + snapshot) so others can search & join.
-      try { if(params.pub) send({ t:'publish', public:true, mapName: params.mapName||'', asset: params.asset||'', tf: params.tf||'', host: params.host, snapshot: params.snapshot||'' }); } catch(_){}
+      // v1.0.646 (Room P1) — a moderated/curated host DEFERS join until the relay's
+      // `hello` nonce arrives, then joins with a wallet-signed roomCfg. Everyone else
+      // (and any un-upgraded relay, via the 600ms fallback) joins plain immediately.
+      var wantsCfg = params && (params.mode === 'moderated' || params.mode === 'curated') && _canSignHost();
+      if(wantsCfg){
+        _pendingHostJoin = true;
+        try { if(_helloFallback) clearTimeout(_helloFallback); } catch(_){}
+        _helloFallback = setTimeout(function(){ if(_pendingHostJoin){ _pendingHostJoin = false; _doJoinSend(null); } }, 600);
+      } else {
+        _doJoinSend(null);
+      }
     };
     ws.onmessage = function(ev){ try { onMsg(JSON.parse(ev.data)); } catch(_){} };
     ws.onclose   = function(){ stopPos(); stopBuilds(); scheduleReconnect(); };
@@ -38604,6 +38680,8 @@ window.crRoom = (function(){
       seat:   o.seat   || ex.seat   || 'guest',
       avatarClass: o.avatarClass || ex.avatarClass || 'runner',
       isWallet: !!(o.isWallet || ex.isWallet),
+      isHost: !!(o.isHost || ex.isHost),
+      muted: !!(o.muted != null ? o.muted : ex.muted),
       wx: ex.wx, py: ex.py,
       twx: (o.x!=null ? o.x : ex.twx),
       tpy: (o.y!=null ? o.y : ex.tpy),
@@ -38617,6 +38695,9 @@ window.crRoom = (function(){
     switch(m && m.t){
       case 'welcome':
         mySid = m.sessionId; spectator = !!m.spectator;
+        _roomMode = m.mode || 'open'; _youAreHost = !!m.youAreHost;
+        try { if(window._crRoomHostPanelSync) window._crRoomHostPanelSync(); } catch(_){}
+        if(_roomMode !== 'open'){ try { if(typeof toast==='function') toast(_youAreHost ? ('You host this '+_roomMode+' room') : ('Room mode: '+_roomMode)); } catch(_){} }
         (m.occupants||[]).forEach(addPeer);
         // v1.0.639 — runtime join() verdict: the relay accepts ANY base58 id, so a
         // wrong/dead CODE still "connects" — to an empty room. Joining (not creating)
@@ -38670,8 +38751,33 @@ window.crRoom = (function(){
         } catch(_){}
         break;
       }
+      case 'hello':
+        _hostNonce = m.nonce || _hostNonce;
+        if(_pendingHostJoin){ _pendingHostJoin = false; try { if(_helloFallback){ clearTimeout(_helloFallback); _helloFallback=null; } } catch(_){} _signAndJoin(m.nonce); }
+        break;
+      case 'roommode':
+        _roomMode = m.mode || _roomMode;
+        if(m.youAreHost) _youAreHost = true;
+        try { if(window._crRoomHostPanelSync) window._crRoomHostPanelSync(); } catch(_){}
+        try { if(typeof toast==='function') toast('Room mode \u2192 '+_roomMode); } catch(_){}
+        break;
+      case 'peer_mute': {
+        if(m.sessionId === mySid){ try { if(typeof toast==='function') toast(m.muted ? 'You were muted by the host' : 'You were unmuted'); } catch(_){} }
+        else { var _mp = peers.get(m.sessionId); if(_mp) _mp.muted = !!m.muted; }
+        break;
+      }
+      case 'peer_submit':
+        if(_youAreHost && m.id){ _submissions.set(m.id, { sid:m.sessionId, handle:m.handle||'guest', kind:m.kind, payload:m.payload, t:Date.now() }); try { if(window._crRoomHostPanelSync) window._crRoomHostPanelSync(); } catch(_){} }
+        break;
+      case 'authed': break;
       case 'promoted': spectator = false; break;
-      case 'error': try { console.warn('[crRoom] relay error:', m.code, m.msg); } catch(_){}; break;
+      case 'error':
+        try { console.warn('[crRoom] relay error:', m.code, m.msg); } catch(_){}
+        if(m.code === 'kicked' || m.code === 'banned'){
+          try { if(typeof toast==='function') toast(m.code === 'kicked' ? 'You were removed from the room' : 'You are banned from this room'); } catch(_){}
+          try { leave(); } catch(_){}
+        }
+        break;
     }
   }
 
@@ -38807,16 +38913,20 @@ window.crRoom = (function(){
     var t = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 240);
     if(!t) return '';
     action('chat', t);
+    try {
+      if(_roomMode === 'curated' && !_youAreHost){ if(typeof toast==='function') toast('Sent to host for approval'); }
+      else if(_roomMode === 'moderated' && !_youAreHost && (params && params.hideGuestChat !== false)){ if(typeof toast==='function') toast('Host-only chat here \u2014 your message is hidden'); }
+    } catch(_){}
     return t;
   }
 
   // v1.0.431 — Online roster: self + live peers (TTL-filtered) for the corner panel.
   function roster(){
-    var out = [{ handle: myHandle(), seat: mySeat(), isWallet: !!myWallet(), self: true }];
+    var out = [{ handle: myHandle(), seat: mySeat(), isWallet: !!myWallet(), self: true, sid: mySid, isHost: _youAreHost }];
     var now = Date.now();
-    peers.forEach(function(p){
+    peers.forEach(function(p, sid){
       if(now - p.last > PEER_TTL_MS) return;
-      out.push({ handle: p.handle || 'player', seat: p.seat || 'guest', isWallet: !!p.isWallet, self: false });
+      out.push({ handle: p.handle || 'player', seat: p.seat || 'guest', isWallet: !!p.isWallet, self: false, sid: sid, isHost: !!p.isHost, muted: !!p.muted });
     });
     return out;
   }
@@ -38868,6 +38978,8 @@ window.crRoom = (function(){
         mapRef:  null,
         pub:     !!opts.pub,
         mapName: opts.mapName || null,
+        mode: opts.mode || 'open',
+        hideGuestChat: opts.hideGuestChat !== false,
         snapshot:'',
       };
       try { api.params = params; } catch(_){}
@@ -38920,6 +39032,13 @@ window.crRoom = (function(){
     roomId:       roomIdFn,
     join:         join,
     leave:        leave,
+    mode:         function(){ return _roomMode; },
+    isHost:       function(){ return _youAreHost; },
+    setMode:      function(mode, hideGuestChat){ _crRoomHostSetMode(mode, hideGuestChat); },
+    hostCmd:      function(t, target){ if(_youAreHost) send({ t:t, target:target }); },
+    approve:      function(id){ if(_youAreHost){ send({ t:'approve', id:id }); _submissions.delete(id); try { if(window._crRoomHostPanelSync) window._crRoomHostPanelSync(); } catch(_){} } },
+    reject:       function(id){ if(_youAreHost){ send({ t:'reject', id:id }); _submissions.delete(id); try { if(window._crRoomHostPanelSync) window._crRoomHostPanelSync(); } catch(_){} } },
+    submissions:  function(){ return Array.from(_submissions.entries()).map(function(e){ return Object.assign({ id:e[0] }, e[1]); }); },
     _connect:     connect,
   };
   return api;
@@ -39013,6 +39132,92 @@ window.crRoom = (function(){
   var _aloneT0 = 0;
   setInterval(tick, 1000);
 })();
+
+/* ── v1.0.646 (Room P1) — host controls panel ────────────────────────────────
+   Visible ONLY when you host a moderated/curated room (crRoom.isHost()). Lists
+   live peers with mute / kick, switches moderated ⇄ curated, toggles hide-guest-
+   chat, and (curated) shows the submit-to-approve tray. Pure DOM overlay; ticks
+   1 Hz + instant sync via window._crRoomHostPanelSync. Never throws. */
+(function crRoomHostPanel(){
+  if(typeof document === 'undefined') return;
+  var el = null, _hc = true;
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>]/g, function(c){ return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'; }); }
+  function ensure(){
+    if(el) return el;
+    el = document.createElement('div'); el.id = 'crRoomHostPanel';
+    el.style.cssText = 'position:fixed;top:54px;right:12px;z-index:64;width:236px;max-height:70vh;overflow:auto;'
+      + 'background:rgba(10,12,20,.93);border:1px solid rgba(20,241,149,.4);border-radius:12px;padding:10px 11px;'
+      + 'font:600 11px ui-monospace,Menlo,Consolas,monospace;color:#e9ebf2;box-shadow:0 10px 30px rgba(0,0,0,.5);'
+      + 'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:none';
+    (document.body||document.documentElement).appendChild(el);
+    el.addEventListener('click', onClick);
+    el.addEventListener('change', onClick);
+    return el;
+  }
+  function onClick(e){
+    var t = e.target; if(!t || !t.getAttribute) return;
+    var act = t.getAttribute('data-hp'); if(!act) return;
+    try {
+      if(act === 'hidechat'){ _hc = !!t.checked; if(window.crRoom && crRoom.setMode) crRoom.setMode(crRoom.mode(), _hc); return; }
+      if(act === 'mode'){ if(window.crRoom && crRoom.setMode) crRoom.setMode(t.getAttribute('data-mode'), _hc); }
+      else if(act === 'kick'){ crRoom.hostCmd('kick', t.getAttribute('data-sid')); }
+      else if(act === 'mute'){ crRoom.hostCmd(t.getAttribute('data-muted')==='1'?'unmute':'mute', t.getAttribute('data-sid')); }
+      else if(act === 'approve'){ crRoom.approve(t.getAttribute('data-id')); }
+      else if(act === 'reject'){ crRoom.reject(t.getAttribute('data-id')); }
+    } catch(_){}
+    render();
+  }
+  function modeChip(m, cur){
+    var on = m === cur;
+    return '<button type="button" data-hp="mode" data-mode="'+m+'" style="flex:1;padding:4px 0;border-radius:6px;cursor:pointer;'
+      + 'border:1px solid '+(on?'#14f195':'rgba(255,255,255,.16)')+';background:'+(on?'rgba(20,241,149,.18)':'transparent')+';'
+      + 'color:'+(on?'#14f195':'#c7ccd8')+';font:700 10px ui-monospace,Menlo,monospace">'+m+'</button>';
+  }
+  function render(){
+    var e = ensure();
+    var active = !!(window.crRoom && crRoom.active && crRoom.active());
+    var host = active && crRoom.isHost && crRoom.isHost();
+    if(!host){ e.style.display = 'none'; return; }
+    var mode = (crRoom.mode && crRoom.mode()) || 'open';
+    var list = (crRoom.roster ? crRoom.roster() : []) || [];
+    var subs = (crRoom.submissions ? crRoom.submissions() : []) || [];
+    var h = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">'
+      + '<span style="width:8px;height:8px;border-radius:50%;background:#14f195;box-shadow:0 0 7px #14f195"></span>'
+      + '<b style="letter-spacing:.4px">HOST</b><span style="margin-left:auto;color:#8a92a3;font-size:10px">'+esc(mode)+'</span></div>';
+    h += '<div style="display:flex;gap:5px;margin-bottom:7px">'+modeChip('moderated',mode)+modeChip('curated',mode)+'</div>';
+    h += '<label style="display:flex;align-items:center;gap:6px;margin:0 1px 8px;font-size:10px;color:#c7ccd8;cursor:pointer">'
+      + '<input type="checkbox" data-hp="hidechat" '+(_hc?'checked':'')+' style="accent-color:#14f195"> hide guest chat</label>';
+    h += '<div style="color:#8a92a3;font-size:9px;letter-spacing:.5px;margin-bottom:3px">RUNNERS</div>';
+    var others = list.filter(function(p){ return !p.self; });
+    if(!others.length) h += '<div style="color:#6a6f7a;font-size:10px">no one else yet</div>';
+    others.forEach(function(p){
+      var col = (crRoom.seatColor?crRoom.seatColor(p.seat):'#7aa2ff');
+      h += '<div style="display:flex;align-items:center;gap:6px;margin:3px 0">'
+        + '<span style="width:7px;height:7px;border-radius:50%;flex:none;background:'+col+'"></span>'
+        + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p.handle||'player')+(p.muted?' <span style="color:#ffb454">muted</span>':'')+'</span>'
+        + '<button type="button" data-hp="mute" data-sid="'+esc(p.sid)+'" data-muted="'+(p.muted?'1':'0')+'" title="'+(p.muted?'unmute':'mute')+'" style="cursor:pointer;border:1px solid rgba(255,255,255,.18);background:transparent;color:#ffb454;border-radius:5px;padding:1px 5px;font:700 10px ui-monospace">'+(p.muted?'&#9834;':'&#9219;')+'</button>'
+        + '<button type="button" data-hp="kick" data-sid="'+esc(p.sid)+'" title="kick" style="cursor:pointer;border:1px solid rgba(255,90,110,.4);background:transparent;color:#ff5a6e;border-radius:5px;padding:1px 5px;font:700 10px ui-monospace">&#10005;</button>'
+        + '</div>';
+    });
+    if(mode === 'curated'){
+      h += '<div style="color:#8a92a3;font-size:9px;letter-spacing:.5px;margin:9px 0 3px">REVIEW ('+subs.length+')</div>';
+      if(!subs.length) h += '<div style="color:#6a6f7a;font-size:10px">nothing pending</div>';
+      subs.slice(0,8).forEach(function(s){
+        var what = s.kind === 'builds' ? 'build' : ((s.payload && s.payload.kind === 'chat') ? ('chat: '+esc(String(s.payload.label||'').slice(0,40))) : 'action');
+        h += '<div style="display:flex;align-items:center;gap:5px;margin:3px 0;padding:3px 5px;border:1px solid rgba(255,255,255,.1);border-radius:6px">'
+          + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px">'+esc(s.handle||'guest')+' &middot; '+what+'</span>'
+          + '<button type="button" data-hp="approve" data-id="'+esc(s.id)+'" style="cursor:pointer;border:1px solid rgba(20,241,149,.5);background:transparent;color:#14f195;border-radius:5px;padding:1px 6px;font:700 10px ui-monospace">&#10003;</button>'
+          + '<button type="button" data-hp="reject" data-id="'+esc(s.id)+'" style="cursor:pointer;border:1px solid rgba(255,90,110,.4);background:transparent;color:#ff5a6e;border-radius:5px;padding:1px 6px;font:700 10px ui-monospace">&#10005;</button>'
+          + '</div>';
+      });
+    }
+    e.innerHTML = h;
+    e.style.display = '';
+  }
+  window._crRoomHostPanelSync = render;
+  setInterval(render, 1000);
+})();
+
 
 /* ── v1.0.570 — In-room players overview ─────────────────────────────────────
    Opened by clicking the ONLINE bar docked at the bottom of the chat. A small
@@ -39478,6 +39683,14 @@ window.crRoom = (function(){
       onFail: function(){ if(done) done(false); },
     });
   }
+  function _wizModerated(mode, hideChatEl){
+    if(!(window.crWallet && crWallet.canSign && crWallet.canSign())){
+      say('Connect a signing wallet (Phantom / Solflare) to host a moderated room');
+      try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){}
+      return;
+    }
+    doCreate({ wallet: true, pub: true, mode: mode, hideGuestChat: !hideChatEl || hideChatEl.checked });
+  }
   function doCreate(o){
     o = o || {};
     if(!(window.crRoom && typeof crRoom.join === 'function')){ say('Rooms unavailable'); return; }
@@ -39493,6 +39706,8 @@ window.crRoom = (function(){
       creating: true,
       host: host || null,
       pub: !!o.pub,
+      mode: o.mode || 'open',
+      hideGuestChat: o.hideGuestChat !== false,
       mapName: mapName || null,
       onJoined: function(){
         closeWiz();
@@ -39572,11 +39787,16 @@ window.crRoom = (function(){
       + '<div class="crWizSec">Room type · current chart</div>'
       + '<button class="crWizBig" type="button" id="crWizPriv">PRIVATE<span class="s">code or link only · unlisted · you host</span></button>'
       + '<button class="crWizBig" type="button" id="crWizPub">PUBLIC<span class="s">listed in the Rooms directory · anyone joins</span></button>'
-      + '<button class="crWizBig locked" type="button" tabindex="-1"><span class="crWizTag">P1 · soon</span>MODERATED<span class="s">relay-enforced host controls · kick / mute / curate</span></button>'
+      + '<button class="crWizBig" type="button" id="crWizMod"><span class="crWizTag" style="background:rgba(20,241,149,.16);border-color:rgba(20,241,149,.5);color:#14f195">P1</span>MODERATED<span class="s">host-only broadcast · kick / mute · relay-enforced</span></button>'
+      + '<button class="crWizBig" type="button" id="crWizCur"><span class="crWizTag" style="background:rgba(20,241,149,.16);border-color:rgba(20,241,149,.5);color:#14f195">P1</span>CURATED<span class="s">guests submit \u2192 you approve · kick / mute</span></button>'
+      + '<label style="display:flex;align-items:center;gap:7px;margin:6px 2px 2px;font-size:11px;color:#c7ccd8;cursor:pointer"><input type="checkbox" id="crWizHideChat" checked style="accent-color:#14f195"> hide guest chat in moderated/curated</label>'
       + '<button class="crWizBig locked" type="button" tabindex="-1"><span class="crWizTag">P2 · soon</span>EARN ON-CHAIN<span class="s">SOL entry + copy-trading fees · host earns</span></button>'
       + '<div class="crWizFoot"><span class="lnk" id="crWizBack">◂ back</span><span class="lnk" id="crWizBrowse">🔍 browse public rooms</span></div>';
     bodyEl.querySelector('#crWizPriv').addEventListener('click', function(){ doCreate({ wallet: true }); });
     bodyEl.querySelector('#crWizPub').addEventListener('click', function(){ doCreate({ wallet: true, pub: true }); });
+    var _hideChatEl = bodyEl.querySelector('#crWizHideChat');
+    var _mb = bodyEl.querySelector('#crWizMod'); if(_mb) _mb.addEventListener('click', function(){ _wizModerated('moderated', _hideChatEl); });
+    var _cb2 = bodyEl.querySelector('#crWizCur'); if(_cb2) _cb2.addEventListener('click', function(){ _wizModerated('curated', _hideChatEl); });
     var bk2 = bodyEl.querySelector('#crWizBack');
     if(bk2) bk2.addEventListener('click', function(){ paint('1'); });
     var br = bodyEl.querySelector('#crWizBrowse');
