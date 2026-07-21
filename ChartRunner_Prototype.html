@@ -8938,6 +8938,11 @@ window.crShare = function (o) {
   #win-tokenterm .cr-tok-star.on{color:#ffd166!important;border-color:rgba(255,209,102,.55)!important;
     background:rgba(255,209,102,.10)!important;text-shadow:0 0 10px rgba(255,209,102,.85)}
   #win-tokenterm .cr-tok-star:hover{color:#ffd166!important;transform:scale(1.12);border-color:rgba(255,209,102,.7)!important}
+  /* v1.0.648 — bigger, more rounded star box specifically in the Token
+     Terminal list rows (matches the reference card's trailing star button);
+     the plain .cr-tok-star rule above stays 24px/6px for other contexts
+     (e.g. the profile hero) that weren't part of this change. */
+  #win-tokenterm #crTokList .cr-tok-star{width:34px!important;height:34px!important;border-radius:8px!important;font-size:15px!important}
   /* v1.0 — mobile timeframe overflow dropdown (12H+). Hidden on desktop; the topbar
      mobile media query reveals it and hides the inline .tvTfExtra buttons. */
   .crTvTfMoreWrap{display:none;position:relative}
@@ -15274,7 +15279,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.647",
+  VERSION: "1.0.648",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -48961,7 +48966,7 @@ window.crLaunchMinigameRandom = crLaunchMinigameRandom;
     }, 250);
     // Banner + coach after the chart has loaded.
     setTimeout(() => {
-      try { showBanner('❏ Campaign Ch.' + ((window.CR_CH_DISPLAY && window.CR_CH_DISPLAY[num]) || num), ch.goal); } catch(_){}
+      try { var _cd = (window.CR_CH_DISPLAY && window.CR_CH_DISPLAY[num]); showBanner('❏ ' + (_cd ? ('Campaign Ch.' + _cd) : ((ch && ch.name) ? ch.name : ('Campaign Ch.' + num))), ch.goal); } catch(_){}
       try { if(window.crCampaignCoach && typeof window.crCampaignCoach.start === 'function') window.crCampaignCoach.start(num); } catch(_){}
       // v1.0.589 — anchor guidance is driven per-step by the coach render() (only on the
       // click-to-place steps, adapting to anchor 1 / anchor 2), not shown at chapter start.
@@ -49078,6 +49083,12 @@ window.crLaunchMinigameRandom = crLaunchMinigameRandom;
   // Re-paint on splash show (covers the post-chapter return path).
   try { window._crPaintCampaignStars = _crPaintCampaignStars; } catch(_){}
   try { window.crLaunchCampaignChapter = _launchCampaignChapter; } catch(_){}
+  // v1.0.699 — expose CAMPAIGN_CHAPTERS so top-level fns outside this block
+  // (e.g. _crShowChapterEndcard) can read chapter names/goals. Without this,
+  // the endcard's `typeof CAMPAIGN_CHAPTERS` was 'undefined' → ch=null → every
+  // endcard fell back to "Chapter <id>", leaking raw internal ids for named
+  // Basics chapters (Journal→"Chapter 49", etc.).
+  try { window.CAMPAIGN_CHAPTERS = CAMPAIGN_CHAPTERS; } catch(_){}
   // v0.9.13 — Subcategory tab strip. Filters .modecard visibility by data-cat.
   // v0.9.50 — Selector extended to .modeSection so the new Campaign-tab
   // section dividers (Foundation / Tools / Primitives / Strategy / Bots) also
@@ -56099,7 +56110,7 @@ function crBuyBot(id){
     if(_ch != null){
       var _nb = []; try { _nb = JSON.parse(localStorage.getItem('cr_new_bot_chapters_v1') || '[]') || []; } catch(_){}
       if(_nb.indexOf(_ch) < 0){ _nb.push(_ch); try { localStorage.setItem('cr_new_bot_chapters_v1', JSON.stringify(_nb)); } catch(_){} }
-      try { if(typeof crNotify === 'function') crNotify('🎓 New lesson unlocked · Campaign Ch.' + ((window.CR_CH_DISPLAY && window.CR_CH_DISPLAY[_ch]) || _ch) + ' — learn your new bot'); } catch(_){}
+      try { if(typeof crNotify === 'function'){ var _nd = (window.CR_CH_DISPLAY && window.CR_CH_DISPLAY[_ch]); var _nn = (window.CAMPAIGN_CHAPTERS && window.CAMPAIGN_CHAPTERS[_ch] && window.CAMPAIGN_CHAPTERS[_ch].name); crNotify('🎓 New lesson unlocked · ' + (_nd ? ('Campaign Ch.' + _nd) : (_nn || ('Campaign Ch.' + _ch))) + ' — learn your new bot'); } } catch(_){}
       try { if(typeof window._crPaintCampaignStars === 'function') window._crPaintCampaignStars(); } catch(_){}
     }
   } catch(_){}
@@ -61328,10 +61339,10 @@ function _tokMergeCgTop(rows){
     const tag = String(r.sym || '').toUpperCase();
     if(!tag) return;
     let d = byTag[tag];
-    if(d){ d.cg = true; d.cgPx = r.price; d.cgCh = r.ch24; d.cgMc = r.mcap; d.cgRank = r.rank; }
+    if(d){ d.cg = true; d.cgPx = r.price; d.cgCh = r.ch24; d.cgMc = r.mcap; d.cgRank = r.rank; if(r.img) d.cgImg = r.img; }
     else {
       d = { id:'cgtok_' + tag.toLowerCase(), nm:r.name || tag, tag:tag, chain:'cex', seed:(r.rank * 7 + 13),
-            cg:true, cgPx:r.price, cgCh:r.ch24, cgMc:r.mcap, cgRank:r.rank };
+            cg:true, cgPx:r.price, cgCh:r.ch24, cgMc:r.mcap, cgRank:r.rank, cgImg:r.img || '' };
       byTag[tag] = d; TOK_LIST.push(d);
     }
   });
@@ -61878,6 +61889,29 @@ function _tokRenderWlBar(){
     if(db) db.addEventListener('click', () => { const a = crTokLists.active(); if(!a) return; if(crTokLists.lists().length <= 1){ try { toast('Keep at least one watchlist'); } catch(_){} return; } if(confirm('Delete watchlist "' + a.name + '"? (the tokens in it are just unpinned)')){ crTokLists.remove(a.id); try { toast('Watchlist deleted'); } catch(_){} } });
   }
 }
+// Token logos — real image when CoinGecko has one (see _tokMergeCgTop's
+// cgImg carry-through above), initials badge fallback otherwise. Ported
+// from ChartRunner_Prototype_UnlockedEcon.html's v1.0.789/790 logo work
+// (skips that file's paid "custom logo mark" feature — out of scope here).
+function _tokLogoUrl(def){
+  try { return (def && def.cgImg) ? String(def.cgImg) : null; } catch(_){ return null; }
+}
+function _tokFillLogoEl(el, def){
+  const url = _tokLogoUrl(def);
+  const initials = String((def && def.tag) || '?').slice(0, 3).toUpperCase();
+  el.innerHTML = '';
+  if(url){
+    const img = document.createElement('img');
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
+    img.loading = 'lazy';
+    img.alt = '';
+    img.src = url;
+    img.onerror = function(){ try { img.remove(); } catch(_){} el.textContent = initials; };
+    el.appendChild(img);
+  } else {
+    el.textContent = initials;
+  }
+}
 function _tokRenderList(){
   const host = document.getElementById('crTokList');
   const cnt  = document.getElementById('crTokCount');
@@ -61948,24 +61982,30 @@ function _tokRenderList(){
     const row = document.createElement('div');
     row.setAttribute('draggable', 'true');
     row.dataset.tokId = def.id;
-    // v0.9.44 — Added a star column for the watchlist toggle. The grid
-    // now has 6 columns: rank · star · header · price · change · signal.
+    // v1.0.648 — ported the row layout from ChartRunner_Prototype_UnlockedEcon.html:
+    // circular logo (real CoinGecko image when available, initials fallback),
+    // rank folded inline before the ticker, price/% stacked and right-aligned,
+    // star trailing at the far right (was leading). Dropped the chain/holders
+    // subtitle and the per-row signal pill to match the reference card exactly
+    // (both remain computed on the snapshot, just not rendered in this row).
     row.style.cssText = [
-      'display:grid',
-      'grid-template-columns:auto auto 1fr auto auto auto',
-      'gap:8px',
+      'display:flex',
       'align-items:center',
-      'padding:6px 8px',
+      'gap:10px',
+      'padding:8px 10px',
       'border:1px solid ' + (isSel ? 'rgba(20,241,149,0.55)' : 'var(--line)'),
-      'border-radius:6px',
+      'border-radius:8px',
       'background:' + (isSel ? 'rgba(20,241,149,0.10)' : 'rgba(10,15,28,0.55)'),
       'cursor:grab',
       'font-size:11px',
       'transition:background .12s,border-color .12s'
     ].join(';');
-    const rank = document.createElement('span');
-    rank.style.cssText = 'color:var(--dim);font-size:9px;font-variant-numeric:tabular-nums;width:18px;text-align:right';
+    const rank = document.createElement('i');
+    rank.style.cssText = 'color:var(--dim);font-size:9px;font-style:normal;font-variant-numeric:tabular-nums;margin-right:3px';
     rank.textContent = (i + 1);
+    const logo = document.createElement('div');
+    logo.style.cssText = 'flex:none;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#e7fff2,#28de98);color:#0c1115;font:900 10px ui-monospace,Menlo,monospace;overflow:hidden';
+    _tokFillLogoEl(logo, def);
     // v0.9.44 — Watchlist star button. Filled gold when pinned, hollow grey
     // when not. Click toggles. stopPropagation so the row click (selectedId)
     // doesn't fire alongside it.
@@ -61985,20 +62025,31 @@ function _tokRenderList(){
       try { _tokOpenWlPicker(def, star); } catch(_){ try { _tokToggleWatch(def.id); } catch(__){} }
     });
     const head = document.createElement('div');
-    head.style.cssText = 'display:flex;flex-direction:column;min-width:0';
-    head.innerHTML =
-      '<div style="display:flex;align-items:center;gap:6px"><b>' + def.tag + '</b><span class="dim" style="font-size:9px">' + def.nm + '</span></div>' +
-      '<div class="dim" style="font-size:9px">' + def.chain + ' · ' + s.holders.toLocaleString('en-US') + ' holders</div>';
+    head.style.cssText = 'flex:1;min-width:0;display:flex;align-items:center;gap:6px';
+    head.appendChild(rank);
+    const tagEl = document.createElement('b');
+    tagEl.textContent = def.tag;
+    head.appendChild(tagEl);
+    const nmEl = document.createElement('span');
+    nmEl.className = 'dim';
+    nmEl.style.cssText = 'font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    nmEl.textContent = def.nm;
+    head.appendChild(nmEl);
+    const priceWrap = document.createElement('div');
+    priceWrap.style.cssText = 'flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:2px';
     const px = document.createElement('span');
-    px.style.cssText = 'font-variant-numeric:tabular-nums;color:var(--fg)';
+    px.style.cssText = 'font-variant-numeric:tabular-nums;font-weight:700;color:var(--fg)';
     px.textContent = _tokFmtPx(s.px);
     const ch = document.createElement('span');
-    ch.style.cssText = 'font-variant-numeric:tabular-nums;font-weight:700;color:' + (s.ch24 >= 0 ? '#3ddc97' : '#ff5b7f');
+    ch.style.cssText = 'font-variant-numeric:tabular-nums;font-weight:700;font-size:10px;color:' + (s.ch24 >= 0 ? '#3ddc97' : '#ff5b7f');
     ch.textContent = (s.ch24 >= 0 ? '+' : '') + s.ch24.toFixed(1) + '%';
-    const sig = document.createElement('span');
-    sig.style.cssText = 'font-size:9px;padding:2px 6px;border-radius:3px;letter-spacing:.4px;background:rgba(255,255,255,.04);color:' + _tokSignalColor(s.signal);
-    sig.textContent = s.signal;
-    row.appendChild(rank); row.appendChild(star); row.appendChild(head); row.appendChild(px); row.appendChild(ch); row.appendChild(sig);
+    priceWrap.appendChild(px); priceWrap.appendChild(ch);
+    // v1.0.648 — star moved from the leading position to trailing, after
+    // price/change, matching the reference card layout. Sizing lives in
+    // #win-tokenterm #crTokList .cr-tok-star below (the global !important
+    // rule beats any inline override here, so don't bother with one).
+    star.style.flex = 'none';
+    row.appendChild(logo); row.appendChild(head); row.appendChild(priceWrap); row.appendChild(star);
     row.addEventListener('mouseenter', () => { row.style.background = isSel ? 'rgba(20,241,149,0.16)' : 'rgba(155,140,255,0.10)'; });
     row.addEventListener('mouseleave', () => { row.style.background = isSel ? 'rgba(20,241,149,0.10)' : 'rgba(10,15,28,0.55)'; });
     row.addEventListener('click', () => {
@@ -71228,7 +71279,7 @@ function _crShowChapterEndcard(chapter, info){
   const prior = document.getElementById('crChapterEnd');
   if(prior && prior.parentNode) prior.parentNode.removeChild(prior);
 
-  const ch = (typeof CAMPAIGN_CHAPTERS !== 'undefined') ? CAMPAIGN_CHAPTERS[chapter] : null;
+  const ch = (window.CAMPAIGN_CHAPTERS && window.CAMPAIGN_CHAPTERS[chapter]) || ((typeof CAMPAIGN_CHAPTERS !== 'undefined') ? CAMPAIGN_CHAPTERS[chapter] : null);
   const title = (ch && ch.name) ? (ch.name + ' complete') : ('Chapter ' + ((window.CR_CH_DISPLAY && window.CR_CH_DISPLAY[chapter]) || chapter) + ' complete');
   const goal = (ch && ch.goal) || 'Chapter complete.';
 
@@ -86970,6 +87021,26 @@ window.crGoldRush = (function(){
     }catch(_){}
     return '';
   }
+  // v1.0.648 — D0 completion: a live rail row (SolanaTracker / GeckoTerminal) has
+  // a real mint but no CATALOG id, so _crRdWatchId returned '' and ★ Watch was
+  // dead ("only catalog coins can be starred (D0)"). The Token Terminal already
+  // knows how to carry an arbitrary contract as an honest custom (the search-add
+  // path at _tokRenderList pushes {id:'addr-<mint>', mint, …} into TOK_LIST, and
+  // _tokSnapshot renders it). Reuse that exact scheme so any coin with a contract
+  // is starrable: register-on-star, then toggle the same watchlist store.
+  function _crRdIsContract(s){ s = String(s || ''); return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s) || /^0x[a-fA-F0-9]{40}$/.test(s); }
+  function _crRdEnsureCustomWatch(mint, ticker){
+    try{
+      mint = String(mint || '').trim();
+      if(!_crRdIsContract(mint) || typeof TOK_LIST === 'undefined') return '';
+      var id = 'addr-' + mint;
+      if(!TOK_LIST.find(function(t){ return t.id === id; })){
+        TOK_LIST.push({ id:id, tag:(ticker ? String(ticker).toUpperCase() : (mint.slice(0,4) + '…' + mint.slice(-4))),
+          nm:'Custom token', chain:(/^0x/.test(mint) ? 'evm' : 'sol'), mint:mint, seed:((mint.charCodeAt(0) || 1) * 7) });
+      }
+      return id;
+    }catch(_){ return ''; }
+  }
   function _crRdIsWatched(id){
     try{ var a = window.crTokLists && window.crTokLists.active(); return !!(a && a.items.indexOf(id) >= 0); }catch(_){ return false; }
   }
@@ -87024,11 +87095,16 @@ window.crGoldRush = (function(){
     if(ctx.mint || ctx.ticker) b.push('<button type="button" class="crRdAct primary" data-cr-rd-open="1">▶ Run</button>');
     // ★ Watch — token-terminal watchlist store only (no parallel store).
     if(ctx.kind === 'token' || ctx.kind === 'perp'){
-      if(ctx.watchId){
-        var on = _crRdIsWatched(ctx.watchId);
-        b.push('<button type="button" class="crRdAct' + (on ? ' on' : '') + '" data-cr-rd-watch="' + _crRailEsc(ctx.watchId) + '" title="toggle on the active Token Terminal watchlist">' + (on ? '★ Watched' : '☆ Watch') + '</button>');
+      // v1.0.648 — catalog id first; else fall back to the coin's own contract
+      // (registered as an honest addr-<mint> custom on click). Only truly
+      // contract-less rows (e.g. a synthetic perp with no mint) stay disabled.
+      var _wid = ctx.watchId || (ctx.mint && _crRdIsContract(ctx.mint) ? ('addr-' + ctx.mint) : '');
+      if(_wid){
+        var on = _crRdIsWatched(_wid);
+        var _wmint = ctx.watchId ? '' : (' data-cr-rd-watch-mint="' + _crRailEsc(ctx.mint) + '"' + (ctx.sym ? ' data-cr-rd-watch-tk="' + _crRailEsc(ctx.sym) + '"' : ''));
+        b.push('<button type="button" class="crRdAct' + (on ? ' on' : '') + '" data-cr-rd-watch="' + _crRailEsc(_wid) + '"' + _wmint + ' title="toggle on the active Token Terminal watchlist">' + (on ? '★ Watched' : '☆ Watch') + '</button>');
       } else {
-        b.push('<button type="button" class="crRdAct off" title="only Token Terminal catalog coins can be starred (D0)">☆ Watch</button>');
+        b.push('<button type="button" class="crRdAct off" title="no contract on this row — nothing to watch">☆ Watch</button>');
       }
     }
     // 🔔 Alert — prefill the alarm system (crAlarm.saveObjectAlarm + editor) at the
@@ -87391,6 +87467,13 @@ window.crGoldRush = (function(){
         var wb = t.closest('[data-cr-rd-watch]');
         if(wb){
           var wid = wb.getAttribute('data-cr-rd-watch');
+          // v1.0.648 — mint-backed rows: register the contract as an honest
+          // addr-<mint> custom in TOK_LIST before toggling, so the watchlist can
+          // render + track it (same scheme as the Token Terminal search-add).
+          var _wbMint = wb.getAttribute('data-cr-rd-watch-mint');
+          if(_wbMint && typeof _crRdEnsureCustomWatch === 'function'){
+            try{ var _rid = _crRdEnsureCustomWatch(_wbMint, wb.getAttribute('data-cr-rd-watch-tk')); if(_rid) wid = _rid; }catch(_){}
+          }
           if(wid && typeof window._tokToggleWatch === 'function'){
             window._tokToggleWatch(wid);
             var won = _crRdIsWatched(wid);
