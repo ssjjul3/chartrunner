@@ -15797,7 +15797,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.687",
+  VERSION: "1.0.688",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -16625,6 +16625,7 @@ window.crAccount = (function(){
   }
 
   function isSignedIn(){ return !!(_session && _session.user); }
+  function token(){ return (_session && _session.access_token) || ''; } // v1.0.688 — Supabase JWT for authed worker routes
   function email(){ return (_session && _session.user && _session.user.email) || ''; }
   function userId(){ return (_session && _session.user && _session.user.id) || ''; }
 
@@ -16878,7 +16879,7 @@ window.crAccount = (function(){
 
   try { window.addEventListener('load', function(){ _restore(); }); } catch(_){}
 
-  return { open: open, close: close, isSignedIn: isSignedIn, email: email, signOut: signOut };
+  return { open: open, close: close, isSignedIn: isSignedIn, email: email, token: token, signOut: signOut };
 })();
 
 /* =========================================================================
@@ -53504,15 +53505,15 @@ function _crRenderPingClasses(){
   });
 })();
 
-// v1.0.684 — crMailNotify: e-mail notification prefs + relay client. All
-// classes except 'weekly' are CLIENT-detectable events; send() POSTs them to
-// the my-worker /notify/email route (Resend already lives in that worker).
-// Until the route is deployed the POST fails silently — prefs still persist,
-// and the Settings pane shows an honest relay status. Call sites hook in via
-// window.crMailNotify.send(kind, subject, text).
+// v1.0.684 — crMailNotify: e-mail notification prefs + relay client.
+// v1.0.688 — migrated to the LIVE authed route: POST /v1/mail/alert on
+// chartrunner-worker with the Supabase JWT (crAccount.token()). The worker
+// sends via Resend to the SIGNED-IN account's e-mail and wraps the body in
+// the branded ChartRunner template. Not signed in -> send() no-ops; prefs
+// still persist locally. Call sites: window.crMailNotify.send(kind, subject, text).
 window.crMailNotify = (function(){
   const KEY = 'cr_mail_notify_v1';
-  const RELAY = 'https://my-worker.jsg-951.workers.dev/notify/email';
+  const RELAY = 'https://chartrunner-worker.jsg-951.workers.dev/v1/mail/alert';
   const DEFS = [
     { id:'alert',      label:'Alert Mail',        desc:'A price/indicator alarm you set fires (hotkey-4 laser).' },
     { id:'tpsl',       label:'TP/SL Mail',        desc:'A bracket hits take-profit or stop-loss.' },
@@ -53535,15 +53536,24 @@ window.crMailNotify = (function(){
     try { if(window.crAccount && crAccount.isSignedIn && crAccount.isSignedIn()) return crAccount.email() || ''; } catch(_){}
     return '';
   }
+  function _asHtml(t){
+    return '<p style="margin:0">' + String(t || '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\n/g,'<br>') + '</p>';
+  }
+  function _token(){
+    try { return (window.crAccount && crAccount.token) ? crAccount.token() : ''; } catch(_){ return ''; }
+  }
   async function send(kind, subject, text){
     try {
       const st = get();
-      const to = email();
-      if(!to || !st.classes[kind]) return false;
+      if(!st.classes[kind]) return false;
+      const tok = _token();
+      if(!tok) return false; // route is authed; mails go to the account e-mail
       const r = await fetch(RELAY, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },  // no CORS preflight
-        body: JSON.stringify({ to: to, kind: kind, subject: String(subject || 'ChartRunner'), text: String(text || '') }),
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+        body: JSON.stringify({ subject: String(subject || 'ChartRunner'), html: _asHtml(text) }),
       });
       return !!(r && r.ok);
     } catch(_){ return false; }
@@ -53576,8 +53586,8 @@ function _crRenderMailClasses(){
   if(st){
     st.textContent = 'relay: checking…';
     fetch(crMailNotify.RELAY, { method: 'OPTIONS' })
-      .then(r => { st.textContent = r.ok ? 'relay: online' : 'relay: not deployed yet — prefs are saved, mails start once the worker route ships'; })
-      .catch(() => { st.textContent = 'relay: not deployed yet — prefs are saved, mails start once the worker route ships'; });
+      .then(r => { st.textContent = r.ok ? 'relay: online — mails go to your signed-in account e-mail' : 'relay: unreachable — prefs still save'; })
+      .catch(() => { st.textContent = 'relay: unreachable — prefs still save'; });
   }
 }
 (function wireMailNotifActions(){
@@ -53591,16 +53601,17 @@ function _crRenderMailClasses(){
   });
   const testBtn = document.getElementById('crMailNotifTest');
   if(testBtn) testBtn.addEventListener('click', async () => {
-    if(!_mailDraft) _mailDraft = crMailNotify.get();
-    const addr = document.getElementById('crMailNotifAddr');
-    const to = addr ? String(addr.value || '').trim() : '';
-    if(!to){ try { toast('Enter an e-mail address first'); } catch(_){} return; }
-    // Test bypasses class toggles but uses the same relay path.
+    // v1.0.688 — the route is authed: it always mails the SIGNED-IN account.
+    let tok = '';
+    try { tok = (window.crAccount && crAccount.token) ? crAccount.token() : ''; } catch(_){}
+    if(!tok){ try { toast('Sign in first — mails go to your account e-mail'); } catch(_){} return; }
     try {
-      const r = await fetch(crMailNotify.RELAY, { method:'POST', headers:{ 'Content-Type':'text/plain' },
-        body: JSON.stringify({ to: to, kind: 'test', subject: 'ChartRunner test mail', text: 'Your ChartRunner mail notifications are wired up.' }) });
-      try { toast(r && r.ok ? '✓ Test mail sent' : 'Mail relay not deployed yet — settings still save'); } catch(_){}
-    } catch(_){ try { toast('Mail relay not deployed yet — settings still save'); } catch(_){} }
+      const r = await fetch(crMailNotify.RELAY, { method:'POST',
+        headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + tok },
+        body: JSON.stringify({ subject: 'ChartRunner test mail',
+          html: '<p style="margin:0">Your ChartRunner mail notifications are wired up. Alert, TP/SL and security mails will look like this one.</p>' }) });
+      try { toast(r && r.ok ? '✓ Test mail sent to your account e-mail' : 'Mail relay error (' + (r ? r.status : '?') + ')'); } catch(_){}
+    } catch(_){ try { toast('Mail relay unreachable'); } catch(_){} }
   });
 })();
 
@@ -54650,7 +54661,7 @@ function _crWalletAllSymbols(){
 // client-side call to api.devnet.solana.com, devnet-only and meaningless
 // for a real connected wallet). CHART / RUN remain game-internal (no
 // on-chain mint yet).
-const _CR_WALLET_WORKER = 'https://my-worker.jsg-951.workers.dev';
+const _CR_WALLET_WORKER = 'https://chartrunner-worker.jsg-951.workers.dev'; // v1.0.688 — gateway rename
 const _CR_BAL_TTL_MS  = 30000;
 let _crWalletBalances = { SOL: null, fetchedAt: 0, fetching: false };
 async function _crWalletFetchSol(){
@@ -87414,6 +87425,9 @@ window.crGoldRush = (function(){
   'use strict';
 
   var BASE     = 'https://api.covalenthq.com/v1';
+  // v1.0.688 — server-side key: no personal key configured -> route through
+  // the chartrunner-worker proxy (GOLDRUSH_API_KEY secret + 60s edge cache).
+  var PROXY    = 'https://chartrunner-worker.jsg-951.workers.dev/v1/goldrush';
   var TTL_MS   = 60 * 1000;
   var cache    = new Map();        // key → { data, t }
   var inflight = new Map();
@@ -87427,7 +87441,7 @@ window.crGoldRush = (function(){
     return '';
   }
 
-  function hasKey(){ return _apiKey() !== ''; }
+  function hasKey(){ return true; } // v1.0.688 — worker proxy is always available; a personal key just switches to direct mode
 
   function _headers(){
     var h = { 'accept': 'application/json' };
@@ -87445,20 +87459,12 @@ window.crGoldRush = (function(){
   var _goldWarnedOnce = false;
 
   async function _fetch(chain, endpoint, params){
-    if(!_apiKey()){
-      if(!_goldWarnedOnce){
-        _goldWarnedOnce = true;
-        try { console.info('[crGoldRush] no API key configured — external data disabled (set via Token Terminal ⊛ or window.crGoldRush.setApiKey)'); } catch(_){}
-      }
-      return null;
-    }
-
     var key = _cacheKey(chain, endpoint, params);
     var hit = cache.get(key);
     if(hit && (Date.now() - hit.t) < TTL_MS) return hit.data;
     if(inflight.has(key)) return inflight.get(key);
 
-    var url = BASE + '/' + encodeURIComponent(chain) + '/' + endpoint + '/';
+    var url = (_apiKey() ? BASE : PROXY) + '/' + encodeURIComponent(chain) + '/' + endpoint + '/';
     if(params){
       var u = new URL(url);
       Object.keys(params).forEach(function(k){
