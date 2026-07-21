@@ -14132,6 +14132,14 @@ window.crShare = function (o) {
               <button class="cr-go" id="crWalletRefreshBtn" type="button" style="background:rgba(10,15,28,.8)!important;border:1px solid var(--line)!important;border-radius:8px!important;color:#7ee787!important;font:700 10px ui-monospace,Menlo,monospace!important;letter-spacing:.4px!important;text-transform:uppercase!important;text-shadow:none!important;box-shadow:none!important;padding:5px 10px!important;cursor:pointer!important">↻ Refresh</button>
             </div>
             <div id="crWalletHoldings" style="display:flex;flex-direction:column;gap:6px"></div>
+            <!-- v1.0.671 — Recent Activity: real on-chain history via my-worker
+                 (Helius enhanced-transactions API), replaces the earlier
+                 "no tx history" gap. Populated by _crWalletRenderTx(). -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 6px">
+              <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim)">Recent Activity</h4>
+              <span style="font-size:9px;color:#3ddc97;font-weight:600;text-transform:uppercase;letter-spacing:.4px">mainnet</span>
+            </div>
+            <div id="crWalletTxList" style="display:flex;flex-direction:column;gap:6px"></div>
             <!-- Add-token form -->
             <div style="display:flex;gap:6px;margin:10px 0 4px;align-items:center">
               <input type="text" id="crWalletAddSym" placeholder="BONK, JUP, ETH…" maxlength="10" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace;text-transform:uppercase">
@@ -15740,7 +15748,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.670",
+  VERSION: "1.0.671",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -54407,10 +54415,12 @@ function _crWalletAllSymbols(){
     .filter(s => s && CR_WALLET_DEFAULTS.indexOf(s) < 0);
   return CR_WALLET_DEFAULTS.concat(extras);
 }
-// v0.9.89 — Real SOL balance fetched from devnet RPC, cached 30 s.
-// Hits api.devnet.solana.com getBalance with the connected pubkey.
-// CHART / RUN remain game-internal (no on-chain mint yet).
-const _CR_DEVNET_RPC  = 'https://api.devnet.solana.com';
+// v1.0.671 — Real SOL balance + tx history via my-worker (Cloudflare Worker
+// fronting Helius mainnet RPC with a server-side key — was a bare
+// client-side call to api.devnet.solana.com, devnet-only and meaningless
+// for a real connected wallet). CHART / RUN remain game-internal (no
+// on-chain mint yet).
+const _CR_WALLET_WORKER = 'https://my-worker.jsg-951.workers.dev';
 const _CR_BAL_TTL_MS  = 30000;
 let _crWalletBalances = { SOL: null, fetchedAt: 0, fetching: false };
 async function _crWalletFetchSol(){
@@ -54423,19 +54433,11 @@ async function _crWalletFetchSol(){
         && (now - _crWalletBalances.fetchedAt) < _CR_BAL_TTL_MS) return;
     if (_crWalletBalances.fetching) return;
     _crWalletBalances.fetching = true;
-    const resp = await fetch(_CR_DEVNET_RPC, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 1, method: 'getBalance',
-        params: [pk, { commitment: 'confirmed' }],
-      }),
-    });
+    const resp = await fetch(_CR_WALLET_WORKER + '/wallet/balance?address=' + encodeURIComponent(pk));
     const data = await resp.json();
-    const lamports = data && data.result && typeof data.result.value === 'number'
-                     ? data.result.value : null;
-    if (lamports !== null){
-      _crWalletBalances.SOL = lamports / 1e9;
+    const sol = data && typeof data.sol === 'number' ? data.sol : null;
+    if (sol !== null){
+      _crWalletBalances.SOL = sol;
       _crWalletBalances.fetchedAt = now;
       try { if (typeof _crWalletRender === 'function') _crWalletRender(); } catch(_){}
     }
@@ -54444,6 +54446,81 @@ async function _crWalletFetchSol(){
   } finally {
     _crWalletBalances.fetching = false;
   }
+}
+// v1.0.671 — Recent on-chain activity (Helius enhanced-transactions API,
+// human-readable `description` per tx), same cache/refresh rhythm as the
+// SOL balance above.
+let _crWalletTx = { items: null, fetchedAt: 0, fetching: false, error: false };
+async function _crWalletFetchTx(){
+  try {
+    if (typeof crWallet === 'undefined' || !crWallet.isConnected()) return;
+    const pk = crWallet.get();
+    if (!pk) return;
+    const now = Date.now();
+    if (_crWalletTx.items !== null && (now - _crWalletTx.fetchedAt) < _CR_BAL_TTL_MS) return;
+    if (_crWalletTx.fetching) return;
+    _crWalletTx.fetching = true;
+    const resp = await fetch(_CR_WALLET_WORKER + '/wallet/transactions?address=' + encodeURIComponent(pk) + '&limit=10');
+    const data = await resp.json();
+    _crWalletTx.items = Array.isArray(data) ? data : [];
+    _crWalletTx.fetchedAt = now;
+    _crWalletTx.error = false;
+    try { if (typeof _crWalletRenderTx === 'function') _crWalletRenderTx(); } catch(_){}
+  } catch(_){
+    _crWalletTx.error = true;
+  } finally {
+    _crWalletTx.fetching = false;
+  }
+}
+function _crWalletTxAgo(ts){
+  const diff = Math.max(0, Math.floor(Date.now() / 1000) - ts);
+  if (diff < 60) return diff + 's ago';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+}
+function _crWalletEscTx(v){
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch){
+    return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[ch];
+  });
+}
+function _crWalletRenderTx(){
+  const list = document.getElementById('crWalletTxList');
+  if (!list) return;
+  let connected = false;
+  try { connected = typeof crWallet !== 'undefined' && crWallet.isConnected && crWallet.isConnected(); } catch(_){}
+  list.innerHTML = '';
+  if (!connected){
+    list.innerHTML = '<div style="padding:8px 4px;color:var(--dim);font-size:11px">Connect a wallet to see recent activity.</div>';
+    return;
+  }
+  if (_crWalletTx.items === null && _crWalletTx.fetching){
+    list.innerHTML = '<div style="padding:8px 4px;color:var(--dim);font-size:11px">Loading…</div>';
+    return;
+  }
+  if (_crWalletTx.error && _crWalletTx.items === null){
+    list.innerHTML = '<div style="padding:8px 4px;color:var(--dim);font-size:11px">Couldn\'t load activity — try Refresh.</div>';
+    return;
+  }
+  const items = _crWalletTx.items || [];
+  if (!items.length){
+    list.innerHTML = '<div style="padding:8px 4px;color:var(--dim);font-size:11px">No recent on-chain activity.</div>';
+    return;
+  }
+  items.slice(0, 10).forEach(function(tx){
+    const sig  = tx && tx.signature ? String(tx.signature) : '';
+    const desc = tx && tx.description ? String(tx.description) : (tx && tx.type ? String(tx.type) : 'Transaction');
+    const ago  = tx && typeof tx.timestamp === 'number' ? _crWalletTxAgo(tx.timestamp) : '';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4);font-size:11px';
+    row.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+        '<span style="color:var(--fg);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _crWalletEscTx(desc) + '</span>' +
+        '<span style="color:var(--dim);font-size:9px;white-space:nowrap">' + _crWalletEscTx(ago) + '</span>' +
+      '</div>' +
+      (sig ? '<a href="https://explorer.solana.com/tx/' + encodeURIComponent(sig) + '" target="_blank" rel="noreferrer" style="color:#3ddc97;font:9px ui-monospace,Menlo,monospace;word-break:break-all">' + _crWalletEscTx(sig.slice(0, 10) + '…' + sig.slice(-6)) + '</a>' : '');
+    list.appendChild(row);
+  });
 }
 function _crWalletBalanceFor(sym){
   // RUN mirrors game.run so the player sees in-game P&L. SOL pulls from
@@ -54497,11 +54574,14 @@ function _crWalletRender(){
   // value lands.
   if (connected) {
     try { _crWalletFetchSol(); } catch(_){}
+    try { _crWalletFetchTx(); } catch(_){}
   } else {
-    // Wipe cached balance on disconnect so a fresh connect re-fetches.
+    // Wipe cached balance/activity on disconnect so a fresh connect re-fetches.
     try { _crWalletBalances = { SOL: null, fetchedAt: 0, fetching: false }; } catch(_){}
+    try { _crWalletTx = { items: null, fetchedAt: 0, fetching: false, error: false }; } catch(_){}
   }
   try { if(window.crWalletProofDemo && typeof crWalletProofDemo.refresh === 'function') crWalletProofDemo.refresh(); } catch(_){}
+  try { _crWalletRenderTx(); } catch(_){}
   if (!list) return;
   const symbols = _crWalletAllSymbols();
   list.innerHTML = '';
@@ -54535,10 +54615,10 @@ function _crWalletRender(){
     row.innerHTML =
       '<div style="width:28px;height:28px;border-radius:50%;background:' + pillBg + ';border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font:bold 10px ui-monospace,Menlo,monospace;color:var(--fg)">' + sym.slice(0,3) + '</div>' +
       '<div style="flex:1;min-width:0">' +
-        '<div style="font-weight:700;color:var(--fg)">$' + sym + (isDefault ? '' : ' <span style="font-size:9px;color:var(--dim);font-weight:400;text-transform:uppercase;letter-spacing:.4px">custom</span>') + (sym === 'SOL' && connected ? ' <span style="font-size:9px;color:#3ddc97;font-weight:600;text-transform:uppercase;letter-spacing:.4px">devnet</span>' : '') + ((sym === 'USDT' || sym === 'USDC') && connected ? ' <span style="font-size:9px;color:#3ddc97;font-weight:600;text-transform:uppercase;letter-spacing:.4px">mainnet</span>' : '') + '</div>' +
+        '<div style="font-weight:700;color:var(--fg)">$' + sym + (isDefault ? '' : ' <span style="font-size:9px;color:var(--dim);font-weight:400;text-transform:uppercase;letter-spacing:.4px">custom</span>') + (sym === 'SOL' && connected ? ' <span style="font-size:9px;color:#3ddc97;font-weight:600;text-transform:uppercase;letter-spacing:.4px">mainnet</span>' : '') + ((sym === 'USDT' || sym === 'USDC') && connected ? ' <span style="font-size:9px;color:#3ddc97;font-weight:600;text-transform:uppercase;letter-spacing:.4px">mainnet</span>' : '') + '</div>' +
         '<div style="font-size:10px;color:var(--dim)">' +
           (sym === 'RUN'  ? 'Run-token · in-game P&L' :
-           sym === 'SOL'  ? 'Solana · gas + native (live RPC)' :
+           sym === 'SOL'  ? 'Solana · gas + native (live mainnet via Helius)' :
            sym === 'USDC' ? 'USD-C stable · default quote (live)' :
            sym === 'USDT' ? 'Tether USD stable · settle asset (live)' :
                             'SPL token · custom') +
