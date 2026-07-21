@@ -15279,7 +15279,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.649",
+  VERSION: "1.0.650",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -25210,12 +25210,22 @@ function currentAssetObj(){ return ASSETS.find(a=>a.id===currentAsset) || ASSETS
    reopening the picker/app doesn't re-hit the limit. Returns rows ranked by
    market cap desc: {cgId,sym,name,price,mcap,rank,ch24,img}. Never throws —
    returns the cache (or []) on failure. */
-const CR_CG_BASE = 'https://api.coingecko.com/api/v3';
+// Cloudflare Worker gateway (chartrunner-private-ops/my-worker, see
+// docs/architecture/CLOUDFLARE-WORKER-API-GATEWAY-BRAINSTORM-2026-07-20.md).
+// Off by default — flip localStorage.cr_gateway_enabled_v1='1' once the
+// worker is deployed+verified live. Until then every call site below is
+// byte-identical to pre-gateway behavior (direct api.coingecko.com).
+const CR_API_GATEWAY_BASE = 'https://chartrunner-worker.jsg-951.workers.dev';
+function _crGatewayEnabled(){ try { return localStorage.getItem('cr_gateway_enabled_v1') === '1'; } catch(_){ return false; } }
+// A user-supplied key (cr_coingecko_key) is an explicit opt-out of the
+// gateway — bring-your-own-key bypasses the shared quota (brainstorm §7,
+// open decision 6: "keep them as an optional power-user escape hatch").
+const CR_CG_BASE = (function(){ try { return (_crGatewayEnabled() && !localStorage.getItem('cr_coingecko_key')) ? (CR_API_GATEWAY_BASE + '/v1/market') : 'https://api.coingecko.com/api/v3'; } catch(_){ return 'https://api.coingecko.com/api/v3'; } })();
 const CR_CG_CACHE_KEY = 'cr_cg_markets_v3';
 // Stablecoins are excluded from the picker/Token lists — they peg to ~$1 so
 // there's no tradeable chart (and "USDT/USDT" is nonsense). v1.0.327.
 const CR_CG_STABLES = { usdt:1, usdc:1, dai:1, fdusd:1, tusd:1, usde:1, usdd:1, pyusd:1, usds:1, gusd:1, usdp:1, frax:1, lusd:1, susd:1, usdl:1, eurc:1, eurt:1, buidl:1, usd0:1, usdy:1, crvusd:1, gho:1, usdb:1 };
-function crCgHeaders(){ try { var k = localStorage.getItem('cr_coingecko_key') || ''; return k ? { 'x-cg-demo-api-key': k } : {}; } catch(_){ return {}; } }
+function crCgHeaders(){ try { if(CR_CG_BASE.indexOf(CR_API_GATEWAY_BASE) === 0) return {}; var k = localStorage.getItem('cr_coingecko_key') || ''; return k ? { 'x-cg-demo-api-key': k } : {}; } catch(_){ return {}; } }
 function _crCgCacheRead(limit){ try { var c = JSON.parse(localStorage.getItem(CR_CG_CACHE_KEY) || 'null'); if(c && Array.isArray(c.rows)) return c.rows.slice(0, limit); } catch(_){} return null; }
 async function crCgMarkets(limit){
   limit = Math.max(1, Math.min(1000, (limit | 0) || 100));
@@ -65211,7 +65221,7 @@ window._crRepaintEngineWatchlists = _crPaintEngineWatchlists;
 const _crWalBalCache = {}; // { address: { lamports, t } }
 const _crWalBalInflight = {};
 const _CR_WAL_TTL_MS = 60000;
-const _CR_WAL_RPC = 'https://api.mainnet-beta.solana.com';
+const _CR_WAL_RPC = (function(){ try { return _crGatewayEnabled() ? (CR_API_GATEWAY_BASE + '/v1/rpc') : 'https://api.mainnet-beta.solana.com'; } catch(_){ return 'https://api.mainnet-beta.solana.com'; } })();
 function _crFetchSolBalance(addr){
   const now = Date.now();
   const cached = _crWalBalCache[addr];
