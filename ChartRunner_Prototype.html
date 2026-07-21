@@ -13371,6 +13371,14 @@ window.crShare = function (o) {
                   <button id="crLiteStartBtn" class="cr-gobtn" type="button" style="max-width:340px" title="Open a live room on the current chart and get a code to share"><span>START ROOM · current chart · just charting · free</span></button>
                   <div class="lt-lock" id="crLiteWallet" title="Connect a wallet to save maps, copy trades and earn">🔒 Save maps · copy trades · earn → <u>Connect wallet</u></div>
                 </div>
+                <!-- v1.0.679 -- Connected room config INLINE in the ROOMS tab
+                     (Julian: "rooms einstellungen sollen bei connected player in dem
+                     Fenster configuriert werden und nicht in einem weiteren pop up
+                     fenster, aehnlich wie econ version"). Rendered + wired by the
+                     crRoomWiz module (paintRoomsInline) using the SAME doCreate /
+                     _wizModerated paths as the (still existing) crRoomWizard modal,
+                     which other entry points keep using. Guest-hidden via CSS. -->
+                <div id="crRoomsInline"></div>
                 <div id="crRoomsLive">
                   <div class="rl-head">
                     <span class="rl-t"><span class="rl-dot">●</span> LIVE ROOMS <span id="crRoomsLiveN"></span></span>
@@ -15753,7 +15761,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.678",
+  VERSION: "1.0.679",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -40632,6 +40640,50 @@ window.crRoom = (function(){
     }
     if(liteStart) liteStart.addEventListener('click', function(){ doCreate({}); });
     if(liteLock) liteLock.addEventListener('click', function(){ try { if(window.crAccount && crAccount.open) crAccount.open(); else if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){} });
+  } catch(_){}
+
+  // -- v1.0.679 -- Connected room config INLINE in the ROOMS tab (econ-style).
+  //    Replaces the "+ start a room" -> modal hop for connected players: type
+  //    cards (PRIVATE / PUBLIC / MODERATED P1 / EARN P2 locked), the locked
+  //    JOIN KEY pricing placeholder, hide-guest-chat, one CREATE button and
+  //    the public-rooms browser link -- all in the Run window itself. Uses the
+  //    same doCreate/_wizModerated paths as the modal; the modal stays for the
+  //    Maps-row and other entry points. Guests never see this (CSS gate).
+  try {
+    var riHost = document.getElementById('crRoomsInline');
+    if(riHost && !riHost.dataset.crWired){
+      riHost.dataset.crWired = '1';
+      var RI_LBL = { 'private': 'CREATE PRIVATE ROOM', 'public': 'CREATE PUBLIC ROOM', 'moderated': 'CREATE MODERATED ROOM' };
+      riHost.innerHTML = ''
+        + '<div class="ri-sec">\u25B6 Start a room \u00B7 current chart</div>'
+        + '<div class="ri-cards">'
+        +   '<button type="button" class="ri-card on" data-rt="private">PRIVATE<span class="s">code or link only \u00B7 unlisted \u00B7 you host</span></button>'
+        +   '<button type="button" class="ri-card" data-rt="public">PUBLIC<span class="s">listed in the Rooms directory \u00B7 anyone joins</span></button>'
+        +   '<button type="button" class="ri-card" data-rt="moderated"><span class="ri-tag p1">P1</span>MODERATED<span class="s">host-only broadcast \u00B7 kick / mute \u00B7 relay-enforced</span></button>'
+        +   '<button type="button" class="ri-card locked" tabindex="-1"><span class="ri-tag">P2 \u00B7 soon</span>EARN ON-CHAIN<span class="s">SOL entry + copy-trading fees \u00B7 host earns</span></button>'
+        + '</div>'
+        + '<div class="ri-key"><span class="ri-keyt">JOIN KEY \u00B7 buyers pay to enter \u00B7 you earn</span><span class="ri-tag">P2 settles on-chain</span>'
+        +   '<span class="ri-keyrow"><button type="button" disabled class="ri-kb on">\u25CE SOL</button><button type="button" disabled class="ri-kb">$RUN</button><input type="text" value="0,05" disabled aria-label="Join key price"><i>0 = free room</i></span></div>'
+        + '<label class="ri-chk"><input type="checkbox" id="crRiHideChat" checked> hide guest chat in moderated rooms</label>'
+        + '<button type="button" class="ri-create" id="crRiCreate">\u25B6 CREATE PRIVATE ROOM</button>'
+        + '<div class="ri-foot"><span class="lnk" id="crRiBrowse">\uD83D\uDD0D browse public rooms</span></div>';
+      var riType = 'private';
+      var riCreate = riHost.querySelector('#crRiCreate');
+      var riChk = riHost.querySelector('#crRiHideChat');
+      riHost.querySelectorAll('.ri-card:not(.locked)').forEach(function(card){
+        card.addEventListener('click', function(){
+          riType = card.getAttribute('data-rt') || 'private';
+          riHost.querySelectorAll('.ri-card').forEach(function(c){ c.classList.toggle('on', c === card); });
+          if(riCreate) riCreate.textContent = '\u25B6 ' + (RI_LBL[riType] || RI_LBL['private']);
+        });
+      });
+      if(riCreate) riCreate.addEventListener('click', function(){
+        if(riType === 'moderated'){ _wizModerated('moderated', riChk); return; }
+        doCreate({ wallet: true, pub: riType === 'public' });
+      });
+      var riBrowse = riHost.querySelector('#crRiBrowse');
+      if(riBrowse) riBrowse.addEventListener('click', function(){ try { if(window.crRoomsBrowser && crRoomsBrowser.open) crRoomsBrowser.open(); } catch(_){} });
+    }
   } catch(_){}
 })();
 
@@ -93158,6 +93210,36 @@ window.crQvac = (function(){
 #osGrid .os-icon[data-prog="walletapp"]{order:5}
 #osGrid .os-icon[data-prog="display"]{order:6}
 #osGrid .os-icon[data-prog="settings"]{order:7}
+/* v1.0.679 -- ROOMS tab: inline connected room config (econ-style). Guest
+   sees #crRoomsLite instead; the header "+ start a room" + empty-state start
+   button are redundant next to the inline CREATE and are hidden. Base look
+   is dark-theme; the v1.0.673 platinum/bw flat rules restyle the buttons
+   automatically (.ri-card.on hits the .on green-tint rule there). */
+body.cr-guest #crRoomsInline{display:none!important}
+#crRoomsLive .rl-startTop{display:none!important}
+#crRoomsInline{display:flex;flex-direction:column;gap:9px;margin:2px 0 14px}
+#crRoomsInline .ri-sec{font:700 13px ui-monospace,Menlo,monospace;color:var(--fg);letter-spacing:.4px}
+#crRoomsInline .ri-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#crRoomsInline .ri-card{position:relative;text-align:left;padding:11px 12px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.45);color:var(--fg);font:800 12px ui-monospace,Menlo,monospace;letter-spacing:.5px;cursor:pointer}
+#crRoomsInline .ri-card .s{display:block;margin-top:5px;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.3px;color:var(--dim);text-transform:uppercase}
+#crRoomsInline .ri-card.on{border-color:rgba(20,241,149,.6);background:rgba(20,241,149,.08)}
+#crRoomsInline .ri-card.locked{opacity:.55;cursor:default}
+#crRoomsInline .ri-tag{float:right;font:700 9px ui-monospace,Menlo,monospace;letter-spacing:.4px;color:#ffd166;border:1px solid rgba(255,209,102,.45);background:rgba(255,209,102,.08);border-radius:999px;padding:2px 7px;margin-left:8px}
+#crRoomsInline .ri-tag.p1{color:#14f195;border-color:rgba(20,241,149,.5);background:rgba(20,241,149,.1)}
+#crRoomsInline .ri-key{border:1px dashed var(--line);border-radius:10px;padding:9px 11px;opacity:.7}
+#crRoomsInline .ri-keyt{font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.5px;color:var(--dim);text-transform:uppercase}
+#crRoomsInline .ri-keyrow{display:flex;align-items:center;gap:7px;margin-top:8px}
+#crRoomsInline .ri-kb{padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--dim);font:700 11px ui-monospace,Menlo,monospace}
+#crRoomsInline .ri-kb.on{border-color:rgba(20,241,149,.5);color:#bff7df;background:rgba(20,241,149,.08)}
+#crRoomsInline .ri-keyrow input{width:74px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:rgba(10,15,28,.5);color:var(--fg);font:700 12px ui-monospace,Menlo,monospace;text-align:center}
+#crRoomsInline .ri-keyrow i{font:600 10px ui-monospace,Menlo,monospace;color:var(--dim);font-style:normal}
+#crRoomsInline .ri-chk{display:flex;align-items:center;gap:7px;font:600 11px ui-monospace,Menlo,monospace;color:var(--dim);cursor:pointer}
+#crRoomsInline .ri-chk input{accent-color:#14f195}
+#crRoomsInline .ri-create{width:100%;padding:13px 14px;border:1px solid rgba(20,241,149,.55);border-radius:11px;background:linear-gradient(180deg,rgba(20,241,149,.22),rgba(20,241,149,.08));color:#bff7df;font:800 13px ui-monospace,Menlo,monospace;letter-spacing:.7px;text-transform:uppercase;cursor:pointer}
+#crRoomsInline .ri-create:hover{background:linear-gradient(180deg,rgba(20,241,149,.3),rgba(20,241,149,.12))}
+#crRoomsInline .ri-foot{display:flex;justify-content:center}
+#crRoomsInline .ri-foot .lnk{font:700 11px ui-monospace,Menlo,monospace;color:var(--dim);cursor:pointer;text-decoration:underline}
+#crRoomsInline .ri-foot .lnk:hover{color:var(--fg)}
 </style>
 </body>
 </html>
