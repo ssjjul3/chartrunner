@@ -14063,6 +14063,29 @@ window.crShare = function (o) {
                 <button type="button" id="crPingClassDocsAlerts" class="cr-go" style="font-size:11px;padding:7px 14px">Open Docs Alerts</button>
               </div>
             </div>
+            <!-- v1.0.684 — MAIL NOTIFICATIONS (Julian: "hier sollten auch mail
+                 notifications configuriert werden - Alert Mail, tp/sl Mail,
+                 brainstorm für mehr realisierbare notificationen per mail").
+                 Every class here is client-detectable TODAY (alarms, bracket
+                 fills, run end, bot signals, wallet connects) — the game POSTs
+                 to the my-worker /notify/email route (Resend is already wired
+                 in that worker for Stripe receipts). Until that route ships,
+                 crMailNotify.send() fails silently and the honest relay-status
+                 line below says so; prefs are saved either way. Weekly digest
+                 is the one server-side class (worker cron) — tagged. -->
+            <div class="os-section" style="margin-bottom:14px">
+              <h4 style="margin:0 0 10px;font-size:11px;letter-spacing:.8px;color:var(--dim);text-transform:uppercase">Mail Notifications</h4>
+              <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap">
+                <input type="email" id="crMailNotifAddr" placeholder="you@example.com" autocomplete="email" spellcheck="false"
+                  style="flex:1;min-width:200px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(10,15,28,.6);color:var(--fg);font:600 12px ui-monospace,Menlo,monospace">
+                <span id="crMailNotifRelay" style="font-size:10px;color:var(--dim)"></span>
+              </div>
+              <div id="crMailClassList" style="display:flex;flex-direction:column;gap:8px"></div>
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <button type="button" id="crMailNotifSave" class="cr-go" style="font-size:11px;padding:7px 14px">Save Mail Settings</button>
+                <button type="button" id="crMailNotifTest" class="cr-go" style="font-size:11px;padding:7px 14px">Send Test Mail</button>
+              </div>
+            </div>
             <div class="os-section">
               <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 8px">
                 <h4 style="margin:0">Notifications</h4>
@@ -15774,7 +15797,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.683",
+  VERSION: "1.0.684",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -53395,7 +53418,7 @@ function osRefreshShop(){
       const view = btn.getAttribute('data-setview');
       tabs.forEach(b => b.classList.toggle('active', b === btn));
       Object.keys(views).forEach(k => { if(views[k]) views[k].classList.toggle('hidden', k !== view); });
-      if(view === 'notif')   { try { _crSetRenderNotif(); } catch(_){} try { _crRenderPingClasses(); } catch(_){} }
+      if(view === 'notif')   { try { _crSetRenderNotif(); } catch(_){} try { _crRenderPingClasses(); } catch(_){} try { _crRenderMailClasses(); } catch(_){} }
       if(view === 'account') { try { _crSetRenderAccount(); } catch(_){} }
       // v1.0.667 — Tools tab (moved in from the retired Tools-App window):
       // refresh both merged sub-views the same way osRefreshToolConfig() used to.
@@ -53478,6 +53501,106 @@ function _crRenderPingClasses(){
         try { const tab = document.querySelector('#crJournalTabs button[data-jrntab="alerts"]'); if(tab) tab.click(); } catch(_){}
       }, 120);
     }, 120);
+  });
+})();
+
+// v1.0.684 — crMailNotify: e-mail notification prefs + relay client. All
+// classes except 'weekly' are CLIENT-detectable events; send() POSTs them to
+// the my-worker /notify/email route (Resend already lives in that worker).
+// Until the route is deployed the POST fails silently — prefs still persist,
+// and the Settings pane shows an honest relay status. Call sites hook in via
+// window.crMailNotify.send(kind, subject, text).
+window.crMailNotify = (function(){
+  const KEY = 'cr_mail_notify_v1';
+  const RELAY = 'https://my-worker.jsg-951.workers.dev/notify/email';
+  const DEFS = [
+    { id:'alert',      label:'Alert Mail',        desc:'A price/indicator alarm you set fires (hotkey-4 laser).' },
+    { id:'tpsl',       label:'TP/SL Mail',        desc:'A bracket hits take-profit or stop-loss.' },
+    { id:'runsummary', label:'Run Summary',       desc:'End-of-run recap — P&L, score, trades.' },
+    { id:'botsignal',  label:'Bot Signal Mail',   desc:'A bot proposes or fires a setup.' },
+    { id:'security',   label:'Security Mail',     desc:'Wallet connect/disconnect and account changes.' },
+    { id:'weekly',     label:'Weekly Digest',     desc:'Weekly performance recap.', tag:'worker cron · soon' },
+  ];
+  function get(){
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch(_){ saved = {}; }
+    const out = { email: (saved && typeof saved.email === 'string') ? saved.email : '' , classes: {} };
+    DEFS.forEach(d => { out.classes[d.id] = !!(saved.classes && saved.classes[d.id]); });
+    return out;
+  }
+  function save(state){ try { localStorage.setItem(KEY, JSON.stringify(state || {})); } catch(_){} }
+  function email(){
+    const st = get();
+    if(st.email) return st.email;
+    try { if(window.crAccount && crAccount.isSignedIn && crAccount.isSignedIn()) return crAccount.email() || ''; } catch(_){}
+    return '';
+  }
+  async function send(kind, subject, text){
+    try {
+      const st = get();
+      const to = email();
+      if(!to || !st.classes[kind]) return false;
+      const r = await fetch(RELAY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },  // no CORS preflight
+        body: JSON.stringify({ to: to, kind: kind, subject: String(subject || 'ChartRunner'), text: String(text || '') }),
+      });
+      return !!(r && r.ok);
+    } catch(_){ return false; }
+  }
+  return { DEFS: DEFS, get: get, save: save, email: email, send: send, RELAY: RELAY };
+})();
+let _mailDraft = null;
+function _crRenderMailClasses(){
+  const host = document.getElementById('crMailClassList');
+  if(!host) return;
+  if(!_mailDraft) _mailDraft = crMailNotify.get();
+  const addr = document.getElementById('crMailNotifAddr');
+  if(addr && !addr.value) addr.value = _mailDraft.email || crMailNotify.email() || '';
+  host.innerHTML = '';
+  crMailNotify.DEFS.forEach(d => {
+    const row = document.createElement('div');
+    row.className = 'crPingRow';
+    row.innerHTML = '<div><div class="nm">' + d.label
+      + (d.tag ? ' <span style="font-size:9px;color:#ffd166;border:1px solid rgba(255,209,102,.45);border-radius:999px;padding:1px 7px;margin-left:6px;letter-spacing:.4px">' + d.tag + '</span>' : '')
+      + '</div><div class="ds">' + d.desc + '</div></div>'
+      + '<input type="checkbox" data-mail-id="' + d.id + '"' + (_mailDraft.classes[d.id] ? ' checked' : '') + '>';
+    const cb = row.querySelector('input');
+    const toggle = () => { _mailDraft.classes[d.id] = !_mailDraft.classes[d.id]; cb.checked = _mailDraft.classes[d.id]; };
+    row.addEventListener('click', (e) => { if(e.target !== cb) toggle(); });
+    cb.addEventListener('click', (e) => { e.stopPropagation(); _mailDraft.classes[d.id] = cb.checked; });
+    host.appendChild(row);
+  });
+  // Honest relay status: HEAD-probe the notify route once per render.
+  const st = document.getElementById('crMailNotifRelay');
+  if(st){
+    st.textContent = 'relay: checking…';
+    fetch(crMailNotify.RELAY, { method: 'OPTIONS' })
+      .then(r => { st.textContent = r.ok ? 'relay: online' : 'relay: not deployed yet — prefs are saved, mails start once the worker route ships'; })
+      .catch(() => { st.textContent = 'relay: not deployed yet — prefs are saved, mails start once the worker route ships'; });
+  }
+}
+(function wireMailNotifActions(){
+  const saveBtn = document.getElementById('crMailNotifSave');
+  if(saveBtn) saveBtn.addEventListener('click', () => {
+    if(!_mailDraft) _mailDraft = crMailNotify.get();
+    const addr = document.getElementById('crMailNotifAddr');
+    _mailDraft.email = addr ? String(addr.value || '').trim() : '';
+    crMailNotify.save(_mailDraft);
+    try { toast('✓ Mail settings saved'); } catch(_){}
+  });
+  const testBtn = document.getElementById('crMailNotifTest');
+  if(testBtn) testBtn.addEventListener('click', async () => {
+    if(!_mailDraft) _mailDraft = crMailNotify.get();
+    const addr = document.getElementById('crMailNotifAddr');
+    const to = addr ? String(addr.value || '').trim() : '';
+    if(!to){ try { toast('Enter an e-mail address first'); } catch(_){} return; }
+    // Test bypasses class toggles but uses the same relay path.
+    try {
+      const r = await fetch(crMailNotify.RELAY, { method:'POST', headers:{ 'Content-Type':'text/plain' },
+        body: JSON.stringify({ to: to, kind: 'test', subject: 'ChartRunner test mail', text: 'Your ChartRunner mail notifications are wired up.' }) });
+      try { toast(r && r.ok ? '✓ Test mail sent' : 'Mail relay not deployed yet — settings still save'); } catch(_){}
+    } catch(_){ try { toast('Mail relay not deployed yet — settings still save'); } catch(_){} }
   });
 })();
 
@@ -53848,6 +53971,7 @@ function _crSetRenderAppsLoc(){
         try {
           if(now && !_wLast) crNotifLog.add('Wallet connected' + (window.crWallet.truncated ? ' · ' + crWallet.truncated() : ''), 'security');
           else if(!now && _wLast) crNotifLog.add('Wallet disconnected', 'security');
+          try { if(window.crMailNotify) crMailNotify.send('security', 'ChartRunner security', 'A wallet was disconnected from your ChartRunner session.'); } catch(_){}
         } catch(_){}
         _wLast = now;
       });
@@ -92135,6 +92259,12 @@ window.crQvac = (function(){
         var fire = a.confluence ? met.every(function(x){return x;}) : met.some(function(x){return x;});
         if(fire){ a.triggered=true; this.fire(a); } } },
     fire:function(a){ a.lastFiredAt = Date.now(); note('◉ ALARM: '+a.name+(a.anchorMapId?' (anchored)':''));
+      // v1.0.684 — Alert Mail: class-gated, fail-silent relay send.
+      try { if(window.crMailNotify) crMailNotify.send('alert', 'ChartRunner alarm: ' + (a.name || 'Alarm'),
+        'Alarm "' + (a.name || 'Alarm') + '" fired'
+        + ((a.conditions && a.conditions[0] && a.conditions[0].price != null) ? ' at ' + a.conditions[0].price : '')
+        + ' on ' + (typeof currentAsset === 'string' ? currentAsset.toUpperCase() : 'BTC')
+        + ' ' + (typeof timeframe === 'string' ? timeframe : '') + '.'); } catch(_){}
       try { if(window.crAlertBus && typeof window.crAlertBus.publish === 'function') window.crAlertBus.publish({
         type:a.confluence?'confluence':'price-alert',
         severity:'critical',
