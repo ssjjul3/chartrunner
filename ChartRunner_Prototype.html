@@ -15279,7 +15279,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.648",
+  VERSION: "1.0.649",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -71283,6 +71283,24 @@ function _crShowChapterEndcard(chapter, info){
   const title = (ch && ch.name) ? (ch.name + ' complete') : ('Chapter ' + ((window.CR_CH_DISPLAY && window.CR_CH_DISPLAY[chapter]) || chapter) + ' complete');
   const goal = (ch && ch.goal) || 'Chapter complete.';
 
+  // v1.0.649 — "Next Level" progression: only offered for numbered chapters (those with a
+  // CR_CH_DISPLAY entry) whose immediate successor (display N+1) is a real, non-archived,
+  // non-phase2 chapter. Basics chapters (0/45/47-50/53) have no display number and no natural
+  // "next" in reading order, so they keep the Try again/Home-only endcard. A wallet-gated
+  // successor is NOT excluded — clicking Next Level on one just re-triggers the same "connect a
+  // wallet" gate _launchCampaignChapterCore already shows on a manual card click.
+  let nextChapterId = null;
+  try {
+    const _dispNum = window.CR_CH_DISPLAY && window.CR_CH_DISPLAY[chapter];
+    if(_dispNum){
+      const _candId = (typeof crDisplayToInternal === 'function') ? crDisplayToInternal(_dispNum + 1) : null;
+      if(_candId != null){
+        const _candCh = (window.CAMPAIGN_CHAPTERS && window.CAMPAIGN_CHAPTERS[_candId]) || ((typeof CAMPAIGN_CHAPTERS !== 'undefined') ? CAMPAIGN_CHAPTERS[_candId] : null);
+        if(_candCh && !_candCh.archived && !_candCh.phase2) nextChapterId = _candId;
+      }
+    }
+  } catch(_){}
+
   const ov = document.createElement('div');
   ov.id = 'crChapterEnd';
   ov.style.cssText = "position:fixed;inset:0;z-index:9800;background:radial-gradient(900px 500px at 50% 0%, rgba(20,241,149,.10), transparent 70%), rgba(2,4,8,.86);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;backdrop-filter:blur(3px)";
@@ -71305,20 +71323,29 @@ function _crShowChapterEndcard(chapter, info){
         : 'Probes missing: ' + info.requiredProbes.filter(p => !info.usedProbes.includes(p)).join(', '));
 
   var _eF = "-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif";
+  var _primaryBtnStyle = 'background:#14F195;border:0;color:#04150d;padding:12px 24px;border-radius:12px;cursor:pointer;font:800 13px ' + _eF + ';box-shadow:0 6px 20px rgba(20,241,149,.28)';
+  var _secondaryBtnStyle = 'background:transparent;border:1px solid rgba(255,255,255,.18);color:#cfd2db;padding:12px 22px;border-radius:12px;cursor:pointer;font:700 13px ' + _eF;
   card.innerHTML =
     '<div style="font:800 11px/1 ' + _eF + ';letter-spacing:2px;color:#14F195;text-transform:uppercase">' + headline + '</div>' +
     '<div style="font-size:56px;line-height:1;margin:12px 0 6px;color:' + starColor + ';text-shadow:0 0 32px ' + starColor + '66">' + star + '</div>' +
     '<div style="font:800 22px/1.2 ' + _eF + ';color:#ffffff;letter-spacing:-.3px;margin-bottom:6px">' + title + '</div>' +
     '<div style="font:500 14px/1.45 ' + _eF + ';color:#aab2bf;margin-bottom:10px">' + goal + '</div>' +
     '<div style="font:500 12px/1.4 ' + _eF + ';color:#6b7280;margin-bottom:22px">' + sub + '</div>' +
-    '<div style="display:flex;gap:10px;justify-content:center">' +
-      '<button id="crChEndRetry" type="button" style="background:#14F195;border:0;color:#04150d;padding:12px 24px;border-radius:12px;cursor:pointer;font:800 13px ' + _eF + ';box-shadow:0 6px 20px rgba(20,241,149,.28)">Try again</button>' +
-      '<button id="crChEndHome" type="button" style="background:transparent;border:1px solid rgba(255,255,255,.18);color:#cfd2db;padding:12px 22px;border-radius:12px;cursor:pointer;font:700 13px ' + _eF + '">Home</button>' +
+    '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">' +
+      (nextChapterId != null ? '<button id="crChEndNext" type="button" style="' + _primaryBtnStyle + '">Next Level →</button>' : '') +
+      '<button id="crChEndRetry" type="button" style="' + (nextChapterId != null ? _secondaryBtnStyle : _primaryBtnStyle) + '">Try again</button>' +
+      '<button id="crChEndHome" type="button" style="' + _secondaryBtnStyle + '">Home</button>' +
     '</div>';
 
   ov.appendChild(card);
   document.body.appendChild(ov);
 
+  if(nextChapterId != null){
+    card.querySelector('#crChEndNext').addEventListener('click', () => {
+      ov.remove();
+      try { if(typeof window.crLaunchCampaignChapter === 'function') window.crLaunchCampaignChapter(nextChapterId); } catch(_){}
+    });
+  }
   card.querySelector('#crChEndRetry').addEventListener('click', () => {
     ov.remove();
     try { if(typeof window.crLaunchCampaignChapter === 'function') window.crLaunchCampaignChapter(chapter); } catch(_){}
