@@ -132,7 +132,7 @@
       <h2>Free to play. Pay only to run bots at scale.</h2>
       <p>The game stays free forever &mdash; no pay-to-win. These plans are for builders running bots and agents: they provision faster <b style="color:var(--paper)">API + RPC key access</b> so your bots get fresh on-chain data and dedicated throughput. Pay by card via Stripe, or on-chain in SOL / USDC.</p>
       <div class="pricing-head">
-        <div style="display:none" data-annual-hidden="stripe annual prices not created yet — re-enable when they exist" class="bill-toggle" id="billToggle">
+        <div class="bill-toggle" id="billToggle">
           <button type="button" data-bill="monthly" class="on">Monthly</button>
           <button type="button" data-bill="annual">Annual</button>
         </div>
@@ -194,9 +194,9 @@
     var MERCHANT_SOL = 'F4XgsVpo3DQv7SiHA2yhqVY2uepb49p2WPKQWPMqWvnm';         // <-- ChartRunner receiving wallet
     var USDC_MINT    = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // mainnet USDC SPL mint
     var STRIPE = {   // <-- Stripe Payment Link URLs (dashboard → Payment Links). Placeholders now.
-      pro:   { monthly:'https://buy.stripe.com/eVq00k3ja2Ha6oVfs5gMw00',   annual:'https://buy.stripe.com/eVq00k3ja2Ha6oVfs5gMw00'   },
-      quant: { monthly:'https://buy.stripe.com/5kQ7sMaLCgy000x5RvgMw01', annual:'https://buy.stripe.com/5kQ7sMaLCgy000x5RvgMw01' },
-      desk:  { monthly:'https://buy.stripe.com/aFa8wQ8DudlO3cJ3JngMw02',  annual:'https://buy.stripe.com/aFa8wQ8DudlO3cJ3JngMw02'  }
+      pro:   { monthly:'https://buy.stripe.com/eVq00k3ja2Ha6oVfs5gMw00',   annual:'https://buy.stripe.com/4gM9AU06Y5Tm9B7a7LgMw05'   },
+      quant: { monthly:'https://buy.stripe.com/5kQ7sMaLCgy000x5RvgMw01', annual:'https://buy.stripe.com/8x2eVedXO95y28F3JngMw04' },
+      desk:  { monthly:'https://buy.stripe.com/aFa8wQ8DudlO3cJ3JngMw02',  annual:'https://buy.stripe.com/5kQ5kE9Hy0z24gNeo1gMw03'  }
     };
     // -----------------------------------------------------------------------------------
 
@@ -266,8 +266,53 @@
     function tierById(id){ for(var i=0;i<TIERS.length;i++) if(TIERS[i].id===id) return TIERS[i]; return null; }
 
     // ---- Stripe (card) --------------------------------------------------------
+    // v2026-07-21b: account-aware checkout. If the visitor has a ChartRunner
+    // session on this origin (Supabase stores it in localStorage, shared with
+    // /play/), we mint a REAL Checkout Session via the worker -- the webhook
+    // then grants the tier automatically (client_reference_id) and
+    // cancellations downgrade via subscription metadata. Anonymous visitors
+    // keep the static Payment Link; those purchases are claimable in-game
+    // later (sign in with the same e-mail -> auto-claim).
+    var API_BASE = 'https://chartrunner-worker.jsg-951.workers.dev';
+    var _supaTok = '';
+    (function(){
+      var el = document.createElement('script');
+      el.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+      el.onload = function(){
+        try {
+          window.supabase.createClient(
+            'https://gjaaxqnqohseyesctbcd.supabase.co',
+            'sb_publishable_JcwYmWfxSbBGIbLHxJmSpQ_5SAl-LfF'
+          ).auth.getSession().then(function(res){
+            _supaTok = (res && res.data && res.data.session && res.data.session.access_token) || '';
+          });
+        } catch(_){}
+      };
+      el.onerror = function(){};
+      document.head.appendChild(el);
+    })();
+    var TIER_API_ID = { pro: 'RUNNER_PRO', quant: 'QUANT', desk: 'DESK' };
     function stripe(id){
       var link = STRIPE[id] && STRIPE[id][bill];
+      if(_supaTok && TIER_API_ID[id]){
+        fetch(API_BASE + '/v1/billing/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _supaTok },
+          body: JSON.stringify({
+            tier: TIER_API_ID[id],
+            billing: bill === 'annual' ? 'annual' : 'monthly',
+            successUrl: 'https://chartrunner.xyz/play/?billing=success',
+            cancelUrl: 'https://chartrunner.xyz/pricing.html'
+          })
+        }).then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(j){
+            if(j && j.url){ window.location.href = j.url; }
+            else if(link && link.indexOf('REPLACE') !== 0){ window.location.href = link; }
+            else { toast('Checkout unavailable right now.'); }
+          })
+          .catch(function(){ if(link && link.indexOf('REPLACE') !== 0){ window.location.href = link; } });
+        return;
+      }
       if(!link || link.indexOf('REPLACE') === 0){
         toast('Card checkout goes live once the Stripe Payment Link is configured. (Placeholder in this preview.)');
         return;

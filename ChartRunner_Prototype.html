@@ -16035,7 +16035,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.700",
+  VERSION: "1.0.701",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -54169,6 +54169,87 @@ function _crRenderMailClasses(){
   });
 })();
 
+// v1.0.690 — crTier: server-declared tier + limits from the worker
+// (/v1/billing/status with the Supabase JWT). Client gates (bot count /
+// refresh cadence) read crTier.limits(); the request-rate side is enforced
+// SERVER-side by the tier-sharded limiter, so this is display + UX, not
+// security. Auto-claims Payment-Link purchases made with the account
+// e-mail (/v1/billing/claim) once per session after sign-in.
+window.crTier = (function(){
+  var API = 'https://chartrunner-worker.jsg-951.workers.dev';
+  var state = { tier: 'FREE', limits: { bots: 1, refreshX: 1, reqPerMin: 60 }, fetchedAt: 0 };
+  var _claimed = false;
+  function _token(){ try { return (window.crAccount && crAccount.token) ? crAccount.token() : ''; } catch(_){ return ''; } }
+  async function refresh(force){
+    var tok = _token();
+    if(!tok){ state.tier = 'FREE'; return state; }
+    if(!force && (Date.now() - state.fetchedAt) < 600000) return state;
+    try {
+      var r = await fetch(API + '/v1/billing/status', { headers: { 'Authorization': 'Bearer ' + tok } });
+      if(r.ok){
+        var j = await r.json();
+        if(j && j.tier){ state.tier = j.tier; if(j.limits) state.limits = j.limits; state.fetchedAt = Date.now(); }
+      }
+    } catch(_){}
+    return state;
+  }
+  async function claim(){
+    var tok = _token(); if(!tok || _claimed) return null;
+    _claimed = true;
+    try {
+      var r = await fetch(API + '/v1/billing/claim', { method: 'POST', headers: { 'Authorization': 'Bearer ' + tok } });
+      if(r.ok){
+        var j = await r.json();
+        if(j && j.claimed){ try { toast('\u2713 Purchase claimed \u2014 tier ' + j.tier + ' active'); } catch(_){} }
+        await refresh(true);
+        return j;
+      }
+    } catch(_){}
+    return null;
+  }
+  function _boot(){
+    refresh(true).then(function(s){ if(s.tier !== 'FREE'){ try { console.info('[crTier] ' + s.tier + ' active'); } catch(_){} } });
+    if(_token()) claim();
+  }
+  setTimeout(_boot, 4000);
+  setInterval(function(){ refresh(false); }, 600000);
+  return { get: function(){ return state; }, tier: function(){ return state.tier; }, limits: function(){ return state.limits; }, refresh: refresh, claim: claim };
+})();
+
+// v1.0.690 — crBilling: in-game checkout (the MAIN paid path). Signed-in
+// players get a real Stripe Checkout Session from the worker (tier grant +
+// cancellation handling are automatic via client_reference_id +
+// subscription metadata); signed-out players are sent to the pricing page
+// whose Payment Links remain the anonymous fallback.
+window.crBilling = (function(){
+  var API = 'https://chartrunner-worker.jsg-951.workers.dev';
+  async function upgrade(tier, billing){
+    var tok = '';
+    try { tok = (window.crAccount && crAccount.token) ? crAccount.token() : ''; } catch(_){}
+    if(!tok){
+      try { if(window.crAccount && crAccount.open){ crAccount.open(); toast('Sign in first \u2014 or buy on chartrunner.xyz/pricing.html'); return false; } } catch(_){}
+      try { window.open('https://chartrunner.xyz/pricing.html', '_blank'); } catch(_){}
+      return false;
+    }
+    try {
+      var r = await fetch(API + '/v1/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+        body: JSON.stringify({
+          tier: String(tier || 'RUNNER_PRO'),
+          billing: billing === 'annual' ? 'annual' : 'monthly',
+          successUrl: 'https://chartrunner.xyz/play/?billing=success',
+          cancelUrl: 'https://chartrunner.xyz/pricing.html',
+        }),
+      });
+      if(r.ok){ var j = await r.json(); if(j && j.url){ location.href = j.url; return true; } }
+      try { toast('Checkout failed (' + r.status + ')'); } catch(_){}
+    } catch(_){ try { toast('Checkout unreachable \u2014 try chartrunner.xyz/pricing.html'); } catch(_){} }
+    return false;
+  }
+  return { upgrade: upgrade };
+})();
+
 // crNotifLog — lightweight persisted notification history for the Settings ·
 // Notifications pane. toast()/showBanner() (see line ~70695 / ~36084) are both
 // ephemeral with no list behind them — this is the first durable one.
@@ -87564,6 +87645,12 @@ window.crBirdeye = (function(){
   'use strict';
 
   var BASE     = 'https://public-api.birdeye.so';
+  // v1.0.690 -- server-side key: no personal key -> route through the
+  // chartrunner-worker proxy (BIRDEYE_API_KEY secret + 30s edge cache).
+  // Proxy mode sends NO x-chain header (the worker defaults to solana and
+  // the CORS allowlist does not cover custom headers); a Supabase token is
+  // attached when signed in so the tier-sharded rate limit applies.
+  var PROXY    = 'https://chartrunner-worker.jsg-951.workers.dev/v1/birdeye';
   var TTL_MS   = 30 * 1000;
   var cache    = new Map();          // mint → { data, t }
   var inflight = new Map();          // mint → Promise
@@ -87578,11 +87665,12 @@ window.crBirdeye = (function(){
   }
 
   function _headers(){
-    var h = { 'x-chain': 'solana' };
     var k = _apiKey();
-    if(k) h['X-API-KEY'] = k;
-    return h;
+    if(k) return { 'x-chain': 'solana', 'X-API-KEY': k };  // direct mode
+    try { var tok = (window.crAccount && crAccount.token) ? crAccount.token() : ''; if(tok) return { 'Authorization': 'Bearer ' + tok }; } catch(_){}
+    return {};
   }
+  function _base(){ return _apiKey() ? BASE : PROXY; }
 
   // Map TOK_LIST id → mint. TOK_BIRDEYE_MINT lives near line 27293; we
   // pull from the global if defined, otherwise no-op.
@@ -87599,11 +87687,8 @@ window.crBirdeye = (function(){
   // payload (price + ch24% + 24h volume + holders + market cap).
   // Falls back to /defi/price if token_overview is gated by the key.
   async function _fetchOne(mint){
-    if(!hasKey()){
-      return null; // v1.0.127 — no spam when user has not configured a Birdeye key
-    }
     try {
-      var r = await fetch(BASE + '/defi/token_overview?address=' + encodeURIComponent(mint), { headers: _headers() });
+      var r = await fetch(_base() + '/defi/token_overview?address=' + encodeURIComponent(mint), { headers: _headers() });
       if(r.ok){
         var j = await r.json();
         var d = j && j.data;
@@ -87641,7 +87726,7 @@ window.crBirdeye = (function(){
     }
     // Fallback: price-only endpoint.
     try {
-      var r2 = await fetch(BASE + '/defi/price?address=' + encodeURIComponent(mint), { headers: _headers() });
+      var r2 = await fetch(_base() + '/defi/price?address=' + encodeURIComponent(mint), { headers: _headers() });
       if(!r2.ok) return null;
       var j2 = await r2.json();
       var d2 = j2 && j2.data;
@@ -87727,7 +87812,7 @@ window.crBirdeye = (function(){
         return null; // silent — user has not configured a Birdeye key yet
       }
       try {
-        var url = BASE + '/defi/ohlcv'
+        var url = _base() + '/defi/ohlcv'
                 + '?address='   + encodeURIComponent(mint)
                 + '&type='      + encodeURIComponent(birdTf)
                 + '&time_from=' + from
@@ -87777,7 +87862,7 @@ window.crBirdeye = (function(){
   // v1.0.106 — Expose hasKey() so refreshers can distinguish "no key
   // configured" (user needs to paste one in Settings ⊛) from "API
   // returned an empty payload" (real condition worth surfacing).
-  function hasKey(){ return _apiKey() !== ''; }
+  function hasKey(){ return true; } // v1.0.690 — worker proxy is always available; a personal key switches to direct mode
 
   return {
     fetchToken: fetchToken,
@@ -88000,7 +88085,9 @@ window.crGoldRush = (function(){
   function _headers(){
     var h = { 'accept': 'application/json' };
     var k = _apiKey();
-    if(k) h['authorization'] = 'Bearer ' + k;
+    if(k){ h['authorization'] = 'Bearer ' + k; return h; }  // direct mode
+    // v1.0.690 — proxy mode: signed-in token -> tier-sharded rate bucket
+    try { var tok = (window.crAccount && crAccount.token) ? crAccount.token() : ''; if(tok) h['Authorization'] = 'Bearer ' + tok; } catch(_){}
     return h;
   }
 
@@ -88822,7 +88909,7 @@ window.crGoldRush = (function(){
     const cfg = _getConfigFor('cexExchanges');
     const rows = cfg.rows || 10;
     try {
-      const r = await _crTermFetchJsonResponse('cexExchanges', 'https://api.coingecko.com/api/v3/exchanges?per_page=' + rows + '&page=1');
+      const r = await _crTermFetchJsonResponse('cexExchanges', CR_CG_BASE + '/exchanges?per_page=' + rows + '&page=1', { headers: crCgHeaders() });
       if(!r.ok){ _setHdTag('cexExchanges','rate-limited','warn'); return; }
       const list = await r.json();
       if(!Array.isArray(list) || !list.length){ _setHdTag('cexExchanges','no data','warn'); return; }
@@ -88870,7 +88957,7 @@ window.crGoldRush = (function(){
     const cfg = _getConfigFor('cexListings');
     const rows = cfg.rows || 10;
     try {
-      const r = await _crTermFetchJsonResponse('cexListings', 'https://api.coingecko.com/api/v3/search/trending');
+      const r = await _crTermFetchJsonResponse('cexListings', CR_CG_BASE + '/search/trending', { headers: crCgHeaders() });
       if(!r.ok){ _setHdTag('cexListings','rate-limited','warn'); return; }
       const j = await r.json();
       const list = Array.isArray(j) ? j : ((j && j.coins) || []).map(x => x && (x.item || x)).filter(Boolean);
@@ -88919,7 +89006,17 @@ window.crGoldRush = (function(){
       if(window.crBirdeyeKey) k = String(window.crBirdeyeKey);
       else { const stored = localStorage.getItem('cr_birdeye_key_v1'); if(stored) k = stored; }
     } catch(_){}
-    return k ? { 'X-API-KEY': k, 'x-chain':'solana' } : { 'x-chain':'solana' };
+    if(k) return { 'X-API-KEY': k, 'x-chain':'solana' };
+    // v1.0.690 — proxy mode: no x-chain (worker defaults solana; header
+    // would fail the CORS preflight). Signed-in token -> tier rate bucket.
+    try { const tok = (window.crAccount && crAccount.token) ? crAccount.token() : ''; if(tok) return { 'Authorization': 'Bearer ' + tok }; } catch(_){}
+    return {};
+  };
+  // v1.0.690 — Birdeye base for the terminal panes: personal key = direct,
+  // otherwise the chartrunner-worker proxy (server-side key, 30s edge cache).
+  const _BIRD_BASE = () => {
+    try { if(window.crBirdeyeKey || localStorage.getItem('cr_birdeye_key_v1')) return 'https://public-api.birdeye.so'; } catch(_){}
+    return 'https://chartrunner-worker.jsg-951.workers.dev/v1/birdeye';
   };
 
   // v1.0.75 — Body status helper. When a refresher fails or has no
@@ -89057,7 +89154,7 @@ window.crGoldRush = (function(){
       return;
     }
     try {
-      const url = 'https://public-api.birdeye.so/defi/tokenlist?sort_by=' + sort + '&sort_type=desc&offset=0&limit=' + Math.min(rows, 50);
+      const url = _BIRD_BASE() + '/defi/tokenlist?sort_by=' + sort + '&sort_type=desc&offset=0&limit=' + Math.min(rows, 50);
       const r = await fetch(url, { headers: _BIRD_HEADERS() });
       if(!r.ok){
         _crTermArchiveProviderFailure('solTopTokens', 'Birdeye tokenlist HTTP ' + r.status, () => _crTermRenderSolTopTokensFallback(rows, sort));
@@ -89100,7 +89197,7 @@ window.crGoldRush = (function(){
     const owned = await _crTermOwnedPane('solTrending', { rows });
     if(owned && _crTermRenderOwnedTokenList('solTrending', owned, rows, 'owned momentum · LIVE')) return;
     try {
-      const r = await fetch('https://public-api.birdeye.so/defi/token_trending?sort_by=rank&sort_type=asc&offset=0&limit=' + Math.min(rows, 20), { headers: _BIRD_HEADERS() });
+      const r = await fetch(_BIRD_BASE() + '/defi/token_trending?sort_by=rank&sort_type=asc&offset=0&limit=' + Math.min(rows, 20), { headers: _BIRD_HEADERS() });
       if(!r.ok){
         _crTermArchiveProviderFailure('solTrending', 'Birdeye trending HTTP ' + r.status, () => _crTermRenderSolTrendingFallback(rows));
         return;
@@ -90237,7 +90334,7 @@ window.crGoldRush = (function(){
     if(cached0 && (Date.now() - (cached0.ts||0)) < 90000){ _mktRegimeRender(cached0.d, 'cached', 'tune'); return; }
     if(Date.now() < _cgGlobalCooldownUntil){ if(cached0){ _mktRegimeRender(cached0.d, 'cached', 'tune'); } else { _setHdTag('mktRegime','rate-limited','warn'); } return; }
     try{
-      const r = await fetch('https://api.coingecko.com/api/v3/global', { headers:(typeof crCgHeaders==='function'?crCgHeaders():{}) });
+      const r = await fetch(CR_CG_BASE + '/global', { headers:(typeof crCgHeaders==='function'?crCgHeaders():{}) });
       if(!r.ok){ _cgGlobalCooldownUntil = Date.now() + 5 * 60 * 1000; const c = readCache(); if(c){ _mktRegimeRender(c.d, 'cached', 'tune'); } else { _setHdTag('mktRegime','rate-limited','warn'); } return; }
       const d = (await r.json()).data || {};
       try { localStorage.setItem('cr_cg_global_v1', JSON.stringify({ ts:Date.now(), d })); } catch(_){}
@@ -90639,7 +90736,7 @@ window.crGoldRush = (function(){
     const rows = cfg.rows || 8;
     const coin = _coinId(cfg.symbol || 'BTC');
     try {
-      const r = await _crTermFetchJsonResponse('cexAgg', 'https://api.coingecko.com/api/v3/coins/' + coin + '/tickers?include_exchange_logo=false&order=volume_desc&depth=false');
+      const r = await _crTermFetchJsonResponse('cexAgg', CR_CG_BASE + '/coins/' + coin + '/tickers?include_exchange_logo=false&order=volume_desc&depth=false', { headers: crCgHeaders() });
       if(!r.ok){ _setHdTag('cexAgg','rate-limited','warn'); return; }
       const j = await r.json();
       const list = (j && j.tickers) || [];
