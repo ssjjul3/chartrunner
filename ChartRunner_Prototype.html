@@ -3597,6 +3597,10 @@ window.crShare = function (o) {
   body.cr-guest .dockBtn[data-prog="maps"],
   body.cr-guest .dockBtn[data-prog="journal"],
   body.cr-guest .dockBtn[data-prog="runtube"]{display:none!important}
+  /* v1.0.651 — Settings app: same connect-explicit idiom as Maps/Journal. */
+  body.cr-guest .os-icon[data-prog="settings"],
+  body.cr-guest #crOSDockFixed .dockBtn[data-prog="settings"],
+  body.cr-guest .dockBtn[data-prog="settings"]{display:none!important}
   /* RUN-tube ARCHIVED — hidden for everyone (dock entries + the PIP widget). */
   .os-icon[data-prog="runtube"],
   #crOSDockFixed .dockBtn[data-prog="runtube"],
@@ -10628,6 +10632,8 @@ window.crShare = function (o) {
   <button class="dockBtn" data-prog="runtube"     title="RUN-tube · streaming + PIP video">▶</button>
   <button class="dockBtn" data-prog="display"     title="Docs · folder of decks / files (PDF / image)">❏</button>
   <div class="dockSep"></div>
+  <button class="dockBtn" data-prog="settings"    title="Settings">⚙</button>
+  <div class="dockSep"></div>
   <button class="dockBtn" id="crDockReturn"       title="Return to Desktop">⌂</button>
 </div>
 
@@ -12222,6 +12228,25 @@ window.crShare = function (o) {
           <div class="lbl">Docs</div>
           <div class="kbd">Folder</div>
         </button>
+        <!-- v1.0.651 — Settings: real first-class app (Profile / Account / Game /
+             Notifications / API-RPC / Privacy). Two-gear glyph; wallet-gated
+             like Maps/Journal (body.cr-guest hides it — see CSS gating block). -->
+        <button class="os-icon" data-prog="settings" title="Settings — profile, account, game, notifications, API keys, privacy">
+          <div class="ico"><svg class="cr-svg-ico" style="--accent:#8b95a8;--accent2:#3ddc97" viewBox="0 0 32 32" aria-hidden="true">
+            <!-- two interlocking gears -->
+            <g class="a" opacity=".22"><circle cx="12" cy="12" r="7"/><circle cx="21" cy="21" r="5.4"/></g>
+            <path d="M12 6.4 v2.1 M12 15.5 v2.1 M6.4 12 h2.1 M15.5 12 h2.1 M8.2 8.2 l1.5 1.5 M14.3 14.3 l1.5 1.5 M15.8 8.2 l-1.5 1.5 M9.7 14.3 l-1.5 1.5"
+              stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="12" cy="12" r="7" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+            <circle class="b" cx="12" cy="12" r="2.6"/>
+            <path d="M21 16.8 v1.6 M21 23.6 v1.6 M16.8 21 h1.6 M23.6 21 h1.6 M18.1 18.1 l1.1 1.1 M21.8 21.8 l1.1 1.1 M23.9 18.1 l-1.1 1.1 M20.2 21.8 l-1.1 1.1"
+              stroke="var(--accent2)" stroke-width="1.4" stroke-linecap="round"/>
+            <circle cx="21" cy="21" r="5.4" fill="none" stroke="var(--accent2)" stroke-width="1.4"/>
+            <circle class="b" cx="21" cy="21" r="2" fill="var(--accent2)"/>
+          </svg></div>
+          <div class="lbl">Settings</div>
+          <div class="kbd">Profile · API</div>
+        </button>
         <!-- v0.8k#24y — Configs icon retired from the desktop. Configs now opens
              after picking a mode in Run (Mode Pick → Configure → Start Run). -->
         <!-- v0.8k#24l — cleanup pass: removed retired Inventory splash icon stub. -->
@@ -13756,6 +13781,110 @@ window.crShare = function (o) {
         </div>
       </div>
 
+      <!-- v1.0.651 — Settings app: Profile / Account / Game / Notifications /
+           API-RPC / Privacy. Reuses existing state (crRunnerName, crWallet,
+           applyTheme, the gateway/API-key localStorage keys) — see
+           wireSettingsTabs / osRefreshSettings / crNotifLog further down. -->
+      <div class="os-window" id="win-settings" style="width:min(620px,calc(100% - 60px))">
+        <div class="os-wbar">
+          <div class="dots"><span class="dot red"></span><span class="dot yel"></span><span class="dot grn"></span></div>
+          <div class="ttl"><svg class="cr-svg-ico ttl-ico" style="--accent:#8b95a8;--accent2:#3ddc97" viewBox="0 0 32 32" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="none" stroke="var(--accent)" stroke-width="1.6"/><circle class="b" cx="12" cy="12" r="2.6"/><circle cx="21" cy="21" r="5.4" fill="none" stroke="var(--accent2)" stroke-width="1.4"/><circle class="b" cx="21" cy="21" r="2" fill="var(--accent2)"/></svg>Settings</div>
+          <div class="spacer"></div>
+          <button class="wclose" data-close>Close</button>
+        </div>
+        <div class="os-wbody">
+          <div class="crTerm-tabs">
+            <button class="crTerm-tab active" data-setview="profile" type="button">PROFILE</button>
+            <button class="crTerm-tab" data-setview="account" type="button">ACCOUNT</button>
+            <button class="crTerm-tab" data-setview="game" type="button">GAME</button>
+            <button class="crTerm-tab" data-setview="notif" type="button">NOTIFICATIONS</button>
+            <button class="crTerm-tab" data-setview="api" type="button">API · RPC</button>
+            <button class="crTerm-tab" data-setview="privacy" type="button">PRIVACY</button>
+          </div>
+
+          <div class="crTerm-view" id="crSetViewProfile">
+            <div class="os-section">
+              <h4 style="margin:0 0 6px">Runner handle</h4>
+              <div class="md-row" style="display:flex;gap:10px;align-items:center">
+                <input type="text" id="crSetName" placeholder="anon_runner" maxlength="20" style="flex:1;background:transparent;border:1px solid #2a2a2e;color:inherit;padding:6px 8px;border-radius:4px;font:inherit;font-size:13px" />
+                <button type="button" id="crSetNameSave" class="cr-go" style="font-size:11px;padding:6px 12px">Save</button>
+              </div>
+              <p style="margin:8px 0 0;font-size:10px;color:var(--dim)">Your public handle across the desktop, leaderboards and multiplayer rooms. Claim it on-chain from Profile · Player.</p>
+            </div>
+          </div>
+
+          <div class="crTerm-view hidden" id="crSetViewAccount">
+            <div class="os-section">
+              <h4 style="margin:0 0 6px">Wallet</h4>
+              <div id="crSetAcctStatus" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin:0 0 10px;background:rgba(10,15,28,.5);font-size:12px">
+                <span id="crSetAcctDot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#5a5a72"></span>
+                <span id="crSetAcctText" style="color:var(--dim)">Not connected</span>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" id="crSetAcctConnect" class="cr-go" style="font-size:11px;padding:6px 12px">Connect / Switch Wallet</button>
+                <button type="button" id="crSetAcctDisconnect" class="cr-go" style="font-size:11px;padding:6px 12px">Disconnect</button>
+              </div>
+              <p style="margin:8px 0 0;font-size:10px;color:var(--dim)">Manage multiple wallets from the standalone Wallet app once connected.</p>
+            </div>
+          </div>
+
+          <div class="crTerm-view hidden" id="crSetViewGame">
+            <div class="os-section">
+              <h4 style="margin:0 0 6px">Theme</h4>
+              <div id="crSetThemeChips" style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="cr-go crSetThemeChip" data-theme-pick="platinum" style="font-size:11px;padding:6px 12px">Platinum</button>
+                <button type="button" class="cr-go crSetThemeChip" data-theme-pick="mono" style="font-size:11px;padding:6px 12px">Monochrome</button>
+                <button type="button" class="cr-go crSetThemeChip" data-theme-pick="bw" style="font-size:11px;padding:6px 12px">Black &amp; White</button>
+              </div>
+              <p style="margin:10px 0 0;font-size:10px;color:var(--dim)">Applies instantly across the desktop and in-run chart chrome.</p>
+            </div>
+          </div>
+
+          <div class="crTerm-view hidden" id="crSetViewNotif">
+            <div class="os-section">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 8px">
+                <h4 style="margin:0">Notifications</h4>
+                <button type="button" id="crSetNotifClear" class="cr-go" style="font-size:10px;padding:4px 10px">Clear</button>
+              </div>
+              <div id="crSetNotifList" style="display:flex;flex-direction:column;gap:6px;max-height:40vh;overflow:auto"></div>
+            </div>
+          </div>
+
+          <div class="crTerm-view hidden" id="crSetViewApi">
+            <div class="os-section">
+              <h4 style="margin:0 0 6px">API keys</h4>
+              <p style="margin:0 0 8px;font-size:10px;color:var(--dim)">Optional — bring your own key to skip the shared gateway's rate limit. Keys are stored locally in this browser only.</p>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <label style="display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--dim)">CoinGecko demo key
+                  <input type="text" id="crSetKeyCg" placeholder="CG-xxxxxxxx" style="padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                </label>
+                <label style="display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--dim)">Birdeye key
+                  <input type="text" id="crSetKeyBe" placeholder="birdeye API key" style="padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                </label>
+                <label style="display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--dim)">GoldRush key
+                  <input type="text" id="crSetKeyGr" placeholder="goldrush API key" style="padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace">
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;font-size:11px;margin-top:4px">
+                  <input type="checkbox" id="crSetGatewayToggle"> Route CoinGecko + Solana RPC through the ChartRunner gateway
+                </label>
+                <div>
+                  <button type="button" id="crSetKeysSave" class="cr-go" style="font-size:11px;padding:6px 14px">Save</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="crTerm-view hidden" id="crSetViewPrivacy">
+            <div class="os-section">
+              <h4 style="margin:0 0 6px">Privacy</h4>
+              <p style="margin:0 0 10px;font-size:10px;color:var(--dim)">Everything ChartRunner stores lives in this browser's local storage — nothing is uploaded except signed on-chain actions you explicitly take.</p>
+              <button type="button" id="crSetClearCache" class="cr-go" style="font-size:11px;padding:6px 14px">Clear cached price &amp; API data</button>
+              <p style="margin:8px 0 0;font-size:10px;color:var(--dim)">Clears cached market data and your saved API keys. Does not touch your wallet, progress, maps or journal.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="os-window" id="win-sdk">
         <div class="os-wbar">
           <div class="dots"><span class="dot red"></span><span class="dot yel"></span><span class="dot grn"></span></div>
@@ -15279,7 +15408,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.650",
+  VERSION: "1.0.651",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -52506,6 +52635,182 @@ function osRefreshShop(){
 })();
 
 // ═══════════════════════════════════════════════════════════════════════════
+// v1.0.651 — Settings app: Profile / Account / Game / Notifications / API-RPC /
+// Privacy. Reuses existing state end-to-end (crRunnerName, crWallet, applyTheme,
+// the cr_coingecko_key/cr_birdeye_key_v1/cr_goldrush_key_v1/cr_gateway_enabled_v1
+// localStorage keys the gateway routing already reads) instead of inventing a
+// parallel store. Tab wiring follows the same flat-querySelectorAll pattern as
+// wireProfileTabs above (data-setview instead of data-profview).
+// ═══════════════════════════════════════════════════════════════════════════
+(function wireSettingsTabs(){
+  const tabs = document.querySelectorAll('.crTerm-tab[data-setview]');
+  if(!tabs.length) return;
+  const views = {
+    profile: document.getElementById('crSetViewProfile'),
+    account: document.getElementById('crSetViewAccount'),
+    game:    document.getElementById('crSetViewGame'),
+    notif:   document.getElementById('crSetViewNotif'),
+    api:     document.getElementById('crSetViewApi'),
+    privacy: document.getElementById('crSetViewPrivacy'),
+  };
+  tabs.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.getAttribute('data-setview');
+      tabs.forEach(b => b.classList.toggle('active', b === btn));
+      Object.keys(views).forEach(k => { if(views[k]) views[k].classList.toggle('hidden', k !== view); });
+      if(view === 'notif')   { try { _crSetRenderNotif(); } catch(_){} }
+      if(view === 'account') { try { _crSetRenderAccount(); } catch(_){} }
+    });
+  });
+})();
+
+// crNotifLog — lightweight persisted notification history for the Settings ·
+// Notifications pane. toast()/showBanner() (see line ~70695 / ~36084) are both
+// ephemeral with no list behind them — this is the first durable one.
+window.crNotifLog = (function(){
+  const KEY = 'cr_notif_log_v1';
+  const CAP = 50;
+  function list(){ try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch(_){ return []; } }
+  function save(l){ try { localStorage.setItem(KEY, JSON.stringify(l.slice(0, CAP))); } catch(_){} }
+  function add(text, kind){
+    const l = list();
+    l.unshift({ t: Date.now(), text: String(text || ''), kind: kind || 'info' });
+    save(l);
+    try { if(typeof _crSetRenderNotif === 'function') _crSetRenderNotif(); } catch(_){}
+  }
+  function clear(){ save([]); try { if(typeof _crSetRenderNotif === 'function') _crSetRenderNotif(); } catch(_){} }
+  return { add: add, list: list, clear: clear };
+})();
+
+function _crSetFmtAgo(t){
+  const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if(s < 60) return s + 's ago';
+  if(s < 3600) return Math.floor(s / 60) + 'm ago';
+  if(s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+function _crSetRenderNotif(){
+  const host = document.getElementById('crSetNotifList');
+  if(!host) return;
+  const items = (window.crNotifLog ? crNotifLog.list() : []);
+  if(!items.length){ host.innerHTML = '<p style="margin:0;font-size:11px;color:var(--dim)">No notifications yet.</p>'; return; }
+  host.innerHTML = '';
+  items.forEach(it => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4)';
+    const txt = document.createElement('span'); txt.style.cssText = 'font-size:11px;color:var(--fg)'; txt.textContent = it.text;
+    const age = document.createElement('span'); age.style.cssText = 'font-size:9px;color:var(--dim);white-space:nowrap'; age.textContent = _crSetFmtAgo(it.t);
+    row.appendChild(txt); row.appendChild(age);
+    host.appendChild(row);
+  });
+}
+function _crSetRenderAccount(){
+  const dot = document.getElementById('crSetAcctDot');
+  const txt = document.getElementById('crSetAcctText');
+  const connected = (function(){ try { return !!(window.crWallet && crWallet.isConnected && crWallet.isConnected()); } catch(_){ return false; } })();
+  if(dot) dot.style.background = connected ? '#3ddc97' : '#5a5a72';
+  if(txt){
+    if(connected){
+      const short = (function(){ try { return crWallet.truncated ? crWallet.truncated() : ''; } catch(_){ return ''; } })();
+      const adapter = (function(){ try { return crWallet.adapter ? crWallet.adapter() : ''; } catch(_){ return ''; } })();
+      txt.textContent = (short || 'Connected') + (adapter ? ' · ' + adapter : '');
+      txt.style.color = 'var(--fg)';
+    } else {
+      txt.textContent = 'Not connected';
+      txt.style.color = 'var(--dim)';
+    }
+  }
+}
+function osRefreshSettings(){
+  try {
+    const nameEl = document.getElementById('crSetName');
+    if(nameEl && window.crRunnerName) nameEl.value = crRunnerName.get();
+  } catch(_){}
+  try {
+    const gw = document.getElementById('crSetGatewayToggle');
+    if(gw) gw.checked = (localStorage.getItem('cr_gateway_enabled_v1') === '1');
+    const cg = document.getElementById('crSetKeyCg'); if(cg) cg.value = localStorage.getItem('cr_coingecko_key') || '';
+    const be = document.getElementById('crSetKeyBe'); if(be) be.value = localStorage.getItem('cr_birdeye_key_v1') || '';
+    const gr = document.getElementById('crSetKeyGr'); if(gr) gr.value = localStorage.getItem('cr_goldrush_key_v1') || '';
+  } catch(_){}
+  try { _crSetRenderAccount(); } catch(_){}
+  try { _crSetRenderNotif(); } catch(_){}
+}
+(function wireSettingsActions(){
+  const saveNameBtn = document.getElementById('crSetNameSave');
+  if(saveNameBtn) saveNameBtn.addEventListener('click', () => {
+    const el = document.getElementById('crSetName');
+    const v = el ? el.value : '';
+    if(window.crRunnerName){ const n = crRunnerName.set(v); if(el) el.value = n; }
+    try { if(typeof toast === 'function') toast('Handle saved'); } catch(_){}
+  });
+  const connectBtn = document.getElementById('crSetAcctConnect');
+  if(connectBtn) connectBtn.addEventListener('click', () => {
+    try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){}
+  });
+  const disconnectBtn = document.getElementById('crSetAcctDisconnect');
+  if(disconnectBtn) disconnectBtn.addEventListener('click', () => {
+    try { if(window.crWallet && crWallet.disconnect) crWallet.disconnect(); } catch(_){}
+  });
+  document.querySelectorAll('.crSetThemeChip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = btn.getAttribute('data-theme-pick');
+      try { if(typeof window.crApplyTheme === 'function') window.crApplyTheme(t); } catch(_){}
+    });
+  });
+  const clearNotifBtn = document.getElementById('crSetNotifClear');
+  if(clearNotifBtn) clearNotifBtn.addEventListener('click', () => { try { crNotifLog.clear(); } catch(_){} });
+  const saveKeysBtn = document.getElementById('crSetKeysSave');
+  if(saveKeysBtn) saveKeysBtn.addEventListener('click', () => {
+    try {
+      const cg = document.getElementById('crSetKeyCg'); if(cg) localStorage.setItem('cr_coingecko_key', cg.value.trim());
+      const be = document.getElementById('crSetKeyBe'); if(be){ localStorage.setItem('cr_birdeye_key_v1', be.value.trim()); if(window.crBirdeye && typeof crBirdeye.setApiKey === 'function') crBirdeye.setApiKey(be.value.trim()); }
+      const gr = document.getElementById('crSetKeyGr'); if(gr){ localStorage.setItem('cr_goldrush_key_v1', gr.value.trim()); if(window.crGoldRush && typeof crGoldRush.setApiKey === 'function') crGoldRush.setApiKey(gr.value.trim()); }
+      const gw = document.getElementById('crSetGatewayToggle');
+      if(gw) localStorage.setItem('cr_gateway_enabled_v1', gw.checked ? '1' : '0');
+      try { if(typeof toast === 'function') toast('API settings saved — reload to apply'); } catch(_){}
+      try { if(window.crNotifLog) crNotifLog.add('API / RPC settings updated'); } catch(_){}
+    } catch(_){}
+  });
+  const clearCacheBtn = document.getElementById('crSetClearCache');
+  if(clearCacheBtn) clearCacheBtn.addEventListener('click', () => {
+    try {
+      ['cr_coingecko_key','cr_birdeye_key_v1','cr_goldrush_key_v1'].forEach(k => { try { localStorage.removeItem(k); } catch(_){} });
+      try {
+        const drop = [];
+        for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if(k && /_cache_|^cr_cg_cache|^cr_price_cache/i.test(k)) drop.push(k); }
+        drop.forEach(k => { try { localStorage.removeItem(k); } catch(_){} });
+      } catch(_){}
+      try { osRefreshSettings(); } catch(_){}
+      try { if(typeof toast === 'function') toast('Cache cleared'); } catch(_){}
+      try { if(window.crNotifLog) crNotifLog.add('Local cache cleared'); } catch(_){}
+    } catch(_){}
+  });
+})();
+
+// v1.0.651 — Log meaningful state changes into crNotifLog so the Settings ·
+// Notifications pane isn't an empty shell. crWallet.on() fires immediately
+// with the current state on registration (see its own doc comment near the
+// listener array) — _wInit skips that first synthetic fire so boot doesn't
+// log a spurious connect/disconnect line, only real transitions do.
+(function crNotifLogHooks(){
+  let _wInit = false, _wLast = null;
+  try {
+    if(window.crWallet && typeof crWallet.on === 'function'){
+      crWallet.on(function(pk){
+        if(!_wInit){ _wInit = true; _wLast = pk || null; return; }
+        const now = pk || null;
+        try {
+          if(now && !_wLast) crNotifLog.add('Wallet connected' + (window.crWallet.truncated ? ' · ' + crWallet.truncated() : ''), 'wallet');
+          else if(!now && _wLast) crNotifLog.add('Wallet disconnected', 'wallet');
+        } catch(_){}
+        _wLast = now;
+      });
+    }
+  } catch(_){}
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
 // v1.0.119 — Profile Phase 1 · Track 1 · Name Claim
 // ═══════════════════════════════════════════════════════════════════════════
 // On-chain runner-name claim via chartrunner_registry (entity type 6 = TokenProfile,
@@ -73329,6 +73634,8 @@ function log(msg){
     window.crThemeAvailableThemes = () => _crThemeList().slice();
     window.crThemeIsArchivedOnLive = _crLiveThemeArchived;
     window.crNormalizeThemeForSurface = _crNormalizeThemeForSurface;
+    // v1.0.651 — exposed for the Settings · Game pane's theme chips.
+    window.crApplyTheme = applyTheme;
   } catch(_){}
   bindMenu('crMenuTheme', () => {
     cycleTheme();
@@ -74070,7 +74377,7 @@ function log(msg){
   // List of all known program ids — original 6 + new 6.
   // Note: window.OS_PROGRAMS already exists from the v0.7b block; we
   // extend it in-place so the original close/refresh helpers still work.
-  const NEW_PROGS = ['chartrunner','missions','l3coach','wallet','sdk','mail','terminal','maps','brokerconnect'];   // v1.0.631 — 'weather' removed (app deleted)
+  const NEW_PROGS = ['chartrunner','missions','l3coach','wallet','sdk','mail','terminal','maps','brokerconnect','settings'];   // v1.0.631 — 'weather' removed (app deleted); v1.0.651 — 'settings' added
   try{
     if(typeof OS_PROGRAMS !== 'undefined' && Array.isArray(OS_PROGRAMS)){
       NEW_PROGS.forEach(p => { if(!OS_PROGRAMS.includes(p)) OS_PROGRAMS.push(p); });
@@ -74359,6 +74666,8 @@ function log(msg){
     else if(prog === 'workbench'){ try{ if(typeof _wbRenderBots === 'function'){ if(typeof _wbRenderTools === 'function') try{_wbRenderTools();}catch(e){console.warn('wbTools',e)} try{_wbRenderPrimitives();}catch(e){console.warn('wbPrim',e)} try{_wbRenderBots();}catch(e){console.warn('wbBots',e)} try{_wbRenderStrats();}catch(e){console.warn('wbStrats',e)} try{_wbRenderInds();}catch(e){console.warn('wbInds',e)} try{_wbRenderTerms();}catch(e){console.warn('wbTerms',e)} try{_wbRenderApps();}catch(e){console.warn('wbApps',e)} try{_wbRebuildBacktestTargets();}catch(e){console.warn('wbBack',e)} try{_wbRenderBackHistory();}catch(e){console.warn('wbHist',e)} } }catch{} }
     // v0.8k#24ce — Token Terminal refresh hook.
     else if(prog === 'tokenterm'){ try { if(typeof osRefreshTokenTerm === 'function') osRefreshTokenTerm(); } catch(_){} }
+    // v1.0.651 — Settings app refresh hook.
+    else if(prog === 'settings'){ try { if(typeof osRefreshSettings === 'function') osRefreshSettings(); } catch(_){} }
     // sdk + marketplace are dead-windows (no icons since v0.8M#1).
   }
 
