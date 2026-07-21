@@ -3601,6 +3601,11 @@ window.crShare = function (o) {
   body.cr-guest .os-icon[data-prog="settings"],
   body.cr-guest #crOSDockFixed .dockBtn[data-prog="settings"],
   body.cr-guest .dockBtn[data-prog="settings"]{display:none!important}
+  /* v1.0.652 — Wallet app: same connect-explicit idiom (was already implicit for
+     the old WALLET/BROKER tabs inside Profile — now the whole standalone app). */
+  body.cr-guest .os-icon[data-prog="walletapp"],
+  body.cr-guest #crOSDockFixed .dockBtn[data-prog="walletapp"],
+  body.cr-guest .dockBtn[data-prog="walletapp"]{display:none!important}
   /* RUN-tube ARCHIVED — hidden for everyone (dock entries + the PIP widget). */
   .os-icon[data-prog="runtube"],
   #crOSDockFixed .dockBtn[data-prog="runtube"],
@@ -3608,12 +3613,12 @@ window.crShare = function (o) {
   #crRunTube{display:none!important}
   body.cr-guest .slot[data-abl="bluelaser"]{display:none!important}
   /* Profile: guests see only PLAYER + TOOLS — hide the Wallet / Broker / Coach tabs. */
-  body.cr-guest #win-wallet .crTerm-tab[data-profview="bal"],
-  body.cr-guest #win-wallet .crTerm-tab[data-profview="broker"],
+  /* v1.0.652 — WALLET/BROKER tabs moved to #win-walletapp (guest-hidden at the
+     app level above); only COACH still lives in #win-wallet (Profile). */
   body.cr-guest #win-wallet .crTerm-tab[data-profview="coach"]{display:none!important}
   /* Chapter-based level gates (toggled by crApplyLevelGates): Broker tab → ch.40,
      Journal → ch.41. Hidden for EVERYONE until that campaign chapter is completed. */
-  body.cr-lock-broker #win-wallet .crTerm-tab[data-profview="broker"]{display:none!important}
+  body.cr-lock-broker #win-walletapp .crTerm-tab[data-profview="broker"]{display:none!important}
   body.cr-lock-journal .os-icon[data-prog="journal"],
   body.cr-lock-journal #crOSDockFixed .dockBtn[data-prog="journal"],
   body.cr-lock-journal .dockBtn[data-prog="journal"]{display:none!important}
@@ -10633,6 +10638,7 @@ window.crShare = function (o) {
   <button class="dockBtn" data-prog="display"     title="Docs · folder of decks / files (PDF / image)">❏</button>
   <div class="dockSep"></div>
   <button class="dockBtn" data-prog="settings"    title="Settings">⚙</button>
+  <button class="dockBtn" data-prog="walletapp"   title="Wallet">◈</button>
   <div class="dockSep"></div>
   <button class="dockBtn" id="crDockReturn"       title="Return to Desktop">⌂</button>
 </div>
@@ -12247,6 +12253,23 @@ window.crShare = function (o) {
           <div class="lbl">Settings</div>
           <div class="kbd">Profile · API</div>
         </button>
+        <!-- v1.0.652 — Wallet: standalone multi-wallet app (Wallet / Wallets /
+             Portfolio / Broker). Moved out of Profile · Wallet+Broker tabs per
+             Julian's "Build." list item 5. Wallet-connect gated (same idiom as
+             Maps/Journal/Settings — body.cr-guest hides it). data-prog="walletapp"
+             (NOT "wallet" — that id is Profile's own icon, see above). -->
+        <button class="os-icon" data-prog="walletapp" title="Wallet — multi-wallet, portfolio, broker">
+          <div class="ico"><svg class="cr-svg-ico" style="--accent:#ffd166;--accent2:#9b8cff" viewBox="0 0 32 32" aria-hidden="true">
+            <!-- folded wallet with flap + coin -->
+            <path class="a" d="M4 11 q0-4 4-4 h16 q4 0 4 4 v12 q0 4-4 4 H8 q-4 0-4-4 z" opacity=".22"/>
+            <path d="M4 11 q0-4 4-4 h16 q4 0 4 4 v12 q0 4-4 4 H8 q-4 0-4-4 z" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/>
+            <path class="l" d="M4 13 h24" stroke-width="1.2" opacity=".5"/>
+            <circle class="b" cx="23" cy="19" r="2.6"/>
+            <path d="M9 7.5 L20 3" stroke="var(--accent2)" stroke-width="1.4" stroke-linecap="round" opacity=".7"/>
+          </svg></div>
+          <div class="lbl">Wallet</div>
+          <div class="kbd">Multi · Portfolio</div>
+        </button>
         <!-- v0.8k#24y — Configs icon retired from the desktop. Configs now opens
              after picking a mode in Run (Mode Pick → Configure → Start Run). -->
         <!-- v0.8k#24l — cleanup pass: removed retired Inventory splash icon stub. -->
@@ -13514,11 +13537,14 @@ window.crShare = function (o) {
                are reachable for restore by removing the display:none. -->
           <div class="crTerm-tabs" style="margin-top:8px">
             <button class="crTerm-tab active" data-profview="player" type="button">PLAYER</button>
-            <button class="crTerm-tab" data-profview="bal" type="button">WALLET</button>
             <!-- v1.0.288 — TOOLS tab moved here from the archived Workbench app. -->
             <button class="crTerm-tab" data-profview="tools" type="button">TOOLS</button>
-            <!-- v1.0.359 — BROKER tab moved here from Configure Run. Connect once here. -->
-            <button class="crTerm-tab" data-profview="broker" type="button">BROKER</button>
+            <!-- v1.0.652 — WALLET + BROKER tabs moved OUT to the standalone Wallet app
+                 (#win-walletapp, wallet-gated). The underlying views
+                 (#crProfileViewBal / #crProfileViewBroker) and their refresh functions
+                 (_crWalletRender / _crBrokerSync) are unchanged, just relocated —
+                 wireProfileTabs() below still drives them by id regardless of which
+                 window physically contains the tab button that was clicked. -->
             <!-- v1.0.364 — COACH model config moved here from the COACH.llm chat popup. -->
             <button class="crTerm-tab" data-profview="coach" type="button" style="display:none">COACH</button>
             <button class="crTerm-tab" data-profview="stats" type="button" style="display:none">STATS</button>
@@ -13551,22 +13577,7 @@ window.crShare = function (o) {
                Run). The connected API is then selectable per-trade on the in-game
                activation card. Ids match the old block so the broker IIFE wiring is
                unchanged; _crBrokerSync() re-centers the wheel when this tab opens. -->
-          <div class="crTerm-view hidden" id="crProfileViewBroker">
-            <h4 style="margin:0 0 8px">Broker · connect once</h4>
-            <p style="margin:0 0 10px;font-size:11px;color:var(--dim)">Pick a venue family and broker, then Connect. Once connected, choose which API to route through when you activate a trade in-game.</p>
-            <div class="cfg-broker" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;grid-template-columns:none">
-              <div class="cfg-brokerSeg" id="cfgBrokerSeg" role="tablist" aria-label="Broker venue family">
-                <button data-bk="dex" class="on" type="button" role="tab">DEX</button>
-                <button data-bk="cex" type="button" role="tab">CEX</button>
-              </div>
-              <div class="cfg-wheel" id="cfgBrokerWheel" title="Scroll to pick a broker">
-                <div class="cfg-wheel-list" id="cfgBrokerWheelList"></div>
-                <div class="cfg-wheel-sel" aria-hidden="true"></div>
-              </div>
-              <button class="cfg-broker-connect" id="cfgBrokerConnect" type="button">Connect CEX/DEX</button>
-            </div>
-            <p style="margin:10px 0 0;font-size:10px;color:var(--dim)">Connections are saved and persist across sessions. No funds move and no live order routes — execution is paper/mock until Phase 2.</p>
-          </div>
+          
           <!-- v1.0.364 — COACH view: the model/provider config moved here from the COACH.llm
                chat popup (same ids so the provider wiring is unchanged). Chat stays in the popup;
                the popup's V1 button now opens this tab. -->
@@ -13711,56 +13722,7 @@ window.crShare = function (o) {
                shown, even at 0). Player can add more tokens; the addition is
                persisted per-wallet in localStorage. crWallet (existing
                Solana adapter) provides isConnected / get / truncated. -->
-          <div class="crTerm-view hidden" id="crProfileViewBal">
-            <!-- Connection banner -->
-            <div id="crWalletStatus" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin:0 0 10px;background:rgba(10,15,28,.5);font-size:12px">
-              <span id="crWalletDot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#5a5a72;box-shadow:0 0 6px rgba(0,0,0,.4)"></span>
-              <span id="crWalletStatusText" style="color:var(--dim)">Not connected — click Connect in the topbar to load on-chain holdings</span>
-              <button class="cr-go" id="crWalletConnectBtn" type="button" style="margin-left:auto;font-size:10px;padding:4px 10px">Connect</button>
-            </div>
-            <div id="crWalletProofDemo" style="display:none;border:1px solid var(--line);border-radius:8px;background:rgba(10,15,28,.42);padding:10px 12px;margin:0 0 10px;gap:8px;font-size:12px">
-              <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
-                <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim)">Signed Devnet Demo</h4>
-                <span id="crProofDemoRoute" style="font:10px ui-monospace,Menlo,monospace;color:var(--dim)">No wallet selected</span>
-              </div>
-              <p id="crProofDemoStatus" style="margin:0;color:var(--dim);line-height:1.35">Choose a wallet, then sign a demo map proof and a demo run proof.</p>
-              <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <button class="cr-go" id="crProofDemoChooseWallet" type="button" style="font-size:10px;padding:5px 9px">Choose Wallet</button>
-                <button class="cr-go" id="crProofDemoSaveMap" type="button" style="font-size:10px;padding:5px 9px">Sign Map Proof</button>
-                <button class="cr-go" id="crProofDemoRecordRun" type="button" style="font-size:10px;padding:5px 9px">Sign Run Proof</button>
-              </div>
-              <div id="crProofDemoResult" style="font:10px ui-monospace,Menlo,monospace;color:var(--dim);word-break:break-word"></div>
-            </div>
-            <!-- Holdings list -->
-            <div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0 6px">
-              <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim)">Holdings</h4>
-              <button class="cr-go" id="crWalletRefreshBtn" type="button" style="background:rgba(10,15,28,.8)!important;border:1px solid var(--line)!important;border-radius:8px!important;color:#7ee787!important;font:700 10px ui-monospace,Menlo,monospace!important;letter-spacing:.4px!important;text-transform:uppercase!important;text-shadow:none!important;box-shadow:none!important;padding:5px 10px!important;cursor:pointer!important">↻ Refresh</button>
-            </div>
-            <div id="crWalletHoldings" style="display:flex;flex-direction:column;gap:6px"></div>
-            <!-- Add-token form -->
-            <div style="display:flex;gap:6px;margin:10px 0 4px;align-items:center">
-              <input type="text" id="crWalletAddSym" placeholder="BONK, JUP, ETH…" maxlength="10" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace;text-transform:uppercase">
-              <button class="cr-go cr-gobtn" id="crWalletAddBtn" type="button">+ Add token</button>
-            </div>
-            <!-- v1.0.128 — Tokenomics block → collapsible explainer (.cr-tok). Full committed M1 model. Replaces the static Swap-rate / $RUN-supply two-card grid. -->
-            <details class="cr-tok">
-              <summary>
-                <span class="cr-tok-head">
-                  <span class="cr-tok-title">Tokenomics</span>
-                  <span class="cr-tok-rate">100 $CHART → 1 $RUN · 100M $RUN supply</span>
-                </span>
-                <span class="cr-tok-chev">▾</span>
-              </summary>
-              <div class="cr-tok-body">
-                <div class="cr-tok-row"><span class="cr-tok-k">$CHART</span><span class="cr-tok-v"><b>Soft currency.</b> Earned in-run from grunt kills, pickups &amp; mode entries. Resets each run; your career tally persists. Front-loaded issuance — 500 → 200 floor per run.</span></div>
-                <div class="cr-tok-row"><span class="cr-tok-k">$RUN</span><span class="cr-tok-v"><b>Hard currency.</b> Scarce on-chain SPL on Solana. Mints only on a winning trade, a boss kill, or a mission complete. Daily mint cap 50 $RUN.</span></div>
-                <div class="cr-tok-row"><span class="cr-tok-k">Swap</span><span class="cr-tok-v">100 $CHART → 1 $RUN at the in-run shop. Reserve float drifts 100:1 → 250:1 as the reserve drains (one-way). 2% swap tax.</span></div>
-                <!-- tokenomics Entry-fees row removed from public (v1.0.451) -->
-                <!-- tokenomics Supply row removed from public (v1.0.451) -->
-                <!-- tokenomics M1 note removed from public (v1.0.451) -->
-              </div>
-            </details>
-          </div>
+          
           <!-- v0.8k#24av — Stats now lives in its own tab. Same IDs so the
                refreshIntelDesktop() hook keeps painting them. -->
           <div class="crTerm-view hidden" id="crProfileViewStats">
@@ -13881,6 +13843,117 @@ window.crShare = function (o) {
               <button type="button" id="crSetClearCache" class="cr-go" style="font-size:11px;padding:6px 14px">Clear cached price &amp; API data</button>
               <p style="margin:8px 0 0;font-size:10px;color:var(--dim)">Clears cached market data and your saved API keys. Does not touch your wallet, progress, maps or journal.</p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1.0.652 — Wallet app: Wallet / Wallets / Portfolio / Broker. Moved
+           OUT of Profile (#win-wallet) per Julian's "Build." item 5 — WALLET and
+           BROKER are the exact same views/ids/refresh-functions as before, just
+           relocated; WALLETS and PORTFOLIO are new. Wallet-connect gated (icon +
+           dock hidden for guests, see CSS gating block near line 3600). Plugs
+           into the shared wireProfileTabs() switcher below (flat
+           document.querySelectorAll over data-profview, not window-scoped). -->
+      <div class="os-window" id="win-walletapp" style="width:min(680px,calc(100% - 60px))">
+        <div class="os-wbar">
+          <div class="dots"><span class="dot red"></span><span class="dot yel"></span><span class="dot grn"></span></div>
+          <div class="ttl"><svg class="cr-svg-ico ttl-ico" style="--accent:#ffd166;--accent2:#9b8cff" viewBox="0 0 32 32" aria-hidden="true"><path class="a" d="M4 11 q0-4 4-4 h16 q4 0 4 4 v12 q0 4-4 4 H8 q-4 0-4-4 z" opacity=".22"/><path d="M4 11 q0-4 4-4 h16 q4 0 4 4 v12 q0 4-4 4 H8 q-4 0-4-4 z" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/><circle class="b" cx="23" cy="19" r="2.6"/></svg>Wallet</div>
+          <div class="spacer"></div>
+          <button class="wclose" data-close>Close</button>
+        </div>
+        <div class="os-wbody">
+          <div class="crTerm-tabs">
+            <button class="crTerm-tab active" data-profview="bal" type="button">WALLET</button>
+            <button class="crTerm-tab" data-profview="wallets" type="button">WALLETS</button>
+            <button class="crTerm-tab" data-profview="portfolio" type="button">PORTFOLIO</button>
+            <button class="crTerm-tab" data-profview="broker" type="button">BROKER</button>
+          </div>
+
+          <div class="crTerm-view" id="crProfileViewBal">
+            <!-- Connection banner -->
+            <div id="crWalletStatus" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin:0 0 10px;background:rgba(10,15,28,.5);font-size:12px">
+              <span id="crWalletDot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#5a5a72;box-shadow:0 0 6px rgba(0,0,0,.4)"></span>
+              <span id="crWalletStatusText" style="color:var(--dim)">Not connected — click Connect in the topbar to load on-chain holdings</span>
+              <button class="cr-go" id="crWalletConnectBtn" type="button" style="margin-left:auto;font-size:10px;padding:4px 10px">Connect</button>
+            </div>
+            <div id="crWalletProofDemo" style="display:none;border:1px solid var(--line);border-radius:8px;background:rgba(10,15,28,.42);padding:10px 12px;margin:0 0 10px;gap:8px;font-size:12px">
+              <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
+                <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim)">Signed Devnet Demo</h4>
+                <span id="crProofDemoRoute" style="font:10px ui-monospace,Menlo,monospace;color:var(--dim)">No wallet selected</span>
+              </div>
+              <p id="crProofDemoStatus" style="margin:0;color:var(--dim);line-height:1.35">Choose a wallet, then sign a demo map proof and a demo run proof.</p>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="cr-go" id="crProofDemoChooseWallet" type="button" style="font-size:10px;padding:5px 9px">Choose Wallet</button>
+                <button class="cr-go" id="crProofDemoSaveMap" type="button" style="font-size:10px;padding:5px 9px">Sign Map Proof</button>
+                <button class="cr-go" id="crProofDemoRecordRun" type="button" style="font-size:10px;padding:5px 9px">Sign Run Proof</button>
+              </div>
+              <div id="crProofDemoResult" style="font:10px ui-monospace,Menlo,monospace;color:var(--dim);word-break:break-word"></div>
+            </div>
+            <!-- Holdings list -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0 6px">
+              <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim)">Holdings</h4>
+              <button class="cr-go" id="crWalletRefreshBtn" type="button" style="background:rgba(10,15,28,.8)!important;border:1px solid var(--line)!important;border-radius:8px!important;color:#7ee787!important;font:700 10px ui-monospace,Menlo,monospace!important;letter-spacing:.4px!important;text-transform:uppercase!important;text-shadow:none!important;box-shadow:none!important;padding:5px 10px!important;cursor:pointer!important">↻ Refresh</button>
+            </div>
+            <div id="crWalletHoldings" style="display:flex;flex-direction:column;gap:6px"></div>
+            <!-- Add-token form -->
+            <div style="display:flex;gap:6px;margin:10px 0 4px;align-items:center">
+              <input type="text" id="crWalletAddSym" placeholder="BONK, JUP, ETH…" maxlength="10" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:rgba(10,15,28,.6);color:var(--fg);font:11px ui-monospace,Menlo,monospace;text-transform:uppercase">
+              <button class="cr-go cr-gobtn" id="crWalletAddBtn" type="button">+ Add token</button>
+            </div>
+            <!-- v1.0.128 — Tokenomics block → collapsible explainer (.cr-tok). Full committed M1 model. Replaces the static Swap-rate / $RUN-supply two-card grid. -->
+            <details class="cr-tok">
+              <summary>
+                <span class="cr-tok-head">
+                  <span class="cr-tok-title">Tokenomics</span>
+                  <span class="cr-tok-rate">100 $CHART → 1 $RUN · 100M $RUN supply</span>
+                </span>
+                <span class="cr-tok-chev">▾</span>
+              </summary>
+              <div class="cr-tok-body">
+                <div class="cr-tok-row"><span class="cr-tok-k">$CHART</span><span class="cr-tok-v"><b>Soft currency.</b> Earned in-run from grunt kills, pickups &amp; mode entries. Resets each run; your career tally persists. Front-loaded issuance — 500 → 200 floor per run.</span></div>
+                <div class="cr-tok-row"><span class="cr-tok-k">$RUN</span><span class="cr-tok-v"><b>Hard currency.</b> Scarce on-chain SPL on Solana. Mints only on a winning trade, a boss kill, or a mission complete. Daily mint cap 50 $RUN.</span></div>
+                <div class="cr-tok-row"><span class="cr-tok-k">Swap</span><span class="cr-tok-v">100 $CHART → 1 $RUN at the in-run shop. Reserve float drifts 100:1 → 250:1 as the reserve drains (one-way). 2% swap tax.</span></div>
+                <!-- tokenomics Entry-fees row removed from public (v1.0.451) -->
+                <!-- tokenomics Supply row removed from public (v1.0.451) -->
+                <!-- tokenomics M1 note removed from public (v1.0.451) -->
+              </div>
+            </details>
+          </div>
+          <div class="crTerm-view hidden" id="crProfileViewWallets">
+            <div class="os-section">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 8px">
+                <h4 style="margin:0">Known wallets</h4>
+                <button type="button" id="crWalletsAddBtn" class="cr-go" style="font-size:10px;padding:4px 10px">+ Connect another</button>
+              </div>
+              <div id="crWalletsList" style="display:flex;flex-direction:column;gap:6px"></div>
+              <p style="margin:8px 0 0;font-size:10px;color:var(--dim)">ChartRunner remembers every wallet you've connected with in this browser. Reconnecting swaps the active session to that wallet via your wallet extension's own picker — non-custodial wallets don't allow silently switching accounts from a webpage.</p>
+            </div>
+          </div>
+          <div class="crTerm-view hidden" id="crProfileViewPortfolio">
+            <div class="os-section">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 8px">
+                <h4 style="margin:0">NFT holdings</h4>
+                <button type="button" id="crPortfolioRefreshBtn" class="cr-go" style="font-size:10px;padding:4px 10px">↻ Refresh</button>
+              </div>
+              <div id="crPortfolioBody" style="display:flex;flex-direction:column;gap:8px"></div>
+              <p style="margin:8px 0 0;font-size:10px;color:var(--dim)">Fungible token holdings (BONK, JUP, etc.) live in the WALLET tab. This tab is NFTs only, via the ChartRunner gateway's Helius DAS route.</p>
+            </div>
+          </div>
+          <div class="crTerm-view hidden" id="crProfileViewBroker">
+            <h4 style="margin:0 0 8px">Broker · connect once</h4>
+            <p style="margin:0 0 10px;font-size:11px;color:var(--dim)">Pick a venue family and broker, then Connect. Once connected, choose which API to route through when you activate a trade in-game.</p>
+            <div class="cfg-broker" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;grid-template-columns:none">
+              <div class="cfg-brokerSeg" id="cfgBrokerSeg" role="tablist" aria-label="Broker venue family">
+                <button data-bk="dex" class="on" type="button" role="tab">DEX</button>
+                <button data-bk="cex" type="button" role="tab">CEX</button>
+              </div>
+              <div class="cfg-wheel" id="cfgBrokerWheel" title="Scroll to pick a broker">
+                <div class="cfg-wheel-list" id="cfgBrokerWheelList"></div>
+                <div class="cfg-wheel-sel" aria-hidden="true"></div>
+              </div>
+              <button class="cfg-broker-connect" id="cfgBrokerConnect" type="button">Connect CEX/DEX</button>
+            </div>
+            <p style="margin:10px 0 0;font-size:10px;color:var(--dim)">Connections are saved and persist across sessions. No funds move and no live order routes — execution is paper/mock until Phase 2.</p>
           </div>
         </div>
       </div>
@@ -15408,7 +15481,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.651",
+  VERSION: "1.0.652",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -52612,6 +52685,9 @@ function osRefreshShop(){
   const brokerV = document.getElementById('crProfileViewBroker');
   // v1.0.364 — COACH view (model/provider config moved from the COACH.llm popup).
   const coachV  = document.getElementById('crProfileViewCoach');
+  // v1.0.652 — WALLETS + PORTFOLIO views, new in the standalone Wallet app.
+  const walletsV   = document.getElementById('crProfileViewWallets');
+  const portfolioV = document.getElementById('crProfileViewPortfolio');
   tabs.forEach(btn => {
     btn.addEventListener('click', () => {
       const view = btn.getAttribute('data-profview');
@@ -52623,6 +52699,8 @@ function osRefreshShop(){
       if(toolsV)  toolsV.classList.toggle('hidden',  view !== 'tools');
       if(brokerV) brokerV.classList.toggle('hidden', view !== 'broker');
       if(coachV)  coachV.classList.toggle('hidden',  view !== 'coach');
+      if(walletsV)   walletsV.classList.toggle('hidden',   view !== 'wallets');
+      if(portfolioV) portfolioV.classList.toggle('hidden', view !== 'portfolio');
       if(view === 'player' && typeof _renderPlayerTab === 'function') _renderPlayerTab();
       if(view === 'bal' && typeof _crWalletRender === 'function') _crWalletRender();
       if(view === 'tools'){ try { if(typeof _wbRenderTools === 'function') _wbRenderTools(); } catch(_){} }
@@ -52630,6 +52708,9 @@ function osRefreshShop(){
       if(view === 'broker'){ try { if(typeof window._crBrokerSync === 'function') window._crBrokerSync(); } catch(_){} }
       // v1.0.364 — refresh the Coach provider form/status when the tab opens.
       if(view === 'coach'){ try { if(typeof window._crCoachFillProvider === 'function') window._crCoachFillProvider(); } catch(_){} }
+      // v1.0.652 — Wallets directory / NFT portfolio, new tabs in the Wallet app.
+      if(view === 'wallets'){ try { if(typeof _crWalletsRender === 'function') _crWalletsRender(); } catch(_){} }
+      if(view === 'portfolio'){ try { if(typeof _crPortfolioRender === 'function') _crPortfolioRender(); } catch(_){} }
     });
   });
 })();
@@ -52808,6 +52889,152 @@ function osRefreshSettings(){
       });
     }
   } catch(_){}
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.0.652 — Wallet app: standalone Wallet / Wallets / Portfolio / Broker.
+// Moved WALLET (crProfileViewBal) + BROKER (crProfileViewBroker) out of the
+// Profile window into #win-walletapp (see the window markup + wireProfileTabs
+// extension above); WALLETS + PORTFOLIO are genuinely new here.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// crKnownWallets — a real local directory of wallets this browser has
+// connected with (localStorage cr_known_wallets_v1). There is no way to
+// silently switch a non-custodial browser wallet's active account from a
+// webpage, so "multi-wallet support" here means: remember every wallet
+// you've used, let you reconnect to one via the normal wallet picker, and
+// let you forget stale ones — not a fake instant-switch.
+window.crKnownWallets = (function(){
+  const KEY = 'cr_known_wallets_v1';
+  const CAP = 20;
+  function list(){ try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch(_){ return []; } }
+  function save(l){ try { localStorage.setItem(KEY, JSON.stringify(l.slice(0, CAP))); } catch(_){} }
+  function remember(addr, adapter){
+    if(!addr) return;
+    const l = list().filter(w => w.addr !== addr);
+    l.unshift({ addr: addr, adapter: adapter || '', lastSeen: Date.now() });
+    save(l);
+  }
+  function forget(addr){ save(list().filter(w => w.addr !== addr)); }
+  return { list: list, remember: remember, forget: forget };
+})();
+
+// Remember the active wallet in the known-wallets directory whenever it
+// changes — same _wInit-guarded pattern as the crNotifLog hook above so
+// boot's synthetic first fire doesn't do anything surprising (a wallet
+// that's already connected on load is remembered on that first fire too,
+// which IS correct here — unlike the notif log we want it in the list).
+(function crKnownWalletsHook(){
+  try {
+    if(window.crWallet && typeof crWallet.on === 'function'){
+      crWallet.on(function(pk){
+        if(!pk) return;
+        try {
+          const adapter = crWallet.adapter ? crWallet.adapter() : '';
+          crKnownWallets.remember(pk, adapter);
+        } catch(_){}
+        try { if(typeof _crWalletsRender === 'function') _crWalletsRender(); } catch(_){}
+      });
+    }
+  } catch(_){}
+})();
+
+function _crWalletsRender(){
+  const host = document.getElementById('crWalletsList');
+  if(!host) return;
+  const active = (function(){ try { return (window.crWallet && crWallet.get) ? crWallet.get() : ''; } catch(_){ return ''; } })();
+  const wallets = (window.crKnownWallets ? crKnownWallets.list() : []);
+  if(!wallets.length){ host.innerHTML = '<p style="margin:0;font-size:11px;color:var(--dim)">No wallets remembered yet — connect one from the WALLET tab.</p>'; return; }
+  host.innerHTML = '';
+  wallets.forEach(w => {
+    const isActive = w.addr === active;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid ' + (isActive ? 'rgba(20,241,149,.5)' : 'var(--line)') + ';border-radius:8px;background:' + (isActive ? 'rgba(20,241,149,.08)' : 'rgba(10,15,28,.4)');
+    const dot = document.createElement('span');
+    dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (isActive ? '#3ddc97' : '#5a5a72');
+    const info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:2px';
+    const addr = document.createElement('span');
+    addr.style.cssText = 'font:11px ui-monospace,Menlo,monospace;color:var(--fg)';
+    addr.textContent = w.addr.slice(0, 4) + '…' + w.addr.slice(-4) + (w.adapter ? ' · ' + w.adapter : '') + (isActive ? ' · active' : '');
+    info.appendChild(addr);
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:6px;flex:none';
+    if(!isActive){
+      const reBtn = document.createElement('button');
+      reBtn.type = 'button'; reBtn.className = 'cr-go'; reBtn.style.cssText = 'font-size:10px;padding:4px 9px';
+      reBtn.textContent = 'Reconnect';
+      reBtn.addEventListener('click', () => { try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){} });
+      btnRow.appendChild(reBtn);
+    }
+    const fgBtn = document.createElement('button');
+    fgBtn.type = 'button'; fgBtn.className = 'cr-go'; fgBtn.style.cssText = 'font-size:10px;padding:4px 9px';
+    fgBtn.textContent = 'Forget';
+    fgBtn.addEventListener('click', () => { try { crKnownWallets.forget(w.addr); _crWalletsRender(); } catch(_){} });
+    btnRow.appendChild(fgBtn);
+    row.appendChild(dot); row.appendChild(info); row.appendChild(btnRow);
+    host.appendChild(row);
+  });
+}
+
+// Portfolio (NFT holdings) — the real consumer of the /v1/nft/by-owner
+// gateway route (Helius DAS getAssetsByOwner) added this session. Degrades
+// honestly: no fake data when the gateway is off or nothing's connected.
+async function _crPortfolioRender(){
+  const host = document.getElementById('crPortfolioBody');
+  if(!host) return;
+  const connected = (function(){ try { return !!(window.crWallet && crWallet.isConnected && crWallet.isConnected()); } catch(_){ return false; } })();
+  if(!connected){ host.innerHTML = '<p style="margin:0;font-size:11px;color:var(--dim)">Connect a wallet to see NFT holdings.</p>'; return; }
+  const gwOn = (function(){ try { return localStorage.getItem('cr_gateway_enabled_v1') === '1'; } catch(_){ return false; } })();
+  if(!gwOn){ host.innerHTML = '<p style="margin:0;font-size:11px;color:var(--dim)">NFT lookups route through the ChartRunner gateway, which is off by default. Enable it in Settings · API-RPC to load this tab.</p>'; return; }
+  const owner = (function(){ try { return crWallet.get(); } catch(_){ return ''; } })();
+  if(!owner) return;
+  host.innerHTML = '<p style="margin:0;font-size:11px;color:var(--dim)">Loading…</p>';
+  try {
+    const base = (typeof CR_API_GATEWAY_BASE === 'string') ? CR_API_GATEWAY_BASE : 'https://chartrunner-worker.jsg-951.workers.dev';
+    const res = await fetch(base + '/v1/nft/by-owner?owner=' + encodeURIComponent(owner) + '&limit=24');
+    if(!res.ok) throw new Error('gateway ' + res.status);
+    const data = await res.json();
+    const items = (data && data.items) || [];
+    if(!items.length){ host.innerHTML = '<p style="margin:0;font-size:11px;color:var(--dim)">No NFTs found for this wallet.</p>'; return; }
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px';
+    items.forEach(it => {
+      const meta = (it && it.content && it.content.metadata) || {};
+      const img = (it && it.content && it.content.links && it.content.links.image) || '';
+      const cell = document.createElement('div');
+      cell.style.cssText = 'display:flex;flex-direction:column;gap:4px;align-items:center;text-align:center';
+      const thumb = document.createElement('div');
+      thumb.style.cssText = 'width:100%;aspect-ratio:1;border-radius:8px;border:1px solid var(--line);background:rgba(10,15,28,.5) center/cover no-repeat' + (img ? ";background-image:url('" + img.replace(/'/g, '') + "')" : '');
+      const label = document.createElement('span');
+      label.style.cssText = 'font-size:9px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%';
+      label.textContent = meta.name || meta.symbol || 'Unnamed';
+      cell.appendChild(thumb); cell.appendChild(label);
+      grid.appendChild(cell);
+    });
+    host.innerHTML = '';
+    host.appendChild(grid);
+  } catch(err){
+    host.innerHTML = '<p style="margin:0;font-size:11px;color:var(--dim)">Couldn\'t load NFT holdings (' + (err && err.message ? err.message : 'network error') + ').</p>';
+  }
+}
+
+function osRefreshWalletApp(){
+  try { if(typeof _crWalletRender === 'function') _crWalletRender(); } catch(_){}
+  try { if(typeof window._crBrokerSync === 'function') window._crBrokerSync(); } catch(_){}
+  try { _crWalletsRender(); } catch(_){}
+  // Portfolio is fetch-driven and only useful once connected + gateway on;
+  // leave it to render on first click of its tab (wireProfileTabs) rather
+  // than firing a network call every time the Wallet app just opens on
+  // the default WALLET tab.
+}
+(function wireWalletAppActions(){
+  const addBtn = document.getElementById('crWalletsAddBtn');
+  if(addBtn) addBtn.addEventListener('click', () => {
+    try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){}
+  });
+  const refreshBtn = document.getElementById('crPortfolioRefreshBtn');
+  if(refreshBtn) refreshBtn.addEventListener('click', () => { try { _crPortfolioRender(); } catch(_){} });
 })();
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -74377,7 +74604,7 @@ function log(msg){
   // List of all known program ids — original 6 + new 6.
   // Note: window.OS_PROGRAMS already exists from the v0.7b block; we
   // extend it in-place so the original close/refresh helpers still work.
-  const NEW_PROGS = ['chartrunner','missions','l3coach','wallet','sdk','mail','terminal','maps','brokerconnect','settings'];   // v1.0.631 — 'weather' removed (app deleted); v1.0.651 — 'settings' added
+  const NEW_PROGS = ['chartrunner','missions','l3coach','wallet','sdk','mail','terminal','maps','brokerconnect','settings','walletapp'];   // v1.0.631 — 'weather' removed (app deleted); v1.0.651 — 'settings' added; v1.0.652 — 'walletapp' added
   try{
     if(typeof OS_PROGRAMS !== 'undefined' && Array.isArray(OS_PROGRAMS)){
       NEW_PROGS.forEach(p => { if(!OS_PROGRAMS.includes(p)) OS_PROGRAMS.push(p); });
@@ -74543,14 +74770,25 @@ function log(msg){
       } catch(_){}
       try { currentFlightSkin = 'invader'; } catch(_){}          // invader (green) avatar
       // Profile is public for guests but only Player + Tools tabs show — if a now-hidden
-      // tab (Wallet / Broker / Coach) was active, fall back to Player.
+      // tab (Coach — Wallet/Broker moved out to the standalone Wallet app in v1.0.652)
+      // was active, fall back to Player.
       try {
         const at = document.querySelector('#win-wallet .crTerm-tab[data-profview].active');
         const av = at ? at.getAttribute('data-profview') : '';
-        if(av === 'bal' || av === 'broker' || av === 'coach'){
+        if(av === 'coach'){
           const pl = document.querySelector('#win-wallet .crTerm-tab[data-profview="player"]');
           if(pl) pl.click();
         }
+      } catch(_){}
+      // v1.0.652 — the standalone Wallet app + Settings app are both wallet-gated;
+      // if either was left open when the wallet disconnects, close it (its icon/dock
+      // button just vanished via CSS — an orphaned open window would be confusing).
+      try {
+        ['walletapp','settings'].forEach(function(p){
+          const w = document.getElementById('win-' + p);
+          if(w && w.classList.contains('on')){ w.classList.remove('on'); w.classList.remove('focus'); }
+        });
+        if(typeof syncDock === 'function') syncDock();
       } catch(_){}
     }
     // Repaint the laser menu / loadout surfaces if they're open.
@@ -74668,6 +74906,8 @@ function log(msg){
     else if(prog === 'tokenterm'){ try { if(typeof osRefreshTokenTerm === 'function') osRefreshTokenTerm(); } catch(_){} }
     // v1.0.651 — Settings app refresh hook.
     else if(prog === 'settings'){ try { if(typeof osRefreshSettings === 'function') osRefreshSettings(); } catch(_){} }
+    // v1.0.652 — Wallet app refresh hook (Wallet/Wallets/Portfolio/Broker).
+    else if(prog === 'walletapp'){ try { if(typeof osRefreshWalletApp === 'function') osRefreshWalletApp(); } catch(_){} }
     // sdk + marketplace are dead-windows (no icons since v0.8M#1).
   }
 
