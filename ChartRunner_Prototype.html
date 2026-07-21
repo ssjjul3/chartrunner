@@ -913,9 +913,14 @@ window.crShare = function (o) {
   .player-altar-avatar{display:flex;flex-direction:column;gap:6px;width:100%;align-items:center}
   /* v1.0.667 — Player name box: relocated below the avatar preview, styled
      like the app's search-box inputs (see #crTokSearch/#crMapSearch). */
-  .player-name-box{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;max-width:220px;margin:4px auto 0}
-  .player-name-input{width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--line);border-radius:8px;
-    background:rgba(10,15,28,.6);color:var(--fg);font:700 12px ui-monospace,Menlo,monospace;text-align:center}
+  /* v1.0.674 — unified name field (Julian: "one single textfield looking like
+     a simple search/textfill field ... save profilename and/or onchain name
+     — one unified name per player"). Was a stacked input + claim-pill pair;
+     now ONE search-style field with the on-chain claim as an icon-only
+     affordance inside its right edge (late-block CSS positions it). */
+  .player-name-box{display:flex;align-items:center;width:100%;max-width:260px;margin:4px auto 0;position:relative}
+  .player-name-input{width:100%;box-sizing:border-box;padding:9px 40px 9px 14px;border:1px solid var(--line);border-radius:12px;
+    background:rgba(10,15,28,.6);color:var(--fg);font:700 12px ui-monospace,Menlo,monospace;text-align:left}
   .player-name-input::placeholder{color:var(--dim);font-weight:600}
   .player-name-input:focus{outline:none;border-color:rgba(20,241,149,.5);box-shadow:0 0 0 1px rgba(20,241,149,.25)}
   .player-altar-avatar-tabs{display:flex;gap:6px;justify-content:center}
@@ -15748,7 +15753,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.673",
+  VERSION: "1.0.674",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -53980,12 +53985,26 @@ function osRefreshDocs(){
     // "Claim name" only when nothing is visible for the connected wallet.
     const visible = _nameVisibleForCurrentWallet();
     const btns = document.querySelectorAll('[data-cr-name-btn]');
+    // v1.0.674 — unified name field (Julian: "one single textfield ... with
+    // function to save profilename and/or onchain name — one unified name per
+    // player"). Claim buttons are icon-only ◎ now: the profile-box copy sits
+    // INSIDE the name field, the light-profile copy sits beside #crLpName
+    // which already shows the name — no more repeating the name on the pill.
     btns.forEach(b => {
-      b.innerHTML = visible
-        ? ('<span style="margin-right:5px">◎</span>' + visible)
-        : '<span style="margin-right:5px">◎</span>Claim name';
+      b.innerHTML = '<span>◎</span>';
+      b.title = visible
+        ? ('On-chain name: ' + visible + ' — click to manage')
+        : 'Claim your runner name on-chain';
+      try { b.setAttribute('aria-label', b.title); } catch(_){}
       b.classList.toggle('cr-name-btn-claimed', !!visible);
     });
+    // One unified name: a claimed on-chain name IS the player's name — mirror
+    // it into the single edit field (display sync only; never while typing,
+    // and the local handle store stays untouched so norm() can't fight it).
+    try {
+      const uEdit = document.getElementById('crProfilePlayerNameEdit');
+      if (uEdit && visible && document.activeElement !== uEdit && uEdit.value !== visible) uEdit.value = visible;
+    } catch(_){}
   }
   window._crPlayerNameApply = applyName;
   // v1.0 — lightweight local runner handle for the onboarding name prompt and the
@@ -93094,6 +93113,21 @@ window.crQvac = (function(){
 :is(body[data-os-theme="platinum"],body[data-os-theme="bw"],.splash[data-theme="platinum"],.splash[data-theme="bw"]) :is(.os-wbody,.crTerm) :is(button,.brBtn,.nmBtn,.cr-session-btn,.tw-btn-danger):is(.danger,[data-del],[data-delete]){
   background:rgba(214,48,89,.10) !important;
   border-color:rgba(214,48,89,.42) !important;color:#b3264a !important}
+/* v1.0.674 — unified name field: the on-chain claim is an icon-only ◎ ghost
+   button INSIDE the profile name field (markup unchanged — #crPlayerAltarClaimBtn
+   just repositioned + de-chromed). Id selector + !important wins over both the
+   v1.0.165 dark app-button rule and the v1.0.673 platinum/bw econ rule. */
+.player-name-box #crPlayerAltarClaimBtn{
+  position:absolute !important;right:5px !important;top:50% !important;
+  transform:translateY(-50%) !important;margin:0 !important;
+  background:transparent !important;border:1px solid transparent !important;
+  box-shadow:none !important;text-shadow:none !important;
+  padding:4px 8px !important;border-radius:8px !important;
+  color:#3ddc97 !important;font:700 13px ui-monospace,Menlo,monospace !important;
+  line-height:1 !important;letter-spacing:0 !important;cursor:pointer !important}
+.player-name-box #crPlayerAltarClaimBtn:hover{background:rgba(61,220,151,.14) !important}
+.player-name-box #crPlayerAltarClaimBtn.cr-name-btn-claimed{color:#b79cff !important}
+.player-name-box #crPlayerAltarClaimBtn.cr-name-btn-claimed:hover{background:rgba(153,69,255,.14) !important}
 </style>
 </body>
 </html>
