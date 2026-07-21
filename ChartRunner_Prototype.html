@@ -3606,6 +3606,11 @@ window.crShare = function (o) {
   body.cr-guest .os-icon[data-prog="walletapp"],
   body.cr-guest #crOSDockFixed .dockBtn[data-prog="walletapp"],
   body.cr-guest .dockBtn[data-prog="walletapp"]{display:none!important}
+  /* v1.0.655 — Control Center: Apps on Desktop / Apps in Dock switch (Settings ·
+     Game pane). Dock-only mode hides the desktop icon grid; #crOSDockFixed is
+     already always present (desktop AND in-game), so nothing else needs to
+     change — no parallel dock to build. */
+  body.cr-apps-in-dock #osGrid .os-icon{display:none!important}
   /* RUN-tube ARCHIVED — hidden for everyone (dock entries + the PIP widget). */
   .os-icon[data-prog="runtube"],
   #crOSDockFixed .dockBtn[data-prog="runtube"],
@@ -13800,6 +13805,16 @@ window.crShare = function (o) {
               </div>
               <p style="margin:10px 0 0;font-size:10px;color:var(--dim)">Applies instantly across the desktop and in-run chart chrome.</p>
             </div>
+            <div class="os-section" style="margin-top:14px">
+              <h4 style="margin:0 0 6px">App launchers</h4>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(10,15,28,.4)">
+                <span id="crSetAppsLocLbl" style="font-size:11px">Apps on Desktop</span>
+                <button type="button" id="crSetAppsLocSw" role="switch" aria-checked="false" title="Switch app launchers between desktop icons and the dock" style="position:relative;flex:none;width:38px;height:20px;border-radius:999px;border:1px solid var(--line);background:rgba(10,15,28,.6);cursor:pointer;padding:0">
+                  <span id="crSetAppsLocKnob" style="position:absolute;top:1px;left:1px;width:16px;height:16px;border-radius:50%;background:var(--dim);transition:transform .15s ease"></span>
+                </button>
+              </div>
+              <p style="margin:8px 0 0;font-size:10px;color:var(--dim)">Dock only hides the desktop icon grid — the bottom dock already opens every app either way.</p>
+            </div>
           </div>
 
           <div class="crTerm-view hidden" id="crSetViewNotif">
@@ -15481,7 +15496,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.654",
+  VERSION: "1.0.655",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -52813,6 +52828,35 @@ function osRefreshSettings(){
   } catch(_){}
   try { _crSetRenderAccount(); } catch(_){}
   try { _crSetRenderNotif(); } catch(_){}
+  try { _crSetRenderAppsLoc(); } catch(_){}
+}
+// v1.0.655 — Control Center: Apps on Desktop / Apps in Dock. window.crAppsLoc
+// so the boot-time apply (way below, alongside the theme persistence IIFE)
+// and the Settings switch share one source of truth instead of two copies
+// of the same localStorage read/write.
+window.crAppsLoc = (function(){
+  const KEY = 'cr_apps_location_v1';
+  function get(){ try { return localStorage.getItem(KEY) === 'dock' ? 'dock' : 'desktop'; } catch(_){ return 'desktop'; } }
+  function apply(mode){
+    try { document.body.classList.toggle('cr-apps-in-dock', mode === 'dock'); } catch(_){}
+  }
+  function set(mode){
+    mode = (mode === 'dock') ? 'dock' : 'desktop';
+    try { localStorage.setItem(KEY, mode); } catch(_){}
+    apply(mode);
+    return mode;
+  }
+  return { get: get, set: set, apply: apply };
+})();
+function _crSetRenderAppsLoc(){
+  const sw = document.getElementById('crSetAppsLocSw');
+  const knob = document.getElementById('crSetAppsLocKnob');
+  const lbl = document.getElementById('crSetAppsLocLbl');
+  const mode = (window.crAppsLoc ? crAppsLoc.get() : 'desktop');
+  const on = mode === 'dock';
+  if(sw){ sw.setAttribute('aria-checked', on ? 'true' : 'false'); sw.style.borderColor = on ? 'rgba(20,241,149,.55)' : 'var(--line)'; sw.style.background = on ? 'rgba(20,241,149,.12)' : 'rgba(10,15,28,.6)'; }
+  if(knob){ knob.style.transform = on ? 'translateX(18px)' : 'translateX(0)'; knob.style.background = on ? '#3ddc97' : 'var(--dim)'; }
+  if(lbl) lbl.textContent = on ? 'Apps in Dock' : 'Apps on Desktop';
 }
 (function wireSettingsActions(){
   const saveNameBtn = document.getElementById('crSetNameSave');
@@ -52835,6 +52879,16 @@ function osRefreshSettings(){
       const t = btn.getAttribute('data-theme-pick');
       try { if(typeof window.crApplyTheme === 'function') window.crApplyTheme(t); } catch(_){}
     });
+  });
+  const appsLocSw = document.getElementById('crSetAppsLocSw');
+  if(appsLocSw) appsLocSw.addEventListener('click', () => {
+    try {
+      const next = (window.crAppsLoc && crAppsLoc.get() === 'dock') ? 'desktop' : 'dock';
+      if(window.crAppsLoc) crAppsLoc.set(next);
+      _crSetRenderAppsLoc();
+      try { if(typeof syncDock === 'function') syncDock(); } catch(_){}
+      try { if(window.crNotifLog) crNotifLog.add('App launchers: ' + (next === 'dock' ? 'Dock only' : 'Desktop')); } catch(_){}
+    } catch(_){}
   });
   const clearNotifBtn = document.getElementById('crSetNotifClear');
   if(clearNotifBtn) clearNotifBtn.addEventListener('click', () => { try { crNotifLog.clear(); } catch(_){} });
@@ -81994,6 +82048,10 @@ const crL3 = (function(){
       try{ if(stored === 'dark' || stored === 'platinum') document.body.removeAttribute('data-os-theme'); else document.body.setAttribute('data-os-theme', stored); }catch{}
     }
   }catch{}
+  // v1.0.655 — Control Center: apply the persisted Apps on Desktop / Apps in
+  // Dock choice at boot too (not just when the Settings pane happens to
+  // render), same idiom as the theme apply right above.
+  try{ if(window.crAppsLoc) crAppsLoc.apply(crAppsLoc.get()); }catch{}
   // Persist on every theme change. Watch the splash data-theme via observer.
   try{
     const splashEl = document.getElementById('splash');
