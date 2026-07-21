@@ -15739,7 +15739,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.664",
+  VERSION: "1.0.665",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -53116,10 +53116,16 @@ function _crCCRenderTheme(){
 }
 function _crCCRenderAppsLoc(){
   const sw = document.getElementById('crCCAppsLocSw');
+  const swUi = document.getElementById('crCCAppsLocSwUI');
   const lbl = document.getElementById('crCCAppsLocLbl');
   const mode = (window.crAppsLoc ? crAppsLoc.get() : 'desktop');
   const on = mode === 'dock';
   if(sw) sw.setAttribute('aria-checked', on ? 'true' : 'false');
+  // v1.0.665 — the .cr-cc-switch[aria-checked] CSS lives on the INNER
+  // span (the visual track), not the outer button — stamp it there too
+  // or the switch never visually flips even though aria-checked (and the
+  // label below) is correct on the button.
+  if(swUi) swUi.setAttribute('aria-checked', on ? 'true' : 'false');
   if(lbl) lbl.textContent = on ? 'Apps in Dock' : 'Apps on Desktop';
 }
 function _crCCRenderNotifs(){
@@ -53226,11 +53232,20 @@ function _crBuildAppDock(){
     const dock = document.getElementById('crAppDock');
     const grid = document.getElementById('osGrid');
     if(!dock || !grid) return;
+    // v1.0.665 — body.cr-apps-in-dock is what HIDES #osGrid .os-icon in the
+    // first place, so if it's already on when we measure, getComputedStyle
+    // reads display:none for every icon and the dock builds empty. Peel it
+    // off just for the measurement (synchronous, no paint happens in
+    // between) so visibility reflects guest-gating / archived-icon rules
+    // only, not our own dock-mode hiding rule.
+    const hadDockClass = document.body.classList.contains('cr-apps-in-dock');
+    if(hadDockClass) document.body.classList.remove('cr-apps-in-dock');
     const icons = Array.prototype.slice.call(grid.querySelectorAll('.os-icon')).filter(ic => {
       if(ic.getAttribute('aria-hidden') === 'true') return false;
       try { if(window.getComputedStyle(ic).display === 'none') return false; } catch(_){}
       return !!(ic.querySelector('.ico') || (ic.textContent || '').trim());
     });
+    if(hadDockClass) document.body.classList.add('cr-apps-in-dock');
     const frag = document.createDocumentFragment();
     icons.forEach(ic => {
       const b = document.createElement('button');
