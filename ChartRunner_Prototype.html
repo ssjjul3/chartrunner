@@ -15481,7 +15481,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.652",
+  VERSION: "1.0.653",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -62610,6 +62610,16 @@ function _tokRenderList(){
   });
 }
 // Render the profile card on the right.
+// v1.0.653 — search-style social links for the Token Research hero's action
+// strip. Same approach as UnlockedEcon's _tokDexSearchUrl: catalog tokens
+// don't carry a verified website/Twitter/Telegram field, so these are
+// honest search links rather than fabricated exact URLs.
+function _tokSocialUrl(kind, tag){
+  tag = encodeURIComponent(String(tag || '').replace(/^\$/, ''));
+  if(kind === 'twitter') return 'https://twitter.com/search?q=%24' + tag;
+  if(kind === 'telegram') return 'https://t.me/s/' + tag.toLowerCase();
+  return 'https://www.coingecko.com/en/search?query=' + tag;
+}
 function _tokRenderProfile(){
   const host = document.getElementById('crTokProfile');
   if(!host) return;
@@ -62643,9 +62653,16 @@ function _tokRenderProfile(){
         '<a href="https://solscan.io/token/' + _tokEscA(_tokMint) + '" target="_blank" rel="noopener" title="view on Solscan ↗" style="color:#7aa2ff;text-decoration:none;font-size:8.5px;border:1px solid rgba(122,162,255,.4);border-radius:4px;padding:1px 4px">EXP ↗</a>' +
       '</div>'
     : '';
+  const _tokLogoElId = 'tokProfLogo_' + def.id;
+  const _tokIsWatchedHero = (function(){ try { return !!(_tokState.watchlist && _tokState.watchlist.has(def.id)); } catch(_){ return false; } })();
   host.innerHTML =
-    // Header: tag + name + signal
-    '<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">' +
+    // v1.0.653 — Hero card: was a bare header row, now a bordered card with the
+    // real per-token logo (same _tokFillLogoEl helper the list rows use, wired
+    // after mount below) so the profile view opens with the same visual anchor
+    // as the list. Ported idea from UnlockedEcon's crTokFocusSheet, scaled back
+    // to just the hero — none of its chart/signal/flow/pair-page redesign.
+    '<div style="display:flex;align-items:center;gap:12px;padding:12px;margin-bottom:10px;border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.35)">' +
+      '<div id="' + _tokLogoElId + '" style="flex:none;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#e7fff2,#28de98);color:#0c1115;font:900 13px ui-monospace,Menlo,monospace;overflow:hidden"></div>' +
       '<div style="flex:1;min-width:0">' +
         '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px;font-weight:700">' + def.tag + '</span><span class="dim">' + def.nm + '</span>' + liveBadge + '</div>' +
         '<div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.5px">' + def.chain + ' · ' + s.ageDays + 'd old' + (s.isNew ? ' · NEW' : '') + '</div>' +
@@ -62656,6 +62673,16 @@ function _tokRenderProfile(){
         '<div style="font-weight:700;font-variant-numeric:tabular-nums;color:' + (s.ch24 >= 0 ? '#3ddc97' : '#ff5b7f') + '">' +
           (s.ch24 >= 0 ? '+' : '') + s.ch24.toFixed(2) + '% 24h · ' + (s.ch7d >= 0 ? '+' : '') + s.ch7d.toFixed(1) + '% 7d</div>' +
       '</div>' +
+    '</div>' +
+    // v1.0.653 — Social/action strip: search-style Website/Twitter/Telegram
+    // links (honest — catalog tokens don't carry a verified URL field) plus a
+    // Watchlist toggle that reuses the existing window._tokToggleWatch/★ star
+    // mechanism from the list rows instead of a parallel one.
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">' +
+      '<a href="' + _tokSocialUrl('web', def.tag) + '" target="_blank" rel="noopener" style="padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);color:#7aa2ff;text-decoration:none;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Website</a>' +
+      '<a href="' + _tokSocialUrl('twitter', def.tag) + '" target="_blank" rel="noopener" style="padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);color:#7aa2ff;text-decoration:none;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Twitter</a>' +
+      '<a href="' + _tokSocialUrl('telegram', def.tag) + '" target="_blank" rel="noopener" style="padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);color:#7aa2ff;text-decoration:none;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Telegram</a>' +
+      '<button type="button" data-tok-watch-hero="' + def.id + '" style="padding:5px 10px;border:1px solid ' + (_tokIsWatchedHero ? 'rgba(255,209,102,.55)' : 'var(--line)') + ';border-radius:6px;background:' + (_tokIsWatchedHero ? 'rgba(255,209,102,.10)' : 'rgba(10,15,28,.5)') + ';color:' + (_tokIsWatchedHero ? '#ffd166' : 'var(--dim)') + ';font-size:10px;text-transform:uppercase;letter-spacing:.4px;cursor:pointer;font-family:inherit">' + (_tokIsWatchedHero ? '★ Watched' : '☆ Watchlist') + '</button>' +
     '</div>' +
     // v1.0.519 — RUN button moved to the TOP (right under the ticker + price header).
     '<button type="button" class="cr-cta-blink" data-tok-run="' + def.id + '" style="width:100%;box-sizing:border-box;margin:0 0 10px;padding:11px;border:1px solid #14f195!important;border-radius:8px!important;background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.06))!important;color:#bff7df!important;font:700 13px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;text-shadow:none!important;box-shadow:0 0 14px rgba(20,241,149,.20)!important">▶ RUN ' + def.tag + ' · ' + String(s.tf||'').toUpperCase() + '</button>' +
@@ -62711,6 +62738,21 @@ function _tokRenderProfile(){
     // for arbitrary tokens). The drag hint footer also removed — drag
     // is still functional, players discover it organically.
     '';
+  // v1.0.653 — Fill the hero logo + wire the hero action-strip Watchlist
+  // toggle (reuses window._tokToggleWatch, the same mechanism the list-row
+  // stars use — no parallel watchlist logic).
+  try {
+    const _tokHeroLogoEl = document.getElementById(_tokLogoElId);
+    if(_tokHeroLogoEl && typeof _tokFillLogoEl === 'function') _tokFillLogoEl(_tokHeroLogoEl, def);
+  } catch(_){}
+  try {
+    const _tokHeroWatchBtn = host.querySelector('[data-tok-watch-hero]');
+    if(_tokHeroWatchBtn) _tokHeroWatchBtn.addEventListener('click', () => {
+      try { if(typeof window._tokToggleWatch === 'function') window._tokToggleWatch(def.id); } catch(_){}
+      _tokRenderProfile();
+      try { if(typeof renderWidgets === 'function') renderWidgets(); } catch(_){}
+    });
+  } catch(_){}
   // v0.9.43 — Wire TF buttons + paint the sparkline after the HTML mounts.
   try {
     host.querySelectorAll('[data-tok-tf]').forEach(btn => {
