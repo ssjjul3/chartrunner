@@ -15481,7 +15481,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.653",
+  VERSION: "1.0.654",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -39402,7 +39402,8 @@ window.crRoom = (function(){
     var h = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">'
       + '<span style="width:8px;height:8px;border-radius:50%;background:#14f195;box-shadow:0 0 7px #14f195"></span>'
       + '<b style="letter-spacing:.4px">HOST</b><span style="margin-left:auto;color:#8a92a3;font-size:10px">'+esc(mode)+'</span></div>';
-    h += '<div style="display:flex;gap:5px;margin-bottom:7px">'+modeChip('moderated',mode)+modeChip('curated',mode)+'</div>';
+    // v1.0.654 — the moderated<->curated live switch is gone (curated is cut);
+    // a hosted room's mode is fixed at creation now, nothing to toggle here.
     h += '<label style="display:flex;align-items:center;gap:6px;margin:0 1px 8px;font-size:10px;color:#c7ccd8;cursor:pointer">'
       + '<input type="checkbox" data-hp="hidechat" '+(_hc?'checked':'')+' style="accent-color:#14f195"> hide guest chat</label>';
     h += '<div style="color:#8a92a3;font-size:9px;letter-spacing:.5px;margin-bottom:3px">RUNNERS</div>';
@@ -39417,18 +39418,9 @@ window.crRoom = (function(){
         + '<button type="button" data-hp="kick" data-sid="'+esc(p.sid)+'" title="kick" style="cursor:pointer;border:1px solid rgba(255,90,110,.4);background:transparent;color:#ff5a6e;border-radius:5px;padding:1px 5px;font:700 10px ui-monospace">&#10005;</button>'
         + '</div>';
     });
-    if(mode === 'curated'){
-      h += '<div style="color:#8a92a3;font-size:9px;letter-spacing:.5px;margin:9px 0 3px">REVIEW ('+subs.length+')</div>';
-      if(!subs.length) h += '<div style="color:#6a6f7a;font-size:10px">nothing pending</div>';
-      subs.slice(0,8).forEach(function(s){
-        var what = s.kind === 'builds' ? 'build' : ((s.payload && s.payload.kind === 'chat') ? ('chat: '+esc(String(s.payload.label||'').slice(0,40))) : 'action');
-        h += '<div style="display:flex;align-items:center;gap:5px;margin:3px 0;padding:3px 5px;border:1px solid rgba(255,255,255,.1);border-radius:6px">'
-          + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px">'+esc(s.handle||'guest')+' &middot; '+what+'</span>'
-          + '<button type="button" data-hp="approve" data-id="'+esc(s.id)+'" style="cursor:pointer;border:1px solid rgba(20,241,149,.5);background:transparent;color:#14f195;border-radius:5px;padding:1px 6px;font:700 10px ui-monospace">&#10003;</button>'
-          + '<button type="button" data-hp="reject" data-id="'+esc(s.id)+'" style="cursor:pointer;border:1px solid rgba(255,90,110,.4);background:transparent;color:#ff5a6e;border-radius:5px;padding:1px 6px;font:700 10px ui-monospace">&#10005;</button>'
-          + '</div>';
-      });
-    }
+    // v1.0.654 — curated's submit/approve review tray removed along with the
+    // mode itself (see above). `subs` (crRoom.submissions()) is now unused
+    // here but left harmless — the getter call above stays a no-op array read.
     e.innerHTML = h;
     e.style.display = '';
   }
@@ -40006,15 +39998,20 @@ window.crRoom = (function(){
       + '<button class="crWizBig" type="button" id="crWizPriv">PRIVATE<span class="s">code or link only · unlisted · you host</span></button>'
       + '<button class="crWizBig" type="button" id="crWizPub">PUBLIC<span class="s">listed in the Rooms directory · anyone joins</span></button>'
       + '<button class="crWizBig" type="button" id="crWizMod"><span class="crWizTag" style="background:rgba(20,241,149,.16);border-color:rgba(20,241,149,.5);color:#14f195">P1</span>MODERATED<span class="s">host-only broadcast · kick / mute · relay-enforced</span></button>'
-      + '<button class="crWizBig" type="button" id="crWizCur"><span class="crWizTag" style="background:rgba(20,241,149,.16);border-color:rgba(20,241,149,.5);color:#14f195">P1</span>CURATED<span class="s">guests submit \u2192 you approve · kick / mute</span></button>'
-      + '<label style="display:flex;align-items:center;gap:7px;margin:6px 2px 2px;font-size:11px;color:#c7ccd8;cursor:pointer"><input type="checkbox" id="crWizHideChat" checked style="accent-color:#14f195"> hide guest chat in moderated/curated</label>'
+      // v1.0.654 — CURATED cut. Julian: "reimagine to what is realistically
+      // implementable — cut the curated room — only public, private,
+      // moderated." Submit-to-approve never had a realistic host-side
+      // moderation queue UI worth shipping at P1; moderated (host-only
+      // broadcast) covers the real need. _wizModerated()/crRoom.setMode()
+      // still accept 'curated' at the protocol layer (untouched, out of
+      // scope here) — this only removes the client UI that offered it.
+      + '<label style="display:flex;align-items:center;gap:7px;margin:6px 2px 2px;font-size:11px;color:#c7ccd8;cursor:pointer"><input type="checkbox" id="crWizHideChat" checked style="accent-color:#14f195"> hide guest chat in moderated rooms</label>'
       + '<button class="crWizBig locked" type="button" tabindex="-1"><span class="crWizTag">P2 · soon</span>EARN ON-CHAIN<span class="s">SOL entry + copy-trading fees · host earns</span></button>'
       + '<div class="crWizFoot"><span class="lnk" id="crWizBack">◂ back</span><span class="lnk" id="crWizBrowse">🔍 browse public rooms</span></div>';
     bodyEl.querySelector('#crWizPriv').addEventListener('click', function(){ doCreate({ wallet: true }); });
     bodyEl.querySelector('#crWizPub').addEventListener('click', function(){ doCreate({ wallet: true, pub: true }); });
     var _hideChatEl = bodyEl.querySelector('#crWizHideChat');
     var _mb = bodyEl.querySelector('#crWizMod'); if(_mb) _mb.addEventListener('click', function(){ _wizModerated('moderated', _hideChatEl); });
-    var _cb2 = bodyEl.querySelector('#crWizCur'); if(_cb2) _cb2.addEventListener('click', function(){ _wizModerated('curated', _hideChatEl); });
     var bk2 = bodyEl.querySelector('#crWizBack');
     if(bk2) bk2.addEventListener('click', function(){ paint('1'); });
     var br = bodyEl.querySelector('#crWizBrowse');
