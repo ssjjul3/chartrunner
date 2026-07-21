@@ -3140,6 +3140,21 @@ window.crShare = function (o) {
   .cr-cc-switch[aria-checked="true"]{background:var(--accent);border-color:var(--accent)}
   .cr-cc-knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--dim);transition:transform .15s ease,background .15s ease}
   .cr-cc-switch[aria-checked="true"] .cr-cc-knob{transform:translateX(20px);background:#04150d}
+  /* v1.0.660 — Control Center popover (menubar quick-access). Fixed so it
+     floats above the desktop regardless of scroll/z-index of whatever's open. */
+  .crCCPop{
+    position:fixed;top:34px;right:10px;width:250px;max-height:min(74vh,560px);
+    overflow:auto;background:#151a28;border:1px solid var(--line);border-radius:12px;
+    box-shadow:0 12px 32px rgba(0,0,0,.55);z-index:99999;padding:12px;
+    display:none;color:var(--fg);font:12px ui-monospace,Menlo,monospace}
+  .crCCPop.on{display:block}
+  .crCCPop .cr-cc-pill{padding:6px 11px;font-size:10px}
+  .crCCPop #crCCNotifList .crCCNoteRow{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4)}
+  .crCCPop #crCCNotifList .crCCNoteTxt{font-size:10.5px;color:var(--fg);word-break:break-word}
+  .crCCPop #crCCNotifList .crCCNoteAge{font-size:9px;color:var(--dim);white-space:nowrap;flex:none}
+  .crCCPop #crCCNotifList .crCCNoteEmpty{font-size:10.5px;color:var(--dim);font-style:italic;padding:4px 2px}
   .os-section:first-child{margin-top:0;padding-top:0;border-top:0}
   .os-section h4{margin:0 0 6px;font-size:10px;letter-spacing:.6px;color:var(--dim);text-transform:uppercase}
   .os-shop-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
@@ -12085,9 +12100,39 @@ window.crShare = function (o) {
         <!-- v0.9.3 / wallet picker — Wallet connect on the splash menubar. Same
              picker as the in-game crBarConnect; /solana-connect is one option. -->
         <div class="menu" id="crMenuConnect" title="Connect a Solana wallet — required to load Profile / Maps / Workbench data">Connect</div>
+        <!-- v1.0.660 — Control Center: quick-access menubar popover for Theme,
+             Apps on Desktop/Dock, and Notifications — a faster surface than
+             opening Settings for a one-off glance/change. Reuses the exact
+             same state as the Settings · Game Control Center panel (v1.0.658,
+             crApplyTheme/crAppsLoc) and the Settings · Notifications log
+             (crNotifLog, v1.0.651) — single source of truth either way. -->
+        <div class="menu" id="crMenuCC" title="Control Center">⌃</div>
         <div class="spacer" style="flex:1"></div>
         <div class="title" style="font-size:11px;color:#3a3a36">ChartRunner<span class="c"></span>OS</div>
         <div class="clock" id="crClock">--:--</div>
+      </div>
+
+      <!-- v1.0.660 — Control Center popover. Sits above the desktop, not inside
+           any .os-window, so it can float over everything the menubar button
+           itself sits above. Reuses the .cr-cc-* classes from the Settings ·
+           Game Control Center panel (v1.0.658) for visual consistency. -->
+      <div class="crCCPop" id="crCCPop">
+        <div class="cr-cc-lbl" style="margin-top:0">Theme</div>
+        <div class="cr-cc-pillrow" id="crCCThemeChips">
+          <button type="button" class="crCCThemeChip cr-cc-pill" data-theme-pick="platinum">Platinum</button>
+          <button type="button" class="crCCThemeChip cr-cc-pill" data-theme-pick="mono">Monochrome</button>
+          <button type="button" class="crCCThemeChip cr-cc-pill" data-theme-pick="bw">Black &amp; White</button>
+        </div>
+        <div class="cr-cc-lbl" style="margin-top:12px">Apps</div>
+        <button type="button" id="crCCAppsLocSw" role="switch" aria-checked="false" title="Switch app launchers between desktop icons and the dock" class="cr-cc-row" style="width:100%;cursor:pointer;appearance:none;font:inherit;color:inherit;text-align:left">
+          <span id="crCCAppsLocLbl">Apps on Desktop</span>
+          <span class="cr-cc-switch" id="crCCAppsLocSwUI"><span class="cr-cc-knob"></span></span>
+        </button>
+        <div class="cr-cc-lbl" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;cursor:default">
+          <span>Notifications</span>
+          <button type="button" id="crCCNotifClear" style="appearance:none;border:0;background:transparent;color:var(--accent);font:700 9px ui-monospace,Menlo,monospace;letter-spacing:.4px;text-transform:uppercase;cursor:pointer;padding:0">Clear</button>
+        </div>
+        <div id="crCCNotifList" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto"></div>
       </div>
 
       <!-- v1.0.368 — Persistent desktop COACH invader. Always on the desktop at
@@ -15607,7 +15652,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.659",
+  VERSION: "1.0.660",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -52886,6 +52931,8 @@ window.crNotifLog = (function(){
     l.unshift({ t: Date.now(), text: String(text || ''), kind: kind || 'info' });
     save(l);
     try { if(typeof _crSetRenderNotif === 'function') _crSetRenderNotif(); } catch(_){}
+    // v1.0.660 — also keep the Control Center popover's list current if it's open.
+    try { if(typeof _crCCRenderNotifs === 'function') _crCCRenderNotifs(); } catch(_){}
   }
   function clear(){ save([]); try { if(typeof _crSetRenderNotif === 'function') _crSetRenderNotif(); } catch(_){} }
   return { add: add, list: list, clear: clear };
@@ -52956,6 +53003,92 @@ function _crSetRenderTheme(){
     btn.classList.toggle('on', btn.getAttribute('data-theme-pick') === cur);
   });
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.0.660 — Control Center: menubar popover (Theme / Apps / Notifications).
+// A faster surface for the exact same state the Settings · Game panel
+// (v1.0.658) and Settings · Notifications log (crNotifLog, v1.0.651) already
+// own — no parallel store anywhere in here, every section just reads/writes
+// through the same functions Settings uses (crApplyTheme, crAppsLoc,
+// crNotifLog), so the two surfaces can never drift out of sync.
+// ═══════════════════════════════════════════════════════════════════════════
+function _crCCRenderTheme(){
+  let cur = 'platinum';
+  try { cur = document.getElementById('splash').getAttribute('data-theme') || 'platinum'; } catch(_){}
+  document.querySelectorAll('.crCCThemeChip').forEach(btn => {
+    btn.classList.toggle('on', btn.getAttribute('data-theme-pick') === cur);
+  });
+}
+function _crCCRenderAppsLoc(){
+  const sw = document.getElementById('crCCAppsLocSw');
+  const lbl = document.getElementById('crCCAppsLocLbl');
+  const mode = (window.crAppsLoc ? crAppsLoc.get() : 'desktop');
+  const on = mode === 'dock';
+  if(sw) sw.setAttribute('aria-checked', on ? 'true' : 'false');
+  if(lbl) lbl.textContent = on ? 'Apps in Dock' : 'Apps on Desktop';
+}
+function _crCCRenderNotifs(){
+  const host = document.getElementById('crCCNotifList');
+  if(!host) return;
+  const pop = document.getElementById('crCCPop');
+  if(!pop || !pop.classList.contains('on')) return; // skip work while closed
+  const items = (window.crNotifLog ? crNotifLog.list() : []).slice(0, 12);
+  if(!items.length){ host.innerHTML = '<div class="crCCNoteEmpty">No notifications yet.</div>'; return; }
+  host.innerHTML = '';
+  items.forEach(it => {
+    const row = document.createElement('div'); row.className = 'crCCNoteRow';
+    const txt = document.createElement('span'); txt.className = 'crCCNoteTxt'; txt.textContent = it.text;
+    const age = document.createElement('span'); age.className = 'crCCNoteAge';
+    age.textContent = (typeof _crSetFmtAgo === 'function') ? _crSetFmtAgo(it.t) : '';
+    row.appendChild(txt); row.appendChild(age);
+    host.appendChild(row);
+  });
+}
+function _crCCRender(){
+  try { _crCCRenderTheme(); } catch(_){}
+  try { _crCCRenderAppsLoc(); } catch(_){}
+  try { _crCCRenderNotifs(); } catch(_){}
+}
+(function wireControlCenterPopover(){
+  const btn = document.getElementById('crMenuCC');
+  const pop = document.getElementById('crCCPop');
+  if(!btn || !pop) return;
+  function open(){ pop.classList.add('on'); _crCCRender(); }
+  function close(){ pop.classList.remove('on'); }
+  function toggle(e){ if(e){ e.stopPropagation(); } if(pop.classList.contains('on')) close(); else open(); }
+  btn.addEventListener('click', toggle);
+  document.addEventListener('click', e => {
+    if(!pop.classList.contains('on')) return;
+    if(pop.contains(e.target) || e.target === btn || btn.contains(e.target)) return;
+    close();
+  });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape') close(); });
+  document.querySelectorAll('.crCCThemeChip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const t = chip.getAttribute('data-theme-pick');
+      try { if(typeof window.crApplyTheme === 'function') window.crApplyTheme(t); } catch(_){}
+      _crCCRenderTheme();
+      try { _crSetRenderTheme(); } catch(_){} // keep Settings' pills in sync too, if open
+    });
+  });
+  const appsSw = document.getElementById('crCCAppsLocSw');
+  if(appsSw) appsSw.addEventListener('click', e => {
+    e.preventDefault();
+    try {
+      const next = (window.crAppsLoc && crAppsLoc.get() === 'dock') ? 'desktop' : 'dock';
+      if(window.crAppsLoc) crAppsLoc.set(next);
+      _crCCRenderAppsLoc();
+      try { if(typeof _crSetRenderAppsLoc === 'function') _crSetRenderAppsLoc(); } catch(_){} // Settings switch too
+      try { if(typeof syncDock === 'function') syncDock(); } catch(_){}
+      try { if(window.crNotifLog) crNotifLog.add('App launchers: ' + (next === 'dock' ? 'Dock only' : 'Desktop')); } catch(_){}
+    } catch(_){}
+  });
+  const clearBtn = document.getElementById('crCCNotifClear');
+  if(clearBtn) clearBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    try { if(window.crNotifLog) crNotifLog.clear(); } catch(_){}
+    _crCCRenderNotifs();
+  });
+})();
 // v1.0.655 — Control Center: Apps on Desktop / Apps in Dock. window.crAppsLoc
 // so the boot-time apply (way below, alongside the theme persistence IIFE)
 // and the Settings switch share one source of truth instead of two copies
