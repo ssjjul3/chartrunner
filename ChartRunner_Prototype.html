@@ -73404,13 +73404,24 @@ function _crNotifyEnsurePanel(){
       if(!panel) return;
       var bar = document.getElementById('crTopBar');
       var top = 64;
-      if(bar && bar.offsetParent !== null){
+      // v1.0.740 — the toolbar is position:fixed, so offsetParent is ALWAYS null; the old
+      // `offsetParent !== null` gate meant this never tracked the bar and the console stayed
+      // stuck at 64px, leaving a gap when the toolbar folds/hides
+      // (.crChrome.top.hide = translateY(-100%)). getBoundingClientRect already reflects the
+      // transform, so use it directly (height 0 = display:none → keep the fallback).
+      if(bar){
         var r = bar.getBoundingClientRect();
-        if(r.height > 0) top = Math.round(r.bottom + GAP);
+        if(r.height > 0){ top = Math.round(r.bottom + GAP); }
       }
       panel.style.top = top + 'px';
     } catch(_){}
   }
+  // v1.0.740 — track the toolbar PER FRAME for a short window (covers the 0.35s fold transition)
+  // so the console rides the fold smoothly instead of snapping after it settles.
+  var _followUntil = 0, _followRaf = 0;
+  function _now(){ try { return performance.now(); } catch(_){ return Date.now(); } }
+  function _loop(){ place(); if(_now() < _followUntil){ _followRaf = requestAnimationFrame(_loop); } else { _followRaf = 0; } }
+  function followFor(ms){ _followUntil = _now() + (ms||480); if(!_followRaf){ _followRaf = requestAnimationFrame(_loop); } }
   var booted = false;
   function boot(){
     if(booted){ place(); return; }
@@ -73421,9 +73432,12 @@ function _crNotifyEnsurePanel(){
     try {
       var bar = document.getElementById('crTopBar');
       if(bar && typeof ResizeObserver !== 'undefined'){ new ResizeObserver(place).observe(bar); }
+      // v1.0.740 — the fold is a transform/class toggle (not a size change), so ResizeObserver
+      // misses it. Watch class/style mutations then follow per-frame through the fold transition.
+      if(bar && typeof MutationObserver !== 'undefined'){ new MutationObserver(function(){ followFor(480); }).observe(bar, { attributes:true, attributeFilter:['class','style'] }); }
     } catch(_){}
     // Cheap safety re-place: catches toolbar show/hide + late layout shifts.
-    try { setInterval(place, 500); } catch(_){}
+    try { setInterval(place, 250); } catch(_){}
   }
   window._crNotifyStick = place;
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
