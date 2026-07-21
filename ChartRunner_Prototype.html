@@ -12450,13 +12450,14 @@ window.crShare = function (o) {
              Maps/Journal/Settings — body.cr-guest hides it). data-prog="walletapp"
              (NOT "wallet" — that id is Profile's own icon, see above). -->
         <button class="os-icon" data-prog="walletapp" title="Wallet — multi-wallet, broker">
-          <div class="ico"><svg class="cr-svg-ico" style="--accent:#ffd166;--accent2:#9b8cff" viewBox="0 0 32 32" aria-hidden="true">
-            <!-- folded wallet with flap + coin -->
-            <path class="a" d="M4 11 q0-4 4-4 h16 q4 0 4 4 v12 q0 4-4 4 H8 q-4 0-4-4 z" opacity=".22"/>
-            <path d="M4 11 q0-4 4-4 h16 q4 0 4 4 v12 q0 4-4 4 H8 q-4 0-4-4 z" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/>
-            <path class="l" d="M4 13 h24" stroke-width="1.2" opacity=".5"/>
-            <circle class="b" cx="23" cy="19" r="2.6"/>
-            <path d="M9 7.5 L20 3" stroke="var(--accent2)" stroke-width="1.4" stroke-linecap="round" opacity=".7"/>
+          <div class="ico"><svg class="cr-svg-ico" style="--accent:#3ddc84;--accent2:#3ddc84" viewBox="0 0 32 32" aria-hidden="true">
+            <!-- v1.0.670 — simple credit-card glyph (rounded card + stripe + dot),
+                 matches Julian's reference Wallet icon (blue badge is the desktop's
+                 existing .selected treatment; only the glyph art changes here). -->
+            <rect class="a" x="4" y="8" width="24" height="17" rx="4" opacity=".2"/>
+            <rect x="4" y="8" width="24" height="17" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
+            <path class="l" d="M4 14 h24" stroke-width="1.8" opacity=".9"/>
+            <circle class="b" cx="10" cy="20" r="2.3"/>
           </svg></div>
           <div class="lbl">Wallet</div>
           <div class="kbd">Multi · Wallets</div>
@@ -15739,7 +15740,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.669",
+  VERSION: "1.0.670",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -16509,6 +16510,300 @@ window.crWallet = (function(){
            canSign: canSign, signMessage: signMessage,
            connect: connect, openWalletPicker: openWalletPicker, selectRunnerWallet: selectRunnerWallet,
            selectBrowserWallet: selectBrowserWallet, disconnect: disconnect, setConnected: setConnected, on: on };
+})();
+
+/* =========================================================================
+ * crAccount — real ChartRunner account layer (v1.0.670).
+ *
+ * Backs the "Create your ChartRunner account" gate with Supabase Auth
+ * (email/password) against the live ChartRunner Supabase project. Guest and
+ * wallet-connect stay on their existing, already-working paths — this module
+ * only adds a THIRD path (email account) plus a modal that presents all
+ * three together, matching Julian's reference design.
+ *
+ * Google / Apple sign-in are NOT wired: turning those on needs a Google/
+ * Apple developer account + OAuth client secret registered in the Supabase
+ * Auth -> Providers panel by the project owner -- that is a credential this
+ * build cannot create or hold. Until then their buttons are honest
+ * "not connected yet" placeholders (toast, no fake success). Email + guest +
+ * wallet are fully real.
+ *
+ * On sign-in, pulls the account's public.profiles row (RLS-scoped to
+ * auth.uid()) and -- only if the browser has no local runner handle yet --
+ * applies its runner_name via window.crRunnerName.set(). crRunnerName.set is
+ * wrapped once so any LATER local rename also best-effort pushes back to the
+ * cloud profile while signed in (never blocks the local edit on failure).
+ *
+ * window.crAccount = { open, close, isSignedIn, email, signOut }
+ * =======================================================================*/
+window.crAccount = (function(){
+  var SUPABASE_URL = 'https://gjaaxqnqohseyesctbcd.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_JcwYmWfxSbBGIbLHxJmSpQ_5SAl-LfF';
+  var SDK_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+
+  var _sdkPromise = null;
+  var _client = null;
+  var _session = null;
+  var _mode = 'signup'; // 'signup' | 'signin'
+  var _nameHookDone = false;
+
+  function _loadSdk(){
+    if(_sdkPromise) return _sdkPromise;
+    _sdkPromise = new Promise(function(resolve){
+      if(window.supabase && window.supabase.createClient){ resolve(true); return; }
+      var el = document.createElement('script');
+      el.src = SDK_URL;
+      el.onload = function(){ resolve(!!(window.supabase && window.supabase.createClient)); };
+      el.onerror = function(){ resolve(false); };
+      document.head.appendChild(el);
+    });
+    return _sdkPromise;
+  }
+  async function _clientAsync(){
+    if(_client) return _client;
+    var ok = await _loadSdk();
+    if(!ok) return null;
+    try { _client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch(_){ _client = null; }
+    return _client;
+  }
+
+  function isSignedIn(){ return !!(_session && _session.user); }
+  function email(){ return (_session && _session.user && _session.user.email) || ''; }
+  function userId(){ return (_session && _session.user && _session.user.id) || ''; }
+
+  function _hookRunnerName(){
+    if(_nameHookDone) return;
+    _nameHookDone = true;
+    try {
+      var rn = window.crRunnerName;
+      var orig = rn && rn.set;
+      if(typeof orig !== 'function') return;
+      rn.set = function(name){
+        var r = orig.apply(rn, arguments);
+        try { _pushName(name); } catch(_){}
+        return r;
+      };
+    } catch(_){}
+  }
+  async function _pushName(name){
+    if(!isSignedIn() || !name) return;
+    var c = await _clientAsync(); if(!c) return;
+    try {
+      await c.from('profiles').update({ runner_name: String(name).slice(0, 32), updated_at: new Date().toISOString() }).eq('id', userId());
+    } catch(_){}
+  }
+  async function _pullProfile(){
+    var c = await _clientAsync(); if(!c || !isSignedIn()) return;
+    try {
+      var res = await c.from('profiles').select('runner_name').eq('id', userId()).maybeSingle();
+      var name = res && res.data && res.data.runner_name;
+      if(name && window.crRunnerName && typeof window.crRunnerName.has === 'function' && !window.crRunnerName.has()){
+        window.crRunnerName.set(name);
+      }
+    } catch(_){}
+  }
+
+  async function _restore(){
+    var c = await _clientAsync(); if(!c) return;
+    try {
+      var res = await c.auth.getSession();
+      _session = (res && res.data && res.data.session) || null;
+    } catch(_){}
+    _hookRunnerName();
+    if(isSignedIn()) _pullProfile();
+    try {
+      c.auth.onAuthStateChange(function(_evt, sess){
+        _session = sess || null;
+        if(isSignedIn()) _pullProfile();
+      });
+    } catch(_){}
+  }
+
+  async function signUp(em, pass){
+    var c = await _clientAsync();
+    if(!c) return { error: 'Account service unavailable -- check your connection.' };
+    try {
+      var res = await c.auth.signUp({ email: em, password: pass });
+      if(res.error) return { error: res.error.message };
+      _session = (res.data && res.data.session) || null;
+      if(!_session) return { needsConfirm: true };
+      return { ok: true };
+    } catch(err){ return { error: (err && err.message) || 'Sign-up failed.' }; }
+  }
+  async function signIn(em, pass){
+    var c = await _clientAsync();
+    if(!c) return { error: 'Account service unavailable -- check your connection.' };
+    try {
+      var res = await c.auth.signInWithPassword({ email: em, password: pass });
+      if(res.error) return { error: res.error.message };
+      _session = (res.data && res.data.session) || null;
+      return { ok: true };
+    } catch(err){ return { error: (err && err.message) || 'Sign-in failed.' }; }
+  }
+  async function signOut(){
+    var c = await _clientAsync(); if(!c) return;
+    try { await c.auth.signOut(); } catch(_){}
+    _session = null;
+  }
+
+  function _css(){
+    if(document.getElementById('crAccountCss')) return;
+    var css = ''
+      + '#crAccountModal{position:fixed;inset:0;z-index:100260;display:none;align-items:center;justify-content:center;background:rgba(10,14,20,.6);padding:18px}'
+      + '#crAccountModal.on{display:flex}'
+      + '#crAccountModal .acCard{position:relative;width:min(380px,100%);background:#fff;color:#0e1116;border-radius:18px;box-shadow:0 30px 90px rgba(0,0,0,.5);padding:28px 26px 22px;font:14px/1.4 system-ui,-apple-system,sans-serif;text-align:center}'
+      + '#crAccountModal .acClose{position:absolute;top:12px;right:12px;width:26px;height:26px;border:none;border-radius:999px;background:rgba(0,0,0,.06);color:#666;font-size:13px;cursor:pointer}'
+      + '#crAccountModal .acClose:hover{background:rgba(0,0,0,.12)}'
+      + '#crAccountModal .acLogo{width:40px;height:40px;margin:0 auto 12px;border-radius:11px;background:linear-gradient(160deg,#14F195,#0a8d4a);display:flex;align-items:center;justify-content:center;color:#06170f;font:800 18px ui-monospace,Menlo,monospace}'
+      + '#crAccountModal h2{margin:0 0 8px;font-size:18px;font-weight:800;letter-spacing:-.2px}'
+      + '#crAccountModal .acSub{margin:0 0 20px;color:#666;font-size:12.5px;line-height:1.5}'
+      + '#crAccountModal .acOauth{display:grid;gap:9px;margin-bottom:16px}'
+      + '#crAccountModal .acOauthBtn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:10px 12px;border:1px solid #dcdce2;border-radius:10px;background:#fff;color:#1a1a1f;font:600 13px inherit;cursor:pointer}'
+      + '#crAccountModal .acOauthBtn:hover{background:#f5f5f7}'
+      + '#crAccountModal .acIco{width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}'
+      + '#crAccountModal .acDivider{display:flex;align-items:center;gap:10px;color:#aaa;font-size:10.5px;letter-spacing:.6px;margin:4px 0 16px}'
+      + '#crAccountModal .acDivider::before,#crAccountModal .acDivider::after{content:"";flex:1;height:1px;background:#e6e6ea}'
+      + '#crAccountModal .acEmailCta{width:100%;padding:11px 12px;border:none;border-radius:10px;background:#14F195;color:#06170f;font:800 13px inherit;cursor:pointer}'
+      + '#crAccountModal .acEmailCta:hover{background:#1fffab}'
+      + '#crAccountModal .acEmailForm{display:grid;gap:8px;margin-top:10px;text-align:left}'
+      + '#crAccountModal .acEmailForm input{width:100%;box-sizing:border-box;padding:10px 11px;border:1px solid #dcdce2;border-radius:9px;font:13px inherit;background:#fafafc;color:#0e1116}'
+      + '#crAccountModal .acEmailForm input:focus{outline:none;border-color:#14F195}'
+      + '#crAccountModal .acEmailSubmit{width:100%;padding:10px 12px;border:none;border-radius:9px;background:#0e1116;color:#fff;font:800 12.5px inherit;cursor:pointer}'
+      + '#crAccountModal .acEmailSubmit[disabled]{opacity:.5;cursor:default}'
+      + '#crAccountModal .acMsg{font-size:11.5px;line-height:1.4;min-height:14px;text-align:center}'
+      + '#crAccountModal .acMsg.err{color:#d13a3a}'
+      + '#crAccountModal .acMsg.ok{color:#0a8d4a}'
+      + '#crAccountModal .acWalletBtn{width:100%;margin-top:14px;padding:10px 12px;border:1px dashed #cfcfd6;border-radius:10px;background:transparent;color:#444;font:600 12.5px inherit;cursor:pointer}'
+      + '#crAccountModal .acWalletBtn:hover{border-color:#14F195;color:#0a8d4a}'
+      + '#crAccountModal .acFoot{margin-top:16px;font-size:11.5px;color:#888}'
+      + '#crAccountModal .acFoot a{color:#0a8d4a;font-weight:700;text-decoration:none;cursor:pointer}'
+      + '#crAccountModal .acFoot a:hover{text-decoration:underline}';
+    var style = document.createElement('style');
+    style.id = 'crAccountCss';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  function _ensure(){
+    if(document.getElementById('crAccountModal')) return;
+    _css();
+    var m = document.createElement('div');
+    m.id = 'crAccountModal';
+    m.setAttribute('aria-hidden', 'true');
+    m.innerHTML = ''
+      + '<div class="acCard" role="dialog" aria-labelledby="crAccountTitle">'
+        + '<button type="button" class="acClose" data-ac="close" aria-label="Close">✕</button>'
+        + '<div class="acLogo">◆</div>'
+        + '<h2 id="crAccountTitle">Create your ChartRunner account</h2>'
+        + '<p class="acSub">Play with an email first -- add wallets later. Your progress, API keys and bots live in one account.</p>'
+        + '<div class="acOauth">'
+          + '<button type="button" class="acOauthBtn" data-ac="google"><span class="acIco">G</span>Continue with Google</button>'
+          + '<button type="button" class="acOauthBtn" data-ac="apple"><span class="acIco"></span>Continue with Apple</button>'
+        + '</div>'
+        + '<div class="acDivider"><span>OR</span></div>'
+        + '<button type="button" class="acEmailCta" id="crAcEmailCta">Continue with email</button>'
+        + '<div class="acEmailForm" id="crAcEmailForm" style="display:none">'
+          + '<input type="email" id="crAcEmail" placeholder="you@example.com" autocomplete="email">'
+          + '<input type="password" id="crAcPass" placeholder="Password (min 6 characters)" autocomplete="current-password">'
+          + '<button type="button" class="acEmailSubmit" id="crAcSubmit">Create account</button>'
+          + '<div class="acMsg" id="crAcMsg"></div>'
+        + '</div>'
+        + '<button type="button" class="acWalletBtn" data-ac="wallet">Connect a wallet instead</button>'
+        + '<div class="acFoot" id="crAcFoot">Already have an account? <a data-ac="toggle">Sign in</a> · <a data-ac="guest">Continue as guest</a></div>'
+      + '</div>';
+    document.body.appendChild(m);
+    m.addEventListener('click', function(e){
+      if(e.target === m){ close(); return; }
+      var el = e.target && e.target.closest ? e.target.closest('[data-ac]') : null;
+      if(!el) return;
+      var act = el.getAttribute('data-ac');
+      if(act === 'close') close();
+      else if(act === 'guest') close();
+      else if(act === 'wallet'){ close(); try { window.crWallet && crWallet.openWalletPicker && crWallet.openWalletPicker(); } catch(_){} }
+      else if(act === 'toggle'){ _mode = _mode === 'signup' ? 'signin' : 'signup'; _render(); }
+      else if(act === 'google' || act === 'apple'){ try { toast(el.textContent.trim() + ' -- not connected yet. Use email or a wallet for now.'); } catch(_){} }
+    });
+    var cta = m.querySelector('#crAcEmailCta');
+    cta.addEventListener('click', function(){
+      cta.style.display = 'none';
+      m.querySelector('#crAcEmailForm').style.display = 'grid';
+      var inp = m.querySelector('#crAcEmail');
+      if(inp) setTimeout(function(){ inp.focus(); }, 30);
+    });
+    var submitBtn = m.querySelector('#crAcSubmit');
+    submitBtn.addEventListener('click', _submit);
+    Array.prototype.forEach.call(m.querySelectorAll('#crAcEmail,#crAcPass'), function(inp){
+      inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') _submit(); });
+    });
+  }
+
+  function _msg(text, kind){
+    var el = document.getElementById('crAcMsg');
+    if(!el) return;
+    el.textContent = text || '';
+    el.className = 'acMsg' + (kind ? ' ' + kind : '');
+  }
+
+  async function _submit(){
+    var em = (document.getElementById('crAcEmail') || {}).value || '';
+    var pass = (document.getElementById('crAcPass') || {}).value || '';
+    em = em.trim();
+    if(!em || !/.+@.+\..+/.test(em)){ _msg('Enter a valid email address.', 'err'); return; }
+    if(!pass || pass.length < 6){ _msg('Password needs at least 6 characters.', 'err'); return; }
+    var btn = document.getElementById('crAcSubmit');
+    if(btn){ btn.setAttribute('disabled', '1'); btn.textContent = 'Please wait...'; }
+    _msg('');
+    var res = _mode === 'signup' ? await signUp(em, pass) : await signIn(em, pass);
+    if(btn){ btn.removeAttribute('disabled'); btn.textContent = _mode === 'signup' ? 'Create account' : 'Sign in'; }
+    if(res.error){ _msg(res.error, 'err'); return; }
+    if(res.needsConfirm){ _msg('Check your inbox -- confirm your email, then sign in.', 'ok'); _mode = 'signin'; _render(); return; }
+    _msg('Signed in as ' + em, 'ok');
+    try { toast('Signed in as ' + em); } catch(_){}
+    setTimeout(close, 700);
+  }
+
+  function _render(){
+    var title = document.getElementById('crAccountTitle');
+    var sub = document.querySelector('#crAccountModal .acSub');
+    var submit = document.getElementById('crAcSubmit');
+    var foot = document.getElementById('crAcFoot');
+    if(_mode === 'signin'){
+      if(title) title.textContent = 'Sign in to ChartRunner';
+      if(sub) sub.textContent = 'Welcome back -- your progress, API keys and bots are waiting.';
+      if(submit) submit.textContent = 'Sign in';
+      if(foot) foot.innerHTML = 'New here? <a data-ac="toggle">Create an account</a> · <a data-ac="guest">Continue as guest</a>';
+    } else {
+      if(title) title.textContent = 'Create your ChartRunner account';
+      if(sub) sub.textContent = 'Play with an email first -- add wallets later. Your progress, API keys and bots live in one account.';
+      if(submit) submit.textContent = 'Create account';
+      if(foot) foot.innerHTML = 'Already have an account? <a data-ac="toggle">Sign in</a> · <a data-ac="guest">Continue as guest</a>';
+    }
+    _msg('');
+  }
+
+  function open(mode){
+    _ensure();
+    if(mode === 'signin' || mode === 'signup') _mode = mode;
+    _render();
+    var cta = document.getElementById('crAcEmailCta');
+    var form = document.getElementById('crAcEmailForm');
+    if(cta) cta.style.display = '';
+    if(form) form.style.display = 'none';
+    var m = document.getElementById('crAccountModal');
+    if(!m) return;
+    m.classList.add('on');
+    m.setAttribute('aria-hidden', 'false');
+  }
+  function close(){
+    var m = document.getElementById('crAccountModal');
+    if(!m) return;
+    m.classList.remove('on');
+    m.setAttribute('aria-hidden', 'true');
+  }
+
+  try { window.addEventListener('load', function(){ _restore(); }); } catch(_){}
+
+  return { open: open, close: close, isSignedIn: isSignedIn, email: email, signOut: signOut };
 })();
 
 /* =========================================================================
@@ -40305,7 +40600,7 @@ window.crRoom = (function(){
       liteJoin.addEventListener('click', liteGo);
     }
     if(liteStart) liteStart.addEventListener('click', function(){ doCreate({}); });
-    if(liteLock) liteLock.addEventListener('click', function(){ try { if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){} });
+    if(liteLock) liteLock.addEventListener('click', function(){ try { if(window.crAccount && crAccount.open) crAccount.open(); else if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){} });
   } catch(_){}
 })();
 
@@ -76874,6 +77169,8 @@ function log(msg){
 
   function _onWalletPillClick(){
     if(typeof crWallet === 'undefined') return;
+    if(crWallet.isConnected()){ crWallet.connect(); return; }
+    try { if(window.crAccount && crAccount.open){ crAccount.open(); return; } } catch(_){}
     crWallet.connect();
   }
   bind('crBarConnect', _onWalletPillClick);
