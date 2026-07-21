@@ -15753,7 +15753,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.676",
+  VERSION: "1.0.677",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -16734,7 +16734,25 @@ window.crAccount = (function(){
       else if(act === 'guest') close();
       else if(act === 'wallet'){ close(); try { window.crWallet && crWallet.openWalletPicker && crWallet.openWalletPicker(); } catch(_){} }
       else if(act === 'toggle'){ _mode = _mode === 'signup' ? 'signin' : 'signup'; _render(); }
-      else if(act === 'google' || act === 'apple'){ try { toast(el.textContent.trim() + ' -- not connected yet. Use email or a wallet for now.'); } catch(_){} }
+      else if(act === 'google'){
+        // v1.0.677 -- real Google sign-in via Supabase OAuth. The Google Cloud
+        // side (Auth Platform 'ChartRunner', web client, redirect URI
+        // <SUPABASE_URL>/auth/v1/callback, published to production) was set up
+        // 2026-07-21; Supabase Auth->Providers->Google holds the client
+        // credentials. redirectTo brings the browser back to /play after the
+        // Google consent screen; onAuthStateChange in _init() picks up the
+        // returned session exactly like an email sign-in.
+        (async function(){
+          try {
+            var c = await _clientAsync();
+            if(!c){ try { toast('Google sign-in unavailable (offline?)'); } catch(_){} return; }
+            var dest = location.origin + location.pathname;
+            var r = await c.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: dest } });
+            if(r && r.error){ try { toast('Google sign-in failed: ' + (r.error.message || 'unknown error')); } catch(_){} }
+          } catch(e){ try { toast('Google sign-in failed'); } catch(_){} }
+        })();
+      }
+      else if(act === 'apple'){ try { toast(el.textContent.trim() + ' -- not connected yet. Use email or a wallet for now.'); } catch(_){} }
     });
     var cta = m.querySelector('#crAcEmailCta');
     cta.addEventListener('click', function(){
