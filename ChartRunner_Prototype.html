@@ -3174,6 +3174,37 @@ window.crShare = function (o) {
     border-radius:999px;background:#e6473f;color:#fff;font:700 8.5px/13px ui-monospace,Menlo,monospace;
     text-align:center;box-shadow:0 0 0 1.5px rgba(0,0,0,.15)}
   .crCCBadge.cr-hidden{display:none}
+  /* v1.0.664 — App-launcher dock (Apps in Dock mode). Ported from
+     ChartRunner_Prototype_UnlockedEcon .html's #crAppDock — the actual
+     colorful floating dock shown in the reference mockup, distinct from
+     the legacy #crOSDockFixed glyph strip (which stays hidden on the
+     desktop and is only ever shown mid-run). Built in JS by cloning the
+     live .os-icon SVGs, so it always matches the desktop icon art. */
+  #crAppDock{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:119;
+    display:none;gap:9px;align-items:center;height:68px;padding:9px 16px;max-width:min(94vw,1080px);
+    overflow-x:auto;overflow-y:visible;border-radius:22px;color:#1a1f2b;
+    background:linear-gradient(180deg,rgba(255,255,255,.70),rgba(232,235,236,.54));
+    border:.5px solid rgba(255,255,255,.74);
+    box-shadow:0 18px 48px rgba(0,0,0,.25),0 1px 0 rgba(255,255,255,.75) inset,0 0 0 .5px rgba(55,65,80,.22);
+    -webkit-backdrop-filter:blur(28px) saturate(1.45);backdrop-filter:blur(28px) saturate(1.45);
+    font:700 11px system-ui,-apple-system,sans-serif}
+  body.crSplashUp.cr-apps-in-dock #crAppDock{display:flex}
+  #crAppDock .dockBtn{appearance:none;-webkit-appearance:none;width:52px;height:52px;min-width:52px;
+    border-radius:15px;border:.5px solid rgba(85,88,96,.25);padding:0;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;color:#1a1f2b;
+    background:linear-gradient(180deg,rgba(255,255,255,.88),rgba(218,222,227,.70));
+    box-shadow:0 3px 10px rgba(0,0,0,.14),inset 0 1px 0 rgba(255,255,255,.76);
+    transition:translate .15s cubic-bezier(.23,1,.32,1),scale .15s cubic-bezier(.23,1,.32,1),box-shadow .14s ease,filter .14s ease;
+    position:relative}
+  #crAppDock .dockBtn:hover{translate:0 -7px;scale:1.09;filter:saturate(1.08);box-shadow:0 13px 24px rgba(0,0,0,.20),inset 0 1px 0 rgba(255,255,255,.84)}
+  #crAppDock .dockBtn:active{translate:0 -2px;scale:.98}
+  #crAppDock .dockBtn.cr-run::after{content:"";position:absolute;left:50%;bottom:-6px;width:5px;height:5px;border-radius:50%;background:#1a1f2b;transform:translateX(-50%)}
+  #crAppDock .ico{width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:transparent;box-shadow:none}
+  #crAppDock .ico svg,
+  #crAppDock .cr-svg-ico{width:34px;height:34px;display:block;filter:none}
+  @media (prefers-reduced-motion:reduce){
+    #crAppDock .dockBtn,#crAppDock .dockBtn:hover{transition:none;translate:0 0;scale:1}
+  }
   .crCCPop .cr-cc-lbl{color:#1a1f2b;opacity:.55;font-size:9px;letter-spacing:1.1px;text-transform:uppercase}
   .crCCPop .cr-cc-pill{padding:6px 10px;font-size:10.5px;border:none;background:rgba(127,127,127,.16);color:#1a1f2b}
   .crCCPop .cr-cc-pill.on{background:#1a1f2b;border-color:transparent;color:#fff}
@@ -12110,6 +12141,9 @@ window.crShare = function (o) {
            the open windows so dragged Map/Chat/Terminal previews persist
            on the desktop background. Populated by JS from localStorage. -->
       <div id="crWidgetLayer"></div>
+      <!-- v1.0.664 — App-launcher dock host. Populated by _crBuildAppDock()
+           when Apps-in-Dock mode is on; empty/hidden otherwise. -->
+      <div class="cr-app-dock" id="crAppDock" aria-hidden="true"></div>
       <!-- v0.8L — Mac OS 9 / Platinum-style Apple menubar.
            Apple logo, app menus, and right-side clock. The static "double-click"
            hint stays as a hidden span for legacy text-search; the visible menus
@@ -15705,7 +15739,7 @@ try{ document.body.classList.add('crSplashUp'); }catch(_){}
 
 // ====================== 1. CONFIG & CONSTANTS ======================
 const CONFIG = {
-  VERSION: "1.0.663",
+  VERSION: "1.0.664",
   // --- Physics (handover skeleton + current game tuning) ---
   GRAVITY: 0.42,          // legacy px/frame style; real game uses 380+ px/s² via dt
   FRICTION: 0.88,
@@ -53166,11 +53200,69 @@ try { _crCCRenderBadge(); } catch(_){} // initial paint at boot, popover closed 
 // so the boot-time apply (way below, alongside the theme persistence IIFE)
 // and the Settings switch share one source of truth instead of two copies
 // of the same localStorage read/write.
+// v1.0.664 — App-launcher dock (Apps in Dock mode). Clones each visible
+// desktop .os-icon's .ico (the colorful SVG) into a dockBtn, so the dock
+// always mirrors the real desktop icon set — including guest gating and
+// archived apps (maps/journal/missions), which are hidden via stylesheet
+// rules rather than inline style, hence the getComputedStyle check below.
+function _crAppDockLabel(ic){
+  try {
+    const lbl = ic.querySelector('.lbl');
+    const txt = (lbl && (lbl.textContent || '').trim()) || (ic.getAttribute('title') || 'App').split('—')[0].split('·')[0].trim();
+    return txt || 'App';
+  } catch(_){ return 'App'; }
+}
+function _crSyncAppDockState(){
+  try {
+    document.querySelectorAll('#crAppDock .dockBtn[data-prog]').forEach(b => {
+      const prog = b.getAttribute('data-prog');
+      const w = document.getElementById('win-' + prog);
+      b.classList.toggle('cr-run', !!(w && w.classList.contains('on')));
+    });
+  } catch(_){}
+}
+function _crBuildAppDock(){
+  try {
+    const dock = document.getElementById('crAppDock');
+    const grid = document.getElementById('osGrid');
+    if(!dock || !grid) return;
+    const icons = Array.prototype.slice.call(grid.querySelectorAll('.os-icon')).filter(ic => {
+      if(ic.getAttribute('aria-hidden') === 'true') return false;
+      try { if(window.getComputedStyle(ic).display === 'none') return false; } catch(_){}
+      return !!(ic.querySelector('.ico') || (ic.textContent || '').trim());
+    });
+    const frag = document.createDocumentFragment();
+    icons.forEach(ic => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'dockBtn cr-appdock-btn';
+      const prog = ic.getAttribute('data-prog') || '';
+      if(prog) b.setAttribute('data-prog', prog);
+      const label = _crAppDockLabel(ic);
+      b.title = label;
+      b.setAttribute('aria-label', label);
+      const ico = ic.querySelector('.ico');
+      if(ico) b.appendChild(ico.cloneNode(true));
+      else b.textContent = label.slice(0, 1).toUpperCase();
+      b.addEventListener('click', ev => {
+        ev.preventDefault(); ev.stopPropagation();
+        try { ic.click(); } catch(_){}
+        _crSyncAppDockState();
+      });
+      frag.appendChild(b);
+    });
+    dock.innerHTML = '';
+    dock.appendChild(frag);
+    dock.setAttribute('aria-hidden', (window.crAppsLoc && crAppsLoc.get() === 'dock') ? 'false' : 'true');
+    _crSyncAppDockState();
+  } catch(_){}
+}
 window.crAppsLoc = (function(){
   const KEY = 'cr_apps_location_v1';
   function get(){ try { return localStorage.getItem(KEY) === 'dock' ? 'dock' : 'desktop'; } catch(_){ return 'desktop'; } }
   function apply(mode){
     try { document.body.classList.toggle('cr-apps-in-dock', mode === 'dock'); } catch(_){}
+    try { if(typeof _crBuildAppDock === 'function') _crBuildAppDock(); } catch(_){}
   }
   function set(mode){
     mode = (mode === 'dock') ? 'dock' : 'desktop';
@@ -75350,6 +75442,9 @@ function log(msg){
   function crApplyAccessGates(){
     const guest = crGuest();
     try { document.body.classList.toggle('cr-guest', guest); } catch(_){}
+    // v1.0.664 — keep the app-launcher dock in sync with whichever icons
+    // just became visible/hidden (guest gating flips both ways here).
+    try { if(window.crAppsLoc && crAppsLoc.get() === 'dock' && typeof _crBuildAppDock === 'function') _crBuildAppDock(); } catch(_){}
     // v1.0.588 — repaint the campaign grid so Act II wallet-locked chapter cards flip
     // (🔒 Connect → open) the instant a wallet connects / disconnects.
     try { if(window._crPaintCampaignStars) window._crPaintCampaignStars(); } catch(_){}
