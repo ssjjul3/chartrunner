@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.648
-     LAST UPDATED:    2026-07-22  ·  v1.0.648: ROOMS LIVE (P0, ?rooms=1) — RoomsClient IIFE wires the guest START/JOIN A ROOM buttons to the standalone Rooms server (wss://rooms.chartrunner.xyz): create/join, ~10 Hz state pump, peer ghost-runners painted via the chart's own render hook (crRoomsNet.render, mapped through sX()/priceToY()), a top-left room code + roster panel, and chat/error toasts. ADDITIVE + feature-flagged — without ?rooms=1 the default relay path (crRoom / relay.chartrunner.xyz) is byte-for-byte unchanged. Relay→rooms migration is a later server-side port.
+     CURRENT VERSION: v1.0.649
+     LAST UPDATED:    2026-07-22  ·  v1.0.649: ROOMS DEFAULT — the standalone Rooms server (wss://rooms.chartrunner.xyz) is now the DEFAULT multiplayer path for ALL entry points, not just the guest lite buttons. doCreate/doJoin delegate to crRoomsNet at the root, so the wizard, connected inline creator, lite buttons, maps-row, public-rooms browser and ?room= deep-links all land on the new server (server assigns the code, floated via cmOpen). The legacy crRoom/relay stack is QUIESCED (connect() no-ops) and reactivates only via the ?relay=1 escape hatch — the two systems can never hold sockets in parallel. Room types the simple server lacks (moderated/curated/on-chain) degrade to a normal room with an honest toast. No ?rooms=1 flag needed anymore.
+     PREV  ·  v1.0.648: ROOMS LIVE (P0, ?rooms=1) — RoomsClient IIFE wired the guest START/JOIN A ROOM buttons to wss://rooms.chartrunner.xyz: create/join, ~10 Hz state pump, peer ghost-runners via the chart's own render hook, room code + roster panel, chat/error toasts. Was additive + feature-flagged behind ?rooms=1.
      PREV  ·  v1.0.647: OS REINFORCE — liquid theme blur/ease tokens + COACH.llm spatial entrance (crCoachInLiquid) + prefers-reduced-motion guard (additive, scoped; no restyle)
      v1.0.646: ROOM P1 CLIENT — moderated/curated rooms (unlocks the MODERATED
      preset + adds CURATED; EARN ON-CHAIN stays P2). Per docs/ROOM-P1-ROOMCFG-SPEC.md, paired with chartrunner-relay
@@ -27274,6 +27275,7 @@ function crSyncChartUrl(){
     if(typeof game === 'undefined' || !game.running) return;
     if(game.campaignChapter) return;
     if(window.crRoom && typeof crRoom.active === 'function' && crRoom.active()) return;
+    if(window.crRoomsNet && crRoomsNet.active && crRoomsNet.active()) return;   // v1.0.649 — in a Rooms room: don't overwrite the ?room= deep-link
     try { var _ca = currentAssetObj(); if(_ca && _ca.pair) return; } catch(_){}   // synthetic pair has no addressable link
     if(location.hash && /[#&]m=/.test(location.hash)) return;   // active snapshot/map link
     var link = crChartLinkCurrent();
@@ -39745,7 +39747,13 @@ window.crRoom = (function(){
     _buildHostCfg(_hostNonce).then(function(bundle){ if(bundle) send({ t:'cfg', cfg:bundle.cfg, sig:bundle.sig, pubkey:bundle.pubkey }); });
   }
 
+  // v1.0.649 — the standalone Rooms server (crRoomsNet → wss://rooms.chartrunner.xyz)
+  // is now the DEFAULT multiplayer path. This legacy relay stack is quiesced: connect()
+  // no-ops unless the ?relay=1 escape hatch is present, so the two systems can never
+  // hold sockets in parallel. Reactivate for rollback / the later server-side port.
+  function _relayOptIn(){ try { return /(?:^|[?&])relay=1(?:&|$)/.test(location.search || ''); } catch(_){ return false; } }
   function connect(){
+    if(!_relayOptIn()) return;
     if(!params || typeof WebSocket==='undefined') return;
     // v1.0.639 — runtime join(): never let two sockets coexist (the boot timer and a
     // runtime join could otherwise race in the first ~1.4s). Detach before closing so
@@ -40134,7 +40142,7 @@ window.crRoom = (function(){
   if(params){ setTimeout(connect, 1400); }        // let auth + chart settle first
 
   var api = {
-    active:       function(){ return !!params; },
+    active:       function(){ return !!params && _relayOptIn(); },   // v1.0.649 — false while quiesced (default), so legacy room chrome stays off; crRoomsNet owns the UI
     params:       params,
     render:       render,
     sendPos:      sendPos,
@@ -40164,9 +40172,11 @@ window.crRoom = (function(){
 
 /* =========================================================================
  * RoomsClient + crRoomsNet — LIVE multiplayer against the standalone Rooms
- * server (wss://rooms.chartrunner.xyz). ADDITIVE and feature-flagged behind
- * ?rooms=1 — the default page behaviour (crRoom / relay.chartrunner.xyz) is
- * untouched. RoomsClient is pure transport (auto-reconnect + send queue);
+ * server (wss://rooms.chartrunner.xyz). As of v1.0.649 this is the DEFAULT
+ * multiplayer path: doCreate/doJoin delegate here for every entry point, and
+ * the legacy crRoom/relay stack is quiesced (only ?relay=1 revives it), so the
+ * two systems can never connect in parallel. RoomsClient is pure transport
+ * (auto-reconnect + send queue);
  * crRoomsNet is the thin wiring layer: it owns the ghost-runner OVERLAY DATA
  * plus a small room panel, but the CHART owns drawing — the main render loop
  * calls crRoomsNet.render(ctx,W,H) alongside crRoom.render (rendering and
@@ -40175,9 +40185,9 @@ window.crRoom = (function(){
  *   state{data} → broadcast state{playerId,data} · chat → chat{playerId,name,text}
  *   peer_joined / peer_left / error.
  * Origin-check server-side allows only https://chartrunner.xyz — local tests
- * against the live server are expected to fail. Migrating the relay presence
- * system onto this server is a later server-side port; until then this path
- * is opt-in via ?rooms=1.
+ * against the live server are expected to fail. Migrating the richer relay
+ * presence system (moderation, on-chain roomCfg) onto this server is a later
+ * server-side port; ?relay=1 temporarily revives the legacy stack for rollback.
  * =======================================================================*/
 const RoomsClient = (() => {
   const URL_WS = 'wss://rooms.chartrunner.xyz';
@@ -40202,16 +40212,25 @@ const RoomsClient = (() => {
     on(ev,fn){(handlers[ev]=handlers[ev]||[]).push(fn);return this;}};
 })();
 
-/* crRoomsNet — feature-flagged (?rooms=1) wiring for RoomsClient: buttons,
- * ~10 Hz state pump, ghost overlay data, and a small room/roster panel. */
+/* crRoomsNet — DEFAULT wiring for RoomsClient: create/join, ~10 Hz state pump,
+ * ghost overlay data, and a small room/roster panel. As of v1.0.649 this is the
+ * default multiplayer path for ALL entry points (wizard, inline creator, lite
+ * buttons, maps-row, public browser) — doCreate/doJoin delegate here at the
+ * root. The legacy crRoom/relay stack is quiesced (crRoom.connect() no-ops) and
+ * only reactivates via the ?relay=1 escape hatch, so the two systems can never
+ * connect in parallel. */
 window.crRoomsNet = (function(){
-  var FLAG = false;
-  try { FLAG = /(?:^|[?&])rooms=1(?:&|$)/.test(location.search || ''); } catch(_){}
+  // Enabled by default. ?relay=1 hands multiplayer back to the legacy crRoom
+  // relay stack (rollback + the later server-side port) and disables this one.
+  var RELAY_ESCAPE = false;
+  try { RELAY_ESCAPE = /(?:^|[?&])relay=1(?:&|$)/.test(location.search || ''); } catch(_){}
+  var ENABLED = !RELAY_ESCAPE;
 
   var inRoom = false, roomCode = '', myId = null, pumpTimer = null;
   var ghosts = new Map();          // playerId -> {name,wx,py,pnl,last}
   var roster = new Map();          // playerId -> {name}
   var GHOST_TTL_MS = 12000, GHOST_COL = '#7aa2ff';
+  var _pendCreate = null, _pendJoin = null, _createTO = null, _joinTO = null;   // one-shot UX callbacks + failsafe timers
 
   function myName(){
     try { var el = document.getElementById('crLpName'); var t = el && el.textContent ? el.textContent.trim() : ''; if(t) return t.slice(0,32); } catch(_){}
@@ -40245,7 +40264,7 @@ window.crRoomsNet = (function(){
     c.restore();
   }
   function render(c, W, H){
-    if(!FLAG || !inRoom || !ghosts.size) return;
+    if(!ENABLED || !inRoom || !ghosts.size) return;
     var now = Date.now();
     ghosts.forEach(function(g, id){
       if(now - g.last > GHOST_TTL_MS){ ghosts.delete(id); return; }
@@ -40259,7 +40278,7 @@ window.crRoomsNet = (function(){
   }
 
   // ── room panel (code chip + roster). Small fixed DOM card, top-left, shown
-  //    only while in a ?rooms=1 room. The code chip is click-to-copy. ──
+  //    only while in a room. The code chip is click-to-copy. ──
   var panel = null;
   function ensurePanel(){
     if(panel || typeof document==='undefined') return panel;
@@ -40284,7 +40303,7 @@ window.crRoomsNet = (function(){
       + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(nm) + (you ? ' <span style="color:#6a6f7a">(you)</span>' : '') + '</span></div>';
   }
   function paintPanel(){
-    if(!FLAG) return;
+    if(!ENABLED) return;
     var el = ensurePanel(); if(!el) return;
     if(!inRoom){ el.style.display = 'none'; return; }
     var rows = rosterRow(myName(), '#14f195', true);
@@ -40315,27 +40334,82 @@ window.crRoomsNet = (function(){
   function stopPump(){ if(pumpTimer){ clearInterval(pumpTimer); pumpTimer = null; } }
 
   function enterRoom(code, id){ roomCode = code || ''; myId = id || null; inRoom = true; roster.clear(); ghosts.clear(); paintPanel(); startPump(); }
+  // Tear down: leave the room, stop the pump, drop the socket, clear state + panel.
+  // Called on home-exit (default path owns its own socket, so crRoom.leave() alone
+  // no longer covers it now that the relay stack is quiesced).
+  function leaveRoom(){
+    try { RoomsClient.leave(); } catch(_){}
+    try { RoomsClient.disconnect(); } catch(_){}
+    stopPump();
+    if(_createTO){ clearTimeout(_createTO); _createTO = null; }
+    if(_joinTO){ clearTimeout(_joinTO); _joinTO = null; }
+    _pendCreate = null; _pendJoin = null;
+    inRoom = false; roomCode = ''; myId = null; roster.clear(); ghosts.clear();
+    paintPanel();
+  }
 
-  // ── event wiring (once, only under the flag) ──
-  if(FLAG){
+  // Failsafe: if the socket can't establish (origin mismatch / server down),
+  // RoomsClient emits only 'disconnected' and neither 'created'/'joined'/'error'
+  // ever arrives — without a timeout the wizard / Join button would hang forever
+  // (the legacy crRoom path had a 9s _joinGuard; this mirrors it).
+  var JOIN_TIMEOUT_MS = 9000;
+  function _clearCreate(){ if(_createTO){ clearTimeout(_createTO); _createTO = null; } }
+  function _clearJoin(){ if(_joinTO){ clearTimeout(_joinTO); _joinTO = null; } }
+  function _create(opts, cb){
+    if(!ENABLED) return;
+    opts = opts || {};
+    // The simple Rooms server has no moderated/curated/on-chain config yet —
+    // degrade to a plain room instead of hard-removing the option.
+    if(opts.mode === 'moderated' || opts.mode === 'curated') say('Moderated rooms are coming soon — starting a normal room');
+    else if(opts.pub) say('Public listing is coming soon — room created, share the code');
+    _pendCreate = (typeof cb === 'function') ? cb : null;
+    _clearCreate();
+    _createTO = setTimeout(function(){ _createTO = null; if(!inRoom){ _pendCreate = null; say('Couldn’t reach the room server — try again'); } }, JOIN_TIMEOUT_MS);
+    RoomsClient.create(myName());
+  }
+  function _join(code, cb){
+    if(!ENABLED){ if(cb) cb(false); return; }
+    var c = String(code || '').trim().toUpperCase();
+    if(!c){ say('Enter a room code'); if(cb) cb(false); return; }
+    _pendJoin = (typeof cb === 'function') ? cb : null;
+    _clearJoin();
+    _joinTO = setTimeout(function(){ _joinTO = null; if(!inRoom){ var j = _pendJoin; _pendJoin = null; say('Couldn’t reach the room server — try again'); if(j) j(false); } }, JOIN_TIMEOUT_MS);
+    RoomsClient.join(c, myName());
+  }
+
+  // ── event wiring (once; skipped entirely under the ?relay=1 escape hatch so
+  //    RoomsClient never connects while the legacy crRoom relay is in charge). ──
+  if(ENABLED){
     RoomsClient
       .on('connected',    function(){ say('Rooms · connected'); })
-      .on('created',      function(m){ enterRoom(m.room, m.playerId); say('Room ' + roomCode + ' — share the code'); })
-      .on('joined',       function(m){ enterRoom(m.room, m.playerId); (m.players||[]).forEach(function(p){ var id = p && (p.playerId || p.id); if(id && id !== myId) roster.set(id, { name: (p && p.name) || 'runner' }); }); paintPanel(); say('Joined ' + roomCode); })
+      .on('created',      function(m){ _clearCreate(); enterRoom(m.room, m.playerId); var cb = _pendCreate; _pendCreate = null; if(cb) cb(roomCode); else say('Room ' + roomCode + ' — share the code'); })
+      .on('joined',       function(m){ _clearJoin(); enterRoom(m.room, m.playerId); (m.players||[]).forEach(function(p){ var id = p && (p.playerId || p.id); if(id && id !== myId) roster.set(id, { name: (p && p.name) || 'runner' }); }); paintPanel(); var cb = _pendJoin; _pendJoin = null; if(cb) cb(true, roomCode); else say('Joined ' + roomCode); })
       .on('peer_joined',  function(m){ if(m.playerId){ roster.set(m.playerId, { name: m.name || 'runner' }); paintPanel(); say((m.name || 'A runner') + ' joined'); } })
       .on('peer_left',    function(m){ if(m.playerId){ roster.delete(m.playerId); ghosts.delete(m.playerId); paintPanel(); } })
       .on('state',        function(m){ if(!m || !m.playerId || m.playerId === myId) return; var d = m.data || {}; var g = ghosts.get(m.playerId) || {}; if(typeof d.x==='number') g.wx = d.x; if(typeof d.py==='number') g.py = d.py; if(typeof d.pnl==='number') g.pnl = d.pnl; var r = roster.get(m.playerId); g.name = (r && r.name) || g.name; g.last = Date.now(); ghosts.set(m.playerId, g); })
       .on('chat',         function(m){ if(m && m.playerId !== myId) say((m.name || 'runner') + ': ' + String(m.text || '').slice(0, 120)); })
-      .on('error',        function(m){ say('Rooms: ' + ((m && m.message) || 'error')); });
+      .on('error',        function(m){ _clearJoin(); _clearCreate(); if(_pendJoin){ var j = _pendJoin; _pendJoin = null; j(false); } _pendCreate = null; say('Rooms: ' + ((m && m.message) || 'error')); });
+
+    // ?room=<code> deep-link (shared room links + public-browser navigations):
+    // under the default path this is the ONLY joiner, since crRoom.connect() is
+    // quiesced. Capture synchronously before any URL cleanup, then join once the
+    // chart has settled (mirrors crRoom's old 1.4s boot delay).
+    var _bootRoom = '';
+    try { _bootRoom = new URL(location.href).searchParams.get('room') || ''; } catch(_){}
+    if(_bootRoom){ setTimeout(function(){ if(!inRoom) _join(_bootRoom, null); }, 1500); }
   }
 
   return {
-    enabled:      function(){ return FLAG; },
-    active:       function(){ return FLAG && inRoom; },
+    enabled:      function(){ return ENABLED; },
+    active:       function(){ return ENABLED && inRoom; },
     roomId:       function(){ return roomCode; },
-    createFromUI: function(){ if(FLAG) RoomsClient.create(myName()); },
-    joinFromUI:   function(code){ if(!FLAG) return; var c = String(code || '').trim().toUpperCase(); if(!c){ say('Enter a room code'); return; } RoomsClient.join(c, myName()); },
-    chat:         function(t){ if(FLAG && inRoom) RoomsClient.chat(String(t || '')); },
+    // Root entry points (doCreate/doJoin delegate here). cb is a one-shot UX
+    // callback fired on the created/joined event with the SERVER's room code, or
+    // with failure after JOIN_TIMEOUT_MS if the socket never establishes.
+    create:       _create,
+    join:         _join,
+    chat:         function(t){ if(ENABLED && inRoom) RoomsClient.chat(String(t || '')); },
+    leave:        leaveRoom,
     render:       render,
     _stopPump:    stopPump,
   };
@@ -40883,6 +40957,11 @@ window.crRoomsNet = (function(){
     }
     return out;
   }
+  // v1.0.649 — the standalone Rooms server issues uppercase-HEX codes (0-9A-F),
+  // which the base58 normCode above would corrupt (it drops 0/O/I/l). This
+  // hex-safe normalizer is used whenever the new Rooms path is the default.
+  function normCodeRooms(raw){ return String(raw || '').toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 88); }
+  function isRoomsMode(){ try { return !!(window.crRoomsNet && crRoomsNet.enabled()); } catch(_){ return false; } }
   function copyText(t){
     function fallback(){
       try {
@@ -40960,6 +41039,16 @@ window.crRoomsNet = (function(){
 
   // ── Join / create (shared by wizard + Rooms-lite) ───────────────────────────
   function doJoin(rawCode, done){
+    // v1.0.649 — root switch: ALL join entry points (wizard, lite buttons, room
+    // rows) land on the standalone Rooms server by default; ?relay=1 falls back.
+    // The Rooms server issues 4-HEX codes (may contain 0/O/I/l), so do NOT run
+    // them through the base58 normCode — normalize with the hex-safe path.
+    if(window.crRoomsNet && crRoomsNet.enabled()){
+      var rc = normCodeRooms(rawCode);
+      if(rc.length < 3){ say('Enter the room code'); if(done) done(false); return; }
+      crRoomsNet.join(rc, function(ok, code){ if(ok){ closeWiz(); say('Joined room ' + (code || rc)); enterChart(); } if(done) done(!!ok); });
+      return;
+    }
     var c = normCode(rawCode);
     if(c.length < 3){ say('Enter the 8-character room code'); if(done) done(false); return; }
     if(!(window.crRoom && typeof crRoom.join === 'function')){ say('Rooms unavailable'); if(done) done(false); return; }
@@ -40983,6 +41072,14 @@ window.crRoomsNet = (function(){
   }
   function doCreate(o){
     o = o || {};
+    // v1.0.649 — root switch: ALL create entry points (wizard, inline creator,
+    // lite button, maps-row moderated path) land on the standalone Rooms server
+    // by default; the server assigns the code, which we float via cmOpen. ?relay=1
+    // falls back to the legacy relay stack below.
+    if(window.crRoomsNet && crRoomsNet.enabled()){
+      crRoomsNet.create(o, function(code){ closeWiz(); enterChart(); setTimeout(function(){ cmOpen(code); }, 350); });
+      return;
+    }
     if(!(window.crRoom && typeof crRoom.join === 'function')){ say('Rooms unavailable'); return; }
     var code = genCode();
     var host = '';
@@ -41027,7 +41124,7 @@ window.crRoomsNet = (function(){
   function closeWiz(){ if(bd) bd.classList.remove('on'); }
   function isGuest(){ try { return (typeof window.crGuest === 'function') ? !!window.crGuest() : true; } catch(_){ return true; } }
   function wireCodeInput(inp, go){
-    inp.addEventListener('input', function(){ var v = normCode(inp.value); if(inp.value !== v) inp.value = v; });
+    inp.addEventListener('input', function(){ var v = isRoomsMode() ? normCodeRooms(inp.value) : normCode(inp.value); if(inp.value !== v) inp.value = v; });
     inp.addEventListener('keydown', function(e){ e.stopPropagation(); if(e.key === 'Enter'){ e.preventDefault(); go(); } });
     inp.addEventListener('keyup', function(e){ e.stopPropagation(); });
   }
@@ -41118,8 +41215,6 @@ window.crRoomsNet = (function(){
     var liteLock  = document.getElementById('crLiteWallet');
     if(liteInp && liteJoin){
       var liteGo = function(){
-        // ?rooms=1 — route JOIN to the standalone Rooms server instead of the relay.
-        if(window.crRoomsNet && crRoomsNet.enabled()){ crRoomsNet.joinFromUI(liteInp.value); return; }
         if(liteJoin.getAttribute('data-busy')) return;
         liteJoin.setAttribute('data-busy','1');
         doJoin(liteInp.value, function(){ try { liteJoin.removeAttribute('data-busy'); } catch(_){} });
@@ -41127,7 +41222,7 @@ window.crRoomsNet = (function(){
       wireCodeInput(liteInp, liteGo);
       liteJoin.addEventListener('click', liteGo);
     }
-    if(liteStart) liteStart.addEventListener('click', function(){ if(window.crRoomsNet && crRoomsNet.enabled()){ crRoomsNet.createFromUI(); return; } doCreate({}); });
+    if(liteStart) liteStart.addEventListener('click', function(){ doCreate({}); });
     if(liteLock) liteLock.addEventListener('click', function(){ try { if(window.crAccount && crAccount.open) crAccount.open(); else if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){} });
   } catch(_){}
 
@@ -41361,8 +41456,8 @@ function frame(ts){
   // M-MP — LIVE co-presence: paint other occupants of this room link as avatars
   // mapped through our own sX()/priceToY(). Dormant unless opened via a ?room= link.
   try { if(typeof crRoom !== 'undefined') crRoom.render(ctx, W, H); } catch(_){}
-  // ?rooms=1 — ghost runners from the standalone Rooms server (wss://rooms.chartrunner.xyz),
-  // mapped through our own sX()/priceToY(). Dormant unless the flag is on and joined.
+  // Ghost runners from the standalone Rooms server (wss://rooms.chartrunner.xyz),
+  // mapped through our own sX()/priceToY(). Default path; dormant until joined (or under ?relay=1).
   try { if(typeof crRoomsNet !== 'undefined') crRoomsNet.render(ctx, W, H); } catch(_){}
   requestAnimationFrame(frame);
 }
@@ -78138,6 +78233,9 @@ function log(msg){
             crRoom.leave();
           }
         } catch(_){}
+        // v1.0.649 — the standalone Rooms path (default) owns its own socket + pump;
+        // leave it too so co-presence doesn't linger after returning to the desktop.
+        try { if(window.crRoomsNet && crRoomsNet.active && crRoomsNet.active() && typeof crRoomsNet.leave === 'function'){ crRoomsNet.leave(); } } catch(_){}
       };
       const _doExit = () => {
         try { if(typeof crNotify === 'function') crNotify('Exit · CRT fade home', 'warn'); } catch(_){}
@@ -90583,7 +90681,7 @@ window.crGoldRush = (function(){
         var _joinB = t.closest('[data-cr-rd-join]');
         if(_joinB){
           var _code = _joinB.getAttribute('data-cr-rd-join') || '';
-          if(_code){ try{ if(window.crRoom && typeof window.crRoom.join === 'function') window.crRoom.join(_code); else location.assign(location.pathname + '?room=' + encodeURIComponent(_code)); }catch(_){} }
+          if(_code){ try{ if(window.crRoomsNet && crRoomsNet.enabled()) crRoomsNet.join(_code); else if(window.crRoom && typeof window.crRoom.join === 'function') window.crRoom.join(_code); else location.assign(location.pathname + '?room=' + encodeURIComponent(_code)); }catch(_){} }
           return;
         }
         if(t.closest('[data-cr-rd-open]')){
