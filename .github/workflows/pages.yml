@@ -58,16 +58,29 @@ jobs:
           # Carry .nojekyll to /play/ too, defensive.
           touch _site/play/.nojekyll
 
-      - name: Stage Telegram Mini App at /telegram/
+      # ---------------------------------------------------------------------
+      # OPTIONAL SURFACES — decoupled from the core deploy.
+      # Everything below is best-effort: a broken telegram/ or solana-connect
+      # build must NOT block publishing the landing page, roadmap, or /play/.
+      # Each optional surface uses continue-on-error + a guarded stage step so
+      # the artifact still uploads and deploys with whatever built successfully.
+      # ---------------------------------------------------------------------
+
+      - name: Stage Telegram Mini App at /telegram/ (non-blocking)
+        continue-on-error: true
         run: |
+          set -euo pipefail
           mkdir -p _site/telegram
           # Static Mini App surface.
           # TON Connect manifest expects to resolve at /telegram/tonconnect-manifest.json on this origin.
           cp -R telegram/. _site/telegram/
           touch _site/telegram/.nojekyll
+          echo "telegram: staged"
 
-      - name: Build solana-connect (Vite + React)
+      - name: Build solana-connect (Vite + React) (non-blocking)
+        id: solana_build
         working-directory: solana-connect
+        continue-on-error: true
         env:
           # v0.9.7 — custom domain (chartrunner.xyz) serves from root, NOT
           # /<repo>/. The previous /chartrunner/solana-connect/ base 404'd
@@ -78,10 +91,31 @@ jobs:
           npm ci || npm install
           npm run build
 
-      - name: Stage solana-connect at /solana-connect/
+      - name: Stage solana-connect at /solana-connect/ (if built)
         run: |
-          mkdir -p _site/solana-connect
-          cp -R solana-connect/dist/. _site/solana-connect/
+          set -euo pipefail
+          if [ -d solana-connect/dist ] && [ -n "$(ls -A solana-connect/dist 2>/dev/null)" ]; then
+            mkdir -p _site/solana-connect
+            cp -R solana-connect/dist/. _site/solana-connect/
+            echo "solana-connect: staged"
+          else
+            echo "::warning title=solana-connect skipped::Vite build unavailable (build step outcome=${{ steps.solana_build.outcome }}); core deploy continues without /solana-connect/"
+          fi
+
+      - name: Verify core surfaces are present (fail deploy only if these are missing)
+        run: |
+          set -euo pipefail
+          # The landing page + roadmap + game are the surfaces the deploy exists
+          # to publish. If any of THESE are missing, the deploy is genuinely
+          # broken and should fail loudly rather than publish a half-empty site.
+          missing=0
+          for f in _site/index.html _site/roadmap.html _site/play/index.html; do
+            if [ ! -s "$f" ]; then echo "::error::missing core surface: $f"; missing=1; fi
+          done
+          [ "$missing" = "0" ] || exit 1
+          echo "Core surfaces OK:"
+          ls -1 _site
+          echo "--- BUILD-INFO ---"; cat _site/BUILD-INFO || true
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
