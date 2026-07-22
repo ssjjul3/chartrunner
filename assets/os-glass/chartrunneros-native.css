@@ -1,0 +1,483 @@
+/* ChartRunnerOS native integration (v2, 2026-07-17)
+   Replaces the earlier overlay shell. App windows are real .os-window elements (themed by the
+   active theme automatically); content uses inherited/neutral tokens so it blends on every theme.
+   Adds: native launch icons, menubar tray, Control Center, command palette, notifications.
+   Accent = currentColor → no foreign blue; panels = translucent neutral → reads light or dark. */
+
+.cr-appwin{ --cr-accent: currentColor; flex-direction:column; z-index:60; }
+.cr-appwin .os-wbody{ display:flex; flex-direction:column; padding:0; min-height:0; overflow:hidden; }
+/* header row: title on the left, search moved up here on the right (no separate toolbar row) */
+.cr-appwin .cr-hrow{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:12px 16px 2px; }
+.cr-appwin .cr-search{ flex:0 0 auto; width:220px; padding:6px 11px; border-radius:8px; border:.5px solid rgba(127,127,127,.28); background:rgba(127,127,127,.08); color:inherit; font:inherit; margin-top:4px; }
+.cr-appwin .cr-hrow .cr-h, .cr-appwin .cr-hrow .cr-hsub{ padding:0; }
+/* full-width empty state (no longer squished into a grid cell) */
+.cr-appwin .cr-empty{ grid-column:1 / -1; max-width:560px; font-size:13px; opacity:.55; line-height:1.5; padding:6px 2px; }
+.cr-appwin .cr-opendj{ padding:5px 10px; border-radius:7px; border:.5px solid rgba(127,127,127,.3); background:rgba(127,127,127,.12); color:inherit; cursor:pointer; font:600 12px system-ui,sans-serif; }
+.cr-appwin .cr-opendj:hover{ background:rgba(127,127,127,.22); }
+#osGrid .os-icon[data-prog="journal"]{ display:none !important; }
+/* Maps is merged into Docs too */
+#osGrid .os-icon[data-prog="maps"]{ display:none !important; }
+/* hosted native app (Maps/Journal) fills the Docs content pane */
+.cr-appwin .cr-content.cr-hosting{ padding:0; overflow:hidden; display:flex; }
+.cr-appwin .cr-content.cr-hosting > .os-wbody{ flex:1; width:100%; min-height:0; overflow:auto; }
+/* the embedded Journal's own tab bar is redundant — the Docs sidebar drives it */
+.cr-appwin .cr-content.cr-hosting #crJournalTabs{ display:none !important; }
+/* ============================================================
+   UNIFIED EMBEDDED-OS PALETTE — one gray scale + one green.
+   Scope: folded native apps (.cr-oslight), hosted Journal
+   (.cr-content.cr-hosting) and the built-in Docs views (.cr-appwin).
+   Collapses the many dark/gray/green treatments into a single system. */
+.cr-oslight, .cr-content.cr-hosting, .cr-appwin{
+  --cros-accent:#17b877; --cros-line:rgba(127,127,127,.24); --cros-field:rgba(127,127,127,.09);
+  --cros-surface:rgba(127,127,127,.06); --cros-btn:rgba(127,127,127,.13);
+  --good:#17b877 !important; --accent:#17b877 !important; --pos:#17b877 !important; }
+
+/* 0 — ROOT FIX: the dark look is the game's THEME VARIABLES bleeding into embedded content.
+   Re-map them to light values inside the Docs + folded Run/Token containers so every native
+   component (panels, borders, buttons, text) flips to the light OS palette in one shot. */
+.cr-appwin .cr-content, .cr-appwin .cr-content.cr-hosting,
+#win-run .os-wbody.cr-folded .cr-appmain, #win-tokenterm .os-wbody.cr-folded .cr-appmain{
+  --bg0:#e4e4e0 !important; --bg1:#eaeae6 !important; --bg2:#f0f0ec !important;
+  --fg:#1b2130 !important; --dim:#6a7183 !important; --line:rgba(120,122,132,.26) !important;
+  --good:#17b877 !important; --accent:#17b877 !important; --accent2:#8b5cf6 !important;
+  --cd-fg:#1b2130 !important; --cd-dim:#6a7183 !important; --cd-bd:rgba(120,122,132,.26) !important;
+  --cr-app-line:rgba(120,122,132,.26) !important; }
+
+/* 1 — dark inline panels/rows → one light surface */
+.cr-oslight [style*="rgba(10,15,28"], .cr-content.cr-hosting [style*="rgba(10,15,28"], .cr-appwin [style*="rgba(10,15,28"],
+.cr-oslight [style*="rgba(10, 15, 28"], .cr-content.cr-hosting [style*="rgba(10, 15, 28"],
+.cr-oslight [style*="rgba(8,1"], .cr-content.cr-hosting [style*="rgba(8,1"],
+.cr-oslight [style*="rgba(18,26"], .cr-content.cr-hosting [style*="rgba(18,26"],
+.cr-oslight [style*="rgba(20,30"], .cr-content.cr-hosting [style*="rgba(20,30"],
+.cr-oslight [style*="background:#0"], .cr-content.cr-hosting [style*="background:#0"], .cr-appwin [style*="background:#0"],
+.cr-oslight [style*="background: #0"], .cr-content.cr-hosting [style*="background: #0"]{
+  background:var(--cros-surface) !important; }
+
+/* 2 — every form control → one field style (selects need appearance:none so bg + a matching chevron apply) */
+.cr-oslight input:not([type="checkbox"]):not([type="radio"]), .cr-content.cr-hosting input:not([type="checkbox"]):not([type="radio"]), .cr-appwin .cr-content input:not([type="checkbox"]):not([type="radio"]),
+.cr-oslight textarea, .cr-content.cr-hosting textarea, .cr-appwin .cr-content textarea,
+.cr-oslight select, .cr-content.cr-hosting select, .cr-appwin .cr-content select{
+  background:var(--cros-field) !important; color:inherit !important;
+  border:.5px solid var(--cros-line) !important; border-radius:8px !important; box-shadow:none !important; }
+.cr-oslight select, .cr-content.cr-hosting select, .cr-appwin .cr-content select{
+  -webkit-appearance:none !important; -moz-appearance:none !important; appearance:none !important; padding-right:26px !important;
+  background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%) !important;
+  background-position:calc(100% - 15px) 54%,calc(100% - 10px) 54% !important; background-size:5px 5px,5px 5px !important; background-repeat:no-repeat !important; opacity:.95; }
+.cr-oslight option, .cr-content.cr-hosting option, .cr-appwin .cr-content option{ color:#141414 !important; background:#f2f2f0 !important; }
+/* near-white inline text → readable ink */
+.cr-oslight [style*="color:#e"], .cr-content.cr-hosting [style*="color:#e"],
+.cr-oslight [style*="color:#f"], .cr-content.cr-hosting [style*="color:#f"],
+.cr-oslight [style*="color:#c"], .cr-content.cr-hosting [style*="color:#c"],
+.cr-oslight [style*="color:var(--fg"], .cr-content.cr-hosting [style*="color:var(--fg"]{ color:inherit !important; }
+
+/* 3 — one button system: solid/CTA = green, ghost/secondary = gray outline, danger = red outline */
+.cr-oslight .brBtn, .cr-content.cr-hosting .brBtn, .cr-appwin .cr-content .brBtn,
+.cr-oslight .cr-al-add, .cr-content.cr-hosting .cr-al-add, .cr-appwin .cr-content .cr-al-add{
+  background:var(--cros-accent) !important; color:#062015 !important; border:0 !important;
+  border-radius:8px !important; box-shadow:none !important; font-weight:600 !important; }
+.cr-oslight .brBtn.ghost, .cr-content.cr-hosting .brBtn.ghost, .cr-appwin .cr-content .brBtn.ghost,
+.cr-oslight .cr-go, .cr-content.cr-hosting .cr-go, .cr-appwin .cr-content .cr-go,
+.cr-oslight .cr-al-btn, .cr-content.cr-hosting .cr-al-btn, .cr-appwin .cr-content .cr-al-btn{
+  background:var(--cros-btn) !important; color:inherit !important; opacity:.9;
+  border:.5px solid var(--cros-line) !important; border-radius:8px !important; box-shadow:none !important; }
+.cr-oslight .brBtn.danger, .cr-content.cr-hosting .brBtn.danger, .cr-appwin .cr-content .brBtn.danger{
+  background:transparent !important; color:#d1495b !important; border:.5px solid rgba(209,73,91,.4) !important; }
+/* table header underlines / row separators → one line color */
+.cr-oslight thead th, .cr-content.cr-hosting thead th, .cr-appwin .cr-content thead th{ border-color:var(--cros-line) !important; }
+/* --- Run config form → sleek light OS segmented controls (asset/timeframe) --- */
+.cr-oslight .cfg-block{ background:rgba(127,127,127,.05) !important; border:.5px solid rgba(127,127,127,.20) !important; border-radius:12px !important; }
+.cr-oslight .asset-box, .cr-oslight .tfbox{
+  background:rgba(127,127,127,.11) !important; border:.5px solid rgba(127,127,127,.22) !important;
+  overflow:visible !important; border-radius:10px !important; padding:4px !important; gap:2px;
+  flex-wrap:nowrap !important; width:100% !important; }
+.cr-oslight .asset-box > *, .cr-oslight .tfbox > *{
+  flex:1 1 0 !important; min-width:0 !important; text-align:center !important; justify-content:center !important; white-space:nowrap !important; }
+.cr-oslight .asset-box button, .cr-oslight .tfbox button{
+  background:transparent !important; color:inherit !important; border-radius:7px !important; opacity:.6; padding:8px 6px !important; }
+.cr-oslight .asset-box button.on, .cr-oslight .tfbox button.on{
+  background:rgba(20,241,149,.16) !important; color:inherit !important; opacity:1;
+  box-shadow:inset 0 0 0 .5px rgba(20,241,149,.5) !important; }
+.cr-oslight .asset-box button:hover, .cr-oslight .tfbox button:hover{ opacity:1; background:rgba(127,127,127,.10) !important; }
+.cr-oslight .asset-box .cfg-tf-more, .cr-oslight .tfbox .cfg-tf-more,
+.cr-oslight .crTvTfMoreWrap, .cr-oslight .tvTfMoreBtn{ white-space:nowrap !important; }
+.cr-oslight .cfg-token-input{ background:rgba(127,127,127,.09) !important; color:inherit !important; border:.5px solid rgba(127,127,127,.28) !important; border-radius:8px !important; }
+/* give the folded Run window room so the form isn't cramped (matches the roomy reference proportions) */
+.os-window:has(> .os-wbody.cr-folded) #crModeTabs{ display:none !important; }
+#win-run:has(.os-wbody.cr-folded){ width:820px !important; max-width:calc(100vw - 40px) !important; }
+#win-tokenterm:has(.os-wbody.cr-folded){ width:900px !important; max-width:calc(100vw - 40px) !important; }
+/* the "Choose a mode" heading is redundant with the MODE sidebar — hide it when folded */
+.cr-folded .cr-modehead-redundant{ display:none !important; }
+
+/* ===== Wallet app + Laser Tools window: force-show reparented native Profile views ===== */
+.cr-appwin .cr-content > .crTerm-view{ display:block !important; width:100% !important; }
+/* WALLET / BROKER / TOOLS tabs moved out of Profile into their own apps → hide the tabs */
+#win-wallet .crTerm-tab[data-profview="bal"],
+#win-wallet .crTerm-tab[data-profview="broker"],
+#win-wallet .crTerm-tab[data-profview="tools"]{ display:none !important; }
+
+/* ===== Profile cleanup: delete the tab row; avatar centered, cards in a unified bottom row ===== */
+#win-wallet .crTerm-tabs{ display:none !important; }
+/* center column: avatar+name centered in the upper area, Vehicle/Laser pinned to the
+   bottom so they line up with the BOT 2 / BOT 3 row */
+.player-altar .player-altar-center{ display:flex; flex-direction:column; }
+.player-altar .player-altar-avatar{ margin-top:auto; align-items:center; }
+.cr-ident-under{ display:flex; flex-direction:column; align-items:center; margin:8px 0 0; width:100%; }
+.cr-ident-under .cr-ident-name{ font:700 15px ui-monospace,Menlo,monospace; color:#1a1a18; }
+/* unnamed → small, transparent, Search-style field (id-scoped to beat .os-profile input) */
+#win-wallet .cr-ident-field, .cr-ident-field{ width:min(200px,64%) !important; box-sizing:border-box !important; text-align:center !important;
+  background:rgba(120,122,132,.10) !important; border:.5px solid rgba(120,122,132,.26) !important; border-radius:9px !important;
+  color:#1a1a18 !important; font:500 12px ui-monospace,Menlo,monospace !important; padding:6px 11px !important;
+  outline:0 !important; box-shadow:none !important; -webkit-appearance:none !important; appearance:none !important; text-shadow:none !important; }
+#win-wallet .cr-ident-field::placeholder, .cr-ident-field::placeholder{ color:rgba(90,92,100,.6) !important; font-weight:500 !important; letter-spacing:.2px; }
+#win-wallet .cr-ident-field:focus, .cr-ident-field:focus{ background:rgba(120,122,132,.15) !important; border-color:rgba(120,122,132,.5) !important; }
+
+/* ===== Vehicle + Laser — identical SQUARE 64×64 frames like every equipment card,
+   pinned to the bottom row so BOT2 · VEHICLE · LASER · BOT3 read as one line ===== */
+.cr-vl-row{ display:flex; gap:10px; align-items:flex-start; justify-content:center; margin-top:auto; width:100%; }
+.cr-vl-row > .player-slot{ flex:0 0 auto !important; width:auto !important; max-width:none !important; margin:0 !important; }
+.cr-vl-row > .player-slot .ps-frame{ width:64px !important; height:64px !important; background:#0a0d14 !important; border-color:rgba(0,0,0,.35) !important; }
+.cr-vl-row > .player-slot .ps-frame canvas{ width:100% !important; height:100% !important; object-fit:contain; }
+/* the LASER card matches the Vehicle card exactly (single icon, cap, name) */
+.cr-laser-slot .cr-laser-ic{ font-size:34px; line-height:1; color:#e0556f; }
+/* laser config window: settings panels for Activation / Alert lasers */
+.cr-lset-head{ display:flex; align-items:center; gap:12px; padding:4px 2px 14px; }
+.cr-lset-head .cr-lset-ic{ width:38px; height:38px; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:20px; color:#fff; flex:0 0 auto; }
+.cr-lset-t{ font-size:15px; font-weight:600; }
+.cr-lset-sub{ font-size:11.5px; opacity:.62; margin-top:2px; }
+.cr-lset-grid{ display:flex; flex-direction:column; gap:2px; }
+.cr-lset-row{ display:flex; align-items:center; gap:12px; padding:11px 4px; border-top:.5px solid rgba(127,127,127,.16); }
+.cr-lset-row:first-child{ border-top:0; }
+.cr-lset-l{ flex:1 1 auto; min-width:0; }
+.cr-lset-lb{ font-size:13px; font-weight:600; }
+.cr-lset-hint{ font-size:11px; opacity:.55; margin-top:1px; }
+.cr-lset-row select{ flex:0 0 auto; min-width:200px; max-width:56%; }
+.cr-lnum{ flex:0 0 auto; display:flex; align-items:center; gap:6px; }
+.cr-lnum input{ width:88px; text-align:right; }
+.cr-lnum-sfx{ font-size:12px; opacity:.6; min-width:16px; }
+/* locked laser row in the config sidebar */
+.cr-appwin .cr-navitem.cr-locked{ opacity:.6; }
+
+/* ============================================================
+   SIDEBAR DRAWER — every app sidebar is a collapsible drawer.
+   A small titlebar button cycles: open → fluid → closed.
+   ============================================================ */
+.cr-sb-toggle{ position:absolute; left:10px; bottom:10px; z-index:40; appearance:none; -webkit-appearance:none;
+  border:.5px solid rgba(127,127,127,.32); background:rgba(240,240,237,.9); color:#2a2f3a; width:26px; height:22px; border-radius:7px; cursor:pointer;
+  font-size:11px; line-height:1; display:inline-flex; align-items:center; justify-content:center; margin:0; padding:0; opacity:.85;
+  box-shadow:0 2px 8px rgba(0,0,0,.14); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+.cr-sb-toggle:hover{ opacity:1; background:rgba(255,255,255,.98); }
+/* edge hot-zone — unused in the icon-float fluid model, kept inert */
+.cr-sb-hot{ position:absolute; left:0; top:0; bottom:0; width:0; z-index:6; pointer-events:none; }
+
+/* CLOSED — sidebar removed, content takes the full frame */
+.cr-sbmode-closed .cr-drawerhost > .cr-sidebar{ display:none !important; }
+
+/* FLUID — ONLY the icons float over the content: invisible background, transparent
+   labels, and the panel itself passes clicks through — nothing behind is blocked. */
+.cr-sbmode-fluid .cr-drawerhost > .cr-sidebar{
+  position:absolute !important; left:0; top:0; bottom:0; z-index:9; width:auto !important; min-width:0 !important;
+  padding:8px 6px !important; overflow:visible !important;
+  background:transparent !important; box-shadow:none !important; border:0 !important;
+  backdrop-filter:none !important; -webkit-backdrop-filter:none !important; transform:none !important;
+  pointer-events:none !important; }
+/* hide every text element — labels, section headers, counts */
+.cr-sbmode-fluid .cr-drawerhost > .cr-sidebar .cr-listsec,
+.cr-sbmode-fluid .cr-drawerhost > .cr-sidebar .cr-nlbl,
+.cr-sbmode-fluid .cr-drawerhost > .cr-sidebar .cr-nnum{ display:none !important; }
+/* nav rows collapse to just the icon; row doesn't catch clicks, the icon does */
+.cr-sbmode-fluid .cr-drawerhost > .cr-sidebar .cr-navitem{
+  background:transparent !important; padding:0 !important; margin:0 0 8px 0 !important; width:max-content !important; pointer-events:none !important; }
+.cr-sbmode-fluid .cr-drawerhost > .cr-sidebar .cr-nico{
+  pointer-events:auto !important; cursor:pointer; width:30px; height:30px; font-size:14px;
+  box-shadow:0 2px 10px rgba(0,0,0,.28), 0 0 0 2px rgba(255,255,255,.5); transition:transform .12s ease; }
+.cr-sbmode-fluid .cr-drawerhost > .cr-sidebar .cr-nico:hover{ transform:scale(1.12); }
+/* declutter the embedded Maps: drop the verbose help paragraph inside Docs */
+.cr-appwin .cr-content.cr-hosting .crMapsFull{ display:none !important; }
+/* Maps view (built from crMaps API): asset filter chips */
+/* unified light filter chips (was dark-gray buttons) — one consistent pill shape */
+.cr-appwin .cr-chips{ display:flex; gap:8px; padding:6px 16px 6px; flex-wrap:wrap; }
+.cr-appwin .cr-chip{ padding:6px 15px !important; border-radius:9px !important; border:.5px solid rgba(120,122,132,.28) !important;
+  background:rgba(120,122,132,.12) !important; color:#1a1a18 !important; opacity:1 !important; cursor:pointer;
+  font:600 12px system-ui,-apple-system,sans-serif !important; text-shadow:none !important; box-shadow:none !important; }
+.cr-appwin .cr-chip:hover{ background:rgba(120,122,132,.2) !important; }
+.cr-appwin .cr-chip.on{ background:rgba(20,241,149,.18) !important; box-shadow:inset 0 0 0 .5px rgba(20,241,149,.5) !important; font-weight:700 !important; }
+
+/* Fold an app's top tabs into a left folder-sidebar (Play, Token) — reuses the exact Docs sidebar classes */
+.os-wbody.cr-folded{ display:flex !important; flex-direction:row !important; padding:0 !important; align-items:stretch; gap:0 !important; }
+.os-wbody.cr-folded > .cr-sidebar{ width:196px; flex:0 0 auto; padding:10px; overflow:auto; border-right:.5px solid rgba(127,127,127,.20); }
+.os-wbody.cr-folded > .cr-appmain{ flex:1 1 auto; min-width:0; overflow:auto; padding:14px 16px; }
+.os-wbody.cr-folded #crModeTabs, .os-wbody.cr-folded #crTokTabs{ display:none !important; }
+.cr-appwin .cr-content.cr-hosting{ padding-top:6px; }
+/* Alarms panel */
+.cr-appwin .cr-alarm-new{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:12px 16px; }
+.cr-appwin .cr-alarm-new input, .cr-appwin .cr-alarm-new select{ padding:6px 10px; border-radius:8px; border:.5px solid rgba(127,127,127,.28); background:rgba(127,127,127,.08); color:inherit; font:inherit; }
+.cr-appwin .cr-al-asset{ width:84px; text-transform:uppercase; } .cr-appwin .cr-al-price{ width:120px; }
+.cr-appwin .cr-al-add{ padding:6px 13px; border-radius:7px; border:0; background:#2fa855; color:#fff; cursor:pointer; font:700 12px system-ui,sans-serif; }
+.cr-appwin .cr-al-add:hover{ filter:brightness(1.08); }
+.cr-appwin .cr-alarm-list{ padding:2px 16px 16px; }
+.cr-appwin .cr-alarm-row{ display:flex; align-items:center; gap:10px; padding:10px 0; border-top:.5px solid rgba(127,127,127,.16); }
+.cr-appwin .cr-alarm-row.off{ opacity:.6; } .cr-appwin .cr-alarm-row.done{ opacity:.5; }
+.cr-appwin .cr-al-txt{ flex:1; } .cr-appwin .cr-al-txt b{ font-weight:700; }
+.cr-appwin .cr-al-state{ font-size:11px; opacity:.65; white-space:nowrap; }
+.cr-appwin .cr-al-btn{ padding:4px 10px; border-radius:7px; border:.5px solid rgba(127,127,127,.3); background:rgba(127,127,127,.12); color:inherit; cursor:pointer; font:600 12px system-ui,sans-serif; }
+.cr-appwin .cr-al-btn:hover{ background:rgba(127,127,127,.24); }
+.cr-appwin .cr-appbody{ flex:1; display:flex; min-height:0; }
+.cr-appwin .cr-sidebar{ width:196px; padding:10px; overflow:auto; border-right:.5px solid rgba(127,127,127,.20); }
+.cr-appwin .cr-cards{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.cr-appwin .cr-card{ padding:9px; border-radius:10px; background:rgba(127,127,127,.12); cursor:pointer; transition:transform .12s cubic-bezier(.23,1,.32,1); }
+.cr-appwin .cr-card:active{ transform:scale(.97); }
+.cr-appwin .cr-card.active{ background:rgba(127,127,127,.24); box-shadow:inset 0 0 0 1.5px currentColor; }
+.cr-appwin .cr-cico{ display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; font-size:12px; color:#fff; }
+.cr-appwin .cr-cnt{ float:right; font-size:18px; font-weight:700; }
+.cr-appwin .cr-clbl{ display:block; margin-top:6px; font-size:11px; font-weight:600; opacity:.85; }
+.cr-appwin .cr-listsec, .cr-folded .cr-listsec{ margin-top:14px; font-size:9px; letter-spacing:1.4px; opacity:.5; padding-left:4px; }
+.cr-appwin .cr-listsec:first-child, .cr-folded .cr-listsec:first-child{ margin-top:2px; }
+.cr-appwin .cr-navitem, .cr-folded .cr-navitem{ display:flex; align-items:center; gap:8px; padding:6px 7px; border-radius:7px; cursor:pointer; }
+.cr-appwin .cr-navitem:hover, .cr-folded .cr-navitem:hover{ background:rgba(127,127,127,.12); }
+.cr-appwin .cr-navitem.active, .cr-folded .cr-navitem.active{ background:rgba(127,127,127,.20); }
+.cr-appwin .cr-nico, .cr-folded .cr-nico{ width:23px; height:23px; border-radius:7px; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; color:#fff;
+  background:linear-gradient(155deg, rgba(255,255,255,.32), rgba(255,255,255,0) 55%), var(--nc,#6b7280);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5), inset 0 -2px 3px rgba(0,0,0,.16), 0 2px 5px rgba(0,0,0,.22); }
+.cr-appwin .cr-nico svg, .cr-folded .cr-nico svg{ width:14px; height:14px; display:block; filter:drop-shadow(0 1px 0 rgba(0,0,0,.16)); }
+.cr-appwin .cr-nlbl, .cr-folded .cr-nlbl{ flex:1; font-weight:600; } .cr-appwin .cr-nnum{ opacity:.5; font-size:12px; }
+.cr-appwin .cr-content{ flex:1; overflow:auto; padding:4px 0; }
+.cr-appwin .cr-h{ padding:12px 16px 2px; font-size:22px; font-weight:700; color:var(--cr-accent); }
+.cr-appwin .cr-hsub{ padding:0 16px 8px; opacity:.5; font-size:12px; }
+.cr-appwin .cr-row{ display:flex; gap:11px; align-items:flex-start; padding:9px 16px; border-top:.5px solid rgba(127,127,127,.16); }
+.cr-appwin .cr-check{ width:19px; height:19px; border-radius:50%; border:2px solid currentColor; opacity:.6; flex:0 0 auto; margin-top:1px; cursor:pointer; }
+.cr-appwin .cr-check.done{ background:currentColor; opacity:1; }
+.cr-appwin .cr-rtitle{ font-weight:600; } .cr-appwin .cr-rtitle .cr-bang{ color:#e0a326; font-weight:800; margin-right:4px; }
+.cr-appwin .cr-rmeta{ margin-top:3px; font-size:12px; opacity:.7; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.cr-appwin .cr-tag{ padding:1px 7px; border-radius:999px; background:rgba(127,127,127,.20); font-size:11px; }
+.cr-appwin .cr-statusbar{ padding:7px 14px; border-top:.5px solid rgba(127,127,127,.22); font-size:12px; opacity:.6; }
+/* Finder grid */
+.cr-appwin .cr-fgrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(88px,1fr)); gap:13px; padding:14px 16px; }
+.cr-appwin .cr-fitem{ text-align:center; cursor:pointer; }
+.cr-appwin .cr-fico{ width:52px; height:64px; margin:0 auto 6px; border-radius:7px; background:rgba(127,127,127,.14); display:flex; align-items:flex-end; justify-content:center; position:relative; overflow:hidden; box-shadow:inset 0 0 0 .5px rgba(127,127,127,.3); }
+.cr-appwin .cr-fbadge{ position:absolute; top:4px; left:4px; font-size:8px; letter-spacing:.5px; padding:1px 4px; border-radius:4px; }
+.cr-appwin .cr-fname{ font-size:12px; opacity:.9; line-height:1.25; word-break:break-word; }
+.cr-appwin .cr-fsub{ font-size:10px; opacity:.5; }
+/* stat + shop */
+.cr-appwin .cr-statgrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; padding:14px 16px; }
+.cr-appwin .cr-stat{ padding:12px; border-radius:10px; background:rgba(127,127,127,.12); }
+.cr-appwin .cr-stat .cr-slbl{ font-size:11px; opacity:.6; } .cr-appwin .cr-stat .cr-sval{ font-size:24px; font-weight:700; margin-top:3px; }
+.cr-appwin .cr-shoprow{ display:flex; align-items:center; gap:12px; padding:10px 16px; border-top:.5px solid rgba(127,127,127,.16); }
+.cr-appwin .cr-price{ margin-left:auto; font-weight:700; }
+
+/* menubar tray items (match the native .cr-bar-btn look) */
+#crBarConn,#crBarSol,#crBarCC,#crBarNotif{ cursor:default; }
+#crBarCC,#crBarNotif{ cursor:pointer; }
+.cr-bar-dot{ display:inline-block; width:7px; height:7px; border-radius:50%; background:#3fbf6f; margin-right:4px; vertical-align:middle; }
+.cr-bar-dot.off{ background:#d0556f; }
+#crMenuDev.cr-on{ color:#12c07a !important; font-weight:700; }
+/* Theme control moved entirely into Control Center — hide the standalone Theme menu item */
+#crMenuTheme{ display:none !important; }
+
+/* ===== Window dock / taskbar (running windows) — Kimi window structure, native look ===== */
+#crDock{ position:fixed; left:50%; bottom:12px; transform:translateX(-50%); z-index:120;
+  display:flex; gap:6px; align-items:center; padding:6px 8px; max-width:78vw; overflow-x:auto;
+  border-radius:15px; color:var(--lg-ink,#1a1f2b); background:var(--lg-glass,rgba(244,245,247,.9));
+  box-shadow:0 10px 30px rgba(0,0,0,.22), inset 0 0 0 .5px rgba(127,127,127,.32);
+  backdrop-filter:blur(18px) saturate(1.3); -webkit-backdrop-filter:blur(18px) saturate(1.3);
+  font:600 12px system-ui,-apple-system,sans-serif; }
+#crDock:empty{ display:none; }
+#crDock .cr-dwin{ display:flex; align-items:center; gap:6px; padding:5px 11px; border-radius:9px; cursor:pointer;
+  white-space:nowrap; background:rgba(127,127,127,.14); transition:transform .1s cubic-bezier(.23,1,.32,1); }
+#crDock .cr-dwin:hover{ background:rgba(127,127,127,.26); }
+#crDock .cr-dwin:active{ transform:scale(.95); }
+#crDock .cr-dwin.min{ opacity:.55; }
+#crDock .cr-dwin .cr-ddot{ width:6px; height:6px; border-radius:50%; background:#12c07a; box-shadow:0 0 5px #12c07a; }
+#crDock .cr-dwin.min .cr-ddot{ background:#e0a326; box-shadow:0 0 5px #e0a326; }
+#crDock .cr-dall{ padding:5px 9px; border-radius:9px; cursor:pointer; opacity:.7; }
+#crDock .cr-dall:hover{ opacity:1; background:rgba(127,127,127,.2); }
+
+/* Control Center + notifications dropdowns (themed neutral) */
+.cr-pop{ position:fixed; top:38px; z-index:200; width:250px; padding:12px; border-radius:14px;
+  color:inherit; font:600 12px/1.3 system-ui,sans-serif; background:var(--lg-glass,rgba(240,240,244,.96));
+  color:var(--lg-ink,#1a1f2b); box-shadow:0 20px 50px rgba(0,0,0,.35), inset 0 0 0 .5px rgba(127,127,127,.3);
+  backdrop-filter:blur(24px) saturate(1.3); -webkit-backdrop-filter:blur(24px) saturate(1.3); }
+.cr-pop.cr-hidden{ display:none; }
+.cr-pop .cr-cch{ font-size:9px; letter-spacing:1.3px; opacity:.5; margin:2px 2px 7px; }
+.cr-pop .cr-ccrow{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.cr-pop .cr-ccbtn{ padding:6px 9px; border-radius:9px; background:rgba(127,127,127,.16); cursor:pointer; font-size:11px; }
+.cr-pop .cr-ccbtn.active{ background:currentColor; }
+.cr-pop .cr-ccbtn.active span{ mix-blend-mode:difference; color:#fff; }
+.cr-pop .cr-cctog{ display:flex; align-items:center; justify-content:space-between; padding:7px 9px; border-radius:9px; background:rgba(127,127,127,.10); margin-bottom:7px; cursor:pointer; }
+.cr-pop .cr-sw{ width:32px; height:19px; border-radius:999px; background:rgba(127,127,127,.35); position:relative; }
+.cr-pop .cr-sw::after{ content:''; position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%; background:#fff; transition:left .16s; }
+.cr-pop .cr-sw.on{ background:#3fbf6f; } .cr-pop .cr-sw.on::after{ left:15px; }
+.cr-note{ padding:9px 10px; border-radius:9px; background:rgba(127,127,127,.10); margin-bottom:7px; }
+.cr-note .cr-nt{ font-weight:700; } .cr-note .cr-nm{ opacity:.7; font-size:11px; margin-top:2px; }
+.cr-note-empty{ opacity:.5; padding:8px; text-align:center; }
+
+
+/* Unlock (dev): reveal EVERY app icon + dock button, overriding every hide rule
+   (guest gates, level gates, and the always-hidden retired apps runtube/workbench). */
+body.cr-unlock-all .os-icon[data-prog]{ display:inline-block !important; }
+body.cr-unlock-all .dockBtn[data-prog], body.cr-unlock-all #crOSDockFixed .dockBtn[data-prog]{ display:inline-flex !important; }
+/* …but keep the RETIRED standalone apps deleted — their content lives in Docs → Journal
+   (P&L Tracker → P&L tab, Trade Notes → Notes tab). Never re-show them, even unlocked. */
+body.cr-unlock-all .os-icon[data-prog="app_inGame_pnl"], body.cr-unlock-all .os-icon[data-prog="app_inGame_notes"],
+body.cr-unlock-all .dockBtn[data-prog="app_inGame_pnl"], body.cr-unlock-all .dockBtn[data-prog="app_inGame_notes"],
+body.cr-unlock-all #win-app_inGame_pnl, body.cr-unlock-all #win-app_inGame_notes{ display:none !important; }
+#crMenuUnlock.cr-on{ color:#17b877; }
+
+/* Canon apps only — hide the stock icons my reimagined OS apps replace:
+   shop→Market, display("Docs" decks/files)→Docs, workbench→Workbench (bot→Bot Terminal handled below). */
+.os-icon[data-prog="shop"], body.cr-unlock-all .os-icon[data-prog="shop"], .dockBtn[data-prog="shop"], body.cr-unlock-all .dockBtn[data-prog="shop"],
+.os-icon[data-prog="display"], body.cr-unlock-all .os-icon[data-prog="display"], .dockBtn[data-prog="display"], body.cr-unlock-all .dockBtn[data-prog="display"],
+.os-icon[data-prog="workbench"], body.cr-unlock-all .os-icon[data-prog="workbench"], .dockBtn[data-prog="workbench"], body.cr-unlock-all .dockBtn[data-prog="workbench"]{ display:none !important; }
+/* Market app: sidebar drives everything — hide the native tab bar AND subcategory bar */
+.cr-content.cr-market .crTerm-tabs, .cr-content.cr-market #crShopCatBar{ display:none !important; }
+.cr-content.cr-market{ padding:0 !important; }
+/* P2P / Shop switch (segmented) at the top of the Market sidebar */
+.cr-mkt-switch{ display:flex; gap:3px; padding:3px; background:rgba(120,122,132,.16); border-radius:11px; margin-bottom:12px; }
+.cr-mkt-switch button{ flex:1; appearance:none; -webkit-appearance:none; border:0; background:transparent; color:inherit; border-radius:8px;
+  padding:8px 0; font:700 12px system-ui,sans-serif; letter-spacing:.3px; cursor:pointer; opacity:.6; }
+.cr-mkt-switch button.on{ background:rgba(255,255,255,.9); color:#1a1f2b; opacity:1; box-shadow:0 1px 3px rgba(0,0,0,.14); }
+/* reimagined listing cards — modern light layout, game glyphs, detailed info */
+.cr-content.cr-market .os-shop-grid{ display:grid !important; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)) !important; gap:12px !important; padding:14px 16px !important; }
+/* light card applies to EVERY shop item (even freshly re-rendered ones) so there's no dark flash */
+.cr-content.cr-market .os-shop-item{ display:grid !important; grid-template-columns:auto 1fr auto; align-items:center; gap:13px;
+  background:rgba(255,255,255,.55) !important; border:.5px solid rgba(120,122,132,.22) !important; border-radius:15px !important; padding:13px 15px !important;
+  box-shadow:0 1px 3px rgba(0,0,0,.05) !important; color:#1a1f2b !important; transition:transform .12s ease, box-shadow .12s ease; }
+.cr-content.cr-market .os-shop-item:hover{ transform:translateY(-2px); box-shadow:0 8px 22px rgba(0,0,0,.1) !important; border-color:rgba(20,241,149,.4) !important; }
+.cr-content.cr-market .os-shop-item .ic{ background:transparent !important; padding:0 !important; margin:0 !important; width:auto !important; height:auto !important; font-size:0 !important; display:flex; align-items:center; }
+.cr-content.cr-market .os-shop-item .ic .cr-nico{ width:40px !important; height:40px !important; border-radius:12px !important; }
+.cr-content.cr-market .os-shop-item .ic .cr-nico svg{ width:21px !important; height:21px !important; }
+.cr-content.cr-market .os-shop-item .cr-mkt-badge{ display:inline-block; font:700 8.5px system-ui,sans-serif; letter-spacing:.7px; text-transform:uppercase;
+  color:#6a7180; background:rgba(120,122,132,.16); border-radius:5px; padding:2px 6px; margin-bottom:5px; }
+.cr-content.cr-market .os-shop-item .nm{ font-weight:700 !important; font-size:14px !important; color:#1a1f2b !important; line-height:1.25 !important; }
+.cr-content.cr-market .os-shop-item .pr{ font:700 13px ui-monospace,Menlo,monospace !important; color:#17a86a !important; margin-top:3px !important; }
+.cr-content.cr-market .os-shop-item .meta{ color:#6a7180 !important; font-size:11px !important; margin-top:3px !important; }
+.cr-content.cr-market .os-shop-item .buy{ padding:9px 15px !important; font:700 11px system-ui,sans-serif !important; white-space:nowrap; cursor:pointer; }
+/* Bot Terminal app: sidebar drives Console/Sessions/Agents → hide the native tab bar */
+.cr-content.cr-botterm .crTerm-tabs{ display:none !important; }
+.cr-content.cr-botterm{ padding:14px 16px !important; }
+.cr-content.cr-botterm .crBotProxyPanel{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+/* the stock dark Bot Terminal desktop icon → replaced by the reimagined OS app */
+.os-icon[data-prog="bot"], body.cr-unlock-all .os-icon[data-prog="bot"],
+.dockBtn[data-prog="bot"], body.cr-unlock-all .dockBtn[data-prog="bot"]{ display:none !important; }
+/* game-progress card at the top of the Market sidebar */
+.cr-mkt-prog{ padding:12px 12px 13px; border-radius:12px; background:rgba(127,127,127,.08); border:.5px solid rgba(127,127,127,.18); margin-bottom:12px; }
+.cr-mkt-prog .cr-mkt-lvl{ font:700 12px system-ui,sans-serif; opacity:.6; letter-spacing:.4px; text-transform:uppercase; margin-bottom:7px; }
+.cr-mkt-prog .cr-mkt-cur{ display:flex; align-items:baseline; gap:6px; font:600 15px ui-monospace,Menlo,monospace; margin-top:3px; }
+.cr-mkt-prog .cr-mkt-cur span{ font-size:10px; opacity:.55; letter-spacing:.5px; }
+/* Workbench (create/sell) rows */
+.cr-wb-list{ padding:4px 12px 16px; }
+.cr-wb-row{ display:flex; align-items:center; gap:11px; padding:11px 8px; border-top:.5px solid rgba(127,127,127,.14); }
+.cr-wb-row:first-child{ border-top:0; }
+.cr-wb-meta{ flex:1; min-width:0; }
+.cr-wb-nm{ font-weight:600; font-size:13px; word-break:break-word; }
+.cr-wb-sub{ font-size:11px; opacity:.55; margin-top:1px; }
+.cr-wb-sell{ flex:0 0 auto; background:rgba(20,241,149,.15); border:.5px solid rgba(20,241,149,.4); color:inherit; border-radius:8px; padding:7px 13px; font:600 11px system-ui,sans-serif; cursor:pointer; }
+.cr-wb-sell:hover{ background:rgba(20,241,149,.26); }
+
+/* ============================================================
+   TERMINAL → new OS style (CSS-only: every panel/drag/config preserved).
+   Unifies the panels into clean OS cards, modernises the terminal consoles,
+   and turns the section tabs into OS pills — the green identity stays.
+   ============================================================ */
+#win-terminal .crTerm-pane{ background:rgba(255,255,255,.5) !important; border:.5px solid rgba(120,122,132,.2) !important;
+  border-radius:14px !important; box-shadow:0 1px 3px rgba(0,0,0,.04) !important; overflow:hidden; }
+#win-terminal .crTerm-paneHd{ background:rgba(120,122,132,.06) !important; border-bottom:.5px solid rgba(120,122,132,.14) !important; }
+/* consoles (API CALLS · TRADE EXEC · session) → modern rounded terminal surface */
+#win-terminal .crTerm-paneBd.log{ background:#141924 !important; border-radius:12px !important; margin:8px !important;
+  box-shadow:inset 0 0 0 .5px rgba(255,255,255,.06) !important; }
+#win-terminal .crTerm-prompt{ background:#141924 !important; border:.5px solid rgba(120,122,132,.22) !important; border-radius:11px !important; padding:8px 12px !important; }
+#win-terminal .crTerm-prompt input{ background:transparent !important; color:#cfe9d4 !important; }
+/* section tabs → OS pill style, keeping their per-view accent colour */
+#win-terminal .crTerm-tabs{ border-bottom:.5px solid rgba(120,122,132,.2) !important; gap:6px !important; }
+#win-terminal .crTerm-tab{ border-radius:10px 10px 0 0 !important; padding:8px 15px !important; font-weight:700 !important; }
+#win-terminal .crTerm-tab.active{ background:rgba(120,122,132,.12) !important; box-shadow:inset 0 -2px 0 rgba(20,241,149,.55) !important; }
+/* progress meters + heatmap tiles read cleaner on the light cards */
+#win-terminal .crTerm-mtr, #win-terminal .crTerm-bar{ border-radius:999px !important; }
+/* PINNED panes (dragged onto the desktop / chart) → transparent LIQUID-GLASS, fluid, no hard lines */
+#crWidgetLayer .cr-widget, #crChartWidgetLayer .cr-widget{
+  background:rgba(250,250,252,.26) !important; border:0 !important; border-radius:17px !important;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.5), inset 0 1px 0 rgba(255,255,255,.6), 0 12px 32px rgba(0,0,0,.13) !important;
+  backdrop-filter:blur(28px) saturate(1.5); -webkit-backdrop-filter:blur(28px) saturate(1.5);
+  overflow:hidden !important; color:#1a1f2b !important; }
+/* strip every inner line — the title bar + pane borders blend into the glass */
+#crWidgetLayer .cr-widget .wTitle, #crChartWidgetLayer .cr-widget .wTitle,
+#crWidgetLayer .cr-widget .crTerm-pane, #crChartWidgetLayer .cr-widget .crTerm-pane,
+#crWidgetLayer .cr-widget .crTerm-paneHd, #crChartWidgetLayer .cr-widget .crTerm-paneHd,
+#crWidgetLayer .cr-widget .crTerm-paneBd, #crChartWidgetLayer .cr-widget .crTerm-paneBd,
+#crWidgetLayer .cr-widget .wBody, #crChartWidgetLayer .cr-widget .wBody{
+  background:transparent !important; border:0 !important; box-shadow:none !important; }
+#crWidgetLayer .cr-widget .wTitle .nm, #crWidgetLayer .cr-widget .wBody,
+#crChartWidgetLayer .cr-widget .wTitle .nm, #crChartWidgetLayer .cr-widget .wBody{ color:#1a1f2b !important; }
+#crWidgetLayer .cr-widget .wTitle .x, #crChartWidgetLayer .cr-widget .wTitle .x{ color:#8a8f99 !important; border-radius:7px !important; background:transparent !important; }
+
+/* ===== Drawers + settings windows → new OS chrome (glassy, rounded, soft shadow) ===== */
+/* right-side detail drawer (funding/token detail: Run · Watch · Alert · Explain) */
+#drawer, .cr-detail-drawer{ border-radius:18px 0 0 18px !important; box-shadow:-10px 0 36px rgba(0,0,0,.16) !important;
+  border-left:.5px solid rgba(120,122,132,.2) !important; backdrop-filter:blur(18px) saturate(1.2); -webkit-backdrop-filter:blur(18px) saturate(1.2); overflow:hidden; }
+#drawer .win-close, .cr-detail-drawer .win-close{ border-radius:8px !important; }
+/* the terminal pane picker / settings modal */
+#crTermPicker{ border-radius:18px !important; box-shadow:0 30px 80px rgba(0,0,0,.35), inset 0 0 0 .5px rgba(120,122,132,.2) !important;
+  backdrop-filter:blur(24px) saturate(1.2); -webkit-backdrop-filter:blur(24px) saturate(1.2); overflow:hidden; }
+/* generic per-pane settings dialog (rows/refresh · Save/Cancel) — round the card + sliders */
+#crTvSettings, .crTerm-cfgCard{ border-radius:16px !important; box-shadow:0 24px 60px rgba(0,0,0,.3) !important; }
+#drawer input[type="range"], #crTermPicker input[type="range"], #crTvSettings input[type="range"]{ accent-color:#17b877; }
+
+/* Control Center: single menubar button (unique glyph) + notification badge */
+#crMenuCC .cr-ccglyph{ display:block; vertical-align:-3px; }
+#crMenuCC{ position:relative; }
+#crMenuCC[data-n]::after{ content:attr(data-n); position:absolute; top:0px; right:-1px; min-width:14px; height:14px; padding:0 3px;
+  box-sizing:border-box; border-radius:999px; background:#ff5b5b; color:#fff; font:700 9px/14px system-ui,sans-serif; text-align:center;
+  box-shadow:0 0 0 1.5px var(--cr-menubar-bg, rgba(240,240,237,.9)); }
+/* CC panel: compact top row (simple search icon + SOL balance) */
+.cr-pop .cr-cctop{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:11px; }
+.cr-pop .cr-ccsi{ width:30px; height:30px; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
+  background:rgba(127,127,127,.14); border:.5px solid rgba(127,127,127,.22); color:inherit; border-radius:9px;
+  font-size:16px; line-height:1; padding:0; }
+.cr-pop .cr-ccsi:hover{ background:rgba(127,127,127,.24); }
+.cr-pop .cr-ccsol{ font:700 13px ui-monospace,Menlo,monospace; }
+.cr-pop .cr-ccnotes{ max-height:180px; overflow:auto; margin-bottom:11px; }
+.cr-pop .cr-ccclear{ opacity:.6; cursor:pointer; font-weight:600; margin-left:4px; }
+.cr-pop .cr-ccclear:hover{ opacity:1; }
+
+/* command palette */
+#crPalette{ position:fixed; top:14%; left:50%; transform:translateX(-50%); z-index:1200; width:min(560px,92vw);
+  border-radius:14px; overflow:hidden; color:var(--lg-ink,#e8edf4); background:var(--lg-glass,rgba(28,30,36,.97));
+  box-shadow:0 30px 80px rgba(0,0,0,.5), inset 0 0 0 .5px rgba(127,127,127,.3);
+  backdrop-filter:blur(30px) saturate(1.3); -webkit-backdrop-filter:blur(30px) saturate(1.3); }
+#crPalette.cr-hidden{ display:none; }
+#crPalette input{ width:100%; box-sizing:border-box; padding:15px 18px; border:0; background:transparent; color:inherit; font:500 16px system-ui,sans-serif; outline:none; border-bottom:.5px solid rgba(127,127,127,.25); }
+#crPalette .cr-pres{ max-height:340px; overflow:auto; }
+#crPalette .cr-pitem{ display:flex; align-items:center; gap:11px; padding:11px 18px; cursor:pointer; }
+#crPalette .cr-pitem.sel,#crPalette .cr-pitem:hover{ background:rgba(127,127,127,.16); }
+#crPalette .cr-pk{ width:22px; text-align:center; opacity:.7; }
+#crPalette .cr-pl{ flex:1; } #crPalette .cr-ptag{ font-size:11px; opacity:.5; }
+
+/* Red Laser Tools — dark command-palette-style window (searchable) */
+#crLaserTools{ position:fixed; top:8%; left:50%; transform:translateX(-50%); z-index:1210; width:min(720px,94vw); max-height:82vh;
+  display:flex; flex-direction:column; border-radius:14px; overflow:hidden; color:#e8edf4;
+  background:rgba(24,26,32,.98); box-shadow:0 30px 80px rgba(0,0,0,.55), inset 0 0 0 .5px rgba(127,127,127,.3);
+  backdrop-filter:blur(30px) saturate(1.3); -webkit-backdrop-filter:blur(30px) saturate(1.3);
+  --fg:#e8edf4; --dim:#9aa0b0; --line:rgba(127,127,127,.3); }
+#crLaserTools.cr-hidden{ display:none; }
+#crLaserTools .cr-lt-bar{ display:flex; align-items:center; gap:10px; padding:12px 15px; border-bottom:.5px solid rgba(127,127,127,.2); }
+#crLaserTools .cr-lt-ttl{ font:600 13px system-ui,sans-serif; color:#ff9db0; letter-spacing:.2px; }
+#crLaserTools .cr-lt-cnt{ margin-left:auto; font-size:11px; opacity:.5; }
+#crLaserTools .cr-lt-x{ appearance:none; border:0; width:24px; height:24px; border-radius:7px; background:rgba(127,127,127,.16); color:inherit; cursor:pointer; font-size:12px; }
+#crLaserTools .cr-lt-x:hover{ background:rgba(127,127,127,.28); }
+#crLaserTools #crLtSearch{ width:100%; box-sizing:border-box; padding:14px 18px; border:0; background:transparent; color:inherit;
+  font:500 16px system-ui,sans-serif; outline:none; border-bottom:.5px solid rgba(127,127,127,.18); }
+#crLaserTools #crLtSearch::placeholder{ color:rgba(160,164,176,.6); }
+#crLaserTools .cr-lt-body{ overflow:auto; padding:8px 12px 14px; }
+#crLaserTools .cr-lt-empty{ padding:24px; text-align:center; opacity:.6; }
+/* hide the tools view's own intro heading + paragraph (redundant with the bar + search) */
+#crLaserTools #crProfileViewTools > h4, #crLaserTools #crProfileViewTools > p{ display:none !important; }
+#crLaserTools #crProfileViewTools{ color:#e8edf4; }
+
+/* Desktop app icons — uniform, springy hover animation for EVERY icon
+   (Docs + Wallet now behave exactly like Profile/Token) */
+.splash .os-icon{ transition:transform .18s cubic-bezier(.34,1.56,.64,1) !important; }
+.splash .os-icon:hover{ transform:translateY(-4px) scale(1.06) !important; }
+.splash .os-icon:active{ transform:translateY(-1px) scale(1.01) !important; }
+.splash .os-icon:hover .ico{ transition:box-shadow .18s ease, border-color .18s ease; }
+
+/* make the core desktop widgets blend with the theme instead of white glass */
+.crw-widget{ background:rgba(127,127,127,.14)!important; color:inherit!important; backdrop-filter:none!important; -webkit-backdrop-filter:none!important; box-shadow:inset 0 0 0 .5px rgba(127,127,127,.3)!important; }
