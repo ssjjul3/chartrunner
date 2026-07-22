@@ -128,3 +128,58 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # ---------------------------------------------------------------------
+      # Purge the Cloudflare cache after a successful deploy so chartrunner.xyz
+      # serves the freshly published Pages build instead of a stale edge copy.
+      #
+      # The zone ID is resolved at runtime from the zone NAME so no extra secret
+      # is needed — reuses CLOUDFLARE_API_TOKEN (needs Cache Purge:Purge on the
+      # zone; zone lookup by name needs the token to be able to read the zone).
+      # ---------------------------------------------------------------------
+      - name: Purge Cloudflare cache (chartrunner.xyz)
+        if: success()
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ZONE_NAME: chartrunner.xyz
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CF_API_TOKEN:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is not set — cannot purge cache."
+            exit 1
+          fi
+
+          api="https://api.cloudflare.com/client/v4"
+
+          # Resolve the zone ID from its name (no zone-id secret required).
+          zone_resp="$(curl -sS -X GET \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${api}/zones?name=${CF_ZONE_NAME}")"
+
+          if [ "$(echo "$zone_resp" | jq -r '.success')" != "true" ]; then
+            echo "::error::Zone lookup failed for ${CF_ZONE_NAME}"
+            echo "$zone_resp" | jq -r '.errors' || echo "$zone_resp"
+            exit 1
+          fi
+
+          zone_id="$(echo "$zone_resp" | jq -r '.result[0].id // empty')"
+          if [ -z "$zone_id" ]; then
+            echo "::error::No zone id resolved for ${CF_ZONE_NAME} — check the token can read this zone."
+            exit 1
+          fi
+          echo "Resolved zone ${CF_ZONE_NAME} -> ${zone_id}"
+
+          purge_resp="$(curl -sS -X POST \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${api}/zones/${zone_id}/purge_cache" \
+            --data '{"purge_everything":true}')"
+
+          if [ "$(echo "$purge_resp" | jq -r '.success')" != "true" ]; then
+            echo "::error::Cache purge failed for ${CF_ZONE_NAME}"
+            echo "$purge_resp" | jq -r '.errors' || echo "$purge_resp"
+            exit 1
+          fi
+          echo "Cache purged for ${CF_ZONE_NAME} (purge_everything)."

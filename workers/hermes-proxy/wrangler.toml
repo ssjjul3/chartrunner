@@ -1,0 +1,33 @@
+# Pyth Hermes proxy worker for ChartRunner.
+#
+# Serves chartrunner.xyz/hermes/* and forwards to the public Pyth Hermes API
+# (https://hermes.pyth.network), injecting the mandatory API key server-side.
+# Pyth is moving Hermes to mandatory authentication (deadline 2026-07-31);
+# this worker keeps the key off the client while preserving same-origin calls
+# from the game (chartrunner.xyz/hermes/... -> hermes.pyth.network/...).
+#
+# The Hermes key is stored as a Wrangler *secret* (HERMES_API_KEY), NOT in this
+# file and NOT as a plaintext var. See workers/hermes-proxy/README.md for how to
+# set it once the real key is available.
+#
+# account_id is intentionally omitted so it can be supplied at deploy time via
+# the CLOUDFLARE_ACCOUNT_ID env var (used by the deploy-workers.yml CI workflow),
+# keeping the account id out of the repo.
+
+name = "chartrunner-hermes-proxy"
+main = "src/index.js"
+compatibility_date = "2026-07-21"
+
+# Bind the worker to the public path. Deploying this route needs the API token
+# to hold "Workers Routes:Edit" on the chartrunner.xyz zone.
+routes = [
+  { pattern = "chartrunner.xyz/hermes/*", zone_name = "chartrunner.xyz" }
+]
+
+# Upstream Hermes base URL is a non-secret var so it is greppable/overridable
+# without touching code. The API key is a secret (set out-of-band).
+[vars]
+HERMES_UPSTREAM = "https://hermes.pyth.network"
+
+[observability]
+enabled = true
