@@ -28,7 +28,20 @@ game input -> ChartRunnerSDK intent -> risk/wallet/broker boundary -> result
 
 The public repo demonstrates the playable game, the SDK call shape, public devnet proof, and the wallet approval boundary. Premium execution, hosted agents, private market data, replay corpora, bot tuning, and unpublished SDK packages stay gated until they are intentionally released.
 
-Current public prototype version: `v1.0.255`. The latest public release adds per-object Alarm setup for tools, primitives, and indicators, a Journal Alert V2 progression view, uniform object settings tabs, Fib Extension interaction repair, and Bracket access/shootability plus trade-size calculator fixes. Public safety boundaries are unchanged: no live broker route, hidden order routing, signing, or production execution was added.
+Current public prototype version: `v1.0.648`. The latest public release wires live multiplayer rooms to the standalone Rooms server behind an opt-in `?rooms=1` flag (see [Multiplayer Rooms](#multiplayer-rooms-experimental)). Public safety boundaries are unchanged: no live broker route, hidden order routing, signing, or production execution was added.
+
+## Multiplayer Rooms (experimental)
+
+Live co-op presence runs on a standalone WebSocket server, `wss://rooms.chartrunner.xyz` (verified: `/health` → ok, `/stats` → JSON). Wiring is **opt-in behind `?rooms=1`** — without the flag the page behaves exactly as before.
+
+- Open `https://chartrunner.xyz/play/?rooms=1`.
+- **START A ROOM** creates a room and shows a shareable code; **JOIN A ROOM** + code joins an existing one (max 8 players).
+- While running, each client broadcasts its position at ~10 Hz; other players appear as translucent **ghost runners** on the chart (rendered through the chart's own overlay hook — abilities/modules never touch the canvas directly).
+- A small top-left panel shows the room code (click to copy) and the live roster; chat and errors surface as toasts.
+
+The client (`RoomsClient` transport + `crRoomsNet` wiring) is a single inline IIFE in `ChartRunner_Prototype.html` — no new file, no CDN. The server-side origin check allows only `https://chartrunner.xyz`, so local runs against the live server are expected to fail. The existing relay-based presence system (`crRoom`) is untouched; migrating it onto this server is a later server-side port.
+
+**Two-device verification:** on device A open `/play/?rooms=1` → START A ROOM → copy the code; on device B open `/play/?rooms=1` → JOIN A ROOM with that code. `https://rooms.chartrunner.xyz/stats` should then report `rooms:1, players:2`, and each device should see the other's ghost runner on the chart.
 
 ## Public Boundary
 

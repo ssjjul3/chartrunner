@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.647
-     LAST UPDATED:    2026-07-17  ·  v1.0.647: OS REINFORCE — liquid theme blur/ease tokens + COACH.llm spatial entrance (crCoachInLiquid) + prefers-reduced-motion guard (additive, scoped; no restyle)
+     CURRENT VERSION: v1.0.648
+     LAST UPDATED:    2026-07-22  ·  v1.0.648: ROOMS LIVE (P0, ?rooms=1) — RoomsClient IIFE wires the guest START/JOIN A ROOM buttons to the standalone Rooms server (wss://rooms.chartrunner.xyz): create/join, ~10 Hz state pump, peer ghost-runners painted via the chart's own render hook (crRoomsNet.render, mapped through sX()/priceToY()), a top-left room code + roster panel, and chat/error toasts. ADDITIVE + feature-flagged — without ?rooms=1 the default relay path (crRoom / relay.chartrunner.xyz) is byte-for-byte unchanged. Relay→rooms migration is a later server-side port.
+     PREV  ·  v1.0.647: OS REINFORCE — liquid theme blur/ease tokens + COACH.llm spatial entrance (crCoachInLiquid) + prefers-reduced-motion guard (additive, scoped; no restyle)
      v1.0.646: ROOM P1 CLIENT — moderated/curated rooms (unlocks the MODERATED
      preset + adds CURATED; EARN ON-CHAIN stays P2). Per docs/ROOM-P1-ROOMCFG-SPEC.md, paired with chartrunner-relay
      v0.2.0. crWallet gains canSign + signMessage (base58, browser wallet / Runner Wallet). crRoom: on a moderated/
@@ -40161,6 +40162,185 @@ window.crRoom = (function(){
   return api;
 })();
 
+/* =========================================================================
+ * RoomsClient + crRoomsNet — LIVE multiplayer against the standalone Rooms
+ * server (wss://rooms.chartrunner.xyz). ADDITIVE and feature-flagged behind
+ * ?rooms=1 — the default page behaviour (crRoom / relay.chartrunner.xyz) is
+ * untouched. RoomsClient is pure transport (auto-reconnect + send queue);
+ * crRoomsNet is the thin wiring layer: it owns the ghost-runner OVERLAY DATA
+ * plus a small room panel, but the CHART owns drawing — the main render loop
+ * calls crRoomsNet.render(ctx,W,H) alongside crRoom.render (rendering and
+ * modules never cross). Protocol (JSON over WSS):
+ *   create → created{room,playerId} · join → joined{room,playerId,players}
+ *   state{data} → broadcast state{playerId,data} · chat → chat{playerId,name,text}
+ *   peer_joined / peer_left / error.
+ * Origin-check server-side allows only https://chartrunner.xyz — local tests
+ * against the live server are expected to fail. Migrating the relay presence
+ * system onto this server is a later server-side port; until then this path
+ * is opt-in via ?rooms=1.
+ * =======================================================================*/
+const RoomsClient = (() => {
+  const URL_WS = 'wss://rooms.chartrunner.xyz';
+  let ws=null, attempt=0, wantOpen=false, queue=[];
+  const handlers={};
+  const emit=(ev,data)=>(handlers[ev]||[]).forEach(fn=>{try{fn(data)}catch(e){console.error('[rooms]',e)}});
+  function connect(){wantOpen=true;ws=new WebSocket(URL_WS);
+    ws.onopen=()=>{attempt=0;emit('connected',{});queue.forEach(m=>ws.send(m));queue=[];};
+    ws.onmessage=(e)=>{let m;try{m=JSON.parse(e.data)}catch{return}emit(m.type,m);};
+    ws.onclose=()=>{emit('disconnected',{});if(!wantOpen)return;
+      const w=Math.min(1000*2**attempt++,15000);setTimeout(connect,w);};
+    ws.onerror=()=>ws.close();}
+  function send(o){const raw=JSON.stringify(o);
+    if(ws&&ws.readyState===1)ws.send(raw);
+    else{queue.push(raw);if(!wantOpen)connect();}}
+  return{connect,disconnect(){wantOpen=false;if(ws)ws.close();},
+    create(n){send({type:'create',name:n})},
+    join(r,n){send({type:'join',room:String(r).toUpperCase(),name:n})},
+    leave(){send({type:'leave'})},
+    sendState(d){send({type:'state',data:d})},
+    chat(t){send({type:'chat',text:t})},
+    on(ev,fn){(handlers[ev]=handlers[ev]||[]).push(fn);return this;}};
+})();
+
+/* crRoomsNet — feature-flagged (?rooms=1) wiring for RoomsClient: buttons,
+ * ~10 Hz state pump, ghost overlay data, and a small room/roster panel. */
+window.crRoomsNet = (function(){
+  var FLAG = false;
+  try { FLAG = /(?:^|[?&])rooms=1(?:&|$)/.test(location.search || ''); } catch(_){}
+
+  var inRoom = false, roomCode = '', myId = null, pumpTimer = null;
+  var ghosts = new Map();          // playerId -> {name,wx,py,pnl,last}
+  var roster = new Map();          // playerId -> {name}
+  var GHOST_TTL_MS = 12000, GHOST_COL = '#7aa2ff';
+
+  function myName(){
+    try { var el = document.getElementById('crLpName'); var t = el && el.textContent ? el.textContent.trim() : ''; if(t) return t.slice(0,32); } catch(_){}
+    return 'runner';
+  }
+  function say(m){ try { if(typeof toast==='function') toast(m); } catch(_){} }
+  function peerCount(){ var n = 0; roster.forEach(function(_v, id){ if(id !== myId) n++; }); return n; }
+
+  // ── ghost overlay: the CHART owns drawing; we only supply data and map it
+  //    through the viewer's OWN sX()/priceToY() so a ghost lands on the same
+  //    candle regardless of local pan/zoom (mirrors crRoom's coord model). ──
+  function drawGhost(c, x, y, g){
+    c.save();
+    c.globalAlpha = 0.5;
+    c.translate(x, y);
+    try {
+      if(typeof drawInvader === 'function') drawInvader(c, 1.4, GHOST_COL);
+      else { c.beginPath(); c.arc(0,0,9,0,Math.PI*2); c.fillStyle = GHOST_COL; c.fill(); }
+    } catch(_){ try { c.beginPath(); c.arc(0,0,9,0,Math.PI*2); c.fillStyle = GHOST_COL; c.fill(); } catch(__){} }
+    c.restore();
+    c.save();
+    var pnl = (g.pnl==null || !isFinite(g.pnl)) ? '' : '  ' + (g.pnl>=0?'+':'') + g.pnl;
+    var label = (g.name || 'runner') + pnl;
+    c.font = '11px ui-monospace, Menlo, monospace';
+    var tw = c.measureText(label).width;
+    c.globalAlpha = 0.82; c.fillStyle = 'rgba(10,12,20,0.82)';
+    c.fillRect(x - tw/2 - 4, y - 33, tw + 8, 15);
+    c.globalAlpha = 1; c.fillStyle = GHOST_COL;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(label, x, y - 25);
+    c.restore();
+  }
+  function render(c, W, H){
+    if(!FLAG || !inRoom || !ghosts.size) return;
+    var now = Date.now();
+    ghosts.forEach(function(g, id){
+      if(now - g.last > GHOST_TTL_MS){ ghosts.delete(id); return; }
+      if(g.wx==null || g.py==null) return;
+      var x, y;
+      try { x = sX(g.wx); y = priceToY(g.py); } catch(_){ return; }
+      if(!isFinite(x) || !isFinite(y)) return;
+      if(x < -40 || x > (W||0)+40) return;   // offscreen cull
+      drawGhost(c, x, y, g);
+    });
+  }
+
+  // ── room panel (code chip + roster). Small fixed DOM card, top-left, shown
+  //    only while in a ?rooms=1 room. The code chip is click-to-copy. ──
+  var panel = null;
+  function ensurePanel(){
+    if(panel || typeof document==='undefined') return panel;
+    panel = document.createElement('div');
+    panel.id = 'crRoomsNetPanel';
+    panel.style.cssText = 'position:fixed;top:54px;left:12px;z-index:62;min-width:150px;max-width:240px;'
+      + 'background:rgba(10,12,20,.86);border:1px solid rgba(122,162,255,.32);border-radius:11px;'
+      + 'padding:9px 11px;font:600 12px ui-monospace,Menlo,Consolas,monospace;color:#e9ebf2;'
+      + 'backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);box-shadow:0 8px 24px rgba(0,0,0,.45);display:none';
+    (document.body || document.documentElement).appendChild(panel);
+    panel.addEventListener('click', function(e){
+      var chip = e.target && e.target.closest ? e.target.closest('#crRoomsNetCode') : null;
+      if(!chip || !roomCode) return;
+      try { if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(roomCode); say('Code ' + roomCode + ' copied'); } catch(_){}
+    });
+    return panel;
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>]/g, function(ch){ return ch==='&'?'&amp;':ch==='<'?'&lt;':'&gt;'; }); }
+  function rosterRow(nm, col, you){
+    return '<div style="display:flex;align-items:center;gap:8px;overflow:hidden;margin-top:5px">'
+      + '<span style="width:8px;height:8px;border-radius:50%;flex:none;background:' + col + ';box-shadow:0 0 6px ' + col + '"></span>'
+      + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(nm) + (you ? ' <span style="color:#6a6f7a">(you)</span>' : '') + '</span></div>';
+  }
+  function paintPanel(){
+    if(!FLAG) return;
+    var el = ensurePanel(); if(!el) return;
+    if(!inRoom){ el.style.display = 'none'; return; }
+    var rows = rosterRow(myName(), '#14f195', true);
+    roster.forEach(function(p, id){ if(id !== myId) rows += rosterRow(p.name || 'runner', GHOST_COL, false); });
+    el.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'
+      + '<span style="color:#7aa2ff;font-size:10px;letter-spacing:.6px">ROOM</span>'
+      + '<span id="crRoomsNetCode" title="Copy code" style="cursor:pointer;font-weight:800;letter-spacing:2px;color:#e9ebf2">' + esc(roomCode) + '</span>'
+      + '<span style="margin-left:auto;color:#6a6f7a;font-size:10px">' + (1 + peerCount()) + '/8</span></div>'
+      + rows;
+    el.style.display = 'block';
+  }
+
+  // ── outbound state pump (~10 Hz): only while in a room and running. ──
+  function startPump(){
+    if(pumpTimer) return;
+    pumpTimer = setInterval(function(){
+      if(!inRoom) return;
+      try {
+        if(typeof game==='undefined' || !game.running) return;
+        if(typeof player==='undefined' || !player || !isFinite(player.wx)) return;
+        var idx = (typeof STEP!=='undefined' && STEP) ? Math.floor(player.wx / STEP) : 0;
+        var pnl = 0;
+        try { if(game.pnl) pnl = Math.round(((game.pnl.realized||0) + (game.pnl.unrealized||0)) * 100) / 100; } catch(_){}
+        RoomsClient.sendState({ x: player.wx, py: player.py, pnl: pnl, candleIndex: idx });
+      } catch(_){}
+    }, 100);
+  }
+  function stopPump(){ if(pumpTimer){ clearInterval(pumpTimer); pumpTimer = null; } }
+
+  function enterRoom(code, id){ roomCode = code || ''; myId = id || null; inRoom = true; roster.clear(); ghosts.clear(); paintPanel(); startPump(); }
+
+  // ── event wiring (once, only under the flag) ──
+  if(FLAG){
+    RoomsClient
+      .on('connected',    function(){ say('Rooms · connected'); })
+      .on('created',      function(m){ enterRoom(m.room, m.playerId); say('Room ' + roomCode + ' — share the code'); })
+      .on('joined',       function(m){ enterRoom(m.room, m.playerId); (m.players||[]).forEach(function(p){ var id = p && (p.playerId || p.id); if(id && id !== myId) roster.set(id, { name: (p && p.name) || 'runner' }); }); paintPanel(); say('Joined ' + roomCode); })
+      .on('peer_joined',  function(m){ if(m.playerId){ roster.set(m.playerId, { name: m.name || 'runner' }); paintPanel(); say((m.name || 'A runner') + ' joined'); } })
+      .on('peer_left',    function(m){ if(m.playerId){ roster.delete(m.playerId); ghosts.delete(m.playerId); paintPanel(); } })
+      .on('state',        function(m){ if(!m || !m.playerId || m.playerId === myId) return; var d = m.data || {}; var g = ghosts.get(m.playerId) || {}; if(typeof d.x==='number') g.wx = d.x; if(typeof d.py==='number') g.py = d.py; if(typeof d.pnl==='number') g.pnl = d.pnl; var r = roster.get(m.playerId); g.name = (r && r.name) || g.name; g.last = Date.now(); ghosts.set(m.playerId, g); })
+      .on('chat',         function(m){ if(m && m.playerId !== myId) say((m.name || 'runner') + ': ' + String(m.text || '').slice(0, 120)); })
+      .on('error',        function(m){ say('Rooms: ' + ((m && m.message) || 'error')); });
+  }
+
+  return {
+    enabled:      function(){ return FLAG; },
+    active:       function(){ return FLAG && inRoom; },
+    roomId:       function(){ return roomCode; },
+    createFromUI: function(){ if(FLAG) RoomsClient.create(myName()); },
+    joinFromUI:   function(code){ if(!FLAG) return; var c = String(code || '').trim().toUpperCase(); if(!c){ say('Enter a room code'); return; } RoomsClient.join(c, myName()); },
+    chat:         function(t){ if(FLAG && inRoom) RoomsClient.chat(String(t || '')); },
+    render:       render,
+    _stopPump:    stopPump,
+  };
+})();
+
 /* ── v1.0.431 — Online-players roster panel (multiplayer maps only) ───────────
    A compact top-right corner panel that lists everyone live in the current room
    (self + peers) by name, seat-colored (★ creator gold · wallet green · guest
@@ -40938,6 +41118,8 @@ window.crRoom = (function(){
     var liteLock  = document.getElementById('crLiteWallet');
     if(liteInp && liteJoin){
       var liteGo = function(){
+        // ?rooms=1 — route JOIN to the standalone Rooms server instead of the relay.
+        if(window.crRoomsNet && crRoomsNet.enabled()){ crRoomsNet.joinFromUI(liteInp.value); return; }
         if(liteJoin.getAttribute('data-busy')) return;
         liteJoin.setAttribute('data-busy','1');
         doJoin(liteInp.value, function(){ try { liteJoin.removeAttribute('data-busy'); } catch(_){} });
@@ -40945,7 +41127,7 @@ window.crRoom = (function(){
       wireCodeInput(liteInp, liteGo);
       liteJoin.addEventListener('click', liteGo);
     }
-    if(liteStart) liteStart.addEventListener('click', function(){ doCreate({}); });
+    if(liteStart) liteStart.addEventListener('click', function(){ if(window.crRoomsNet && crRoomsNet.enabled()){ crRoomsNet.createFromUI(); return; } doCreate({}); });
     if(liteLock) liteLock.addEventListener('click', function(){ try { if(window.crAccount && crAccount.open) crAccount.open(); else if(window.crWallet && crWallet.openWalletPicker) crWallet.openWalletPicker(); } catch(_){} });
   } catch(_){}
 
@@ -41179,6 +41361,9 @@ function frame(ts){
   // M-MP — LIVE co-presence: paint other occupants of this room link as avatars
   // mapped through our own sX()/priceToY(). Dormant unless opened via a ?room= link.
   try { if(typeof crRoom !== 'undefined') crRoom.render(ctx, W, H); } catch(_){}
+  // ?rooms=1 — ghost runners from the standalone Rooms server (wss://rooms.chartrunner.xyz),
+  // mapped through our own sX()/priceToY(). Dormant unless the flag is on and joined.
+  try { if(typeof crRoomsNet !== 'undefined') crRoomsNet.render(ctx, W, H); } catch(_){}
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
