@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.743
-     LAST UPDATED:    2026-07-28  ·  v1.0.743: ROOMS INSTANT GHOSTS — peers show the moment they enter a room, not on their first position-update. crRoomsNet now _seedGhost()s a positionless ghost as soon as a peer is known (own `joined` for each existing player + every `peer_joined`), and render() paints positionless ghosts as a subtle SCREEN-ANCHORED "<name> · lobby" placeholder (top-right, stacking down; screen-anchored so a fresh run's off-screen camera can't cull them). The first real state swaps it for the true world position. Silent ghosts (>12 s) are now DEMOTED back to the lobby placeholder instead of deleted; only peer_left removes for good. Zombie-guard: a state after peer_left can't resurrect a nameless ghost (unknown peers are dropped). drawGhost() gains an idle variant (avatar α .32, quieter label).
+     CURRENT VERSION: v1.0.744
+     LAST UPDATED:    2026-07-28  ·  v1.0.744: ROOMS CHART PIN — a room pins its chart: every joiner lands on the creator's asset+timeframe, not the default. CREATOR: on `created`, _stampRoomUrl(code,true) also stamps asset=<mint|id>&tf into the address bar, and the code modal's "Copy link" (roomLink()) appends the same params — so a link-joiner boots straight onto the creator's chart via the existing ?room=&asset= deep-link path (DEX tokens as the mint, CEX as the id). CODE-JOINER: every 10 Hz state now carries a (asset/mint) + tf; a joiner arms a 30 s one-shot on `joined` and adopts the first announced chart via crApplyDeepLink (same machinery as the link path). The creator never syncs off its own chart (only joiners arm). Unparseable announcements don't burn the one-shot; a rejected launch (asset unknown on the device) re-arms within the window; a joiner already on the announced chart disarms silently (no flapping). RE-SHARE: after sync the joiner writes asset/tf into its URL. Known v1 limits (by design): first-announcer-wins if a non-creator is already on another chart at join; a stale link briefly boots the old chart, then the pump-sync corrects — a clean fix needs room metadata in the Rooms-server protocol (separate ticket).
+     PREV  ·  v1.0.743: ROOMS INSTANT GHOSTS — peers show the moment they enter a room, not on their first position-update. crRoomsNet now _seedGhost()s a positionless ghost as soon as a peer is known (own `joined` for each existing player + every `peer_joined`), and render() paints positionless ghosts as a subtle SCREEN-ANCHORED "<name> · lobby" placeholder (top-right, stacking down; screen-anchored so a fresh run's off-screen camera can't cull them). The first real state swaps it for the true world position. Silent ghosts (>12 s) are now DEMOTED back to the lobby placeholder instead of deleted; only peer_left removes for good. Zombie-guard: a state after peer_left can't resurrect a nameless ghost (unknown peers are dropped). drawGhost() gains an idle variant (avatar α .32, quieter label).
      PREV  ·  v1.0.649: ROOMS DEFAULT — the standalone Rooms server (wss://rooms.chartrunner.xyz) is now the DEFAULT multiplayer path for ALL entry points, not just the guest lite buttons. doCreate/doJoin delegate to crRoomsNet at the root, so the wizard, connected inline creator, lite buttons, maps-row, public-rooms browser and ?room= deep-links all land on the new server (server assigns the code, floated via cmOpen). The legacy crRoom/relay stack is QUIESCED (connect() no-ops) and reactivates only via the ?relay=1 escape hatch — the two systems can never hold sockets in parallel. Room types the simple server lacks (moderated/curated/on-chain) degrade to a normal room with an honest toast. No ?rooms=1 flag needed anymore.
      PREV  ·  v1.0.648: ROOMS LIVE (P0, ?rooms=1) — RoomsClient IIFE wired the guest START/JOIN A ROOM buttons to wss://rooms.chartrunner.xyz: create/join, ~10 Hz state pump, peer ghost-runners via the chart's own render hook, room code + roster panel, chat/error toasts. Was additive + feature-flagged behind ?rooms=1.
      PREV  ·  v1.0.647: OS REINFORCE — liquid theme blur/ease tokens + COACH.llm spatial entrance (crCoachInLiquid) + prefers-reduced-motion guard (additive, scoped; no restyle)
@@ -40254,6 +40255,10 @@ window.crRoomsNet = (function(){
   var roster = new Map();          // playerId -> {name}
   var GHOST_TTL_MS = 12000, GHOST_COL = '#7aa2ff';
   var _pendCreate = null, _pendJoin = null, _createTO = null, _joinTO = null;   // one-shot UX callbacks + failsafe timers
+  // v1.0.744 — chart-pin one-shot: a code-joiner (never the creator) arms this on
+  // `joined` and adopts the FIRST parseable asset+tf announced in a peer's state,
+  // then disarms. 30 s window covers the gap until the creator starts running.
+  var _chartSyncPending = false, _chartSyncUntil = 0;
 
   function myName(){
     try { var el = document.getElementById('crLpName'); var t = el && el.textContent ? el.textContent.trim() : ''; if(t) return t.slice(0,32); } catch(_){}
@@ -40384,11 +40389,88 @@ window.crRoomsNet = (function(){
         var idx = (typeof STEP!=='undefined' && STEP) ? Math.floor(player.wx / STEP) : 0;
         var pnl = 0;
         try { if(game.pnl) pnl = Math.round(((game.pnl.realized||0) + (game.pnl.unrealized||0)) * 100) / 100; } catch(_){}
-        RoomsClient.sendState({ x: player.wx, py: player.py, pnl: pnl, candleIndex: idx });
+        // v1.0.744 — every state announces the local chart (a=mint|id, tf) so a
+        // code-joiner's chart-pin one-shot can adopt the creator's asset+timeframe.
+        var _ct = _chartAssetTf();
+        RoomsClient.sendState({ x: player.wx, py: player.py, pnl: pnl, candleIndex: idx, a: _ct.a, tf: _ct.tf });
       } catch(_){}
     }, 100);
   }
   function stopPump(){ if(pumpTimer){ clearInterval(pumpTimer); pumpTimer = null; } }
+
+  // v1.0.744 — the chart a room pins: the creator's current asset + timeframe.
+  // Returns { a, tf } where `a` is the DEX mint (dex broker) or the CEX id, EXACTLY
+  // the grammar parseSymbol/crResolveDeepLink read back on the joiner. A synthetic
+  // pair has no addressable chart (mirrors crSyncChartUrl's guard) → a:'' so it's
+  // never announced. Used by the state pump (code-join sync), the URL stamp
+  // (link-join), and roomLink() (copy-link), so all three carry the same chart.
+  function _chartAssetTf(){
+    var out = { a:'', tf:'' };
+    try {
+      out.tf = (typeof timeframe !== 'undefined' && timeframe) ? String(timeframe) : '';
+      var aObj = (typeof currentAssetObj === 'function') ? currentAssetObj() : null;
+      if(aObj && aObj.pair) return out;   // synthetic pair — no addressable chart to pin
+      var br = (typeof crBrokerSelection === 'function') ? crBrokerSelection() : null;
+      if(br && String(br.type).toLowerCase() === 'dex' && aObj && aObj.mint){
+        out.a = String(aObj.mint);
+      } else {
+        out.a = (typeof currentAsset !== 'undefined' && currentAsset) ? String(currentAsset)
+              : ((aObj && aObj.id) ? String(aObj.id) : '');
+      }
+    } catch(_){}
+    return out;
+  }
+
+  // v1.0.744 — are we already on the announced chart? (asset AND tf). Lets a link-
+  // joiner (already booted onto the room's chart from the URL) disarm the one-shot
+  // silently instead of relaunching the same chart — no sync-flapping.
+  function _onChart(s, ptf){
+    try {
+      var cur = _chartAssetTf();
+      if(!cur.a) return false;
+      var want = s.isMint ? String(s.mint || '') : String(s.asset || '');
+      if(!want || String(cur.a).toLowerCase() !== want.toLowerCase()) return false;
+      if(ptf && cur.tf && String(cur.tf).toLowerCase() !== String(ptf).toLowerCase()) return false;
+      return true;
+    } catch(_){ return false; }
+  }
+
+  // v1.0.744 — adopt an announced chart via the SAME machinery as the link path
+  // (crApplyDeepLink with a synthetic room-intent res). Unparseable announcements
+  // leave the one-shot armed; a rejected launch (asset unknown on this device)
+  // re-arms within the window; success writes asset/tf back into the URL (re-share).
+  function _tryChartSync(a, tf){
+    try {
+      var DL = window.crDeepLink;
+      if(!DL || typeof DL.parseSymbol !== 'function') return;   // no parser yet — stay armed
+      var s = DL.parseSymbol(String(a || ''));
+      if(!s || !s.ok) return;                                   // unparseable — don't burn the one-shot
+      var ptf = (typeof DL.parseTf === 'function') ? DL.parseTf(tf) : (tf || '15m');
+      if(_onChart(s, ptf)){ _chartSyncPending = false; return; }   // already there — disarm, no relaunch
+      _chartSyncPending = false;                                 // consume BEFORE the async apply → no double-launch
+      if(typeof crApplyDeepLink !== 'function'){ return; }
+      var res = { intent:'room', symbol:s.raw, venue:s.venue, asset:s.asset, isMint:s.isMint,
+                  mint:s.mint, tf:ptf, room:roomCode, host:null, mode:'chart', raw:{ hasSnapshot:false } };
+      var label = s.isMint ? ((typeof crShortMint==='function') ? crShortMint(s.mint) : 'Token')
+                           : String(s.asset || '').toUpperCase();
+      Promise.resolve(crApplyDeepLink(res)).then(function(ok){
+        if(ok){
+          say('Room chart · ' + label + ' · ' + ptf);
+          try { _stampRoomUrl(roomCode, true); } catch(_){}   // re-share: asset/tf now in the URL
+        } else if(inRoom && Date.now() < _chartSyncUntil){
+          _chartSyncPending = true;                           // launch rejected → re-arm within the window
+        }
+      }, function(){ if(inRoom && Date.now() < _chartSyncUntil) _chartSyncPending = true; });
+    } catch(_){}
+  }
+  // v1.0.744 — called from every inbound peer state. Fires the one-shot only while
+  // armed, in-window, and the state actually carries an asset announcement.
+  function _maybeChartSync(d){
+    if(!_chartSyncPending) return;
+    if(Date.now() > _chartSyncUntil){ _chartSyncPending = false; return; }
+    if(!d || !d.a) return;   // this state has no chart announcement — wait for one
+    _tryChartSync(d.a, d.tf);
+  }
 
   // v1.0.742 — stamp ?room=<CODE> into the address bar so the raw browser URL /
   // iOS share-sheet share IS a working invite. The new crRoomsNet stack never
@@ -40398,13 +40480,23 @@ window.crRoomsNet = (function(){
   // (/stats never counted up). Strip params that would mis-route the joiner
   // (rooms/sharedMap/map/symbol/mint/mg/campaign/lesson) plus a #m= snapshot
   // hash; KEEP host/asset/tf/pub/mn so R-01 invites still carry the room's chart.
-  function _stampRoomUrl(code){
+  function _stampRoomUrl(code, withChart){
     var c = String(code || '').trim();
     if(!c) return;
     try {
       var u = new URL(location.href);
       ['rooms','sharedMap','map','symbol','mint','mg','campaign','lesson'].forEach(function(k){ u.searchParams.delete(k); });
       u.searchParams.set('room', c);
+      // v1.0.744 — a room pins its chart. On CREATE (and on a code-joiner's re-share
+      // after sync) also stamp asset+tf so the raw ?room= link boots straight onto
+      // the room's chart via the existing ?room=&asset= deep-link path. DEX tokens
+      // travel as the mint, CEX assets as the id — parseSymbol reads both back. A
+      // bare join (withChart falsy) KEEPS any asset/tf the invite link already carried.
+      if(withChart){
+        u.searchParams.delete('asset'); u.searchParams.delete('tf');
+        var ct = _chartAssetTf();
+        if(ct.a){ u.searchParams.set('asset', ct.a); if(ct.tf) u.searchParams.set('tf', ct.tf); }
+      }
       if(/[#&]m=/.test(u.hash || '')) u.hash = '';
       history.replaceState(history.state, '', u.pathname + u.search + u.hash);
     } catch(_){}
@@ -40417,7 +40509,10 @@ window.crRoomsNet = (function(){
     } catch(_){}
   }
 
-  function enterRoom(code, id){ roomCode = code || ''; myId = id || null; inRoom = true; roster.clear(); ghosts.clear(); paintPanel(); startPump(); _stampRoomUrl(roomCode); }
+  // v1.0.744 — asCreator stamps the chart into the URL right away (the creator IS
+  // the source of truth); a joiner stamps a bare ?room= and lets the chart-pin
+  // one-shot fill in asset/tf once it adopts the room's chart.
+  function enterRoom(code, id, asCreator){ roomCode = code || ''; myId = id || null; inRoom = true; roster.clear(); ghosts.clear(); paintPanel(); startPump(); _stampRoomUrl(roomCode, !!asCreator); }
   // Tear down: leave the room, stop the pump, drop the socket, clear state + panel.
   // Called on home-exit (default path owns its own socket, so crRoom.leave() alone
   // no longer covers it now that the relay stack is quiesced).
@@ -40428,6 +40523,7 @@ window.crRoomsNet = (function(){
     if(_createTO){ clearTimeout(_createTO); _createTO = null; }
     if(_joinTO){ clearTimeout(_joinTO); _joinTO = null; }
     _pendCreate = null; _pendJoin = null;
+    _chartSyncPending = false; _chartSyncUntil = 0;   // v1.0.744 — disarm the chart-pin one-shot on leave
     inRoom = false; roomCode = ''; myId = null; roster.clear(); ghosts.clear();
     _unstampRoomUrl();
     paintPanel();
@@ -40467,14 +40563,16 @@ window.crRoomsNet = (function(){
   if(ENABLED){
     RoomsClient
       .on('connected',    function(){ say('Rooms · connected'); })
-      .on('created',      function(m){ _clearCreate(); enterRoom(m.room, m.playerId); var cb = _pendCreate; _pendCreate = null; if(cb) cb(roomCode); else say('Room ' + roomCode + ' — share the code'); })
-      .on('joined',       function(m){ _clearJoin(); enterRoom(m.room, m.playerId); (m.players||[]).forEach(function(p){ var id = p && (p.playerId || p.id); if(id && id !== myId){ var nm = (p && p.name) || 'runner'; roster.set(id, { name: nm }); _seedGhost(id, nm); } }); paintPanel(); var cb = _pendJoin; _pendJoin = null; if(cb) cb(true, roomCode); else say('Joined ' + roomCode); })
+      .on('created',      function(m){ _clearCreate(); enterRoom(m.room, m.playerId, true); var cb = _pendCreate; _pendCreate = null; if(cb) cb(roomCode); else say('Room ' + roomCode + ' — share the code'); })
+      // v1.0.744 — a JOINER (never the creator) arms the chart-pin one-shot: adopt
+      // the first asset+tf a peer announces in its state, within a 30 s window.
+      .on('joined',       function(m){ _clearJoin(); enterRoom(m.room, m.playerId); _chartSyncPending = true; _chartSyncUntil = Date.now() + 30000; (m.players||[]).forEach(function(p){ var id = p && (p.playerId || p.id); if(id && id !== myId){ var nm = (p && p.name) || 'runner'; roster.set(id, { name: nm }); _seedGhost(id, nm); } }); paintPanel(); var cb = _pendJoin; _pendJoin = null; if(cb) cb(true, roomCode); else say('Joined ' + roomCode); })
       .on('peer_joined',  function(m){ if(m.playerId){ roster.set(m.playerId, { name: m.name || 'runner' }); _seedGhost(m.playerId, m.name || 'runner'); paintPanel(); say((m.name || 'A runner') + ' joined'); } })
       .on('peer_left',    function(m){ if(m.playerId){ roster.delete(m.playerId); ghosts.delete(m.playerId); paintPanel(); } })
       // v1.0.743 — zombie-guard: only accept state from a peer still in the roster.
       // A state that arrives after peer_left (now that ghosts are demoted, not
       // deleted, on TTL) would otherwise resurrect a permanent nameless placeholder.
-      .on('state',        function(m){ if(!m || !m.playerId || m.playerId === myId) return; if(!roster.has(m.playerId)) return; var d = m.data || {}; var g = ghosts.get(m.playerId) || {}; if(typeof d.x==='number') g.wx = d.x; if(typeof d.py==='number') g.py = d.py; if(typeof d.pnl==='number') g.pnl = d.pnl; var r = roster.get(m.playerId); g.name = (r && r.name) || g.name; g.last = Date.now(); ghosts.set(m.playerId, g); })
+      .on('state',        function(m){ if(!m || !m.playerId || m.playerId === myId) return; if(!roster.has(m.playerId)) return; var d = m.data || {}; var g = ghosts.get(m.playerId) || {}; if(typeof d.x==='number') g.wx = d.x; if(typeof d.py==='number') g.py = d.py; if(typeof d.pnl==='number') g.pnl = d.pnl; var r = roster.get(m.playerId); g.name = (r && r.name) || g.name; g.last = Date.now(); ghosts.set(m.playerId, g); _maybeChartSync(d); })
       .on('chat',         function(m){ if(m && m.playerId !== myId) say((m.name || 'runner') + ': ' + String(m.text || '').slice(0, 120)); })
       .on('error',        function(m){ _clearJoin(); _clearCreate(); if(_pendJoin){ var j = _pendJoin; _pendJoin = null; j(false); } _pendCreate = null; say('Rooms: ' + ((m && m.message) || 'error')); });
 
@@ -40499,6 +40597,8 @@ window.crRoomsNet = (function(){
     chat:         function(t){ if(ENABLED && inRoom) RoomsClient.chat(String(t || '')); },
     leave:        leaveRoom,
     render:       render,
+    // v1.0.744 — the room's pinned chart params ({a, tf}) for roomLink()'s copy-link.
+    chartParams:  _chartAssetTf,
     _stopPump:    stopPump,
   };
 })();
@@ -41069,7 +41169,16 @@ window.crRoomsNet = (function(){
       res(fallback());
     });
   }
-  function roomLink(code){ return location.origin + location.pathname + '?room=' + encodeURIComponent(code); }
+  // v1.0.744 — the copy-link carries the room's pinned chart (asset+tf) so a link-
+  // joiner boots straight onto it, matching the address-bar stamp _stampRoomUrl writes.
+  function roomLink(code){
+    var url = location.origin + location.pathname + '?room=' + encodeURIComponent(code);
+    try {
+      var ct = (window.crRoomsNet && crRoomsNet.chartParams) ? crRoomsNet.chartParams() : null;
+      if(ct && ct.a){ url += '&asset=' + encodeURIComponent(ct.a); if(ct.tf) url += '&tf=' + encodeURIComponent(ct.tf); }
+    } catch(_){}
+    return url;
+  }
   // Enter the chart via the established hand-off (v638 rail-drawer guard pattern):
   // when no run is live, _crDlEnterRun closes the windows + starts a run on the
   // current chart; when a run IS live, stay in place (presence just attaches).
