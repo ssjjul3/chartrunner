@@ -27037,7 +27037,28 @@ async function crApplyDeepLink(res){
     // would land on the DESKTOP. Fall through to the symbol/mint launch below using
     // the asset/tf the room link carries, so we land on the room's chart + presence.
     if(res.intent !== 'symbol' && res.intent !== 'map' && res.intent !== 'room') return false;
-    if(res.intent === 'room' && !res.asset && !res.isMint) return false; // truly bare room — nothing to chart
+    // v1.0.741 — TRULY BARE room link (?room=<code>, no asset/tf/snapshot): this is
+    // the standard invite the Rooms code modal copies (roomLink()). It used to
+    // `return false` here, stranding the joiner on the DESKTOP while crRoomsNet's
+    // +1.5s boot join attached presence invisibly (roster panel counted players,
+    // no chart) — and, worse, the ?room= boot cover only lifted via its 14s safety
+    // timeout because no chart-launch path ever called crDlRevealChart. Land on
+    // the chart instead: dismiss the boot gate, wait out the boot candle load,
+    // then enter a run on the current (default) chart — mirroring the in-app
+    // doJoin → enterChart() hand-off. Presence attaches to that live chart.
+    if(res.intent === 'room' && !res.asset && !res.isMint){
+      _crDlGuestDismissBoot();
+      var _brT0 = Date.now();
+      (function _brEnter(){
+        var running = false, ready = false;
+        try { running = (typeof game !== 'undefined') && !!game.running; } catch(_){}
+        if(running) return;                                  // a run is already live — presence just attaches
+        try { ready = (typeof candles !== 'undefined') && candles.length > 0; } catch(_){}
+        if(ready){ try { _crDlEnterRun(); } catch(_){} return; }
+        if(Date.now() - _brT0 < 20000) setTimeout(_brEnter, 250);   // poll the boot candle load; past 20s the 14s cover-safety has long revealed the desktop — give up quietly
+      })();
+      return true;
+    }
 
     _crDlGuestDismissBoot();
 
@@ -27276,6 +27297,7 @@ function crSyncChartUrl(){
     if(game.campaignChapter) return;
     if(window.crRoom && typeof crRoom.active === 'function' && crRoom.active()) return;
     if(window.crRoomsNet && crRoomsNet.active && crRoomsNet.active()) return;   // v1.0.649 — in a Rooms room: don't overwrite the ?room= deep-link
+    if(/[?&]room=/.test(location.search || '')) return;   // v1.0.741 — ?room= still in the URL: the boot auto-run (bare room link) starts BEFORE the +1.5s Rooms join sets inRoom, so active() alone would let this wipe the invite link — never clobber ?room=
     try { var _ca = currentAssetObj(); if(_ca && _ca.pair) return; } catch(_){}   // synthetic pair has no addressable link
     if(location.hash && /[#&]m=/.test(location.hash)) return;   // active snapshot/map link
     var link = crChartLinkCurrent();
