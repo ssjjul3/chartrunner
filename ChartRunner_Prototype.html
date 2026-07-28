@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.744
-     LAST UPDATED:    2026-07-28  ·  v1.0.744: ROOMS CHART PIN — a room pins its chart: every joiner lands on the creator's asset+timeframe, not the default. CREATOR: on `created`, _stampRoomUrl(code,true) also stamps asset=<mint|id>&tf into the address bar, and the code modal's "Copy link" (roomLink()) appends the same params — so a link-joiner boots straight onto the creator's chart via the existing ?room=&asset= deep-link path (DEX tokens as the mint, CEX as the id). CODE-JOINER: every 10 Hz state now carries a (asset/mint) + tf; a joiner arms a 30 s one-shot on `joined` and adopts the first announced chart via crApplyDeepLink (same machinery as the link path). The creator never syncs off its own chart (only joiners arm). Unparseable announcements don't burn the one-shot; a rejected launch (asset unknown on the device) re-arms within the window; a joiner already on the announced chart disarms silently (no flapping). RE-SHARE: after sync the joiner writes asset/tf into its URL. Known v1 limits (by design): first-announcer-wins if a non-creator is already on another chart at join; a stale link briefly boots the old chart, then the pump-sync corrects — a clean fix needs room metadata in the Rooms-server protocol (separate ticket).
+     CURRENT VERSION: v1.0.745
+     LAST UPDATED:    2026-07-28  ·  v1.0.745: GUEST-ROOM CHAT — guest rooms get the same chat as connected rooms. The whole chat chrome existed (the notification panel flips into chat mode: input line, messages, ONLINE bar with CODE chip, players overview) but every gate checked crRoom.active(), which is always false on the default guest path — so incoming guest chat only surfaced as a toast. New _crChatStack() returns the active multiplayer stack (crRoomsNet guest rooms, else legacy crRoom; ?relay=1 makes them mutually exclusive); chat mode, send and count consume it. crRoomsNet gains the compatibility API the chrome expects (handle, seat=guest, peerCount, roster() in crRoom format). Incoming guest chat now lands in the same panel via _crChatReceive (seat colour guest), toast only as fallback. Roster tick, Terminal ONLINE tab, CODE chip, players overview (incl. first paint) and crRoomCopyCode are all stack-aware. Known/cosmetic (not touched): guest rooms show both the top-left room widget AND the chat ONLINE bar; the [data-cr-chat-count] target in _crChatUpdateCount is dead code since v379.
+     PREV  ·  v1.0.744: ROOMS CHART PIN — a room pins its chart: every joiner lands on the creator's asset+timeframe, not the default. CREATOR: on `created`, _stampRoomUrl(code,true) also stamps asset=<mint|id>&tf into the address bar, and the code modal's "Copy link" (roomLink()) appends the same params — so a link-joiner boots straight onto the creator's chart via the existing ?room=&asset= deep-link path (DEX tokens as the mint, CEX as the id). CODE-JOINER: every 10 Hz state now carries a (asset/mint) + tf; a joiner arms a 30 s one-shot on `joined` and adopts the first announced chart via crApplyDeepLink (same machinery as the link path). The creator never syncs off its own chart (only joiners arm). Unparseable announcements don't burn the one-shot; a rejected launch (asset unknown on the device) re-arms within the window; a joiner already on the announced chart disarms silently (no flapping). RE-SHARE: after sync the joiner writes asset/tf into its URL. Known v1 limits (by design): first-announcer-wins if a non-creator is already on another chart at join; a stale link briefly boots the old chart, then the pump-sync corrects — a clean fix needs room metadata in the Rooms-server protocol (separate ticket).
      PREV  ·  v1.0.743: ROOMS INSTANT GHOSTS — peers show the moment they enter a room, not on their first position-update. crRoomsNet now _seedGhost()s a positionless ghost as soon as a peer is known (own `joined` for each existing player + every `peer_joined`), and render() paints positionless ghosts as a subtle SCREEN-ANCHORED "<name> · lobby" placeholder (top-right, stacking down; screen-anchored so a fresh run's off-screen camera can't cull them). The first real state swaps it for the true world position. Silent ghosts (>12 s) are now DEMOTED back to the lobby placeholder instead of deleted; only peer_left removes for good. Zombie-guard: a state after peer_left can't resurrect a nameless ghost (unknown peers are dropped). drawGhost() gains an idle variant (avatar α .32, quieter label).
      PREV  ·  v1.0.649: ROOMS DEFAULT — the standalone Rooms server (wss://rooms.chartrunner.xyz) is now the DEFAULT multiplayer path for ALL entry points, not just the guest lite buttons. doCreate/doJoin delegate to crRoomsNet at the root, so the wizard, connected inline creator, lite buttons, maps-row, public-rooms browser and ?room= deep-links all land on the new server (server assigns the code, floated via cmOpen). The legacy crRoom/relay stack is QUIESCED (connect() no-ops) and reactivates only via the ?relay=1 escape hatch — the two systems can never hold sockets in parallel. Room types the simple server lacks (moderated/curated/on-chain) degrade to a normal room with an honest toast. No ?rooms=1 flag needed anymore.
      PREV  ·  v1.0.648: ROOMS LIVE (P0, ?rooms=1) — RoomsClient IIFE wired the guest START/JOIN A ROOM buttons to wss://rooms.chartrunner.xyz: create/join, ~10 Hz state pump, peer ghost-runners via the chart's own render hook, room code + roster panel, chat/error toasts. Was additive + feature-flagged behind ?rooms=1.
@@ -40266,6 +40267,17 @@ window.crRoomsNet = (function(){
   }
   function say(m){ try { if(typeof toast==='function') toast(m); } catch(_){} }
   function peerCount(){ var n = 0; roster.forEach(function(_v, id){ if(id !== myId) n++; }); return n; }
+  // v1.0.745 — crRoom-format roster for the SHARED chat chrome (self first, then
+  // peers). Seat is always 'guest' in a Rooms guest room, so seat colouring lands
+  // on the default blue. Consumed uniformly with crRoom via _crChatStack().
+  function _rosterList(){
+    var out = [{ handle: myName(), seat: 'guest', self: true }];
+    roster.forEach(function(v, id){
+      if(id === myId) return;
+      out.push({ handle: (v && v.name) || 'runner', seat: 'guest', self: false });
+    });
+    return out;
+  }
 
   // ── ghost overlay: the CHART owns drawing; we only supply data and map it
   //    through the viewer's OWN sX()/priceToY() so a ghost lands on the same
@@ -40573,7 +40585,10 @@ window.crRoomsNet = (function(){
       // A state that arrives after peer_left (now that ghosts are demoted, not
       // deleted, on TTL) would otherwise resurrect a permanent nameless placeholder.
       .on('state',        function(m){ if(!m || !m.playerId || m.playerId === myId) return; if(!roster.has(m.playerId)) return; var d = m.data || {}; var g = ghosts.get(m.playerId) || {}; if(typeof d.x==='number') g.wx = d.x; if(typeof d.py==='number') g.py = d.py; if(typeof d.pnl==='number') g.pnl = d.pnl; var r = roster.get(m.playerId); g.name = (r && r.name) || g.name; g.last = Date.now(); ghosts.set(m.playerId, g); _maybeChartSync(d); })
-      .on('chat',         function(m){ if(m && m.playerId !== myId) say((m.name || 'runner') + ': ' + String(m.text || '').slice(0, 120)); })
+      // v1.0.745 — incoming guest chat lands in the SAME notification-panel chat as
+      // connected rooms (seat colour guest), mirroring crRoom's peer_action/kind:'chat'
+      // path; the toast is only a fallback if the chat chrome isn't wired yet.
+      .on('chat',         function(m){ if(!m || m.playerId === myId) return; var nm = m.name || 'runner'; var tx = String(m.text || '').slice(0, 200); if(!tx) return; var routed = false; try { if(typeof window._crChatReceive === 'function'){ window._crChatReceive(nm, tx, 'guest'); routed = true; } } catch(_){} if(!routed) say(nm + ': ' + tx.slice(0, 120)); })
       .on('error',        function(m){ _clearJoin(); _clearCreate(); if(_pendJoin){ var j = _pendJoin; _pendJoin = null; j(false); } _pendCreate = null; say('Rooms: ' + ((m && m.message) || 'error')); });
 
     // ?room=<code> deep-link (shared room links + public-browser navigations):
@@ -40599,9 +40614,31 @@ window.crRoomsNet = (function(){
     render:       render,
     // v1.0.744 — the room's pinned chart params ({a, tf}) for roomLink()'s copy-link.
     chartParams:  _chartAssetTf,
+    // v1.0.745 — compatibility surface the shared chat chrome expects (mirrors
+    // crRoom): handle/seat/peerCount/roster + roomId, so the notification panel
+    // flips into chat mode for DEFAULT guest rooms too, not just legacy relay rooms.
+    handle:       myName,
+    seat:         function(){ return 'guest'; },
+    peerCount:    peerCount,
+    roster:       _rosterList,
     _stopPump:    stopPump,
   };
 })();
+
+// v1.0.745 — the currently active multiplayer stack for the SHARED chat chrome.
+// crRoomsNet (default guest rooms) wins when live; the legacy crRoom relay only
+// runs under ?relay=1, so the two are mutually exclusive and this returns at most
+// one — or null when not in a room (chat chrome stays off). Both stacks now expose
+// the same active/chat/handle/seat/peerCount/roster/roomId surface, so every caller
+// (chat mode, send, roster tick, ONLINE tab, CODE chip, overview, copy-code) treats
+// the result uniformly instead of hard-wiring crRoom (whose active() is always false
+// on the default guest path).
+function _crChatStack(){
+  try { if(window.crRoomsNet && crRoomsNet.active && crRoomsNet.active()) return crRoomsNet; } catch(_){}
+  try { if(window.crRoom && crRoom.active && crRoom.active()) return crRoom; } catch(_){}
+  return null;
+}
+try { window._crChatStack = _crChatStack; } catch(_){}
 
 /* ── v1.0.431 — Online-players roster panel (multiplayer maps only) ───────────
    A compact top-right corner panel that lists everyone live in the current room
@@ -40638,8 +40675,9 @@ window.crRoomsNet = (function(){
   function renderTermRoster(){
     try {
       var body = document.getElementById('crTermOnlineBody'); if(!body) return;
-      var active = !!(window.crRoom && crRoom.active && crRoom.active());
-      var list = active && crRoom.roster ? (crRoom.roster() || []) : [];
+      var stack = _crChatStack();                                  // v1.0.745 — stack-aware (guest rooms too)
+      var active = !!stack;
+      var list = active && stack.roster ? (stack.roster() || []) : [];
       var tag = document.getElementById('crTermOnlineTag');
       if(tag) tag.textContent = active ? ('room · ' + list.length + ' live') : 'not in a room';
       body.innerHTML = active
@@ -40650,8 +40688,9 @@ window.crRoomsNet = (function(){
   window.crRenderRoomRoster = renderTermRoster;
   function tick(){
     try {
-      var active = !!(window.crRoom && crRoom.active && crRoom.active());
-      var list = active && crRoom.roster ? (crRoom.roster() || []) : [];
+      var stack = _crChatStack();                                  // v1.0.745 — stack-aware (guest rooms too)
+      var active = !!stack;
+      var list = active && stack.roster ? (stack.roster() || []) : [];
       // v1.0.548 — ONLINE tab + "ChartRunner Multiplayer" title are CSS-gated on
       // the data-cr-mp flag we toggle here.
       var twin = document.getElementById('win-terminal');
@@ -40668,7 +40707,7 @@ window.crRoomsNet = (function(){
       // room ids only (8-char codes); the long legacy map-room ids would flood the bar.
       try {
         var codeEl = document.querySelector('#crNotify .crChatOnline .code');
-        var rid = (active && crRoom.roomId) ? crRoom.roomId() : null;
+        var rid = (active && stack.roomId) ? stack.roomId() : null;   // v1.0.745 — stack-aware CODE chip
         var showC = !!(rid && rid.length <= 16);
         if(codeEl){
           if(showC && codeEl.getAttribute('data-code') !== rid){ codeEl.setAttribute('data-code', rid); codeEl.textContent = '· CODE ' + rid + ' ⧉'; }
@@ -40807,8 +40846,9 @@ window.crRoomsNet = (function(){
   }
   function curList(){
     try {
-      var active = !!(window.crRoom && crRoom.active && crRoom.active());
-      var list = active && crRoom.roster ? (crRoom.roster() || []) : [];
+      var stack = _crChatStack();                                  // v1.0.745 — stack-aware; open() paints
+      var active = !!stack;                                        // immediately (no 1s roster-tick gap)
+      var list = active && stack.roster ? (stack.roster() || []) : [];
       return { active: active, list: list };
     } catch(_){ return { active:false, list:[] }; }
   }
@@ -41228,7 +41268,8 @@ window.crRoomsNet = (function(){
   // Footer CODE chip click lands here (chat bar, roster tick fills the chip).
   window.crRoomCopyCode = function(){
     try {
-      var rid = (window.crRoom && crRoom.roomId) ? crRoom.roomId() : null;
+      var stack = (typeof _crChatStack === 'function') ? _crChatStack() : null;   // v1.0.745 — stack-aware
+      var rid = (stack && stack.roomId) ? stack.roomId() : null;
       if(!rid) return;
       copyText(rid).then(function(ok){ say(ok ? 'code copied' : 'copy failed — code: ' + rid); });
     } catch(_){}
@@ -71108,7 +71149,7 @@ function syncOverlayUI(){ /* no-op — drawer entries removed */ }
           try {
             // v1.0.548 — in a LIVE multiplayer room the mode banner reads
             // "MULTIPLAYER" across every mode (Time is Money / Monster / Racing / Snake / campaign).
-            if(window.crRoom && crRoom.active && crRoom.active()) return 'Multiplayer';
+            if(typeof _crChatStack === 'function' && _crChatStack()) return 'Multiplayer';   // v1.0.745 — guest rooms too
             const ch = (typeof game !== 'undefined') ? game.campaignChapter : null;
             if(ch && typeof CAMPAIGN_CHAPTERS !== 'undefined' && CAMPAIGN_CHAPTERS[ch]){
               return 'CH.' + ch + ' · ' + (CAMPAIGN_CHAPTERS[ch].goal || 'Campaign');
@@ -74290,7 +74331,10 @@ try { window.crConsoleToggle = crConsoleToggleVisible; } catch(_){}
 // In a live map room the notification panel flips into a chat display: it shows
 // messages from all players in the map and hides command/event notifications.
 function _crChatModeActive(){
-  try { return !!(window.crRoom && crRoom.active && crRoom.active()); } catch(_){ return false; }
+  // v1.0.745 — any active multiplayer stack (crRoomsNet guest rooms OR legacy crRoom
+  // relay) flips the panel into chat mode; the old crRoom-only gate never fired on
+  // the default guest path, so guest chat only surfaced as a toast.
+  try { return !!_crChatStack(); } catch(_){ return false; }
 }
 function _crChatEnsure(panel){
   if(!panel) return;
@@ -74353,7 +74397,7 @@ function _crChatUpdateCount(panel){
     const c = panel.querySelector('[data-cr-chat-count]');
     if(!c) return;
     let n = 1;
-    try { n = 1 + (window.crRoom && crRoom.peerCount ? crRoom.peerCount() : 0); } catch(_){}
+    try { const s = _crChatStack(); n = 1 + (s && s.peerCount ? s.peerCount() : 0); } catch(_){}   // v1.0.745 — stack-aware
     c.textContent = n + (n === 1 ? ' player' : ' players');
   } catch(_){}
 }
@@ -74362,12 +74406,15 @@ function _crChatSendFromInput(inp){
   const t = (inp.value || '').trim();
   if(!t) return;
   inp.value = '';
+  // v1.0.745 — send through the active stack (guest rooms send via crRoomsNet.chat,
+  // relay rooms via crRoom.chat) and echo the local line with our own handle/seat.
+  const stack = _crChatStack();
   let sent = t;
-  try { if(window.crRoom && crRoom.chat) sent = crRoom.chat(t) || t; } catch(_){}
+  try { if(stack && stack.chat) sent = stack.chat(t) || t; } catch(_){}
   let me = 'you';
-  try { me = (window.crRoom && crRoom.handle ? crRoom.handle() : 'you') || 'you'; } catch(_){}
+  try { me = (stack && stack.handle ? stack.handle() : 'you') || 'you'; } catch(_){}
   let seat = 'guest';
-  try { seat = (window.crRoom && crRoom.seat ? crRoom.seat() : 'guest') || 'guest'; } catch(_){}
+  try { seat = (stack && stack.seat ? stack.seat() : 'guest') || 'guest'; } catch(_){}
   _crChatAppend(me, sent, true, seat);
   try { inp.focus(); } catch(_){}
 }
