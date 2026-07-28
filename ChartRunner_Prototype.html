@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.649
-     LAST UPDATED:    2026-07-22  ·  v1.0.649: ROOMS DEFAULT — the standalone Rooms server (wss://rooms.chartrunner.xyz) is now the DEFAULT multiplayer path for ALL entry points, not just the guest lite buttons. doCreate/doJoin delegate to crRoomsNet at the root, so the wizard, connected inline creator, lite buttons, maps-row, public-rooms browser and ?room= deep-links all land on the new server (server assigns the code, floated via cmOpen). The legacy crRoom/relay stack is QUIESCED (connect() no-ops) and reactivates only via the ?relay=1 escape hatch — the two systems can never hold sockets in parallel. Room types the simple server lacks (moderated/curated/on-chain) degrade to a normal room with an honest toast. No ?rooms=1 flag needed anymore.
+     CURRENT VERSION: v1.0.743
+     LAST UPDATED:    2026-07-28  ·  v1.0.743: ROOMS INSTANT GHOSTS — peers show the moment they enter a room, not on their first position-update. crRoomsNet now _seedGhost()s a positionless ghost as soon as a peer is known (own `joined` for each existing player + every `peer_joined`), and render() paints positionless ghosts as a subtle SCREEN-ANCHORED "<name> · lobby" placeholder (top-right, stacking down; screen-anchored so a fresh run's off-screen camera can't cull them). The first real state swaps it for the true world position. Silent ghosts (>12 s) are now DEMOTED back to the lobby placeholder instead of deleted; only peer_left removes for good. Zombie-guard: a state after peer_left can't resurrect a nameless ghost (unknown peers are dropped). drawGhost() gains an idle variant (avatar α .32, quieter label).
+     PREV  ·  v1.0.649: ROOMS DEFAULT — the standalone Rooms server (wss://rooms.chartrunner.xyz) is now the DEFAULT multiplayer path for ALL entry points, not just the guest lite buttons. doCreate/doJoin delegate to crRoomsNet at the root, so the wizard, connected inline creator, lite buttons, maps-row, public-rooms browser and ?room= deep-links all land on the new server (server assigns the code, floated via cmOpen). The legacy crRoom/relay stack is QUIESCED (connect() no-ops) and reactivates only via the ?relay=1 escape hatch — the two systems can never hold sockets in parallel. Room types the simple server lacks (moderated/curated/on-chain) degrade to a normal room with an honest toast. No ?rooms=1 flag needed anymore.
      PREV  ·  v1.0.648: ROOMS LIVE (P0, ?rooms=1) — RoomsClient IIFE wired the guest START/JOIN A ROOM buttons to wss://rooms.chartrunner.xyz: create/join, ~10 Hz state pump, peer ghost-runners via the chart's own render hook, room code + roster panel, chat/error toasts. Was additive + feature-flagged behind ?rooms=1.
      PREV  ·  v1.0.647: OS REINFORCE — liquid theme blur/ease tokens + COACH.llm spatial entrance (crCoachInLiquid) + prefers-reduced-motion guard (additive, scoped; no restyle)
      v1.0.646: ROOM P1 CLIENT — moderated/curated rooms (unlocks the MODERATED
@@ -40264,9 +40265,23 @@ window.crRoomsNet = (function(){
   // ── ghost overlay: the CHART owns drawing; we only supply data and map it
   //    through the viewer's OWN sX()/priceToY() so a ghost lands on the same
   //    candle regardless of local pan/zoom (mirrors crRoom's coord model). ──
-  function drawGhost(c, x, y, g){
+  // v1.0.743 — seed a positionless ghost the moment a peer is KNOWN (own joined
+  // for each existing player, and every peer_joined) so a fresh joiner sees them
+  // as a lobby placeholder immediately, without waiting for their first 10-Hz
+  // state (which a peer in the Configure-Run menu never sends). Never clobbers an
+  // already-known ghost's position; last:0 keeps it idle until a real state lands.
+  function _seedGhost(id, name){
+    if(!id || id === myId) return;
+    var g = ghosts.get(id);
+    if(g){ if(name) g.name = name; return; }
+    ghosts.set(id, { name: name || 'runner', wx: null, py: null, pnl: null, last: 0 });
+  }
+  // v1.0.743 — idle flag: lobby-placeholder look (fainter avatar, "· lobby"
+  // label, no P&L). A ghost is idle when we know the peer but have no position
+  // yet (fresh joiner / host still in the menu) or after its state went silent.
+  function drawGhost(c, x, y, g, idle){
     c.save();
-    c.globalAlpha = 0.5;
+    c.globalAlpha = idle ? 0.32 : 0.5;
     c.translate(x, y);
     try {
       if(typeof drawInvader === 'function') drawInvader(c, 1.4, GHOST_COL);
@@ -40274,28 +40289,48 @@ window.crRoomsNet = (function(){
     } catch(_){ try { c.beginPath(); c.arc(0,0,9,0,Math.PI*2); c.fillStyle = GHOST_COL; c.fill(); } catch(__){} }
     c.restore();
     c.save();
-    var pnl = (g.pnl==null || !isFinite(g.pnl)) ? '' : '  ' + (g.pnl>=0?'+':'') + g.pnl;
-    var label = (g.name || 'runner') + pnl;
+    var label;
+    if(idle){
+      label = (g.name || 'runner') + ' · lobby';
+    } else {
+      var pnl = (g.pnl==null || !isFinite(g.pnl)) ? '' : '  ' + (g.pnl>=0?'+':'') + g.pnl;
+      label = (g.name || 'runner') + pnl;
+    }
     c.font = '11px ui-monospace, Menlo, monospace';
     var tw = c.measureText(label).width;
-    c.globalAlpha = 0.82; c.fillStyle = 'rgba(10,12,20,0.82)';
+    c.globalAlpha = idle ? 0.5 : 0.82; c.fillStyle = 'rgba(10,12,20,0.82)';
     c.fillRect(x - tw/2 - 4, y - 33, tw + 8, 15);
-    c.globalAlpha = 1; c.fillStyle = GHOST_COL;
+    c.globalAlpha = idle ? 0.72 : 1; c.fillStyle = GHOST_COL;
     c.textAlign = 'center'; c.textBaseline = 'middle';
     c.fillText(label, x, y - 25);
     c.restore();
   }
+  // v1.0.743 — lobby placeholder for a positionless peer. Drawn SCREEN-ANCHORED
+  // (top-right of the chart), NOT world-anchored: a world anchor (e.g. the newest
+  // candle) sits off-screen for a fresh run's camera and would be culled below —
+  // exactly for the joiner this feature exists for. Multiple placeholders stack
+  // downward. The first real state-update swaps this for the true world position.
+  function drawLobbyGhost(c, W, H, g, n){
+    var x = Math.max(60, (W||0) - 96);
+    var y = 108 + n * 30;
+    drawGhost(c, x, y, g, true);
+  }
   function render(c, W, H){
     if(!ENABLED || !inRoom || !ghosts.size) return;
     var now = Date.now();
+    var lobbyN = 0;
     ghosts.forEach(function(g, id){
-      if(now - g.last > GHOST_TTL_MS){ ghosts.delete(id); return; }
-      if(g.wx==null || g.py==null) return;
+      var positioned = (g.wx != null && g.py != null);
+      // v1.0.743 — TTL-DEMOTION, not deletion: a ghost that goes silent (peer
+      // back in the menu) falls back to a lobby placeholder instead of vanishing.
+      // Only peer_left removes a ghost for good.
+      if(positioned && now - g.last > GHOST_TTL_MS){ g.wx = null; g.py = null; positioned = false; }
+      if(!positioned){ drawLobbyGhost(c, W, H, g, lobbyN++); return; }
       var x, y;
       try { x = sX(g.wx); y = priceToY(g.py); } catch(_){ return; }
       if(!isFinite(x) || !isFinite(y)) return;
-      if(x < -40 || x > (W||0)+40) return;   // offscreen cull
-      drawGhost(c, x, y, g);
+      if(x < -40 || x > (W||0)+40) return;   // offscreen cull (world-anchored only)
+      drawGhost(c, x, y, g, false);
     });
   }
 
@@ -40433,10 +40468,13 @@ window.crRoomsNet = (function(){
     RoomsClient
       .on('connected',    function(){ say('Rooms · connected'); })
       .on('created',      function(m){ _clearCreate(); enterRoom(m.room, m.playerId); var cb = _pendCreate; _pendCreate = null; if(cb) cb(roomCode); else say('Room ' + roomCode + ' — share the code'); })
-      .on('joined',       function(m){ _clearJoin(); enterRoom(m.room, m.playerId); (m.players||[]).forEach(function(p){ var id = p && (p.playerId || p.id); if(id && id !== myId) roster.set(id, { name: (p && p.name) || 'runner' }); }); paintPanel(); var cb = _pendJoin; _pendJoin = null; if(cb) cb(true, roomCode); else say('Joined ' + roomCode); })
-      .on('peer_joined',  function(m){ if(m.playerId){ roster.set(m.playerId, { name: m.name || 'runner' }); paintPanel(); say((m.name || 'A runner') + ' joined'); } })
+      .on('joined',       function(m){ _clearJoin(); enterRoom(m.room, m.playerId); (m.players||[]).forEach(function(p){ var id = p && (p.playerId || p.id); if(id && id !== myId){ var nm = (p && p.name) || 'runner'; roster.set(id, { name: nm }); _seedGhost(id, nm); } }); paintPanel(); var cb = _pendJoin; _pendJoin = null; if(cb) cb(true, roomCode); else say('Joined ' + roomCode); })
+      .on('peer_joined',  function(m){ if(m.playerId){ roster.set(m.playerId, { name: m.name || 'runner' }); _seedGhost(m.playerId, m.name || 'runner'); paintPanel(); say((m.name || 'A runner') + ' joined'); } })
       .on('peer_left',    function(m){ if(m.playerId){ roster.delete(m.playerId); ghosts.delete(m.playerId); paintPanel(); } })
-      .on('state',        function(m){ if(!m || !m.playerId || m.playerId === myId) return; var d = m.data || {}; var g = ghosts.get(m.playerId) || {}; if(typeof d.x==='number') g.wx = d.x; if(typeof d.py==='number') g.py = d.py; if(typeof d.pnl==='number') g.pnl = d.pnl; var r = roster.get(m.playerId); g.name = (r && r.name) || g.name; g.last = Date.now(); ghosts.set(m.playerId, g); })
+      // v1.0.743 — zombie-guard: only accept state from a peer still in the roster.
+      // A state that arrives after peer_left (now that ghosts are demoted, not
+      // deleted, on TTL) would otherwise resurrect a permanent nameless placeholder.
+      .on('state',        function(m){ if(!m || !m.playerId || m.playerId === myId) return; if(!roster.has(m.playerId)) return; var d = m.data || {}; var g = ghosts.get(m.playerId) || {}; if(typeof d.x==='number') g.wx = d.x; if(typeof d.py==='number') g.py = d.py; if(typeof d.pnl==='number') g.pnl = d.pnl; var r = roster.get(m.playerId); g.name = (r && r.name) || g.name; g.last = Date.now(); ghosts.set(m.playerId, g); })
       .on('chat',         function(m){ if(m && m.playerId !== myId) say((m.name || 'runner') + ': ' + String(m.text || '').slice(0, 120)); })
       .on('error',        function(m){ _clearJoin(); _clearCreate(); if(_pendJoin){ var j = _pendJoin; _pendJoin = null; j(false); } _pendCreate = null; say('Rooms: ' + ((m && m.message) || 'error')); });
 
