@@ -40355,7 +40355,34 @@ window.crRoomsNet = (function(){
   }
   function stopPump(){ if(pumpTimer){ clearInterval(pumpTimer); pumpTimer = null; } }
 
-  function enterRoom(code, id){ roomCode = code || ''; myId = id || null; inRoom = true; roster.clear(); ghosts.clear(); paintPanel(); startPump(); }
+  // v1.0.742 — stamp ?room=<CODE> into the address bar so the raw browser URL /
+  // iOS share-sheet share IS a working invite. The new crRoomsNet stack never
+  // wrote the code to the URL (only the quiesced legacy crRoom.join did), so a
+  // host who created a room from /play/?rooms=1 kept sharing ?rooms=1 — the
+  // invitee landed in the ROOMS view instead of the room and it stayed empty
+  // (/stats never counted up). Strip params that would mis-route the joiner
+  // (rooms/sharedMap/map/symbol/mint/mg/campaign/lesson) plus a #m= snapshot
+  // hash; KEEP host/asset/tf/pub/mn so R-01 invites still carry the room's chart.
+  function _stampRoomUrl(code){
+    var c = String(code || '').trim();
+    if(!c) return;
+    try {
+      var u = new URL(location.href);
+      ['rooms','sharedMap','map','symbol','mint','mg','campaign','lesson'].forEach(function(k){ u.searchParams.delete(k); });
+      u.searchParams.set('room', c);
+      if(/[#&]m=/.test(u.hash || '')) u.hash = '';
+      history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    } catch(_){}
+  }
+  function _unstampRoomUrl(){
+    try {
+      var u = new URL(location.href);
+      u.searchParams.delete('room');
+      history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    } catch(_){}
+  }
+
+  function enterRoom(code, id){ roomCode = code || ''; myId = id || null; inRoom = true; roster.clear(); ghosts.clear(); paintPanel(); startPump(); _stampRoomUrl(roomCode); }
   // Tear down: leave the room, stop the pump, drop the socket, clear state + panel.
   // Called on home-exit (default path owns its own socket, so crRoom.leave() alone
   // no longer covers it now that the relay stack is quiesced).
@@ -40367,6 +40394,7 @@ window.crRoomsNet = (function(){
     if(_joinTO){ clearTimeout(_joinTO); _joinTO = null; }
     _pendCreate = null; _pendJoin = null;
     inRoom = false; roomCode = ''; myId = null; roster.clear(); ghosts.clear();
+    _unstampRoomUrl();
     paintPanel();
   }
 
