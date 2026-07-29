@@ -2543,7 +2543,7 @@ window.crShare = function (o) {
     filter:drop-shadow(0 0 9px rgba(20,241,149,.5));
     animation:crTutInvaderBob 2.6s ease-in-out infinite}
   #crCoachHubBtn:hover{filter:drop-shadow(0 0 14px rgba(20,241,149,.85))}
-  #crCoachHubBtn canvas{display:block;width:76px;height:53px;image-rendering:pixelated}  /* v1.0.749 — was 120x84; downscaled so the invader stays inside the viewport (canvas attrs unchanged, painter unaffected) */
+  #crCoachHubBtn canvas{display:block;width:120px;height:84px;image-rendering:pixelated}  /* v1.0.751 — restored to the pre-v749 size (120x84) per owner request; v749 had downscaled it to 76x53 (canvas attrs unchanged, painter unaffected) */
   /* v1.0.372 — Welcome bubble fills the THIRD right-column dock slot (set as a
      fixed rect by JS on open). Flex column so the action buttons pin to the
      bottom of the frame, like the chat window's input row. */
@@ -2551,6 +2551,11 @@ window.crShare = function (o) {
     display:flex;flex-direction:column;overflow:hidden}
   #crCoachHubBubble .term-body{flex:1 1 auto;overflow:auto}
   #crCoachHubBubble .crCoachHubActions{display:flex;gap:6px;padding:8px 10px 12px;flex-wrap:wrap;margin-top:auto}
+  /* v1.0.751 — COACH Chat is sign-in / Connect exclusive: hide the Chat button
+     for guests, who get a tutorial-only COACH (pressing the invader launches the
+     guided tour directly — see crCoachHubInit). Flips live when guest state does
+     (crApplyAccessGates toggles body.cr-guest). */
+  body.cr-guest #crCoachHubBubble .crCoachHubActions #crCoachHubChat{display:none!important}
   /* v1.0.458 — welcome buttons use the SAME terminal button language as the tutorial
      nav (.cr-tut-foot .cr-go): monospace, uppercase, green-on-dark. Tutorial = filled
      primary (mirrors #crTutNext); Chat = outline secondary (mirrors Back). */
@@ -76200,15 +76205,40 @@ function log(msg){
         try { document.body.classList.remove('cr-coach-bubble-open'); } catch(_){}
       }
     }
+    // v1.0.597 — unified tutorial via crFirstRun (legacy crCoachTutorial fallback).
+    function _crCoachStartTutorial(){
+      try {
+        if(window.crFirstRun && window.crFirstRun.reset) window.crFirstRun.reset();
+        else if(window.crFirstRun && window.crFirstRun.start) window.crFirstRun.start(true);
+        else if(window.crCoachTutorial) window.crCoachTutorial(true, 'os');
+      } catch(_){}
+    }
+    // v1.0.751 — guest state (wallet-connect OR email/apple sign-in; see crConnected).
+    function _crCoachIsGuest(){ try { return (typeof window.crGuest==='function') ? !!window.crGuest() : document.body.classList.contains('cr-guest'); } catch(_){ return false; } }
     btn.addEventListener('click', function(e){
       e.stopPropagation();
+      // v1.0.751 — for guests COACH is a pure tutorial launcher: pressing the
+      // invader starts the guided tour directly (no welcome bubble, no Chat).
+      // Connected / signed-in players keep the bubble (Tutorial + Chat).
+      if(_crCoachIsGuest()){ show(false); _crCoachStartTutorial(); return; }
       show(bubble.style.display === 'none' || !bubble.style.display);
     });
     const tutBtn   = document.getElementById('crCoachHubTut');
     const chatBtn  = document.getElementById('crCoachHubChat');
     const closeBtn = document.getElementById('crCoachHubClose');
-    if(tutBtn)   tutBtn.addEventListener('click',   function(){ show(false); try { /* v1.0.597 — unified tutorial via crFirstRun */ if(window.crFirstRun && window.crFirstRun.reset) window.crFirstRun.reset(); else if(window.crFirstRun && window.crFirstRun.start) window.crFirstRun.start(true); else if(window.crCoachTutorial) window.crCoachTutorial(true, 'os'); } catch(_){} });
-    if(chatBtn)  chatBtn.addEventListener('click',  function(){ show(false); try { if(window.crOpenCoachChat) window.crOpenCoachChat(); } catch(_){} });
+    if(tutBtn)   tutBtn.addEventListener('click',   function(){ show(false); _crCoachStartTutorial(); });
+    if(chatBtn)  chatBtn.addEventListener('click',  function(){
+      // v1.0.751 — Chat is sign-in / Connect exclusive. The button is hidden for
+      // guests via CSS; this guard is the belt-and-suspenders — route guests to
+      // Connect instead of opening the chat.
+      if(_crCoachIsGuest()){
+        show(false);
+        try { if(typeof toast === 'function') toast('🔒 COACH Chat is sign-in / connect exclusive — connect a wallet or sign in.'); } catch(_){}
+        try { var _mc = document.getElementById('crMenuConnect'); if(_mc) _mc.click(); } catch(_){}
+        return;
+      }
+      show(false); try { if(window.crOpenCoachChat) window.crOpenCoachChat(); } catch(_){}
+    });
     if(closeBtn) closeBtn.addEventListener('click', function(){ show(false); });
     // v1.0.543 — keep the bubble OPEN while the player navigates apps/tabs so it
     // can re-narrate the new context (the 300ms poll updates the text). Only a click
