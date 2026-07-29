@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.745
-     LAST UPDATED:    2026-07-28  ·  v1.0.745: GUEST-ROOM CHAT — guest rooms get the same chat as connected rooms. The whole chat chrome existed (the notification panel flips into chat mode: input line, messages, ONLINE bar with CODE chip, players overview) but every gate checked crRoom.active(), which is always false on the default guest path — so incoming guest chat only surfaced as a toast. New _crChatStack() returns the active multiplayer stack (crRoomsNet guest rooms, else legacy crRoom; ?relay=1 makes them mutually exclusive); chat mode, send and count consume it. crRoomsNet gains the compatibility API the chrome expects (handle, seat=guest, peerCount, roster() in crRoom format). Incoming guest chat now lands in the same panel via _crChatReceive (seat colour guest), toast only as fallback. Roster tick, Terminal ONLINE tab, CODE chip, players overview (incl. first paint) and crRoomCopyCode are all stack-aware. Known/cosmetic (not touched): guest rooms show both the top-left room widget AND the chat ONLINE bar; the [data-cr-chat-count] target in _crChatUpdateCount is dead code since v379.
+     CURRENT VERSION: v1.0.746
+     LAST UPDATED:    2026-07-29  ·  v1.0.746: REMOVE ROOM CARD — deleted the floating top-left room widget (#crRoomsNetPanel, "ROOM <CODE>" + roster). Since v1.0.745 the chat panel's ONLINE bar shows the same info (online count, click-to-copy CODE chip, players overview), so the card was a duplicate hanging over the chat. In the crRoomsNet IIFE, ensurePanel(), rosterRow() and the module-local esc() copy are gone; paintPanel() stays as an internal refresh hook (callers: enterRoom/leaveRoom/joined/peer_joined/peer_left) but now only tears any prior card out of the DOM and is otherwise a no-op. The roster tick/overview module keeps its own esc/rosterRows copies — no dangling references (all 7 inline blocks parse, leakage guard green).
+     PREV  ·  v1.0.745: GUEST-ROOM CHAT — guest rooms get the same chat as connected rooms. The whole chat chrome existed (the notification panel flips into chat mode: input line, messages, ONLINE bar with CODE chip, players overview) but every gate checked crRoom.active(), which is always false on the default guest path — so incoming guest chat only surfaced as a toast. New _crChatStack() returns the active multiplayer stack (crRoomsNet guest rooms, else legacy crRoom; ?relay=1 makes them mutually exclusive); chat mode, send and count consume it. crRoomsNet gains the compatibility API the chrome expects (handle, seat=guest, peerCount, roster() in crRoom format). Incoming guest chat now lands in the same panel via _crChatReceive (seat colour guest), toast only as fallback. Roster tick, Terminal ONLINE tab, CODE chip, players overview (incl. first paint) and crRoomCopyCode are all stack-aware. Known/cosmetic (not touched): guest rooms show both the top-left room widget AND the chat ONLINE bar; the [data-cr-chat-count] target in _crChatUpdateCount is dead code since v379.
      PREV  ·  v1.0.744: ROOMS CHART PIN — a room pins its chart: every joiner lands on the creator's asset+timeframe, not the default. CREATOR: on `created`, _stampRoomUrl(code,true) also stamps asset=<mint|id>&tf into the address bar, and the code modal's "Copy link" (roomLink()) appends the same params — so a link-joiner boots straight onto the creator's chart via the existing ?room=&asset= deep-link path (DEX tokens as the mint, CEX as the id). CODE-JOINER: every 10 Hz state now carries a (asset/mint) + tf; a joiner arms a 30 s one-shot on `joined` and adopts the first announced chart via crApplyDeepLink (same machinery as the link path). The creator never syncs off its own chart (only joiners arm). Unparseable announcements don't burn the one-shot; a rejected launch (asset unknown on the device) re-arms within the window; a joiner already on the announced chart disarms silently (no flapping). RE-SHARE: after sync the joiner writes asset/tf into its URL. Known v1 limits (by design): first-announcer-wins if a non-creator is already on another chart at join; a stale link briefly boots the old chart, then the pump-sync corrects — a clean fix needs room metadata in the Rooms-server protocol (separate ticket).
      PREV  ·  v1.0.743: ROOMS INSTANT GHOSTS — peers show the moment they enter a room, not on their first position-update. crRoomsNet now _seedGhost()s a positionless ghost as soon as a peer is known (own `joined` for each existing player + every `peer_joined`), and render() paints positionless ghosts as a subtle SCREEN-ANCHORED "<name> · lobby" placeholder (top-right, stacking down; screen-anchored so a fresh run's off-screen camera can't cull them). The first real state swaps it for the true world position. Silent ghosts (>12 s) are now DEMOTED back to the lobby placeholder instead of deleted; only peer_left removes for good. Zombie-guard: a state after peer_left can't resurrect a nameless ghost (unknown peers are dropped). drawGhost() gains an idle variant (avatar α .32, quieter label).
      PREV  ·  v1.0.649: ROOMS DEFAULT — the standalone Rooms server (wss://rooms.chartrunner.xyz) is now the DEFAULT multiplayer path for ALL entry points, not just the guest lite buttons. doCreate/doJoin delegate to crRoomsNet at the root, so the wizard, connected inline creator, lite buttons, maps-row, public-rooms browser and ?room= deep-links all land on the new server (server assigns the code, floated via cmOpen). The legacy crRoom/relay stack is QUIESCED (connect() no-ops) and reactivates only via the ?relay=1 escape hatch — the two systems can never hold sockets in parallel. Room types the simple server lacks (moderated/curated/on-chain) degrade to a normal room with an honest toast. No ?rooms=1 flag needed anymore.
@@ -40351,43 +40352,17 @@ window.crRoomsNet = (function(){
     });
   }
 
-  // ── room panel (code chip + roster). Small fixed DOM card, top-left, shown
-  //    only while in a room. The code chip is click-to-copy. ──
-  var panel = null;
-  function ensurePanel(){
-    if(panel || typeof document==='undefined') return panel;
-    panel = document.createElement('div');
-    panel.id = 'crRoomsNetPanel';
-    panel.style.cssText = 'position:fixed;top:54px;left:12px;z-index:62;min-width:150px;max-width:240px;'
-      + 'background:rgba(10,12,20,.86);border:1px solid rgba(122,162,255,.32);border-radius:11px;'
-      + 'padding:9px 11px;font:600 12px ui-monospace,Menlo,Consolas,monospace;color:#e9ebf2;'
-      + 'backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);box-shadow:0 8px 24px rgba(0,0,0,.45);display:none';
-    (document.body || document.documentElement).appendChild(panel);
-    panel.addEventListener('click', function(e){
-      var chip = e.target && e.target.closest ? e.target.closest('#crRoomsNetCode') : null;
-      if(!chip || !roomCode) return;
-      try { if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(roomCode); say('Code ' + roomCode + ' copied'); } catch(_){}
-    });
-    return panel;
-  }
-  function esc(s){ return String(s==null?'':s).replace(/[&<>]/g, function(ch){ return ch==='&'?'&amp;':ch==='<'?'&lt;':'&gt;'; }); }
-  function rosterRow(nm, col, you){
-    return '<div style="display:flex;align-items:center;gap:8px;overflow:hidden;margin-top:5px">'
-      + '<span style="width:8px;height:8px;border-radius:50%;flex:none;background:' + col + ';box-shadow:0 0 6px ' + col + '"></span>'
-      + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(nm) + (you ? ' <span style="color:#6a6f7a">(you)</span>' : '') + '</span></div>';
-  }
+  // ── room panel — REMOVED (v1.0.746). The floating top-left card
+  //    (#crRoomsNetPanel, "ROOM <CODE>" + roster) duplicated the chat panel's
+  //    online-bar (online count, click-to-copy CODE chip, players overview)
+  //    added in v1.0.745. paintPanel() is kept as an internal refresh hook —
+  //    its callers (enterRoom/leaveRoom/joined/peer_joined/peer_left) still
+  //    call it — but it now only tears down any card a prior build may have
+  //    created and is otherwise a no-op. ──
   function paintPanel(){
-    if(!ENABLED) return;
-    var el = ensurePanel(); if(!el) return;
-    if(!inRoom){ el.style.display = 'none'; return; }
-    var rows = rosterRow(myName(), '#14f195', true);
-    roster.forEach(function(p, id){ if(id !== myId) rows += rosterRow(p.name || 'runner', GHOST_COL, false); });
-    el.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'
-      + '<span style="color:#7aa2ff;font-size:10px;letter-spacing:.6px">ROOM</span>'
-      + '<span id="crRoomsNetCode" title="Copy code" style="cursor:pointer;font-weight:800;letter-spacing:2px;color:#e9ebf2">' + esc(roomCode) + '</span>'
-      + '<span style="margin-left:auto;color:#6a6f7a;font-size:10px">' + (1 + peerCount()) + '/8</span></div>'
-      + rows;
-    el.style.display = 'block';
+    if(typeof document==='undefined') return;
+    var el = document.getElementById('crRoomsNetPanel');
+    if(el && el.parentNode){ el.parentNode.removeChild(el); }
   }
 
   // ── outbound state pump (~10 Hz): only while in a room and running. ──
