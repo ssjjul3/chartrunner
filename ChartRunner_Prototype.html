@@ -55409,7 +55409,10 @@ function _crBuildAppDock(){
       const prog = ic.getAttribute('data-prog') || '';
       if(prog) b.setAttribute('data-prog', prog);
       const label = _crAppDockLabel(ic);
-      b.title = label;
+      // v1.0.750 — dock buttons carry the FULL desktop-icon title (name — description),
+      // not just the short label, so the themed hover tooltip (crTip) reads the same in
+      // both launcher views. crTip may have stashed a hovered icon's title to __crTitle.
+      b.title = ic.getAttribute('title') || ic.__crTitle || label;
       b.setAttribute('aria-label', label);
       const ico = ic.querySelector('.ico');
       if(ico) b.appendChild(ico.cloneNode(true));
@@ -94441,20 +94444,47 @@ window.crQvac = (function(){
   var STEPS = [
     // v1.0 — "What's your name" opener: a local handle for leaderboards + MP rooms.
     { sel:null, ttl:'Your name', body:'', nameInput:true },
+    // v1.0.750 — order per spec: PLAY → PROFILE → TERMINAL → TOKEN, then EVERY
+    // further app in a fixed order. Steps whose icon is hidden (guest-gated /
+    // archived) auto-skip via targetFor's visibility check and reappear on
+    // their own once the app is visible (connected / signed in) — so the
+    // connected desktop gets the full walk-through with zero extra flags.
     { sel:'.os-icon[data-prog="chartrunner"]', ttl:'Play',     body:"Your run launcher. Pick an asset / token / timeframe and START a run on real candles." },
-    { sel:'.os-icon[data-prog="terminal"]',    ttl:'Terminal', body:"Live trading console — chart engine, on-chain + CEX trackers and strategies. Drag any pane onto the chart to pin it live." },
     { sel:'.os-icon[data-prog="wallet"]',      ttl:'Profile',  body:"Your loadout — weapon, skin, vehicle, bots and tools. Gear up before a run." },
+    { sel:'.os-icon[data-prog="terminal"]',    ttl:'Terminal', body:"Live trading console — chart engine, on-chain + CEX trackers and strategies. Drag any pane onto the chart to pin it live." },
     { sel:'.os-icon[data-prog="tokenterm"]',   ttl:'Token',    body:"Research any token, star favourites into watchlists, and $RUN it as a chart." },
-    // v1.0.661 — Maps + Journal merged into Docs; their own icon steps are gone
-    // (the icons are permanently hidden now, so they'd only ever auto-skip).
-    // Docs is connect-gated: auto-skips for guests (icon hidden), shows once a wallet is connected.
+    { sel:'.os-icon[data-prog="walletapp"]',   ttl:'Wallet',   body:"Your on-chain wallet — balances, remembered wallets and broker connections." },
+    // v1.0.661 — Maps + Journal merged into Docs; Docs is connect-gated (auto-skips for guests).
     { sel:'.os-icon[data-prog="display"]',     ttl:'Docs',     body:"Maps + Journal in one place — saved chart setups and your trade log, alerts and P&L, in a sidebar." },
+    { sel:'.os-icon[data-prog="settings"]',    ttl:'Settings', body:"Your control panel — profile, account, game options, notifications, API keys and privacy." },
+    { sel:'.os-icon[data-prog="shop"]',        ttl:'Shop',     body:"Spend your in-game currency on vehicles, gear and unlocks." },
+    { sel:'.os-icon[data-prog="maps"]',        ttl:'Maps',     body:"Save and load chart setups — asset, timeframe, tools and indicators in one map." },
+    { sel:'.os-icon[data-prog="bot"]',         ttl:'Bot',      body:"Bot Terminal — connect agents (Claude · Telegram · Lobster · OpenClaw) to run with you." },
+    { sel:'.os-icon[data-prog="workbench"]',   ttl:'Workbench',body:"Craft and equip local detector bots — build, backtest, deploy." },
+    { sel:'.os-icon[data-prog="journal"]',     ttl:'Journal',  body:"Your trade log — every manual + bot trade with alerts and P&L." },
+    { sel:'.os-icon[data-prog="runtube"]',     ttl:'RUN-tube', body:"Streaming + picture-in-picture webcam for demo recording." },
     { sel:null,                                ttl:'Coach.llm',body:"That's me — COACH.llm. Take the guided tour or just chat, any time, from the desktop invader (bottom-right) or the toolbar. Same brain as the in-game Quant." },
     { sel:'#crMenuConnect',                    ttl:'Connect',  body:"Connect a Solana wallet to unlock Maps, Journal, bots, lasers and the full Profile.", guestOnly:true }
   ];
   var mask, ring, beacon, arrow, pop, ttlEl, stepEl, bodyEl, dotsEl, backBtn, nextBtn, skipBtn, idx=0, active=false, clickHandler=null, built=false, _frDragDemoEl=null, _frRaisedWin=null, _frHintEl=null, _frRingTarget=null, _frRingRO=null, _frRingROTgt=null;
   function visible(el){ try { return !!(el && el.offsetParent !== null && el.getBoundingClientRect().width > 1); } catch(_){ return false; } }
-  function targetFor(i){ var st=STEPS[i]; if(!st||!st.sel) return null; var el=document.querySelector(st.sel); return visible(el)?el:null; }
+  function targetFor(i){
+    var st=STEPS[i]; if(!st||!st.sel) return null;
+    var el=document.querySelector(st.sel);
+    if(visible(el)) return el;
+    // v1.0.750 — Apps-in-Dock mode hides every desktop .os-icon, which used to
+    // make ALL app steps auto-skip (the tour collapsed to Name→Coach→Connect).
+    // Fall back to the matching dock button so the tour highlights the dock
+    // icon instead — same data-prog, same click behaviour.
+    try {
+      var m = /\[data-prog="([^"]+)"\]/.exec(st.sel || '');
+      if(m){
+        var db = document.querySelector('#crAppDock .dockBtn[data-prog="' + m[1] + '"]');
+        if(visible(db)) return db;
+      }
+    } catch(_){}
+    return null;
+  }
   // v1.0 — phase gating. Connect is guest-only (dropped once a wallet is connected);
   // Maps / Journal gate themselves by icon visibility (handled in targetFor).
   function _frConnected(){ try { return (typeof window.crConnected==='function') ? !!window.crConnected() : false; } catch(_){ return false; } }
@@ -94647,7 +94677,12 @@ window.crQvac = (function(){
     Profile:  { prog:'wallet',      win:'win-wallet' },
     Maps:     { prog:'maps',        win:'win-display',   drag:'[draggable="true"]', label:'map'   },
     Token:    { prog:'tokenterm',   win:'win-tokenterm', drag:'[draggable="true"]', label:'token' },
-    Journal:  { prog:'journal',     win:'win-display' }
+    Journal:  { prog:'journal',     win:'win-display' },
+    // v1.0.750 — the new connected-app steps open their windows too.
+    Wallet:   { prog:'walletapp',   win:'win-walletapp' },
+    Docs:     { prog:'display',     win:'win-display' },
+    Settings: { prog:'settings',    win:'win-settings' },
+    Shop:     { prog:'shop',        win:'win-shop' }
   };
   function _frClearPinHint(){ try { if(_frHintEl){ _frHintEl.classList.remove('cr-pin-hint'); _frHintEl = null; } } catch(_){} }
   function _frCloseAppDemo(){
@@ -94753,13 +94788,14 @@ window.crQvac = (function(){
       }
     } catch(_){}
     mask.classList.add('on'); pop.classList.add('on'); _frRingTarget = null; reposition();
-    // v1.0 — pop the highlighted element's own themed tooltip during the tour, for
-    // every step EXCEPT Token (per spec). The mask blocks normal hover, so we drive
-    // it programmatically; .cr-tip layers above the mask.
+    // v1.0.750 — pop the highlighted element's own themed tooltip during the tour,
+    // for EVERY app step (the old Token/Terminal/Maps exclusions are lifted per
+    // spec: hover hints must appear on all apps). The mask blocks normal hover,
+    // so we drive it programmatically; .cr-tip layers above the mask.
     try {
       var _tgt = (st && st.sel) ? targetFor(idx) : null;
       if(window.crTip){
-        if(_tgt && st.ttl !== 'Token' && st.ttl !== 'Terminal' && st.ttl !== 'Maps') window.crTip.show(_tgt);
+        if(_tgt) window.crTip.show(_tgt);
         else window.crTip.hide();
       }
     } catch(_){}
@@ -94796,9 +94832,13 @@ window.crQvac = (function(){
     build(); var o=load();
     if(!force && o.done) return;
     if(!force && _frInRoom()) return;  // don't auto-run the desktop onboarding tour on a multiplayer room link
-    // v1.0 — require the desktop icons to be VISIBLE (not just present in the DOM), so the
+    // v1.0 — require the app launchers to be VISIBLE (not just present in the DOM), so the
     // tour never opens over a live run/minigame where the icons are hidden behind the chart.
-    if(!onDesktop() || !visible(document.querySelector('.os-icon[data-prog="chartrunner"]'))) return;
+    // v1.0.750 — dock mode counts too: in Apps-in-Dock view the desktop icons are hidden
+    // but the dock buttons are the launchers — the tour must start there as well.
+    var _frLauncher = visible(document.querySelector('.os-icon[data-prog="chartrunner"]'))
+                   || visible(document.querySelector('#crAppDock .dockBtn[data-prog="chartrunner"]'));
+    if(!onDesktop() || !_frLauncher) return;
     try { var hb=document.getElementById('crCoachHubBubble'); if(hb) hb.style.display='none'; } catch(_){}
     active=true;
     try { window._crTourActive = true; } catch(_){}
@@ -94818,7 +94858,7 @@ window.crQvac = (function(){
     // (was 40 tries ≈ 20s, which gave up before slow first-timers reached the desktop).
     var iv=setInterval(function(){ tries++;
       if(load().done){ clearInterval(iv); return; }
-      if(onDesktop() && visible(document.querySelector('.os-icon[data-prog="chartrunner"]'))){ clearInterval(iv); start(false); }
+      if(onDesktop() && (visible(document.querySelector('.os-icon[data-prog="chartrunner"]')) || visible(document.querySelector('#crAppDock .dockBtn[data-prog="chartrunner"]')))){ clearInterval(iv); start(false); }   // v1.0.750 — dock mode auto-starts the tour too
       else if(tries>1200){ clearInterval(iv); }   // ~10 min safety bound
     }, 500);
   }
