@@ -14166,6 +14166,10 @@ window.crShare = function (o) {
                     <input type="text" id="crProfilePlayerNameEdit" class="player-name-input"
                       placeholder="anon_runner" maxlength="20" autocomplete="off" spellcheck="false"
                       title="Your local runner handle — shown on the desktop, leaderboards and multiplayer rooms">
+                    <!-- v1.0.752 — same 🔍 as the in-game lite profile: find any runner by
+                         name or wallet address. Shares the crSocial search (class .cr-name-search). -->
+                    <button type="button" class="cr-name-btn cr-name-search" id="crProfileSearchDesktop"
+                      title="Search players by name or wallet address"><span>🔍</span></button>
                     <button type="button" class="cr-name-btn" data-cr-name-btn="1" id="crPlayerAltarClaimBtn"
                       title="Claim your runner name on-chain">◎ Claim name</button>
                   </div>
@@ -16896,7 +16900,15 @@ window.crAccount = (function(){
   // v1.0.747 — re-run the access gates whenever this account's session changes, so an
   // email sign-in unlocks the same features as a wallet connect (and sign-out re-locks).
   // crApplyAccessGates() reads crConnected(), which now counts a signed-in account.
-  function _gatesSync(){ try { if(typeof window.crApplyAccessGates === 'function') window.crApplyAccessGates(); } catch(_){} }
+  function _gatesSync(){
+    try { if(typeof window.crApplyAccessGates === 'function') window.crApplyAccessGates(); } catch(_){}
+    try { if(typeof window.crRefreshIdentityPill === 'function') window.crRefreshIdentityPill(); } catch(_){}   /* v1.0.752 — sign-in/out also refreshes the identity pill */
+    // v1.0.752 — OAuth (Google/Apple) sign-ins never collect a username inline;
+    // once signed in without a name, prompt for a unique one so every player is
+    // findable. Deferred a beat so the profile pull (which may supply a name)
+    // runs first. No-ops for guests and for anyone who already has a name.
+    try { if(isSignedIn() && window.crNames && crNames.ensureUsername){ setTimeout(function(){ try { crNames.ensureUsername(); } catch(_){} }, 900); } } catch(_){}
+  }
   function token(){ return (_session && _session.access_token) || ''; } // v1.0.688 — Supabase JWT for authed worker routes
   function email(){ return (_session && _session.user && _session.user.email) || ''; }
   function userId(){ return (_session && _session.user && _session.user.id) || ''; }
@@ -17076,6 +17088,10 @@ window.crAccount = (function(){
         + '<div class="acDivider"><span>OR</span></div>'
         + '<button type="button" class="acEmailCta" id="crAcEmailCta">Continue with email</button>'
         + '<div class="acEmailForm" id="crAcEmailForm" style="display:none">'
+          // v1.0.752 — a username is REQUIRED to create an account and is globally
+          // unique across both name registers, so every player is findable by name.
+          + '<input type="text" id="crAcUsername" placeholder="Pick a username (3–20, a–z 0–9 _)" autocomplete="off" maxlength="20" spellcheck="false">'
+          + '<div class="acMsg" id="crAcUserMsg" style="min-height:0;text-align:left;margin:-3px 2px 0"></div>'
           + '<input type="email" id="crAcEmail" placeholder="you@example.com" autocomplete="email">'
           + '<input type="password" id="crAcPass" placeholder="Password (min 6 characters)" autocomplete="new-password">'
           + '<button type="button" class="acEmailSubmit" id="crAcSubmit">Create account</button>'
@@ -17108,9 +17124,30 @@ window.crAccount = (function(){
     });
     var submitBtn = m.querySelector('#crAcSubmit');
     submitBtn.addEventListener('click', _submit);
-    Array.prototype.forEach.call(m.querySelectorAll('#crAcEmail,#crAcPass'), function(inp){
+    Array.prototype.forEach.call(m.querySelectorAll('#crAcUsername,#crAcEmail,#crAcPass'), function(inp){
       inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') _submit(); });
     });
+    // v1.0.752 — live username availability check (debounced) in signup mode.
+    try {
+      var uInp = m.querySelector('#crAcUsername'), _uDeb = null;
+      if(uInp) uInp.addEventListener('input', function(){
+        var raw = uInp.value || '';
+        var norm = window.crNames ? crNames.norm(raw) : raw;
+        if(uInp.value !== norm) uInp.value = norm;
+        var uMsg = document.getElementById('crAcUserMsg'); if(!uMsg) return;
+        clearTimeout(_uDeb);
+        if(!norm){ uMsg.textContent = ''; return; }
+        if(!window.crNames || !crNames.valid(norm)){ uMsg.textContent = 'At least 3 characters (a–z, 0–9, _).'; uMsg.className = 'acMsg err'; return; }
+        uMsg.textContent = 'Checking…'; uMsg.className = 'acMsg';
+        _uDeb = setTimeout(function(){
+          crNames.available(norm).then(function(free){
+            if((uInp.value||'') !== norm) return; // input changed meanwhile
+            uMsg.textContent = free ? ('“' + norm + '” is available ✓') : ('“' + norm + '” is taken');
+            uMsg.className = 'acMsg ' + (free ? 'ok' : 'err');
+          }).catch(function(){ uMsg.textContent = ''; });
+        }, 350);
+      });
+    } catch(_){}
     // v1.0.748 — Escape closes the modal (only while it is open, so we don't
     // swallow Escape for the rest of the app).
     document.addEventListener('keydown', function(e){
@@ -17129,17 +17166,45 @@ window.crAccount = (function(){
     var em = (document.getElementById('crAcEmail') || {}).value || '';
     var pass = (document.getElementById('crAcPass') || {}).value || '';
     em = em.trim();
+    // v1.0.752 — SIGN-UP requires a globally-unique username (checked across both
+    // name registers via crNames). Sign-in doesn't (the account already has one).
+    var uname = '';
+    if(_mode === 'signup'){
+      uname = (window.crNames ? crNames.norm((document.getElementById('crAcUsername') || {}).value || '') : '');
+      if(!window.crNames || !crNames.valid(uname)){ _msg('Pick a username: 3–20 characters, a–z, 0–9 or _.', 'err'); return; }
+    }
     if(!em || !/.+@.+\..+/.test(em)){ _msg('Enter a valid email address.', 'err'); return; }
     if(!pass || pass.length < 6){ _msg('Password needs at least 6 characters.', 'err'); return; }
     var btn = document.getElementById('crAcSubmit');
     if(btn){ btn.setAttribute('disabled', '1'); btn.textContent = 'Please wait...'; }
     _msg('');
+    // v1.0.752 — RESERVE the username BEFORE creating the account (owner = email
+    // for now; upgraded to uid once known). This prevents an orphaned auth
+    // account if the name is lost to a race: no reservation → no signUp. If the
+    // account creation then fails, we release the reservation so it isn't
+    // squatted. Reserve is the hard uniqueness gate (table primary key).
+    if(_mode === 'signup'){
+      var rr;
+      try { rr = await crNames.reserve(uname, 'offchain', em); } catch(_){ rr = { ok:true, reason:'no-backend' }; }
+      if(rr && rr.ok === false){
+        if(btn){ btn.removeAttribute('disabled'); btn.textContent = 'Create account'; }
+        _msg(rr.reason === 'taken' ? ('“' + uname + '” is already taken — choose another.') : 'Could not reserve that username — try again.', 'err');
+        return;
+      }
+    }
     var res = _mode === 'signup' ? await signUp(em, pass) : await signIn(em, pass);
     if(btn){ btn.removeAttribute('disabled'); btn.textContent = _mode === 'signup' ? 'Create account' : 'Sign in'; }
-    if(res.error){ _msg(res.error, 'err'); return; }
-    if(res.needsConfirm){ _msg('Check your inbox -- confirm your email, then sign in.', 'ok'); _mode = 'signin'; _render(); return; }
-    _msg('Signed in as ' + em, 'ok');
-    try { toast('Signed in as ' + em); } catch(_){}
+    if(res.error){
+      // account creation failed → unwind the reservation we just took.
+      if(_mode === 'signup' && uname){ try { await crNames.release(uname, em); } catch(_){} }
+      _msg(res.error, 'err'); return;
+    }
+    // Account created — apply the (already-reserved) username as the unified name.
+    if(_mode === 'signup' && uname){ try { if(window.crRunnerName) crRunnerName.set(uname); } catch(_){} }
+    if(res.needsConfirm){ _msg('Check your inbox -- confirm your email, then sign in. Your name “' + uname + '” is reserved.', 'ok'); _mode = 'signin'; _render(); return; }
+    _msg('Signed in as ' + (uname || em), 'ok');
+    try { toast('Signed in as ' + (uname || em)); } catch(_){}
+    try { if(typeof window.crRefreshIdentityPill === 'function') window.crRefreshIdentityPill(); } catch(_){}
     setTimeout(close, 700);
   }
 
@@ -17166,6 +17231,12 @@ window.crAccount = (function(){
     if(authPane) authPane.style.display = '';
     if(signedPane) signedPane.style.display = 'none';
     if(pass) pass.setAttribute('autocomplete', _mode === 'signup' ? 'new-password' : 'current-password'); // v1.0.748
+    // v1.0.752 — the username field is signup-only.
+    try {
+      var uEl = document.getElementById('crAcUsername'), uMsg = document.getElementById('crAcUserMsg');
+      if(uEl) uEl.style.display = (_mode === 'signup') ? '' : 'none';
+      if(uMsg){ uMsg.style.display = (_mode === 'signup') ? '' : 'none'; uMsg.textContent = ''; }
+    } catch(_){}
     if(_mode === 'signin'){
       if(title) title.textContent = 'Sign in to ChartRunner';
       if(sub) sub.textContent = 'Welcome back -- your progress, API keys and bots are waiting.';
@@ -17202,7 +17273,14 @@ window.crAccount = (function(){
 
   try { window.addEventListener('load', function(){ _restore(); }); } catch(_){}
 
-  return { open: open, close: close, isSignedIn: isSignedIn, email: email, token: token, signOut: signOut, _gatesSync: _gatesSync };
+  // v1.0.752 — expose a Supabase RPC runner + the auth uid so crNames can reach
+  // the cross-register name namespace (cr_names table + its SECURITY DEFINER
+  // functions). Degrades to {error} when the SDK/client isn't available.
+  async function rpc(fn, args){
+    try { var c = await _clientAsync(); if(!c) return { error: 'no-client' }; return await c.rpc(fn, args || {}); }
+    catch(e){ return { error: (e && e.message) || 'rpc-failed' }; }
+  }
+  return { open: open, close: close, isSignedIn: isSignedIn, email: email, token: token, signOut: signOut, _gatesSync: _gatesSync, rpc: rpc, userId: userId };
 })();
 
 /* =========================================================================
@@ -17825,6 +17903,210 @@ window.crRegistry = (function(){
     buyLicense:     buyLicense,
     cancelLicenseListing: cancelLicenseListing,
   };
+})();
+
+/* =========================================================================
+ * crNames — v1.0.752 — the ONE cross-register name namespace.
+ *
+ * Requirement: a name may exist only ONCE across BOTH registers (off-chain
+ * Supabase account usernames AND on-chain runner handles) so every player is
+ * findable by a unique name, and a wallet address is itself findable like a
+ * name. The authority is a single Supabase table `public.cr_names` (see the
+ * migration in the PR): both an email username and an on-chain handle RESERVE
+ * a row there, so its primary key is the global uniqueness guarantee — the two
+ * registers can never overlap.
+ *
+ * This module is the client face:
+ *   crNames.norm(s) / crNames.valid(s)         — 3–20 chars [a-z0-9_], not reserved
+ *   crNames.available(name)  → Promise<bool>   — free in BOTH registers (RPC)
+ *   crNames.reserve(name,kind,owner)→Promise   — claim a name (RPC, PK backstop)
+ *   crNames.search(query)    → Promise<rows>   — names + wallets (Supabase ∪ relay)
+ *   crNames.currentName()                       — this player's unified name or ''
+ *   crNames.pillLabel()                         — username | short-wallet | ''
+ *
+ * Everything degrades safely when the migration hasn't been run yet (the RPCs
+ * return {error}); uniqueness then falls back to best-effort and nothing bricks.
+ * ========================================================================= */
+window.crNames = (function(){
+  var NAME_RE = /^[a-z0-9_]{3,20}$/;
+  var RESERVED = { anon_runner:1, admin:1, root:1, chartrunner:1, system:1, coach:1, null:1, undefined:1 };
+  function norm(s){ return String(s == null ? '' : s).trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20); }
+  function valid(s){ var n = norm(s); return NAME_RE.test(n) && !RESERVED[n]; }
+  function isWalletAddr(s){ try { return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(s || '').trim()); } catch(_){ return false; } }
+  function shortW(w){ w = String(w || ''); return w ? (w.slice(0, 4) + '…' + w.slice(-4)) : ''; }
+  function _wallet(){ try { return (window.crWallet && crWallet.isConnected && crWallet.isConnected() && crWallet.get) ? String(crWallet.get() || '') : ''; } catch(_){ return ''; } }
+
+  // Availability — the Supabase RPC checks the unified cr_names table, so ONE
+  // call covers both the off-chain and on-chain register. If the RPC isn't
+  // deployed yet it returns {error}; we then treat the name as available
+  // (best-effort) so the flow never hard-blocks before the migration is run.
+  async function available(name){
+    var n = norm(name);
+    if(!valid(n)) return false;
+    try {
+      if(window.crAccount && crAccount.rpc){
+        var r = await crAccount.rpc('cr_name_available', { p_name: n });
+        if(r && !r.error && typeof r.data === 'boolean') return r.data;
+      }
+    } catch(_){}
+    return true; // migration not live yet → don't block
+  }
+
+  // Is this name already reserved by THIS owner? Lets a wallet re-claim its own
+  // abandoned handle (and a re-signup re-own its name) without a false "taken".
+  async function ownedBy(name, owner){
+    var n = norm(name);
+    if(!valid(n)) return false;
+    try {
+      if(window.crAccount && crAccount.rpc){
+        var r = await crAccount.rpc('cr_name_owned_by', { p_name: n, p_owner: owner || '' });
+        if(r && !r.error && typeof r.data === 'boolean') return r.data;
+      }
+    } catch(_){}
+    return false;
+  }
+
+  // Release a name owned by `owner` (used to unwind a reservation after a failed
+  // account creation). Best-effort; never throws.
+  async function release(name, owner){
+    var n = norm(name);
+    if(!n) return;
+    try { if(window.crAccount && crAccount.rpc) await crAccount.rpc('cr_name_release', { p_name: n, p_owner: owner || '' }); } catch(_){}
+  }
+
+  // Reserve a name into the shared namespace. kind: 'offchain' | 'onchain'.
+  // The table primary key is the real guard against a race; this returns false
+  // when the name was taken between check and write.
+  async function reserve(name, kind, owner){
+    var n = norm(name);
+    if(!valid(n)) return { ok:false, reason:'invalid' };
+    try {
+      if(window.crAccount && crAccount.rpc){
+        var r = await crAccount.rpc('cr_name_reserve', { p_name: n, p_kind: kind || 'offchain', p_owner: owner || '' });
+        if(r && r.error) return { ok:false, reason:'rpc', error:r.error };
+        // rpc returns boolean data: true = reserved, false = already taken
+        return { ok: r && r.data === true, reason: (r && r.data === false) ? 'taken' : '' };
+      }
+    } catch(e){ return { ok:false, reason:'rpc', error:(e&&e.message) }; }
+    return { ok:true, reason:'no-backend' }; // degrade: allow, the local set still happens
+  }
+
+  // Search both registers by name OR wallet address. Supabase cr_search_names
+  // returns unified rows; the relay presence directory (legacy, may be down) is
+  // merged in for live online players. De-duped by lowercased name.
+  async function search(query){
+    var q = String(query || '').trim();
+    var out = [], seen = {};
+    function push(row){
+      var key = String(row.name || row.wallet || '').toLowerCase();
+      if(!key || seen[key]) return; seen[key] = 1; out.push(row);
+    }
+    // Relay presence FIRST (live online players) so an online player's row wins
+    // the de-dup over the same name's offline Supabase row.
+    try {
+      var http = (window.crRoom && crRoom.relayHttp) ? crRoom.relayHttp() : 'https://relay.chartrunner.xyz';
+      var pr = await fetch(http + '/presence', { cache:'no-store' });
+      var pj = await pr.json();
+      if(Array.isArray(pj)){
+        var ql = q.toLowerCase();
+        pj.filter(function(p){ return !ql || String(p.name||'').toLowerCase().includes(ql) || String(p.wallet||'').toLowerCase().includes(ql); })
+          .forEach(function(p){ push({ name:p.name, wallet:p.wallet, online:!!p.online, kind:'onchain' }); });
+      }
+    } catch(_){}
+    // Supabase (covers signed-in / off-chain users + on-chain handles not online)
+    try {
+      if(window.crAccount && crAccount.rpc){
+        var r = await crAccount.rpc('cr_search_names', { p_query: q });
+        if(r && !r.error && Array.isArray(r.data)){
+          r.data.forEach(function(x){ push({ name:x.name, kind:x.kind, wallet:x.owner && isWalletAddr(x.owner) ? x.owner : '', online:false }); });
+        }
+      }
+    } catch(_){}
+    return out;
+  }
+
+  // The player's single unified name across every store (local handle, on-chain
+  // claim, lite-profile). '' when the player hasn't chosen one.
+  function currentName(){
+    try { if(window.crHasName && crHasName()){
+      try { var n = window.crRunnerName && crRunnerName.get(); if(n && n !== 'anon_runner') return n; } catch(_){}
+      try { var p = window.crPlayerName && crPlayerName.get && crPlayerName.get(); if(p && p !== 'anon_runner') return p; } catch(_){}
+      try { var el = document.getElementById('crLpName'); var t = el && el.textContent ? el.textContent.trim() : ''; if(t && t !== 'anon_runner') return t; } catch(_){}
+    } } catch(_){}
+    return '';
+  }
+
+  // What the top-left Connect pill shows:
+  //   • a chosen username (email OR wallet, any register)      → the username
+  //   • wallet connected but no name minted yet                → short address
+  //   • nobody signed in / connected                           → '' (→ "Connect")
+  function pillLabel(){
+    var nm = currentName();
+    if(nm) return nm;
+    var w = _wallet();
+    if(w) return shortW(w);
+    return '';
+  }
+
+  // A compact "choose your username" overlay. Used for sign-in paths that DON'T
+  // collect a username inline — Google/Apple OAuth — and as the fallback if an
+  // email signup loses its name to a race. Blocks (no guest dismiss) so the
+  // core guarantee holds: every signed-in player ends up with a unique name.
+  var _pu = null;
+  function promptUsername(reason){
+    if(_pu){ _pu.classList.add('on'); return; }
+    _pu = document.createElement('div'); _pu.id = 'crUserPrompt';
+    _pu.style.cssText = 'position:fixed;inset:0;z-index:100270;display:flex;align-items:center;justify-content:center;background:rgba(10,14,20,.6);padding:18px';
+    _pu.innerHTML = '<div style="width:min(360px,100%);background:#fff;color:#0e1116;border-radius:18px;box-shadow:0 30px 90px rgba(0,0,0,.5);padding:26px;text-align:center;font:14px/1.4 system-ui,-apple-system,sans-serif">'
+      + '<h2 style="margin:0 0 8px;font-size:17px;font-weight:800">Pick your username</h2>'
+      + '<p style="margin:0 0 16px;color:#666;font-size:12.5px">' + (reason || 'A unique username lets other players find you.') + '</p>'
+      + '<input id="crUpInp" type="text" maxlength="20" autocomplete="off" spellcheck="false" placeholder="3–20 · a–z 0–9 _" style="width:100%;box-sizing:border-box;padding:10px 11px;border:1px solid #dcdce2;border-radius:9px;font:13px inherit;background:#fafafc;color:#0e1116">'
+      + '<div id="crUpMsg" style="min-height:14px;font-size:11.5px;margin:6px 2px;text-align:left"></div>'
+      + '<button id="crUpSave" type="button" style="width:100%;padding:10px 12px;border:none;border-radius:9px;background:#0e1116;color:#fff;font:800 12.5px inherit;cursor:pointer">Save username</button>'
+      + '</div>';
+    document.body.appendChild(_pu);
+    var inp = _pu.querySelector('#crUpInp'), msg = _pu.querySelector('#crUpMsg'), save = _pu.querySelector('#crUpSave'), deb = null;
+    function setMsg(t, ok){ msg.textContent = t || ''; msg.style.color = ok ? '#0a8d4a' : '#c0392b'; }
+    inp.addEventListener('input', function(){
+      var n = norm(inp.value); if(inp.value !== n) inp.value = n;
+      clearTimeout(deb); if(!n){ setMsg(''); return; }
+      if(!valid(n)){ setMsg('At least 3 characters (a–z, 0–9, _).', false); return; }
+      setMsg('Checking…', true);
+      deb = setTimeout(function(){ available(n).then(function(free){ if((inp.value||'')!==n) return; setMsg(free ? ('“'+n+'” is available ✓') : ('“'+n+'” is taken'), free); }); }, 350);
+    });
+    save.addEventListener('click', async function(){
+      var n = norm(inp.value);
+      if(!valid(n)){ setMsg('Pick a valid username first.', false); return; }
+      save.setAttribute('disabled','1'); save.textContent = 'Saving…';
+      // v1.0.752 — offchain owner is the account EMAIL everywhere (stable per
+      // account, available pre-session, matches the signup path's reserve owner),
+      // so owner-scoped release/re-own stays consistent across all entry points.
+      var owner = ''; try { owner = (window.crAccount && crAccount.email && crAccount.email()) || (window.crAccount && crAccount.userId && crAccount.userId()) || ''; } catch(_){}
+      var free = await available(n); if(!free){ save.removeAttribute('disabled'); save.textContent='Save username'; setMsg('“'+n+'” is taken — choose another.', false); return; }
+      var rr = await reserve(n, 'offchain', owner);
+      if(rr && rr.ok === false && rr.reason === 'taken'){ save.removeAttribute('disabled'); save.textContent='Save username'; setMsg('“'+n+'” was just taken — choose another.', false); return; }
+      try { if(window.crRunnerName) crRunnerName.set(n); } catch(_){}
+      try { if(typeof window.crRefreshIdentityPill === 'function') window.crRefreshIdentityPill(); } catch(_){}
+      _pu.classList.remove('on'); _pu.style.display = 'none';
+      try { if(typeof toast === 'function') toast('Username set · ' + n); } catch(_){}
+    });
+    _pu.classList.add('on');
+    setTimeout(function(){ try { inp.focus(); } catch(_){} }, 40);
+  }
+  // v1.0.752 — after any sign-in that didn't collect a username inline (OAuth),
+  // make sure the signed-in player has a unique name. Called from crAccount.
+  function ensureUsername(){
+    try {
+      if(!(window.crAccount && crAccount.isSignedIn && crAccount.isSignedIn())) return;
+      if(window.crHasName && crHasName()) return;          // already has one
+      promptUsername('You are signed in — choose a unique username so others can find you.');
+    } catch(_){}
+  }
+
+  return { norm:norm, valid:valid, isWalletAddr:isWalletAddr, shortW:shortW,
+           available:available, ownedBy:ownedBy, reserve:reserve, release:release, search:search,
+           currentName:currentName, pillLabel:pillLabel,
+           promptUsername:promptUsername, ensureUsername:ensureUsername };
 })();
 
 /* =========================================================================
@@ -41646,8 +41928,15 @@ try { window._crChatStack = _crChatStack; } catch(_){}
   async function renderList(q){
     q = String(q||'').toLowerCase().trim();
     bodyEl.innerHTML = '<div class="crSocEmpty">Loading…</div>';
-    var list = await presenceAll();
-    var rows = list.filter(function(p){ if(!q) return true; return (String(p.name||'').toLowerCase().includes(q) || String(p.wallet||'').toLowerCase().includes(q)); });
+    // v1.0.752 — search BOTH registers via crNames (Supabase account usernames +
+    // on-chain handles + live relay presence), so signed-in email users — who
+    // never appear in the relay presence directory — are findable too. Falls
+    // back to the legacy presence-only path if crNames isn't present.
+    var rows;
+    try {
+      if(window.crNames && crNames.search){ rows = await crNames.search(q); }
+      else { var list = await presenceAll(); rows = list.filter(function(p){ if(!q) return true; return (String(p.name||'').toLowerCase().includes(q) || String(p.wallet||'').toLowerCase().includes(q)); }); }
+    } catch(_){ rows = []; }
     rows.sort(function(a,b){ return (b.online?1:0)-(a.online?1:0) || (b.lastSeen||0)-(a.lastSeen||0); });
     if(!rows.length){ bodyEl.innerHTML = '<div class="crSocEmpty">' + (q ? 'No players match “' + esc(q) + '”.' : 'No players online yet.<br>Connect a wallet and play to appear here.') + '</div>'; return; }
     bodyEl.innerHTML = '';
@@ -41715,8 +42004,10 @@ try { window._crChatStack = _crChatStack; } catch(_){}
     } catch(e){ try { if(typeof toast==='function') toast('Could not join — room may have closed'); } catch(_){} }
   }
   window.crSocial = { openSearch: openSearch, openProfile: openProfile, close: close, profileUrl: profileUrl };
-  // Profile → 🔍 launcher.
-  document.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('#crProfileSearch'); if(b){ e.preventDefault(); e.stopPropagation(); openSearch(''); } });
+  // Profile → 🔍 launcher. v1.0.752 — also fires for the desktop-profile 🔍
+  // (class .cr-name-search) so the in-game lite profile AND the desktop Profile
+  // share one search; works for guests, wallet users and signed-in email users.
+  document.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('#crProfileSearch, .cr-name-search'); if(b){ e.preventDefault(); e.stopPropagation(); openSearch(''); } });
   // Backlink: ?player=<name> opens that profile after boot settles.
   try { var pl = new URLSearchParams(location.search).get('player'); if(pl){ window.addEventListener('load', function(){ setTimeout(function(){ try { openProfile(pl); } catch(_){} }, 1700); }); } } catch(_){}
 })();
@@ -54557,8 +54848,25 @@ function osRefreshShop(){
     setStatus('Checking availability…', '#5a5a52');
     const check = (typeof crMarket !== 'undefined' && crMarket.checkHandle)
       ? crMarket.checkHandle(raw) : Promise.resolve(false);
-    Promise.resolve(check).then(taken => {
+    Promise.resolve(check).then(async taken => {
       if(taken){ setStatus('“' + raw + '” is already taken. Try another.', '#e06c75'); return; }
+      // v1.0.752 — also check the OFF-CHAIN register: a name may exist only once
+      // across both. Reserve it as 'onchain' in the shared namespace so an email
+      // signup can never take the same handle, then bounce to the on-chain claim.
+      try {
+        if(window.crNames){
+          var w = ''; try { w = (crWallet && crWallet.get) ? String(crWallet.get() || '') : ''; } catch(_){}
+          var free = await crNames.available(raw);
+          // If not free, allow it only when THIS wallet already owns the row
+          // (re-claiming a handle it reserved earlier but abandoned).
+          if(!free){
+            var mine = await crNames.ownedBy(raw, w);
+            if(!mine){ setStatus('“' + raw + '” is taken by an account name. Try another.', '#e06c75'); return; }
+          } else {
+            crNames.reserve(raw, 'onchain', w);   // best-effort; the on-chain PDA is the hard gate on-chain
+          }
+        }
+      } catch(_){}
       setStatus('Available — opening wallet to claim…', '#3ddc97');
       if(typeof crRegistry !== 'undefined' && crRegistry.claimName) crRegistry.claimName(raw);
     }).catch(() => {
@@ -55832,6 +56140,7 @@ function osRefreshDocs(){
       // v1.0.667 — also sync the Profile · Player name-box input (the new
       // sole edit surface for this handle, replacing Settings · Profile).
       try { var editEl = document.getElementById('crProfilePlayerNameEdit'); if(editEl && editEl.value !== n) editEl.value = n; } catch(_){}
+      try { if(typeof window.crRefreshIdentityPill === 'function') window.crRefreshIdentityPill(); } catch(_){}   /* v1.0.752 — a set name shows in the Connect pill */
       return n; }
     return { get:get, set:set, has:function(){ var g = get(); return !!g && g !== 'anon_runner'; } };
   })();
@@ -78684,22 +78993,42 @@ function log(msg){
   // v0.9.3 — Wallet connect button on the in-game OS bar. When connected,
   // the button collapses to a truncated address pill and clicking it opens
   // the same wallet picker used by the Profile wallet panel.
+  // v1.0.752 — the Connect pill IS the identity chip. Priority:
+  //   1. a chosen username (email OR wallet, any register) → show the username
+  //   2. wallet connected, no name minted yet             → short wallet address
+  //   3. nobody signed in / connected                     → "Connect"
+  // So a signed-in email user (v747: crConnected true) sees their username here
+  // even without a wallet, and a wallet user who hasn't minted a name sees the
+  // first characters of their address — findable like a name.
   function _refreshWalletPills(){
-    if(typeof crWallet === 'undefined') return;
-    const connected = crWallet.isConnected();
-    const labelConnected = '◎ ' + crWallet.truncated();
+    let walletConnected = false;
+    try { walletConnected = (typeof crWallet !== 'undefined') && crWallet.isConnected(); } catch(_){}
+    let name = '';
+    try { name = (window.crNames && crNames.pillLabel) ? crNames.pillLabel() : ''; } catch(_){}
+    // pillLabel already resolves username-or-short-wallet; but if it's empty and
+    // an email account is signed in (no name yet — shouldn't happen once the
+    // mandatory-username signup ships, but be safe), fall back to the email local part.
+    if(!name){
+      try { if(window.crAccount && crAccount.isSignedIn && crAccount.isSignedIn()){ var em = (crAccount.email && crAccount.email()) || ''; name = em ? ('✉ ' + em.split('@')[0]).slice(0, 20) : ''; } } catch(_){}
+    }
+    const has = !!name;
     let adapterName = '';
-    try { adapterName = connected && crWallet.adapter ? (crWallet.adapter() || '') : ''; } catch(_){}
-    const titleConnected = 'Connected with ' + (adapterName || 'Wallet') + ': ' + crWallet.get() + ' — click to switch';
-    const titleConnect   = 'Connect a Solana wallet — required to load your Profile / Maps / Workbench data';
+    try { adapterName = walletConnected && crWallet.adapter ? (crWallet.adapter() || '') : ''; } catch(_){}
+    let title;
+    if(walletConnected){ try { title = 'Connected with ' + (adapterName || 'Wallet') + ': ' + crWallet.get() + ' — click to manage'; } catch(_){ title = 'Wallet connected — click to manage'; } }
+    else if(has){ title = 'Signed in as ' + name + ' — click to manage your account'; }
+    else { title = 'Connect a Solana wallet or sign in — unlocks your Profile / Maps / bots'; }
     ['crBarConnect','crMenuConnect'].forEach(function(id){
       const el = document.getElementById(id);
       if(!el) return;
-      el.textContent = connected ? labelConnected : 'Connect';
-      el.title       = connected ? titleConnected : titleConnect;
-      el.classList.toggle('cr-wallet-on', connected);
+      el.textContent = has ? ('◎ ' + name) : 'Connect';
+      el.title       = title;
+      el.classList.toggle('cr-wallet-on', has || walletConnected);
     });
   }
+  // v1.0.752 — refresh the pill whenever the account/name state changes, not
+  // just on wallet events: sign-in/out, a freshly claimed username, etc.
+  try { window.crRefreshIdentityPill = _refreshWalletPills; } catch(_){}
   // ── v1.0.23 — REAL NFT avatar picker ────────────────────────────────
   // Replaces the v0.9.95 SVG mockup grid. Now reads the connected
   // wallet's actual NFT holdings via Magic Eden's public no-auth API
