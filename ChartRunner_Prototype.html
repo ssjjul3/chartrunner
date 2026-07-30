@@ -27784,7 +27784,18 @@ window.crMonteCarlo = crMonteCarlo;
    Tailscale Funnel (same pattern as chartrunner-relay), which keeps a Helius key
    server-side + adds CORS + caching. Never throws to callers that catch. */
 const CR_SOL_RPC_DEFAULT = 'https://solana-rpc.publicnode.com';
-function crSolanaRpcUrl(){ try { return localStorage.getItem('cr_solana_rpc') || CR_SOL_RPC_DEFAULT; } catch(_){ return CR_SOL_RPC_DEFAULT; } }
+// v1.0.755 — priority: explicit user override → the keyed Helius RPC via our
+// gateway (/v1/rpc, when the gateway is enabled) → keyless publicnode. The Helius
+// route lights up the network-health / safety panes that publicnode blocks
+// (getRecentPerformanceSamples, getTokenLargestAccounts). Same route already
+// used for the wallet balance/watchlist.
+function crSolanaRpcUrl(){
+  try {
+    var over = localStorage.getItem('cr_solana_rpc'); if(over) return over;
+    if(typeof _crGatewayEnabled === 'function' && _crGatewayEnabled()) return CR_API_GATEWAY_BASE + '/v1/rpc';
+  } catch(_){}
+  return CR_SOL_RPC_DEFAULT;
+}
 async function crSolanaRpc(method, params){
   var r = await fetch(crSolanaRpcUrl(), { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ jsonrpc:'2.0', id:1, method:method, params: params || [] }) });
   if(!r.ok) throw new Error('rpc-http-' + r.status);
@@ -65066,7 +65077,19 @@ const TOK_PYTH_FEED = {
   wif:  '0x4ca4beeca86f0d164160323817a4e42b10010a724c2217c6ee41b54cd4cc61fc',
   pyth: '0x0bbf28e9a841a1cc788f6a361b17ca072d0ea3098a1e5df1c3922d06719579ff',
 };
-const HERMES_LATEST_URL = 'https://hermes.pyth.network/v2/updates/price/latest';
+// v1.0.755 — route Pyth/Hermes through OUR auth proxy (chartrunner.xyz/hermes/*,
+// worker injects HERMES_API_KEY server-side). Pyth requires an API key from
+// 2026-08-18; a direct hermes.pyth.network call from the client would then break.
+// On the live domain use the same-origin /hermes proxy; off-domain (localhost /
+// preview, where the Cloudflare route doesn't exist) fall back to direct.
+function _crHermesBase(){
+  try {
+    var h = location.hostname || '';
+    if(h === 'chartrunner.xyz' || h === 'www.chartrunner.xyz') return location.origin + '/hermes';
+  } catch(_){}
+  return 'https://hermes.pyth.network';
+}
+const HERMES_LATEST_URL = _crHermesBase() + '/v2/updates/price/latest';
 const _tokPythCache = {};      // { id: { px, conf, expo, publishTime, t } }
 const _tokPythInflight = false;
 const _TOK_PYTH_TTL_MS = 5000; // Hermes price update cadence is ~400ms; 5s is plenty
@@ -65764,6 +65787,10 @@ function _tokRenderProfile(){
     '</div>' +
     // v1.0.519 — RUN button moved to the TOP (right under the ticker + price header).
     '<button type="button" class="cr-cta-blink" data-tok-run="' + def.id + '" style="width:100%;box-sizing:border-box;margin:0 0 10px;padding:11px;border:1px solid #14f195!important;border-radius:8px!important;background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.06))!important;color:#bff7df!important;font:700 13px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;text-shadow:none!important;box-shadow:0 0 14px rgba(20,241,149,.20)!important">▶ RUN ' + def.tag + ' · ' + String(s.tf||'').toUpperCase() + '</button>' +
+    // v1.0.755 — SAFETY row (Solana tokens only): real rug-check via Birdeye
+    // token_security, filled async after mount (replaces the old placeholder).
+    (_tokMint ? ('<div id="tokSafety_' + def.id + '" data-tok-safety-mint="' + _tokEscA(_tokMint) + '" style="margin:0 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4);font-size:10px">' +
+      '<span class="dim" style="text-transform:uppercase;letter-spacing:.4px">Safety</span> <span style="color:var(--dim)">checking…</span></div>') : '') +
     // TF picker + sparkline panel
     '<div style="margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4)">' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
@@ -65830,6 +65857,24 @@ function _tokRenderProfile(){
       _tokRenderProfile();
       try { if(typeof renderWidgets === 'function') renderWidgets(); } catch(_){}
     });
+  } catch(_){}
+  // v1.0.755 — fill the SAFETY row async (Birdeye token_security rug-check).
+  try {
+    var _safEl = host.querySelector('[data-tok-safety-mint]');
+    if(_safEl && window.crBirdeye && crBirdeye.security){
+      var _safMint = _safEl.getAttribute('data-tok-safety-mint');
+      crBirdeye.security(_safMint).then(function(sec){
+        // guard: profile may have re-rendered / switched token meanwhile
+        if(!_safEl.isConnected) return;
+        if(!sec){ _safEl.innerHTML = '<span class="dim" style="text-transform:uppercase;letter-spacing:.4px">Safety</span> <span style="color:var(--dim)">unavailable</span>'; return; }
+        var col = sec.verdict === 'SAFE' ? '#3ddc97' : (sec.verdict === 'CAUTION' ? '#ffd166' : (sec.verdict === 'UNKNOWN' ? '#8b95a5' : '#ff5b7f'));
+        var esc = function(x){ return String(x==null?'':x).replace(/[&<>]/g,function(c){return c==='&'?'&amp;':c==='<'?'&lt;':'&gt;';}); };
+        var detail = sec.verdict === 'UNKNOWN' ? ' <span style="color:var(--dim)">· not enough on-chain data</span>'
+          : (sec.flags && sec.flags.length ? (' <span style="color:var(--dim)">· ' + esc(sec.flags.join(' · ')) + '</span>') : ' <span style="color:var(--dim)">· mint & freeze renounced</span>');
+        _safEl.innerHTML = '<span class="dim" style="text-transform:uppercase;letter-spacing:.4px">Safety</span> ' +
+          '<span style="color:' + col + ';font-weight:700">' + sec.verdict + '</span>' + detail;
+      }).catch(function(){});
+    }
   } catch(_){}
   // v0.9.43 — Wire TF buttons + paint the sparkline after the HTML mounts.
   try {
@@ -89316,6 +89361,54 @@ window.crBirdeye = (function(){
     return p;
   }
 
+  // v1.0.755 — Token safety / rug-check via /defi/token_security. Normalizes the
+  // key risk flags into a compact verdict so the Token app can replace its
+  // placeholder safety line with a real read. Cached 10 min per mint. Never throws.
+  var _secCache = new Map();
+  async function security(mint){
+    if(!mint) return null;
+    var hit = _secCache.get(mint);
+    if(hit && (Date.now() - hit.t) < 600000) return hit.v;
+    try {
+      var r = await fetch(_base() + '/defi/token_security?address=' + encodeURIComponent(mint), { headers: _headers() });
+      if(!r.ok) return null;
+      var j = await r.json(); var d = j && j.data;
+      if(!d || typeof d !== 'object') return null;
+      var num = function(x){ var n = Number(x); return isFinite(n) ? n : null; };
+      var has = function(k){ return Object.prototype.hasOwnProperty.call(d, k); };
+      // v1.0.755 — FAIL-SAFE rug-check. Birdeye /defi/token_security actually
+      // returns freezeAuthority/freezeable/mutableMetadata/nonTransferable/
+      // transferFeeEnable/top10HolderPercent/lockInfo (mint authority is usually
+      // absent). If NONE of the fields we understand are present, we return
+      // 'UNKNOWN' — never a false 'SAFE' on a payload we couldn't actually read.
+      var known = ['freezeAuthority','freezeable','mutableMetadata','nonTransferable','transferFeeEnable','top10HolderPercent','top10HolderPct','lockInfo','mintAuthority'];
+      var assessable = known.some(has);
+      if(!assessable) return { verdict:'UNKNOWN', flags:[], raw:d };
+      var top10 = num(d.top10HolderPercent); if(top10 == null) top10 = num(d.top10HolderPct);
+      if(top10 != null && top10 <= 1) top10 = top10 * 100;   // fraction → percent
+      var freezeRisk = (d.freezeAuthority != null && d.freezeAuthority !== '') || d.freezeable === true;
+      var mintRisk   = (d.mintAuthority != null && d.mintAuthority !== '');
+      var nonTransfer= d.nonTransferable === true;
+      var transferFee= d.transferFeeEnable === true;
+      var mutable    = d.mutableMetadata === true;
+      var lpLocked   = (d.lockInfo && d.lockInfo.lpLockedPercent != null) ? num(d.lockInfo.lpLockedPercent) : num(d.lpLockedPct);
+      var flags = [];
+      if(mintRisk)    flags.push('mint authority active');
+      if(freezeRisk)  flags.push('freeze authority active');
+      if(nonTransfer) flags.push('non-transferable');
+      if(transferFee) flags.push('transfer tax');
+      if(mutable)     flags.push('metadata mutable');
+      if(top10 != null && top10 >= 30) flags.push('top-10 hold ' + Math.round(top10) + '%');
+      if(lpLocked != null && lpLocked < 50) flags.push('LP not locked');
+      // hard risk = a way for the creator to seize/kill the token
+      var hard = mintRisk || freezeRisk || nonTransfer;
+      var verdict = hard ? 'RISK' : (flags.length ? 'CAUTION' : 'SAFE');
+      var v = { verdict: verdict, flags: flags, top10: top10, mintAuthority: mintRisk, freezeAuthority: freezeRisk, raw: d };
+      _secCache.set(mint, { v: v, t: Date.now() });
+      return v;
+    } catch(_){ return null; }
+  }
+
   // v1.0.106 — Expose hasKey() so refreshers can distinguish "no key
   // configured" (user needs to paste one in Settings ⊛) from "API
   // returned an empty payload" (real condition worth surfacing).
@@ -89324,6 +89417,7 @@ window.crBirdeye = (function(){
   return {
     fetchToken: fetchToken,
     fetchOhlcv: fetchOhlcv,
+    security:   security,
     peek:       peek,
     setApiKey:  setApiKey,
     hasKey:     hasKey,
