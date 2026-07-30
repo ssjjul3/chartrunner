@@ -17944,6 +17944,12 @@ window.crNames = (function(){
   function isWalletAddr(s){ try { return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(s || '').trim()); } catch(_){ return false; } }
   function shortW(w){ w = String(w || ''); return w ? (w.slice(0, 4) + '…' + w.slice(-4)) : ''; }
   function _wallet(){ try { return (window.crWallet && crWallet.isConnected && crWallet.isConnected() && crWallet.get) ? String(crWallet.get() || '') : ''; } catch(_){ return ''; } }
+  function _email(){ try { return (window.crAccount && crAccount.isSignedIn && crAccount.isSignedIn() && crAccount.email) ? String(crAccount.email() || '') : ''; } catch(_){ return ''; } }
+  // v1.0.754 — the identities this player can own a name under. A person may
+  // have BOTH a wallet and an email account; a name owned by EITHER is theirs.
+  function _identities(){ var out = []; var w = _wallet(); if(w) out.push(w); var e = _email(); if(e) out.push(e); return out; }
+  // The canonical owner to reserve NEW names under (wallet preferred, else email).
+  function myOwner(){ return _wallet() || _email() || ''; }
 
   // Availability — the Supabase RPC checks the unified cr_names table, so ONE
   // call covers both the off-chain and on-chain register. If the RPC isn't
@@ -17973,6 +17979,40 @@ window.crNames = (function(){
       }
     } catch(_){}
     return false;
+  }
+
+  // v1.0.754 — is this name owned by ANY of my identities (wallet OR email)?
+  // Fixes the self-collision where a name reserved under one identity looked
+  // "taken by someone else" when re-claimed under the other.
+  async function ownedByMe(name){
+    var ids = _identities();
+    for(var i = 0; i < ids.length; i++){ try { if(await ownedBy(name, ids[i])) return true; } catch(_){} }
+    return false;
+  }
+
+  // v1.0.754 — the ONE claim path every naming surface funnels through, so the
+  // whole system is consistent with the unified register. Checks availability
+  // across both registers, treats a name I already own as mine, and reserves it
+  // under my canonical owner. Guests (no wallet, no account) get a local-only
+  // provisional name (ok:true, reason:'guest') — they aren't in the register
+  // until they sign in / connect, at which point signup/claim reserves it.
+  // Returns { ok, reason, name }.
+  async function claim(name, kind){
+    var n = norm(name);
+    if(!valid(n)) return { ok:false, reason:'invalid', name:n };
+    var owner = myOwner();
+    var free = true;
+    try { free = await available(n); } catch(_){}
+    if(!free){ if(!(await ownedByMe(n))) return { ok:false, reason:'taken', name:n }; }
+    if(owner){
+      var rr = await reserve(n, kind || (_wallet() ? 'onchain' : 'offchain'), owner);
+      if(rr && rr.ok === false){
+        if(rr.reason === 'taken'){ if(!(await ownedByMe(n))) return { ok:false, reason:'taken', name:n }; }
+        else return { ok:false, reason:'error', name:n };
+      }
+      return { ok:true, reason:'', name:n };
+    }
+    return { ok:true, reason:'guest', name:n };   // no owner yet → local-only, provisional
   }
 
   // Release a name owned by `owner` (used to unwind a reservation after a failed
@@ -18113,7 +18153,8 @@ window.crNames = (function(){
   }
 
   return { norm:norm, valid:valid, isWalletAddr:isWalletAddr, shortW:shortW,
-           available:available, ownedBy:ownedBy, reserve:reserve, release:release, search:search,
+           available:available, ownedBy:ownedBy, ownedByMe:ownedByMe, myOwner:myOwner, claim:claim,
+           reserve:reserve, release:release, search:search,
            currentName:currentName, pillLabel:pillLabel,
            promptUsername:promptUsername, ensureUsername:ensureUsername };
 })();
@@ -42005,7 +42046,16 @@ try { window._crChatStack = _crChatStack; } catch(_){}
   async function joinRoom(id){
     try {
       // v1.0 — choose a name before joining a multiplayer room (if one isn't set yet).
-      try { if(typeof window.crHasName === 'function' && !window.crHasName()){ var _jn = prompt('Choose a name to join this room as:'); if(_jn && window.crRunnerName) crRunnerName.set(_jn); } } catch(_){}
+      // v1.0.754 — route through the unified register so the room name is unique too.
+      try {
+        if(typeof window.crHasName === 'function' && !window.crHasName()){
+          var _jn = prompt('Choose a name to join this room as:');
+          if(_jn && window.crRunnerName){
+            if(window.crNames && crNames.claim){ var _cr = await crNames.claim(_jn); if(_cr && _cr.ok === false){ try{ if(typeof toast==='function') toast('“' + (_cr.name||_jn) + '” is taken — joining as guest'); }catch(_){} } else { crRunnerName.set(_cr && _cr.name ? _cr.name : _jn); } }
+            else crRunnerName.set(_jn);
+          }
+        }
+      } catch(_){}
       var r = await fetch(http()+'/rooms/'+encodeURIComponent(id), {cache:'no-store'}); if(!r.ok) throw 0; var rm = await r.json(); if(!rm||!rm.id) throw 0;
       var url = location.origin + location.pathname + '?sharedMap=1&room=' + encodeURIComponent(rm.id)
         + (rm.host?'&host='+encodeURIComponent(rm.host):'') + (rm.asset?'&asset='+encodeURIComponent(rm.asset):'') + (rm.tf?'&tf='+encodeURIComponent(rm.tf):'') + (rm.snapshot?('#m='+rm.snapshot):'');
@@ -54846,8 +54896,12 @@ function osRefreshShop(){
   const setStatus = (msg, color) => { if(status){ status.textContent = msg || ''; status.style.color = color || '#5a5a52'; } };
   btn.addEventListener('click', () => {
     const raw = (input.value || '').trim().toLowerCase();
-    if(!/^[a-z0-9_]{1,32}$/.test(raw)){
-      setStatus('Handle must be 1–32 chars: a–z, 0–9, underscore.', '#e06c75'); return;
+    // v1.0.754 — one rule everywhere: 3–20 chars a–z/0–9/_ (matches crNames.valid
+    // + the unified register), so this path no longer accepts names the register
+    // would reject and then mislabel as "taken".
+    var _ok3 = window.crNames ? crNames.valid(raw) : /^[a-z0-9_]{3,20}$/.test(raw);
+    if(!_ok3){
+      setStatus('Handle must be 3–20 chars: a–z, 0–9, underscore.', '#e06c75'); return;
     }
     if(typeof crWallet === 'undefined' || !crWallet.isConnected()){
       const ok = window.confirm('Claiming a handle on-chain requires a connected wallet. Connect now?');
@@ -54862,18 +54916,12 @@ function osRefreshShop(){
       // v1.0.752 — also check the OFF-CHAIN register: a name may exist only once
       // across both. Reserve it as 'onchain' in the shared namespace so an email
       // signup can never take the same handle, then bounce to the on-chain claim.
+      // v1.0.754 — single claim path: checks both registers, allows a name I
+      // already own (wallet or account), reserves as an on-chain handle.
       try {
-        if(window.crNames){
-          var w = ''; try { w = (crWallet && crWallet.get) ? String(crWallet.get() || '') : ''; } catch(_){}
-          var free = await crNames.available(raw);
-          // If not free, allow it only when THIS wallet already owns the row
-          // (re-claiming a handle it reserved earlier but abandoned).
-          if(!free){
-            var mine = await crNames.ownedBy(raw, w);
-            if(!mine){ setStatus('“' + raw + '” is taken by an account name. Try another.', '#e06c75'); return; }
-          } else {
-            crNames.reserve(raw, 'onchain', w);   // best-effort; the on-chain PDA is the hard gate on-chain
-          }
+        if(window.crNames && crNames.claim){
+          var cr = await crNames.claim(raw, 'onchain');
+          if(cr && cr.ok === false){ setStatus(cr.reason === 'invalid' ? 'That name isn’t allowed — pick another.' : ('“' + raw + '” is already taken. Try another.'), '#e06c75'); return; }
         }
       } catch(_){}
       setStatus('Available — opening wallet to claim…', '#3ddc97');
@@ -56269,13 +56317,13 @@ function osRefreshDocs(){
     m.innerHTML = ''
       + '<div class="nmCard" role="dialog" aria-labelledby="crNameModalTtl">'
       +   '<h2 id="crNameModalTtl">◎ Claim your runner name</h2>'
-      +   '<p class="nmIntro">Pick a unique name. It anchors on Solana via <code>chartrunner_registry</code> on devnet so no one else can take it.</p>'
+      +   '<p class="nmIntro">Pick a name that is unique across all of ChartRunner — account names and on-chain handles share one registry, so a name exists only once.</p>'
       +   '<div class="nmRow">'
       +     '<input id="crNameInput" type="text" placeholder="your_name" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false">'
       +     '<button id="crNameCheckBtn" class="nmCheck" type="button">Check</button>'
       +   '</div>'
       +   '<p id="crNameStatus" class="nmStatus info">Lowercase letters, digits, and underscores. 3–20 characters.</p>'
-      +   '<p class="nmRules">Names persist locally instantly. The on-chain anchor (<code>saveOnChain</code>) opens the Solana wallet bridge for signature. You can skip the on-chain anchor for now and still keep the local-first name.</p>'
+      +   '<p class="nmRules">Save it to your account to reserve it right away. <b>Anchor on-chain</b> additionally records it on Solana (needs a connected wallet for the signature) — optional, do it whenever you like.</p>'
       +   '<div class="nmFoot">'
       +     '<button id="crNameCancelBtn" class="nmBtn" type="button">Cancel</button>'
       +     '<button id="crNameClaimLocalBtn" class="nmBtn" type="button" disabled>Save local-only</button>'
@@ -56356,9 +56404,24 @@ function osRefreshDocs(){
     if (err){ setStatus(err, 'err'); enableClaim(false); return; }
     setStatus('Checking availability…', 'info');
     enableClaim(false);
-    // Phase 1 availability check: query crRegistry.findOnChain(6, name).
-    // Falls back to "assume available" if registry is unreachable.
+    // v1.0.754 — availability now checks the UNIFIED cr_names register (crNames),
+    // which covers BOTH account names and on-chain handles, plus the legacy
+    // on-chain findOnChain as a backstop. A name the current owner already holds
+    // is allowed (re-save / re-anchor).
     try {
+      const cur = load();
+      if (cur && cur.name === name) {
+        setStatus('That\'s your current name. Pick a new one or close.', 'warn');
+        enableClaim(false);
+        return;
+      }
+      if (window.crNames && typeof crNames.available === 'function') {
+        var free = await crNames.available(name);
+        if (!free) {
+          var mine = await crNames.ownedByMe(name);   // v1.0.754 — mine under wallet OR email
+          if (!mine) { setStatus('"' + name + '" is already taken. Pick another.', 'err'); enableClaim(false); return; }
+        }
+      }
       let onChainHit = null;
       if (typeof crRegistry !== 'undefined' && typeof crRegistry.findOnChain === 'function') {
         onChainHit = await Promise.resolve(crRegistry.findOnChain(ENTITY_TOKENPROFILE, name)).catch(() => null);
@@ -56368,54 +56431,77 @@ function osRefreshDocs(){
         enableClaim(false);
         return;
       }
-      const cur = load();
-      if (cur && cur.name === name) {
-        setStatus('That\'s your current name. Pick a new one or close.', 'warn');
-        enableClaim(false);
-        return;
-      }
-      setStatus('"' + name + '" looks available. Click "Save local-only" or "Anchor on-chain".', 'ok');
+      setStatus('"' + name + '" looks available. Save it to your account, or anchor it on-chain.', 'ok');
       enableClaim(true);
     } catch(e){
-      setStatus('Couldn\'t reach registry. You can save locally; anchor later.', 'warn');
+      setStatus('Couldn\'t reach the registry. You can save it and anchor later.', 'warn');
       enableClaim(true);
     }
   }
+  // v1.0.754 — the owner key for cross-register reservations: the connected
+  // wallet if present, else the signed-in account email (email accounts hold
+  // names too, per the unified register). '' for a pure guest.
+  function _nameOwner(){
+    var w = _walletConnectedAddr(); if(w) return w;
+    try { if(window.crAccount && crAccount.isSignedIn && crAccount.isSignedIn() && crAccount.email) return crAccount.email() || ''; } catch(_){}
+    return '';
+  }
 
-  function onClaimLocalClick(){
+  async function onClaimLocalClick(){
     const input = document.getElementById('crNameInput');
     const name = (input.value || '').trim().toLowerCase();
     if (validate(name)){ setStatus(validate(name), 'err'); return; }
-    // v1.0.122 — Refuse to claim without a connected wallet; names are
-    // wallet-bound now, so the local-only path also needs an address to
-    // bind the record to.
-    const walletAddr = _walletConnectedAddr();
-    if (!walletAddr){
-      setStatus('Connect a wallet first — names are tied to your wallet.', 'err');
+    // v1.0.754 — a name can be held by a connected WALLET or a signed-in ACCOUNT
+    // (the two share one register). Reserve it in the unified cr_names namespace
+    // so it is globally unique, then persist + mirror to the unified handle.
+    const owner = _nameOwner();
+    if (!owner){
+      setStatus('Connect a wallet or sign in first — a name needs an owner.', 'err');
       return;
     }
-    save({ name, claimedAt: Date.now(), onChain: false, sig: null, wallet: walletAddr });
+    setStatus('Reserving “' + name + '”…', 'info');
+    // v1.0.754 — single claim path (checks both registers + reserves under my owner).
+    try {
+      if (window.crNames && typeof crNames.claim === 'function'){
+        var cr = await crNames.claim(name);
+        if (cr && cr.ok === false){ setStatus(cr.reason === 'taken' ? ('“' + name + '” is already taken. Pick another.') : 'Could not reserve that name — try again.', 'err'); return; }
+      }
+    } catch(_){}
+    save({ name, claimedAt: Date.now(), onChain: false, sig: null, wallet: _walletConnectedAddr() || null });
     applyName(name);
-    setStatus('Saved locally. Anchor on-chain anytime for permanence.', 'ok');
+    try { if (window.crRunnerName) crRunnerName.set(name); } catch(_){}   // unify: pill + currentName + profiles sync
+    setStatus('Saved. Anchor on-chain anytime for permanence.', 'ok');
     try { if (typeof crNotify === 'function') crNotify('◎ Name set · ' + name); } catch(_){}
     setTimeout(closeModal, 600);
   }
 
-  function onClaimOnChainClick(){
+  async function onClaimOnChainClick(){
     const input = document.getElementById('crNameInput');
     const name = (input.value || '').trim().toLowerCase();
     if (validate(name)){ setStatus(validate(name), 'err'); return; }
-    // v1.0.122 — On-chain claim inherently needs a wallet to sign; bind the
-    // record to the connected address so the name only shows for that wallet.
+    // On-chain claim inherently needs a wallet to sign; bind the record to the
+    // connected address so the name only shows for that wallet.
     const walletAddr = _walletConnectedAddr();
     if (!walletAddr){
-      setStatus('Connect a wallet first — names are tied to your wallet.', 'err');
+      setStatus('Connect a wallet first — the on-chain anchor needs a signature.', 'err');
       return;
     }
+    // v1.0.754 — reserve in the unified register (as an on-chain handle owned by
+    // this wallet) BEFORE bouncing to the bridge, so it can't collide with an
+    // account name; a name this wallet already owns re-anchors fine.
+    setStatus('Reserving “' + name + '”…', 'info');
+    // v1.0.754 — single claim path, reserved as an on-chain handle under my wallet.
+    try {
+      if (window.crNames && typeof crNames.claim === 'function'){
+        var cr = await crNames.claim(name, 'onchain');
+        if (cr && cr.ok === false){ setStatus(cr.reason === 'taken' ? ('“' + name + '” is already taken. Pick another.') : 'Could not reserve that name — try again.', 'err'); return; }
+      }
+    } catch(_){}
     // Save locally first so the name is visible even if the bridge round-trip
     // takes time / the user cancels in the wallet popup.
     save({ name, claimedAt: Date.now(), onChain: false, sig: null, wallet: walletAddr });
     applyName(name);
+    try { if (window.crRunnerName) crRunnerName.set(name); } catch(_){}   // unify: pill + currentName
     if (typeof crRegistry === 'undefined' || typeof crRegistry.saveOnChain !== 'function') {
       setStatus('On-chain bridge unavailable. Saved locally.', 'warn');
       try { if (typeof crNotify === 'function') crNotify('◎ Saved local-only · ' + name, 'warn'); } catch(_){}
@@ -56485,9 +56571,32 @@ function osRefreshDocs(){
     if (nameEdit && !nameEdit.dataset.crWired) {
       nameEdit.dataset.crWired = '1';
       nameEdit.value = (window.crRunnerName ? crRunnerName.get() : '') || '';
-      const commitName = () => {
+      // v1.0.754 — the inline rename routes through the unified register too:
+      // reserve the new name (unless the player already owns it) before setting
+      // it, so a direct profile rename can't take a name that already exists.
+      const commitName = async () => {
         if (!window.crRunnerName) return;
-        const n = crRunnerName.set(nameEdit.value);
+        const raw = nameEdit.value;
+        const norm = (window.crNames && crNames.norm) ? crNames.norm(raw) : String(raw||'').trim().toLowerCase();
+        if (!norm){ return; }
+        if (window.crNames && crNames.valid && !crNames.valid(norm)){
+          nameEdit.value = norm;
+          try { if (typeof toast === 'function') toast('Name: 3–20 chars, a–z, 0–9, _'); } catch(_){}
+          return;
+        }
+        var cur = ''; try { cur = crRunnerName.get() || ''; } catch(_){}
+        if (norm === cur){ nameEdit.value = norm; return; }   // unchanged → no re-reserve
+        if (window.crNames && crNames.claim){
+          try {
+            var cr = await crNames.claim(norm);
+            if (cr && cr.ok === false){
+              nameEdit.value = cur;   // revert the field
+              try { if (typeof toast === 'function') toast(cr.reason === 'taken' ? ('“' + norm + '” is taken') : 'Could not save that name'); } catch(_){}
+              return;
+            }
+          } catch(_){}
+        }
+        const n = crRunnerName.set(norm);
         if (nameEdit.value !== n) nameEdit.value = n;
         try { if (n && typeof toast === 'function') toast('Handle saved'); } catch(_){}
       };
@@ -94880,9 +94989,31 @@ window.crQvac = (function(){
     bodyEl=pop.querySelector('#crFrBody'); stepEl=pop.querySelector('#crFrStep');
     backBtn=pop.querySelector('#crFrBack'); nextBtn=pop.querySelector('#crFrNext'); skipBtn=pop.querySelector('#crFrClose');
     if(backBtn) backBtn.addEventListener('click', function(){ go(idx-1); });
-    nextBtn.addEventListener('click', function(){
+    nextBtn.addEventListener('click', async function(){
       // v1.0.599 — on the name step, clicking Next sets the handle (no separate Set button).
-      try { var st = STEPS[idx]; if(st && st.nameInput){ var inp = document.getElementById('crFrNameInput'); if(inp && window.crRunnerName){ var v = crRunnerName.set(inp.value); if(v && typeof toast === 'function') toast('Name set · ' + v); } } } catch(_){}
+      // v1.0.754 — route the onboarding name through the unified register: a taken
+      // name keeps the player on the step to pick another; a free/guest name is
+      // set (guests reserve nothing yet — signup/claim does that once they connect).
+      try {
+        var st = STEPS[idx];
+        if(st && st.nameInput){
+          var inp = document.getElementById('crFrNameInput');
+          if(inp && window.crRunnerName){
+            var raw = inp.value;
+            if(window.crNames && crNames.claim && crNames.norm(raw)){
+              var cr = await crNames.claim(raw);
+              if(cr && cr.ok === false){
+                if(cr.reason === 'taken'){ try { if(typeof toast==='function') toast('“' + cr.name + '” is taken — pick another'); } catch(_){} inp.value = cr.name; return; }  // stay on the step
+                // invalid → let them fix it
+                if(cr.reason === 'invalid'){ try { if(typeof toast==='function') toast('Name: 3–20 chars, a–z, 0–9, _'); } catch(_){} return; }
+              }
+              var v = crRunnerName.set(cr && cr.name ? cr.name : raw); if(v && typeof toast === 'function') toast('Name set · ' + v);
+            } else {
+              var v2 = crRunnerName.set(raw); if(v2 && typeof toast === 'function') toast('Name set · ' + v2);
+            }
+          }
+        }
+      } catch(_){}
       go(idx+1);
     });
     skipBtn.addEventListener('click', function(){ finish(true); });
