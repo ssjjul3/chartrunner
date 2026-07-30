@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.759
-     LAST UPDATED:    2026-07-30  ·  v1.0.759: ALERT ENGINE (client tier) — standing per-token alerts get their own Docs side-drawer tab (⏰ Alerts), promoted out of the Journal sub-tabs. New crAlertEngine module: a create-form (token · condition · value · channels · recurring) that persists rules to localStorage (cr_alert_rules_v1) and, when signed in, syncs to Supabase via cr_alerts_* RPCs. A 60s client poll checks each armed rule against crBirdeye (price_above / price_below / pct_move / vol_mult) and crBirdeye.security (safety verdict worsens); on trigger it raises an in-app toast, logs to crAlertBus, and optionally sends a Resend mail (crMailNotify). Fail-safe: providers unreachable → rule stays armed, never a false fire. The tab also shows the fired-event log (engine + chart-alarm laser). SERVER TIER (offline mail via a Worker cron reading cr_alerts) ships separately in the private worker repo — see AUFTRAG. Docs view registered in the three switch points; Journal ALERTS + ALERT V2 sub-tabs removed.
+     CURRENT VERSION: v1.0.760
+     LAST UPDATED:    2026-07-30  ·  v1.0.760: ALERT ENGINE — MAPS + LASER. (1) MAP BINDING: alerts can belong to a saved on-chain map. The create-form has a Map select that auto-defaults to the currently-loaded map (game.currentMapId) and is changeable (incl. "Global (keine Map)"). A filter dropdown above the list follows whichever map is loaded so a map and its alerts travel together; checking stays ALWAYS active regardless of the loaded map (map only groups/filters the view). Rule schema gains mapId/mapName; synced to Supabase via new p_map_id/p_map_name params (needs the incremental cr_alerts ALTER migration). (2) LASER IN ONE LIST: the hotkey-4 chart-alarm laser alarms (window.crAlarm, session-only) are now managed in the Alerts tab alongside standing alerts — condition line + ARMED/FIRED/OFF state + pause/re-arm/anchor-on-chain/delete, driven by crAlarm.toggle/rearm/anchor/remove(id). Laser alarms are filtered by the same map dropdown via their anchorMapId. Fired laser events already showed in the shared Verlauf log.
+     PREV  ·  v1.0.759: ALERT ENGINE (client tier) — standing per-token alerts get their own Docs side-drawer tab (⏰ Alerts), promoted out of the Journal sub-tabs. New crAlertEngine module: a create-form (token · condition · value · channels · recurring) that persists rules to localStorage (cr_alert_rules_v1) and, when signed in, syncs to Supabase via cr_alerts_* RPCs. A 60s client poll checks each armed rule against crBirdeye (price_above / price_below / pct_move / vol_mult) and crBirdeye.security (safety verdict worsens); on trigger it raises an in-app toast, logs to crAlertBus, and optionally sends a Resend mail (crMailNotify). Fail-safe: providers unreachable → rule stays armed, never a false fire. The tab also shows the fired-event log (engine + chart-alarm laser). SERVER TIER (offline mail via a Worker cron reading cr_alerts) ships separately in the private worker repo — see AUFTRAG. Docs view registered in the three switch points; Journal ALERTS + ALERT V2 sub-tabs removed.
      PREV  ·  v1.0.758: TOKEN METADATA & SOCIALS (CoinGecko) — the Token app header now carries real project context instead of only price/MC/holders. A new async _tokFetchMeta(def, mint) pulls CoinGecko /coins (SPL by /contract/<mint>, majors by ticker→cgId via the existing _crTickerToCgId map) with community_data + developer_data. On success it (1) upgrades the Website/Twitter/Telegram buttons from honest search-style fallbacks to the real verified URLs (turned green), and (2) fills a new "Project · CoinGecko" row with category chips + signal stats (🐦 Twitter followers · ✈ Telegram members · ⌨ dev commits/4w · 👍 community sentiment). Cached 10 min, fail-safe: on any error / nothing useful the row stays hidden and the fallback links remain — never fabricated. Routes through the same CR_CG_BASE gateway/proxy the other CoinGecko panes use.
      PREV  ·  v1.0.757: API-VALUE BATCH 3 — Trader-grade depth from keys already paid for. (1) WHALE TAPE: new SolanaTracker pane (solWhaleTape) — large-trade tape for the token loaded in the Token app, via a new crBirdeye.trades() over /defi/txs. Filters to swaps ≥ a configurable min size (default $5k), buy green / sell red · wallet · age. Keys off the same active-mint idiom solSafety uses; fail-safe warn chip on no-token/offline/empty. (2) PORTFOLIO VALUE CURVE: the Wallet app now draws a value-over-time curve above Holdings. Primary source is a new crGoldRush.portfolio() (Covalent portfolio_v2 daily totals); when the provider returns nothing for Solana it falls back to value snapshots recorded locally each time the wallet's total USD is read (keyed per address, ≤180 pts, hourly-deduped). <2 points shows a "building…" note — never a fabricated line. Reuses _tokDrawSparkline. (3) JUPITER SLIPPAGE WIDGET: phxBook (Route Depth) expanded from impact-only into a real cost-of-size table — net price, price impact, slippage vs the 1-SOL fill, min-received at 50 bps, and the best AMM route — with configurable probe sizes (default 1/10/100/500 SOL).
      PREV  ·  v1.0.756: API-VALUE BATCH 2 — Discovery + richer avatars from keys already paid for. (1) NFT-AVATAR via HELIUS DAS: the wallet NFT picker now fetches getAssetsByOwner through our keyed gateway (/v1/rpc → Helius) as the PRIMARY source when the gateway is enabled — covers compressed NFTs (cNFTs) and pNFTs that Magic Eden's /tokens endpoint misses, and it's keyed (no public rate-limit). Robust degradation: DAS is only tried when _crGatewayEnabled() (publicnode can't do DAS); on error or empty it falls back to the existing Magic Eden path, so nothing regresses for gateway-off users. Result maps content.links.image / files[].cdn_uri, filters out fungible tokens, and reads the collection group. (2) MOVERS + NEW-LISTINGS RADAR: two new SolanaTracker panes — solMovers (Birdeye gainers/losers, top climbers/fallers by 24h) and solNewListings (Birdeye new_listing, fresh mints < 24h) — a discovery loop that feeds straight into $RUN. Both go through the same /v1/birdeye proxy + fallback chrome the other Birdeye panes use.
@@ -55236,6 +55237,7 @@ window.crAlertEngine = (function(){
       p_id: r.id, p_asset: r.tokenId || '', p_symbol: r.symbol || '', p_mint: r.mint || '',
       p_type: r.type, p_threshold: Number(r.threshold) || 0,
       p_channels: JSON.stringify(r.channels || {}), p_recurring: !!r.recurring, p_status: r.status || 'armed',
+      p_map_id: r.mapId || '', p_map_name: r.mapName || '',
     });
   }
   async function _supaDelete(id){ if(_signedIn()) await _rpc('cr_alerts_delete', { p_id: id }); }
@@ -55252,6 +55254,7 @@ window.crAlertEngine = (function(){
         id: row.id, tokenId: row.asset || '', symbol: row.symbol || '', mint: row.mint || '',
         type: row.type, threshold: Number(row.threshold) || 0, channels: ch,
         recurring: !!row.recurring, status: row.status || 'armed',
+        mapId: row.map_id || '', mapName: row.map_name || '',
         createdAt: byId[row.id] ? byId[row.id].createdAt : Date.now(),
       });
     });
@@ -55274,6 +55277,8 @@ window.crAlertEngine = (function(){
       channels: { app: input.channels ? !!input.channels.app : true, mail: input.channels ? !!input.channels.mail : false },
       recurring: !!input.recurring,
       status: 'armed',
+      mapId: String(input.mapId || ''),
+      mapName: String(input.mapName || ''),
       createdAt: Date.now(), lastChecked: 0, lastValue: null, lastFiredAt: 0,
       baseVol: (input.baseVol != null ? Number(input.baseVol) : null),
       baseVerdict: (input.baseVerdict != null ? String(input.baseVerdict) : null),
@@ -55366,6 +55371,18 @@ window.crAlertEngine = (function(){
   }
   function _defaultTok(){ try { return (typeof _tokState !== 'undefined' && _tokState.selectedId) ? _tokState.selectedId : 'sol'; } catch(_){ return 'sol'; } }
 
+  // ── Map binding (v1.0.760) ────────────────────────────────────────────────
+  // Alerts can belong to a saved on-chain map. The active-map identity is
+  // game.currentMapId. The filter follows whichever map is loaded (so a map and
+  // its alerts travel together), but checking is ALWAYS active regardless of the
+  // loaded map — the map only groups/filters the view.
+  let _mapFilter = null;     // '__all__' | '' (global/none) | <mapId>
+  let _lastSeenMap = null;
+  function _currentMapId(){ try { return (typeof game !== 'undefined' && game.currentMapId) ? String(game.currentMapId) : ''; } catch(_){ return ''; } }
+  function _mapChoices(){ try { if(!window.crMaps || !crMaps.readAll) return []; return (crMaps.readAll() || []).filter(m => m && m.id).map(m => ({ id:String(m.id), name:String(m.name || m.id) })); } catch(_){ return []; } }
+  function _mapNameFor(id){ if(!id) return ''; const m = _mapChoices().find(x => x.id === id); return m ? m.name : id; }
+  function _matchesFilter(mid){ if(_mapFilter === '__all__' || _mapFilter == null) return true; return String(mid || '') === _mapFilter; }
+
   function render(){
     const host = document.getElementById('crDocsViewAlerts');
     if(!host) return;
@@ -55378,6 +55395,17 @@ window.crAlertEngine = (function(){
     const mailReady = _signedIn();
     const typeOpts = Object.keys(TYPES).map(k => '<option value="' + k + '">' + _esc(TYPES[k].label) + '</option>').join('');
     const tokOpts = toks.map(t => '<option value="' + _esc(t.id) + '"' + (t.id === defTok ? ' selected' : '') + '>' + _esc(t.tag) + '</option>').join('');
+    // Map binding: filter follows the currently-loaded map when it changes.
+    const curMap = _currentMapId();
+    if(curMap !== _lastSeenMap){ _lastSeenMap = curMap; _mapFilter = curMap || '__all__'; }
+    if(_mapFilter == null) _mapFilter = '__all__';
+    const maps = _mapChoices();
+    const defMap = (curMap && maps.some(m => m.id === curMap)) ? curMap : '';
+    const mapOpts = '<option value="">— Global (keine Map) —</option>' +
+      maps.map(m => '<option value="' + _esc(m.id) + '"' + (m.id === defMap ? ' selected' : '') + '>' + _esc(m.name) + '</option>').join('');
+    const filterOpts = '<option value="__all__"' + (_mapFilter === '__all__' ? ' selected' : '') + '>Alle Maps</option>' +
+      '<option value=""' + (_mapFilter === '' ? ' selected' : '') + '>Global (ohne Map)</option>' +
+      maps.map(m => '<option value="' + _esc(m.id) + '"' + (m.id === _mapFilter ? ' selected' : '') + '>' + _esc(m.name) + '</option>').join('');
     host.innerHTML =
       '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 10px">' +
         '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">' + rules.length + ' Alerts · ' + armed + ' scharf · ' + fired + ' ausgelöst</div>' +
@@ -55395,6 +55423,8 @@ window.crAlertEngine = (function(){
         '<div style="margin-bottom:8px"><label style="display:block;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim);margin-bottom:4px">Wert <span id="crAeUnit" style="color:var(--fg)"></span></label>' +
           '<input id="crAeVal" type="number" step="any" class="cr-ae-ctl" placeholder="z. B. 0.000032"></div>' +
         '<div id="crAeHint" style="font-size:10px;color:var(--dim);margin-bottom:10px"></div>' +
+        '<div style="margin-bottom:10px"><label style="display:block;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim);margin-bottom:4px">Map' + (defMap ? ' <span style="color:#3ddc97">· geladene Map</span>' : '') + '</label>' +
+          '<select id="crAeMap" class="cr-ae-ctl">' + mapOpts + '</select></div>' +
         '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:11px">' +
           '<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crAeApp" checked> 🔔 In-App</label>' +
           '<label style="display:flex;align-items:center;gap:6px;cursor:' + (mailReady?'pointer':'not-allowed') + ';opacity:' + (mailReady?'1':'.5') + '"><input type="checkbox" id="crAeMail"' + (mailReady?'':' disabled') + '> ✉ E-Mail' + (mailReady?'':' (Login nötig)') + '</label>' +
@@ -55402,9 +55432,15 @@ window.crAlertEngine = (function(){
         '</div>' +
         '<button id="crAeArm" type="button" class="cr-go" style="width:100%;border-color:#14f195;color:#bff7df;background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.05));font-weight:700">⚡ Alert scharfschalten</button>' +
       '</div>' +
-      // list
-      '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Meine Alerts</div>' +
+      // list + map filter
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+        '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Meine Alerts</div>' +
+        '<select id="crAeFilter" class="cr-ae-ctl" style="margin-left:auto;width:auto;font-size:10px;padding:5px 8px">' + filterOpts + '</select>' +
+      '</div>' +
       '<div id="crAeList" style="display:flex;flex-direction:column;gap:10px"></div>' +
+      // chart-alarm laser (hotkey-4) — managed here too, one unified place
+      '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px">Chart-Alarme · Laser (Hotkey 4)</div>' +
+      '<div id="crAeLaser" style="display:flex;flex-direction:column;gap:10px"></div>' +
       // fired-event log (engine + chart-alarm laser both publish to crAlertBus)
       '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px">Verlauf · ausgelöste Alarme</div>' +
       '<div id="crAeLog" style="display:flex;flex-direction:column;gap:6px"></div>' +
@@ -55415,6 +55451,7 @@ window.crAlertEngine = (function(){
           : '<span>🔒 Melde dich an, damit deine Alerts synchronisiert werden und später auch offline per Mail feuern. Ohne Login laufen sie lokal, solange die App offen ist.</span>') +
       '</div>';
     _renderList();
+    _renderLaser();
     _renderLog();
     _wireForm();
   }
@@ -55436,8 +55473,9 @@ window.crAlertEngine = (function(){
   }
   function _renderList(){
     const box = document.getElementById('crAeList'); if(!box) return;
-    const rules = _load();
-    if(!rules.length){ box.innerHTML = '<div style="font-size:11px;color:var(--dim);padding:14px;text-align:center;border:1px dashed var(--line);border-radius:10px">Noch keine Alerts. Leg oben einen an.</div>'; return; }
+    const all = _load();
+    const rules = all.filter(r => _matchesFilter(r.mapId));
+    if(!rules.length){ box.innerHTML = '<div style="font-size:11px;color:var(--dim);padding:14px;text-align:center;border:1px dashed var(--line);border-radius:10px">' + (all.length ? 'Keine Alerts in dieser Map-Ansicht.' : 'Noch keine Alerts. Leg oben einen an.') + '</div>'; return; }
     const stateChip = (s) => s === 'triggered'
       ? '<span style="margin-left:auto;font-size:9px;letter-spacing:.5px;text-transform:uppercase;padding:3px 9px;border-radius:999px;background:#14f195;color:#06110b;font-weight:700">● ausgelöst</span>'
       : s === 'paused'
@@ -55454,7 +55492,7 @@ window.crAlertEngine = (function(){
       return '<div class="cr-ae-card" style="border:1px solid ' + border + ';border-radius:12px;background:rgba(10,15,28,.5);padding:11px 12px">' +
         '<div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">' +
           '<span style="width:28px;height:28px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;color:#06110b;background:linear-gradient(135deg,#14f195,#9945ff)">' + _esc(String(r.symbol||'?').slice(0,1)) + '</span>' +
-          '<div><div style="font-weight:700">' + _esc(r.symbol) + '</div><div style="font-size:9px;color:var(--dim)">' + _esc((r.mint||'').slice(0,4)) + (r.mint?'…':'') + (r.recurring?' · wiederkehrend':'') + '</div></div>' +
+          '<div><div style="font-weight:700">' + _esc(r.symbol) + '</div><div style="font-size:9px;color:var(--dim)">' + _esc((r.mint||'').slice(0,4)) + (r.mint?'…':'') + (r.recurring?' · wiederkehrend':'') + (r.mapId ? ' · 🗺 ' + _esc(_mapNameFor(r.mapId) || r.mapName) : '') + '</div></div>' +
           stateChip(r.status) +
         '</div>' +
         '<div style="font-size:12px;margin-bottom:8px">' + condTxt + cur + '</div>' +
@@ -55476,6 +55514,53 @@ window.crAlertEngine = (function(){
     box.querySelectorAll('[data-ae-rearm]').forEach(b => b.addEventListener('click', () => { const id=b.getAttribute('data-ae-rearm'); update(id,{status:'armed',triggeredAt:0,lastFiredAt:0}); }));
     box.querySelectorAll('[data-ae-del]').forEach(b => b.addEventListener('click', () => remove(b.getAttribute('data-ae-del'))));
   }
+  // v1.0.760 — Laser (hotkey-4) chart alarms, managed in the same tab. Session-
+  // only definitions live on window.crAlarm; we render + drive them via its
+  // toggle/rearm/anchor/remove(id) methods. Filtered by the same map dropdown
+  // (an alarm's anchorMapId is its map link).
+  function _renderLaser(){
+    const box = document.getElementById('crAeLaser'); if(!box) return;
+    let alarms = [];
+    try { if(window.crAlarm && Array.isArray(crAlarm.alarms)) alarms = crAlarm.alarms; } catch(_){}
+    alarms = alarms.filter(a => a && _matchesFilter(a.anchorMapId || ''));
+    if(!alarms.length){
+      const anyAlarm = (function(){ try { return !!(window.crAlarm && crAlarm.alarms && crAlarm.alarms.length); } catch(_){ return false; } })();
+      box.innerHTML = '<div style="font-size:10.5px;color:var(--dim);padding:10px;text-align:center;border:1px dashed var(--line);border-radius:8px">' +
+        (anyAlarm ? 'Keine Laser-Alarme in dieser Map-Ansicht.' : 'Keine Chart-Alarme. Im Chart mit Hotkey <b>4</b> (Alarm-Laser) auf ein Level klicken.') + '</div>';
+      return;
+    }
+    box.innerHTML = alarms.slice().sort((a,b) => (b.createdAt||0)-(a.createdAt||0)).map(a => {
+      const id = a.id;
+      const state = a.triggered ? 'FIRED' : (a.enabled ? 'ARMED' : 'OFF');
+      const sc = a.triggered ? '#ff5b7f' : (a.enabled ? '#3ddc97' : 'var(--dim)');
+      const tc = a.triggered ? '#ff8aa3' : (a.confluence ? '#ffd166' : '#7be3f3');
+      const conds = (a.conditions || []).map(c =>
+        '<div style="display:grid;grid-template-columns:1fr 40px 84px;gap:6px;padding:3px 0;border-top:1px solid rgba(255,255,255,.04);font-size:10px">' +
+          '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _esc(c.label || c.kind || 'Price') + '</span>' +
+          '<span style="color:var(--dim);text-align:center">' + _esc(c.op || '') + '</span>' +
+          '<span style="text-align:right;font-family:ui-monospace,Menlo,monospace">' + (c.price != null && isFinite(c.price) ? Number(c.price).toFixed(2) : '—') + '</span>' +
+        '</div>').join('');
+      return '<div style="border:1px solid ' + (a.triggered ? 'rgba(255,91,127,.5)' : 'var(--line)') + ';border-radius:12px;background:rgba(10,15,28,.5);padding:11px 12px">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
+          '<b style="color:' + tc + '">' + (a.confluence ? '↯ ' : '⏰ ') + _esc(a.name || 'Alarm') + '</b>' +
+          '<span style="margin-left:auto;font-size:9px;letter-spacing:.5px;color:' + sc + '">' + state + '</span>' +
+        '</div>' +
+        '<div style="font-size:9px;color:' + (a.anchorMapId ? '#14f195' : 'var(--dim)') + ';margin-bottom:4px">' + (a.anchorMapId ? '🗺 anchored · ' + _esc(_mapNameFor(a.anchorMapId)) : 'local only') + '</div>' +
+        (conds ? '<div style="margin-bottom:8px">' + conds + '</div>' : '') +
+        '<div style="display:flex;gap:4px;justify-content:flex-end">' +
+          '<button class="cr-ae-mini" data-al-toggle="' + id + '" title="' + (a.enabled ? 'Pausieren' : 'Scharf') + '">' + (a.enabled ? '⏸' : '▶') + '</button>' +
+          (a.triggered ? '<button class="cr-ae-mini" data-al-rearm="' + id + '" title="Neu scharf">↻</button>' : '') +
+          '<button class="cr-ae-mini" data-al-anchor="' + id + '" title="' + (a.anchorMapId ? 'Anchored' : 'On-chain verankern') + '">' + (a.anchorMapId ? '🔗' : '⚓') + '</button>' +
+          '<button class="cr-ae-mini" data-al-del="' + id + '" title="Löschen">🗑</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    const rerun = () => { try { _renderLaser(); } catch(_){} };
+    box.querySelectorAll('[data-al-toggle]').forEach(b => b.addEventListener('click', () => { try { crAlarm.toggle(b.getAttribute('data-al-toggle')); } catch(_){} rerun(); }));
+    box.querySelectorAll('[data-al-rearm]').forEach(b => b.addEventListener('click', () => { try { crAlarm.rearm(b.getAttribute('data-al-rearm')); } catch(_){} rerun(); }));
+    box.querySelectorAll('[data-al-anchor]').forEach(b => b.addEventListener('click', async () => { try { await crAlarm.anchor(b.getAttribute('data-al-anchor')); } catch(_){} rerun(); }));
+    box.querySelectorAll('[data-al-del]').forEach(b => b.addEventListener('click', () => { try { crAlarm.remove(b.getAttribute('data-al-del')); } catch(_){} rerun(); }));
+  }
   function _wireForm(){
     const typeSel = document.getElementById('crAeType');
     const unitEl = document.getElementById('crAeUnit');
@@ -55483,6 +55568,8 @@ window.crAlertEngine = (function(){
     const syncType = () => { const t = TYPES[typeSel.value] || {}; if(unitEl) unitEl.textContent = t.unit ? ('(' + t.unit + ')') : ''; if(hintEl) hintEl.textContent = t.hint || ''; };
     if(typeSel){ typeSel.addEventListener('change', syncType); syncType(); }
     const chk = document.getElementById('crAeCheck'); if(chk) chk.addEventListener('click', () => { checkNow(); });
+    const filt = document.getElementById('crAeFilter');
+    if(filt) filt.addEventListener('change', () => { _mapFilter = filt.value; _renderList(); _renderLaser(); });
     const arm = document.getElementById('crAeArm');
     if(arm) arm.addEventListener('click', async () => {
       const tokSel = document.getElementById('crAeTok');
@@ -55498,10 +55585,13 @@ window.crAlertEngine = (function(){
         if(type === 'vol_mult' && window.crBirdeye && crBirdeye.fetchToken){ const d = await crBirdeye.fetchToken(tokenId); if(d && isFinite(Number(d.vol24))) baseVol = Number(d.vol24); }
         if(type === 'safety' && tok.mint && window.crBirdeye && crBirdeye.security){ const s = await crBirdeye.security(tok.mint); if(s && s.verdict) baseVerdict = s.verdict; }
       } catch(_){}
+      const mapSel = document.getElementById('crAeMap');
+      const mapId = mapSel ? mapSel.value : '';
       create({
         tokenId: tokenId, symbol: tok.tag, mint: tok.mint, type: type, threshold: threshold,
         channels: { app: !!(document.getElementById('crAeApp')||{}).checked, mail: !!(document.getElementById('crAeMail')||{}).checked },
         recurring: !!(document.getElementById('crAeRec')||{}).checked,
+        mapId: mapId, mapName: mapId ? _mapNameFor(mapId) : '',
         baseVol: baseVol, baseVerdict: baseVerdict,
       });
       if(valEl) valEl.value = '';
