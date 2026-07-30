@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.757
-     LAST UPDATED:    2026-07-30  ·  v1.0.757: API-VALUE BATCH 3 — Trader-grade depth from keys already paid for. (1) WHALE TAPE: new SolanaTracker pane (solWhaleTape) — large-trade tape for the token loaded in the Token app, via a new crBirdeye.trades() over /defi/txs. Filters to swaps ≥ a configurable min size (default $5k), buy green / sell red · wallet · age. Keys off the same active-mint idiom solSafety uses; fail-safe warn chip on no-token/offline/empty. (2) PORTFOLIO VALUE CURVE: the Wallet app now draws a value-over-time curve above Holdings. Primary source is a new crGoldRush.portfolio() (Covalent portfolio_v2 daily totals); when the provider returns nothing for Solana it falls back to value snapshots recorded locally each time the wallet's total USD is read (keyed per address, ≤180 pts, hourly-deduped). <2 points shows a "building…" note — never a fabricated line. Reuses _tokDrawSparkline. (3) JUPITER SLIPPAGE WIDGET: phxBook (Route Depth) expanded from impact-only into a real cost-of-size table — net price, price impact, slippage vs the 1-SOL fill, min-received at 50 bps, and the best AMM route — with configurable probe sizes (default 1/10/100/500 SOL).
+     CURRENT VERSION: v1.0.758
+     LAST UPDATED:    2026-07-30  ·  v1.0.758: TOKEN METADATA & SOCIALS (CoinGecko) — the Token app header now carries real project context instead of only price/MC/holders. A new async _tokFetchMeta(def, mint) pulls CoinGecko /coins (SPL by /contract/<mint>, majors by ticker→cgId via the existing _crTickerToCgId map) with community_data + developer_data. On success it (1) upgrades the Website/Twitter/Telegram buttons from honest search-style fallbacks to the real verified URLs (turned green), and (2) fills a new "Project · CoinGecko" row with category chips + signal stats (🐦 Twitter followers · ✈ Telegram members · ⌨ dev commits/4w · 👍 community sentiment). Cached 10 min, fail-safe: on any error / nothing useful the row stays hidden and the fallback links remain — never fabricated. Routes through the same CR_CG_BASE gateway/proxy the other CoinGecko panes use.
+     PREV  ·  v1.0.757: API-VALUE BATCH 3 — Trader-grade depth from keys already paid for. (1) WHALE TAPE: new SolanaTracker pane (solWhaleTape) — large-trade tape for the token loaded in the Token app, via a new crBirdeye.trades() over /defi/txs. Filters to swaps ≥ a configurable min size (default $5k), buy green / sell red · wallet · age. Keys off the same active-mint idiom solSafety uses; fail-safe warn chip on no-token/offline/empty. (2) PORTFOLIO VALUE CURVE: the Wallet app now draws a value-over-time curve above Holdings. Primary source is a new crGoldRush.portfolio() (Covalent portfolio_v2 daily totals); when the provider returns nothing for Solana it falls back to value snapshots recorded locally each time the wallet's total USD is read (keyed per address, ≤180 pts, hourly-deduped). <2 points shows a "building…" note — never a fabricated line. Reuses _tokDrawSparkline. (3) JUPITER SLIPPAGE WIDGET: phxBook (Route Depth) expanded from impact-only into a real cost-of-size table — net price, price impact, slippage vs the 1-SOL fill, min-received at 50 bps, and the best AMM route — with configurable probe sizes (default 1/10/100/500 SOL).
      PREV  ·  v1.0.756: API-VALUE BATCH 2 — Discovery + richer avatars from keys already paid for. (1) NFT-AVATAR via HELIUS DAS: the wallet NFT picker now fetches getAssetsByOwner through our keyed gateway (/v1/rpc → Helius) as the PRIMARY source when the gateway is enabled — covers compressed NFTs (cNFTs) and pNFTs that Magic Eden's /tokens endpoint misses, and it's keyed (no public rate-limit). Robust degradation: DAS is only tried when _crGatewayEnabled() (publicnode can't do DAS); on error or empty it falls back to the existing Magic Eden path, so nothing regresses for gateway-off users. Result maps content.links.image / files[].cdn_uri, filters out fungible tokens, and reads the collection group. (2) MOVERS + NEW-LISTINGS RADAR: two new SolanaTracker panes — solMovers (Birdeye gainers/losers, top climbers/fallers by 24h) and solNewListings (Birdeye new_listing, fresh mints < 24h) — a discovery loop that feeds straight into $RUN. Both go through the same /v1/birdeye proxy + fallback chrome the other Birdeye panes use.
      PREV  ·  v1.0.755: API-VALUE BATCH 1 — Pyth via the /hermes/* auth-proxy (survives the 18.08 Pyth key requirement), Solana RPC via keyed Helius (/v1/rpc lights up the Network-Health / Safety panes publicnode blocks), and a real Birdeye /defi/token_security rug-check on the Token app safety row (SAFE/CAUTION/RISK + flags, fail-safe UNKNOWN when the payload can't be read).
      PREV  ·  v1.0.754: NAMING CONSISTENCY — every name surface now funnels through one path (crNames.claim) so it stays consistent with the unified cross-register namespace (crNames / Supabase cr_names). (1) ONE CLAIM PATH: crNames.claim(name,kind) validates, checks availability across BOTH the off-chain and on-chain register, treats a name you already own as yours, and reserves it under your canonical owner; guests (no wallet, no account) get a local provisional name reserved later at signup/claim. (2) SELF-COLLISION FIXED: a person can own a name under a wallet AND/OR an email account — ownedByMe() checks ALL of their identities, so re-claiming your own name from the other identity no longer reads as "taken" (new _identities/myOwner/ownedByMe helpers). (3) ALL WRITE PATHS ROUTED: the "Claim your runner name" modal (check + save + on-chain anchor), the on-chain claim button, the Profile inline name-box rename, the first-run onboarding name step, and the multiplayer room-join prompt now all go through crNames.claim before crRunnerName.set. (4) MODAL NO LONGER WALLET-ONLY: a signed-in account can save a name (the on-chain anchor still needs a wallet for the signature); copy reframed to "one name across both registers". (5) ONE RULE EVERYWHERE: 3–20 chars a–z/0–9/_ (the on-chain claim button no longer accepts 1–32 and then mislabels register-invalid names as "taken").
@@ -65877,6 +65878,55 @@ function _tokSocialUrl(kind, tag){
   if(kind === 'telegram') return 'https://t.me/s/' + tag.toLowerCase();
   return 'https://www.coingecko.com/en/search?query=' + tag;
 }
+// v1.0.758 — Token metadata & socials via CoinGecko. Enriches the Token app
+// header with real Website/Twitter/Telegram links, categories, and "is this a
+// real project?" signals (Twitter followers, Telegram members, dev commits/4w,
+// community sentiment). Two lookup paths: SPL tokens by mint via the contract
+// endpoint, majors by ticker→cgId. Cached 10 min. Never throws → returns null
+// so the caller simply keeps the honest search-style fallback links.
+async function _tokFetchMeta(def, mint){
+  try {
+    let url = '';
+    if(mint){
+      url = CR_CG_BASE + '/coins/solana/contract/' + encodeURIComponent(mint)
+          + '?localization=false&tickers=false&market_data=false&community_data=true&developer_data=true&sparkline=false';
+    } else {
+      const cgId = (typeof _crTickerToCgId === 'function') ? _crTickerToCgId(def.tag) : '';
+      if(!cgId) return null;
+      url = CR_CG_BASE + '/coins/' + encodeURIComponent(cgId)
+          + '?localization=false&tickers=false&market_data=false&community_data=true&developer_data=true&sparkline=false';
+    }
+    const ck = 'cgmeta:' + (mint || def.tag);
+    const c = _crTokTabCache[ck]; if(c && (Date.now() - c.t) < 600000) return c.v;
+    const r = await fetch(url, { headers: (typeof crCgHeaders === 'function' ? crCgHeaders() : {}) });
+    if(!r.ok) return null;
+    const j = await r.json();
+    if(!j || typeof j !== 'object') return null;
+    const links = j.links || {};
+    const home = Array.isArray(links.homepage) ? (links.homepage.find(x => x && /^https?:\/\//.test(x)) || '') : '';
+    const tw = links.twitter_screen_name ? ('https://twitter.com/' + String(links.twitter_screen_name).replace(/^@/, '')) : '';
+    const tg = links.telegram_channel_identifier ? ('https://t.me/' + String(links.telegram_channel_identifier).replace(/^@/, '')) : '';
+    const cd = j.community_data || {};
+    const dd = j.developer_data || {};
+    const num = x => { const n = Number(x); return isFinite(n) ? n : null; };
+    const v = {
+      home: home, twitter: tw, telegram: tg,
+      categories: Array.isArray(j.categories) ? j.categories.filter(Boolean).slice(0, 4) : [],
+      sentimentUp: num(j.sentiment_votes_up_percentage),
+      twFollowers: num(cd.twitter_followers),
+      tgUsers:     num(cd.telegram_channel_user_count),
+      devCommits:  num(dd.commit_count_4_weeks),
+      devStars:    num(dd.stars),
+    };
+    // Only cache/return if we actually have something worth showing.
+    const useful = v.home || v.twitter || v.telegram || v.categories.length
+                || v.sentimentUp != null || v.twFollowers != null || v.tgUsers != null || v.devCommits != null;
+    if(!useful) return null;
+    _crTokTabCache[ck] = { t: Date.now(), v: v };
+    return v;
+  } catch(_){ return null; }
+}
+
 function _tokRenderProfile(){
   const host = document.getElementById('crTokProfile');
   if(!host) return;
@@ -65936,9 +65986,9 @@ function _tokRenderProfile(){
     // Watchlist toggle that reuses the existing window._tokToggleWatch/★ star
     // mechanism from the list rows instead of a parallel one.
     '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">' +
-      '<a href="' + _tokSocialUrl('web', def.tag) + '" target="_blank" rel="noopener" style="padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);color:#7aa2ff;text-decoration:none;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Website</a>' +
-      '<a href="' + _tokSocialUrl('twitter', def.tag) + '" target="_blank" rel="noopener" style="padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);color:#7aa2ff;text-decoration:none;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Twitter</a>' +
-      '<a href="' + _tokSocialUrl('telegram', def.tag) + '" target="_blank" rel="noopener" style="padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);color:#7aa2ff;text-decoration:none;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Telegram</a>' +
+      '<a data-tok-soc="web" href="' + _tokSocialUrl('web', def.tag) + '" target="_blank" rel="noopener" style="padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);color:#7aa2ff;text-decoration:none;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Website</a>' +
+      '<a data-tok-soc="twitter" href="' + _tokSocialUrl('twitter', def.tag) + '" target="_blank" rel="noopener" style="padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);color:#7aa2ff;text-decoration:none;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Twitter</a>' +
+      '<a data-tok-soc="telegram" href="' + _tokSocialUrl('telegram', def.tag) + '" target="_blank" rel="noopener" style="padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.5);color:#7aa2ff;text-decoration:none;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Telegram</a>' +
       '<button type="button" data-tok-watch-hero="' + def.id + '" style="padding:5px 10px;border:1px solid ' + (_tokIsWatchedHero ? 'rgba(255,209,102,.55)' : 'var(--line)') + ';border-radius:6px;background:' + (_tokIsWatchedHero ? 'rgba(255,209,102,.10)' : 'rgba(10,15,28,.5)') + ';color:' + (_tokIsWatchedHero ? '#ffd166' : 'var(--dim)') + ';font-size:10px;text-transform:uppercase;letter-spacing:.4px;cursor:pointer;font-family:inherit">' + (_tokIsWatchedHero ? '★ Watched' : '☆ Watchlist') + '</button>' +
     '</div>' +
     // v1.0.519 — RUN button moved to the TOP (right under the ticker + price header).
@@ -65947,6 +65997,9 @@ function _tokRenderProfile(){
     // token_security, filled async after mount (replaces the old placeholder).
     (_tokMint ? ('<div id="tokSafety_' + def.id + '" data-tok-safety-mint="' + _tokEscA(_tokMint) + '" style="margin:0 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4);font-size:10px">' +
       '<span class="dim" style="text-transform:uppercase;letter-spacing:.4px">Safety</span> <span style="color:var(--dim)">checking…</span></div>') : '') +
+    // v1.0.758 — Project metadata & socials (CoinGecko), filled async after mount.
+    // Hidden until real data lands so an empty box never shows.
+    '<div id="tokMeta_' + def.id + '" data-tok-meta="' + _tokEscA(_tokMint || def.tag) + '" style="display:none;margin:0 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4);font-size:10px"></div>' +
     // TF picker + sparkline panel
     '<div style="margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.4)">' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
@@ -66029,6 +66082,42 @@ function _tokRenderProfile(){
           : (sec.flags && sec.flags.length ? (' <span style="color:var(--dim)">· ' + esc(sec.flags.join(' · ')) + '</span>') : ' <span style="color:var(--dim)">· mint & freeze renounced</span>');
         _safEl.innerHTML = '<span class="dim" style="text-transform:uppercase;letter-spacing:.4px">Safety</span> ' +
           '<span style="color:' + col + ';font-weight:700">' + sec.verdict + '</span>' + detail;
+      }).catch(function(){});
+    }
+  } catch(_){}
+  // v1.0.758 — fill the metadata/socials row + upgrade the social links async.
+  try {
+    var _metaEl = document.getElementById('tokMeta_' + def.id);
+    if(_metaEl){
+      _tokFetchMeta(def, _tokMint).then(function(meta){
+        if(!_metaEl.isConnected || !meta) return;   // switched token / nothing useful → keep fallback links
+        var esc = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]); }); };
+        // Upgrade the honest search-style social buttons to the real URLs.
+        var swap = function(kind, href){
+          if(!href) return;
+          var a = host.querySelector('[data-tok-soc="' + kind + '"]');
+          if(a){ a.href = href; a.title = href; a.style.color = '#3ddc97'; a.style.borderColor = 'rgba(20,241,149,.4)'; }
+        };
+        swap('web', meta.home); swap('twitter', meta.twitter); swap('telegram', meta.telegram);
+        // Build the metadata row: category chips + project-signal stats.
+        var chips = (meta.categories || []).map(function(c){
+          return '<span style="display:inline-block;padding:1px 6px;margin:0 4px 4px 0;border:1px solid var(--line);border-radius:10px;background:rgba(122,162,255,.08);color:#9db4ff;font-size:9px">' + esc(c) + '</span>';
+        }).join('');
+        var fmtN = function(n){ if(n == null) return null; if(n >= 1e6) return (n/1e6).toFixed(1)+'M'; if(n >= 1e3) return (n/1e3).toFixed(1)+'K'; return String(Math.round(n)); };
+        var stats = [];
+        if(meta.twFollowers != null) stats.push('🐦 ' + fmtN(meta.twFollowers));
+        if(meta.tgUsers    != null) stats.push('✈ ' + fmtN(meta.tgUsers));
+        if(meta.devCommits != null) stats.push('⌨ ' + fmtN(meta.devCommits) + '/4w');
+        if(meta.sentimentUp!= null) stats.push('👍 ' + Math.round(meta.sentimentUp) + '%');
+        var statLine = stats.length
+          ? '<div style="color:var(--dim);font-size:9.5px;display:flex;gap:10px;flex-wrap:wrap">' + stats.map(function(x){ return '<span>' + x + '</span>'; }).join('') + '</div>'
+          : '';
+        if(!chips && !statLine) return;   // nothing renderable → leave hidden
+        _metaEl.innerHTML =
+          '<div class="dim" style="text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px">Project · CoinGecko</div>' +
+          (chips ? '<div style="margin-bottom:' + (statLine ? '5px' : '0') + '">' + chips + '</div>' : '') +
+          statLine;
+        _metaEl.style.display = '';
       }).catch(function(){});
     }
   } catch(_){}
