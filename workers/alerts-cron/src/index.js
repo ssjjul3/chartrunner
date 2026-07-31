@@ -113,6 +113,106 @@ async function bdVerdict(env, mint) {
   return hard ? "RISK" : flags ? "CAUTION" : "SAFE";
 }
 
+// ── Multi-source price (v1.0.761) ───────────────────────────────────────────
+// Birdeye needs a key we don't hold and only covers SPL mints. To make ALL
+// tokens work, resolve price/24h%/vol from (in order): CoinGecko → DexScreener
+// (SPL catch-all, by mint) → Binance → Birdeye(direct, only if a key).
+//
+// CoinGecko is PRIMARY on the server because Binance frequently returns 451
+// (geo/IP block) from a Cloudflare Worker's data-center IP, while CoinGecko +
+// DexScreener work fine there. CoinGecko covers every listed coin (majors +
+// most SPL) with one call; unlisted memecoins fall through to DexScreener.
+// CoinGecko uses the COINGECKO_API_KEY secret if set, else the existing
+// chartrunner-worker /v1/market proxy, else the keyless free tier.
+function _cgBase(env) {
+  if (env.COINGECKO_API_KEY) return "https://api.coingecko.com/api/v3";
+  if (env.COINGECKO_PROXY) return env.COINGECKO_PROXY.replace(/\/+$/, "");
+  return "https://api.coingecko.com/api/v3";
+}
+function _cgHeaders(env) { return env.COINGECKO_API_KEY ? { "x-cg-demo-api-key": env.COINGECKO_API_KEY } : {}; }
+function _cgShape(o) {
+  if (!o || typeof o !== "object") return null;
+  const p = Number(o.usd);
+  if (!isFinite(p)) return null;
+  return { price: p, ch24: Number(o.usd_24h_change), vol24: Number(o.usd_24h_vol) };
+}
+async function coingeckoByMint(env, mint) {
+  if (!mint) return null;
+  try {
+    const url = _cgBase(env) + "/simple/token_price/solana?contract_addresses=" + encodeURIComponent(mint) +
+      "&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true";
+    const r = await fetch(url, { headers: _cgHeaders(env) });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    if (!j || typeof j !== "object") return null;
+    const vals = Object.values(j); // CG keys by (possibly re-cased) contract → take the single entry
+    return vals.length ? _cgShape(vals[0]) : null;
+  } catch (_) { return null; }
+}
+async function coingeckoById(env, cgId) {
+  if (!cgId) return null;
+  try {
+    const url = _cgBase(env) + "/simple/price?ids=" + encodeURIComponent(cgId) +
+      "&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true";
+    const r = await fetch(url, { headers: _cgHeaders(env) });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    return j ? _cgShape(j[cgId]) : null;
+  } catch (_) { return null; }
+}
+// Symbol → CoinGecko id for symbol-only majors (mirrors the client CR_TICKER_CGID).
+const CGID = { BTC:"bitcoin", ETH:"ethereum", SOL:"solana", BNB:"binancecoin", XRP:"ripple", ADA:"cardano", DOGE:"dogecoin", AVAX:"avalanche-2", LINK:"chainlink", MATIC:"matic-network", POL:"matic-network", DOT:"polkadot", TRX:"tron", LTC:"litecoin", BCH:"bitcoin-cash", ATOM:"cosmos", NEAR:"near", APT:"aptos", ARB:"arbitrum", OP:"optimism", SUI:"sui", TON:"the-open-network", JUP:"jupiter-exchange-solana", BONK:"bonk", WIF:"dogwifcoin", JTO:"jito-governance-token", PYTH:"pyth-network", RAY:"raydium" };
+function _cgId(symbol) { return CGID[String(symbol || "").toUpperCase()] || ""; }
+
+async function binanceTicker(symbol) {
+  const sym = String(symbol || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!sym) return null;
+  try {
+    const r = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=" + sym + "USDT");
+    if (!r.ok) return null; // 400 = no such symbol → fall through
+    const d = await r.json().catch(() => null);
+    if (!d || d.lastPrice == null) return null;
+    return { price: Number(d.lastPrice), ch24: Number(d.priceChangePercent), vol24: Number(d.quoteVolume) };
+  } catch (_) { return null; }
+}
+async function dexscreener(mint) {
+  if (!mint) return null;
+  try {
+    const r = await fetch("https://api.dexscreener.com/latest/dex/tokens/" + encodeURIComponent(mint));
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    const pairs = j && Array.isArray(j.pairs) ? j.pairs : [];
+    let best = null, bestLiq = -1;
+    for (const p of pairs) {
+      const liq = Number(p && p.liquidity && p.liquidity.usd) || 0;
+      if (liq > bestLiq) { bestLiq = liq; best = p; }
+    }
+    if (!best || best.priceUsd == null) return null;
+    return {
+      price: Number(best.priceUsd),
+      ch24: Number(best.priceChange && best.priceChange.h24),
+      vol24: Number(best.volume && best.volume.h24),
+    };
+  } catch (_) { return null; }
+}
+async function resolveOverview(env, symbol, mint) {
+  // Mint-authoritative first (an SPL alert carries the exact mint → no ticker
+  // collision with a same-symbol major): CoinGecko-by-mint, then DexScreener
+  // (catch-all for unlisted memecoins). Then symbol/cgId for pure majors
+  // (CoinGecko, then Binance as a last resort — it may 451 from a Worker).
+  // Birdeye only if a personal key is set.
+  let d;
+  if (mint) {
+    d = await coingeckoByMint(env, mint); if (d && isFinite(d.price)) return d;
+    d = await dexscreener(mint);          if (d && isFinite(d.price)) return d;
+  }
+  const cgId = _cgId(symbol);
+  if (cgId) { d = await coingeckoById(env, cgId); if (d && isFinite(d.price)) return d; }
+  d = await binanceTicker(symbol); if (d && isFinite(d.price)) return d;
+  if (env.BIRDEYE_API_KEY) { d = await bdOverview(env, mint); if (d && isFinite(d.price)) return d; }
+  return null;
+}
+
 // ── Evaluation (mirrors crAlertEngine._evaluate) ────────────────────────────
 // Returns { met, label, patch } — patch carries any baseline to write back.
 function evaluate(a, ov, verdict) {
@@ -184,10 +284,13 @@ async function runOnce(env) {
     let ch = a.channels;
     try { ch = typeof ch === "string" ? JSON.parse(ch) : ch || {}; } catch (_) { ch = {}; }
     a._ch = ch;
-    return ch && ch.mail === true && VALID_TYPES.has(a.type) && a.mint;
+    // safety needs a mint (Birdeye); price/pct/vol work by symbol (Binance) OR
+    // mint (DexScreener), so a symbol alone is enough for majors like BTC/ETH.
+    const resolvable = a.type === "safety" ? !!a.mint : (!!a.symbol || !!a.mint);
+    return ch && ch.mail === true && VALID_TYPES.has(a.type) && resolvable;
   });
 
-  // Cache Birdeye lookups per mint within this run.
+  // Cache price/verdict lookups within this run.
   const ovCache = new Map();
   const vdCache = new Map();
   const emailCache = new Map();
@@ -200,8 +303,9 @@ async function runOnce(env) {
         if (!vdCache.has(a.mint)) vdCache.set(a.mint, await bdVerdict(env, a.mint).catch(() => null));
         verdict = vdCache.get(a.mint);
       } else {
-        if (!ovCache.has(a.mint)) ovCache.set(a.mint, await bdOverview(env, a.mint).catch(() => null));
-        ov = ovCache.get(a.mint);
+        const ck = (a.asset || "") + "|" + (a.symbol || "") + "|" + (a.mint || "");
+        if (!ovCache.has(ck)) ovCache.set(ck, await resolveOverview(env, a.symbol, a.mint).catch(() => null));
+        ov = ovCache.get(ck);
       }
       const res = evaluate(a, ov, verdict);
       summary.checked++;

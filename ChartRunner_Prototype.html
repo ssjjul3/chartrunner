@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.760
-     LAST UPDATED:    2026-07-30  ·  v1.0.760: ALERT ENGINE — MAPS + LASER. (1) MAP BINDING: alerts can belong to a saved on-chain map. The create-form has a Map select that auto-defaults to the currently-loaded map (game.currentMapId) and is changeable (incl. "Global (keine Map)"). A filter dropdown above the list follows whichever map is loaded so a map and its alerts travel together; checking stays ALWAYS active regardless of the loaded map (map only groups/filters the view). Rule schema gains mapId/mapName; synced to Supabase via new p_map_id/p_map_name params (needs the incremental cr_alerts ALTER migration). (2) LASER IN ONE LIST: the hotkey-4 chart-alarm laser alarms (window.crAlarm, session-only) are now managed in the Alerts tab alongside standing alerts — condition line + ARMED/FIRED/OFF state + pause/re-arm/anchor-on-chain/delete, driven by crAlarm.toggle/rearm/anchor/remove(id). Laser alarms are filtered by the same map dropdown via their anchorMapId. Fired laser events already showed in the shared Verlauf log.
+     CURRENT VERSION: v1.0.761
+     LAST UPDATED:    2026-07-31  ·  v1.0.761: ALERT ENGINE — ALL TOKENS (keyless multi-source price). The alert poll no longer depends on Birdeye alone (which needs a key we don't hold and only covers SPL mints). The client now resolves price/24h%/vol via the Token app's existing multi-source snapshot (_tokSnapshot: Binance / Pyth / CoinGecko / Birdeye) for ANY catalog token — majors included — and only evaluates when a real price is present (never fires on synth). Birdeye stays as an SPL-only fallback. The server cron (chartrunner-alerts-cron) resolves price multi-source, CoinGecko-first (works from data-center IPs; Binance often 451s a Worker): CoinGecko /simple/token_price + /simple/price → DexScreener /latest/dex/tokens/<mint> (SPL catch-all) → Binance → Birdeye(only with a key). So offline mail works for all tokens without any Birdeye key. Safety alerts still use Birdeye token_security (best-effort). Fixes: SOL/price alerts stuck on "noch nicht geprüft" and no mail, because token_overview returned nothing without a key.
+     PREV  ·  v1.0.760: ALERT ENGINE — MAPS + LASER. (1) MAP BINDING: alerts can belong to a saved on-chain map. The create-form has a Map select that auto-defaults to the currently-loaded map (game.currentMapId) and is changeable (incl. "Global (keine Map)"). A filter dropdown above the list follows whichever map is loaded so a map and its alerts travel together; checking stays ALWAYS active regardless of the loaded map (map only groups/filters the view). Rule schema gains mapId/mapName; synced to Supabase via new p_map_id/p_map_name params (needs the incremental cr_alerts ALTER migration). (2) LASER IN ONE LIST: the hotkey-4 chart-alarm laser alarms (window.crAlarm, session-only) are now managed in the Alerts tab alongside standing alerts — condition line + ARMED/FIRED/OFF state + pause/re-arm/anchor-on-chain/delete, driven by crAlarm.toggle/rearm/anchor/remove(id). Laser alarms are filtered by the same map dropdown via their anchorMapId. Fired laser events already showed in the shared Verlauf log.
      PREV  ·  v1.0.759: ALERT ENGINE (client tier) — standing per-token alerts get their own Docs side-drawer tab (⏰ Alerts), promoted out of the Journal sub-tabs. New crAlertEngine module: a create-form (token · condition · value · channels · recurring) that persists rules to localStorage (cr_alert_rules_v1) and, when signed in, syncs to Supabase via cr_alerts_* RPCs. A 60s client poll checks each armed rule against crBirdeye (price_above / price_below / pct_move / vol_mult) and crBirdeye.security (safety verdict worsens); on trigger it raises an in-app toast, logs to crAlertBus, and optionally sends a Resend mail (crMailNotify). Fail-safe: providers unreachable → rule stays armed, never a false fire. The tab also shows the fired-event log (engine + chart-alarm laser). SERVER TIER (offline mail via a Worker cron reading cr_alerts) ships separately in the private worker repo — see AUFTRAG. Docs view registered in the three switch points; Journal ALERTS + ALERT V2 sub-tabs removed.
      PREV  ·  v1.0.758: TOKEN METADATA & SOCIALS (CoinGecko) — the Token app header now carries real project context instead of only price/MC/holders. A new async _tokFetchMeta(def, mint) pulls CoinGecko /coins (SPL by /contract/<mint>, majors by ticker→cgId via the existing _crTickerToCgId map) with community_data + developer_data. On success it (1) upgrades the Website/Twitter/Telegram buttons from honest search-style fallbacks to the real verified URLs (turned green), and (2) fills a new "Project · CoinGecko" row with category chips + signal stats (🐦 Twitter followers · ✈ Telegram members · ⌨ dev commits/4w · 👍 community sentiment). Cached 10 min, fail-safe: on any error / nothing useful the row stays hidden and the fallback links remain — never fabricated. Routes through the same CR_CG_BASE gateway/proxy the other CoinGecko panes use.
      PREV  ·  v1.0.757: API-VALUE BATCH 3 — Trader-grade depth from keys already paid for. (1) WHALE TAPE: new SolanaTracker pane (solWhaleTape) — large-trade tape for the token loaded in the Token app, via a new crBirdeye.trades() over /defi/txs. Filters to swaps ≥ a configurable min size (default $5k), buy green / sell red · wallet · age. Keys off the same active-mint idiom solSafety uses; fail-safe warn chip on no-token/offline/empty. (2) PORTFOLIO VALUE CURVE: the Wallet app now draws a value-over-time curve above Holdings. Primary source is a new crGoldRush.portfolio() (Covalent portfolio_v2 daily totals); when the provider returns nothing for Solana it falls back to value snapshots recorded locally each time the wallet's total USD is read (keyed per address, ≤180 pts, hourly-deduped). <2 points shows a "building…" note — never a fabricated line. Reuses _tokDrawSparkline. (3) JUPITER SLIPPAGE WIDGET: phxBook (Route Depth) expanded from impact-only into a real cost-of-size table — net price, price impact, slippage vs the 1-SOL fill, min-received at 50 bps, and the best AMM route — with configurable probe sizes (default 1/10/100/500 SOL).
@@ -55322,8 +55323,7 @@ window.crAlertEngine = (function(){
   async function _tick(){
     const rules = _load().filter(r => r && r.status === 'armed');
     if(!rules.length) return;
-    if(!window.crBirdeye) return;
-    // group by tokenId → one fetchToken per token
+    // group by tokenId → one price resolve per token
     const byTok = {};
     rules.forEach(r => { (byTok[r.tokenId] = byTok[r.tokenId] || []).push(r); });
     for(const tokenId of Object.keys(byTok)){
@@ -55331,8 +55331,29 @@ window.crAlertEngine = (function(){
       const group = byTok[tokenId];
       const needsData = group.some(r => r.type !== 'safety');
       const needsSec  = group.some(r => r.type === 'safety');
-      try { if(needsData && crBirdeye.fetchToken) data = await crBirdeye.fetchToken(tokenId); } catch(_){}
-      try { if(needsSec && crBirdeye.security){ const m = group.find(r => r.mint); if(m) sec = await crBirdeye.security(m.mint); } } catch(_){}
+      if(needsData){
+        // v1.0.761 — price/24h%/vol for ANY catalog token via the Token app's
+        // multi-source snapshot (Binance / Pyth / CoinGecko / Birdeye). Populate
+        // the live cache first, then read the merged snapshot. Only use it when a
+        // real price is present (px != null) so we never fire on synth values.
+        try { if(typeof _tokFetchLive === 'function'){ const _tf = (typeof _tokTF === 'function') ? _tokTF(tokenId) : '1h'; await _tokFetchLive(tokenId, _tf); } } catch(_){}
+        try {
+          if(typeof _tokSnapshot === 'function'){
+            const s = _tokSnapshot(tokenId);
+            if(s && s.px != null && isFinite(Number(s.px))){
+              // Price is always real when px!=null. 24h% / volume are only
+              // trustworthy when a live ticker is present (s.live); otherwise
+              // _tokSnapshot may synth them — so we omit those fields and
+              // pct_move / vol_mult simply won't evaluate (never a synth fire).
+              data = { price: Number(s.px) };
+              if(s.live){ data.ch24 = Number(s.ch24); data.vol24 = Number(s.vol24); }
+            }
+          }
+        } catch(_){}
+        // Fallback: pure-SPL tokens (no Binance pair) via Birdeye, if reachable.
+        if(!data){ try { if(window.crBirdeye && crBirdeye.fetchToken) data = await crBirdeye.fetchToken(tokenId); } catch(_){} }
+      }
+      try { if(needsSec && window.crBirdeye && crBirdeye.security){ const m = group.find(r => r.mint); if(m) sec = await crBirdeye.security(m.mint); } } catch(_){}
       group.forEach(r => {
         const ev = _evaluate(r, data, sec);
         if(!ev.checked) return;
@@ -55582,7 +55603,11 @@ window.crAlertEngine = (function(){
       // Capture baselines for vol_mult / safety at arm time (best-effort).
       let baseVol = null, baseVerdict = null;
       try {
-        if(type === 'vol_mult' && window.crBirdeye && crBirdeye.fetchToken){ const d = await crBirdeye.fetchToken(tokenId); if(d && isFinite(Number(d.vol24))) baseVol = Number(d.vol24); }
+        if(type === 'vol_mult'){
+          // Baseline from the SAME live snapshot the poll uses (source-consistent).
+          try { if(typeof _tokFetchLive === 'function'){ const _tf = (typeof _tokTF === 'function') ? _tokTF(tokenId) : '1h'; await _tokFetchLive(tokenId, _tf); } } catch(_){}
+          try { const s = (typeof _tokSnapshot === 'function') ? _tokSnapshot(tokenId) : null; if(s && s.live && isFinite(Number(s.vol24)) && Number(s.vol24) > 0) baseVol = Number(s.vol24); } catch(_){}
+        }
         if(type === 'safety' && tok.mint && window.crBirdeye && crBirdeye.security){ const s = await crBirdeye.security(tok.mint); if(s && s.verdict) baseVerdict = s.verdict; }
       } catch(_){}
       const mapSel = document.getElementById('crAeMap');
