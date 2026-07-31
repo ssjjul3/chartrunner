@@ -31,15 +31,21 @@ stay armed with a 1-hour cooldown (`last_fired_at`).
 
 | Name                        | Type            | Where set                                  |
 | --------------------------- | --------------- | ------------------------------------------ |
-| `SUPABASE_SERVICE_ROLE_KEY` | Wrangler secret | out-of-band — **service-role, keep secret**|
-| `BIRDEYE_API_KEY`           | Wrangler secret | out-of-band                                |
+| `SUPABASE_SERVICE_ROLE_KEY` | Wrangler secret | out-of-band — **service-role / sb_secret, keep secret** |
 | `RESEND_API_KEY`            | Wrangler secret | out-of-band                                |
 | `CRON_TEST_TOKEN` (optional)| Wrangler secret | out-of-band — enables the manual trigger   |
+| `BIRDEYE_API_KEY` (optional)| Wrangler secret | out-of-band — only for direct Birdeye; omit to use the proxy |
 | `SUPABASE_URL`              | plaintext var   | `wrangler.toml` (already public)           |
-| `BIRDEYE_BASE`              | plaintext var   | `wrangler.toml`                            |
+| `BIRDEYE_PROXY`             | plaintext var   | `wrangler.toml` (chartrunner-worker /v1/birdeye) |
+| `BIRDEYE_BASE`              | plaintext var   | `wrangler.toml` (only used with a direct key) |
 | `MAIL_FROM`                 | plaintext var   | `wrangler.toml` (Resend-verified sender)   |
 | `MAX_PER_RUN`               | plaintext var   | `wrangler.toml` (default 500)              |
 | account id                  | env at deploy   | `CLOUDFLARE_ACCOUNT_ID` (CI)               |
+
+**Birdeye needs no key here.** By default the worker calls the existing
+`chartrunner-worker` `/v1/birdeye` proxy (same path the game client uses), which
+handles Birdeye auth server-side. Only set `BIRDEYE_API_KEY` if you want the
+worker to bypass the proxy and hit Birdeye directly.
 
 **`MAIL_FROM` must be on a Resend-verified domain** (the same one `/v1/mail/alert`
 already uses). Adjust the var in `wrangler.toml` if that address differs.
@@ -55,13 +61,15 @@ migrations already run in Supabase). This worker needs the table columns
 ```bash
 cd workers/alerts-cron
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY --name chartrunner-alerts-cron
-npx wrangler secret put BIRDEYE_API_KEY          --name chartrunner-alerts-cron
 npx wrangler secret put RESEND_API_KEY           --name chartrunner-alerts-cron
 npx wrangler secret put CRON_TEST_TOKEN          --name chartrunner-alerts-cron   # optional
+# BIRDEYE_API_KEY is NOT needed — Birdeye goes through the /v1/birdeye proxy.
 ```
 (`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` exported so wrangler can auth
-non-interactively — same token CI uses.) You can reuse the Birdeye/Resend keys
-already held by `chartrunner-worker`.
+non-interactively — same token CI uses.) Only two required secrets:
+`SUPABASE_SERVICE_ROLE_KEY` (the `sb_secret_…` key from Supabase → API Keys →
+Secret keys) and `RESEND_API_KEY`. Make `MAIL_FROM` match the Resend-verified
+sender that `chartrunner-worker` already uses (`RESEND_FROM_EMAIL`).
 
 ## Verify
 

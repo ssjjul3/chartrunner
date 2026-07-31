@@ -18,12 +18,13 @@
  * vol_mult / safety are established (written back) on first sight, never fired.
  *
  * Secrets (Wrangler, out-of-band — NOT in the repo):
- *   SUPABASE_SERVICE_ROLE_KEY   Supabase service-role key (reads cr_alerts +
- *                               auth admin; keep this server-only, never client).
- *   BIRDEYE_API_KEY             Birdeye API key.
+ *   SUPABASE_SERVICE_ROLE_KEY   Supabase service-role / sb_secret key (reads
+ *                               cr_alerts + auth admin; server-only, never client).
  *   RESEND_API_KEY              Resend API key.
  *   CRON_TEST_TOKEN  (optional) token to allow the manual /?run=1 trigger.
- * Vars (wrangler.toml): SUPABASE_URL, BIRDEYE_BASE, MAIL_FROM, MAX_PER_RUN.
+ *   BIRDEYE_API_KEY  (optional) only if you want direct Birdeye calls; by
+ *                               default Birdeye goes through the /v1/birdeye proxy.
+ * Vars (wrangler.toml): SUPABASE_URL, BIRDEYE_PROXY, BIRDEYE_BASE, MAIL_FROM, MAX_PER_RUN.
  */
 
 const REFIRE_MS = 3600000; // recurring alerts: min gap between mails (1h)
@@ -68,9 +69,21 @@ async function sbUserEmail(env, owner) {
 }
 
 // ── Birdeye ─────────────────────────────────────────────────────────────────
+// Default: go through the existing chartrunner-worker /v1/birdeye proxy (no key
+// needed — it injects the key / handles auth exactly like the game client).
+// If a personal BIRDEYE_API_KEY secret is set, call Birdeye directly instead.
+function _bdBase(env) {
+  return env.BIRDEYE_API_KEY
+    ? (env.BIRDEYE_BASE || "https://public-api.birdeye.so").replace(/\/+$/, "")
+    : (env.BIRDEYE_PROXY || "https://chartrunner-worker.jsg-951.workers.dev/v1/birdeye").replace(/\/+$/, "");
+}
+function _bdHeaders(env) {
+  // Proxy mode sends no x-chain (worker defaults solana), matching the client.
+  return env.BIRDEYE_API_KEY ? { "X-API-KEY": env.BIRDEYE_API_KEY, "x-chain": "solana" } : {};
+}
 async function bdOverview(env, mint) {
-  const url = env.BIRDEYE_BASE.replace(/\/+$/, "") + "/defi/token_overview?address=" + encodeURIComponent(mint);
-  const r = await fetch(url, { headers: { "X-API-KEY": env.BIRDEYE_API_KEY, "x-chain": "solana" } });
+  const url = _bdBase(env) + "/defi/token_overview?address=" + encodeURIComponent(mint);
+  const r = await fetch(url, { headers: _bdHeaders(env) });
   if (!r.ok) return null;
   const j = await r.json().catch(() => null);
   const d = j && j.data;
@@ -78,8 +91,8 @@ async function bdOverview(env, mint) {
   return { price: Number(d.price), ch24: Number(d.priceChange24hPercent), vol24: Number(d.v24hUSD) };
 }
 async function bdVerdict(env, mint) {
-  const url = env.BIRDEYE_BASE.replace(/\/+$/, "") + "/defi/token_security?address=" + encodeURIComponent(mint);
-  const r = await fetch(url, { headers: { "X-API-KEY": env.BIRDEYE_API_KEY, "x-chain": "solana" } });
+  const url = _bdBase(env) + "/defi/token_security?address=" + encodeURIComponent(mint);
+  const r = await fetch(url, { headers: _bdHeaders(env) });
   if (!r.ok) return null;
   const j = await r.json().catch(() => null);
   const d = j && j.data;
@@ -155,7 +168,9 @@ async function sendMail(env, to, subject, bodyText) {
 // ── Core run ────────────────────────────────────────────────────────────────
 async function runOnce(env) {
   const summary = { scanned: 0, checked: 0, fired: 0, mailed: 0, errors: 0 };
-  if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.BIRDEYE_API_KEY) {
+  if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.RESEND_API_KEY) {
+    // Birdeye needs no key (proxy). Without Supabase/Resend we can't read or
+    // deliver — no-op the whole run rather than consuming alerts.
     return { ...summary, error: "missing_secrets" };
   }
   const limit = Math.max(1, Math.min(Number(env.MAX_PER_RUN) || 500, 1000));
