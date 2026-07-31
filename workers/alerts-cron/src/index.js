@@ -1,0 +1,255 @@
+/**
+ * ChartRunner — Alert Engine SERVER TIER (cron worker).
+ *
+ * Route: none (cron only). Also exposes a token-gated manual trigger on the
+ * worker's *.workers.dev URL for testing: GET /?run=1 with ?token=<CRON_TEST_TOKEN>.
+ *
+ * Every 5 minutes (see wrangler.toml [triggers]):
+ *   1. Read armed alerts from Supabase cr_alerts (service-role → bypasses RLS).
+ *   2. For each, check the condition server-side against Birdeye
+ *      (price / 24h% / volume via /defi/token_overview; safety via
+ *      /defi/token_security) — mirrors the in-browser crAlertEngine._evaluate.
+ *   3. On a match with the mail channel on: look up the owner's e-mail via the
+ *      Supabase Admin API and send a Resend mail. Then mark the row triggered
+ *      (recurring alerts stay armed with a 1h cooldown via last_fired_at).
+ *
+ * Fail-safe: per-alert and per-token errors are isolated; a provider timeout
+ * never fails the whole run and never fabricates a trigger. Baselines for
+ * vol_mult / safety are established (written back) on first sight, never fired.
+ *
+ * Secrets (Wrangler, out-of-band — NOT in the repo):
+ *   SUPABASE_SERVICE_ROLE_KEY   Supabase service-role key (reads cr_alerts +
+ *                               auth admin; keep this server-only, never client).
+ *   BIRDEYE_API_KEY             Birdeye API key.
+ *   RESEND_API_KEY              Resend API key.
+ *   CRON_TEST_TOKEN  (optional) token to allow the manual /?run=1 trigger.
+ * Vars (wrangler.toml): SUPABASE_URL, BIRDEYE_BASE, MAIL_FROM, MAX_PER_RUN.
+ */
+
+const REFIRE_MS = 3600000; // recurring alerts: min gap between mails (1h)
+const RANK = { SAFE: 0, CAUTION: 1, UNKNOWN: 1, RISK: 2 };
+const VALID_TYPES = new Set(["price_above", "price_below", "pct_move", "vol_mult", "safety"]);
+
+function esc(x) {
+  return String(x == null ? "" : x).replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
+}
+
+// ── Supabase REST (service role) ────────────────────────────────────────────
+function _sbHeaders(env) {
+  const key = env.SUPABASE_SERVICE_ROLE_KEY;
+  return { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" };
+}
+async function sbArmedAlerts(env, limit) {
+  const url =
+    env.SUPABASE_URL.replace(/\/+$/, "") +
+    "/rest/v1/cr_alerts?status=eq.armed&select=owner,id,asset,symbol,mint,type,threshold,channels,recurring,status,base_vol,base_verdict,last_fired_at" +
+    "&limit=" + encodeURIComponent(limit);
+  const r = await fetch(url, { headers: _sbHeaders(env) });
+  if (!r.ok) throw new Error("supabase armed HTTP " + r.status);
+  const rows = await r.json();
+  return Array.isArray(rows) ? rows : [];
+}
+async function sbPatchAlert(env, owner, id, patch) {
+  const url =
+    env.SUPABASE_URL.replace(/\/+$/, "") +
+    "/rest/v1/cr_alerts?owner=eq." + encodeURIComponent(owner) + "&id=eq." + encodeURIComponent(id);
+  await fetch(url, {
+    method: "PATCH",
+    headers: { ..._sbHeaders(env), Prefer: "return=minimal" },
+    body: JSON.stringify(patch),
+  });
+}
+async function sbUserEmail(env, owner) {
+  const url = env.SUPABASE_URL.replace(/\/+$/, "") + "/auth/v1/admin/users/" + encodeURIComponent(owner);
+  const r = await fetch(url, { headers: _sbHeaders(env) });
+  if (!r.ok) return "";
+  const u = await r.json().catch(() => null);
+  return (u && u.email) || "";
+}
+
+// ── Birdeye ─────────────────────────────────────────────────────────────────
+async function bdOverview(env, mint) {
+  const url = env.BIRDEYE_BASE.replace(/\/+$/, "") + "/defi/token_overview?address=" + encodeURIComponent(mint);
+  const r = await fetch(url, { headers: { "X-API-KEY": env.BIRDEYE_API_KEY, "x-chain": "solana" } });
+  if (!r.ok) return null;
+  const j = await r.json().catch(() => null);
+  const d = j && j.data;
+  if (!d) return null;
+  return { price: Number(d.price), ch24: Number(d.priceChange24hPercent), vol24: Number(d.v24hUSD) };
+}
+async function bdVerdict(env, mint) {
+  const url = env.BIRDEYE_BASE.replace(/\/+$/, "") + "/defi/token_security?address=" + encodeURIComponent(mint);
+  const r = await fetch(url, { headers: { "X-API-KEY": env.BIRDEYE_API_KEY, "x-chain": "solana" } });
+  if (!r.ok) return null;
+  const j = await r.json().catch(() => null);
+  const d = j && j.data;
+  if (!d || typeof d !== "object") return null;
+  const has = (k) => Object.prototype.hasOwnProperty.call(d, k);
+  const known = ["freezeAuthority", "freezeable", "mutableMetadata", "nonTransferable", "transferFeeEnable", "top10HolderPercent", "top10HolderPct", "lockInfo", "mintAuthority"];
+  if (!known.some(has)) return "UNKNOWN";
+  const freezeRisk = (d.freezeAuthority != null && d.freezeAuthority !== "") || d.freezeable === true;
+  const mintRisk = d.mintAuthority != null && d.mintAuthority !== "";
+  const nonTransfer = d.nonTransferable === true;
+  const hard = mintRisk || freezeRisk || nonTransfer;
+  let flags = 0;
+  if (d.mutableMetadata === true) flags++;
+  if (d.transferFeeEnable === true) flags++;
+  let top10 = Number(d.top10HolderPercent);
+  if (!isFinite(top10)) top10 = Number(d.top10HolderPct);
+  if (isFinite(top10)) { if (top10 <= 1) top10 *= 100; if (top10 >= 30) flags++; }
+  return hard ? "RISK" : flags ? "CAUTION" : "SAFE";
+}
+
+// ── Evaluation (mirrors crAlertEngine._evaluate) ────────────────────────────
+// Returns { met, label, patch } — patch carries any baseline to write back.
+function evaluate(a, ov, verdict) {
+  const t = a.type;
+  if (t === "safety") {
+    if (!verdict) return { met: false, label: "", patch: null };
+    if (!a.base_verdict) return { met: false, label: "Verdikt " + verdict, patch: { base_verdict: verdict } };
+    const met = RANK[verdict] != null && RANK[a.base_verdict] != null ? RANK[verdict] > RANK[a.base_verdict] : false;
+    return { met, label: "Verdikt " + verdict, patch: null };
+  }
+  if (!ov) return { met: false, label: "", patch: null };
+  const thr = Number(a.threshold);
+  if (!isFinite(thr)) return { met: false, label: "", patch: null }; // never fire on a bad threshold
+  if (t === "price_above") { const p = ov.price; if (!isFinite(p)) return { met: false, label: "", patch: null }; return { met: p >= thr, label: fmtUsd(p), patch: null }; }
+  if (t === "price_below") { const p = ov.price; if (!isFinite(p)) return { met: false, label: "", patch: null }; return { met: p <= thr, label: fmtUsd(p), patch: null }; }
+  if (t === "pct_move") { const c = ov.ch24; if (!isFinite(c)) return { met: false, label: "", patch: null }; const met = thr >= 0 ? c >= thr : c <= thr; return { met, label: (c >= 0 ? "+" : "") + c.toFixed(1) + "%", patch: null }; }
+  if (t === "vol_mult") {
+    const v = ov.vol24; if (!isFinite(v)) return { met: false, label: "", patch: null };
+    if (!(Number(a.base_vol) > 0)) return { met: false, label: "1.00×", patch: { base_vol: v } };
+    const mult = v / Number(a.base_vol);
+    return { met: mult >= thr, label: mult.toFixed(2) + "×", patch: null };
+  }
+  return { met: false, label: "", patch: null };
+}
+function fmtUsd(v) {
+  if (!isFinite(v)) return "—";
+  if (v >= 1000) return "$" + v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (v >= 1) return "$" + v.toFixed(2);
+  if (v >= 0.01) return "$" + v.toFixed(4);
+  return "$" + v.toFixed(6);
+}
+const TYPE_LABEL = {
+  price_above: "Preis über", price_below: "Preis unter", pct_move: "24h-Änderung",
+  vol_mult: "Volumen-Vielfaches", safety: "Safety verschlechtert",
+};
+
+// ── Resend ──────────────────────────────────────────────────────────────────
+async function sendMail(env, to, subject, bodyText) {
+  const html =
+    '<div style="font-family:ui-monospace,Menlo,monospace;background:#0a0f1c;color:#e7ecf5;padding:20px;border-radius:12px">' +
+    '<div style="color:#14f195;font-weight:700;letter-spacing:.5px;margin-bottom:10px">⏰ ChartRunner Alert</div>' +
+    '<div style="font-size:14px;line-height:1.5">' + esc(bodyText) + "</div>" +
+    '<div style="margin-top:16px"><a href="https://chartrunner.xyz/play/" style="color:#3ddc97">chartrunner.xyz/play</a></div>' +
+    "</div>";
+  const r = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: env.MAIL_FROM || "ChartRunner <alerts@chartrunner.xyz>", to: [to], subject, html }),
+  });
+  return r.ok;
+}
+
+// ── Core run ────────────────────────────────────────────────────────────────
+async function runOnce(env) {
+  const summary = { scanned: 0, checked: 0, fired: 0, mailed: 0, errors: 0 };
+  if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.BIRDEYE_API_KEY) {
+    return { ...summary, error: "missing_secrets" };
+  }
+  const limit = Math.max(1, Math.min(Number(env.MAX_PER_RUN) || 500, 1000));
+  let alerts;
+  try { alerts = await sbArmedAlerts(env, limit); } catch (e) { return { ...summary, error: String(e) }; }
+  summary.scanned = alerts.length;
+
+  // Only alerts that actually need a server mail (mail channel on). App-only
+  // alerts are the browser tier's job.
+  const mailAlerts = alerts.filter((a) => {
+    let ch = a.channels;
+    try { ch = typeof ch === "string" ? JSON.parse(ch) : ch || {}; } catch (_) { ch = {}; }
+    a._ch = ch;
+    return ch && ch.mail === true && VALID_TYPES.has(a.type) && a.mint;
+  });
+
+  // Cache Birdeye lookups per mint within this run.
+  const ovCache = new Map();
+  const vdCache = new Map();
+  const emailCache = new Map();
+  const now = Date.now();
+
+  for (const a of mailAlerts) {
+    try {
+      let ov = null, verdict = null;
+      if (a.type === "safety") {
+        if (!vdCache.has(a.mint)) vdCache.set(a.mint, await bdVerdict(env, a.mint).catch(() => null));
+        verdict = vdCache.get(a.mint);
+      } else {
+        if (!ovCache.has(a.mint)) ovCache.set(a.mint, await bdOverview(env, a.mint).catch(() => null));
+        ov = ovCache.get(a.mint);
+      }
+      const res = evaluate(a, ov, verdict);
+      summary.checked++;
+
+      const iso = new Date(now).toISOString();
+      const basePatch = { last_checked: iso };
+      if (res.label) basePatch.last_value = res.label;
+      if (res.patch) Object.assign(basePatch, res.patch); // baseline write-back (never fires)
+
+      let handled = false; // true once we've claimed+attempted delivery (basePatch already written)
+      if (res.met) {
+        const lastFired = a.last_fired_at ? Date.parse(a.last_fired_at) : 0;
+        const inCooldown = a.recurring && lastFired && now - lastFired < REFIRE_MS;
+        if (!inCooldown) {
+          if (!emailCache.has(a.owner)) emailCache.set(a.owner, await sbUserEmail(env, a.owner).catch(() => ""));
+          const email = emailCache.get(a.owner);
+          if (!email) {
+            // Can't deliver (no address on the account) — leave the alert ARMED
+            // and retry next run rather than silently retiring it.
+            summary.errors++;
+          } else {
+            // Claim FIRST, then mail (at-most-once): a successful claim write
+            // keeps the armed query from re-selecting this row, so a dropped
+            // post-mail write can't cause a duplicate e-mail. If the claim
+            // write itself fails, we DON'T mail — it retries next run instead.
+            const claim = Object.assign({}, basePatch, { triggered_at: iso, last_fired_at: iso });
+            if (!a.recurring) claim.status = "triggered";
+            let claimed = false;
+            try { await sbPatchAlert(env, a.owner, a.id, claim); claimed = true; } catch (_) { summary.errors++; }
+            if (claimed) {
+              handled = true;
+              summary.fired++;
+              const msg = a.symbol + ": " + (TYPE_LABEL[a.type] || a.type) + " — " + res.label;
+              const mailed = await sendMail(env, email, "ChartRunner Alert · " + a.symbol, msg).catch(() => false);
+              if (mailed) summary.mailed++; else summary.errors++;
+            }
+          }
+        }
+      }
+      if (!handled) await sbPatchAlert(env, a.owner, a.id, basePatch).catch(() => {});
+    } catch (_) {
+      summary.errors++;
+    }
+  }
+  return summary;
+}
+
+export default {
+  // Cron entry point.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runOnce(env).then((s) => { try { console.log("[alerts-cron]", JSON.stringify(s)); } catch (_) {} }));
+  },
+
+  // Optional token-gated manual trigger for testing (no public route bound).
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.searchParams.get("run") !== "1") {
+      return new Response("chartrunner-alerts-cron: cron worker. Use ?run=1&token=… to trigger manually.", { status: 200 });
+    }
+    if (!env.CRON_TEST_TOKEN || url.searchParams.get("token") !== env.CRON_TEST_TOKEN) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const s = await runOnce(env);
+    return new Response(JSON.stringify(s, null, 2), { status: 200, headers: { "Content-Type": "application/json" } });
+  },
+};
