@@ -1,0 +1,34 @@
+# ChartRunner — Alert Engine SERVER TIER (cron).
+#
+# Every 5 minutes this worker reads armed alerts from Supabase (cr_alerts,
+# service-role → bypasses RLS), checks each condition server-side against
+# Birdeye, and — for alerts with the mail channel on — sends a Resend e-mail to
+# the owner's account address. This is what makes alerts fire "even while you're
+# not playing"; the in-browser crAlertEngine handles the app-open case.
+#
+# NO secrets live in this file. Set them out-of-band as Wrangler secrets
+# (see README): SUPABASE_SERVICE_ROLE_KEY, BIRDEYE_API_KEY, RESEND_API_KEY,
+# and optionally CRON_TEST_TOKEN (to trigger a run on demand for testing).
+#
+# account_id is omitted on purpose — supplied at deploy time via
+# CLOUDFLARE_ACCOUNT_ID (the deploy-workers.yml CI workflow), keeping it out of
+# the repo. This worker has NO public route: it runs only on the cron schedule
+# (plus an optional token-gated manual trigger via its *.workers.dev URL).
+
+name = "chartrunner-alerts-cron"
+main = "src/index.js"
+compatibility_date = "2026-07-21"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Non-secret config (greppable / overridable without touching code).
+# SUPABASE_URL is already public (it ships in the game client).
+[vars]
+SUPABASE_URL = "https://gjaaxqnqohseyesctbcd.supabase.co"
+BIRDEYE_BASE = "https://public-api.birdeye.so"
+MAIL_FROM    = "ChartRunner <alerts@chartrunner.xyz>"
+MAX_PER_RUN  = "500"
+
+[observability]
+enabled = true
