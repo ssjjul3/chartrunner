@@ -67,6 +67,18 @@ async function sbUserEmail(env, owner) {
   const u = await r.json().catch(() => null);
   return (u && u.email) || "";
 }
+// v1.0.764 — the owner's anti-phishing phrase (profiles.antiphish_phrase). Fail-
+// safe: returns "" if the column/row is absent (e.g. before the migration runs).
+async function sbUserPhrase(env, owner) {
+  try {
+    const url = env.SUPABASE_URL.replace(/\/+$/, "") +
+      "/rest/v1/profiles?id=eq." + encodeURIComponent(owner) + "&select=antiphish_phrase&limit=1";
+    const r = await fetch(url, { headers: _sbHeaders(env) });
+    if (!r.ok) return "";
+    const rows = await r.json().catch(() => null);
+    return (Array.isArray(rows) && rows[0] && rows[0].antiphish_phrase) || "";
+  } catch (_) { return ""; }
+}
 
 // ── Birdeye ─────────────────────────────────────────────────────────────────
 // Default: go through the existing chartrunner-worker /v1/birdeye proxy (no key
@@ -250,17 +262,72 @@ const TYPE_LABEL = {
 };
 
 // ── Resend ──────────────────────────────────────────────────────────────────
-async function sendMail(env, to, subject, bodyText) {
+// v1.0.764 — industry-standard transactional email: 600px table layout, inline
+// CSS (email clients strip <style>/flexbox), hidden preheader, bulletproof CTA,
+// a plaintext alternative (deliverability + a11y), a List-Unsubscribe header and
+// the recipient's anti-phishing phrase. One branded template for every mail this
+// worker sends — the same visual language as the game and the auth mails.
+const MAIL_SITE = "https://chartrunner.xyz";
+function renderBrandedEmail(opts) {
+  const o = opts || {};
+  const heading = o.heading || "ChartRunner";
+  const bodyHtml = o.bodyHtml || esc(o.bodyText || "").replace(/\n/g, "<br>");
+  const ctaText = o.ctaText || "Open ChartRunner";
+  const ctaUrl = o.ctaUrl || (MAIL_SITE + "/play/");
+  const preheader = o.preheader || o.bodyText || heading;
+  const phrase = String(o.phrase || "").trim();
+  const settingsUrl = MAIL_SITE + "/play/";
+  const phraseBlock = phrase
+    ? '<tr><td style="padding:0 32px 10px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #24406a;border-radius:10px;background:#0e1830"><tr><td style="padding:12px 14px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#9fb4d6">' +
+      '<span style="color:#6f86a8">Your security phrase</span><br><span style="color:#e7ecf5;font-weight:700;font-size:14px;letter-spacing:.4px">' + esc(phrase) + '</span><br>' +
+      '<span style="color:#6f86a8">Every genuine ChartRunner email shows this. If it is missing or wrong, do not trust the email.</span></td></tr></table></td></tr>'
+    : "";
   const html =
-    '<div style="font-family:ui-monospace,Menlo,monospace;background:#0a0f1c;color:#e7ecf5;padding:20px;border-radius:12px">' +
-    '<div style="color:#14f195;font-weight:700;letter-spacing:.5px;margin-bottom:10px">⏰ ChartRunner Alert</div>' +
-    '<div style="font-size:14px;line-height:1.5">' + esc(bodyText) + "</div>" +
-    '<div style="margin-top:16px"><a href="https://chartrunner.xyz/play/" style="color:#3ddc97">chartrunner.xyz/play</a></div>' +
-    "</div>";
+    '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<meta name="color-scheme" content="dark light"><meta name="x-apple-disable-message-reformatting"><title>' + esc(heading) + '</title></head>' +
+    '<body style="margin:0;padding:0;background:#06080f;-webkit-font-smoothing:antialiased">' +
+    '<span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">' + esc(preheader) + '</span>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#06080f"><tr><td align="center" style="padding:24px 12px">' +
+    '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:100%;background:#0b1220;border:1px solid #1b2740;border-radius:16px;overflow:hidden">' +
+      '<tr><td style="padding:22px 32px 6px"><span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:800;font-size:16px;letter-spacing:2px;color:#e7ecf5">CHART<span style="color:#14f195">RUNNER</span></span></td></tr>' +
+      '<tr><td style="padding:6px 32px 0"><div style="height:2px;background:#14f195;border-radius:2px"></div></td></tr>' +
+      '<tr><td style="padding:18px 32px 4px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-weight:800;font-size:20px;color:#ffffff">' + esc(heading) + '</td></tr>' +
+      '<tr><td style="padding:6px 32px 14px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#c7d2e4">' + bodyHtml + '</td></tr>' +
+      '<tr><td style="padding:4px 32px 20px"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="border-radius:10px;background:#14f195">' +
+        '<a href="' + esc(ctaUrl) + '" style="display:inline-block;padding:11px 22px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-weight:700;font-size:14px;color:#04150d;text-decoration:none;border-radius:10px">' + esc(ctaText) + ' &rarr;</a>' +
+      '</td></tr></table></td></tr>' +
+      phraseBlock +
+      '<tr><td style="padding:12px 32px 22px;border-top:1px solid #1b2740">' +
+        '<p style="margin:12px 0 0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#6f86a8">You are receiving this because you set up an alert or account on ChartRunner. Manage notifications in the app: <a href="' + esc(settingsUrl) + '" style="color:#3ddc97;text-decoration:none">Settings &middot; Notifications</a>.</p>' +
+        '<p style="margin:8px 0 0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#4d5f7a">ChartRunner &middot; chartrunner.xyz &middot; Automated message — please do not reply.</p>' +
+      '</td></tr>' +
+    '</table></td></tr></table></body></html>';
+  const lines = [heading, "", (o.bodyText || ""), "", ctaText + ": " + ctaUrl];
+  if (phrase) lines.push("", "Your security phrase: " + phrase, "Every genuine ChartRunner email shows this — if it is missing or wrong, do not trust the email.");
+  lines.push("", "— ChartRunner · chartrunner.xyz", "You are receiving this because you set up an alert or account. Manage notifications in the app.");
+  return { html: html, text: lines.join("\n") };
+}
+async function sendMail(env, to, subject, bodyText, opts) {
+  const o = opts || {};
+  const built = renderBrandedEmail({
+    heading: o.heading || "⏰ Alert triggered",
+    bodyText: bodyText,
+    ctaText: o.ctaText || "Open ChartRunner",
+    ctaUrl: o.ctaUrl || (MAIL_SITE + "/play/"),
+    preheader: o.preheader || bodyText,
+    phrase: o.phrase || "",
+  });
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: env.MAIL_FROM || "ChartRunner <alerts@chartrunner.xyz>", to: [to], subject, html }),
+    body: JSON.stringify({
+      from: env.MAIL_FROM || "ChartRunner <alerts@chartrunner.xyz>",
+      to: [to],
+      subject: subject,
+      html: built.html,
+      text: built.text,
+      headers: { "List-Unsubscribe": "<" + MAIL_SITE + "/play/>" },
+    }),
   });
   return r.ok;
 }
@@ -294,6 +361,7 @@ async function runOnce(env) {
   const ovCache = new Map();
   const vdCache = new Map();
   const emailCache = new Map();
+  const phraseCache = new Map();
   const now = Date.now();
 
   for (const a of mailAlerts) {
@@ -338,8 +406,13 @@ async function runOnce(env) {
             if (claimed) {
               handled = true;
               summary.fired++;
+              if (!phraseCache.has(a.owner)) phraseCache.set(a.owner, await sbUserPhrase(env, a.owner).catch(() => ""));
               const msg = a.symbol + ": " + (TYPE_LABEL[a.type] || a.type) + " — " + res.label;
-              const mailed = await sendMail(env, email, "ChartRunner Alert · " + a.symbol, msg).catch(() => false);
+              const mailed = await sendMail(env, email, "ChartRunner Alert · " + a.symbol, msg, {
+                heading: "⏰ Alert · " + a.symbol,
+                preheader: msg,
+                phrase: phraseCache.get(a.owner),
+              }).catch(() => false);
               if (mailed) summary.mailed++; else summary.errors++;
             }
           }
