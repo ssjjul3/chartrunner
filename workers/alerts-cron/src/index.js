@@ -423,7 +423,97 @@ async function runOnce(env) {
       summary.errors++;
     }
   }
+  // v1.0.768 — Wallet Intel Batch 3: offline wallet-activity alerts.
+  try { await runWalletWatch(env, now); } catch (_) { /* never fail the token run */ }
   return summary;
+}
+
+// ── Wallet-watch pass (Batch 3) ─────────────────────────────────────────────
+// Mails watchers when a wallet they ⏰-watch in Wallet Intel has NEW on-chain
+// activity — the offline half of the in-app checkWatches() toast. Reads
+// cr_follows (watch=true) with the service-role key, fetches each wallet's latest
+// tx signature via the GoldRush proxy (keyless, same one the game uses), and
+// mails the owner on a changed signature. Baselines on first sight (never fires),
+// 1h cooldown per (owner,addr), and always advances last_sig so the same tx never
+// re-fires.
+function _grBase(env) {
+  return (env.GOLDRUSH_PROXY || "https://chartrunner-worker.jsg-951.workers.dev/v1/goldrush").replace(/\/+$/, "");
+}
+async function grLatestSig(env, addr) {
+  try {
+    const url = _grBase(env) + "/solana-mainnet/address/" + encodeURIComponent(addr) + "/transactions_v2/?page-size=1";
+    const r = await fetch(url, { headers: { accept: "application/json" } });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    const d = j && j.data;
+    const items = d && d.items;
+    const it = items && items[0];
+    return (it && (it.tx_hash || it.hash)) || null;
+  } catch (_) {
+    return null;
+  }
+}
+async function sbWatchedFollows(env, limit) {
+  const url =
+    env.SUPABASE_URL.replace(/\/+$/, "") +
+    "/rest/v1/cr_follows?watch=eq.true&select=owner,addr,name,last_sig,last_fired_at&limit=" +
+    encodeURIComponent(limit);
+  const r = await fetch(url, { headers: _sbHeaders(env) });
+  if (!r.ok) throw new Error("cr_follows HTTP " + r.status);
+  const rows = await r.json();
+  return Array.isArray(rows) ? rows : [];
+}
+async function sbPatchFollow(env, owner, addr, patch) {
+  const url =
+    env.SUPABASE_URL.replace(/\/+$/, "") +
+    "/rest/v1/cr_follows?owner=eq." + encodeURIComponent(owner) + "&addr=eq." + encodeURIComponent(addr);
+  try {
+    const r = await fetch(url, { method: "PATCH", headers: { ..._sbHeaders(env), Prefer: "return=minimal" }, body: JSON.stringify(patch) });
+    return r.ok;
+  } catch (_) { return false; }
+}
+async function runWalletWatch(env, now) {
+  let rows;
+  try { rows = await sbWatchedFollows(env, Math.max(1, Math.min(Number(env.MAX_PER_RUN) || 500, 1000))); }
+  catch (_) { return; }
+  const sigCache = new Map();     // addr -> latest sig (fetched once per run)
+  const emailCache = new Map();
+  const phraseCache = new Map();
+  for (const f of rows) {
+    try {
+      if (!f.addr) continue;
+      let latest;
+      if (sigCache.has(f.addr)) latest = sigCache.get(f.addr);
+      else { latest = await grLatestSig(env, f.addr); sigCache.set(f.addr, latest); }
+      if (!latest) continue;                 // couldn't read — retry next run
+      if (!f.last_sig) { await sbPatchFollow(env, f.owner, f.addr, { last_sig: latest }); continue; } // baseline, never fires
+      if (latest === f.last_sig) continue;   // no change
+
+      const lastFired = f.last_fired_at ? Date.parse(f.last_fired_at) : 0;
+      const inCooldown = lastFired && now - lastFired < REFIRE_MS;
+      // In cooldown (or no email): just advance the baseline so the same tx can't re-fire; no mail.
+      if (inCooldown) { await sbPatchFollow(env, f.owner, f.addr, { last_sig: latest }); continue; }
+      if (!emailCache.has(f.owner)) emailCache.set(f.owner, await sbUserEmail(env, f.owner).catch(() => ""));
+      const email = emailCache.get(f.owner);
+      if (!email) { await sbPatchFollow(env, f.owner, f.addr, { last_sig: latest }); continue; }
+
+      // CLAIM BEFORE MAIL (at-most-once, mirrors the token path): advance last_sig
+      // AND set the cooldown first; only mail if that write lands. A dropped
+      // post-mail write can then never cause a duplicate — worst case is one
+      // missed notification, never a repeat.
+      const claimed = await sbPatchFollow(env, f.owner, f.addr, { last_sig: latest, last_fired_at: new Date(now).toISOString() });
+      if (!claimed) continue;                // claim failed → retry next run, no mail
+      if (!phraseCache.has(f.owner)) phraseCache.set(f.owner, await sbUserPhrase(env, f.owner).catch(() => ""));
+      const label = f.name || (f.addr.slice(0, 4) + "…" + f.addr.slice(-4));
+      const msg = "New on-chain activity from a wallet you watch: " + label + ".";
+      await sendMail(env, email, "ChartRunner · wallet activity — " + label, msg, {
+        heading: "🛰 Wallet activity",
+        preheader: msg,
+        phrase: phraseCache.get(f.owner),
+        ctaText: "Open Wallet Intel",
+      }).catch(() => false);
+    } catch (_) { /* per-row isolation */ }
+  }
 }
 
 export default {
