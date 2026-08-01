@@ -1,0 +1,35 @@
+# ChartRunner — Account deletion worker.
+#
+# Serves chartrunner.xyz/account/delete (same-origin as the game, so the client
+# call needs no CORS). It authenticates the CALLER with their own Supabase JWT
+# (GET /auth/v1/user), derives their uid server-side, then uses the service-role
+# key to delete their rows (profiles, cr_alerts, cr_names) and finally the auth
+# user (Admin API). A user can only ever delete THEIR OWN account — the uid comes
+# from the verified token, never from the client body.
+#
+# NO secrets in this file. Set out-of-band as a Wrangler secret:
+#   SUPABASE_SERVICE_ROLE_KEY   (sb_secret / service-role — full access, server-only)
+# The publishable (anon) key is public (it ships in the game) so it lives as a
+# plaintext var below, used only as the apikey header for the token-verify call.
+#
+# account_id is omitted on purpose — supplied at deploy time via
+# CLOUDFLARE_ACCOUNT_ID (deploy-workers.yml). Deploying the route needs the API
+# token to hold "Workers Routes:Edit" on the chartrunner.xyz zone (same as
+# hermes-proxy).
+
+name = "chartrunner-account"
+main = "src/index.js"
+compatibility_date = "2026-07-21"
+
+routes = [
+  { pattern = "chartrunner.xyz/account/*", zone_name = "chartrunner.xyz" }
+]
+
+[vars]
+SUPABASE_URL      = "https://gjaaxqnqohseyesctbcd.supabase.co"
+# Publishable/anon key — already public (ships in the client). Used ONLY as the
+# apikey header when verifying the caller's JWT via /auth/v1/user.
+SUPABASE_ANON_KEY = "sb_publishable_JcwYmWfxSbBGIbLHxJmSpQ_5SAl-LfF"
+
+[observability]
+enabled = true
