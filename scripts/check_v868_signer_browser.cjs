@@ -96,7 +96,14 @@ function mockWallets(){
     let n; while((n = it.nextNode())) if(/CURRENT VERSION:/.test(n.nodeValue)) return n.nodeValue;
     return '';
   });
-  check('Banner meldet v1.0.868', /CURRENT VERSION:\s*v1\.0\.868/.test(banner), banner.slice(0, 70));
+  // MINDESTversion. Beim Schreiben dieses Checks stand die exakte Nummer hier
+  // — zum zweiten Mal in derselben Session, nachdem derselbe Fehler im
+  // v867-Check gerade behoben worden war. Ein Test, der bei jedem
+  // Versionssprung rot wird, misst die Versionsnummer, nicht sein Thema.
+  const bv = (banner.match(/CURRENT VERSION:\s*v(\d+)\.(\d+)\.(\d+)/) || []).slice(1).map(Number);
+  check('Banner meldet mindestens v1.0.868',
+    bv.length === 3 && (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 868)))),
+    banner.slice(0, 70));
   check('window.crSigner existiert', await page.evaluate(() => !!(window.crSigner && crSigner.signAndSend)));
 
   console.log('\n-- base58 von Hand (bekannte Vektoren) --');
