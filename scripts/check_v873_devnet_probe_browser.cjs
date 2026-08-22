@@ -8,7 +8,7 @@
  * der Explorer sagte zur selben Zeit „Not Found". Sechs Minuten lang war
  * nicht feststellbar, was stimmt — beides war falsch beschriftet.
  *
- * Aufruf:  npm i playwright && node scripts/check_v872_devnet_probe_browser.cjs
+ * Aufruf:  npm i playwright && node scripts/check_v873_devnet_probe_browser.cjs
  * Bewusst nicht in ci.yml — der CI-Job hat keinen Browser.
  */
 const fs = require('node:fs');
@@ -132,8 +132,8 @@ function mockWallet(){
     let n; while((n = it.nextNode())) if(/CURRENT VERSION:/.test(n.nodeValue)) return n.nodeValue;
     return ''; });
   const bv = (banner.match(/CURRENT VERSION:\s*v(\d+)\.(\d+)\.(\d+)/) || []).slice(1).map(Number);
-  check('Banner meldet mindestens v1.0.872',
-    bv.length === 3 && (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 872)))),
+  check('Banner meldet mindestens v1.0.873',
+    bv.length === 3 && (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 873)))),
     banner.slice(0, 70));
   check('window.crTxApi existiert', await page.evaluate(() => !!(window.crTxApi && crTxApi.memo)));
 
@@ -237,6 +237,11 @@ function mockWallet(){
   // fiel frueher durch alle Zweige und galt als „noch nicht bestaetigt".
   check('ein Ausfall wird NICHT als „noch nicht bestaetigt" gelesen',
     !/noch nicht bestaetigt/.test(t), t);
+  // v1.0.873: der Worker nennt den Grund im Klartext (rpc_note). Ihn gegen
+  // eine Statusnummer einzutauschen waere genau der Verlust, den diese Kette
+  // vermeiden soll.
+  check('der Klartextgrund des Workers wird gezeigt, nicht nur „http-502"',
+    /RPC nicht erreichbar/.test(t), t);
   check('der Explorer-Link steht trotzdem bereit',
     await page.evaluate(() => !!document.querySelector('#crWalletPickerProbe a')));
 
