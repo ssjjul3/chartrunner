@@ -31,7 +31,16 @@ PR schreiben — nie „mach das eben lokal".
   - Leakage-Guard: `node scripts/check_public_leakage.mjs`
   - Inline-Script-Parse-Check: jeder `<script>`-Block in
     `ChartRunner_Prototype.html` muss parsen (siehe `ci.yml` → „Validate every
-    `<script>` body parses").
+    `<script>` body parses"). Der Scanner zählt **7** Blöcke — Blöcke mit `src=`
+    sind ausgenommen. Wer 8 zählt, benutzt ein anderes Muster.
+  - Namenskollisionen: `npm i acorn --no-save && node scripts/check_duplicate_toplevel.mjs`
+    — zwei gleichnamige Funktionsdeklarationen im selben Scope kollidieren
+    **nicht laut**: die spätere gewinnt, die frühere ist toter Code. Der
+    Parse-Check kann das nicht sehen, die Datei ist ja gültig. Genau so hat
+    v1.0.874 ein zweites `_crFmtSol` mitgebracht, und die Swap-Tafel benutzte
+    nie den Formatierer, den sie mitbrachte.
+  - **Achtung beim Banner-Text:** ein literales `<script>` im HTML-Kommentar
+    zerlegt den Block-Scanner. Umschreiben („Skriptblock"), nicht escapen.
 - **Leakage-Guard nie lockern.** Bei Konflikt die eigenen Namen/Dateien
   anpassen, nicht die Allowlist/Regeln aufweichen. Der Guard ist die maßgebliche
   Grenze zwischen öffentlich und privat.
