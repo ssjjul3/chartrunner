@@ -8,7 +8,7 @@
  * der Explorer sagte zur selben Zeit „Not Found". Sechs Minuten lang war
  * nicht feststellbar, was stimmt — beides war falsch beschriftet.
  *
- * Aufruf:  npm i playwright && node scripts/check_v871_devnet_probe_browser.cjs
+ * Aufruf:  npm i playwright && node scripts/check_v872_devnet_probe_browser.cjs
  * Bewusst nicht in ci.yml — der CI-Job hat keinen Browser.
  */
 const fs = require('node:fs');
@@ -77,8 +77,11 @@ function mockWallet(){
     txCalls.push({ url: req.url(), method: req.method(), body });
     // v1.0.870 — Statusabfrage. Modus steuert, was die Kette angeblich sagt.
     if(/\/v1\/tx\/status/.test(req.url())){
-      if(stMode === 'down')  return route.fulfill({ status: 503, contentType: 'application/json',
-        body: JSON.stringify({ error: 'rpc-down' }) });
+      // So antwortet der Worker wirklich: 502, ok:false, und
+      // confirmationStatus fehlt ABSICHTLICH — sonst saehe ein Ausfall wie
+      // eine Auskunft aus. Kein `error`-Feld im Body.
+      if(stMode === 'down')  return route.fulfill({ status: 502, contentType: 'application/json',
+        body: JSON.stringify({ ok: false, rpc_note: 'RPC nicht erreichbar' }) });
       if(stMode === 'failed') return route.fulfill({ status: 200, contentType: 'application/json',
         body: JSON.stringify({ confirmationStatus: 'confirmed', err: { InstructionError: [0, 'Custom'] } }) });
       if(stMode === 'pending') return route.fulfill({ status: 200, contentType: 'application/json',
@@ -129,8 +132,8 @@ function mockWallet(){
     let n; while((n = it.nextNode())) if(/CURRENT VERSION:/.test(n.nodeValue)) return n.nodeValue;
     return ''; });
   const bv = (banner.match(/CURRENT VERSION:\s*v(\d+)\.(\d+)\.(\d+)/) || []).slice(1).map(Number);
-  check('Banner meldet mindestens v1.0.871',
-    bv.length === 3 && (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 871)))),
+  check('Banner meldet mindestens v1.0.872',
+    bv.length === 3 && (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 872)))),
     banner.slice(0, 70));
   check('window.crTxApi existiert', await page.evaluate(() => !!(window.crTxApi && crTxApi.memo)));
 
@@ -230,6 +233,10 @@ function mockWallet(){
   await tap('devnet'); t = await settle();
   check('sagt nicht „gescheitert", wenn nur der Status fehlt',
     !/FEHLGESCHLAGEN/.test(t) && /kann trotzdem gelaufen sein/.test(t), t);
+  // Regression v1.0.872: ein 502 ohne confirmationStatus und ohne error-Feld
+  // fiel frueher durch alle Zweige und galt als „noch nicht bestaetigt".
+  check('ein Ausfall wird NICHT als „noch nicht bestaetigt" gelesen',
+    !/noch nicht bestaetigt/.test(t), t);
   check('der Explorer-Link steht trotzdem bereit',
     await page.evaluate(() => !!document.querySelector('#crWalletPickerProbe a')));
 
