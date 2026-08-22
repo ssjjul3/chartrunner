@@ -33,12 +33,16 @@ PR schreiben — nie „mach das eben lokal".
     `ChartRunner_Prototype.html` muss parsen (siehe `ci.yml` → „Validate every
     `<script>` body parses"). Der Scanner zählt **7** Blöcke — Blöcke mit `src=`
     sind ausgenommen. Wer 8 zählt, benutzt ein anderes Muster.
-  - Namenskollisionen: `npm i acorn --no-save && node scripts/check_duplicate_toplevel.mjs`
+  - Namenskollisionen: `npm i acorn --no-save && node scripts/check_duplicate_declarations.mjs`
     — zwei gleichnamige Funktionsdeklarationen im selben Scope kollidieren
     **nicht laut**: die spätere gewinnt, die frühere ist toter Code. Der
     Parse-Check kann das nicht sehen, die Datei ist ja gültig. Genau so hat
     v1.0.874 ein zweites `_crFmtSol` mitgebracht, und die Swap-Tafel benutzte
     nie den Formatierer, den sie mitbrachte.
+    Der Check prüft **jeden** Scope (oberste Ebene, jeden Funktionskörper, jede
+    IIFE), die Blöcke gegeneinander und doppelte Schlüssel in Objektliteralen.
+    Verglichen werden nur Geschwister — Shadowing über Ebenen hinweg ist legal.
+    Grün heißt hier also wirklich „keine Kollision", nicht nur „keine globale".
   - **Achtung beim Banner-Text:** ein literales `<script>` im HTML-Kommentar
     zerlegt den Block-Scanner. Umschreiben („Skriptblock"), nicht escapen.
 - **Leakage-Guard nie lockern.** Bei Konflikt die eigenen Namen/Dateien
