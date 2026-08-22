@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.873
-     LAST UPDATED:    2026-08-22  ·  v1.0.873: DEN GRUND ZEIGEN, NICHT NUR BERECHNEN. Gefunden beim Review von v1.0.872: crTxApi.status() ermittelt bei einem Ausfall ein `detail` aus dem rpc_note des Workers — angezeigt wurde aber nur st.error, also „http-502“. Der Worker gibt sich Muehe, den Grund im Klartext zu nennen („RPC nicht erreichbar“), und der Client tauschte ihn gegen eine Statusnummer. Genau die Sorte Verlust, die diese ganze Kette vermeiden soll — und der Kommentar im Patch legte nahe, es wuerde bereits benutzt. Jetzt steht der Klartextgrund da, die Statusnummer nur, wenn keiner mitkam. Der Testfall prueft ab sofort den GRUND, nicht bloss dass irgendeine Ausfallmeldung erscheint. Ein Zeichen Code, aber es ist der Unterschied zwischen „irgendetwas ist kaputt“ und „der Solana-Knoten antwortet nicht“. Spiellogik, Rendering und Abilities unberuehrt.
+     CURRENT VERSION: v1.0.874
+     LAST UPDATED:    2026-08-22  ·  v1.0.874: P2.3 — DER ERSTE ECHTE HANDEL, IN ZWEI STUFEN. Bis v1.0.873 war die Kette geschlossen, aber sie trug nur ein Memo. Jetzt traegt sie einen Swap. (a) NEU crTxApi.swap(): fragt beim tx-Worker POST /v1/tx/swap ein Angebot an — Einsatz, Ausgabe-Mint, Slippage. Der Client baut nichts und rechnet nichts; er zeigt, was der Worker geprueft hat. (b) NEU ChartRunnerSDK.prototype.prepareSwap(): die eine Order-Instanz bleibt die eine Order-Instanz. prepareSwap SIGNIERT ausdruecklich nicht — hier haengt spaeter der Broker-Parameter, wenn nicht mehr nur ueber Jupiter geroutet wird. (c) NEU Handel-Schaltflaeche im Handelbarkeit-Block: ZWEI STUFEN, nicht eine. Tap 1 holt das Angebot und signiert NICHTS; die Tafel zeigt Einsatz, Erwartet, MINDESTENS (die Zahl, die zaehlt), Preisauswirkung, Gebuehr und den Deckel. Tap 2 signiert. Wer nur einmal tippt, hat nichts riskiert. (d) Der Worker meldet in jeder Antwort checked.instructions_match_request:false — er hat die Instruktionen NICHT gegen die Anfrage geprueft. Diese Luecke wird weitergereicht statt verschwiegen: die Wallet zeigt gleich, was wirklich signiert wird. (e) BUGFIX aus v1.0.870: _explorerLink() und _awaitConfirmation() hingen fest an devnet. Ein Mainnet-Handel haette auf einen Devnet-Explorer verlinkt und gegen das falsche Netz bestaetigt — derselbe Fehler wie in v1.0.871, eine Ebene tiefer. Cluster laeuft jetzt durch. (f) Der Deckel (0,05 SOL, nur BONK) ist eine TESTBREMSE, keine Obergrenze — er faellt, wenn Phase 2 steht. Spiellogik, Rendering und Abilities unberuehrt.
+     PREV  ·  v1.0.873: DEN GRUND ZEIGEN, NICHT NUR BERECHNEN. Gefunden beim Review von v1.0.872: crTxApi.status() ermittelt bei einem Ausfall ein `detail` aus dem rpc_note des Workers — angezeigt wurde aber nur st.error, also „http-502“. Der Worker gibt sich Muehe, den Grund im Klartext zu nennen („RPC nicht erreichbar“), und der Client tauschte ihn gegen eine Statusnummer. Genau die Sorte Verlust, die diese ganze Kette
      PREV  ·  v1.0.872: EIN AUSFALL IST KEINE AUSKUNFT — HTTP-EBENE VOR BODY-EBENE. Der tx-Worker meldet einen RPC-Ausfall als 502 mit ok:false und LAESST confirmationStatus bewusst weg, damit ein Ausfall nicht wie eine Antwort aussieht. Genau daran fiel crTxApi.status() durch: es prueft nur auf 404 und reichte sonst den geparsten Body durch. Ohne error, ohne err, ohne confirmationStatus landete der Client im Z
      PREV  ·  v1.0.871: DAS NETZ DER WALLET IST NICHT DAS NETZ DER TRANSAKTION. Der erste Devnet-Durchlauf lief gegen eine Phantom-Instanz im MAINNET-Modus: wir haben devnet angefragt, die Wallet hat anstandslos SIGNIERT, und die Transaktion landete nirgends. Das Spiel meldete „gesendet". Eine Signatur entsteht beim Signieren — sie sagt nichts darueber, ob das Netz ueberhaupt zusammenpasst. (a) EIGENE FRUEHERE 
      PREV  ·  v1.0.870: DIE KETTE IST DIE INSTANZ, NICHT DER RUECKGABEWERT. Anlass ist ein echter Vorfall: der erste Devnet-Durchlauf meldete im Spiel „Signiert und gesendet", waehrend der Explorer zur selben Zeit „Not Found" zeigte. Sechs Minuten lang gab es keine Moeglichkeit zu wissen, was stimmt — BEIDES war falsch beschriftet, nicht nur eines. (Aufgeloest hat es sich: die Transaktion lief, Status Success, 
@@ -15866,9 +15867,14 @@ window.crWallet = (function(){
    * Der dritte Fall ist der wichtigste. Eine Transaktion kann landen UND
    * scheitern; wer nur auf „ist sie da" prueft, meldet genau dann Erfolg,
    * wenn Geld weg ist und nichts passiert ist. */
-  function _explorerLink(sig){
-    return '<a href="https://explorer.solana.com/tx/' + encodeURIComponent(sig)
-      + '?cluster=devnet" target="_blank" rel="noopener">'
+  // v1.0.874 — der Link folgt dem NETZ. Mainnet-Transaktionen tragen keinen
+  // cluster-Parameter; ein angehaengtes „?cluster=devnet" wuerde den Explorer
+  // im falschen Netz suchen lassen und ein „Not Found" zeigen, das nichts
+  // ueber die Transaktion aussagt.
+  function _explorerLink(sig, cluster){
+    var q = (cluster && cluster !== 'mainnet') ? ('?cluster=' + encodeURIComponent(cluster)) : '';
+    return '<a href="https://explorer.solana.com/tx/' + encodeURIComponent(sig) + q
+      + '" target="_blank" rel="noopener">'
       + sig.slice(0, 8) + '…' + sig.slice(-8) + ' im Explorer</a>';
   }
   // Zwei getrennte Budgets, weil es zwei verschiedene Lagen sind:
@@ -15878,14 +15884,22 @@ window.crWallet = (function(){
   //   Antwort nicht besser, es verzoegert nur die ehrliche Auskunft. Drei
   //   Versuche gegen einen Schluckauf, dann sagen wir es.
   var _CONFIRM_TRIES = 15, _CONFIRM_EVERY_MS = 2000, _CONFIRM_ERR_TRIES = 3;
-  function _awaitConfirmation(sig){
-    var link = _explorerLink(sig);
+  /* v1.0.874 — cluster wird DURCHGEREICHT, nicht angenommen.
+   *
+   * Bis hierher stand hier fest verdrahtet 'devnet'. Aufgefallen ist es der
+   * Session, die den Status-Endpunkt gebaut hat: eine Mainnet-Signatur gegen
+   * Devnet geprueft liefert keinen Fehler, sondern ein ueberzeugend
+   * aussehendes „kenne ich nicht" — und daraus haette diese Funktion
+   * „nach 30s noch nicht bestaetigt" gemacht. Bei einem echten Trade. */
+  function _awaitConfirmation(sig, cluster){
+    cluster = cluster || 'devnet';
+    var link = _explorerLink(sig, cluster);
     var tries = 0, errs = 0;
     _probeSay('Gesendet. Warte auf Bestaetigung durch die Kette …<br>' + link);
 
     function tick(){
       tries++;
-      return crTxApi.status(sig, 'solana:devnet'.split(':')[1]).then(function(st){
+      return crTxApi.status(sig, cluster).then(function(st){
         // Der Statusdienst selbst ist nicht erreichbar — das sagt NICHTS
         // ueber die Transaktion aus, und darf deshalb nicht als Fehlschlag
         // erscheinen.
@@ -15990,7 +16004,7 @@ window.crWallet = (function(){
         }
         // v1.0.870 — ab hier fragt die KETTE, nicht die Wallet.
         _probeBusy = true;
-        return _awaitConfirmation(res.signature);
+        return _awaitConfirmation(res.signature, 'devnet');
       });
     }).catch(function(e){
       _probeBusy = false;
@@ -16072,7 +16086,13 @@ window.crWallet = (function(){
   return { get: get, adapter: adapter, isConnected: isConnected, runnerWalletSelected: runnerWalletSelected, truncated: truncated,
            canSign: canSign, signMessage: signMessage,
            connect: connect, openWalletPicker: openWalletPicker, selectRunnerWallet: selectRunnerWallet,
-           selectBrowserWallet: selectBrowserWallet, disconnect: disconnect, setConnected: setConnected, on: on };
+           selectBrowserWallet: selectBrowserWallet, disconnect: disconnect, setConnected: setConnected, on: on,
+           // v1.0.874 — nach aussen gereicht, damit es GENAU EINE Stelle gibt,
+           // die einen Explorer-Link baut. Der Swap-Pfad hatte seine eigene
+           // gebaut, mit fest verdrahtetem Mainnet: zufaellig richtig, aber die
+           // Gegenprobe (cluster kaputtmachen → Test muss rot werden) blieb
+           // gruen, weil der Testpfad die geprüfte Funktion gar nicht anfasste.
+           explorerLink: _explorerLink };
 })();
 
 /* =========================================================================
@@ -16429,7 +16449,13 @@ window.crTxApi = (function(){
         // scheitern — dieser Fall bekommt deshalb einen eigenen Namen.
         if(j && (j.rpc_ok === false || /rpc/i.test(String(j.error || ''))))
           return { error: 'rpc-down', detail: j.rpc_note || j.error || '' };
-        return { error: (j && j.error) || ('http-' + r.status), detail: (j && j.note) || '' };
+        // v1.0.874 — Ablehnungen des Swap-Deckels tragen `given` und `cap`.
+        // Die zu einer Textmeldung einzudampfen hiesse, die Grenze zu
+        // verschweigen, die gerade gegriffen hat.
+        return { error: (j && j.error) || ('http-' + r.status),
+                 detail: (j && j.note) || '',
+                 given:  (j && j.given) != null ? j.given : undefined,
+                 cap:    (j && j.cap)   || undefined };
       }).catch(function(){ return { error: 'http-' + r.status }; });
     }).catch(function(){ return { error: 'offline' }; });
   }
@@ -16494,7 +16520,32 @@ window.crTxApi = (function(){
       .catch(function(){ return { error: 'offline' }; });
   }
 
-  return { memo: memo, health: health, status: status };
+  /* v1.0.874 — swap(): der erste Endpunkt, der echtes Geld bewegt.
+   *
+   * Der Client rechnet hier NICHTS. Er schickt eine Absicht und bekommt eine
+   * fertige, unsignierte Transaktion samt den Zahlen zurueck, die dazu
+   * gehoeren — Angebot, Mindest-Erhalt, Deckel, Gebuehr. Die Grenzen werden
+   * im Worker geprueft, vor dem ersten Netzaufruf; was hier ankommt, ist das
+   * Ergebnis, nicht eine Bitte.
+   *
+   * Ablehnungen sind KEINE Fehler im schlechten Sinn. Ein „over-cap" ist der
+   * Beweis, dass der Deckel haelt — und wird deshalb mit seinen Zahlen
+   * durchgereicht statt zu einer Meldung eingedampft. */
+  function swap(opts){
+    opts = opts || {};
+    if(!opts.payer)      return Promise.resolve({ error: 'no-payer' });
+    if(!opts.outputMint) return Promise.resolve({ error: 'no-mint' });
+    return _post('/v1/tx/swap', {
+      payer:        String(opts.payer),
+      cluster:      opts.cluster || 'mainnet',   // steht da, nie stillschweigend
+      input_mint:   opts.inputMint || 'So11111111111111111111111111111111111111112',
+      output_mint:  String(opts.outputMint),
+      amount_raw:   String(opts.amountRaw),
+      slippage_bps: Number(opts.slippageBps || 50)
+    });
+  }
+
+  return { memo: memo, health: health, status: status, swap: swap };
 })();
 
 /* =========================================================================
@@ -26439,7 +26490,217 @@ try {
     return crQuote.quote(opts);
   };
 } catch(_){}
+
+/* v1.0.874 (P2·3) — prepareSwap: die erste Methode auf diesem Weg, die zu
+ * echtem Geld fuehrt. Sie liegt hier, weil ChartRunnerSDK die EINZIGE
+ * Order-Instanz ist (CLAUDE.md) — eine zweite Handelsschnittstelle daneben
+ * waere derselbe Fehler wie zwei Wallet-Wahrheiten.
+ *
+ * ABSICHTLICH GETRENNT: prepareSwap BEREITET vor, es signiert nicht. Die
+ * Signatur ist ein eigener, ausdruecklicher Schritt durch crSigner. Wer
+ * beides in einen Aufruf packt, baut einen Knopf, der Geld bewegt, bevor
+ * jemand die Zahlen gelesen hat.
+ *
+ * Der spaetere Broker-Parameter (Phoenix, Drift, CEX — die vier gesperrten
+ * Kampagnen-Kapitel) gehoert genau hierher, nicht in die Aufrufer. */
+try {
+  ChartRunnerSDK.prototype.prepareSwap = function(opts){
+    if(!window.crTxApi) return Promise.resolve({ error: 'swap-unavailable' });
+    return crTxApi.swap(opts);
+  };
+} catch(_){}
 /* END_CHART_RUNNER_CORE_BUNDLE */
+
+
+/* =========================================================================
+ * v1.0.874 (P2·3) — Echt handeln.
+ *
+ * Der Ablauf ist ABSICHTLICH zweistufig und nicht abkuerzbar:
+ *
+ *   Tap 1 → Angebot holen. Der Worker prueft die Grenzen, baut die
+ *           Transaktion und schickt die Zahlen mit. Es passiert nichts.
+ *   Lesen → Einsatz, erwarteter Erhalt, MINDEST-Erhalt, Preisauswirkung,
+ *           Gebuehr, Deckel. Und die Luecke, die der Worker selbst meldet.
+ *   Tap 2 → Signieren. Erst hier fragt die Wallet.
+ *
+ * Wer beides in einen Tap legt, baut einen Knopf, der Geld bewegt, bevor
+ * jemand die Zahlen gelesen hat. Der erwartete Erhalt ist eine Erwartung —
+ * die Zahl, die zaehlt, ist der Mindest-Erhalt.
+ *
+ * Testphase: feste Groesse 0,05 SOL. Der Deckel im Worker ist die Autoritaet;
+ * was hier steht, ist nur die Anfrage. Faellt der Deckel spaeter, bekommt
+ * diese Stelle eine Groessenwahl — dann ist es keine Testphase mehr.
+ * ========================================================================= */
+var CR_SWAP_TEST_LAMPORTS = 50000000;   // 0,05 SOL
+var CR_SWAP_SLIPPAGE_BPS  = 50;
+
+function _crFmtSol(lamports){
+  var n = Number(lamports) / 1e9;
+  return (n < 0.001 ? n.toFixed(6) : n.toFixed(4)).replace(/0+$/, '').replace(/\.$/, '') + ' SOL';
+}
+function _crFmtRaw(raw){
+  var n = Number(raw);
+  if(!isFinite(n)) return String(raw);
+  return n.toLocaleString('de-DE', { maximumFractionDigits: 0 });
+}
+function _crSwapRow(k, v, col){
+  return '<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0">'
+    + '<span style="color:var(--dim)">' + k + '</span>'
+    + '<span style="font-weight:700' + (col ? (';color:' + col) : '') + '">' + v + '</span></div>';
+}
+
+function _crWireSwap(host, mint){
+  var btn = host.querySelector('[data-cr-swap]');
+  var panel = host.querySelector('[data-cr-swap-panel]');
+  if(!btn || !panel) return;
+  var busy = false;
+
+  function say(html){ panel.style.display = ''; panel.innerHTML = html; }
+
+  btn.addEventListener('click', function(){
+    if(busy) return;
+    var addr = '';
+    try { addr = (window.crSigner && crSigner.active() && crSigner.active().address) || ''; } catch(_){}
+    if(!addr) return say('<span style="color:var(--dim)">Erst eine Wallet verbinden — Topbar → Connect.</span>');
+
+    // Netz VOR dem Bauen pruefen, wie bei der Devnet-Probe. Eine Wallet auf
+    // Devnet signiert einen Mainnet-Swap anstandslos, und er landet nirgends.
+    var netz = null;
+    try { netz = crSigner.chainReady('solana:mainnet'); } catch(_){}
+    if(netz && !netz.ok && netz.reason === 'wrong-network'){
+      return say('<span style="color:#f7c76b">Deine Wallet steht auf <b>'
+        + netz.on.join(', ').replace(/solana:/g, '') + '</b>. Ein echter Handel braucht <b>mainnet</b>.'
+        + '<br>In Phantom: Einstellungen → Entwickler-Einstellungen → Testnet-Modus <b>aus</b>.</span>');
+    }
+
+    busy = true;
+    say('<span style="color:var(--dim)">Angebot wird geholt — es wird noch nichts signiert…</span>');
+
+    ChartRunnerSDK.prototype.prepareSwap({
+      payer: addr, outputMint: mint, amountRaw: String(CR_SWAP_TEST_LAMPORTS),
+      slippageBps: CR_SWAP_SLIPPAGE_BPS, cluster: 'mainnet'
+    }).then(function(res){
+      busy = false;
+      if(res && res.error){
+        // Eine Ablehnung ist hier eine gute Nachricht: die Grenze hat
+        // gegriffen. Sie wird deshalb MIT ihren Zahlen gezeigt.
+        var cap = res.cap || {};
+        if(res.error === 'over-cap')
+          return say('<span style="color:#f7c76b">Über dem Deckel: angefragt ' + _crFmtSol(res.given)
+            + ', erlaubt ' + _crFmtSol(cap.max_in_lamports) + '. <b>Der Deckel hat gehalten.</b></span>');
+        if(res.error === 'mint-not-allowed')
+          return say('<span style="color:#f7c76b">Dieser Token ist in der Testphase nicht freigegeben.'
+            + (cap.output_allowlist ? '<br>Freigegeben: ' + cap.output_allowlist.length + ' Token.' : '') + '</span>');
+        if(res.error === 'input-must-be-wsol')
+          return say('<span style="color:#f7c76b">In der Testphase sind nur Käufe möglich (SOL → Token).</span>');
+        if(res.error === 'slippage-too-high')
+          return say('<span style="color:#f7c76b">Slippage über der Grenze ('
+            + (cap.max_slippage_bps != null ? cap.max_slippage_bps + ' bps' : 'Grenze') + ').</span>');
+        if(res.error === 'not-deployed')
+          return say('<span style="color:var(--dim)">Der Handels-Endpunkt ist noch nicht ausgerollt.</span>');
+        if(res.error === 'offline')
+          return say('<span style="color:var(--dim)">Der Worker ist nicht erreichbar — nichts wurde gebaut.</span>');
+        return say('<span style="color:var(--dim)">Kein Angebot: ' + res.error
+          + (res.detail ? ' · ' + res.detail : '') + '</span>');
+      }
+      if(!res || typeof res.transaction !== 'string' || !res.transaction)
+        return say('<span style="color:var(--dim)">Der Worker meldete Erfolg, lieferte aber keine Transaktion. Nichts wurde signiert.</span>');
+
+      var q = res.quote || {}, cap = res.cap || {}, fee = res.fee || {}, chk = res.checked || {};
+      var imp = (Number(q.price_impact_pct) || 0) * 100;
+      var impCol = imp >= 3 ? '#ff5b7f' : (imp >= 1 ? '#f7c76b' : '#3ddc97');
+      var builtAt = Date.now(), ttl = Number(res.expires_in_s || 0);
+
+      say('<div style="border:1px solid var(--line);border-radius:6px;padding:8px 9px;background:rgba(10,15,28,.55)">'
+        + '<div style="text-transform:uppercase;letter-spacing:.4px;color:var(--dim);font-size:9px;margin-bottom:5px">Bevor du signierst</div>'
+        + _crSwapRow('Einsatz', _crFmtSol(q.in_raw != null ? q.in_raw : CR_SWAP_TEST_LAMPORTS))
+        + _crSwapRow('Erwartet', _crFmtRaw(q.out_raw))
+        + _crSwapRow('Mindestens', _crFmtRaw(q.min_out_raw), '#f7c76b')
+        + _crSwapRow('Preisauswirkung', imp.toFixed(imp < 0.01 ? 3 : 2) + ' %', impCol)
+        + _crSwapRow('Gebühr', (fee.priority_lamports == null
+            ? (Number(fee.base_lamports || 0)).toLocaleString('de-DE') + ' Lamports'
+            : (Number(fee.base_lamports || 0) + Number(fee.priority_lamports)).toLocaleString('de-DE') + ' Lamports'))
+        + _crSwapRow('Deckel', _crFmtSol(cap.max_in_lamports))
+        + '<div class="dim" style="font-size:9px;margin-top:5px;line-height:1.45">'
+        + '<b>Mindestens</b> ist die Zahl, die zählt — „Erwartet" ist eine Erwartung.'
+        + (chk.instructions_match_request === false
+            ? '<br>Der Worker prüft Beträge und Mints gegen das Angebot, aber <b>nicht</b>, ob die Instruktionen in der Transaktion genau das bewegen. Deine Wallet zeigt dir gleich, was du wirklich signierst — lies es.'
+            : '')
+        + '</div>'
+        + '<button type="button" data-cr-swap-go="1" style="font:inherit;font-size:11px;font-weight:700;'
+        + 'width:100%;margin-top:7px;padding:8px;border-radius:5px;border:0;background:#177A4C;color:#EAFBF1;cursor:pointer">'
+        + 'Signieren und senden</button>'
+        + '</div>');
+
+      var go = panel.querySelector('[data-cr-swap-go]');
+      if(go) go.addEventListener('click', function(){
+        if(busy) return; busy = true;
+        go.disabled = true; go.textContent = 'Deine Wallet fragt gleich…';
+        crSigner.signAndSend(res.transaction, { chain: 'solana:mainnet' }).then(function(sg){
+          busy = false;
+          if(sg.error === 'rejected') return say('<span style="color:var(--dim)">Abgebrochen. Es wurde nichts gesendet.</span>');
+          if(sg.error){
+            var waited = (Date.now() - builtAt) / 1000;
+            if(ttl && waited > ttl)
+              return say('<span style="color:#f7c76b">Zu lange gewartet — das Angebot war nach ' + ttl
+                + 's nicht mehr gültig. Einfach neu holen.</span>');
+            return say('<span style="color:var(--dim)">Nicht signiert: ' + sg.error
+              + (sg.detail ? ' · ' + sg.detail : '') + '</span>');
+          }
+          // Bestaetigung ueber die KETTE — und ausdruecklich gegen mainnet.
+          say('<span style="color:var(--dim)">Gesendet. Warte auf Bestätigung durch die Kette…</span>');
+          // busy bleibt WAEHREND der Bestaetigung gesetzt. Sonst schreiben zwei
+          // Stellen in dieselbe Tafel: ein neuer Tap holt ein Angebot und
+          // ueberschreibt die laufende Bestaetigung, deren naechster Tick sie
+          // dann wieder ueberschreibt. Der Spieler saehe abwechselnd zwei
+          // verschiedene Trades an derselben Stelle und wuesste nicht, welcher
+          // gerade seiner ist. Erst wenn die Kette geantwortet hat, ist die
+          // Tafel wieder frei.
+          busy = true;
+          _crConfirmSwap(sg.signature, panel).then(function(){ busy = false; });
+        });
+      });
+    }).catch(function(e){
+      busy = false;
+      say('<span style="color:var(--dim)">Unerwarteter Fehler: ' + String((e && e.message) || e) + '</span>');
+    });
+  });
+}
+
+/* Dieselbe Regel wie bei der Devnet-Probe: die Kette ist die Instanz, und ein
+ * ausgefallener Statusdienst ist kein Fehlschlag. Hier gegen MAINNET. */
+function _crConfirmSwap(sig, panel){
+  var link = crWallet.explorerLink(sig, 'mainnet');
+  var tries = 0, errs = 0;
+  function say(h){ panel.style.display = ''; panel.innerHTML = h; }
+  function tick(){
+    tries++;
+    return crTxApi.status(sig, 'mainnet').then(function(st){
+      if(st && st.error){
+        errs++;
+        if(errs < 3) return new Promise(function(r){ setTimeout(function(){ r(tick()); }, 2000); });
+        return say('<span style="color:var(--dim)">Gesendet. Der Status ließ sich nicht abfragen'
+          + (st.detail ? ': ' + st.detail : ' (' + st.error + ')')
+          + ' — der Handel kann trotzdem gelaufen sein.<br>' + link + '</span>');
+      }
+      errs = 0;
+      if(st && st.err)
+        return say('<span style="color:#ff5b7f">Auf der Kette FEHLGESCHLAGEN: '
+          + (typeof st.err === 'string' ? st.err : JSON.stringify(st.err)) + '<br>' + link + '</span>');
+      if(st && (st.confirmationStatus === 'confirmed' || st.confirmationStatus === 'finalized'))
+        return say('<span style="color:#3ddc97"><b>Gehandelt.</b> '
+          + (st.confirmations == null ? 'finalisiert' : st.confirmations + ' Bestätigungen')
+          + '<br>' + link + '</span>');
+      if(tries < 15) return new Promise(function(r){ setTimeout(function(){ r(tick()); }, 2000); });
+      return say('<span style="color:var(--dim)">Gesendet, nach 30s noch nicht bestätigt. Das heißt '
+        + 'nicht, dass es gescheitert ist — der Explorer zeigt den aktuellen Stand.<br>' + link + '</span>');
+    });
+  }
+  // Gibt die Kette zurueck: sie ist genau dann erfuellt, wenn ein ENDZUSTAND
+  // erreicht ist (bestaetigt, fehlgeschlagen, Status nicht abfragbar, oder
+  // 30s ohne Antwort). Der Aufrufer haengt daran die Freigabe der Tafel.
+  return tick();
+}
 
 /* =========================================================================
  * Canvas + chart data
@@ -71632,7 +71893,16 @@ function _tokRenderProfile(){
         _tokQEl.innerHTML = lbl
           + '<span style="color:' + impCol + '">' + _tokT('tok.tradeImpact','{p}% Preisauswirkung bei 1 SOL',{p:imp.toFixed(imp<0.01?3:2)}) + '</span>'
           + (q.hops ? ' <span style="color:var(--dim)">· ' + _tokT('tok.tradeRoute','{n} Hop(s) über {l}',{n:q.hops,l:_tokEscA((q.labels||[]).join(', ') || '?')}) + '</span>' : '')
-          + '<div class="dim" style="font-size:9px;margin-top:3px">' + _tokT('tok.tradeNote','Nur eine Auskunft — es wird nichts signiert und keine Order ausgelöst.') + '</div>';
+          + '<div class="dim" style="font-size:9px;margin-top:3px">' + _tokT('tok.tradeNote','Nur eine Auskunft — es wird nichts signiert und keine Order ausgelöst.') + '</div>'
+          // v1.0.874 (P2·3) — ab hier kann echtes Geld fliessen. Der Knopf
+          // OEFFNET nur; signiert wird erst nach einem zweiten, ausdruecklichen
+          // Tap, und erst nachdem die Zahlen dastehen.
+          + '<div style="margin-top:6px"><button type="button" data-cr-swap="' + _tokEscA(_qMint) + '" '
+          + 'style="font:inherit;font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;'
+          + 'border:1px solid #2E9E63;background:transparent;color:#4ADE80;cursor:pointer">'
+          + _tokT('tok.swapOpen','Echt handeln — 0,05 SOL') + '</button></div>'
+          + '<div data-cr-swap-panel="' + _tokEscA(_qMint) + '" style="display:none;margin-top:7px"></div>';
+        try { _crWireSwap(_tokQEl, _qMint); } catch(_){}
       }).catch(() => {});
     }
     // v1.0.865 — TRACE: Ergebnis landet im Intel-Fenster (dort ist Wallet-Wissen zuhause).
