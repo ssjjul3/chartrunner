@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.875
-     LAST UPDATED:    2026-08-22  ·  v1.0.875: EIN DECKEL, DER NIE GEGEN ETWAS GEDRUECKT HAT, IST EINE BEHAUPTUNG. Die Probe sollte per curl gegen den Worker laufen; beide Sandboxes sind fuer *.workers.dev gesperrt (403 auf CONNECT). Also laeuft sie aus dem Netz des Spielers — ueber GENAU DEN WEG, den ein echter Handel nimmt: prepareSwap, crTxApi, Worker, dieselbe Tafel. Eine eigene Probe-Seite waere eine ZWEITE Anfrage-Implementierung gewesen und haette etwas anderes geprueft als das, was der Spieler benutzt — der Fehler, den v1.0.874 zweimal beseitigt hat. (a) NEU Schaltflaeche „Deckel pruefen" neben „Echt handeln". Holt zwei Angebote, signiert keines. (b) DER EIGENTLICHE FALL, gefunden von der Session, die v1.0.874 angewandt hat: der Client schickt bei jedem Handel EXAKT max_in_lamports. Prueft der Worker `betrag >= deckel` statt `> deckel`, wird JEDER Handel abgelehnt — das Feature waere tot, ohne dass eine Meldung das sagt. Die Probe prueft beide Richtungen der Grenze: den erlaubten Betrag (muss durchgehen) und EIN LAMPORT darueber (muss abgelehnt werden). (c) Der Deckel wird NICHT hart verdrahtet, sondern aus der Antwort des Workers gelesen und die Grenze daraus abgeleitet. Faellt der Deckel, prueft die Probe die neue Grenze. (d) Drei unverwechselbare Diagnosen: haelt richtig · sperrt zu frueh (Vergleich falsch herum, ausdruecklich mit „nicht handeln") · undicht. (e) Probe und Handel teilen sich Tafel UND busy — zwei Zustaende waeren wieder zwei Schreiber auf einer Flaeche. Spiellogik, Rendering und Abilities unberuehrt.
+     CURRENT VERSION: v1.0.876
+     LAST UPDATED:    2026-08-22  ·  v1.0.876: EINE KAPUTTE AUSKUNFT DARF KEINE FUNKTIONIERENDE KETTE VERSTECKEN. Live-Befund aus dem Token-Profil: „Kursabfrage nicht erreichbar" — und der Handel-Knopf war weg. Nicht weil mit dem Handel etwas war. (a) URSACHE 1, Verdrahtung: die Schaltflaechen wurden NUR im Erfolgszweig der Kursabfrage gezeichnet. Der Handel laeuft aber ueber crTxApi und den eigenen Worker und weiss von dieser Abfrage nichts. Faellt die Vorschau, verschwand die ganze Phase-2-Oberflaeche mit. (b) URSACHE 2, Endpunkt: crQuote zeigt auf quote-api.jup.ag/v6. Jupiter hat den Host abgekuendigt (Migration war Mai 2025), und auch lite-api.jup.ag — an anderer Stelle in DIESER Datei benutzt — ist seit Januar 2026 abgeloest. Aktuell ist api.jup.ag/swap/v1 MIT API-Key, was heisst: die Kursabfrage kann nicht im Client bleiben, sie gehoert hinter einen Worker wie schon der Hermes-Proxy. Das ist NICHT Teil dieses Patches; ein Key im Browser waere der falsche Weg. (c) NEU _crTradeabilityHtml(q, mint): die Entscheidung steht in EINER Funktion mit EINER Markup-Quelle, ohne gerendertes Profil pruefbar. Der Ausfallzweig sagt jetzt ausdruecklich, dass nur die VORSCHAU fehlt — die Zahlen des Handels kommen ohnehin vom eigenen Worker und stehen vor dem Signieren da. (d) BUGFIX beim Bauen gefunden: _tokEscA lag als const INNERHALB von _tokRenderProfile. Die neue Funktion haette zur Laufzeit einen ReferenceError geworfen — den weder Parse-Check noch Kollisions-Check sehen koennen. Auf Modulebene gehoben statt kopiert: es gibt genau EINEN Escaper. Der Testfall RUFT die Funktion auf, statt ihr Markup zu lesen. Spiellogik, Rendering und Abilities unberuehrt.
+     PREV  ·  v1.0.875: EIN DECKEL, DER NIE GEGEN ETWAS GEDRUECKT HAT, IST EINE BEHAUPTUNG. Die Probe sollte per curl gegen den Worker laufen; beide Sandboxes sind fuer *.workers.dev gesperrt (403 auf CONNECT). Also laeuft sie aus dem Netz des Spielers — ueber GENAU DEN WEG, den ein echter Handel nimmt: prepareSwap, crTxApi, Worker, dieselbe Tafel. Eine eigene Probe-Seite waere eine ZWEITE Anfrage-Implementierung gewesen
      PREV  ·  v1.0.874: P2.3 — DER ERSTE ECHTE HANDEL, IN ZWEI STUFEN. Bis v1.0.873 war die Kette geschlossen, aber sie trug nur ein Memo. Jetzt traegt sie einen Swap. (a) NEU crTxApi.swap(): fragt beim tx-Worker POST /v1/tx/swap ein Angebot an — Einsatz, Ausgabe-Mint, Slippage. Der Client baut nichts und rechnet nichts; er zeigt, was der Worker geprueft hat. (b) NEU ChartRunnerSDK.prototype.prepareSwap(): die eine Order
      PREV  ·  v1.0.873: DEN GRUND ZEIGEN, NICHT NUR BERECHNEN. Gefunden beim Review von v1.0.872: crTxApi.status() ermittelt bei einem Ausfall ein `detail` aus dem rpc_note des Workers — angezeigt wurde aber nur st.error, also „http-502“. Der Worker gibt sich Muehe, den Grund im Klartext zu nennen („RPC nicht erreichbar“), und der Client tauschte ihn gegen eine Statusnummer. Genau die Sorte Verlust, die diese ganze Kette
      PREV  ·  v1.0.872: EIN AUSFALL IST KEINE AUSKUNFT — HTTP-EBENE VOR BODY-EBENE. Der tx-Worker meldet einen RPC-Ausfall als 502 mit ok:false und LAESST confirmationStatus bewusst weg, damit ein Ausfall nicht wie eine Antwort aussieht. Genau daran fiel crTxApi.status() durch: es prueft nur auf 404 und reichte sonst den geparsten Body durch. Ohne error, ohne err, ohne confirmationStatus landete der Client im Z
@@ -26762,6 +26763,61 @@ function _crConfirmSwap(sig, panel){
  *
  * Es wird nie signiert. Ein Angebot zu holen kostet nichts und bewegt nichts.
  * ======================================================================= */
+/* v1.0.876 — DIE VORSCHAU IST NICHT DER HANDEL.
+ *
+ * Bis hierher wurde der Handel-Knopf NUR im Erfolgszweig der Kursabfrage
+ * gezeichnet. Faellt die Vorschau aus, verschwand damit die ganze
+ * Phase-2-Oberflaeche — obwohl sie ueber einen voellig anderen Weg laeuft
+ * (crTxApi → eigener Worker), der davon gar nichts weiss.
+ *
+ * Genau das ist live passiert: crQuote zeigt auf quote-api.jup.ag/v6, einen
+ * Host, den Jupiter laengst abgeschaltet hat. Im Profil stand „Kursabfrage
+ * nicht erreichbar" — und der Handel-Knopf war weg, obwohl mit ihm alles in
+ * Ordnung war. Eine kaputte Auskunft darf keine funktionierende Kette
+ * verstecken.
+ *
+ * Deshalb steht die Entscheidung jetzt in EINER Funktion, mit EINER Quelle
+ * fuer das Knopf-Markup — und sie ist ohne gerendertes Token-Profil pruefbar. */
+function _crTradeabilityHtml(q, mint){
+  var lbl = '<span class="dim" style="text-transform:uppercase;letter-spacing:.4px">'
+    + _tokT('tok.tradeability','Handelbarkeit') + '</span> ';
+
+  // v1.0.874 — ab hier kann echtes Geld fliessen. Der Knopf OEFFNET nur;
+  // signiert wird erst nach einem zweiten, ausdruecklichen Tap, und erst
+  // nachdem die Zahlen dastehen.
+  // v1.0.875 — daneben die Deckel-Probe: derselbe Weg wie ein echter Handel,
+  // keine zweite Anfrage-Implementierung. Es wird dabei nie signiert.
+  var btns = '<div style="margin-top:6px"><button type="button" data-cr-swap="' + _tokEscA(mint) + '" '
+    + 'style="font:inherit;font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;'
+    + 'border:1px solid #2E9E63;background:transparent;color:#4ADE80;cursor:pointer">'
+    + _tokT('tok.swapOpen','Echt handeln — 0,05 SOL') + '</button>'
+    + ' <button type="button" data-cr-cap-probe="' + _tokEscA(mint) + '" '
+    + 'style="font:inherit;font-size:10px;padding:5px 9px;border-radius:5px;'
+    + 'border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer">'
+    + _tokT('tok.capProbe','Deckel prüfen') + '</button></div>'
+    + '<div data-cr-swap-panel="' + _tokEscA(mint) + '" style="display:none;margin-top:7px"></div>';
+
+  if(!q || q.error){
+    var msg = q && q.error === 'no-route' ? _tokT('tok.tradeNoRoute','keine Handelsroute gefunden')
+      : q && q.error === 'rate-limited' ? _tokT('tok.tradeBusy','Kursabfrage gerade ausgelastet — später erneut')
+      : _tokT('tok.tradeOffline','Kursabfrage nicht erreichbar');
+    // Ehrlich benennen, was fehlt: die VORSCHAU. Der Handel holt seine Zahlen
+    // beim eigenen Worker und zeigt sie vor dem Signieren.
+    return lbl + '<span style="color:var(--dim)">' + msg + '</span>'
+      + '<div class="dim" style="font-size:9px;margin-top:3px">'
+      + _tokT('tok.tradeStillOpen','Nur die Vorschau fehlt. Der Handel holt seine Zahlen selbst — du siehst sie, bevor du signierst.')
+      + '</div>' + btns;
+  }
+
+  var imp = (Number(q.priceImpactPct) || 0) * 100;
+  var impCol = imp >= 3 ? '#ff5b7f' : (imp >= 1 ? '#f7c76b' : '#3ddc97');
+  return lbl
+    + '<span style="color:' + impCol + '">' + _tokT('tok.tradeImpact','{p}% Preisauswirkung bei 1 SOL',{p:imp.toFixed(imp<0.01?3:2)}) + '</span>'
+    + (q.hops ? ' <span style="color:var(--dim)">· ' + _tokT('tok.tradeRoute','{n} Hop(s) über {l}',{n:q.hops,l:_tokEscA((q.labels||[]).join(', ') || '?')}) + '</span>' : '')
+    + '<div class="dim" style="font-size:9px;margin-top:3px">' + _tokT('tok.tradeNote','Nur eine Auskunft — es wird nichts signiert und keine Order ausgelöst.') + '</div>'
+    + btns;
+}
+
 function _crProbeRow(label, amountRaw, verdict, detail){
   var col = verdict === 'ok' ? '#3ddc97' : (verdict === 'fail' ? '#ff5b7f' : 'var(--dim)');
   var mark = verdict === 'ok' ? '✓' : (verdict === 'fail' ? '✗' : '…');
@@ -56222,7 +56278,7 @@ window.crI18n = (function(){
       'alerts.enterValue':'Bitte einen Wert eingeben','alerts.armed':'⏰ Alert scharfgeschaltet',
       'rooms.searchBtn':'Öffentliche Räume suchen / durchsuchen',
       'pay.choose.title':'Auf Runner Pro upgraden','pay.perMonth':'/Mo','pay.choose.card':'Mit Karte zahlen','pay.choose.sol':'Mit SOL / USDC zahlen','pay.sol.title':'Mit Solana zahlen · Runner Pro','pay.sol.inSol':'in SOL — Betrag im Wallet eingeben','pay.sol.sendTo':'Senden an (ChartRunner-Treasury)','pay.sol.open':'Im Wallet öffnen →','pay.sol.note':'In einem beliebigen Solana-Pay-Wallet öffnen. USDC ist 1:1 zum USD. Die Zahlung erreicht die ChartRunner-Treasury on-chain; die automatische Pro-Freischaltung wird serverseitig verifiziert und kommt mit dem Live-Trading (Phase 2).','pay.copy':'Kopieren','pay.copied':'Kopiert','pay.sol.confirmed':'Runner Pro ist jetzt aktiv','pay.sol.waiting':'Warte auf deine Zahlung… lass dieses Fenster offen','pay.sol.autoNote':'In einem beliebigen Solana-Pay-Wallet öffnen. USDC ist 1:1 zum USD. Sobald die Zahlung on-chain ankommt, wird sie verifiziert und Pro schaltet sich automatisch frei — lass dieses Fenster kurz offen.','pay.sol.signin':'Melde dich zuerst an (Einstellungen · Konto), damit Pro nach der Zahlung automatisch freigeschaltet wird.','set.manageBilling':'Abo verwalten','bill.manage.signin':'Melde dich an, um dein Abo zu verwalten.','bill.manage.loading':'Öffne…','bill.manage.lifetime':'Du hast Lifetime-Pro — es gibt kein laufendes Abo zum Kündigen.','bill.manage.crypto':'Dieses Pro wurde per SOL / USDC aktiviert — es gibt kein Karten-Abo zum Verwalten.','bill.manage.err':'Abo-Verwaltung gerade nicht erreichbar — bitte gleich noch mal versuchen.',
-      'tok.tradeability':'Handelbarkeit','tok.tradeImpact':'{p}% Preisauswirkung bei 1 SOL','tok.tradeRoute':'{n} Hop(s) über {l}','tok.tradeNote':'Nur eine Auskunft — es wird nichts signiert und keine Order ausgelöst.','tok.tradeNoRoute':'keine Handelsroute gefunden','tok.tradeBusy':'Kursabfrage gerade ausgelastet — später erneut','tok.tradeOffline':'Kursabfrage nicht erreichbar','intel.pos.title':'Ergebnis auf ChartRunner-Token','intel.pos.result':'Ergebnis','intel.pos.holding':'Bestand','intel.pos.bought':'gekauft','intel.pos.sold':'verkauft','intel.pos.closed':'Position geschlossen','intel.pos.flow':'Fluss','intel.pos.unknown':'—','intel.pos.err':'Der ChartRunner-Index ist gerade nicht erreichbar — hier stehen deshalb keine Zahlen.','intel.pos.none':'Diese Wallet ist auf den verfolgten Token nicht aufgetaucht.','intel.pos.partial':'Für {n} von {m} Positionen liegt gerade kein aktueller Preis vor — deren Ergebnis fehlt in der Summe.','intel.pos.math':'Ergebnis = (verkauft − gekauft) + aktueller Wert des Restbestands. „Fluss“ ist nur der Zahlungsfluss — wer noch hält, steht dort scheinbar im Minus.','intel.pos.coverage':'Gezählt wird ausschließlich, was ab Index-Start auf von ChartRunner verfolgten Token passiert ist — Handel davor oder anderswo ist hier unsichtbar.','tok.trace':'◎ Trace','tok.traceTitle':'Wer hat diesen Token früh gekauft — und hält noch?','intel.disc.forYou':'Passt zu deinen Token','intel.disc.active':'Aktive Wallets · 24h','intel.disc.noMints':'Setz Token auf deine Watchlist — dann schlage ich hier Wallets vor, die genau diese Token früh gekauft haben und noch halten.','intel.disc.noSug':'Zu deinen Watchlist-Token sind noch keine frühen Käufer im Index. Öffne ihre Charts — dann fängt der Index an, sie mitzuschreiben.','intel.disc.noTop':'In den letzten 24 h wurde in den indexierten Token nichts gehandelt — hier steht nur, was wirklich passiert ist.','intel.disc.offline':'Intel-Backend nicht erreichbar — Vorschläge und Aktivität bleiben leer, bis es antwortet.','intel.disc.notDeployed':'Dieser Teil des Intel-Backends ist noch nicht ausgerollt (Feed-Endpunkte fehlen).','intel.disc.err':'Intel-Backend antwortet mit einem Fehler ({e}).','intel.disc.coverage':'Alles hier stammt aus ChartRunners eigenem Index — also nur aus Token, die hier jemand angesehen hat. Das ist ein Ausschnitt von Solana, keine Gesamtsicht.','intel.disc.sugSub':'#{rank} früher Käufer · {usd} gekauft','intel.disc.topSub':'{n} Trades · {m} Token','intel.trace.title':'Trace','intel.trace.token':'Token','intel.trace.wallet':'Wallet','intel.trace.back':'← zurück','intel.trace.buyers':'Early Buyer','intel.trace.holding':'hält noch','intel.trace.soldOut':'ausgestiegen','intel.trace.volume':'Kaufvolumen','intel.trace.earlyMoney':'Early Money','intel.trace.bought':'gekauft','intel.trace.sold':'verkauft','intel.trace.pnl':'realisiert','intel.trace.held':'gehalten','intel.trace.holdUnknown':'Haltequote unbekannt','intel.trace.age':'{d}d alt','intel.trace.fundedBy':'finanziert von {a}','intel.trace.tokensTraded':'Gehandelte Token (im Index)','intel.trace.quota':'Kontingent: {u}/{l} heute','intel.trace.cached':'aus dem Cache','intel.trace.budget':'Das Abfragebudget für diesen Trace war erschöpft — das Ergebnis ist unvollständig.','intel.trace.noKey':'Kettendaten (Wallet-Alter, Herkunft) waren für diesen Trace nicht verfügbar — angezeigt sind nur Index-Fakten.','intel.trace.sharedFunding':'{n} Adresse(n) haben mehrere dieser Wallets finanziert.','intel.trace.empty':'Für diesen Token liegen noch keine indexierten Käufe vor.','intel.trace.walletUnknown':'Diese Wallet ist in unserem Index nicht aufgetaucht — sie hat keinen der hier verfolgten Token gehandelt.','intel.trace.running':'Trace läuft — der Index wird ausgewertet…','intel.trace.quotaHit':'Trace-Kontingent für heute aufgebraucht.','intel.trace.off':'Trace ist derzeit abgeschaltet.','intel.trace.offline':'Trace-Backend nicht erreichbar — kein Ergebnis, keine erfundenen Daten.','intel.trace.failed':'Trace fehlgeschlagen ({e}).','intel.trace.noApi':'Trace ist in dieser Version nicht verfügbar.','tok.hot.tag':'heiß','tok.hot.listTitle':'Auf ChartRunner geboostet','tok.hot.loading':'geboostete Token werden gescannt…','tok.hot.empty':'Gerade keine geboosteten Token.','tok.hot.boostedToken':'Geboosteter Token','tok.hot.boostTitle':'Booste deinen Token','tok.hot.boostIntro':'Bring deinen Token in die 🔥-Hot-Liste. Zahlbar in SOL / USDC / $RUN — mit $RUN sparst du {pct}%.','tok.hot.inRun':'in $RUN','tok.hot.boost':'Boosten','tok.hot.boostNote':'Checkout via Solana Pay — non-custodial, on-chain an die Treasury. Das Listing aktiviert automatisch nach der on-chain-Verifikation.','tok.hot.payTitle':'Boost buchen','tok.hot.mint':'Mint des Tokens, der geboostet werden soll','tok.hot.next':'Weiter → Solana Pay','tok.hot.badMint':'Keine gültige Solana-Mint-Adresse','tok.hot.waiting':'Warte auf deine Zahlung… Fenster offen lassen — das Listing aktiviert automatisch','tok.hot.confirmed':'Boost aktiv — dein Token ist in der 🔥-Liste','tok.hot.unavailable':'Der Boost-Checkout ist serverseitig noch nicht freigeschaltet. Es wird KEINE Zahlung angeboten, bis Verifikation + Auto-Listing live sind — bitte später erneut versuchen.',
+      'tok.tradeability':'Handelbarkeit','tok.tradeImpact':'{p}% Preisauswirkung bei 1 SOL','tok.tradeRoute':'{n} Hop(s) über {l}','tok.tradeNote':'Nur eine Auskunft — es wird nichts signiert und keine Order ausgelöst.','tok.tradeNoRoute':'keine Handelsroute gefunden','tok.tradeBusy':'Kursabfrage gerade ausgelastet — später erneut','tok.tradeOffline':'Kursabfrage nicht erreichbar','tok.tradeStillOpen':'Nur die Vorschau fehlt. Der Handel holt seine Zahlen selbst — du siehst sie, bevor du signierst.','intel.pos.title':'Ergebnis auf ChartRunner-Token','intel.pos.result':'Ergebnis','intel.pos.holding':'Bestand','intel.pos.bought':'gekauft','intel.pos.sold':'verkauft','intel.pos.closed':'Position geschlossen','intel.pos.flow':'Fluss','intel.pos.unknown':'—','intel.pos.err':'Der ChartRunner-Index ist gerade nicht erreichbar — hier stehen deshalb keine Zahlen.','intel.pos.none':'Diese Wallet ist auf den verfolgten Token nicht aufgetaucht.','intel.pos.partial':'Für {n} von {m} Positionen liegt gerade kein aktueller Preis vor — deren Ergebnis fehlt in der Summe.','intel.pos.math':'Ergebnis = (verkauft − gekauft) + aktueller Wert des Restbestands. „Fluss“ ist nur der Zahlungsfluss — wer noch hält, steht dort scheinbar im Minus.','intel.pos.coverage':'Gezählt wird ausschließlich, was ab Index-Start auf von ChartRunner verfolgten Token passiert ist — Handel davor oder anderswo ist hier unsichtbar.','tok.trace':'◎ Trace','tok.traceTitle':'Wer hat diesen Token früh gekauft — und hält noch?','intel.disc.forYou':'Passt zu deinen Token','intel.disc.active':'Aktive Wallets · 24h','intel.disc.noMints':'Setz Token auf deine Watchlist — dann schlage ich hier Wallets vor, die genau diese Token früh gekauft haben und noch halten.','intel.disc.noSug':'Zu deinen Watchlist-Token sind noch keine frühen Käufer im Index. Öffne ihre Charts — dann fängt der Index an, sie mitzuschreiben.','intel.disc.noTop':'In den letzten 24 h wurde in den indexierten Token nichts gehandelt — hier steht nur, was wirklich passiert ist.','intel.disc.offline':'Intel-Backend nicht erreichbar — Vorschläge und Aktivität bleiben leer, bis es antwortet.','intel.disc.notDeployed':'Dieser Teil des Intel-Backends ist noch nicht ausgerollt (Feed-Endpunkte fehlen).','intel.disc.err':'Intel-Backend antwortet mit einem Fehler ({e}).','intel.disc.coverage':'Alles hier stammt aus ChartRunners eigenem Index — also nur aus Token, die hier jemand angesehen hat. Das ist ein Ausschnitt von Solana, keine Gesamtsicht.','intel.disc.sugSub':'#{rank} früher Käufer · {usd} gekauft','intel.disc.topSub':'{n} Trades · {m} Token','intel.trace.title':'Trace','intel.trace.token':'Token','intel.trace.wallet':'Wallet','intel.trace.back':'← zurück','intel.trace.buyers':'Early Buyer','intel.trace.holding':'hält noch','intel.trace.soldOut':'ausgestiegen','intel.trace.volume':'Kaufvolumen','intel.trace.earlyMoney':'Early Money','intel.trace.bought':'gekauft','intel.trace.sold':'verkauft','intel.trace.pnl':'realisiert','intel.trace.held':'gehalten','intel.trace.holdUnknown':'Haltequote unbekannt','intel.trace.age':'{d}d alt','intel.trace.fundedBy':'finanziert von {a}','intel.trace.tokensTraded':'Gehandelte Token (im Index)','intel.trace.quota':'Kontingent: {u}/{l} heute','intel.trace.cached':'aus dem Cache','intel.trace.budget':'Das Abfragebudget für diesen Trace war erschöpft — das Ergebnis ist unvollständig.','intel.trace.noKey':'Kettendaten (Wallet-Alter, Herkunft) waren für diesen Trace nicht verfügbar — angezeigt sind nur Index-Fakten.','intel.trace.sharedFunding':'{n} Adresse(n) haben mehrere dieser Wallets finanziert.','intel.trace.empty':'Für diesen Token liegen noch keine indexierten Käufe vor.','intel.trace.walletUnknown':'Diese Wallet ist in unserem Index nicht aufgetaucht — sie hat keinen der hier verfolgten Token gehandelt.','intel.trace.running':'Trace läuft — der Index wird ausgewertet…','intel.trace.quotaHit':'Trace-Kontingent für heute aufgebraucht.','intel.trace.off':'Trace ist derzeit abgeschaltet.','intel.trace.offline':'Trace-Backend nicht erreichbar — kein Ergebnis, keine erfundenen Daten.','intel.trace.failed':'Trace fehlgeschlagen ({e}).','intel.trace.noApi':'Trace ist in dieser Version nicht verfügbar.','tok.hot.tag':'heiß','tok.hot.listTitle':'Auf ChartRunner geboostet','tok.hot.loading':'geboostete Token werden gescannt…','tok.hot.empty':'Gerade keine geboosteten Token.','tok.hot.boostedToken':'Geboosteter Token','tok.hot.boostTitle':'Booste deinen Token','tok.hot.boostIntro':'Bring deinen Token in die 🔥-Hot-Liste. Zahlbar in SOL / USDC / $RUN — mit $RUN sparst du {pct}%.','tok.hot.inRun':'in $RUN','tok.hot.boost':'Boosten','tok.hot.boostNote':'Checkout via Solana Pay — non-custodial, on-chain an die Treasury. Das Listing aktiviert automatisch nach der on-chain-Verifikation.','tok.hot.payTitle':'Boost buchen','tok.hot.mint':'Mint des Tokens, der geboostet werden soll','tok.hot.next':'Weiter → Solana Pay','tok.hot.badMint':'Keine gültige Solana-Mint-Adresse','tok.hot.waiting':'Warte auf deine Zahlung… Fenster offen lassen — das Listing aktiviert automatisch','tok.hot.confirmed':'Boost aktiv — dein Token ist in der 🔥-Liste','tok.hot.unavailable':'Der Boost-Checkout ist serverseitig noch nicht freigeschaltet. Es wird KEINE Zahlung angeboten, bis Verifikation + Auto-Listing live sind — bitte später erneut versuchen.',
       // v1.0.795 — sign-in / account modal
       'acc.google':'Mit Google fortfahren','acc.apple':'Mit Apple fortfahren','acc.or':'ODER','acc.emailCta':'Mit E-Mail fortfahren','acc.wallet':'Stattdessen Wallet verbinden','acc.ph.pass':'Passwort (mind. 6 Zeichen)','acc.ph.newpass':'Neues Passwort (mind. 6 Zeichen)','acc.updatePass':'Passwort aktualisieren','acc.cancel':'Abbrechen','acc.signedAs':'Angemeldet als','acc.signout':'Abmelden','acc.close':'Schließen','acc.title.recovery':'Neues Passwort festlegen','acc.sub.recovery':'Wähle ein neues Passwort für dein ChartRunner-Konto.','acc.title.signed':'Dein ChartRunner-Konto','acc.sub.signed':'Du bist angemeldet. Fortschritt, API-Keys und Bots sind freigeschaltet.','acc.title.signin':'Bei ChartRunner anmelden','acc.sub.signin':'Willkommen zurück — dein Fortschritt, deine API-Keys und Bots warten.','acc.submit.signin':'Anmelden','acc.title.signup':'Erstelle dein ChartRunner-Konto','acc.sub.signup':'Spiel zuerst mit einer E-Mail — Wallets kommen später. Fortschritt, API-Keys und Bots leben in einem Konto.','acc.submit.signup':'Konto erstellen','acc.foot.have':'Schon ein Konto?','acc.foot.new':'Neu hier?','acc.link.signin':'Anmelden','acc.link.create':'Konto erstellen','acc.link.guest':'Als Gast fortfahren','acc.link.forgot':'Passwort vergessen?',
       // v1.0.793 — Batch 4: HOT-on-DEX + Boost-Pane
@@ -71789,6 +71845,12 @@ async function _tokEnsureBacktest(def){
 }
 try { window._tokEnsureBacktest = _tokEnsureBacktest; } catch(_){}
 
+// v1.0.876 — auf Modulebene gehoben. Lag als const INNERHALB von
+// _tokRenderProfile und war damit fuer _crTradeabilityHtml() unerreichbar —
+// ein ReferenceError zur Laufzeit, den weder Parse-Check noch
+// Kollisions-Check sehen koennen. Eine zweite Kopie waere die naheliegende
+// und falsche Loesung gewesen: es gibt genau EINEN Escaper.
+function _tokEscA(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' })[c]; }); }
 function _tokT(k, en, v){ try { return (window.crI18n && crI18n.t) ? crI18n.t(k, en, v) : (en!=null?en:k); } catch(_){ return en!=null?en:k; } }   // v1.0.788
 function _tokRenderProfile(){
   const host = document.getElementById('crTokProfile');
@@ -71840,7 +71902,6 @@ function _tokRenderProfile(){
   // v1.0.360 — contract / mint address (shown when available).
   let _tokMint = '';
   try { _tokMint = String((typeof TOK_BIRDEYE_MINT !== 'undefined' && TOK_BIRDEYE_MINT[def.id]) || def.mint || ''); } catch(_){}
-  const _tokEscA = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
   const _contractRow = _tokMint
     ? '<div class="dim" style="font-size:9.5px;display:flex;align-items:center;gap:6px;margin-top:3px">' +
         '<span style="text-transform:uppercase;letter-spacing:.4px">' + _tokT('tok.contract','Contract') + '</span>' +
@@ -72046,37 +72107,7 @@ function _tokRenderProfile(){
       const WSOL_M = 'So11111111111111111111111111111111111111112';
       crQuote.quote({ inMint: WSOL_M, outMint: _qMint, amountRaw: 1e9, slippageBps: 50 }).then(q => {
         if(!_tokQEl.isConnected) return;
-        const lbl = '<span class="dim" style="text-transform:uppercase;letter-spacing:.4px">' + _tokT('tok.tradeability','Handelbarkeit') + '</span> ';
-        if(!q || q.error){
-          const msg = q && q.error === 'no-route' ? _tokT('tok.tradeNoRoute','keine Handelsroute gefunden')
-            : q && q.error === 'rate-limited' ? _tokT('tok.tradeBusy','Kursabfrage gerade ausgelastet — später erneut')
-            : _tokT('tok.tradeOffline','Kursabfrage nicht erreichbar');
-          _tokQEl.innerHTML = lbl + '<span style="color:var(--dim)">' + msg + '</span>';
-          return;
-        }
-        const imp = (Number(q.priceImpactPct) || 0) * 100;
-        const impCol = imp >= 3 ? '#ff5b7f' : (imp >= 1 ? '#f7c76b' : '#3ddc97');
-        _tokQEl.innerHTML = lbl
-          + '<span style="color:' + impCol + '">' + _tokT('tok.tradeImpact','{p}% Preisauswirkung bei 1 SOL',{p:imp.toFixed(imp<0.01?3:2)}) + '</span>'
-          + (q.hops ? ' <span style="color:var(--dim)">· ' + _tokT('tok.tradeRoute','{n} Hop(s) über {l}',{n:q.hops,l:_tokEscA((q.labels||[]).join(', ') || '?')}) + '</span>' : '')
-          + '<div class="dim" style="font-size:9px;margin-top:3px">' + _tokT('tok.tradeNote','Nur eine Auskunft — es wird nichts signiert und keine Order ausgelöst.') + '</div>'
-          // v1.0.874 (P2·3) — ab hier kann echtes Geld fliessen. Der Knopf
-          // OEFFNET nur; signiert wird erst nach einem zweiten, ausdruecklichen
-          // Tap, und erst nachdem die Zahlen dastehen.
-          + '<div style="margin-top:6px"><button type="button" data-cr-swap="' + _tokEscA(_qMint) + '" '
-          + 'style="font:inherit;font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;'
-          + 'border:1px solid #2E9E63;background:transparent;color:#4ADE80;cursor:pointer">'
-          + _tokT('tok.swapOpen','Echt handeln — 0,05 SOL') + '</button>'
-          // v1.0.875 — Der Deckel laesst sich vom Telefon aus PRUEFEN, nicht nur
-          // behaupten. Bewusst derselbe Weg wie ein echter Handel (prepareSwap →
-          // crTxApi → Worker), nicht eine zweite Anfrage-Implementierung auf einer
-          // eigenen Seite: geprueft werden soll die Kette, die der Spieler
-          // benutzt. Es wird dabei nie signiert.
-          + ' <button type="button" data-cr-cap-probe="' + _tokEscA(_qMint) + '" '
-          + 'style="font:inherit;font-size:10px;padding:5px 9px;border-radius:5px;'
-          + 'border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer">'
-          + _tokT('tok.capProbe','Deckel prüfen') + '</button></div>'
-          + '<div data-cr-swap-panel="' + _tokEscA(_qMint) + '" style="display:none;margin-top:7px"></div>';
+        _tokQEl.innerHTML = _crTradeabilityHtml(q, _qMint);
         try { _crWireSwap(_tokQEl, _qMint); } catch(_){}
       }).catch(() => {});
     }
