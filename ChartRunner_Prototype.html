@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.868
-     LAST UPDATED:    2026-08-22  ·  v1.0.868: P2.2 ENTSCHIEDEN — SIGNIERT WIRD IM SPIEL, UND ES KOSTET DIE EINZELDATEI-REGEL NICHT. Der Plan sah einen Build-Schritt vor (@solana/web3.js + Wallet-Adapter), also das Ende von „alles inline". Falsch gerechnet: der Wallet Standard definiert solana:signAndSendTransaction mit `transaction: Uint8Array` — SERIALISIERTEN BYTES, nicht einem web3.js-Objekt. Jupiters /swap liefert die Transaktion genau so (base64). Der Client braucht also nur atob() und die Schnittstelle, die die Wallets ohnehin ins window legen. GEMESSEN STATT VERMUTET: chartrunner.xyz/wallet-probe.html fand im Phantom-Browser zwei Wallets ueber reines JS, beide mit solana:signAndSendTransaction. (a) NEU crSigner: Wallet-Standard-Handshake (beide Wege — app-ready fuer bereits vorhandene Wallets, register-wallet fuer spaetere), Auswahl, Verbinden, Signieren. (b) ABGRENZUNG: crWallet bleibt die IDENTITAET (welche Adresse, welche Spielstand-Partition), crSigner ist die FAEHIGKEIT. Bei Erfolg meldet crSigner an crWallet.setConnected() — zwei Wallet-Wahrheiten waeren derselbe Fehler wie zwei Order-Instanzen. (c) Phantom registriert sich MEHRFACH unter gleichem Namen (Solana, Sui). Ausgewaehlt wird nur, wer eine solana:-Kette UND eine Signier-Faehigkeit hat. (d) DEVNET IST DIE VORGABE. Mainnet nur, wenn es dasteht: eine Vorgabe, die im Zweifel echtes Geld bewegt, ist keine Vorgabe sondern eine Falle. Nicht unterstuetzte Netze werden VOR der Wallet-Abfrage abgefangen. (e) base58 und base64 von Hand, weil keine Bibliothek erlaubt ist — gegen bekannte Vektoren geprueft (Hello World!, fuehrende Nullbytes, Uebertrag bei 58). (f) Fehler bleiben unterscheidbar: rejected (Nutzer bricht ab) ist KEIN sign-failed, und „Erfolg ohne Signatur" wird nicht als Erfolg ausgegeben. (g) KEIN HINTERGRUNDBETRIEB — der Handshake laeuft einmal beim Laden (zwei window-Ereignisse, kein Netz), alles Weitere nur auf Anforderung. Nach v1.0.867 waere alles andere ein Rueckfall. Noch nichts signiert im Spiel: es fehlt die Gegenseite, die eine Transaktion baut. Spiellogik, Rendering und Abilities unberuehrt.
+     CURRENT VERSION: v1.0.869
+     LAST UPDATED:    2026-08-22  ·  v1.0.869: DER SIGNIERWEG IST GESCHLOSSEN — DEVNET-PROBE IM WALLET-PICKER. v1.0.868 brachte crSigner (Wallet finden, verbinden, serialisierte Bytes signieren lassen), es fehlte die Gegenseite, die eine Transaktion BAUT. Die steht jetzt als eigener Worker. (a) NEU crTxApi: duenne Anbindung an chartrunner-tx. Der Client baut KEINE Solana-Transaktion — das braeuchte web3.js und damit einen Build-Schritt. Der Worker haelt die Bibliothek, das Spiel bleibt eine Datei. Der Worker signiert NIE und haelt keinen Schluessel; braeuchte er einen, waere das Design falsch geworden. (b) NEU Devnet-Probe im Wallet-Picker: Worker baut ein Memo -> base64 -> crSigner -> Wallet -> Kette -> Signatur mit Explorer-Link. Ein MEMO, weil Jupiter kein Devnet kennt (die Quote-API hat keinen Cluster-Parameter: es gibt genau ein Netz, und das ist Mainnet). Die FORM ist dieselbe wie beim Swap — bauen, signieren, senden, Signatur melden — nur ohne einen Cent Risiko. Wer diesen Weg beweist, hat alles bewiesen ausser dem Swap selbst. (c) „MORE WALLETS" WIRD EHRLICH: die Zeile sprang bisher nach /solana-connect/ — also genau der Umweg, den P2.2 abgewaehlt hat. Mit crSigner ist der Wallet Standard in DIESER Seite erreichbar; der Sprung bleibt nur als Rueckfallebene, wenn hier nichts gefunden wird (Safari ohne Erweiterung). Die Zeile nennt jetzt die tatsaechlich gefundenen Wallets. (d) Die Probe erscheint NUR, wenn eine Wallet verbunden ist UND signieren kann — sonst waere es ein Knopf, der beim Tippen erklaeren muesste, warum er nichts tut. (e) FEHLER MIT NAECHSTEM SCHRITT STATT NUR MIT NAMEN: der tx-Worker meldete beim ersten Live-Aufruf rpc_ok:false (HTTP 403 vom Solana-Knoten). Dieser Fall ist derzeit der WAHRSCHEINLICHSTE, nicht der exotische, und sagt jetzt „Serverproblem, nicht deines" statt einer Fehlernummer. Dazu: abgelaufener Blockhash wird an der gemessenen Wartezeit erkannt und im Klartext benannt, statt die kryptische Wallet-Meldung durchzureichen. Abbruch durch den Nutzer sagt „es wurde nichts gesendet". (f) Kein Hintergrundbetrieb: der Worker wird nur auf Tippen angerufen. Spiellogik, Rendering und Abilities unberuehrt.
+     PREV  ·  v1.0.868: P2.2 ENTSCHIEDEN — SIGNIERT WIRD IM SPIEL, UND ES KOSTET DIE EINZELDATEI-REGEL NICHT. Der Plan sah einen Build-Schritt vor (@solana/web3.js + Wallet-Adapter), also das Ende von „alles inline". Falsch gerechnet: der Wallet Standard definiert solana:signAndSendTransaction mit `transaction: Uint8Array` — SERIALISIERTEN BYTES, nicht einem web3.js-Objekt. Jupiters /swap liefert die Transaktio
      PREV  ·  v1.0.867: REQUEST-DIAET — DAS SPIEL HAT SEIN EIGENES WORKER-BUDGET VERBRANNT. Cloudflare meldete 90% des Tageslimits (100.000 Requests/Tag). Verdaechtigt wurde zuerst die Helius-Ingestion; gemessen wurde dann das Spiel selbst — EIN offener Tab, Terminal NIE geoeffnet, erzeugte rund 170.000 Worker-Requests/Tag und riss das Limit im Alleingang. (a) URSACHE: der crTerm-Herzschlag (setInterval(_tick,1
      PREV  ·  v1.0.866: PHASE-2-VORARBEIT — ECHTE HANDELSKURSE LESEN (P2·0) + POSITIONEN/ERGEBNIS AUS DEM EIGENEN INDEX (P2·1). Beides bewusst OHNE Signatur: kein Wallet-Connect, keine Transaktion, kein Risiko. Der Zweck ist, die zwei Zahlen ins Spiel zu holen, die zwischen einem simulierten und einem echten Ergebnis stehen. (a) NEU crQuote (P2·0): fragt bei Jupiter, was ein Swap KOSTEN würde — erwarteter Erlös
      PREV  ·  v1.0.760: ALERT ENGINE — MAPS + LASER. (1) MAP BINDING: alerts can belong to a saved on-chain map. The create-form has a Map select that auto-defaults to the currently-loaded map (game.currentMapId) and is changeable (incl. "Global (keine Map)"). A filter dropdown above the list follows whichever map is loaded so a map and its alerts travel together; checking stays ALWAYS active regardless of the loaded map (map only groups/filters the view). Rule schema gains mapId/mapName; synced to Supabase via new p_map_id/p_map_name params (needs the incremental cr_alerts ALTER migration). (2) LASER IN ONE LIST: the hotkey-4 chart-alarm laser alarms (window.crAlarm, session-only) are now managed in the Alerts tab alongside standing alerts — condition line + ARMED/FIRED/OFF state + pause/re-arm/anchor-on-chain/delete, driven by crAlarm.toggle/rearm/anchor/remove(id). Laser alarms are filtered by the same map dropdown via their anchorMapId. Fired laser events already showed in the shared Verlauf log.
@@ -15729,8 +15730,13 @@ window.crWallet = (function(){
       + '<div class="wpRows">'
       + '<button type="button" data-cr-wallet-choice="runner"><span class="wpNm">Runner Wallet</span><span class="wpSub">Extension signer, encrypted key, devnet proof queue.</span></button>'
       + '<button type="button" data-cr-wallet-choice="browser"><span class="wpNm">Browser Wallet</span><span class="wpSub">Use injected Phantom / Backpack / Solflare provider.</span></button>'
-      + '<button type="button" data-cr-wallet-choice="bridge"><span class="wpNm">More wallets</span><span class="wpSub">Open the Wallet Standard picker via /solana-connect.</span></button>'
+      + '<button type="button" data-cr-wallet-choice="bridge"><span class="wpNm">More wallets</span><span class="wpSub" id="crWpBridgeSub">Open the Wallet Standard picker via /solana-connect.</span></button>'
+      // v1.0.869 — Devnet-Probe. Erscheint nur, wenn eine Wallet verbunden ist
+      // UND sie serialisierte Bytes signieren kann. Sonst waere es ein Knopf,
+      // der beim Tippen erklaeren muesste, warum er nichts tut.
+      + '<button type="button" data-cr-wallet-choice="devnet" id="crWpDevnetBtn" style="display:none"><span class="wpNm">Devnet-Probe</span><span class="wpSub">Baut ein Memo, laesst es signieren, zeigt die Signatur. Kein Geld, kein Handel.</span></button>'
       + '</div>'
+      + '<p id="crWalletPickerProbe" style="display:none"></p>'
       + '<div class="wpFoot">'
       + '<button type="button" data-cr-wallet-choice="disconnect">Disconnect</button>'
       + '<button type="button" data-cr-wallet-choice="close">Close</button>'
@@ -15743,7 +15749,24 @@ window.crWallet = (function(){
       var choice = btn.getAttribute('data-cr-wallet-choice');
       if (choice === 'close') { _walletPickerClose(); return; }
       if (choice === 'disconnect') { disconnect(); _walletPickerClose(); return; }
-      if (choice === 'bridge') { _walletPickerClose(); _legacyConnect(); return; }
+      // v1.0.869 — „More wallets" wird ehrlich. Bis hierher sprang die Zeile
+      // nach /solana-connect/ — also genau der Umweg, den P2·2 abgewaehlt hat.
+      // Mit crSigner ist der Wallet Standard in DIESER Seite erreichbar. Der
+      // Sprung bleibt nur als Rueckfallebene, wenn hier nichts gefunden wird
+      // (z. B. Safari ohne Erweiterung).
+      if (choice === 'bridge') {
+        var found = [];
+        try { found = (window.crSigner && crSigner.list()) || []; } catch(_){}
+        if (!found.length) { _walletPickerClose(); _legacyConnect(); return; }
+        _probeSay('Verbinde …');
+        crSigner.connect().then(function(res){
+          if (res && res.address) { _walletPickerRender(); _probeSay('Verbunden: ' + res.wallet + ' · ' + res.address.slice(0,4) + '…' + res.address.slice(-4)); }
+          else if (res && res.error === 'rejected') _probeSay('Abgebrochen — nichts passiert.');
+          else _probeSay('Nicht verbunden: ' + ((res && res.error) || 'unbekannt'));
+        });
+        return;
+      }
+      if (choice === 'devnet') { _runDevnetProbe(); return; }
       if (choice === 'runner') {
         selectRunnerWallet().then(function(ok){
           if (ok) _walletPickerClose();
@@ -15775,15 +15798,105 @@ window.crWallet = (function(){
       if (nm) nm.textContent = browserProvider ? _browserWalletName(browserProvider) : 'Browser Wallet';
     }
     if (disconnectBtn) disconnectBtn.disabled = !isConnected();
+    // v1.0.869 — Wallet Standard in dieser Seite? Dann sagt die Zeile das auch.
+    try {
+      var std = (window.crSigner && crSigner.list()) || [];
+      var sub = m.querySelector('#crWpBridgeSub');
+      if (sub) sub.textContent = std.length
+        ? ('Hier verbinden — gefunden: ' + std.map(function(w){ return w.name; }).join(', '))
+        : 'Keine Wallet in dieser Seite gefunden — oeffnet /solana-connect.';
+      var dv = m.querySelector('#crWpDevnetBtn');
+      // Nur zeigen, wenn eine Wallet verbunden ist UND signieren kann.
+      var sig = (window.crSigner && crSigner.info()) || null;
+      if (dv) dv.style.display = (sig && sig.ready) ? '' : 'none';
+    } catch(_){}
     if (state) {
       state.textContent = isConnected()
         ? ('Connected with ' + (adapter() || 'Wallet') + ': ' + truncated())
         : 'Pick the signer for this ChartRunner session. One wallet is active at a time.';
     }
   }
+  /* ── v1.0.869 · Devnet-Probe ────────────────────────────────────────────
+   * Der erste vollstaendige Durchlauf des neuen Signierwegs:
+   *
+   *   Worker baut Memo → base64 → crSigner → Wallet → Kette → Signatur
+   *
+   * Ein Memo, weil Jupiter kein Devnet kennt (die Quote-API hat keinen
+   * Cluster-Parameter — es gibt genau ein Netz, und das ist Mainnet). Die
+   * FORM ist dieselbe wie beim Swap: bauen, signieren, senden, Signatur
+   * melden. Nur ohne einen Cent Risiko. Wer diesen Weg beweist, hat alles
+   * bewiesen ausser dem Swap selbst. */
+  function _probeSay(html, cls){
+    var p = document.getElementById('crWalletPickerProbe');
+    if (!p) return;
+    p.style.display = '';
+    p.innerHTML = html;
+    p.className = cls || '';
+  }
+  var _probeBusy = false;
+  function _runDevnetProbe(){
+    if (_probeBusy) return;
+    if (!window.crSigner || !window.crTxApi) { _probeSay('Signierweg nicht geladen.'); return; }
+    var sig = crSigner.info();
+    if (!sig || !sig.ready) { _probeSay('Erst eine Wallet verbinden, die signieren kann.'); return; }
+    _probeBusy = true;
+    var addr = sig.connected && sig.connected.address;
+    _probeSay('Baue die Transaktion …');
+
+    crTxApi.memo(addr, 'ChartRunner devnet · Probe').then(function(built){
+      if (built.error){
+        _probeBusy = false;
+        // Die Fehlerfaelle, die hier WIRKLICH vorkommen — jeder mit dem
+        // naechsten Schritt, nicht nur mit einem Namen.
+        if (built.error === 'rpc-down')
+          return _probeSay('Der Worker erreicht seinen Solana-Knoten nicht (' + (built.detail || 'RPC') + '). Nichts wurde gebaut — das ist ein Serverproblem, nicht deines.');
+        if (built.error === 'offline')
+          return _probeSay('Der Worker ist nicht erreichbar. Netz pruefen und noch einmal.');
+        if (built.error === 'not-deployed')
+          return _probeSay('Den Endpunkt gibt es dort nicht. Ist der tx-Worker deployt?');
+        return _probeSay('Konnte nicht gebaut werden: ' + built.error + (built.detail ? ' · ' + built.detail : ''));
+      }
+
+      // v1.0.869 — 200 OK ist kein Beweis, dass etwas drin ist. Ohne diese
+      // Pruefung ginge `undefined` an die Wallet und der Nutzer saehe „bad-tx"
+      // statt zu erfahren, dass der Worker nichts geliefert hat. Dieselbe
+      // Klasse wie „Erfolg ohne Signatur" beim Signieren.
+      if(typeof built.transaction !== 'string' || !built.transaction){
+        _probeBusy = false;
+        return _probeSay('Der Worker meldete Erfolg, lieferte aber keine Transaktion. Nichts wurde signiert.');
+      }
+      var builtAt = Date.now();
+      var ttl = Number(built.expires_in_s || 0);
+      _probeSay('Transaktion gebaut. Deine Wallet fragt gleich nach — bitte bestaetigen.');
+
+      return crSigner.signAndSend(built.transaction, { chain: 'solana:devnet' }).then(function(res){
+        _probeBusy = false;
+        if (res.error === 'rejected')
+          return _probeSay('Abgebrochen. Es wurde nichts gesendet.');
+        if (res.error){
+          // Ein abgelaufener Blockhash ist der haeufigste Fall und sieht in
+          // der Wallet kryptisch aus. Wenn die Zeit dafuer reicht, sagen wir
+          // es im Klartext statt die Wallet-Meldung durchzureichen.
+          var waited = (Date.now() - builtAt) / 1000;
+          if (ttl && waited > ttl)
+            return _probeSay('Zu lange gewartet — die Transaktion war nach ' + ttl + 's nicht mehr gueltig. Einfach noch einmal.');
+          return _probeSay('Nicht signiert: ' + res.error + (res.detail ? ' · ' + res.detail : ''));
+        }
+        var s = res.signature;
+        _probeSay('Signiert und gesendet.<br>'
+          + '<a href="https://explorer.solana.com/tx/' + encodeURIComponent(s) + '?cluster=devnet" target="_blank" rel="noopener">'
+          + s.slice(0, 8) + '…' + s.slice(-8) + ' im Explorer ansehen</a>');
+      });
+    }).catch(function(e){
+      _probeBusy = false;
+      _probeSay('Unerwarteter Fehler: ' + String((e && e.message) || e));
+    });
+  }
+
   function openWalletPicker(){
     _walletPickerEnsure();
     _walletPickerRender();
+    try { var p = document.getElementById('crWalletPickerProbe'); if(p){ p.style.display = 'none'; p.innerHTML = ''; } } catch(_){}
     var m = document.getElementById('crWalletPickerModal');
     if (!m) return;
     m.classList.add('on');
@@ -16142,6 +16255,62 @@ window.crSigner = (function(){
     _b64ToBytes: b64ToBytes,
     _bytesToB58: bytesToB58
   };
+})();
+
+/* =========================================================================
+ * crTxApi — die Gegenseite zu crSigner (v1.0.869).
+ *
+ * Der Client baut keine Solana-Transaktion. Er kann es nicht (das braeuchte
+ * @solana/web3.js und damit einen Build-Schritt) und er soll es auch nicht:
+ * dieser Worker haelt die Bibliothek, das Spiel bleibt eine Datei.
+ *
+ *   Spiel ──Auftrag──▶ Worker ──baut──▶ base64 ──▶ Spiel ──Bytes──▶ Wallet
+ *
+ * Der Worker signiert NIE und haelt keinen Schluessel. Wenn er jemals einen
+ * braeuchte, waere das Design falsch geworden.
+ * ========================================================================= */
+const CR_TX_API = 'https://chartrunner-tx.jsg-951.workers.dev';
+
+window.crTxApi = (function(){
+  'use strict';
+
+  function _post(path, body){
+    return fetch(CR_TX_API + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(r){
+      if(r.status === 404) return { error: 'not-deployed' };
+      return r.json().then(function(j){
+        if(r.ok && j && j.ok !== false) return j;
+        // Der Worker meldet einen kaputten RPC ehrlich statt still zu
+        // scheitern — dieser Fall bekommt deshalb einen eigenen Namen.
+        if(j && (j.rpc_ok === false || /rpc/i.test(String(j.error || ''))))
+          return { error: 'rpc-down', detail: j.rpc_note || j.error || '' };
+        return { error: (j && j.error) || ('http-' + r.status), detail: (j && j.note) || '' };
+      }).catch(function(){ return { error: 'http-' + r.status }; });
+    }).catch(function(){ return { error: 'offline' }; });
+  }
+
+  /* memo(payer, text) → { transaction (base64, UNSIGNIERT), expires_in_s, … } */
+  function memo(payer, text){
+    if(!payer) return Promise.resolve({ error: 'no-payer' });
+    return _post('/v1/tx/memo', {
+      payer: String(payer),
+      text: String(text || 'ChartRunner devnet').slice(0, 200),
+      // Netz wird IMMER mitgeschickt, nie stillschweigend angenommen —
+      // dieselbe Regel wie in crSigner.
+      cluster: 'devnet'
+    });
+  }
+
+  function health(){
+    return fetch(CR_TX_API + '/health?_=' + Date.now())
+      .then(function(r){ return r.json(); })
+      .catch(function(){ return { ok: false, error: 'offline' }; });
+  }
+
+  return { memo: memo, health: health };
 })();
 
 /* =========================================================================
