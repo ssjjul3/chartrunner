@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.870
-     LAST UPDATED:    2026-08-22  ·  v1.0.870: DIE KETTE IST DIE INSTANZ, NICHT DER RUECKGABEWERT. Anlass ist ein echter Vorfall: der erste Devnet-Durchlauf meldete im Spiel „Signiert und gesendet", waehrend der Explorer zur selben Zeit „Not Found" zeigte. Sechs Minuten lang gab es keine Moeglichkeit zu wissen, was stimmt — BEIDES war falsch beschriftet, nicht nur eines. (Aufgeloest hat es sich: die Transaktion lief, Status Success, 22 Bestaetigungen; der Explorer hatte nur noch nicht indexiert.) (a) DER FEHLER IM DENKEN: eine Signatur entsteht, sobald die Wallet SIGNIERT hat. Sie beweist nicht, dass die Transaktion ausgefuehrt wurde — und schon gar nicht, dass sie ERFOLGREICH war. Eine Transaktion kann landen UND scheitern. Wer nur prueft „ist sie da", meldet genau dann Erfolg, wenn Geld weg ist und nichts passiert ist. (b) NEU crTxApi.status(): fragt ueber den Worker getSignatureStatuses ab. (c) Die Probe pollt nach dem Signieren bis zu 30s und beschriftet nur, was bekannt ist: „Gesendet, warte auf Bestaetigung" -> „Bestaetigt · n Bestaetigungen" ODER „Auf der Kette FEHLGESCHLAGEN: <err>" ODER „nach 30s noch nicht bestaetigt — das heisst NICHT, dass sie gescheitert ist". (d) Ist der Statusdienst selbst nicht erreichbar, sagt das NICHTS ueber die Transaktion und erscheint deshalb nicht als Fehlschlag. (e) Der Explorer-Link steht ab der ersten Sekunde bereit — man kann waehrend des Wartens selbst nachsehen; nur die Beschriftung darueber aendert sich. Das Polling ist gedeckelt (15 Versuche à 2s), laeuft nur nach einer ausdruecklichen Aktion und stoppt bei jedem Endzustand — keine Rueckkehr zur Dauerlast aus v1.0.867. Spiellogik, Rendering und Abilities unberuehrt.
+     CURRENT VERSION: v1.0.871
+     LAST UPDATED:    2026-08-22  ·  v1.0.871: DAS NETZ DER WALLET IST NICHT DAS NETZ DER TRANSAKTION. Der erste Devnet-Durchlauf lief gegen eine Phantom-Instanz im MAINNET-Modus: wir haben devnet angefragt, die Wallet hat anstandslos SIGNIERT, und die Transaktion landete nirgends. Das Spiel meldete „gesendet". Eine Signatur entsteht beim Signieren — sie sagt nichts darueber, ob das Netz ueberhaupt zusammenpasst. (a) EIGENE FRUEHERE ENTSCHEIDUNG KORRIGIERT: v1.0.868 pruefte das Netz gegen die VEREINIGUNG aus Wallet- und Konto-Ebene, weil eine zu enge Konto-Angabe sonst Mainnet faelschlich blockiert haette. Halb richtig — die Konto-Ebene ist keine laestige Einschraenkung, sondern die beste Auskunft darueber, wo die Wallet GERADE steht. Die Loesung ist keins von beidem: nicht ignorieren, nicht hart sperren, sondern BENENNEN mit dem naechsten Schritt. (b) NEU crSigner.chainReady(chain) + active() liefert accountChains und walletChains getrennt: was die Wallet KANN und wo sie STEHT sind zwei Fragen. (c) Die Devnet-Probe prueft das Netz VOR dem Bauen und sagt im Klartext: „Deine Wallet steht auf mainnet, die Probe braucht devnet … In Phantom: Einstellungen -> Entwickler-Einstellungen -> Testnet-Modus". Es wird dann weder gebaut noch signiert. (d) Der Wallet-Picker zeigt das Netz laut Wallet dauerhaft an — beim Umschalten in Phantom aendert sich die Zeile sichtbar. Meldet die Wallet ihr Netz nicht, steht dort „Netz unbekannt" und keine Vermutung. (e) EHRLICHE GRENZE: nicht jede Wallet meldet ihr aktuelles Netz. Deshalb bleibt das ein HINWEIS, keine Garantie — die eigentliche Absicherung ist und bleibt die Bestaetigung durch die Kette aus v1.0.870. Spiellogik, Rendering und Abilities unberuehrt.
+     PREV  ·  v1.0.870: DIE KETTE IST DIE INSTANZ, NICHT DER RUECKGABEWERT. Anlass ist ein echter Vorfall: der erste Devnet-Durchlauf meldete im Spiel „Signiert und gesendet", waehrend der Explorer zur selben Zeit „Not Found" zeigte. Sechs Minuten lang gab es keine Moeglichkeit zu wissen, was stimmt — BEIDES war falsch beschriftet, nicht nur eines. (Aufgeloest hat es sich: die Transaktion lief, Status Success, 
      PREV  ·  v1.0.869: DER SIGNIERWEG IST GESCHLOSSEN — DEVNET-PROBE IM WALLET-PICKER. v1.0.868 brachte crSigner (Wallet finden, verbinden, serialisierte Bytes signieren lassen), es fehlte die Gegenseite, die eine Transaktion BAUT. Die steht jetzt als eigener Worker. (a) NEU crTxApi: duenne Anbindung an chartrunner-tx. Der Client baut KEINE Solana-Transaktion — das braeuchte web3.js und damit einen Build-Schri
      PREV  ·  v1.0.868: P2.2 ENTSCHIEDEN — SIGNIERT WIRD IM SPIEL, UND ES KOSTET DIE EINZELDATEI-REGEL NICHT. Der Plan sah einen Build-Schritt vor (@solana/web3.js + Wallet-Adapter), also das Ende von „alles inline". Falsch gerechnet: der Wallet Standard definiert solana:signAndSendTransaction mit `transaction: Uint8Array` — SERIALISIERTEN BYTES, nicht einem web3.js-Objekt. Jupiters /swap liefert die Transaktio
      PREV  ·  v1.0.867: REQUEST-DIAET — DAS SPIEL HAT SEIN EIGENES WORKER-BUDGET VERBRANNT. Cloudflare meldete 90% des Tageslimits (100.000 Requests/Tag). Verdaechtigt wurde zuerst die Helius-Ingestion; gemessen wurde dann das Spiel selbst — EIN offener Tab, Terminal NIE geoeffnet, erzeugte rund 170.000 Worker-Requests/Tag und riss das Limit im Alleingang. (a) URSACHE: der crTerm-Herzschlag (setInterval(_tick,1
@@ -15812,8 +15813,21 @@ window.crWallet = (function(){
       if (dv) dv.style.display = (sig && sig.ready) ? '' : 'none';
     } catch(_){}
     if (state) {
+      // v1.0.871 — das Netz laut Wallet dazuschreiben. Kostet eine Zeile und
+      // macht den Unterschied sichtbar, der uns einen Vormittag gekostet hat:
+      // eine Wallet auf Mainnet signiert eine Devnet-Transaktion anstandslos,
+      // und die landet dann nirgends. Meldet die Wallet ihr Netz nicht, steht
+      // hier „Netz unbekannt" — nicht etwa eine Vermutung.
+      var netzTxt = '';
+      try {
+        var a = (window.crSigner && crSigner.active()) || null;
+        if (a) {
+          var ch = (a.accountChains || []).map(function(c){ return String(c).replace('solana:', ''); });
+          netzTxt = ch.length ? ('  ·  Netz: ' + ch.join(', ')) : '  ·  Netz unbekannt';
+        }
+      } catch(_){}
       state.textContent = isConnected()
-        ? ('Connected with ' + (adapter() || 'Wallet') + ': ' + truncated())
+        ? ('Connected with ' + (adapter() || 'Wallet') + ': ' + truncated() + netzTxt)
         : 'Pick the signer for this ChartRunner session. One wallet is active at a time.';
     }
   }
@@ -15912,6 +15926,16 @@ window.crWallet = (function(){
     if (!window.crSigner || !window.crTxApi) { _probeSay('Signierweg nicht geladen.'); return; }
     var sig = crSigner.info();
     if (!sig || !sig.ready) { _probeSay('Erst eine Wallet verbinden, die signieren kann.'); return; }
+    // v1.0.871 — Netz VOR dem Bauen pruefen. Sonst signiert die Wallet
+    // brav eine Transaktion fuer ein Netz, auf dem sie gar nicht steht, und
+    // liefert eine Signatur fuer etwas, das nirgends landet.
+    var netz = crSigner.chainReady('solana:devnet');
+    if (!netz.ok && netz.reason === 'wrong-network') {
+      return _probeSay('Deine Wallet steht auf <b>' + netz.on.join(', ').replace(/solana:/g, '')
+        + '</b>, die Probe braucht <b>devnet</b>. Sie wuerde zwar signieren — die Transaktion '
+        + 'landete aber nirgends.<br>In Phantom umschalten: Einstellungen → '
+        + 'Entwickler-Einstellungen → <b>Testnet-Modus</b> ein, darunter <b>Solana Devnet</b>.');
+    }
     _probeBusy = true;
     var addr = sig.connected && sig.connected.address;
     _probeSay('Baue die Transaktion …');
@@ -16229,7 +16253,43 @@ window.crSigner = (function(){
 
   function active(){
     if(!_active) return null;
-    return { address: _active.account.address, wallet: _active.wallet.name || '' };
+    // v1.0.871 — die Netze des KONTOS mitgeben, getrennt von denen der Wallet.
+    // Die Wallet-Ebene sagt, was sie grundsaetzlich KANN; die Konto-Ebene, wo
+    // sie gerade STEHT. Der Unterschied hat einen ganzen Vormittag gekostet.
+    var accChains = [];
+    try { accChains = (_active.account.chains || []).slice(); } catch(_){}
+    return {
+      address: _active.account.address,
+      wallet: _active.wallet.name || '',
+      accountChains: accChains,
+      walletChains: _chains(_active.wallet)
+    };
+  }
+
+  /* v1.0.871 — chainReady(chain): steht die Wallet auf dem verlangten Netz?
+   *
+   * Anlass: der erste Devnet-Durchlauf lief gegen eine Phantom-Instanz im
+   * Mainnet-Modus. Wir haben devnet ANGEFRAGT, die Wallet hat SIGNIERT, und
+   * die Transaktion landete nirgends. Das Spiel meldete „gesendet".
+   *
+   * In v1.0.868 hatte ich die Netzpruefung bewusst auf die VEREINIGUNG aus
+   * Wallet- und Konto-Netzen gestellt, weil eine zu enge Konto-Angabe sonst
+   * Mainnet faelschlich blockiert haette. Das war halb richtig: die
+   * Konto-Ebene ist keine Einschraenkung, die man wegoptimiert — sie ist die
+   * beste Auskunft darueber, wo die Wallet GERADE steht.
+   *
+   * Die Loesung ist keins von beidem. Nicht ignorieren, nicht hart sperren:
+   * BENENNEN, mit dem naechsten Schritt. Und weil manche Wallets ihr aktuelles
+   * Netz gar nicht melden, bleibt das ein Hinweis und keine Garantie — die
+   * eigentliche Absicherung ist die Bestaetigung durch die Kette (v1.0.870). */
+  function chainReady(chain){
+    if(!_active) return { ok: false, reason: 'not-connected' };
+    var want = chain || 'solana:devnet';
+    var acc = [];
+    try { acc = _active.account.chains || []; } catch(_){}
+    if(!acc.length) return { ok: true, unknown: true };   // Wallet sagt nichts — dann wissen wir nichts
+    if(acc.indexOf(want) !== -1) return { ok: true };
+    return { ok: false, reason: 'wrong-network', want: want, on: acc.slice() };
   }
 
   /* ── Signieren ─────────────────────────────────────────────────────── */
@@ -16320,6 +16380,7 @@ window.crSigner = (function(){
     connect: connect,
     disconnect: disconnect,
     active: active,
+    chainReady: chainReady,
     signAndSend: signAndSend,
     info: info,
     // Für Tests und Fehlersuche — die Kodierung ist von Hand geschrieben und

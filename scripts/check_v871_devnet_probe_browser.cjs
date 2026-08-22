@@ -1,4 +1,4 @@
-/* Smoke-Verifikation fuer die Devnet-Probe (v1.0.869 Weg, v1.0.870 Bestaetigung).
+/* Smoke-Verifikation fuer die Devnet-Probe (v869 Weg, v870 Bestaetigung, v871 Netz).
  *
  * Der wichtigste Fall hier ist NICHT der gute. Es ist der, in dem eine
  * Transaktion LANDET UND SCHEITERT: wer nur prueft „ist sie auf der Kette",
@@ -8,7 +8,7 @@
  * der Explorer sagte zur selben Zeit „Not Found". Sechs Minuten lang war
  * nicht feststellbar, was stimmt — beides war falsch beschriftet.
  *
- * Aufruf:  npm i playwright && node scripts/check_v870_devnet_probe_browser.cjs
+ * Aufruf:  npm i playwright && node scripts/check_v871_devnet_probe_browser.cjs
  * Bewusst nicht in ci.yml — der CI-Job hat keinen Browser.
  */
 const fs = require('node:fs');
@@ -34,12 +34,15 @@ function launchOptions(){
 }
 
 function mockWallet(){
+  // Das Konto meldet, wo die Wallet GERADE steht — umschaltbar wie der
+  // Testnet-Modus in Phantom. Die Wallet-Ebene kann beides.
   const acct = { address: 'CRtestWa11etAddre55111111111111111111111111',
                  chains: ['solana:devnet'], features: [] };
+  window.__setWalletNetwork = n => { acct.chains = [n]; };
   window.__signCalls = [];
   const w = {
     name: 'MockPhantom', version: '1.0.0', icon: '',
-    chains: ['solana:devnet'], accounts: [acct],
+    chains: ['solana:devnet', 'solana:mainnet'], accounts: [acct],
     features: {
       'standard:connect': { version: '1.0.0', connect: async () => ({ accounts: [acct] }) },
       'solana:signAndSendTransaction': { version: '1.0.0',
@@ -126,8 +129,8 @@ function mockWallet(){
     let n; while((n = it.nextNode())) if(/CURRENT VERSION:/.test(n.nodeValue)) return n.nodeValue;
     return ''; });
   const bv = (banner.match(/CURRENT VERSION:\s*v(\d+)\.(\d+)\.(\d+)/) || []).slice(1).map(Number);
-  check('Banner meldet mindestens v1.0.870',
-    bv.length === 3 && (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 870)))),
+  check('Banner meldet mindestens v1.0.871',
+    bv.length === 3 && (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 871)))),
     banner.slice(0, 70));
   check('window.crTxApi existiert', await page.evaluate(() => !!(window.crTxApi && crTxApi.memo)));
 
@@ -176,6 +179,7 @@ function mockWallet(){
   check('leere Antwort wird benannt, nicht an die Wallet weitergereicht',
     /keine Transaktion/.test(await probeText()), await probeText());
 
+  const memoBefore0 = memoCalls().length;
   console.log('\n-- Der gute Fall: bestaetigt --');
   txMode = 'ok'; stMode = 'ok';
   await tap('devnet'); t = await settle();
@@ -197,6 +201,22 @@ function mockWallet(){
   check('payer ist die verbundene Adresse', /^CRtestWa11et/.test(body.payer || ''), body.payer);
   check('Memo geht per POST, nicht GET',
     memoCalls()[memoCalls().length - 1].method === 'POST');
+
+  console.log('\n-- Wallet steht auf dem falschen Netz --');
+  // Der echte Vorfall: Phantom stand auf Mainnet, wir haben devnet angefragt,
+  // die Wallet hat SIGNIERT und die Transaktion landete nirgends.
+  const signsBefore = await page.evaluate(() => window.__signCalls.length);
+  const memoBefore = memoCalls().length;
+  await page.evaluate(() => window.__setWalletNetwork('solana:mainnet'));
+  await tap('devnet'); await page.waitForTimeout(600);
+  t = await probeText();
+  check('falsches Netz wird VOR dem Signieren erkannt',
+    /Wallet steht auf/.test(t) && /mainnet/.test(t), t);
+  check('nennt den konkreten Handgriff in Phantom', /Testnet-Modus/.test(t), t);
+  check('es wurde NICHT signiert',
+    (await page.evaluate(() => window.__signCalls.length)) === signsBefore);
+  check('und auch nichts gebaut', memoCalls().length === memoBefore);
+  await page.evaluate(() => window.__setWalletNetwork('solana:devnet'));
 
   console.log('\n-- Gelandet UND gescheitert (der gefaehrlichste Fall) --');
   stMode = 'failed';
