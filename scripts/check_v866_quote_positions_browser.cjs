@@ -41,7 +41,13 @@ function launchOptions() {
   await page.route('**://**', route => (route.request().url().startsWith('file:') ? route.continue() : route.abort('failed')));
 
   const jupHits = [];
-  await page.route('**quote-api.jup.ag/**', async route => {
+  /* v1.0.877 — Muster auf die Host-FAMILIE, nicht auf einen einzelnen Host.
+   * Vorher stand hier '**quote-api.jup.ag/**'. Als der Client auf lite-api
+   * umzog, traf das Muster nicht mehr, der Catch-all brach die Anfrage ab und
+   * crQuote meldete korrekt 'offline' — vier Zeilen wurden rot, ohne dass am
+   * Verhalten von crQuote irgendetwas falsch war. Ein Test soll pruefen, WAS
+   * herauskommt, nicht WO es herkommt. */
+  await page.route('**jup.ag/**', async route => {
     const url = route.request().url();
     jupHits.push(url);
     if (url.includes('MOCK429')) return route.fulfill({ status: 429, contentType: 'application/json', body: '{}' });
