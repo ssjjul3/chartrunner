@@ -1,11 +1,14 @@
-/* Smoke-Verifikation fuer v1.0.869 (Devnet-Probe im Wallet-Picker).
+/* Smoke-Verifikation fuer die Devnet-Probe (v869 Weg, v870 Bestaetigung, v871 Netz).
  *
- * Der Worker ist eine Attrappe — er ist zum Testzeitpunkt live noch nicht
- * einsatzbereit (sein RPC antwortet mit 403). Genau deshalb wird der Fall
- * „Worker meldet sich als nicht bereit" hier mitgeprueft: er ist gerade der
- * WAHRSCHEINLICHSTE, nicht der exotische.
+ * Der wichtigste Fall hier ist NICHT der gute. Es ist der, in dem eine
+ * Transaktion LANDET UND SCHEITERT: wer nur prueft „ist sie auf der Kette",
+ * meldet genau dann Erfolg, wenn Geld weg ist und nichts passiert ist.
  *
- * Aufruf:  npm i playwright && node scripts/check_v869_devnet_probe_browser.cjs
+ * Anlass ist ein echter Vorfall: die Probe meldete „Signiert und gesendet",
+ * der Explorer sagte zur selben Zeit „Not Found". Sechs Minuten lang war
+ * nicht feststellbar, was stimmt — beides war falsch beschriftet.
+ *
+ * Aufruf:  npm i playwright && node scripts/check_v871_devnet_probe_browser.cjs
  * Bewusst nicht in ci.yml — der CI-Job hat keinen Browser.
  */
 const fs = require('node:fs');
@@ -31,12 +34,15 @@ function launchOptions(){
 }
 
 function mockWallet(){
+  // Das Konto meldet, wo die Wallet GERADE steht — umschaltbar wie der
+  // Testnet-Modus in Phantom. Die Wallet-Ebene kann beides.
   const acct = { address: 'CRtestWa11etAddre55111111111111111111111111',
                  chains: ['solana:devnet'], features: [] };
+  window.__setWalletNetwork = n => { acct.chains = [n]; };
   window.__signCalls = [];
   const w = {
     name: 'MockPhantom', version: '1.0.0', icon: '',
-    chains: ['solana:devnet'], accounts: [acct],
+    chains: ['solana:devnet', 'solana:mainnet'], accounts: [acct],
     features: {
       'standard:connect': { version: '1.0.0', connect: async () => ({ accounts: [acct] }) },
       'solana:signAndSendTransaction': { version: '1.0.0',
@@ -63,12 +69,23 @@ function mockWallet(){
   await page.route('**://**', r => r.request().url().startsWith('file:')
     ? r.continue() : r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
 
-  let txMode = 'ok';
+  let txMode = 'ok', stMode = 'ok';
   const txCalls = [];
   await page.route('**chartrunner-tx.jsg-951.workers.dev/**', async route => {
     const req = route.request();
     let body = {}; try { body = JSON.parse(req.postData() || '{}'); } catch(_){}
     txCalls.push({ url: req.url(), method: req.method(), body });
+    // v1.0.870 — Statusabfrage. Modus steuert, was die Kette angeblich sagt.
+    if(/\/v1\/tx\/status/.test(req.url())){
+      if(stMode === 'down')  return route.fulfill({ status: 503, contentType: 'application/json',
+        body: JSON.stringify({ error: 'rpc-down' }) });
+      if(stMode === 'failed') return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ confirmationStatus: 'confirmed', err: { InstructionError: [0, 'Custom'] } }) });
+      if(stMode === 'pending') return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ confirmationStatus: null }) });
+      return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ confirmationStatus: 'confirmed', confirmations: 22 }) });
+    }
     if(txMode === 'rpc')  return route.fulfill({ status: 503, contentType: 'application/json',
       body: JSON.stringify({ ok: false, rpc_ok: false, rpc_note: 'RPC antwortete mit HTTP 403' }) });
     if(txMode === 'gone') return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
@@ -89,6 +106,20 @@ function mockWallet(){
     const p = document.getElementById('crWalletPickerProbe'); return p ? p.textContent : ''; });
   const tap = (choice) => page.evaluate(c => {
     document.querySelector('[data-cr-wallet-choice="' + c + '"]').click(); }, choice);
+  // Die Probe pollt jetzt bis zu 30s. Fest schlafen waere entweder zu kurz
+  // (Test misst einen Zwischenzustand) oder unnoetig lang — also auf einen
+  // ENDZUSTAND warten.
+  const TERMINAL = /Bestaetigt ·|FEHLGESCHLAGEN|nicht abfragen|noch nicht bestaetigt|nichts gesendet|Serverproblem|deployt|nicht erreichbar|keine Transaktion|Zu lange gewartet/;
+  const settle = async (ms = 40000) => {
+    const t0 = Date.now();
+    for(;;){
+      const t = await probeText();
+      if(TERMINAL.test(t)) return t;
+      if(Date.now() - t0 > ms) return t;
+      await page.waitForTimeout(250);
+    }
+  };
+  const memoCalls = () => txCalls.filter(c => /\/v1\/tx\/memo/.test(c.url));
 
   console.log('\n-- Boot --');
   const hard = errs.filter(m => !/Failed to fetch|NetworkError|ERR_FAILED|net::/i.test(m));
@@ -97,9 +128,10 @@ function mockWallet(){
     const it = document.createNodeIterator(document.documentElement, NodeFilter.SHOW_COMMENT);
     let n; while((n = it.nextNode())) if(/CURRENT VERSION:/.test(n.nodeValue)) return n.nodeValue;
     return ''; });
-  check('Banner meldet mindestens v1.0.869',
-    (() => { const v = (banner.match(/v(\d+)\.(\d+)\.(\d+)/) || []).slice(1).map(Number);
-      return v.length === 3 && (v[0] > 1 || v[1] > 0 || v[2] >= 869); })(), banner.slice(0, 70));
+  const bv = (banner.match(/CURRENT VERSION:\s*v(\d+)\.(\d+)\.(\d+)/) || []).slice(1).map(Number);
+  check('Banner meldet mindestens v1.0.871',
+    bv.length === 3 && (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 871)))),
+    banner.slice(0, 70));
   check('window.crTxApi existiert', await page.evaluate(() => !!(window.crTxApi && crTxApi.memo)));
 
   console.log('\n-- Picker vor dem Verbinden --');
@@ -125,8 +157,7 @@ function mockWallet(){
 
   console.log('\n-- Worker nicht einsatzbereit (der aktuelle Live-Zustand) --');
   txMode = 'rpc';
-  await tap('devnet'); await page.waitForTimeout(700);
-  let t = await probeText();
+  await tap('devnet'); let t = await settle();
   check('sagt, dass es am Server liegt, nicht am Nutzer', /Serverproblem, nicht deines/.test(t), t);
   check('nennt den RPC-Grund im Klartext', /403/.test(t), t);
   check('es wurde NICHT zum Signieren aufgefordert',
@@ -134,25 +165,28 @@ function mockWallet(){
 
   console.log('\n-- Worker fehlt / offline --');
   txMode = 'gone';
-  await tap('devnet'); await page.waitForTimeout(700);
+  await tap('devnet'); await settle();
   check('404 → Hinweis auf fehlendes Deploy', /deployt/.test(await probeText()), await probeText());
   txMode = 'dead';
-  await tap('devnet'); await page.waitForTimeout(700);
+  await tap('devnet'); await settle();
   check('Netzfehler → offline, nicht „unbekannt"', /nicht erreichbar/.test(await probeText()), await probeText());
 
   console.log('\n-- 200 ohne Transaktion --');
   // Beim Testschreiben aufgefallen: ohne Pruefung ginge `undefined` an die
   // Wallet und der Nutzer saehe „bad-tx" statt der Wahrheit.
   txMode = 'empty';
-  await tap('devnet'); await page.waitForTimeout(700);
+  await tap('devnet'); await settle();
   check('leere Antwort wird benannt, nicht an die Wallet weitergereicht',
     /keine Transaktion/.test(await probeText()), await probeText());
 
-  console.log('\n-- Der gute Fall --');
-  txMode = 'ok';
-  await tap('devnet'); await page.waitForTimeout(900);
-  t = await probeText();
-  check('meldet signiert und gesendet', /Signiert und gesendet/.test(t), t);
+  const memoBefore0 = memoCalls().length;
+  console.log('\n-- Der gute Fall: bestaetigt --');
+  txMode = 'ok'; stMode = 'ok';
+  await tap('devnet'); t = await settle();
+  check('sagt „bestaetigt" mit Anzahl, nicht nur „gesendet"',
+    /Bestaetigt · 22 Bestaetigungen/.test(t), t);
+  check('behauptet NICHT „signiert und gesendet" als Endzustand',
+    !/^Signiert und gesendet/.test(t), t);
   const link = await page.evaluate(() => {
     const a = document.querySelector('#crWalletPickerProbe a'); return a ? a.getAttribute('href') : ''; });
   check('Explorer-Link zeigt auf DEVNET', /cluster=devnet/.test(link), link);
@@ -162,14 +196,57 @@ function mockWallet(){
   check('an die Wallet ging solana:devnet', sent.chain === 'solana:devnet', sent);
   check('die vier gebauten Bytes kamen an', sent.len === 4, sent);
 
-  const body = txCalls[txCalls.length - 1].body;
+  const body = memoCalls()[memoCalls().length - 1].body;
   check('cluster wird mitgeschickt, nie stillschweigend angenommen', body.cluster === 'devnet', body);
   check('payer ist die verbundene Adresse', /^CRtestWa11et/.test(body.payer || ''), body.payer);
-  check('POST, nicht GET', txCalls[txCalls.length - 1].method === 'POST');
+  check('Memo geht per POST, nicht GET',
+    memoCalls()[memoCalls().length - 1].method === 'POST');
+
+  console.log('\n-- Wallet steht auf dem falschen Netz --');
+  // Der echte Vorfall: Phantom stand auf Mainnet, wir haben devnet angefragt,
+  // die Wallet hat SIGNIERT und die Transaktion landete nirgends.
+  const signsBefore = await page.evaluate(() => window.__signCalls.length);
+  const memoBefore = memoCalls().length;
+  await page.evaluate(() => window.__setWalletNetwork('solana:mainnet'));
+  await tap('devnet'); await page.waitForTimeout(600);
+  t = await probeText();
+  check('falsches Netz wird VOR dem Signieren erkannt',
+    /Wallet steht auf/.test(t) && /mainnet/.test(t), t);
+  check('nennt den konkreten Handgriff in Phantom', /Testnet-Modus/.test(t), t);
+  check('es wurde NICHT signiert',
+    (await page.evaluate(() => window.__signCalls.length)) === signsBefore);
+  check('und auch nichts gebaut', memoCalls().length === memoBefore);
+  await page.evaluate(() => window.__setWalletNetwork('solana:devnet'));
+
+  console.log('\n-- Gelandet UND gescheitert (der gefaehrlichste Fall) --');
+  stMode = 'failed';
+  await tap('devnet'); t = await settle();
+  check('ein Fehlschlag auf der Kette wird NICHT als Erfolg gemeldet',
+    /FEHLGESCHLAGEN/.test(t) && !/Bestaetigt/.test(t), t);
+  check('der Grund von der Kette steht dabei', /InstructionError/.test(t), t);
+
+  console.log('\n-- Statusdienst nicht erreichbar --');
+  stMode = 'down';
+  await tap('devnet'); t = await settle();
+  check('sagt nicht „gescheitert", wenn nur der Status fehlt',
+    !/FEHLGESCHLAGEN/.test(t) && /kann trotzdem gelaufen sein/.test(t), t);
+  check('der Explorer-Link steht trotzdem bereit',
+    await page.evaluate(() => !!document.querySelector('#crWalletPickerProbe a')));
+
+  console.log('\n-- Noch unbestaetigt --');
+  stMode = 'pending';
+  await tap('devnet'); await page.waitForTimeout(1500);
+  t = await probeText();
+  check('waehrend des Wartens steht „warte auf Bestaetigung"',
+    /Warte auf Bestaetigung/.test(t), t);
+  check('und der Link ist schon da, nicht erst am Ende',
+    await page.evaluate(() => !!document.querySelector('#crWalletPickerProbe a')));
+  await settle();   // das ausstehende Polling austrudeln lassen
+  stMode = 'ok';
 
   console.log('\n-- Abbruch und Ablauf --');
   await page.evaluate(() => { window.__signMode = 'reject'; });
-  await tap('devnet'); await page.waitForTimeout(900);
+  await tap('devnet'); await settle();
   check('Abbruch: „es wurde nichts gesendet"', /nichts gesendet/.test(await probeText()), await probeText());
   await page.evaluate(() => { window.__signMode = null; });
 
