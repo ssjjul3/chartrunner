@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.867
-     LAST UPDATED:    2026-08-21  ·  v1.0.867: REQUEST-DIAET — DAS SPIEL HAT SEIN EIGENES WORKER-BUDGET VERBRANNT. Cloudflare meldete 90% des Tageslimits (100.000 Requests/Tag). Verdaechtigt wurde zuerst die Helius-Ingestion; gemessen wurde dann das Spiel selbst — EIN offener Tab, Terminal NIE geoeffnet, erzeugte rund 170.000 Worker-Requests/Tag und riss das Limit im Alleingang. (a) URSACHE: der crTerm-Herzschlag (setInterval(_tick,15000)) lief ueber ALLE 43 Refresher, und _runGlobalRefresher pruefte nur, ob der Pane im DOM EXISTIERT — die Panes stehen im statischen Markup, existieren also immer. Existenz ist nicht Sichtbarkeit. NEU: Gate auf document.visibilityState + tatsaechliche Sichtbarkeit des Panes (offsetParent/getClientRects); bei Rueckkehr zieht visibilitychange + _forceTickForVisiblePanes sofort nach, die Anzeige ist also nicht langsamer. _forceTickForVisiblePanes prueft jetzt ebenfalls Sichtbarkeit — der Name stimmt endlich. (b) NEGATIV-CACHE: _tokFetchLive verliess die Funktion bei leerem Ergebnis VOR dem Cache-Schreiben (if(!entry) return). Fuer Tokens ohne Daten gab es damit gar keine TTL — jeder Painter-Tick (1s/2s/5s) feuerte den vollen 6-fach-Fan-out erneut, inklusive Aufruf an den eigenen ohlc-store. Ein Fehlschlag ist auch ein Ergebnis und wird jetzt 60s behalten; bewusst in einer EIGENEN Map, weil ein Platzhalter in _tokLiveCache von den Renderern als Preis gelesen und als 0 angezeigt wuerde. (c) PYTH REPARIERT: const _tokPythInflight wurde drei Zeilen spaeter beschrieben — TypeError bei JEDEM Aufruf, vom einzigen Aufrufer stumm geschluckt. Der fetch dahinter lief seit v1.0.755 NIE: der Hermes-Proxy bekam keinen Abruf, der Pyth-Preis erschien nie. Jetzt let + Inflight-Verfall nach 15s. TTL 5s -> 30s, denn der Abruf laeuft ueber unseren EIGENEN Worker: bei 5s waere die Reparatur der naechste Brandherd gewesen (~17.000 Abrufe/Tag/Tab). (d) NACHPRUEFBAR STATT BEHAUPTET: scripts/measure_worker_requests.cjs misst die Last eines Tabs mit abgefangenem Netz (nichts geht raus). Gemessen vorher/nachher mit demselben Aufbau: 171.000 -> 11.040 Worker-Requests/Tag/Tab (-94%), Binance 309.000 -> 8.640 (-97%). Der Rest sind Poller ausserhalb des crTerm-Herzschlags. Nichts an Spiellogik, Rendering oder Abilities angefasst.
+     CURRENT VERSION: v1.0.868
+     LAST UPDATED:    2026-08-22  ·  v1.0.868: P2.2 ENTSCHIEDEN — SIGNIERT WIRD IM SPIEL, UND ES KOSTET DIE EINZELDATEI-REGEL NICHT. Der Plan sah einen Build-Schritt vor (@solana/web3.js + Wallet-Adapter), also das Ende von „alles inline". Falsch gerechnet: der Wallet Standard definiert solana:signAndSendTransaction mit `transaction: Uint8Array` — SERIALISIERTEN BYTES, nicht einem web3.js-Objekt. Jupiters /swap liefert die Transaktion genau so (base64). Der Client braucht also nur atob() und die Schnittstelle, die die Wallets ohnehin ins window legen. GEMESSEN STATT VERMUTET: chartrunner.xyz/wallet-probe.html fand im Phantom-Browser zwei Wallets ueber reines JS, beide mit solana:signAndSendTransaction. (a) NEU crSigner: Wallet-Standard-Handshake (beide Wege — app-ready fuer bereits vorhandene Wallets, register-wallet fuer spaetere), Auswahl, Verbinden, Signieren. (b) ABGRENZUNG: crWallet bleibt die IDENTITAET (welche Adresse, welche Spielstand-Partition), crSigner ist die FAEHIGKEIT. Bei Erfolg meldet crSigner an crWallet.setConnected() — zwei Wallet-Wahrheiten waeren derselbe Fehler wie zwei Order-Instanzen. (c) Phantom registriert sich MEHRFACH unter gleichem Namen (Solana, Sui). Ausgewaehlt wird nur, wer eine solana:-Kette UND eine Signier-Faehigkeit hat. (d) DEVNET IST DIE VORGABE. Mainnet nur, wenn es dasteht: eine Vorgabe, die im Zweifel echtes Geld bewegt, ist keine Vorgabe sondern eine Falle. Nicht unterstuetzte Netze werden VOR der Wallet-Abfrage abgefangen. (e) base58 und base64 von Hand, weil keine Bibliothek erlaubt ist — gegen bekannte Vektoren geprueft (Hello World!, fuehrende Nullbytes, Uebertrag bei 58). (f) Fehler bleiben unterscheidbar: rejected (Nutzer bricht ab) ist KEIN sign-failed, und „Erfolg ohne Signatur" wird nicht als Erfolg ausgegeben. (g) KEIN HINTERGRUNDBETRIEB — der Handshake laeuft einmal beim Laden (zwei window-Ereignisse, kein Netz), alles Weitere nur auf Anforderung. Nach v1.0.867 waere alles andere ein Rueckfall. Noch nichts signiert im Spiel: es fehlt die Gegenseite, die eine Transaktion baut. Spiellogik, Rendering und Abilities unberuehrt.
+     PREV  ·  v1.0.867: REQUEST-DIAET — DAS SPIEL HAT SEIN EIGENES WORKER-BUDGET VERBRANNT. Cloudflare meldete 90% des Tageslimits (100.000 Requests/Tag). Verdaechtigt wurde zuerst die Helius-Ingestion; gemessen wurde dann das Spiel selbst — EIN offener Tab, Terminal NIE geoeffnet, erzeugte rund 170.000 Worker-Requests/Tag und riss das Limit im Alleingang. (a) URSACHE: der crTerm-Herzschlag (setInterval(_tick,1
      PREV  ·  v1.0.866: PHASE-2-VORARBEIT — ECHTE HANDELSKURSE LESEN (P2·0) + POSITIONEN/ERGEBNIS AUS DEM EIGENEN INDEX (P2·1). Beides bewusst OHNE Signatur: kein Wallet-Connect, keine Transaktion, kein Risiko. Der Zweck ist, die zwei Zahlen ins Spiel zu holen, die zwischen einem simulierten und einem echten Ergebnis stehen. (a) NEU crQuote (P2·0): fragt bei Jupiter, was ein Swap KOSTEN würde — erwarteter Erlös
      PREV  ·  v1.0.760: ALERT ENGINE — MAPS + LASER. (1) MAP BINDING: alerts can belong to a saved on-chain map. The create-form has a Map select that auto-defaults to the currently-loaded map (game.currentMapId) and is changeable (incl. "Global (keine Map)"). A filter dropdown above the list follows whichever map is loaded so a map and its alerts travel together; checking stays ALWAYS active regardless of the loaded map (map only groups/filters the view). Rule schema gains mapId/mapName; synced to Supabase via new p_map_id/p_map_name params (needs the incremental cr_alerts ALTER migration). (2) LASER IN ONE LIST: the hotkey-4 chart-alarm laser alarms (window.crAlarm, session-only) are now managed in the Alerts tab alongside standing alerts — condition line + ARMED/FIRED/OFF state + pause/re-arm/anchor-on-chain/delete, driven by crAlarm.toggle/rearm/anchor/remove(id). Laser alarms are filtered by the same map dropdown via their anchorMapId. Fired laser events already showed in the shared Verlauf log.
      PREV  ·  v1.0.759: ALERT ENGINE (client tier) — standing per-token alerts get their own Docs side-drawer tab (⏰ Alerts), promoted out of the Journal sub-tabs. New crAlertEngine module: a create-form (token · condition · value · channels · recurring) that persists rules to localStorage (cr_alert_rules_v1) and, when signed in, syncs to Supabase via cr_alerts_* RPCs. A 60s client poll checks each armed rule against crBirdeye (price_above / price_below / pct_move / vol_mult) and crBirdeye.security (safety verdict worsens); on trigger it raises an in-app toast, logs to crAlertBus, and optionally sends a Resend mail (crMailNotify). Fail-safe: providers unreachable → rule stays armed, never a false fire. The tab also shows the fired-event log (engine + chart-alarm laser). SERVER TIER (offline mail via a Worker cron reading cr_alerts) ships separately in the private worker repo — see AUFTRAG. Docs view registered in the three switch points; Journal ALERTS + ALERT V2 sub-tabs removed.
@@ -15854,6 +15855,293 @@ window.crWallet = (function(){
            canSign: canSign, signMessage: signMessage,
            connect: connect, openWalletPicker: openWalletPicker, selectRunnerWallet: selectRunnerWallet,
            selectBrowserWallet: selectBrowserWallet, disconnect: disconnect, setConnected: setConnected, on: on };
+})();
+
+/* =========================================================================
+ * crSigner — Wallet Standard, in reinem Browser-JavaScript (v1.0.868).
+ *
+ * ENTSCHEIDUNG P2·2: signiert wird IM SPIEL, eine Fläche, kein Seitenwechsel.
+ * Der Preis dafür sollte ein Build-Schritt sein — @solana/web3.js plus
+ * Wallet-Adapter, und damit das Ende der Einzeldatei-Regel. Er ist es nicht.
+ *
+ * Der Wallet Standard definiert das Signieren so:
+ *
+ *   wallet.features['solana:signAndSendTransaction'].signAndSendTransaction({
+ *     transaction,          // Uint8Array — SERIALISIERTE BYTES
+ *     chain: 'solana:devnet',
+ *     account
+ *   })
+ *
+ * Rohe Bytes, kein Objekt. Und Jupiters /swap liefert die Transaktion genau
+ * so (base64). Der Client braucht also nur atob() und die Schnittstelle, die
+ * die Wallets ohnehin ins window legen:
+ *
+ *   Worker baut die Transaktion (base64) → atob() → Uint8Array → Wallet
+ *
+ * Gemessen statt vermutet: chartrunner.xyz/wallet-probe.html hat im
+ * Phantom-Browser zwei Wallets über reines JS gefunden, beide mit
+ * solana:signAndSendTransaction. Keine Bibliothek, kein Build, kein CDN.
+ *
+ * ABGRENZUNG ZU crWallet: crWallet ist die IDENTITÄT — welche Adresse ist
+ * verbunden, und unter welcher werden Spielstände abgelegt. crSigner ist die
+ * FÄHIGKEIT — Wallet finden, verbinden, signieren lassen. Bei Erfolg meldet
+ * crSigner die Adresse an crWallet.setConnected(), damit die bestehende
+ * Partitionierung unverändert weiterläuft. Zwei Wallet-Wahrheiten wären
+ * derselbe Fehler wie zwei Order-Instanzen.
+ *
+ * KEIN HINTERGRUNDBETRIEB. Nichts hier pollt, nichts läuft auf einem Timer.
+ * Der Handshake läuft einmal beim Laden (zwei window-Ereignisse, kein Netz),
+ * alles Weitere passiert nur auf ausdrückliche Anforderung. Nach der
+ * Request-Diät aus v1.0.867 wäre alles andere ein Rückfall.
+ * ========================================================================= */
+window.crSigner = (function(){
+  'use strict';
+
+  var SOL = 'solana:';
+  var FEAT_SIGN_SEND = 'solana:signAndSendTransaction';
+  var FEAT_SIGN      = 'solana:signTransaction';
+  var FEAT_CONNECT   = 'standard:connect';
+
+  var _wallets = [];      // alle registrierten Wallets
+  var _via     = {};      // welcher Handshake-Weg hat geliefert
+  var _active  = null;    // { wallet, account }
+
+  /* ── Handshake ─────────────────────────────────────────────────────────
+     Zwei gültige Wege, und beide müssen bedient werden:
+       a) die Wallet ist schon da → sie antwortet auf unser 'app-ready'
+       b) die Wallet kommt später → sie sendet 'register-wallet'
+     Die Prüfseite meldete anfangs nur (b) und behauptete deshalb einen
+     Fehlschlag, während zwei Phantoms über (a) angekommen waren. */
+  var _phase = 'init';
+  function _register(){
+    var added = 0;
+    for(var i = 0; i < arguments.length; i++){
+      var w = arguments[i];
+      if(w && _wallets.indexOf(w) === -1){ _wallets.push(w); added++; }
+    }
+    if(added) _via[_phase] = (_via[_phase] || 0) + added;
+    return function(){};
+  }
+  var _api = { register: _register };
+
+  try {
+    window.addEventListener('wallet-standard:register-wallet', function(ev){
+      var prev = _phase; _phase = 'register-wallet';
+      try {
+        if(typeof ev.detail === 'function') ev.detail(_api);
+        else if(ev.detail && typeof ev.detail.register === 'function') ev.detail.register(_api);
+      } catch(_){}
+      _phase = prev;
+    });
+  } catch(_){}
+  try {
+    _phase = 'app-ready';
+    window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: _api }));
+  } catch(_){}
+  _phase = 'späte Meldung';
+
+  /* ── Kodierung, von Hand, weil keine Bibliothek erlaubt ist ─────────── */
+
+  // base64 → Bytes. Jupiter und unser Worker liefern die Transaktion so.
+  function b64ToBytes(b64){
+    var bin = atob(String(b64).replace(/-/g, '+').replace(/_/g, '/'));
+    var out = new Uint8Array(bin.length);
+    for(var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  // Bytes → base58. Die Wallet gibt die Signatur als 64 rohe Bytes zurück;
+  // lesbar und im Explorer auffindbar ist sie erst als base58.
+  var B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  function bytesToB58(bytes){
+    var b = (bytes instanceof Uint8Array) ? bytes : new Uint8Array(bytes || []);
+    if(!b.length) return '';
+    var digits = [0], i, j, carry;
+    for(i = 0; i < b.length; i++){
+      carry = b[i];
+      for(j = 0; j < digits.length; j++){
+        carry += digits[j] << 8;
+        digits[j] = carry % 58;
+        carry = (carry / 58) | 0;
+      }
+      while(carry > 0){ digits.push(carry % 58); carry = (carry / 58) | 0; }
+    }
+    var out = '';
+    for(i = 0; b[i] === 0 && i < b.length - 1; i++) out += '1';   // führende Nullbytes
+    for(j = digits.length - 1; j >= 0; j--) out += B58[digits[j]];
+    return out;
+  }
+
+  /* ── Auswahl ───────────────────────────────────────────────────────── */
+
+  function _feats(w){ try { return Object.keys(w.features || {}); } catch(_){ return []; } }
+  function _chains(w){ try { return w.chains ? Array.prototype.slice.call(w.chains) : []; } catch(_){ return []; } }
+
+  // Phantom registriert sich mehrfach (Solana, Sui, …) unter demselben Namen.
+  // Nur die Instanz zählt, die Solana kann UND signieren kann.
+  function _solanaCapable(){
+    return _wallets.filter(function(w){
+      var f = _feats(w);
+      if(f.indexOf(FEAT_SIGN_SEND) === -1 && f.indexOf(FEAT_SIGN) === -1) return false;
+      return _chains(w).some(function(c){ return String(c).indexOf(SOL) === 0; });
+    });
+  }
+
+  function list(){
+    return _solanaCapable().map(function(w){
+      return {
+        name: w.name || 'ohne Namen',
+        icon: w.icon || '',
+        version: w.version || '',
+        chains: _chains(w),
+        canSignAndSend: _feats(w).indexOf(FEAT_SIGN_SEND) !== -1
+      };
+    });
+  }
+
+  function _byName(name){
+    var all = _solanaCapable();
+    if(!name) return all[0] || null;
+    return all.filter(function(w){ return (w.name || '') === name; })[0] || null;
+  }
+
+  /* ── Verbinden ─────────────────────────────────────────────────────── */
+
+  function connect(name){
+    var w = _byName(name);
+    if(!w) return Promise.resolve({ error: 'no-wallet',
+      note: 'Keine Solana-Wallet gefunden. Am Telefon: das Spiel im Browser der Wallet öffnen.' });
+    var f = (w.features || {})[FEAT_CONNECT];
+    if(!f || typeof f.connect !== 'function')
+      return Promise.resolve({ error: 'no-feature', wallet: w.name, feature: FEAT_CONNECT });
+
+    return Promise.resolve()
+      .then(function(){ return f.connect(); })
+      .then(function(res){
+        var acc = (res && res.accounts && res.accounts[0]) || (w.accounts && w.accounts[0]) || null;
+        if(!acc || !acc.address) return { error: 'no-account', wallet: w.name };
+        _active = { wallet: w, account: acc };
+        // Identität an die bestehende Schicht melden — NICHT hier zweitspeichern.
+        try {
+          if(window.crWallet && typeof crWallet.setConnected === 'function')
+            crWallet.setConnected(acc.address, w.name || 'Wallet Standard');
+        } catch(_){}
+        return { address: acc.address, wallet: w.name, chains: acc.chains || _chains(w) };
+      })
+      .catch(function(e){
+        var m = String((e && e.message) || e || '');
+        // Ein Abbruch durch den Nutzer ist kein Fehler und darf nicht als
+        // technischer Ausfall erscheinen.
+        if(/reject|denied|cancel|abbruch/i.test(m)) return { error: 'rejected', wallet: w.name };
+        return { error: 'connect-failed', wallet: w.name, detail: m };
+      });
+  }
+
+  function disconnect(){
+    _active = null;
+    try { if(window.crWallet && crWallet.disconnect) crWallet.disconnect(); } catch(_){}
+  }
+
+  function active(){
+    if(!_active) return null;
+    return { address: _active.account.address, wallet: _active.wallet.name || '' };
+  }
+
+  /* ── Signieren ─────────────────────────────────────────────────────── */
+
+  /* signAndSend(base64Transaction, { chain, wallet })
+   *
+   * chain ist ABSICHTLICH devnet als Vorgabe. Wer Mainnet will, muss es
+   * hinschreiben. Eine Vorgabe, die im Zweifel echtes Geld bewegt, ist keine
+   * Vorgabe, sondern eine Falle. */
+  function signAndSend(b64tx, opts){
+    opts = opts || {};
+    var chain = opts.chain || 'solana:devnet';
+
+    if(!b64tx || typeof b64tx !== 'string')
+      return Promise.resolve({ error: 'bad-tx', note: 'Keine Transaktion übergeben.' });
+    if(String(chain).indexOf(SOL) !== 0)
+      return Promise.resolve({ error: 'bad-chain', chain: chain });
+
+    var w = _active ? _active.wallet : _byName(opts.wallet);
+    var acc = _active ? _active.account : null;
+    if(!w)   return Promise.resolve({ error: 'no-wallet' });
+    if(!acc) return Promise.resolve({ error: 'not-connected',
+      note: 'Erst verbinden — signiert wird nur für ein bekanntes Konto.' });
+
+    var f = (w.features || {})[FEAT_SIGN_SEND];
+    if(!f || typeof f.signAndSendTransaction !== 'function')
+      return Promise.resolve({ error: 'no-feature', wallet: w.name, feature: FEAT_SIGN_SEND });
+
+    // Unterstützt die Wallet dieses Netz überhaupt? Lieber vorher fragen als
+    // den Nutzer in eine Abfrage schicken, die dann scheitert.
+    //
+    // VEREINIGUNG aus Konto- und Wallet-Netzen, nicht nur das Konto. Beim
+    // Testschreiben aufgefallen: die Wallet kann Mainnet, das Konto meldete
+    // nur Devnet — und Mainnet wurde faelschlich abgewiesen. Real ist es oft
+    // andersherum (Konto meldet nur Mainnet), und dann haette ausgerechnet
+    // der Devnet-Durchlauf nicht funktioniert. Die Wallet-Ebene ist die
+    // Faehigkeit, die Konto-Ebene nur eine Momentaufnahme. Der Schutz vor
+    // versehentlichem Mainnet sitzt ohnehin woanders: in der Vorgabe oben.
+    var supported = _chains(w).slice();
+    try { (acc.chains || []).forEach(function(c){ if(supported.indexOf(c) === -1) supported.push(c); }); } catch(_){}
+    if(supported.length && supported.indexOf(chain) === -1)
+      return Promise.resolve({ error: 'chain-unsupported', chain: chain, supported: supported, wallet: w.name });
+
+    var bytes;
+    try { bytes = b64ToBytes(b64tx); }
+    catch(e){ return Promise.resolve({ error: 'bad-tx', detail: String((e && e.message) || e) }); }
+    if(!bytes.length) return Promise.resolve({ error: 'bad-tx', note: 'Transaktion ist leer.' });
+
+    return Promise.resolve()
+      .then(function(){
+        return f.signAndSendTransaction({ transaction: bytes, chain: chain, account: acc });
+      })
+      .then(function(res){
+        var first = Array.isArray(res) ? res[0] : res;
+        var sig = first && first.signature;
+        if(!sig) return { error: 'no-signature', wallet: w.name,
+          note: 'Die Wallet meldete Erfolg, lieferte aber keine Signatur.' };
+        return {
+          signature: bytesToB58(sig),
+          wallet: w.name,
+          chain: chain,
+          address: acc.address
+        };
+      })
+      .catch(function(e){
+        var m = String((e && e.message) || e || '');
+        if(/reject|denied|cancel|abbruch/i.test(m)) return { error: 'rejected', wallet: w.name };
+        return { error: 'sign-failed', wallet: w.name, detail: m };
+      });
+  }
+
+  /* ── Auskunft ──────────────────────────────────────────────────────── */
+
+  function info(){
+    var cap = _solanaCapable();
+    return {
+      found: _wallets.length,
+      solanaCapable: cap.length,
+      handshakeVia: Object.keys(_via),
+      wallets: list(),
+      connected: active(),
+      ready: !!(_active && _feats(_active.wallet).indexOf(FEAT_SIGN_SEND) !== -1)
+    };
+  }
+
+  return {
+    list: list,
+    connect: connect,
+    disconnect: disconnect,
+    active: active,
+    signAndSend: signAndSend,
+    info: info,
+    // Für Tests und Fehlersuche — die Kodierung ist von Hand geschrieben und
+    // muss einzeln prüfbar sein.
+    _b64ToBytes: b64ToBytes,
+    _bytesToB58: bytesToB58
+  };
 })();
 
 /* =========================================================================

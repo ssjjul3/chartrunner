@@ -72,8 +72,13 @@ function launchOptions(){
     let n; while((n = it.nextNode())){ if(/CURRENT VERSION:/.test(n.nodeValue)) return n.nodeValue; }
     return '';
   });
-  check('Banner meldet CURRENT VERSION: v1.0.867', /CURRENT VERSION:\s*v1\.0\.867/.test(banner),
-    banner.slice(0, 80));
+  // MINDESTversion, nicht exakt: Thema dieses Checks ist das Sichtbarkeits-
+  // Gate, nicht die Versionsnummer. Ein fest verdrahtetes v1.0.867 faerbt
+  // jeden spaeteren Versionssprung rot, ohne dass etwas kaputt waere.
+  const bv = (banner.match(/CURRENT VERSION:\s*v(\d+)\.(\d+)\.(\d+)/) || []).slice(1).map(Number);
+  const atLeast = bv.length === 3 &&
+    (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 867))));
+  check('Banner meldet mindestens v1.0.867', atLeast, banner.slice(0, 80));
 
   console.log('\n-- Sichtbarkeits-Gate --');
   // Boot-Welle abwarten und verwerfen, dann die Dauerlast messen.
