@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.871
-     LAST UPDATED:    2026-08-22  ·  v1.0.871: DAS NETZ DER WALLET IST NICHT DAS NETZ DER TRANSAKTION. Der erste Devnet-Durchlauf lief gegen eine Phantom-Instanz im MAINNET-Modus: wir haben devnet angefragt, die Wallet hat anstandslos SIGNIERT, und die Transaktion landete nirgends. Das Spiel meldete „gesendet". Eine Signatur entsteht beim Signieren — sie sagt nichts darueber, ob das Netz ueberhaupt zusammenpasst. (a) EIGENE FRUEHERE ENTSCHEIDUNG KORRIGIERT: v1.0.868 pruefte das Netz gegen die VEREINIGUNG aus Wallet- und Konto-Ebene, weil eine zu enge Konto-Angabe sonst Mainnet faelschlich blockiert haette. Halb richtig — die Konto-Ebene ist keine laestige Einschraenkung, sondern die beste Auskunft darueber, wo die Wallet GERADE steht. Die Loesung ist keins von beidem: nicht ignorieren, nicht hart sperren, sondern BENENNEN mit dem naechsten Schritt. (b) NEU crSigner.chainReady(chain) + active() liefert accountChains und walletChains getrennt: was die Wallet KANN und wo sie STEHT sind zwei Fragen. (c) Die Devnet-Probe prueft das Netz VOR dem Bauen und sagt im Klartext: „Deine Wallet steht auf mainnet, die Probe braucht devnet … In Phantom: Einstellungen -> Entwickler-Einstellungen -> Testnet-Modus". Es wird dann weder gebaut noch signiert. (d) Der Wallet-Picker zeigt das Netz laut Wallet dauerhaft an — beim Umschalten in Phantom aendert sich die Zeile sichtbar. Meldet die Wallet ihr Netz nicht, steht dort „Netz unbekannt" und keine Vermutung. (e) EHRLICHE GRENZE: nicht jede Wallet meldet ihr aktuelles Netz. Deshalb bleibt das ein HINWEIS, keine Garantie — die eigentliche Absicherung ist und bleibt die Bestaetigung durch die Kette aus v1.0.870. Spiellogik, Rendering und Abilities unberuehrt.
+     CURRENT VERSION: v1.0.872
+     LAST UPDATED:    2026-08-22  ·  v1.0.872: EIN AUSFALL IST KEINE AUSKUNFT — HTTP-EBENE VOR BODY-EBENE. Der tx-Worker meldet einen RPC-Ausfall als 502 mit ok:false und LAESST confirmationStatus bewusst weg, damit ein Ausfall nicht wie eine Antwort aussieht. Genau daran fiel crTxApi.status() durch: es prueft nur auf 404 und reichte sonst den geparsten Body durch. Ohne error, ohne err, ohne confirmationStatus landete der Client im Zweig „noch nicht bestaetigt“ und pollte 15 Mal ueber 30s — statt nach 3 Versuchen ehrlich aufzugeben. Die zwei getrennten Budgets aus v1.0.870 waren damit wirkungslos, genau in dem Fall, fuer den sie gebaut wurden. (a) Jeder Statuscode ausserhalb 2xx heisst jetzt: die ABFRAGE ist gescheitert — unabhaengig davon, was im Body steht. Das sagt nichts ueber die Transaktion und wird auch so weitergereicht. (b) Ein 200 mit unparsbarem Body ergibt bad-response statt eines stillen undefined. (c) Der Testfall bildet ab sofort die ECHTE Antwortform des Workers ab (502, ok:false, kein confirmationStatus, KEIN error-Feld) statt einer bequemen Attrappe mit error-Feld — die alte Attrappe haette den Fehler nie gezeigt. Gegenprobe gelaufen: ohne den Fix faellt der neue Testfall, mit ihm nicht. Gefunden durch die private Session, die den Endpunkt gebaut hat: nicht der Code war falsch dokumentiert, sondern meine Annahme ueber seine Fehlerform. Spiellogik, Rendering und Abilities unberuehrt.
+     PREV  ·  v1.0.871: DAS NETZ DER WALLET IST NICHT DAS NETZ DER TRANSAKTION. Der erste Devnet-Durchlauf lief gegen eine Phantom-Instanz im MAINNET-Modus: wir haben devnet angefragt, die Wallet hat anstandslos SIGNIERT, und die Transaktion landete nirgends. Das Spiel meldete „gesendet". Eine Signatur entsteht beim Signieren — sie sagt nichts darueber, ob das Netz ueberhaupt zusammenpasst. (a) EIGENE FRUEHERE 
      PREV  ·  v1.0.870: DIE KETTE IST DIE INSTANZ, NICHT DER RUECKGABEWERT. Anlass ist ein echter Vorfall: der erste Devnet-Durchlauf meldete im Spiel „Signiert und gesendet", waehrend der Explorer zur selben Zeit „Not Found" zeigte. Sechs Minuten lang gab es keine Moeglichkeit zu wissen, was stimmt — BEIDES war falsch beschriftet, nicht nur eines. (Aufgeloest hat es sich: die Transaktion lief, Status Success, 
      PREV  ·  v1.0.869: DER SIGNIERWEG IST GESCHLOSSEN — DEVNET-PROBE IM WALLET-PICKER. v1.0.868 brachte crSigner (Wallet finden, verbinden, serialisierte Bytes signieren lassen), es fehlte die Gegenseite, die eine Transaktion BAUT. Die steht jetzt als eigener Worker. (a) NEU crTxApi: duenne Anbindung an chartrunner-tx. Der Client baut KEINE Solana-Transaktion — das braeuchte web3.js und damit einen Build-Schri
      PREV  ·  v1.0.868: P2.2 ENTSCHIEDEN — SIGNIERT WIRD IM SPIEL, UND ES KOSTET DIE EINZELDATEI-REGEL NICHT. Der Plan sah einen Build-Schritt vor (@solana/web3.js + Wallet-Adapter), also das Ende von „alles inline". Falsch gerechnet: der Wallet Standard definiert solana:signAndSendTransaction mit `transaction: Uint8Array` — SERIALISIERTEN BYTES, nicht einem web3.js-Objekt. Jupiters /swap liefert die Transaktio
@@ -16461,7 +16462,26 @@ window.crTxApi = (function(){
                  + '&_=' + Date.now())
       .then(function(r){
         if(r.status === 404) return { error: 'not-deployed' };
-        return r.json().catch(function(){ return { error: 'http-' + r.status }; });
+        return r.json().catch(function(){ return null; }).then(function(j){
+          // v1.0.872 — HTTP-Ebene ZUERST, unabhaengig vom Body.
+          //
+          // Version 1 pruefte nur auf 404 und reichte sonst den geparsten
+          // Body durch. Der Worker meldet einen RPC-Ausfall aber als 502 mit
+          // `ok:false` und LAESST confirmationStatus bewusst weg — damit ein
+          // Ausfall nicht wie eine Auskunft aussieht. Genau daran fiel mein
+          // Client durch alle Zweige: kein `error`, kein `err`, kein
+          // confirmationStatus → er hielt es fuer „noch nicht bestaetigt“ und
+          // haette 15 Mal ueber 30s gepollt statt nach 3 Versuchen ehrlich
+          // aufzugeben. Die zwei getrennten Budgets aus v1.0.870 waren damit
+          // wirkungslos.
+          //
+          // Ein Statuscode ausserhalb 2xx heisst: die ABFRAGE ist gescheitert.
+          // Das sagt nichts ueber die Transaktion — und genau so wird es
+          // weitergereicht.
+          if(!r.ok) return { error: (j && j.error) || ('http-' + r.status),
+                             detail: (j && (j.rpc_note || j.note)) || '' };
+          return j || { error: 'bad-response' };
+        });
       })
       .catch(function(){ return { error: 'offline' }; });
   }
