@@ -35,6 +35,8 @@ const check=(n,c,x)=>{ c?(pass++,console.log('  ok   '+n)):(fail++,console.log('
   check('keine Page-Errors',errs.length===0,errs.slice(0,2));
   check('Verdikt meldet ehrlich „keine Wallet"',
     /Keine Wallet gefunden/.test(await pg.textContent('#verdict')));
+  check('Handshake-Zeile behauptet keinen Weg',
+    (await pg.textContent('#wHandshake'))==='keine Meldung');
   check('Zaehler steht auf 0', (await pg.textContent('#wCount'))==='0');
   check('Verbinden-Knopf ist gesperrt', await pg.getAttribute('#btnConn','disabled')!==null);
   check('app-ready wurde gesendet', /app-ready gesendet/.test(await pg.textContent('#log')));
@@ -61,13 +63,43 @@ const check=(n,c,x)=>{ c?(pass++,console.log('  ok   '+n)):(fail++,console.log('
   await pg.waitForTimeout(2200);
   console.log('\n-- mit Wallet --');
   check('Wallet wird gefunden',(await pg.textContent('#wCount'))==='1');
-  check('Handshake als beantwortet gemeldet',(await pg.textContent('#wHandshake'))==='ja');
+  // Regression aus dem ersten Live-Lauf: die Zeile meldete „noch nicht",
+  // obwohl zwei Wallets ueber app-ready angekommen waren.
+  check('Handshake nennt den tatsaechlich benutzten Weg',
+    /^ja · über /.test(await pg.textContent('#wHandshake')), await pg.textContent('#wHandshake'));
   check('signAndSendTransaction erkannt',(await pg.textContent('#fSas'))==='vorhanden');
   check('Netze gelesen',/solana:devnet/.test(await pg.textContent('#fChains')));
   check('Verdikt kippt auf „traegt"',/Traegt/.test(await pg.textContent('#verdict')));
   check('Verbinden-Knopf freigegeben', await pg.getAttribute('#btnConn','disabled')===null);
   await pg.click('#btnConn'); await pg.waitForTimeout(400);
   check('connect liefert die Adresse',/7xKXtg2CW3ia/.test(await pg.textContent('#cAcct')));
+  await pg.close();
+
+  // ── C · Wallet, die schon DA ist und auf app-ready antwortet ──────
+  // Genau dieser Weg fehlte in Version 1 des Tests — und genau hier log die
+  // Seite live („noch nicht", obwohl zwei Phantoms gefunden waren).
+  pg=await b.newPage();
+  await pg.addInitScript(()=>{
+    const wallet={ name:'EagerWallet', version:'1.0.0', icon:'',
+      chains:['solana:mainnet'],
+      accounts:[{address:'EagerAddr1111111111111111111111111111111111',chains:['solana:mainnet'],features:[]}],
+      features:{
+        'standard:connect':{version:'1.0.0',connect:async()=>({accounts:wallet.accounts})},
+        'solana:signAndSendTransaction':{version:'1.0.0',signAndSendTransaction:async()=>[]},
+      }};
+    // KEIN eigenes register-wallet: die Wallet wartet auf app-ready und
+    // ruft die uebergebene api direkt auf.
+    window.addEventListener('wallet-standard:app-ready',e=>{
+      const api=e.detail; (typeof api==='function'?api:api.register)(wallet);
+    });
+  });
+  await pg.goto(pathToFileURL(FILE).href,{waitUntil:'domcontentloaded'});
+  await pg.waitForTimeout(2200);
+  console.log('\n-- Wallet war schon da (app-ready-Weg) --');
+  check('Wallet wird gefunden',(await pg.textContent('#wCount'))==='1');
+  check('Handshake meldet app-ready statt „noch nicht"',
+    /^ja · über app-ready/.test(await pg.textContent('#wHandshake')), await pg.textContent('#wHandshake'));
+  check('Verdikt kippt auf „traegt"',/Traegt/.test(await pg.textContent('#verdict')));
   await pg.close();
 
   await b.close();

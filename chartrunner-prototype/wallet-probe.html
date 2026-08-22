@@ -60,7 +60,7 @@
   <div class="card">
     <div class="lbl">1 · Entdeckung über Wallet Standard</div>
     <div class="row"><span class="k">Gefundene Wallets</span><span class="v" id="wCount">—</span></div>
-    <div class="row"><span class="k">Handshake beantwortet</span><span class="v" id="wHandshake">—</span></div>
+    <div class="row"><span class="k">Handshake gelaufen über</span><span class="v" id="wHandshake">—</span></div>
     <div class="row"><span class="k">navigator.wallets (Altentwurf)</span><span class="v" id="wNav">—</span></div>
     <div id="wList"></div>
   </div>
@@ -98,7 +98,14 @@
 <script>
 (function(){
   'use strict';
-  var wallets = [], handshakeAnswered = false, lines = [];
+  /* Es gibt ZWEI Wege, auf denen eine Wallet bei uns ankommt, und beide sind
+     gueltiger Handshake:
+       a) sie war schon da  → sie antwortet auf unser 'app-ready'
+       b) sie kommt spaeter → sie sendet 'register-wallet', wir antworten
+     Version 1 dieser Seite meldete nur (b) als „beantwortet" und behauptete
+     deshalb „noch nicht", obwohl zwei Wallets ueber (a) gefunden wurden.
+     Jetzt wird der tatsaechlich benutzte Weg genannt statt ein Ja/Nein. */
+  var wallets = [], lines = [], phase = 'vor dem Handshake', viaSeen = {};
   function log(s){ lines.push(s); var el = document.getElementById('log'); if(el) el.textContent = lines.join('\n'); }
   function set(id, text, cls){
     var el = document.getElementById(id); if(!el) return;
@@ -116,28 +123,35 @@
       var w = arguments[i];
       if(w && wallets.indexOf(w) === -1){ wallets.push(w); added++; }
     }
-    if(added) { log('registriert: +' + added + ' (jetzt ' + wallets.length + ')'); render(); }
+    if(added){
+      viaSeen[phase] = (viaSeen[phase] || 0) + added;
+      log('registriert: +' + added + ' über ' + phase + ' (jetzt ' + wallets.length + ')');
+      render();
+    }
     return function(){};
   }
   var api = { register: register };
 
   try {
     window.addEventListener('wallet-standard:register-wallet', function(ev){
-      handshakeAnswered = true;
+      var prev = phase; phase = 'register-wallet';
       try {
         // Spezifikation: detail ist eine Funktion, die unsere api entgegennimmt.
         if(typeof ev.detail === 'function') ev.detail(api);
         else if(ev.detail && typeof ev.detail.register === 'function') ev.detail.register(api);
         else log('register-wallet: unerwartete Form von detail (' + typeof ev.detail + ')');
       } catch(e){ log('register-wallet Fehler: ' + (e && e.message)); }
+      phase = prev;
     });
     log('lausche auf wallet-standard:register-wallet');
   } catch(e){ log('addEventListener fehlgeschlagen: ' + (e && e.message)); }
 
   try {
+    phase = 'app-ready';
     window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: api }));
+    phase = 'spätere Meldung';
     log('app-ready gesendet');
-  } catch(e){ log('app-ready fehlgeschlagen: ' + (e && e.message)); }
+  } catch(e){ phase = 'spätere Meldung'; log('app-ready fehlgeschlagen: ' + (e && e.message)); }
 
   // Altentwurf, den manche Wallets noch bedienen.
   try {
@@ -167,7 +181,10 @@
 
   function render(){
     set('wCount', String(wallets.length), wallets.length ? 'ok' : 'bad');
-    set('wHandshake', handshakeAnswered ? 'ja' : 'noch nicht', handshakeAnswered ? 'ok' : 'warn');
+    var ways = Object.keys(viaSeen);
+    set('wHandshake',
+      ways.length ? ('ja · über ' + ways.join(' + ')) : 'keine Meldung',
+      ways.length ? 'ok' : 'warn');
 
     var host = document.getElementById('wList');
     host.innerHTML = '';
@@ -179,7 +196,14 @@
       head.className = 'wname';
       if(w.icon){ var im = document.createElement('img'); im.src = w.icon; im.alt = ''; head.appendChild(im); }
       var nm = document.createElement('span');
-      nm.textContent = (w.name || 'ohne Namen') + '  v' + (w.version || '?');
+      // Phantom registriert sich mehrfach (Solana, Sui, …) — jeweils mit
+      // gleichem Namen. Ohne die Netze daneben sieht das wie ein Duplikat aus.
+      var ch = [];
+      try { ch = w.chains ? Array.prototype.slice.call(w.chains) : []; } catch(_){}
+      var fam = ch.map(function(c){ return String(c).split(':')[0]; })
+                  .filter(function(v, i, a){ return a.indexOf(v) === i; });
+      nm.textContent = (w.name || 'ohne Namen') + '  v' + (w.version || '?')
+                     + (fam.length ? '  · ' + fam.join('/') : '');
       head.appendChild(nm);
       box.appendChild(head);
       feats.forEach(function(f){
