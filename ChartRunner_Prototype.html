@@ -111,14 +111,15 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.876
-     LAST UPDATED:    2026-08-22  ·  v1.0.876: EINE KAPUTTE AUSKUNFT DARF KEINE FUNKTIONIERENDE KETTE VERSTECKEN. Live-Befund aus dem Token-Profil: „Kursabfrage nicht erreichbar" — und der Handel-Knopf war weg. Nicht weil mit dem Handel etwas war. (a) URSACHE 1, Verdrahtung: die Schaltflaechen wurden NUR im Erfolgszweig der Kursabfrage gezeichnet. Der Handel laeuft aber ueber crTxApi und den eigenen Worker und weiss von dieser Abfrage nichts. Faellt die Vorschau, verschwand die ganze Phase-2-Oberflaeche mit. (b) URSACHE 2, Endpunkt: crQuote zeigt auf quote-api.jup.ag/v6. Jupiter hat den Host abgekuendigt (Migration war Mai 2025), und auch lite-api.jup.ag — an anderer Stelle in DIESER Datei benutzt — ist seit Januar 2026 abgeloest. Aktuell ist api.jup.ag/swap/v1 MIT API-Key, was heisst: die Kursabfrage kann nicht im Client bleiben, sie gehoert hinter einen Worker wie schon der Hermes-Proxy. Das ist NICHT Teil dieses Patches; ein Key im Browser waere der falsche Weg. (c) NEU _crTradeabilityHtml(q, mint): die Entscheidung steht in EINER Funktion mit EINER Markup-Quelle, ohne gerendertes Profil pruefbar. Der Ausfallzweig sagt jetzt ausdruecklich, dass nur die VORSCHAU fehlt — die Zahlen des Handels kommen ohnehin vom eigenen Worker und stehen vor dem Signieren da. (d) BUGFIX beim Bauen gefunden: _tokEscA lag als const INNERHALB von _tokRenderProfile. Die neue Funktion haette zur Laufzeit einen ReferenceError geworfen — den weder Parse-Check noch Kollisions-Check sehen koennen. Auf Modulebene gehoben statt kopiert: es gibt genau EINEN Escaper. Der Testfall RUFT die Funktion auf, statt ihr Markup zu lesen. Spiellogik, Rendering und Abilities unberuehrt.
+     CURRENT VERSION: v1.0.877
+     LAST UPDATED:    2026-08-22  ·  v1.0.877: GEMESSEN STATT ANGENOMMEN — DER TOTE HOST IST RAUS. Ich hatte behauptet, quote-api.jup.ag/v6 sei abgeschaltet, gestuetzt auf zwei Doku-Seiten. Die private Session hat das zu Recht als Praemisse und nicht als Messwert bezeichnet; beide Sandboxes koennen jup.ag nicht erreichen. Julian hat es vom Telefon aus gemessen: quote-api.jup.ag → ERR_NAME_NOT_RESOLVED, der Name loest nicht mehr auf. lite-api.jup.ag → 200, vollstaendige Antwort, rund 8 ms. Zwei Hosts, zwei verschiedene Befunde — ich hatte sie zusammengeworfen und beide fuer tot gehalten. (a) crQuote laeuft jetzt gegen lite-api. Die Antwortform ist dieselbe: inAmount, outAmount, priceImpactPct und routePlan[].swapInfo.label stehen in der gemessenen Antwort genauso — nichts wird umgedeutet, es ist wirklich nur der Host. (b) NEU CR_JUP_BASE: EINE Stelle im Client nennt den Host. Vorher waren es zwei — crQuote auf v6, die Terminal-Sonde phxBook auf lite-api. Einer zog um, der andere blieb stehen und starb, und niemand sah es, weil sein Ausfall im Profil nur als „Kursabfrage nicht erreichbar" erschien. Der naechste Umzug ist ein Einzeiler statt einer Suche. (c) OFFEN und bewusst nicht hier geloest: lite-api ist laut Doku selbst abgeloest (31.01.2026) — es antwortet, ist aber nicht mehr das dokumentierte Ziel. Haltbar ist api.jup.ag/swap/v1 MIT Schluessel, und ein Schluessel gehoert nicht in den Browser. Die Abfrage muss hinter einen Worker, wie schon der Hermes-Proxy. (d) Das Fixture im Testfall ist die ECHTE gemessene Antwort, nicht eine nachgebaute. Diese Woche stand schon einmal ein gruener Test ueber einem echten Bug, weil sein Mock nach der Annahme seines Autors gebaut war. Spiellogik, Rendering und Abilities unberuehrt.
+     PREV  ·  v1.0.876: EINE KAPUTTE AUSKUNFT DARF KEINE FUNKTIONIERENDE KETTE VERSTECKEN. Live-Befund aus dem Token-Profil: „Kursabfrage nicht erreichbar" — und der Handel-Knopf war weg. Nicht weil mit dem Handel etwas war. (a) URSACHE 1, Verdrahtung: die Schaltflaechen wurden NUR im Erfolgszweig der Kursabfrage gezeichnet. Der Handel laeuft aber ueber crTxApi und den eigenen Worker und weiss von dieser Abfrage nichts.
      PREV  ·  v1.0.875: EIN DECKEL, DER NIE GEGEN ETWAS GEDRUECKT HAT, IST EINE BEHAUPTUNG. Die Probe sollte per curl gegen den Worker laufen; beide Sandboxes sind fuer *.workers.dev gesperrt (403 auf CONNECT). Also laeuft sie aus dem Netz des Spielers — ueber GENAU DEN WEG, den ein echter Handel nimmt: prepareSwap, crTxApi, Worker, dieselbe Tafel. Eine eigene Probe-Seite waere eine ZWEITE Anfrage-Implementierung gewesen
      PREV  ·  v1.0.874: P2.3 — DER ERSTE ECHTE HANDEL, IN ZWEI STUFEN. Bis v1.0.873 war die Kette geschlossen, aber sie trug nur ein Memo. Jetzt traegt sie einen Swap. (a) NEU crTxApi.swap(): fragt beim tx-Worker POST /v1/tx/swap ein Angebot an — Einsatz, Ausgabe-Mint, Slippage. Der Client baut nichts und rechnet nichts; er zeigt, was der Worker geprueft hat. (b) NEU ChartRunnerSDK.prototype.prepareSwap(): die eine Order
      PREV  ·  v1.0.873: DEN GRUND ZEIGEN, NICHT NUR BERECHNEN. Gefunden beim Review von v1.0.872: crTxApi.status() ermittelt bei einem Ausfall ein `detail` aus dem rpc_note des Workers — angezeigt wurde aber nur st.error, also „http-502“. Der Worker gibt sich Muehe, den Grund im Klartext zu nennen („RPC nicht erreichbar“), und der Client tauschte ihn gegen eine Statusnummer. Genau die Sorte Verlust, die diese ganze Kette
      PREV  ·  v1.0.872: EIN AUSFALL IST KEINE AUSKUNFT — HTTP-EBENE VOR BODY-EBENE. Der tx-Worker meldet einen RPC-Ausfall als 502 mit ok:false und LAESST confirmationStatus bewusst weg, damit ein Ausfall nicht wie eine Antwort aussieht. Genau daran fiel crTxApi.status() durch: es prueft nur auf 404 und reichte sonst den geparsten Body durch. Ohne error, ohne err, ohne confirmationStatus landete der Client im Z
-     PREV  ·  v1.0.871: DAS NETZ DER WALLET IST NICHT DAS NETZ DER TRANSAKTION. Der erste Devnet-Durchlauf lief gegen eine Phantom-Instanz im MAINNET-Modus: wir haben devnet angefragt, die Wallet hat anstandslos SIGNIERT, und die Transaktion landete nirgends. Das Spiel meldete „gesendet". Eine Signatur entsteht beim Signieren — sie sagt nichts darueber, ob das Netz ueberhaupt zusammenpasst. (a) EIGENE FRUEHERE 
-     PREV  ·  v1.0.870: DIE KETTE IST DIE INSTANZ, NICHT DER RUECKGABEWERT. Anlass ist ein echter Vorfall: der erste Devnet-Durchlauf meldete im Spiel „Signiert und gesendet", waehrend der Explorer zur selben Zeit „Not Found" zeigte. Sechs Minuten lang gab es keine Moeglichkeit zu wissen, was stimmt — BEIDES war falsch beschriftet, nicht nur eines. (Aufgeloest hat es sich: die Transaktion lief, Status Success, 
+     PREV  ·  v1.0.871: DAS NETZ DER WALLET IST NICHT DAS NETZ DER TRANSAKTION. Der erste Devnet-Durchlauf lief gegen eine Phantom-Instanz im MAINNET-Modus: wir haben devnet angefragt, die Wallet hat anstandslos SIGNIERT, und die Transaktion landete nirgends. Das Spiel meldete „gesendet". Eine Signatur entsteht beim Signieren — sie sagt nichts darueber, ob das Netz ueberhaupt zusammenpasst. (a) EIGENE FRUEHERE
+     PREV  ·  v1.0.870: DIE KETTE IST DIE INSTANZ, NICHT DER RUECKGABEWERT. Anlass ist ein echter Vorfall: der erste Devnet-Durchlauf meldete im Spiel „Signiert und gesendet", waehrend der Explorer zur selben Zeit „Not Found" zeigte. Sechs Minuten lang gab es keine Moeglichkeit zu wissen, was stimmt — BEIDES war falsch beschriftet, nicht nur eines. (Aufgeloest hat es sich: die Transaktion lief, Status Success,
      PREV  ·  v1.0.869: DER SIGNIERWEG IST GESCHLOSSEN — DEVNET-PROBE IM WALLET-PICKER. v1.0.868 brachte crSigner (Wallet finden, verbinden, serialisierte Bytes signieren lassen), es fehlte die Gegenseite, die eine Transaktion BAUT. Die steht jetzt als eigener Worker. (a) NEU crTxApi: duenne Anbindung an chartrunner-tx. Der Client baut KEINE Solana-Transaktion — das braeuchte web3.js und damit einen Build-Schri
      PREV  ·  v1.0.868: P2.2 ENTSCHIEDEN — SIGNIERT WIRD IM SPIEL, UND ES KOSTET DIE EINZELDATEI-REGEL NICHT. Der Plan sah einen Build-Schritt vor (@solana/web3.js + Wallet-Adapter), also das Ende von „alles inline". Falsch gerechnet: der Wallet Standard definiert solana:signAndSendTransaction mit `transaction: Uint8Array` — SERIALISIERTEN BYTES, nicht einem web3.js-Objekt. Jupiters /swap liefert die Transaktio
      PREV  ·  v1.0.867: REQUEST-DIAET — DAS SPIEL HAT SEIN EIGENES WORKER-BUDGET VERBRANNT. Cloudflare meldete 90% des Tageslimits (100.000 Requests/Tag). Verdaechtigt wurde zuerst die Helius-Ingestion; gemessen wurde dann das Spiel selbst — EIN offener Tab, Terminal NIE geoeffnet, erzeugte rund 170.000 Worker-Requests/Tag und riss das Limit im Alleingang. (a) URSACHE: der crTerm-Herzschlag (setInterval(_tick,1
@@ -59059,8 +59060,32 @@ window.crArena = (function(){
  * Hintergrund pollt, verbrennt fremdes Kontingent. Fehler bleiben ehrlich
  * unterscheidbar — offline, rate-limited, keine Route — statt als "0" zu
  * erscheinen. */
+/* v1.0.877 — EINE Stelle im Client, die den Jupiter-Host nennt.
+ *
+ * Vorher standen hier ZWEI verschiedene: crQuote auf quote-api.jup.ag/v6, die
+ * Terminal-Sonde phxBook auf lite-api. Einer davon ist umgezogen, der andere
+ * nicht — und der stehengebliebene ist gestorben, ohne dass es jemandem
+ * auffiel, weil sein Ausfall im Profil nur als „Kursabfrage nicht erreichbar"
+ * erschien.
+ *
+ * GEMESSEN am 22.08.2026 aus einem echten Netz, nicht aus der Doku geschlossen:
+ *   quote-api.jup.ag  → ERR_NAME_NOT_RESOLVED — der Name loest nicht mehr auf
+ *   lite-api.jup.ag   → 200, vollstaendige Antwort, ~8 ms
+ *
+ * Die Antwortform ist dieselbe: inAmount, outAmount, priceImpactPct und
+ * routePlan[].swapInfo.label stehen in der gemessenen v1-Antwort genauso wie
+ * frueher. Deshalb genuegt der Host-Tausch; nichts wird umgedeutet.
+ *
+ * ABER: lite-api ist laut Jupiter-Doku selbst abgeloest (31.01.2026) — es
+ * antwortet, ist aber nicht mehr das dokumentierte Ziel. Der haltbare Weg ist
+ * api.jup.ag/swap/v1 MIT Schluessel, und ein Schluessel gehoert nicht in den
+ * Browser: die Abfrage muss hinter einen Worker, wie schon der Hermes-Proxy.
+ * Das ist der naechste Auftrag. Bis dahin steht der Host wenigstens an EINER
+ * Stelle, damit der naechste Umzug ein Einzeiler ist statt einer Suche. */
+var CR_JUP_BASE = 'https://lite-api.jup.ag/swap/v1';
+
 window.crQuote = (function(){
-  var BASE = 'https://quote-api.jup.ag/v6/quote';
+  var BASE = CR_JUP_BASE + '/quote';
   var _cache = {};                       // key -> { at, res }
   var TTL = 30000;                       // 30s; Quotes altern schnell
   function key(a,b,amt,slip){ return a+'|'+b+'|'+amt+'|'+slip; }
@@ -98836,7 +98861,7 @@ window.crGoldRush = (function(){
       let bestRoute = '';
       for(const n of probes){
         const amt = String(Math.round(n * 1e9)); // lamports
-        const r = await _crTermFetchJsonResponse('phxBook', 'https://lite-api.jup.ag/swap/v1/quote?inputMint=' + _SOL_MINT + '&outputMint=' + _USDC_MINT + '&amount=' + amt + '&slippageBps=50');
+        const r = await _crTermFetchJsonResponse('phxBook', CR_JUP_BASE + '/quote?inputMint=' + _SOL_MINT + '&outputMint=' + _USDC_MINT + '&amount=' + amt + '&slippageBps=50');
         if(!r.ok) continue;
         const j = await r.json();
         if(!j || !j.outAmount) continue;
