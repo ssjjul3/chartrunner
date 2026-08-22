@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.872
-     LAST UPDATED:    2026-08-22  ·  v1.0.872: EIN AUSFALL IST KEINE AUSKUNFT — HTTP-EBENE VOR BODY-EBENE. Der tx-Worker meldet einen RPC-Ausfall als 502 mit ok:false und LAESST confirmationStatus bewusst weg, damit ein Ausfall nicht wie eine Antwort aussieht. Genau daran fiel crTxApi.status() durch: es prueft nur auf 404 und reichte sonst den geparsten Body durch. Ohne error, ohne err, ohne confirmationStatus landete der Client im Zweig „noch nicht bestaetigt“ und pollte 15 Mal ueber 30s — statt nach 3 Versuchen ehrlich aufzugeben. Die zwei getrennten Budgets aus v1.0.870 waren damit wirkungslos, genau in dem Fall, fuer den sie gebaut wurden. (a) Jeder Statuscode ausserhalb 2xx heisst jetzt: die ABFRAGE ist gescheitert — unabhaengig davon, was im Body steht. Das sagt nichts ueber die Transaktion und wird auch so weitergereicht. (b) Ein 200 mit unparsbarem Body ergibt bad-response statt eines stillen undefined. (c) Der Testfall bildet ab sofort die ECHTE Antwortform des Workers ab (502, ok:false, kein confirmationStatus, KEIN error-Feld) statt einer bequemen Attrappe mit error-Feld — die alte Attrappe haette den Fehler nie gezeigt. Gegenprobe gelaufen: ohne den Fix faellt der neue Testfall, mit ihm nicht. Gefunden durch die private Session, die den Endpunkt gebaut hat: nicht der Code war falsch dokumentiert, sondern meine Annahme ueber seine Fehlerform. Spiellogik, Rendering und Abilities unberuehrt.
+     CURRENT VERSION: v1.0.873
+     LAST UPDATED:    2026-08-22  ·  v1.0.873: DEN GRUND ZEIGEN, NICHT NUR BERECHNEN. Gefunden beim Review von v1.0.872: crTxApi.status() ermittelt bei einem Ausfall ein `detail` aus dem rpc_note des Workers — angezeigt wurde aber nur st.error, also „http-502“. Der Worker gibt sich Muehe, den Grund im Klartext zu nennen („RPC nicht erreichbar“), und der Client tauschte ihn gegen eine Statusnummer. Genau die Sorte Verlust, die diese ganze Kette vermeiden soll — und der Kommentar im Patch legte nahe, es wuerde bereits benutzt. Jetzt steht der Klartextgrund da, die Statusnummer nur, wenn keiner mitkam. Der Testfall prueft ab sofort den GRUND, nicht bloss dass irgendeine Ausfallmeldung erscheint. Ein Zeichen Code, aber es ist der Unterschied zwischen „irgendetwas ist kaputt“ und „der Solana-Knoten antwortet nicht“. Spiellogik, Rendering und Abilities unberuehrt.
+     PREV  ·  v1.0.872: EIN AUSFALL IST KEINE AUSKUNFT — HTTP-EBENE VOR BODY-EBENE. Der tx-Worker meldet einen RPC-Ausfall als 502 mit ok:false und LAESST confirmationStatus bewusst weg, damit ein Ausfall nicht wie eine Antwort aussieht. Genau daran fiel crTxApi.status() durch: es prueft nur auf 404 und reichte sonst den geparsten Body durch. Ohne error, ohne err, ohne confirmationStatus landete der Client im Z
      PREV  ·  v1.0.871: DAS NETZ DER WALLET IST NICHT DAS NETZ DER TRANSAKTION. Der erste Devnet-Durchlauf lief gegen eine Phantom-Instanz im MAINNET-Modus: wir haben devnet angefragt, die Wallet hat anstandslos SIGNIERT, und die Transaktion landete nirgends. Das Spiel meldete „gesendet". Eine Signatur entsteht beim Signieren — sie sagt nichts darueber, ob das Netz ueberhaupt zusammenpasst. (a) EIGENE FRUEHERE 
      PREV  ·  v1.0.870: DIE KETTE IST DIE INSTANZ, NICHT DER RUECKGABEWERT. Anlass ist ein echter Vorfall: der erste Devnet-Durchlauf meldete im Spiel „Signiert und gesendet", waehrend der Explorer zur selben Zeit „Not Found" zeigte. Sechs Minuten lang gab es keine Moeglichkeit zu wissen, was stimmt — BEIDES war falsch beschriftet, nicht nur eines. (Aufgeloest hat es sich: die Transaktion lief, Status Success, 
      PREV  ·  v1.0.869: DER SIGNIERWEG IST GESCHLOSSEN — DEVNET-PROBE IM WALLET-PICKER. v1.0.868 brachte crSigner (Wallet finden, verbinden, serialisierte Bytes signieren lassen), es fehlte die Gegenseite, die eine Transaktion BAUT. Die steht jetzt als eigener Worker. (a) NEU crTxApi: duenne Anbindung an chartrunner-tx. Der Client baut KEINE Solana-Transaktion — das braeuchte web3.js und damit einen Build-Schri
@@ -15892,8 +15893,15 @@ window.crWallet = (function(){
           errs++;
           if(errs < _CONFIRM_ERR_TRIES) return _later(tick);
           _probeBusy = false;
-          return _probeSay('Gesendet. Der Status liess sich nicht abfragen ('
-            + st.error + ') — die Transaktion kann trotzdem gelaufen sein.<br>' + link);
+          // v1.0.873 — den Klartextgrund ZEIGEN, nicht nur berechnen. In
+          // v1.0.872 stand hier nur st.error, also „http-502“ — waehrend das
+          // rpc_note des Workers („RPC nicht erreichbar“) ungenutzt im
+          // Rueckgabeobjekt lag. Der Worker gibt sich Muehe, den Grund im
+          // Klartext zu nennen; ihn dann gegen eine Statusnummer einzutauschen
+          // ist genau die Sorte Verlust, die diese ganze Kette vermeiden soll.
+          return _probeSay('Gesendet. Der Status liess sich nicht abfragen'
+            + (st.detail ? ': ' + st.detail : ' (' + st.error + ')')
+            + ' — die Transaktion kann trotzdem gelaufen sein.<br>' + link);
         }
         errs = 0;   // Dienst antwortet wieder
         // Gelandet UND gescheitert: der gefaehrlichste Fall.
