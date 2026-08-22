@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Wallet-Prüfung · ChartRunner</title>
+<style>
+  :root{
+    --bg:#0A0B0B; --card:#121415; --line:#232628; --line2:#1C1F20;
+    --fg:#F1F3F1; --mut:#8C938F; --dim:#5F6663;
+    --ok:#4ADE80; --warn:#E0A44E; --bad:#F0785C; --purple:#9945FF;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:var(--bg); color:var(--fg);
+    font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  .wrap{ max-width:640px; margin:0 auto; padding:20px 16px 64px; }
+  h1{ font-size:20px; margin:0 0 4px; letter-spacing:-.2px; }
+  .sub{ color:var(--mut); font-size:13px; margin:0 0 18px; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:14px; margin-bottom:14px; }
+  .lbl{ font-size:10px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--mut); margin-bottom:10px; }
+  .row{ display:flex; justify-content:space-between; gap:10px; padding:5px 0; font-size:13.5px; }
+  .row+.row{ border-top:1px solid var(--line2); }
+  .k{ color:var(--mut); }
+  .v{ font-weight:600; text-align:right; word-break:break-all; }
+  .v.ok{ color:var(--ok); } .v.warn{ color:var(--warn); } .v.bad{ color:var(--bad); }
+  .verdict{ border-radius:12px; padding:14px; margin-bottom:16px; font-size:14px; line-height:1.5; }
+  .verdict.ok{ background:#0C2019; border:1px solid #1F5A3E; }
+  .verdict.bad{ background:#241110; border:1px solid #6B2B21; }
+  .verdict.wait{ background:#1A1712; border:1px solid #4A3B1C; }
+  .verdict b{ display:block; font-size:16px; margin-bottom:4px; }
+  button{ font:inherit; font-weight:700; font-size:13.5px; border:0; border-radius:9px;
+    padding:10px 14px; cursor:pointer; color:#fff; background:var(--purple); }
+  button.ghost{ background:transparent; border:1px solid #33383A; color:#C7CDC9; }
+  button[disabled]{ opacity:.45; cursor:default; }
+  .btns{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  pre{ font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:#0C0E0E;
+    border:1px solid var(--line); border-radius:8px; padding:10px; overflow-x:auto;
+    color:#C3CAC5; white-space:pre-wrap; word-break:break-all; margin:10px 0 0; }
+  .feat{ display:inline-block; font:11px/1 ui-monospace,monospace; background:#0C0E0E;
+    border:1px solid var(--line); border-radius:5px; padding:4px 6px; margin:3px 3px 0 0; color:#A8B0AB; }
+  .feat.hit{ border-color:#2E9E63; color:var(--ok); }
+  .wname{ display:flex; align-items:center; gap:8px; font-weight:700; margin-bottom:8px; }
+  .wname img{ width:20px; height:20px; border-radius:5px; }
+  .foot{ color:var(--dim); font-size:12px; margin-top:22px; }
+  a{ color:#8FD9B0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Wallet-Prüfung</h1>
+  <p class="sub">Beantwortet eine einzige Frage: Kann ChartRunner ohne Build-Schritt und ohne Bibliothek eine Wallet finden und signieren lassen? Es wird <b>nichts signiert und nichts gesendet</b> — nur nachgesehen, was da ist.</p>
+
+  <div id="verdict" class="verdict wait"><b>Wird geprüft …</b>Einen Moment — Wallets melden sich manchmal erst kurz nach dem Laden.</div>
+
+  <div class="card">
+    <div class="lbl">1 · Entdeckung über Wallet Standard</div>
+    <div class="row"><span class="k">Gefundene Wallets</span><span class="v" id="wCount">—</span></div>
+    <div class="row"><span class="k">Handshake beantwortet</span><span class="v" id="wHandshake">—</span></div>
+    <div class="row"><span class="k">navigator.wallets (Altentwurf)</span><span class="v" id="wNav">—</span></div>
+    <div id="wList"></div>
+  </div>
+
+  <div class="card">
+    <div class="lbl">2 · Signieren mit rohen Bytes</div>
+    <div class="row"><span class="k">solana:signAndSendTransaction</span><span class="v" id="fSas">—</span></div>
+    <div class="row"><span class="k">solana:signTransaction</span><span class="v" id="fSt">—</span></div>
+    <div class="row"><span class="k">standard:connect</span><span class="v" id="fConn">—</span></div>
+    <div class="row"><span class="k">Unterstützte Netze</span><span class="v" id="fChains">—</span></div>
+  </div>
+
+  <div class="card">
+    <div class="lbl">3 · Verbinden (fragt die Wallet, signiert nicht)</div>
+    <div class="row"><span class="k">Konto</span><span class="v" id="cAcct">nicht verbunden</span></div>
+    <div class="btns">
+      <button id="btnConn" disabled>Verbinden</button>
+      <button class="ghost" id="btnCopy">Bericht kopieren</button>
+    </div>
+    <pre id="log">wartet …</pre>
+  </div>
+
+  <div class="card">
+    <div class="lbl">Zum Vergleich · alter Weg (injiziertes Objekt)</div>
+    <div class="row"><span class="k">window.phantom.solana</span><span class="v" id="lPh">—</span></div>
+    <div class="row"><span class="k">window.solflare</span><span class="v" id="lSf">—</span></div>
+    <div class="row"><span class="k">window.backpack</span><span class="v" id="lBp">—</span></div>
+    <div class="row"><span class="k">Umgebung</span><span class="v" id="lEnv">—</span></div>
+  </div>
+
+  <p class="foot">Diese Seite ist ein Diagnosewerkzeug, kein Teil des Spiels.
+  <a href="/play/">← zurück zu ChartRunner</a></p>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var wallets = [], handshakeAnswered = false, lines = [];
+  function log(s){ lines.push(s); var el = document.getElementById('log'); if(el) el.textContent = lines.join('\n'); }
+  function set(id, text, cls){
+    var el = document.getElementById(id); if(!el) return;
+    el.textContent = text; el.className = 'v' + (cls ? ' ' + cls : '');
+  }
+
+  /* ── 1 · Wallet-Standard-Handshake, in reinem Browser-JS ──────────────
+     Die Wallet ruft den Callback aus 'wallet-standard:register-wallet' auf
+     und uebergibt uns ihr Objekt. Umgekehrt melden wir uns per
+     'wallet-standard:app-ready', falls die Wallet schon vor uns da war.
+     Genau DAS ist die Frage: geht das ohne Paket?                       */
+  function register(){
+    var added = 0;
+    for(var i = 0; i < arguments.length; i++){
+      var w = arguments[i];
+      if(w && wallets.indexOf(w) === -1){ wallets.push(w); added++; }
+    }
+    if(added) { log('registriert: +' + added + ' (jetzt ' + wallets.length + ')'); render(); }
+    return function(){};
+  }
+  var api = { register: register };
+
+  try {
+    window.addEventListener('wallet-standard:register-wallet', function(ev){
+      handshakeAnswered = true;
+      try {
+        // Spezifikation: detail ist eine Funktion, die unsere api entgegennimmt.
+        if(typeof ev.detail === 'function') ev.detail(api);
+        else if(ev.detail && typeof ev.detail.register === 'function') ev.detail.register(api);
+        else log('register-wallet: unerwartete Form von detail (' + typeof ev.detail + ')');
+      } catch(e){ log('register-wallet Fehler: ' + (e && e.message)); }
+    });
+    log('lausche auf wallet-standard:register-wallet');
+  } catch(e){ log('addEventListener fehlgeschlagen: ' + (e && e.message)); }
+
+  try {
+    window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: api }));
+    log('app-ready gesendet');
+  } catch(e){ log('app-ready fehlgeschlagen: ' + (e && e.message)); }
+
+  // Altentwurf, den manche Wallets noch bedienen.
+  try {
+    var nav = window.navigator && window.navigator.wallets;
+    if(nav){
+      set('wNav', 'vorhanden', 'warn');
+      if(typeof nav.push === 'function'){ nav.push(function(a){ try{ register.apply(null, (a.get && a.get()) || []); }catch(_){} }); }
+      else if(typeof nav.get === 'function'){ register.apply(null, nav.get() || []); }
+    } else { set('wNav', 'nicht vorhanden', ''); }
+  } catch(e){ set('wNav', 'Fehler', 'bad'); }
+
+  /* ── Legacy-Injektionen, nur zum Vergleich ────────────────────────── */
+  function probeLegacy(){
+    var ph = (window.phantom && window.phantom.solana) || null;
+    set('lPh', ph ? (ph.isPhantom ? 'ja · isPhantom' : 'ja') : 'nein', ph ? 'ok' : '');
+    set('lSf', window.solflare ? 'ja' : 'nein', window.solflare ? 'ok' : '');
+    set('lBp', window.backpack ? 'ja' : 'nein', window.backpack ? 'ok' : '');
+    var ua = navigator.userAgent || '';
+    var env = /iPhone|iPad/i.test(ua) ? 'iOS' : /Android/i.test(ua) ? 'Android' : 'Desktop';
+    var inApp = /Phantom|Solflare|Backpack/i.test(ua) ? ' · Wallet-Browser' : '';
+    set('lEnv', env + inApp + ' · ' + location.origin, '');
+  }
+
+  /* ── Auswertung ──────────────────────────────────────────────────── */
+  var chosen = null;
+  function featuresOf(w){ try { return Object.keys(w.features || {}); } catch(_){ return []; } }
+
+  function render(){
+    set('wCount', String(wallets.length), wallets.length ? 'ok' : 'bad');
+    set('wHandshake', handshakeAnswered ? 'ja' : 'noch nicht', handshakeAnswered ? 'ok' : 'warn');
+
+    var host = document.getElementById('wList');
+    host.innerHTML = '';
+    wallets.forEach(function(w){
+      var feats = featuresOf(w);
+      var box = document.createElement('div');
+      box.style.cssText = 'margin-top:12px;padding-top:12px;border-top:1px solid var(--line2)';
+      var head = document.createElement('div');
+      head.className = 'wname';
+      if(w.icon){ var im = document.createElement('img'); im.src = w.icon; im.alt = ''; head.appendChild(im); }
+      var nm = document.createElement('span');
+      nm.textContent = (w.name || 'ohne Namen') + '  v' + (w.version || '?');
+      head.appendChild(nm);
+      box.appendChild(head);
+      feats.forEach(function(f){
+        var s = document.createElement('span');
+        s.className = 'feat' + (/^solana:sign|^standard:connect/.test(f) ? ' hit' : '');
+        s.textContent = f;
+        box.appendChild(s);
+      });
+      host.appendChild(box);
+    });
+
+    chosen = wallets.filter(function(w){
+      return featuresOf(w).indexOf('solana:signAndSendTransaction') !== -1;
+    })[0] || wallets[0] || null;
+
+    var f = chosen ? featuresOf(chosen) : [];
+    var hasSas = f.indexOf('solana:signAndSendTransaction') !== -1;
+    var hasSt  = f.indexOf('solana:signTransaction') !== -1;
+    var hasCn  = f.indexOf('standard:connect') !== -1;
+    set('fSas', chosen ? (hasSas ? 'vorhanden' : 'FEHLT') : '—', chosen ? (hasSas ? 'ok' : 'bad') : '');
+    set('fSt',  chosen ? (hasSt  ? 'vorhanden' : 'fehlt') : '—', chosen ? (hasSt ? 'ok' : 'warn') : '');
+    set('fConn',chosen ? (hasCn  ? 'vorhanden' : 'fehlt') : '—', chosen ? (hasCn ? 'ok' : 'warn') : '');
+
+    var chains = [];
+    try { chains = (chosen && chosen.chains) ? Array.prototype.slice.call(chosen.chains) : []; } catch(_){}
+    set('fChains', chains.length ? chains.join(', ') : '—', chains.length ? 'ok' : '');
+
+    document.getElementById('btnConn').disabled = !(chosen && hasCn);
+
+    var v = document.getElementById('verdict');
+    if(!wallets.length){
+      v.className = 'verdict bad';
+      v.innerHTML = '<b>Keine Wallet gefunden.</b>Entweder ist keine installiert, oder die Entdeckung ueber reines JavaScript funktioniert hier nicht. Auf dem Telefon: diese Seite im Browser der Wallet oeffnen und noch einmal pruefen.';
+    } else if(hasSas){
+      v.className = 'verdict ok';
+      v.innerHTML = '<b>Traegt.</b>' + (chosen.name || 'Die Wallet') + ' wurde von reinem Browser-JavaScript gefunden und nimmt serialisierte Bytes entgegen. Ansatz 1 ist damit ohne Build-Schritt moeglich — die Einzeldatei-Regel bleibt.';
+    } else {
+      v.className = 'verdict bad';
+      v.innerHTML = '<b>Wallet gefunden, aber ohne solana:signAndSendTransaction.</b>Dann braeuchte der Signierweg doch eine Bibliothek — und Ansatz 1 kostet den Build-Schritt.';
+    }
+  }
+
+  document.getElementById('btnConn').addEventListener('click', function(){
+    if(!chosen) return;
+    var fn = chosen.features['standard:connect'];
+    log('connect() aufgerufen …');
+    Promise.resolve()
+      .then(function(){ return fn.connect(); })
+      .then(function(res){
+        var acc = (res && res.accounts && res.accounts[0]) || (chosen.accounts && chosen.accounts[0]);
+        if(!acc){ set('cAcct', 'verbunden, kein Konto', 'warn'); log('connect ok, aber accounts leer'); return; }
+        set('cAcct', acc.address, 'ok');
+        log('Konto: ' + acc.address);
+        log('Konto-Features: ' + ((acc.features || []).join(', ') || '—'));
+        log('Konto-Chains: '   + ((acc.chains   || []).join(', ') || '—'));
+      })
+      .catch(function(e){
+        set('cAcct', 'abgelehnt oder Fehler', 'bad');
+        log('connect Fehler: ' + (e && (e.message || e)));
+      });
+  });
+
+  document.getElementById('btnCopy').addEventListener('click', function(){
+    var out = ['ChartRunner Wallet-Pruefung', location.href, navigator.userAgent, ''];
+    ['wCount','wHandshake','wNav','fSas','fSt','fConn','fChains','cAcct','lPh','lSf','lBp','lEnv']
+      .forEach(function(id){
+        var el = document.getElementById(id);
+        var lab = el && el.parentNode && el.parentNode.querySelector('.k');
+        if(el) out.push((lab ? lab.textContent : id) + ': ' + el.textContent);
+      });
+    wallets.forEach(function(w){ out.push('— ' + (w.name||'?') + ': ' + featuresOf(w).join(' ')); });
+    out.push('', 'Protokoll:', lines.join('\n'));
+    var txt = out.join('\n');
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(function(){ log('Bericht kopiert.'); },
+        function(){ log('Kopieren abgelehnt — Text steht unten.'); log(txt); });
+    } else { log(txt); }
+  });
+
+  probeLegacy();
+  render();
+  // Manche Wallets melden sich erst nach dem ersten Frame.
+  setTimeout(function(){ probeLegacy(); render(); }, 400);
+  setTimeout(function(){ probeLegacy(); render(); }, 1600);
+})();
+</script>
+</body>
+</html>
