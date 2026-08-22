@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.874
-     LAST UPDATED:    2026-08-22  ·  v1.0.874: P2.3 — DER ERSTE ECHTE HANDEL, IN ZWEI STUFEN. Bis v1.0.873 war die Kette geschlossen, aber sie trug nur ein Memo. Jetzt traegt sie einen Swap. (a) NEU crTxApi.swap(): fragt beim tx-Worker POST /v1/tx/swap ein Angebot an — Einsatz, Ausgabe-Mint, Slippage. Der Client baut nichts und rechnet nichts; er zeigt, was der Worker geprueft hat. (b) NEU ChartRunnerSDK.prototype.prepareSwap(): die eine Order-Instanz bleibt die eine Order-Instanz. prepareSwap SIGNIERT ausdruecklich nicht — hier haengt spaeter der Broker-Parameter, wenn nicht mehr nur ueber Jupiter geroutet wird. (c) NEU Handel-Schaltflaeche im Handelbarkeit-Block: ZWEI STUFEN, nicht eine. Tap 1 holt das Angebot und signiert NICHTS; die Tafel zeigt Einsatz, Erwartet, MINDESTENS (die Zahl, die zaehlt), Preisauswirkung, Gebuehr und den Deckel. Tap 2 signiert. Wer nur einmal tippt, hat nichts riskiert. (d) Der Worker meldet in jeder Antwort checked.instructions_match_request:false — er hat die Instruktionen NICHT gegen die Anfrage geprueft. Diese Luecke wird weitergereicht statt verschwiegen: die Wallet zeigt gleich, was wirklich signiert wird. (e) BUGFIX aus v1.0.870: _explorerLink() und _awaitConfirmation() hingen fest an devnet. Ein Mainnet-Handel haette auf einen Devnet-Explorer verlinkt und gegen das falsche Netz bestaetigt — derselbe Fehler wie in v1.0.871, eine Ebene tiefer. Cluster laeuft jetzt durch. (f) Der Deckel (0,05 SOL, nur BONK) ist eine TESTBREMSE, keine Obergrenze — er faellt, wenn Phase 2 steht. (g) BUGFIX beim Anwenden gefunden: der Patch brachte ein ZWEITES _crFmtSol mit, im selben Skriptblock wie das bestehende der Wallet-Guthaben-Anzeige. Zwei gleichnamige Deklarationen kollidieren nicht laut — die spaetere gewinnt, und die Swap-Tafel benutzte still einen Formatierer, den sie nie gesehen hat. Aufgefallen ist es nicht der gruenen Suite, sondern der Ausgabe einer Gegenprobe. Es bleibt genau eine Fassung, und der Testfall zaehlt ab sofort die Deklarationen, weil der Browser diese Sorte Kollision nicht melden kann. Spiellogik, Rendering und Abilities unberuehrt.
+     CURRENT VERSION: v1.0.875
+     LAST UPDATED:    2026-08-22  ·  v1.0.875: EIN DECKEL, DER NIE GEGEN ETWAS GEDRUECKT HAT, IST EINE BEHAUPTUNG. Die Probe sollte per curl gegen den Worker laufen; beide Sandboxes sind fuer *.workers.dev gesperrt (403 auf CONNECT). Also laeuft sie aus dem Netz des Spielers — ueber GENAU DEN WEG, den ein echter Handel nimmt: prepareSwap, crTxApi, Worker, dieselbe Tafel. Eine eigene Probe-Seite waere eine ZWEITE Anfrage-Implementierung gewesen und haette etwas anderes geprueft als das, was der Spieler benutzt — der Fehler, den v1.0.874 zweimal beseitigt hat. (a) NEU Schaltflaeche „Deckel pruefen" neben „Echt handeln". Holt zwei Angebote, signiert keines. (b) DER EIGENTLICHE FALL, gefunden von der Session, die v1.0.874 angewandt hat: der Client schickt bei jedem Handel EXAKT max_in_lamports. Prueft der Worker `betrag >= deckel` statt `> deckel`, wird JEDER Handel abgelehnt — das Feature waere tot, ohne dass eine Meldung das sagt. Die Probe prueft beide Richtungen der Grenze: den erlaubten Betrag (muss durchgehen) und EIN LAMPORT darueber (muss abgelehnt werden). (c) Der Deckel wird NICHT hart verdrahtet, sondern aus der Antwort des Workers gelesen und die Grenze daraus abgeleitet. Faellt der Deckel, prueft die Probe die neue Grenze. (d) Drei unverwechselbare Diagnosen: haelt richtig · sperrt zu frueh (Vergleich falsch herum, ausdruecklich mit „nicht handeln") · undicht. (e) Probe und Handel teilen sich Tafel UND busy — zwei Zustaende waeren wieder zwei Schreiber auf einer Flaeche. Spiellogik, Rendering und Abilities unberuehrt.
+     PREV  ·  v1.0.874: P2.3 — DER ERSTE ECHTE HANDEL, IN ZWEI STUFEN. Bis v1.0.873 war die Kette geschlossen, aber sie trug nur ein Memo. Jetzt traegt sie einen Swap. (a) NEU crTxApi.swap(): fragt beim tx-Worker POST /v1/tx/swap ein Angebot an — Einsatz, Ausgabe-Mint, Slippage. Der Client baut nichts und rechnet nichts; er zeigt, was der Worker geprueft hat. (b) NEU ChartRunnerSDK.prototype.prepareSwap(): die eine Order
      PREV  ·  v1.0.873: DEN GRUND ZEIGEN, NICHT NUR BERECHNEN. Gefunden beim Review von v1.0.872: crTxApi.status() ermittelt bei einem Ausfall ein `detail` aus dem rpc_note des Workers — angezeigt wurde aber nur st.error, also „http-502“. Der Worker gibt sich Muehe, den Grund im Klartext zu nennen („RPC nicht erreichbar“), und der Client tauschte ihn gegen eine Statusnummer. Genau die Sorte Verlust, die diese ganze Kette
      PREV  ·  v1.0.872: EIN AUSFALL IST KEINE AUSKUNFT — HTTP-EBENE VOR BODY-EBENE. Der tx-Worker meldet einen RPC-Ausfall als 502 mit ok:false und LAESST confirmationStatus bewusst weg, damit ein Ausfall nicht wie eine Antwort aussieht. Genau daran fiel crTxApi.status() durch: es prueft nur auf 404 und reichte sonst den geparsten Body durch. Ohne error, ohne err, ohne confirmationStatus landete der Client im Z
      PREV  ·  v1.0.871: DAS NETZ DER WALLET IST NICHT DAS NETZ DER TRANSAKTION. Der erste Devnet-Durchlauf lief gegen eine Phantom-Instanz im MAINNET-Modus: wir haben devnet angefragt, die Wallet hat anstandslos SIGNIERT, und die Transaktion landete nirgends. Das Spiel meldete „gesendet". Eine Signatur entsteht beim Signieren — sie sagt nichts darueber, ob das Netz ueberhaupt zusammenpasst. (a) EIGENE FRUEHERE 
@@ -26569,6 +26570,33 @@ function _crWireSwap(host, mint){
 
   function say(html){ panel.style.display = ''; panel.innerHTML = html; }
 
+  // EINE Tafel, EIN busy — Handel und Deckel-Probe teilen sich beides. Zwei
+  // getrennte Zustaende waeren wieder zwei Schreiber auf derselben Flaeche,
+  // genau der Fehler aus v1.0.874.
+  function ready(){
+    var addr = '';
+    try { addr = (window.crSigner && crSigner.active() && crSigner.active().address) || ''; } catch(_){}
+    if(!addr){ say('<span style="color:var(--dim)">Erst eine Wallet verbinden — Topbar → Connect.</span>'); return null; }
+    var netz = null;
+    try { netz = crSigner.chainReady('solana:mainnet'); } catch(_){}
+    if(netz && !netz.ok && netz.reason === 'wrong-network'){
+      say('<span style="color:#f7c76b">Deine Wallet steht auf <b>'
+        + netz.on.join(', ').replace(/solana:/g, '') + '</b>. Ein echter Handel braucht <b>mainnet</b>.'
+        + '<br>In Phantom: Einstellungen → Entwickler-Einstellungen → Testnet-Modus <b>aus</b>.</span>');
+      return null;
+    }
+    return addr;
+  }
+
+  var probeBtn = host.querySelector('[data-cr-cap-probe]');
+  if(probeBtn) probeBtn.addEventListener('click', function(){
+    if(busy) return;
+    var addr = ready();
+    if(!addr) return;
+    busy = true;
+    _crProbeCap(addr, mint, say).then(function(){ busy = false; });
+  });
+
   btn.addEventListener('click', function(){
     if(busy) return;
     var addr = '';
@@ -26712,6 +26740,139 @@ function _crConfirmSwap(sig, panel){
   // erreicht ist (bestaetigt, fehlgeschlagen, Status nicht abfragbar, oder
   // 30s ohne Antwort). Der Aufrufer haengt daran die Freigabe der Tafel.
   return tick();
+}
+
+/* =========================================================================
+ * v1.0.875 — DIE DECKEL-PROBE. Ein Limit, das nie gegen etwas gedrueckt hat,
+ * ist eine Behauptung.
+ *
+ * Anlass: die Probe sollte per curl gegen den Worker laufen. Beide Sandboxes
+ * sind fuer *.workers.dev gesperrt (403 auf CONNECT) — also laeuft sie aus dem
+ * Netz des Spielers, ueber GENAU DEN WEG, den ein echter Handel nimmt:
+ * prepareSwap → crTxApi → Worker → dieselbe Tafel. Eine eigene Probe-Seite
+ * waere eine ZWEITE Anfrage-Implementierung gewesen und haette damit etwas
+ * anderes geprueft als das, was der Spieler benutzt. Diese Woche hat zweimal
+ * genau daran gehangen (Explorer-Link, _crFmtSol).
+ *
+ * Der wichtige Fall ist NICHT „0,06 wird abgelehnt". Es ist die Grenze selbst,
+ * gefunden von der Session, die den Auftrag angewandt hat:
+ *
+ *   Der Client schickt bei jedem Handel EXAKT max_in_lamports. Prueft der
+ *   Worker `betrag >= deckel` statt `betrag > deckel`, wird jeder Handel
+ *   abgelehnt — das Feature waere tot, und zwar ohne Fehlermeldung, die das
+ *   sagt. Ob dieser eine Vergleich richtig herum steht, entscheidet ueber an
+ *   oder aus.
+ *
+ * Deshalb wird der Deckel NICHT hart verdrahtet, sondern aus der Antwort des
+ * Workers gelesen und die Grenze daraus abgeleitet. Faellt der Deckel spaeter,
+ * prueft die Probe automatisch die neue Grenze.
+ *
+ * Es wird nie signiert. Ein Angebot zu holen kostet nichts und bewegt nichts.
+ * ======================================================================= */
+function _crProbeRow(label, amountRaw, verdict, detail){
+  var col = verdict === 'ok' ? '#3ddc97' : (verdict === 'fail' ? '#ff5b7f' : 'var(--dim)');
+  var mark = verdict === 'ok' ? '✓' : (verdict === 'fail' ? '✗' : '…');
+  return '<div style="display:flex;gap:7px;padding:3px 0;align-items:baseline">'
+    + '<span style="color:' + col + ';font-weight:700;width:11px">' + mark + '</span>'
+    + '<span style="flex:1">' + label
+    + '<span style="color:var(--dim)"> · ' + _crFmtSol(amountRaw) + '</span>'
+    + (detail ? '<br><span style="color:' + col + ';font-size:9px">' + detail + '</span>' : '')
+    + '</span></div>';
+}
+
+function _crProbeCap(payer, mint, say){
+  var rows = [], done = [];
+  function draw(tail){
+    say('<div style="border:1px solid var(--line);border-radius:6px;padding:8px 9px;background:rgba(10,15,28,.55)">'
+      + '<div style="text-transform:uppercase;letter-spacing:.4px;color:var(--dim);font-size:9px;margin-bottom:5px">Deckel-Probe · es wird nichts signiert</div>'
+      + rows.join('') + (tail || '') + '</div>');
+  }
+  function ask(amountRaw){
+    return ChartRunnerSDK.prototype.prepareSwap({
+      payer: payer, outputMint: mint, amountRaw: String(amountRaw),
+      slippageBps: CR_SWAP_SLIPPAGE_BPS, cluster: 'mainnet'
+    });
+  }
+
+  rows.push('<div style="color:var(--dim);padding:3px 0">Frage den Worker …</div>');
+  draw();
+
+  // 1. Der Betrag, den ein echter Handel schickt. Aus DIESER Antwort kommt der
+  //    Deckel — geraten wird hier nichts.
+  return ask(CR_SWAP_TEST_LAMPORTS).then(function(a){
+    rows = [];
+    var cap = a && a.cap && a.cap.max_in_lamports;
+
+    if(a && a.error === 'over-cap'){
+      // Der gefaehrlichste Ausgang: der Deckel sperrt den erlaubten Betrag.
+      rows.push(_crProbeRow('Was ein Handel schickt', CR_SWAP_TEST_LAMPORTS, 'fail',
+        'ABGELEHNT — der Deckel sperrt den Betrag, den das Spiel selbst sendet. '
+        + 'Der Vergleich im Worker steht falsch herum (&ge; statt &gt;). '
+        + 'So kann kein Handel zustande kommen.'));
+      done.push(false);
+      draw('<div class="dim" style="font-size:9px;margin-top:6px">Nicht handeln, bevor das behoben ist.</div>');
+      return;
+    }
+    if(a && a.error){
+      rows.push(_crProbeRow('Was ein Handel schickt', CR_SWAP_TEST_LAMPORTS, 'fail',
+        'Abgelehnt mit „' + a.error + '"' + (a.detail ? ' · ' + a.detail : '')
+        + ' — nicht der Deckel, aber der Weg ist trotzdem zu.'));
+      draw();
+      return;
+    }
+    if(!a || typeof a.transaction !== 'string' || !a.transaction){
+      rows.push(_crProbeRow('Was ein Handel schickt', CR_SWAP_TEST_LAMPORTS, 'fail',
+        'Erfolg gemeldet, aber keine Transaktion geliefert.'));
+      draw();
+      return;
+    }
+
+    rows.push(_crProbeRow('Was ein Handel schickt', CR_SWAP_TEST_LAMPORTS, 'ok',
+      'Angebot erhalten. Der erlaubte Betrag geht durch.'));
+    done.push(true);
+
+    if(cap == null){
+      rows.push('<div style="color:var(--dim);padding:3px 0">Der Worker nennt keinen Deckel — die Grenze laesst sich nicht pruefen.</div>');
+      draw();
+      return;
+    }
+
+    // 2. Ein einziges Lamport ueber der Grenze. Der scharfe Test: er trennt
+    //    „der Deckel haelt" von „der Deckel liegt woanders als angegeben".
+    var justOver;
+    try { justOver = String(BigInt(cap) + 1n); }
+    catch(_){ justOver = String(Number(cap) + 1); }
+    rows.push('<div style="color:var(--dim);padding:3px 0">Ein Lamport darüber …</div>');
+    draw();
+
+    return ask(justOver).then(function(b){
+      rows.pop();
+      if(b && b.error === 'over-cap'){
+        rows.push(_crProbeRow('Ein Lamport über dem Deckel', justOver, 'ok',
+          'Abgelehnt. <b>Der Deckel hat gehalten</b> — auf das Lamport genau.'));
+        done.push(true);
+      } else if(b && b.transaction){
+        rows.push(_crProbeRow('Ein Lamport über dem Deckel', justOver, 'fail',
+          'DURCHGELASSEN. Der Deckel liegt nicht dort, wo der Worker ihn angibt.'));
+        done.push(false);
+      } else {
+        rows.push(_crProbeRow('Ein Lamport über dem Deckel', justOver, 'fail',
+          'Weder Angebot noch over-cap, sondern „' + ((b && b.error) || 'nichts') + '".'));
+        done.push(false);
+      }
+      var ok = done.every(Boolean);
+      draw('<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);color:'
+        + (ok ? '#3ddc97' : '#ff5b7f') + ';font-weight:700">'
+        + (ok ? 'Der Deckel hält, und er sperrt nicht zu früh.'
+              : 'Der Deckel verhält sich nicht wie angegeben — nicht handeln.')
+        + '</div><div class="dib dim" style="font-size:9px;margin-top:4px;color:var(--dim)">'
+        + 'Beide Angebote wurden nur geholt, nie signiert. Es ist nichts gesendet worden.</div>');
+    });
+  }).catch(function(e){
+    rows = [_crProbeRow('Deckel-Probe', CR_SWAP_TEST_LAMPORTS, 'fail',
+      'Unerwarteter Fehler: ' + String((e && e.message) || e))];
+    draw();
+  });
 }
 
 /* =========================================================================
@@ -71912,7 +72073,16 @@ function _tokRenderProfile(){
           + '<div style="margin-top:6px"><button type="button" data-cr-swap="' + _tokEscA(_qMint) + '" '
           + 'style="font:inherit;font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;'
           + 'border:1px solid #2E9E63;background:transparent;color:#4ADE80;cursor:pointer">'
-          + _tokT('tok.swapOpen','Echt handeln — 0,05 SOL') + '</button></div>'
+          + _tokT('tok.swapOpen','Echt handeln — 0,05 SOL') + '</button>'
+          // v1.0.875 — Der Deckel laesst sich vom Telefon aus PRUEFEN, nicht nur
+          // behaupten. Bewusst derselbe Weg wie ein echter Handel (prepareSwap →
+          // crTxApi → Worker), nicht eine zweite Anfrage-Implementierung auf einer
+          // eigenen Seite: geprueft werden soll die Kette, die der Spieler
+          // benutzt. Es wird dabei nie signiert.
+          + ' <button type="button" data-cr-cap-probe="' + _tokEscA(_qMint) + '" '
+          + 'style="font:inherit;font-size:10px;padding:5px 9px;border-radius:5px;'
+          + 'border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer">'
+          + _tokT('tok.capProbe','Deckel prüfen') + '</button></div>'
           + '<div data-cr-swap-panel="' + _tokEscA(_qMint) + '" style="display:none;margin-top:7px"></div>';
         try { _crWireSwap(_tokQEl, _qMint); } catch(_){}
       }).catch(() => {});
