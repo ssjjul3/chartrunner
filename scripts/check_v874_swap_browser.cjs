@@ -122,6 +122,23 @@ function mockWallet(){
       await ChartRunnerSDK.prototype.prepareSwap({ payer:'x', outputMint:'y', amountRaw:'1' });
       return window.__signs.length === 0; }));
 
+  /* Genau eine Fassung, nicht zwei.
+   *
+   * Die Datei ist EIN Skriptblock: zwei gleichnamige Funktionsdeklarationen
+   * kollidieren nicht laut, die spaetere gewinnt einfach — und die frueheren
+   * Aufrufer benutzen still eine Fassung, die sie nie gesehen haben. Genau das
+   * war mit _crFmtSol passiert (die Swap-Tafel bekam den Formatierer der
+   * Wallet-Guthaben-Anzeige). Der Browser kann das nicht melden, also wird
+   * hier die Quelle gezaehlt. */
+  console.log('\n-- Genau eine Fassung --');
+  {
+    const src = fs.readFileSync(FILE, 'utf8');
+    for(const fn of ['_crFmtSol', '_crFmtRaw', '_crSwapRow', '_crWireSwap', '_crConfirmSwap']){
+      const n = (src.match(new RegExp('function\\s+' + fn + '\\s*\\(', 'g')) || []).length;
+      check(fn + ' ist genau einmal deklariert', n === 1, n);
+    }
+  }
+
   /* Die Oberflaeche haengt an einem gerenderten Token-Profil. Statt das
    * nachzubauen, wird der Ablauf direkt gegen die Verdrahtung geprueft — es
    * geht um das VERHALTEN, nicht um die Pixel. */

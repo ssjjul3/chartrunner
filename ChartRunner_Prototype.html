@@ -112,7 +112,7 @@ window.crShare = function (o) {
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
      CURRENT VERSION: v1.0.874
-     LAST UPDATED:    2026-08-22  ·  v1.0.874: P2.3 — DER ERSTE ECHTE HANDEL, IN ZWEI STUFEN. Bis v1.0.873 war die Kette geschlossen, aber sie trug nur ein Memo. Jetzt traegt sie einen Swap. (a) NEU crTxApi.swap(): fragt beim tx-Worker POST /v1/tx/swap ein Angebot an — Einsatz, Ausgabe-Mint, Slippage. Der Client baut nichts und rechnet nichts; er zeigt, was der Worker geprueft hat. (b) NEU ChartRunnerSDK.prototype.prepareSwap(): die eine Order-Instanz bleibt die eine Order-Instanz. prepareSwap SIGNIERT ausdruecklich nicht — hier haengt spaeter der Broker-Parameter, wenn nicht mehr nur ueber Jupiter geroutet wird. (c) NEU Handel-Schaltflaeche im Handelbarkeit-Block: ZWEI STUFEN, nicht eine. Tap 1 holt das Angebot und signiert NICHTS; die Tafel zeigt Einsatz, Erwartet, MINDESTENS (die Zahl, die zaehlt), Preisauswirkung, Gebuehr und den Deckel. Tap 2 signiert. Wer nur einmal tippt, hat nichts riskiert. (d) Der Worker meldet in jeder Antwort checked.instructions_match_request:false — er hat die Instruktionen NICHT gegen die Anfrage geprueft. Diese Luecke wird weitergereicht statt verschwiegen: die Wallet zeigt gleich, was wirklich signiert wird. (e) BUGFIX aus v1.0.870: _explorerLink() und _awaitConfirmation() hingen fest an devnet. Ein Mainnet-Handel haette auf einen Devnet-Explorer verlinkt und gegen das falsche Netz bestaetigt — derselbe Fehler wie in v1.0.871, eine Ebene tiefer. Cluster laeuft jetzt durch. (f) Der Deckel (0,05 SOL, nur BONK) ist eine TESTBREMSE, keine Obergrenze — er faellt, wenn Phase 2 steht. Spiellogik, Rendering und Abilities unberuehrt.
+     LAST UPDATED:    2026-08-22  ·  v1.0.874: P2.3 — DER ERSTE ECHTE HANDEL, IN ZWEI STUFEN. Bis v1.0.873 war die Kette geschlossen, aber sie trug nur ein Memo. Jetzt traegt sie einen Swap. (a) NEU crTxApi.swap(): fragt beim tx-Worker POST /v1/tx/swap ein Angebot an — Einsatz, Ausgabe-Mint, Slippage. Der Client baut nichts und rechnet nichts; er zeigt, was der Worker geprueft hat. (b) NEU ChartRunnerSDK.prototype.prepareSwap(): die eine Order-Instanz bleibt die eine Order-Instanz. prepareSwap SIGNIERT ausdruecklich nicht — hier haengt spaeter der Broker-Parameter, wenn nicht mehr nur ueber Jupiter geroutet wird. (c) NEU Handel-Schaltflaeche im Handelbarkeit-Block: ZWEI STUFEN, nicht eine. Tap 1 holt das Angebot und signiert NICHTS; die Tafel zeigt Einsatz, Erwartet, MINDESTENS (die Zahl, die zaehlt), Preisauswirkung, Gebuehr und den Deckel. Tap 2 signiert. Wer nur einmal tippt, hat nichts riskiert. (d) Der Worker meldet in jeder Antwort checked.instructions_match_request:false — er hat die Instruktionen NICHT gegen die Anfrage geprueft. Diese Luecke wird weitergereicht statt verschwiegen: die Wallet zeigt gleich, was wirklich signiert wird. (e) BUGFIX aus v1.0.870: _explorerLink() und _awaitConfirmation() hingen fest an devnet. Ein Mainnet-Handel haette auf einen Devnet-Explorer verlinkt und gegen das falsche Netz bestaetigt — derselbe Fehler wie in v1.0.871, eine Ebene tiefer. Cluster laeuft jetzt durch. (f) Der Deckel (0,05 SOL, nur BONK) ist eine TESTBREMSE, keine Obergrenze — er faellt, wenn Phase 2 steht. (g) BUGFIX beim Anwenden gefunden: der Patch brachte ein ZWEITES _crFmtSol mit, im selben Skriptblock wie das bestehende der Wallet-Guthaben-Anzeige. Zwei gleichnamige Deklarationen kollidieren nicht laut — die spaetere gewinnt, und die Swap-Tafel benutzte still einen Formatierer, den sie nie gesehen hat. Aufgefallen ist es nicht der gruenen Suite, sondern der Ausgabe einer Gegenprobe. Es bleibt genau eine Fassung, und der Testfall zaehlt ab sofort die Deklarationen, weil der Browser diese Sorte Kollision nicht melden kann. Spiellogik, Rendering und Abilities unberuehrt.
      PREV  ·  v1.0.873: DEN GRUND ZEIGEN, NICHT NUR BERECHNEN. Gefunden beim Review von v1.0.872: crTxApi.status() ermittelt bei einem Ausfall ein `detail` aus dem rpc_note des Workers — angezeigt wurde aber nur st.error, also „http-502“. Der Worker gibt sich Muehe, den Grund im Klartext zu nennen („RPC nicht erreichbar“), und der Client tauschte ihn gegen eine Statusnummer. Genau die Sorte Verlust, die diese ganze Kette
      PREV  ·  v1.0.872: EIN AUSFALL IST KEINE AUSKUNFT — HTTP-EBENE VOR BODY-EBENE. Der tx-Worker meldet einen RPC-Ausfall als 502 mit ok:false und LAESST confirmationStatus bewusst weg, damit ein Ausfall nicht wie eine Antwort aussieht. Genau daran fiel crTxApi.status() durch: es prueft nur auf 404 und reichte sonst den geparsten Body durch. Ohne error, ohne err, ohne confirmationStatus landete der Client im Z
      PREV  ·  v1.0.871: DAS NETZ DER WALLET IST NICHT DAS NETZ DER TRANSAKTION. Der erste Devnet-Durchlauf lief gegen eine Phantom-Instanz im MAINNET-Modus: wir haben devnet angefragt, die Wallet hat anstandslos SIGNIERT, und die Transaktion landete nirgends. Das Spiel meldete „gesendet". Eine Signatur entsteht beim Signieren — sie sagt nichts darueber, ob das Netz ueberhaupt zusammenpasst. (a) EIGENE FRUEHERE 
@@ -26534,10 +26534,22 @@ try {
 var CR_SWAP_TEST_LAMPORTS = 50000000;   // 0,05 SOL
 var CR_SWAP_SLIPPAGE_BPS  = 50;
 
-function _crFmtSol(lamports){
-  var n = Number(lamports) / 1e9;
-  return (n < 0.001 ? n.toFixed(6) : n.toFixed(4)).replace(/0+$/, '').replace(/\.$/, '') + ' SOL';
-}
+/* v1.0.874 — HIER STAND EIN ZWEITES _crFmtSol.
+ *
+ * Derselbe Fehler, den dieser Patch beim Explorer-Link behoben hat, nur eine
+ * Datei weiter unten: zwei Implementierungen desselben Begriffs. Beide leben
+ * im SELBEN Skriptblock, also gewinnt die spaetere Deklaration — die
+ * Wallet-Guthaben-Fassung ab „_crFetchSolBalance". Die Swap-Tafel benutzte
+ * also nie den Formatierer, den sie mitgebracht hat: sie zeigte „0,0500 SOL",
+ * wo im Patch „0,05 SOL" stand. Aufgefallen ist es NICHT der gruenen Suite,
+ * sondern der Ausgabe einer Gegenprobe.
+ *
+ * Harmlos war es nur zufaellig. Verschiebt jemand einen der beiden Bloecke,
+ * kippt die Anzeige der jeweils anderen Stelle stillschweigend um.
+ *
+ * Es bleibt GENAU EINE Fassung (die bestehende, weiter unten): sie faengt
+ * null/NaN mit „—" ab, was fuer einen fehlenden Deckel die ehrlichere Anzeige
+ * ist als „NaN SOL". */
 function _crFmtRaw(raw){
   var n = Number(raw);
   if(!isFinite(n)) return String(raw);
