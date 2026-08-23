@@ -68,6 +68,54 @@ Adapter wurden bewusst als *public* freigegeben). Hinweis: Genau deshalb nennt
 diese Datei die verbotenen Marker nicht wörtlich — täte sie es, würde der Guard
 CLAUDE.md selbst als Leak flaggen.
 
+## Werkzeuge für Solana-Arbeit
+
+### Solana Developer MCP
+
+Gehosteter Server der Solana Foundation, kein API-Schlüssel nötig:
+
+```
+https://mcp.solana.com/mcp          # streamable HTTP
+claude mcp add --transport http solana https://mcp.solana.com/mcp
+```
+
+Fünf Werkzeuge: `Solana_Documentation_Search` (semantische Suche),
+`get_documentation` / `list_sections` (kanonische Dokumente),
+`Solana_Expert__Ask_For_Help` (Fragen mit Doku-Kontext) und `program_autofixer`
+(Rust-Analyse für Anchor/Pinocchio — für ChartRunner gegenstandslos, wir haben
+kein eigenes Programm, wir signieren fremde Transaktionen).
+
+**Wofür er taugt** — alles, was in der Doku steht und wo Raten teuer ist:
+Fehlercodes der System-/Token-Programme, Konstanten wie die Mietbefreiung eines
+Token-Kontos (2.039.280 Lamports), Instruktionslayouts, und vor allem
+**versionierte Transaktionen mit Address Lookup Tables** — der schwierige Teil
+der Instruktionsprüfung im tx-Worker.
+
+**Wofür er nicht taugt, und das ist der wichtigere Satz:**
+
+> **Doku ist keine Messung.**
+
+Die Fragen, an denen Phase 2 tatsächlich hing, beantwortet kein Doku-Server:
+ob `quote-api.jup.ag` noch auflöst (tat es nicht — DNS weg), ob der ausgerollte
+Worker `>` oder `>=` prüft, ob das Guthaben reicht, ob der Deploy denselben
+Quelltext fährt wie das Repo. Das musste jedes Mal gemessen werden, meist über
+Julians Telefon, weil beide Sandboxes `*.workers.dev` und `jup.ag` nicht
+erreichen.
+
+Wer eine Aussage aus dem MCP übernimmt, kennzeichnet sie als **Doku**, nicht als
+Befund. Eine Behauptung, die wie ein Messwert aussieht und keiner ist, hat diese
+Codebasis schon mehrfach Geld gekostet.
+
+### Was gemessen werden muss statt nachgelesen
+
+- Erreichbarkeit von Hosts → aus einem echten Netz, notfalls Julians Browser
+- Verhalten des **ausgerollten** Workers → gegen den Endpunkt, nicht gegen den
+  Quelltext (grüner Run ≠ live gilt auch hier)
+- Guthaben, Gebühren, Prioritätsgebühren → die Wallet entscheidet, nicht wir
+- Ob ein Test wirklich prüft → Gegenprobe: die geprüfte Zeile kaputtmachen und
+  sehen, dass er rot wird. Zwei echte Fehler dieser Strecke sind so aufgefallen,
+  nicht durch die grüne Suite.
+
 ## Deploys
 
 ### `pages.yml` — statische Surfaces → chartrunner.xyz
