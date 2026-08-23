@@ -207,8 +207,13 @@ function mockWallet(){
   check('und wird als die Zahl benannt, die zählt', /die Zahl, die zählt/.test(t), t.slice(0, 200));
   check('Deckel wird angezeigt', /Deckel/.test(t));
   check('Preisauswirkung wird angezeigt', /Preisauswirkung/.test(t));
-  check('die Lücke des Workers wird weitergegeben',
-    /nicht.*Instruktionen|Instruktionen.*nicht/i.test(t) && /lies es/.test(t), t.slice(-220));
+  /* v1.0.881 — der Mock schickt instructions_match_request:false, und false
+   * heisst seit tx v1.4 „die Pruefung konnte nicht laufen", nicht mehr „der
+   * Worker sieht die Instruktionen grundsaetzlich nicht an". Frueher stand hier
+   * die Luecken-Warnung. Geprueft wird weiter dasselbe wie vorher: dass der
+   * Spieler diesen Zustand ueberhaupt erfaehrt und zum Lesen aufgefordert wird. */
+  check('der Zustand der Instruktionsprüfung wird weitergegeben',
+    /Instruktionsprüfung konnte nicht laufen/.test(t) && /lies es/.test(t), t.slice(-220));
   check('nach dem ERSTEN Tap ist nichts signiert',
     await page.evaluate(() => window.__signs.length === 0));
 
