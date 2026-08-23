@@ -52,6 +52,21 @@ PR schreiben — nie „mach das eben lokal".
     Dexscreener, RPC) zählen nicht mit: die liefern JSON, keinen Code.
   - **Achtung beim Banner-Text:** ein literales `<script>` im HTML-Kommentar
     zerlegt den Block-Scanner. Umschreiben („Skriptblock"), nicht escapen.
+- **Gemerged ist nicht ausgerollt.** Bevor ein Client-Patch von einem
+  Worker-Endpunkt abhängt, muss der Endpunkt in `GET /health` unter `endpoints`
+  stehen. Ein Commit-Hash aus einem Session-Bericht ist **kein** Beleg dafür,
+  dass der Endpunkt antwortet.
+
+  *Warum das hier steht:* Am 23.08.2026 wurde v1.0.883 gegen
+  `GET /v1/rpc/balance` gebaut, gemerged und ausgerollt. Den Endpunkt gab es
+  nicht — der Worker lief noch auf v1.4, und `/health` führte ihn nicht. Der
+  Client bekam ein 404 und zeigte korrekt „nicht abrufbar": der Patch war
+  richtig, ihm antwortete nur nichts. **Ein GET auf `/health` hätte das vor dem
+  Bau in fünf Sekunden gezeigt.** Das ist dieselbe Sache wie „Doku ist keine
+  Messung" weiter unten — nur war die Doku diesmal ein eigener Bericht aus dem
+  eigenen Projekt, und deshalb hat sie niemand angezweifelt. Ein Bericht über
+  gebauten Code ist eine Beschreibung, keine Messung.
+
 - **Leakage-Guard nie lockern.** Bei Konflikt die eigenen Namen/Dateien
   anpassen, nicht die Allowlist/Regeln aufweichen. Der Guard ist die maßgebliche
   Grenze zwischen öffentlich und privat.
@@ -63,7 +78,7 @@ PR schreiben — nie „mach das eben lokal".
 ### Öffentlich vs. privat (Leakage-Guard)
 
 Privater Namespace und private Infrastruktur gehören **nicht** ins öffentliche
-Repo, sondern ins private Repo `ssjjul3/chartrunner-infra`. Tabu sind u. a.:
+Repo, sondern ins private Repo `ssjjul3/chartrunner-private-ops`. Tabu sind u. a.:
 private `cr`-Labs-/Bot-Bridge-Flags und -Panels, Referenzen auf den privaten
 Home-Server bzw. dessen Tailnet, Partner-Submission-Dokumente, private
 Milestone-/Evaluator-Notizen und private SDK-Artefakte.
