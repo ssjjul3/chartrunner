@@ -76,11 +76,15 @@ const quote = () => ({
   await page.route('**://**', async route => {
     const req = route.request();
     if(req.url().startsWith('file:')) return route.continue();
-    const post = req.postData() || '';
-    if(/getBalance/.test(post)){
-      if(balance === null) return route.fulfill({ status: 500, body: 'nope' });
+    /* v1.0.883 — die Guthaben-Abfrage ist ein GET auf den eigenen Worker, kein
+     * JSON-RPC-POST mehr. Wichtig fuer diesen Test: der Ausfall antwortet OHNE
+     * `lamports`, nicht mit einer 0. Genau das unterscheidet „nicht abrufbar"
+     * von „leeres Konto", und daran haengen die Zeilen weiter unten. */
+    if(/\/v1\/rpc\/balance/.test(req.url())){
+      if(balance === null) return route.fulfill({ status: 502, contentType: 'application/json',
+        body: JSON.stringify({ ok: false, error: 'rpc-unavailable' }) });
       return route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, result: { value: balance } }) });
+        body: JSON.stringify({ ok: true, lamports: String(balance), cluster: 'mainnet' }) });
     }
     if(/\/v1\/tx\/swap/.test(req.url()))
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(quote()) });
