@@ -164,6 +164,14 @@ const overCap = (given) => ({ ok: false, error: 'over-cap', given: String(given)
   check('es wurde NICHT signiert', await page.evaluate(() => window.__signs.length === 0));
   check('sagt ausdrücklich, dass nichts gesendet wurde', /nie signiert/.test(t), t.slice(-140));
 
+  /* v1.0.879 — die beiden Betraege muessen in der Tafel UNTERSCHIEDLICH
+   * aussehen. Im ersten Live-Durchlauf standen beide auf „0.0500 SOL", weil
+   * _crFmtSol auf vier Stellen rundet — die ganze Aussage der Probe ist ein
+   * Lamport Unterschied, und die Anzeige hat genau ihn geschluckt. */
+  check('die beiden Betraege sind in der Tafel unterscheidbar',
+    /50\.000\.000/.test(t) && /50\.000\.001/.test(t), t.slice(0, 260));
+  check('und zwar als Lamports benannt', /Lamports/.test(t));
+
   const sent = calls.slice(mark).filter(c => /\/v1\/tx\/swap/.test(c.url));
   check('genau zwei Anfragen', sent.length === 2, sent.length);
   check('erste Anfrage ist der Betrag eines echten Handels',
