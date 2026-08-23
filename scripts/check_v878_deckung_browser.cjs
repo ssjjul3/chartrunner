@@ -111,7 +111,9 @@ const quote = () => ({
   const d = (bal) => page.evaluate(([b, e]) => _crSwapDeckung(b, e), [bal, CAP]);
   const echt = await d(ECHT);
   check('der echte Fall wird abgelehnt', echt.ok === false, echt.ok);
-  check('nennt das vorhandene Guthaben', /0\.0161/.test(echt.html), echt.html.slice(0, 200));
+  // v1.0.885 — dieselbe Zahl, deutscher Dezimaltrenner (ein Format fuer die
+  // ganze Tafel). Geprueft wird weiter, DASS das Guthaben dasteht.
+  check('nennt das vorhandene Guthaben', /0,0161/.test(echt.html), echt.html.slice(0, 200));
   check('nennt, was fehlt', /fehlen mindestens/.test(echt.html), echt.html.slice(0, 260));
   check('nennt die Konto-Miete als eigenen Posten', /Miete/.test(echt.html));
   check('genau auf der Kante reicht nicht', (await d(CAP)).ok === false);

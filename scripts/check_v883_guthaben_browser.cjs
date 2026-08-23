@@ -197,16 +197,22 @@ const quote = () => ({
    * _crFmtSol und benutzt es; das Feld bleibt liegen. Sonst stuenden zwei
    * Schreibweisen derselben Zahl in derselben Tafel. */
   let st = await run({ ok: true, lamports: String(CAP + RENT + 20000000),
-                       sol: '0,072 SOL', cluster: 'mainnet' });
+                       sol: 'SOL-AUS-DEM-WORKER', cluster: 'mainnet' });
   check('mit Deckung steht eine Zahl statt „nicht abrufbar"',
     !/nicht abrufbar/.test(st.text), st.text.slice(0, 200));
   check('und der Signieren-Knopf ist da', st.hasGo === true);
   /* Der Client formatiert selbst. Das Feld `sol` der Antwort ist bewusst
    * unbenutzt — sonst stuenden zwei Schreibweisen in derselben Tafel. */
-  check('die Zahl steht in _crFmtSol-Schreibweise (0.0720 SOL)',
-    st.text.indexOf('0.0720 SOL') !== -1, st.text.slice(0, 240));
-  check('und NICHT in der Schreibweise des Workers (0,072 SOL)',
-    st.text.indexOf('0,072 SOL') === -1, st.text.slice(0, 240));
+  /* v1.0.885 — der Client formatiert seit v885 ebenfalls deutsch, damit in der
+   * Tafel ein Format gilt. Die Unterscheidung „wer hat formatiert" laesst sich
+   * also nicht mehr am Trennzeichen festmachen — sie haette nur noch an einer
+   * Nachkommastelle gehangen, und das ist kein Test, das ist ein Zufall.
+   * Der Mock schickt deshalb eine Zeichenkette, die der Client unmoeglich
+   * selbst erzeugt haben kann. */
+  check('die Zahl steht in _crFmtSol-Schreibweise (0,0720 SOL)',
+    st.text.indexOf('0,0720 SOL') !== -1, st.text.slice(0, 240));
+  check('und das `sol`-Feld des Workers wird nirgends durchgereicht',
+    st.text.indexOf('SOL-AUS-DEM-WORKER') === -1, st.text.slice(0, 240));
 
   // DER eigentliche Beweis: zu wenig SOL → kein Knopf.
   st = await run({ ok: true, lamports: '16108190', cluster: 'mainnet' });
