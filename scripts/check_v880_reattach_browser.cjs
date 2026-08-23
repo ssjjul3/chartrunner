@@ -88,11 +88,13 @@ const quote = () => ({
   await page.route('**://**', async route => {
     const req = route.request();
     if(req.url().startsWith('file:')) return route.continue();
-    const post = req.postData() || '';
-    if(/getBalance/.test(post)) return route.fulfill({ status: 200, contentType: 'application/json',
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, result: { value: 200000000 } }) });
+    // v1.0.883 — Guthaben kommt per GET vom eigenen Worker, nicht mehr per
+    // JSON-RPC-POST. `lamports` ist ein String, wie in der echten Antwort.
+    if(/\/v1\/rpc\/balance/.test(req.url())) return route.fulfill({ status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, lamports: '200000000', cluster: 'mainnet' }) });
     if(/\/v1\/tx\/swap/.test(req.url())){
-      let body = {}; try { body = JSON.parse(post); } catch(_){}
+      let body = {}; try { body = JSON.parse(req.postData() || '{}'); } catch(_){}
       if(Number(body.amount_raw) > CAP) return route.fulfill({ status: 400, contentType: 'application/json',
         body: JSON.stringify({ ok:false, error:'over-cap', given:String(body.amount_raw), cap:{ max_in_lamports:CAP } }) });
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(quote()) });
