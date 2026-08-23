@@ -96,7 +96,15 @@ const BONK = 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
 
   console.log('\n-- Erfolgsfall unveraendert --');
   const ok = (await render({ priceImpactPct: 0.0512, hops: 2, labels: ['Orca', 'Raydium'] })).html || '';
-  check('Preisauswirkung steht da', /5\.12/.test(ok), ok.slice(0, 160));
+  /* v1.0.885 — dieselbe Aussage, deutsches Format: die Zeile benutzt jetzt
+   * _crFmtImpact, damit hier und in der Handels-Tafel nicht zwei
+   * Prozent-Formatierer nebeneinander stehen. */
+  check('Preisauswirkung steht da', /5,12\s%/.test(ok), ok.slice(0, 160));
+  /* Und der Zustand, den es vor v885 nicht gab: fehlt das Feld, wird daraus
+   * keine gemessene Null mehr. */
+  const ohneImp = (await render({ hops: 1, labels: ['Orca'] })).html || '';
+  check('fehlende Preisauswirkung sagt „nicht bekannt", nicht 0',
+    /nicht bekannt/.test(ohneImp) && !/0,000\s%/.test(ohneImp), ohneImp.slice(0, 200));
   check('Route steht da', /Orca, Raydium/.test(ok));
   check('kein Ausfall-Hinweis im Erfolgsfall', !/Nur die Vorschau fehlt/.test(ok));
   check('auch hier die Knoepfe', /data-cr-swap="/.test(ok) && /data-cr-cap-probe="/.test(ok));
