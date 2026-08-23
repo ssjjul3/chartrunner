@@ -43,6 +43,13 @@ PR schreiben — nie „mach das eben lokal".
     IIFE), die Blöcke gegeneinander und doppelte Schlüssel in Objektliteralen.
     Verglichen werden nur Geschwister — Shadowing über Ebenen hinweg ist legal.
     Grün heißt hier also wirklich „keine Kollision", nicht nur „keine globale".
+  - Fremdcode-Quellen: `node scripts/check_no_new_cdn.mjs` — die Regel „kein
+    CDN" stimmt **nicht**: `unpkg` (web3.js, statisches Tag), `jsdelivr`
+    (Supabase) und `cdnjs` (pdf.js) stehen drin. Der Guard leugnet das nicht,
+    sondern zählt sie mit Grund auf und schlägt bei einer **vierten** an.
+    Fremdcode läuft mit unseren Rechten — bei einer Datei, die Transaktionen
+    zum Signieren vorlegt, ist das keine Stilfrage. Daten-APIs (Jupiter,
+    Dexscreener, RPC) zählen nicht mit: die liefern JSON, keinen Code.
   - **Achtung beim Banner-Text:** ein literales `<script>` im HTML-Kommentar
     zerlegt den Block-Scanner. Umschreiben („Skriptblock"), nicht escapen.
 - **Leakage-Guard nie lockern.** Bei Konflikt die eigenen Namen/Dateien
