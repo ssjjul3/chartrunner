@@ -131,13 +131,17 @@ function mockWallet(){
   };
 
   console.log('\n-- true: was geprueft WURDE --');
-  let r = await run({ instructions_match_request: true });
+  let r = await run({ instructions_match_request: true, level: 'form+amount' });
   check('Angebot steht überhaupt', /Bevor du signierst/.test(r.text), r.text.slice(0, 90));
   /* Auf den BEJAHENDEN Marker festgenagelt, nicht auf die Teilzeichenkette:
    * der fehlend-Fall enthaelt „…ob die Instruktionen geprüft wurden" und wuerde
-   * ein /Instruktionen geprüft/ klaglos bestehen. Der erste Wurf dieses Tests
-   * tat genau das — eine Pruefung, die im falschen Fall gruen wird, ist keine. */
-  check('sagt „Instruktionen geprüft"', r.html.indexOf('>Instruktionen geprüft<') !== -1);
+   * ein /geprüft/ klaglos bestehen. Der erste Wurf dieses Tests tat genau das —
+   * eine Pruefung, die im falschen Fall gruen wird, ist keine.
+   *
+   * v1.0.882: der Marker heisst jetzt >Geprüft<, und der Grad steht daneben.
+   * Die Graduierung selbst prueft check_v882; hier geht es weiter nur darum,
+   * DASS die Zeile bejaht statt eine Luecke zu melden. */
+  check('sagt „Geprüft"', r.html.indexOf('>Geprüft<') !== -1);
   check('nennt die Grenze der Zusicherung (CPI)', /CPI/.test(r.text));
   check('die alte Lücken-Warnung ist WEG',
     !/prüft Beträge und Mints/.test(r.text), r.text.slice(0, 120));
@@ -145,13 +149,15 @@ function mockWallet(){
   const trueText = r.text;
 
   console.log('\n-- false MIT Grund: nicht gelaufen, nicht „passt nicht" --');
+  // v1.0.882: der SATZ steht in `note`; `reason` ist ein Maschinen-Token und
+  // wird nie gezeigt. v881 las das falsche Feld — siehe check_v882.
   const GRUND = 'Lookup Table 9xQeW… nicht abrufbar <b>rpc timeout</b>';
-  r = await run({ instructions_match_request: false, reason: GRUND });
+  r = await run({ instructions_match_request: false, note: GRUND });
   check('sagt „konnte nicht laufen"', /konnte nicht laufen/.test(r.text), r.text.slice(0, 120));
   check('der Grund steht im Klartext da', r.text.indexOf('Lookup Table 9xQeW… nicht abrufbar') !== -1,
     r.text.slice(0, 160));
   check('behauptet NICHT, die Instruktionen passten nicht',
-    !/passen nicht|stimmen nicht/.test(r.text) && r.html.indexOf('>Instruktionen geprüft<') === -1,
+    !/passen nicht|stimmen nicht/.test(r.text) && r.html.indexOf('>Geprüft<') === -1,
     r.text.slice(0, 160));
   /* Der Grund kommt vom Worker und landet in innerHTML. Escaped heisst: als
    * Text sichtbar, nicht als Markup wirksam. */
@@ -160,15 +166,15 @@ function mockWallet(){
     r.html.slice(Math.max(0, r.html.indexOf('konnte nicht laufen')), r.html.indexOf('konnte nicht laufen') + 220));
 
   console.log('\n-- false OHNE Grund: die Leerstelle wird benannt --');
-  r = await run({ instructions_match_request: false });
+  r = await run({ instructions_match_request: false });   // ohne note
   check('sagt immer noch „konnte nicht laufen"', /konnte nicht laufen/.test(r.text));
   check('und sagt, dass der Grund fehlt', /nicht mitgeliefert/.test(r.text), r.text.slice(0, 160));
   const falseNoReason = r.text;
 
   console.log('\n-- Feld fehlt ganz: NICHT in den true-Zweig --');
   r = await run(undefined);
-  check('sagt NICHT „Instruktionen geprüft"',
-    r.html.indexOf('>Instruktionen geprüft<') === -1 && !/Lookup Tables aufgelöst/.test(r.text),
+  check('sagt NICHT „Geprüft"',
+    r.html.indexOf('>Geprüft<') === -1 && r.html.indexOf('>Teilweise geprüft<') === -1,
     r.text.slice(0, 160));
   check('sagt, dass die Antwort dazu nichts sagt',
     /sagt nicht, ob die Instruktionen geprüft wurden/.test(r.text), r.text.slice(0, 160));
