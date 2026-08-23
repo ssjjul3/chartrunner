@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.878
-     LAST UPDATED:    2026-08-22  ·  v1.0.878: DIE ZAHL, DIE ENTSCHIEDEN HAT, KAM IN DER TAFEL NICHT VOR. Erster echter Handel auf Mainnet, Signatur fk3gh6YE…, Slot 440.991.238: gelandet und GESCHEITERT. Das Kettenprotokoll sagt es im Klartext — #4 System Instruction, „Transfer: insufficient lamports 16108190, need 50000000". 0,0161 SOL vorhanden, 0,05 SOL gebraucht. Kosten: 0,00351 SOL Gebuehr fuer eine Transaktion, die nichts bewegt hat; alles andere wurde zurueckgerollt. Was FUNKTIONIERT hat: die zwei Stufen, die Zahlen vor dem Signieren, und vor allem die Bestaetigung ueber die Kette — das Spiel meldete FEHLGESCHLAGEN, nicht „Gehandelt". Die Lehre aus v1.0.870 hat beim ersten Ernstfall getragen. Was GEFEHLT hat: das Guthaben. Einsatz, Mindestens, Preisauswirkung, Deckel standen richtig da — die eine Zahl, die den Ausgang bestimmt hat, stand nirgends. (a) NEU _crSwapDeckung(): rechnet vor dem Signieren gegen Einsatz + Konto-Miete (2.039.280 Lamports, kommt beim Schliessen zurueck, muss aber jetzt da sein) und einen Puffer fuer die Prioritaetsgebuehr. Zwei Stufen: reicht es nicht fuer Einsatz+Miete, VERSCHWINDET der Signieren-Knopf; reicht es dafuer, aber knapp, wird es gesagt und nicht verboten. (b) Guthaben nicht abrufbar blockiert NICHT — ein Ausfall der Abfrage ist keine Auskunft ueber das Konto, und er wird als das benannt. (c) Die Zeile heisst jetzt „Gebuehr (Basis)". Vorher stand dort „Gebuehr: 5.000 Lamports"; Phantom hat 3.510.000 berechnet — Faktor 700. Der Worker setzt bewusst keine Prioritaetsgebuehr, die Wallet tut es, und was dastand sah trotzdem nach der Antwort aus. (d) OFFEN: Phantom stuft chartrunner.xyz als moeglicherweise boesartig ein (Blockaid). Kein Codefehler, aber ein Blocker fuer Phase 2 — kein Spieler tippt an einer roten Warnung vorbei. Spiellogik, Rendering und Abilities unberuehrt.
+     CURRENT VERSION: v1.0.879
+     LAST UPDATED:    2026-08-23  ·  v1.0.879: DIE PROBE HAT IHREN EIGENEN BEWEIS WEGGERUNDET. Der erste echte Handel auf Mainnet ist DURCHGELAUFEN, ohne Phantom-Warnung — die Warnung davor kam von der gescheiterten Simulation, nicht von der Domain. Und die Deckel-Probe lief live gegen den ausgerollten Worker: erlaubter Betrag geht durch, ein Lamport darueber wird abgelehnt. Quelltext (v > maxIn) und Messung stimmen ueberein; der Deckel hat zum ersten Mal nachweislich gegen etwas gedrueckt. NUR: in der Tafel standen beide Zeilen auf „0.0500 SOL". Zweimal derselbe Betrag, einmal angenommen, einmal abgelehnt. Die ganze Aussage der Probe ist EIN Lamport Unterschied — und _crFmtSol rundet auf vier Nachkommastellen, also genau ihn weg. Wer das liest, sieht Willkuer statt einer Grenze. (a) Die Probezeilen zeigen jetzt Lamports: 50.000.000 gegen 50.000.001. Der Unterschied steht da, statt gemeint zu sein. (b) _crFmtSol bleibt unangetastet — es bedient die Guthaben-Anzeige, wo vier Stellen richtig sind. Gewechselt wird die EINHEIT, nicht der Formatierer. (c) Der Testfall haelt beide Zahlen einzeln fest; die Gegenprobe (zurueck auf _crFmtSol) faerbt ihn rot. Spiellogik, Rendering und Abilities unberuehrt.
+     PREV  ·  v1.0.878: DIE ZAHL, DIE ENTSCHIEDEN HAT, KAM IN DER TAFEL NICHT VOR. Erster echter Handel auf Mainnet, Signatur fk3gh6YE…, Slot 440.991.238: gelandet und GESCHEITERT. Das Kettenprotokoll sagt es im Klartext — #4 System Instruction, „Transfer: insufficient lamports 16108190, need 50000000". 0,0161 SOL vorhanden, 0,05 SOL gebraucht. Kosten: 0,00351 SOL Gebuehr fuer eine Transaktion, die nichts bewegt hat; all
      PREV  ·  v1.0.877: GEMESSEN STATT ANGENOMMEN — DER TOTE HOST IST RAUS. Ich hatte behauptet, quote-api.jup.ag/v6 sei abgeschaltet, gestuetzt auf zwei Doku-Seiten. Die private Session hat das zu Recht als Praemisse und nicht als Messwert bezeichnet; beide Sandboxes koennen jup.ag nicht erreichen. Julian hat es vom Telefon aus gemessen: quote-api.jup.ag → ERR_NAME_NOT_RESOLVED, der Name loest nicht mehr auf. lite-api.j
      PREV  ·  v1.0.876: EINE KAPUTTE AUSKUNFT DARF KEINE FUNKTIONIERENDE KETTE VERSTECKEN. Live-Befund aus dem Token-Profil: „Kursabfrage nicht erreichbar" — und der Handel-Knopf war weg. Nicht weil mit dem Handel etwas war. (a) URSACHE 1, Verdrahtung: die Schaltflaechen wurden NUR im Erfolgszweig der Kursabfrage gezeichnet. Der Handel laeuft aber ueber crTxApi und den eigenen Worker und weiss von dieser Abfrage nichts.
      PREV  ·  v1.0.875: EIN DECKEL, DER NIE GEGEN ETWAS GEDRUECKT HAT, IST EINE BEHAUPTUNG. Die Probe sollte per curl gegen den Worker laufen; beide Sandboxes sind fuer *.workers.dev gesperrt (403 auf CONNECT). Also laeuft sie aus dem Netz des Spielers — ueber GENAU DEN WEG, den ein echter Handel nimmt: prepareSwap, crTxApi, Worker, dieselbe Tafel. Eine eigene Probe-Seite waere eine ZWEITE Anfrage-Implementierung gewesen
@@ -26909,13 +26910,28 @@ function _crTradeabilityHtml(q, mint){
     + btns;
 }
 
+/* v1.0.879 — die Probe zeigt LAMPORTS, nicht SOL.
+ *
+ * Im ersten Live-Durchlauf standen beide Zeilen auf „0.0500 SOL":
+ *
+ *   ✓ Was ein Handel schickt · 0.0500 SOL      → Angebot erhalten
+ *   ✓ Ein Lamport über dem Deckel · 0.0500 SOL → abgelehnt
+ *
+ * Zweimal derselbe Betrag, einmal angenommen, einmal abgelehnt. Die ganze
+ * Aussage dieser Probe ist der Unterschied von EINEM Lamport — und
+ * _crFmtSol rundet auf vier Nachkommastellen, also genau ihn weg. Wer das
+ * liest, sieht Willkuer statt einer Grenze.
+ *
+ * _crFmtSol bleibt unangetastet: es bedient die Guthaben-Anzeige, wo vier
+ * Stellen richtig sind. Hier wird die Einheit gewechselt, nicht der
+ * Formatierer geaendert. */
 function _crProbeRow(label, amountRaw, verdict, detail){
   var col = verdict === 'ok' ? '#3ddc97' : (verdict === 'fail' ? '#ff5b7f' : 'var(--dim)');
   var mark = verdict === 'ok' ? '✓' : (verdict === 'fail' ? '✗' : '…');
   return '<div style="display:flex;gap:7px;padding:3px 0;align-items:baseline">'
     + '<span style="color:' + col + ';font-weight:700;width:11px">' + mark + '</span>'
     + '<span style="flex:1">' + label
-    + '<span style="color:var(--dim)"> · ' + _crFmtSol(amountRaw) + '</span>'
+    + '<span style="color:var(--dim)"> · ' + _crFmtRaw(amountRaw) + ' Lamports</span>'
     + (detail ? '<br><span style="color:' + col + ';font-size:9px">' + detail + '</span>' : '')
     + '</span></div>';
 }
