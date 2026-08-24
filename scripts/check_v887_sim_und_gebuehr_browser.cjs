@@ -150,7 +150,10 @@ function mockWallet(){
     }, [q, rt]);
     return page.evaluate((mint) => new Promise((resolve) => {
       const host = document.createElement('div');
-      host.innerHTML = '<button data-cr-swap="' + mint + '">g</button>'
+      /* v1.0.888 — die Ansicht ist ein Formular: der Klickpfad braucht die
+       * Betragseingabe (0,05 SOL, wie der alte Festbetrag). */
+      host.innerHTML = '<input data-cr-swap-betrag value="0,05">'
+                     + '<button data-cr-swap="' + mint + '">g</button>'
                      + '<div data-cr-swap-panel="' + mint + '" style="display:none"></div>';
       document.body.appendChild(host); _crWireSwap(host, mint);
       host.querySelector('[data-cr-swap]').click();
@@ -200,8 +203,9 @@ function mockWallet(){
   const src = fs.readFileSync(FILE, 'utf8');
   check('der SIM-Horchpunkt existiert genau einmal',
     (src.match(/'SIM · '/g) || []).length === 1, (src.match(/'SIM · '/g) || []).length);
-  check('data-cr-sim="1" steht genau zweimal (Pill + Menue-Badge)',
-    (src.match(/data-cr-sim="1"/g) || []).length === 2,
+  /* v1.0.888: +1 — der Journal-Header der Auto-geloggten SIM-Trades. */
+  check('data-cr-sim="1" steht genau dreimal (Pill + Menue-Badge + Journal)',
+    (src.match(/data-cr-sim="1"/g) || []).length === 3,
     (src.match(/data-cr-sim="1"/g) || []).length);
   /* Gesucht wird die CODE-Form (String-Konkatenation), nicht die Phrase —
    * das Banner zitiert die alte Formulierung als Prosa und darf das. */
