@@ -101,6 +101,11 @@ function mockWallet(){
         note: 'FEE_ACCOUNT ist im Worker nicht gesetzt.' });
       // Ein Rand-502 ohne verwertbaren Koerper: der Ausfall-Fall.
       if(ataMode === 'down')    return J(502, { ok: false });
+      // Ein Ausfall, dessen NOTIZ das Wort „Gebuehrenkonto" enthaelt. Eine
+      // Textsuche ueber note wuerde daraus „die Gebuehr ist nicht scharf"
+      // machen — eine Panne, die als Konfigurations-Auskunft auftritt.
+      if(ataMode === 'notegebuehr') return J(502, { ok: false,
+        note: 'Der Worker konnte das Gebuehrenkonto nicht lesen.' });
       if(ataMode === 'gone')    return J(404, {});
       if(ataMode === 'dead')    return route.abort('failed');
       if(ataMode === 'exists')  return J(200, { ok: true, already_exists: true,
@@ -230,6 +235,17 @@ function mockWallet(){
   check('und reicht die Notiz des Workers durch', /FEE_ACCOUNT/.test(t), t);
   check('kein Signieren-Knopf', (await signBtn()) === false);
   check('wird NICHT als Ausfall ausgegeben', !/nicht abrufbar/.test(t), t);
+
+  /* Erkannt wird am FEHLERCODE, nicht am Text. Sonst genuegt ein Wort in der
+   * Worker-Notiz, um einen Ausfall als Konfigurations-Auskunft auszugeben —
+   * und das ist genau die Verwechslung, gegen die dieser Patch gebaut ist. */
+  ataMode = 'notegebuehr';
+  await tap('ata'); t = await settle();
+  check('eine Notiz mit dem Wort „Gebuehrenkonto" macht daraus KEINE Gebuehren-Lage',
+    !/nicht scharf/.test(t), t);
+  check('sondern bleibt der Ausfall, der sie ist', /nicht abrufbar/.test(t), t);
+  check('und die Notiz des Workers steht trotzdem wortwoertlich da',
+    t.includes('Der Worker konnte das Gebuehrenkonto nicht lesen.'), t);
 
   console.log('\n-- 502: ein Ausfall ist keine Aussage ueber das Konto --');
   ataMode = 'down';
