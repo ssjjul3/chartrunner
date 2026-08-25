@@ -294,8 +294,10 @@ function mockWallet(){
   check('kein "Echt handeln — 0,05 SOL" mehr', src.indexOf('Echt handeln — 0,05 SOL') === -1);
   /* Die CODE-Form zaehlen (Markup mit schliessendem Tag) — das Banner
    * zitiert die Knopf-Beschriftung als Prosa und darf das (v887-Lektion). */
-  check('der ANGEBOT-HOLEN-Knopf existiert genau einmal',
-    (src.match(/ANGEBOT HOLEN — ES WIRD NICHTS SIGNIERT<\/button>/g) || []).length === 1);
+  /* v890: der Knopf ist uebersetzt — gezaehlt wird die i18n-Code-Form. */
+  check('der PREIS-ANSEHEN-Knopf existiert genau einmal',
+    (src.match(/_tokT\('tok\.swapQuoteBtn'/g) || []).length === 1 /* die eine Markup-Stelle; Dicts tragen den Schluessel, nicht den Aufruf */
+    && src.indexOf('ANGEBOT HOLEN — ES WIRD NICHTS SIGNIERT</button>') === -1);
   check('kein data-cr-cap-probe-Knopf mehr im Markup',
     (src.match(/data-cr-cap-probe="/g) || []).length === 0);
   check('prepareSwap wird nicht mehr mit CR_SWAP_TEST_LAMPORTS gefuettert',
