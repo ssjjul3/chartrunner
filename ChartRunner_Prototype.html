@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.887
-     LAST UPDATED:    2026-08-24  ·  v1.0.887: SIMULATION SAGT JETZT, DASS SIE SIMULATION IST (Handoff G1). Quelltext-Messung am Stand b6c15a3: sdk.bracket/ladder/oco schreiben nur in openOrders — kein Netz, keine Wallet, kein prepareSwap; auf Solana existieren Bracket/OCO/Ladder nicht als native Ordertypen, und einen Keeper gibt es nicht. Am Ort der Nutzung stand davon NICHTS — der Toast sagte "Bracket placed", das Primitives-Menue sogar "live bracket: #N", das Journal fuehrt die Auto-Logs GETRENNT vom Paper-Tab, und die P&L-Pill zeigt Dollar. Wer im Token-Fenster echt kauft und dann eine Bracket-SL setzt, hielt eine Simulation fuer Schutz — der Stop, der nie ausloest. (a) EIN Horchpunkt an der einen Order-Grenze: die SDK emittiert jedes Primitive als 'order'; ein einziger Listener nach der sdk-Erzeugung meldet "SIM · <kind> — simulated order, nothing goes on-chain" mit kind 'sim'. Kennzeichnung an jedem Aufrufer waere derselbe Begriff in vielen Fassungen; so bleiben Abilities, Rendering und alle Aufrufer unberuehrt, und ein kuenftiges Primitive ist automatisch mitgekennzeichnet. Die Zeile landet als .crNotifyMsg.sim im DOM (violett wie das Primitives-Menue) — die Testzeilen suchen MARKUP, nicht Prosa. (b) Der Menue-Header traegt einen SIM-Badge (data-cr-sim) und sagt "open SIM bracket" statt "live bracket"; die P&L-Pill traegt data-cr-sim und benennt im Title, dass sie SIM-Brackets summiert. (c) DIE HANDELSGEBUEHR STEHT JETZT IN DER TAFEL "Bevor du signierst" — ausgewiesen, nicht stillschweigend eingepreist. Der Wert kommt aus der Antwort (route.platform_fee_bps), nicht aus einer Konstanten: der Worker ist die Autoritaet fuer die Gebuehr. Fehlt das Feld, faellt die Zeile weg statt eine Zahl zu erfinden (v885-Disziplin). Gemessen am 23.08.: Einsatz 50.000.000 Lamports, Gebuehrenkonto +250.000 — die Gebuehr steckt im Einsatz, sie kommt nicht obendrauf; genau das sagt der neue Erklaersatz. (d) DOPPELTES PROZENTZEICHEN in der Handelbarkeits-Zeile behoben: die deutsche Uebersetzung tok.tradeImpact haengte '{p}%' an, waehrend _crFmtImpact das ' %' schon mitbringt — "0,005 %%". Die Einheit gehoert dem Formatierer (er schreibt auch 'nicht bekannt' und '< 0,001 %', wo ein hartes % im Template falsch waere); das Template ist jetzt '{p}'. (e) Der Exakt-Vergleich-Fix aus 103f504 (Gebuehren-Lage am FEHLERCODE erkennen, _ATA_FEE_CODES statt Textsuche) war nach dem Merge von PR #159 nicht auf main gelandet und faehrt hier unveraendert mit. Spiellogik und Rendering unberuehrt.
+     CURRENT VERSION: v1.0.888
+     LAST UPDATED:    2026-08-24  ·  v1.0.888: DIE KLASSISCHE SWAP-ANSICHT — Richtung, Waehrung und Betrag sind frei (Julians Vorgabe 24.08.), der feste 0,05-SOL-Knopf und die Deckel-Probe-Schaltflaeche sind weg. (a) FORMULAR statt Festknopf in _crTradeabilityHtml: KAUFEN/VERKAUFEN, freie Betragseingabe, Waehrungsmenue, MAX, ein Knopf 'ANGEBOT HOLEN — ES WIRD NICHTS SIGNIERT'. Der zweistufige Ablauf (Tap 1 lesen, Tap 2 signieren) bleibt unangetastet. (b) EIN Anfrageweg: prepareSwap bekommt input_mint/output_mint/amount_raw aus dem Formular — crTxApi.swap trug input_mint schon seit v874. Kein Faehigkeits-Schalter im Client: ein ALTER Worker lehnt Verkauf/fremde Waehrung selbst ab (input-must-be-wsol, over-cap) und die Tafel zeigt GENAU DAS — der Worker bleibt die Autoritaet, der Client raet nicht. (c) BETRAG OHNE FLOAT: _crParseBetrag liest de-DE als Stringarithmetik (148.979.256.884 liegt ueber 2^53; Number haette still gerundet und der Worker eine andere Zahl bekommen als getippt); mehr Nachkommastellen als das Asset hat -> Fehler statt Abschneiden; _crRawToUi ist die Gegenrichtung fuer MAX. (d) WAEHRUNGEN AUS /health — Feld swap.quote_currencies, am LIVE-/health v1.13 abgelesen (symbol/mint/decimals; pending-Slots wie RUN mit mint: null rendern sichtbar gesperrt aus der Antwort), keine Konstanten — einzige Ausnahme SOL, Lamports sind Protokoll; RUN steht sichtbar gesperrt im Menue ('Token-Launch'), bis der Worker ihn fuehrt. Eigene Bestaende als Einsatz kommen aus GET /v1/rpc/tokens (tx v1.12; Ausfall ist KEINE leere Liste — Listenfeld fehlt -> null). (e) DIE TAFEL RECHNET IN DER RICHTUNG DES HANDELS: Einsatz in Einheiten der Eingabe-Seite, Erwartet/Mindestens in denen der Ausgabe-Seite; die DECKEL-Zeile rendert nur, solange der Worker einen fuehrt (cap: none -> Zeile faellt von selbst weg); bei Token-Einsatz steht 'Dein Bestand' (spendable) statt des SOL-Guthabens, ein EINGEFRORENES Konto stoppt VOR dem Signieren (rote Box, kein Knopf) — der Stop, den die Wallet sonst erst beim Ablehnen erklaert hätte. (f) AUFKLAPP-MENUE 'Was hier geprueft wird': die drei Erklaerabsaetze + Pruefzeile unveraendert, nur eingeklappt. (h) FEE-ACCOUNT-MISSING IST KEINE SACKGASSE: lehnt der Worker mit fee-account-missing ab (Verkauf eines Assets, dessen Eingabe-Gebuehrenkonto noch fehlt — die Gebuehr faellt je Eingabe-Mint an), steht der Anlege-Knopf DIREKT in der Tafel, zwei Taps wie in v886, Adressen und Miete aus der Antwort, crTxApi.ata nimmt dafuer den mint (ohne mint gilt die Anker-Vorgabe). Der Mint kommt aus fee_mint (Quote-Regel tx v1.14: die Gebuehr kann auf der AUSGABE liegen) bzw. mint; nennt die Antwort KEINEN, gibt es keinen Knopf statt eines geratenen Eingabe-Mints — das falsche Konto waere schlimmer als keins. Damit ist das Anlegen vom TELEFON moeglich — ein POST mit JSON-Body war es nicht. (i) OBSOLETE KNOEPFE ENTFERNT (Julians Vorgabe): Devnet-Probe (der Signierweg ist seit v874 im Ernst bewiesen) und der v886-Gebuehrenkonto-Knopf (konnte nur den Anker-Mint; das Anlegen sitzt jetzt am Fehler in der Tafel) sind aus der Wallet-Auswahl raus; die Bau-Funktionen bleiben, die Tafel nutzt denselben crTxApi.ata-Weg. (g) MITFAHRER Journal: 'Auto-geloggte Trades' hiess das Gegenteil von Paper und meinte dieselben SIM-Orders — Header traegt jetzt SIM-Badge (data-cr-sim), Titel sagen es. Merge-Reihenfolge: NACH dem Worker-Deploy (cap: none, quote_mints, /v1/rpc/tokens live) — vorher zeigt die Ansicht die ehrlichen Alt-Worker-Ablehnungen.
+      PREV  ·  v1.0.887: SIMULATION SAGT JETZT, DASS SIE SIMULATION IST (Handoff G1). Quelltext-Messung am Stand b6c15a3: sdk.bracket/ladder/oco schreiben nur in openOrders — kein Netz, keine Wallet, kein prepareSwap; auf Solana existieren Bracket/OCO/Ladder nicht als native Ordertypen, und einen Keeper gibt es nicht. Am Ort der Nutzung stand davon NICHTS — der Toast sagte "Bracket placed", das Primitives-Menue sogar "live bracket: #N", das Journal fuehrt die Auto-Logs GETRENNT vom Paper-Tab, und die P&L-Pill zeigt Dollar. Wer im Token-Fenster echt kauft und dann eine Bracket-SL setzt, hielt eine Simulation fuer Schutz — der Stop, der nie ausloest. (a) EIN Horchpunkt an der einen Order-Grenze: die SDK emittiert jedes Primitive als 'order'; ein einziger Listener nach der sdk-Erzeugung meldet "SIM · <kind> — simulated order, nothing goes on-chain" mit kind 'sim'. Kennzeichnung an jedem Aufrufer waere derselbe Begriff in vielen Fassungen; so bleiben Abilities, Rendering und alle Aufrufer unberuehrt, und ein kuenftiges Primitive ist automatisch mitgekennzeichnet. Die Zeile landet als .crNotifyMsg.sim im DOM (violett wie das Primitives-Menue) — die Testzeilen suchen MARKUP, nicht Prosa. (b) Der Menue-Header traegt einen SIM-Badge (data-cr-sim) und sagt "open SIM bracket" statt "live bracket"; die P&L-Pill traegt data-cr-sim und benennt im Title, dass sie SIM-Brackets summiert. (c) DIE HANDELSGEBUEHR STEHT JETZT IN DER TAFEL "Bevor du signierst" — ausgewiesen, nicht stillschweigend eingepreist. Der Wert kommt aus der Antwort (route.platform_fee_bps), nicht aus einer Konstanten: der Worker ist die Autoritaet fuer die Gebuehr. Fehlt das Feld, faellt die Zeile weg statt eine Zahl zu erfinden (v885-Disziplin). Gemessen am 23.08.: Einsatz 50.000.000 Lamports, Gebuehrenkonto +250.000 — die Gebuehr steckt im Einsatz, sie kommt nicht obendrauf; genau das sagt der neue Erklaersatz. (d) DOPPELTES PROZENTZEICHEN in der Handelbarkeits-Zeile behoben: die deutsche Uebersetzung tok.tradeImpact haengte '{p}%' an, waehrend _crFmtImpact das ' %' schon mitbringt — "0,005 %%". Die Einheit gehoert dem Formatierer (er schreibt auch 'nicht bekannt' und '< 0,001 %', wo ein hartes % im Template falsch waere); das Template ist jetzt '{p}'. (e) Der Exakt-Vergleich-Fix aus 103f504 (Gebuehren-Lage am FEHLERCODE erkennen, _ATA_FEE_CODES statt Textsuche) war nach dem Merge von PR #159 nicht auf main gelandet und faehrt hier unveraendert mit. Spiellogik und Rendering unberuehrt.
       PREV  ·  v1.0.886: DAS GEBUEHRENKONTO LAESST SICH JETZT VOM TELEFON AUS ANLEGEN. Seit tx v1.10 nimmt der Worker 50 bps Handelsgebuehr; sie fliesst in ein WSOL-Token-Konto, das es noch nicht gibt. Solange es fehlt, lehnt der Worker jeden Swap sauber ab (fee-account-missing, 503) — richtig so, es wird keine Transaktion ausgeliefert, die on-chain scheitert. Der Endpunkt POST /v1/tx/ata baut das Anlegen unsigniert, aber ein POST mit JSON-Body laesst sich vom Telefon aus nicht absetzen. Deshalb ein Knopf — und zwar in der bestehenden tx-Probe (Wallet-Auswahl), NICHT in der Handels-Tafel: das Anlegen kostet den ZAHLER 2.039.280 Lamports Kontomiete, und ein Spieler, der auf einen Knopf tippt und dafuer unser Gebuehrenkonto bezahlt, ist nicht in Ordnung — auch wenn die Miete beim Schliessen zurueckkaeme. Es ist kein einmaliger Vorgang: entpacken heisst das Token-Konto SCHLIESSEN, danach ist die ATA weg und der Handel steht, bis das Konto neu angelegt ist. (a) ZWEI TAPS wie beim Handel seit v1.0.874. Tap 1 baut und zeigt: Eigner und Gebuehrenkonto AUS DER ANTWORT, die Kontomiete mit dem Satz, dass sie beim Schliessen zurueckkommt, und wer zahlt (die verbundene Wallet, nicht der Eigner). Erst Tap 2 fragt die Wallet. (b) DIE ADRESSEN KOMMEN AUS DER ANTWORT, nicht aus einer Konstanten im Client. Der Worker rechnet die ATA bei jedem Start nach und ist die Autoritaet dafuer; eine zweite Ableitung hier waere eine Fassung, die wegdriftet, sobald jemand den Eigner aendert. Fehlt owner oder fee_account, gibt es keinen Signieren-Knopf statt einer geratenen Adresse. (c) VIER ANTWORTEN, NICHT ZWEI. Gebaut fuehrt zu Tap 2; already_exists ist eine AUSKUNFT — kein Signieren-Knopf, keine Fehlerfarbe, dieselbe Unterscheidung wie lamports "0" in v1.0.883; nicht scharfe Gebuehr bekommt eine eigene Zeile — erkannt am exakten Fehlercode, nicht an einer Textsuche ueber error und note, denn sonst haette jede Worker-Notiz mit dem Wort „Gebuehrenkonto" darin einen Ausfall als Konfigurations-Auskunft ausgegeben; ein unbekannter Code faellt in den allgemeinen Zweig und wird dort samt Notiz woertlich gezeigt; ein Netz- oder Worker-Ausfall sagt "nicht abrufbar" und ausdruecklich NICHT "Konto fehlt" — ein 502 ist keine Aussage ueber das Konto. (d) NACH DEM SIGNIEREN FRAGT DIE KETTE, nicht die Wallet: _awaitConfirmation wertet err aus, eine Signatur allein gilt nicht als Erfolg, und der Explorer-Link kommt aus der einen bestehenden Implementierung. Alles aus dem Worker geht durch _tokEscA. Handels-Tafel, Spiellogik, Rendering und Abilities unberuehrt.
      PREV  ·  v1.0.885: EINE MENGE OHNE EINHEIT IST KEINE MENGE. (884 bleibt frei — der Aufraeum-PR hebt das Banner nicht.) Gemessen am Telefon, BONK, Einsatz 0,05 SOL: „Erwartet 142.371.209.424" — keine Einheit, und es sind ROHEINHEITEN. BONK hat 5 Nachkommastellen; der Spieler bekommt 1,4 Millionen und liest 142 Milliarden. Faktor 100.000, auf der Zeile, ueber der die Tafel selbst schreibt, dass „Mindestens" die Zahl ist, die zaehlt. v1.0.879 hat genau das auf der EINGABEseite behoben; auf der Ausgabeseite ist es nie passiert. (a) Jede Menge traegt jetzt das Tokensymbol oder das Wort Roheinheiten — nie nichts. Umgerechnet wird NUR mit bekannter Stellenzahl; ein Standardwert 9 oder 6 sieht immer plausibel aus und ist bei jedem zweiten Token um Groessenordnungen daneben. Stellenzahl und Symbol kommen aus derselben Quelle wie das Tokenprofil (Birdeye token_overview), ohne neue Abfrage, in einem TTL-freien Speicher: sie sind Eigenschaften des Mints und koennen nicht veralten. Fehlt eines, faellt die Zeile auf Roheinheiten zurueck; fehlt der Wert ganz, faellt die Zeile weg statt nackt dazustehen. (b) EIN Zahlformat fuer die ganze Tafel: _crFmtSol lieferte per toFixed einen Punkt als Dezimaltrenner, waehrend _crFmtRaw daneben de-DE benutzt, wo der Punkt Tausender trennt. Jetzt beide deutsch; Stellenzahl unveraendert. (c) DIE PREISAUSWIRKUNG rundete ihre Aussage weg — „0.000 %" sah aus wie gar keine Auswirkung, und Number(x)||0 machte aus einem fehlenden Feld eine gemessene Null. Drei Zustaende: 0 ist eine Auskunft (0,000 %), zu klein zum Anzeigen wird „< 0,001 %", und fehlt das Feld, steht „nicht bekannt". Dieselben Helfer benutzt jetzt auch die Handelbarkeits-Zeile — ein zweiter Formatierer eine Funktion weiter waere die naechste Fassung, die wegdriftet. Deckung, Ablehnung und Pruefzeile aus v878/v882/v883 unveraendert. Spiellogik, Rendering und Abilities unberuehrt.
      PREV  ·  v1.0.883: DAS GUTHABEN WIRD JETZT WIRKLICH GELESEN. In der Tafel stand dauerhaft „Dein Guthaben: nicht abrufbar" — _crFetchSolBalance fragte api.mainnet-beta.solana.com, und die oeffentliche RPC weist Browser-Anfragen ab. Damit war die Deckungspruefung aus v1.0.878 wirkungslos: sie degradierte ehrlich und blockierte nicht, geschuetzt hat sie nichts — ausgerechnet die Pruefung, die den Fehlschlag verhindern sollte, der 0,00351 SOL fuer nichts gekostet hat. (a) Die Abfrage geht jetzt an GET /v1/rpc/balance beim eigenen tx-Worker (seit tx v1.5, Helius-Mainnet, CORS offen). Nur getBalance, kein durchgereichtes method, kein RPC-Proxy. (b) DIE AUSWERTUNG IST DER EIGENTLICHE INHALT: im Ausfall traegt die Antwort weder lamports noch sol — die Felder fehlen. Eine 0 daraus zu machen hiesse „zu wenig SOL" bei jemandem, der genug hat. Geprueft wird deshalb auf == null und danach auf isFinite; Number(j.lamports) || 0 waere eine erfundene Aussage, blankes Number() ein NaN, das durch jeden Vergleich lautlos als false rutscht. (c) Streng davon getrennt: lamports "0" ist ein LEERES KONTO, also eine Auskunft, und fuehrt zu „Das reicht nicht" — nicht zu „nicht abrufbar". Deshalb == null statt !j.lamports. (d) lamports kommt als String; einmal Number() an der Grenze. Das vorformatierte Feld sol wird nicht benutzt, der Client formatiert mit _crFmtSol — zwei Schreibweisen derselben Zahl in einer Tafel hatte diese Datei schon genug. EINE Implementierung fuer beide Aufrufer, Watchlist 60s und Handel 10s als Frische-Grade. Die Rechnung aus v878 bleibt unveraendert; sie bekommt nur endlich eine Zahl zu rechnen. Spiellogik, Rendering und Abilities unberuehrt.
@@ -14618,7 +14619,7 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
             <!-- v0.9.40 — Auto-only entries list (mirror of #crJrnList but
                  filtered to t.auto === true). Renderer fans out to both. -->
             <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 6px">
-              <h4 style="margin:0"><span data-i18n="jrn.autoTrades">Auto-Logged Trades</span> <span id="crJrnAutoCount2" style="color:var(--dim);font-weight:400">(0)</span></h4>
+              <h4 style="margin:0"><span data-i18n="jrn.autoTrades">Auto-Logged SIM Trades</span> <span data-cr-sim="1" title="Simulated orders — no keeper, nothing goes on-chain" style="font-size:9px;font-weight:700;color:#0d0d12;background:#9b8cff;border-radius:3px;padding:1px 5px;letter-spacing:.4px;vertical-align:middle">SIM</span> <span id="crJrnAutoCount2" style="color:var(--dim);font-weight:400">(0)</span></h4>
               <div style="display:flex;gap:6px">
                 <button class="cr-go" id="crJrnAutoExport" type="button" style="font-size:10px;padding:4px 10px;background:transparent;border:1px solid var(--line);color:var(--dim)" data-i18n="jrn.exportCsv">↓ Export CSV</button>
               </div>
@@ -15762,12 +15763,16 @@ window.crWallet = (function(){
       // v1.0.869 — Devnet-Probe. Erscheint nur, wenn eine Wallet verbunden ist
       // UND sie serialisierte Bytes signieren kann. Sonst waere es ein Knopf,
       // der beim Tippen erklaeren muesste, warum er nichts tut.
-      + '<button type="button" data-cr-wallet-choice="devnet" id="crWpDevnetBtn" style="display:none"><span class="wpNm">Devnet-Probe</span><span class="wpSub">Baut ein Memo, laesst es signieren, zeigt die Signatur. Kein Geld, kein Handel.</span></button>'
-      // v1.0.886 — Betriebswerkzeug, kein Spielerknopf: das Anlegen kostet den
-      // ZAHLER die Kontomiete. Deshalb steht es hier bei den Proben und nicht
-      // in der Handels-Tafel. Dieselbe Sichtbarkeitsgrenze wie die Devnet-Probe
-      // — eine zweite waere derselbe Begriff in zwei Fassungen.
-      + '<button type="button" data-cr-wallet-choice="ata" id="crWpAtaBtn" style="display:none"><span class="wpNm">Gebuehrenkonto anlegen</span><span class="wpSub">Baut das WSOL-Konto fuer die Handelsgebuehr. Zwei Schritte: erst lesen, dann signieren.</span></button>'
+      /* v1.0.888 — Devnet-Probe und Gebuehrenkonto-Knopf ENTFERNT (Julians
+       * Vorgabe: obsolete Werkzeuge verschwinden, sobald sie nicht mehr
+       * gebraucht werden). Die Probe bewies den Signierweg, BEVOR echtes Geld
+       * floss — der Weg ist seit v874 im Ernst bewiesen, seither ist sie ein
+       * totes Werkzeug in einer Spieler-Oberflaeche. Das Gebuehrenkonto legt
+       * jetzt die Handels-Tafel selbst an, genau dann, wenn der Worker
+       * fee-account-missing meldet und den Mint nennt — der v886-Knopf konnte
+       * nur den Anker-Mint (WSOL) und haette je Eingabe-Asset sowieso nicht
+       * gereicht. Die Bau-Funktionen darunter bleiben, die Tafel nutzt
+       * denselben Weg (crTxApi.ata). */
       + '</div>'
       + '<p id="crWalletPickerProbe" style="display:none"></p>'
       + '<div class="wpFoot">'
@@ -16724,7 +16729,15 @@ window.crTxApi = (function(){
                  given:  (j && j.given) != null ? j.given : undefined,
                  cap:    (j && j.cap)   || undefined,
                  instructions: Array.isArray(j && j.instructions) ? j.instructions : undefined,
-                 programs:     Array.isArray(j && j.programs)     ? j.programs     : undefined };
+                 programs:     Array.isArray(j && j.programs)     ? j.programs     : undefined,
+                 // v1.0.888 — fee-account-missing traegt fee_mint/fee_side (Quote-
+                 // Regel tx v1.14): ohne sie legt die Tafel das FALSCHE Konto an
+                 // oder keins. Gefunden durch die Testzeile, die den Ausgabe-Mint
+                 // verlangte — der alte mint-Durchgriff bestand nur, weil der
+                 // Rueckfall zufaellig dieselbe Adresse ergab.
+                 fee_mint: (j && typeof j.fee_mint === 'string') ? j.fee_mint : undefined,
+                 fee_side: (j && typeof j.fee_side === 'string') ? j.fee_side : undefined,
+                 mint:     (j && typeof j.mint === 'string')     ? j.mint     : undefined };
       }).catch(function(){ return { error: 'http-' + r.status }; });
     }).catch(function(){ return { error: 'offline' }; });
   }
@@ -16748,9 +16761,14 @@ window.crTxApi = (function(){
    * Worker BAUT nur; signiert wird in der Wallet, wie beim Memo und beim Swap.
    * cluster wird mitgeschickt, nie stillschweigend angenommen — dieselbe Regel
    * wie ueberall auf diesem Weg. Das Gebuehrenkonto liegt auf mainnet. */
-  function ata(payer){
+  /* v1.0.888 — ata(payer, mint): die Gebuehr faellt je EINGABE-Mint an
+   * (/health: platform_fee.per_input_mint), also braucht jedes Eingabe-Asset
+   * sein eigenes Konto. Ohne mint gilt die Worker-Vorgabe (Anker = WSOL). */
+  function ata(payer, mint){
     if(!payer) return Promise.resolve({ error: 'no-payer' });
-    return _post('/v1/tx/ata', { payer: String(payer), cluster: 'mainnet' });
+    var body = { payer: String(payer), cluster: 'mainnet' };
+    if(typeof mint === 'string' && mint) body.mint = mint;
+    return _post('/v1/tx/ata', body);
   }
 
   function health(){
@@ -26978,6 +26996,136 @@ function _crSwapRow(k, v, col){
 var CR_ATA_RENT_LAMPORTS = 2039280;      // rent-exempt Minimum eines Token-Kontos
 var CR_FEE_HEADROOM_LAMPORTS = 10000000; // 0,01 SOL Puffer fuer die Wallet-Gebuehr
 
+/* =========================================================================
+ * v1.0.888 — Helfer der klassischen Swap-Ansicht.
+ * ========================================================================= */
+
+/* Freie Betragseingabe → Roheinheiten, OHNE Float. Grosse Token-Betraege
+ * (148.979.256.884) liegen ueber 2^53; Number wuerde still runden und der
+ * Worker bekaeme eine andere Zahl, als der Spieler getippt hat. Deshalb
+ * Stringarithmetik: de-DE gelesen (Punkt = Tausender, Komma = Dezimal; ein
+ * einzelner Punkt ohne Komma gilt als Dezimalpunkt, damit "0.05" nicht als
+ * 5 gelesen wird). Mehr Nachkommastellen als das Asset hat -> Fehler statt
+ * stillem Abschneiden. */
+function _crParseBetrag(txt, decimals){
+  var s = String(txt == null ? '' : txt).replace(/\s+/g, '');
+  if(!s) return { error: 'leer' };
+  if(!/^[0-9.,]+$/.test(s)) return { error: 'keine Zahl' };
+  var ganz, frac = '';
+  if(s.indexOf(',') !== -1){
+    var teile = s.split(',');
+    if(teile.length > 2) return { error: 'keine Zahl' };
+    ganz = teile[0].replace(/\./g, ''); frac = teile[1] || '';
+  } else if(s.indexOf('.') !== -1){
+    var p = s.split('.');
+    if(p.length === 2){ ganz = p[0]; frac = p[1]; }
+    else { ganz = p.join(''); }
+  } else { ganz = s; }
+  if(!/^[0-9]*$/.test(ganz) || !/^[0-9]*$/.test(frac)) return { error: 'keine Zahl' };
+  var d = Number(decimals || 0);
+  if(frac.length > d) return { error: 'zu viele Nachkommastellen — ' + d + ' sind möglich' };
+  while(frac.length < d) frac += '0';
+  var raw = ((ganz || '0') + frac).replace(/^0+(?=\d)/, '');
+  if(!/[1-9]/.test(raw)) return { error: 'null' };
+  return { raw: raw };
+}
+
+/* Roheinheiten -> Anzeigeeinheiten, fuer den MAX-Knopf. Reine Stringform,
+ * kein Float — gleiche Begruendung wie beim Parser. */
+function _crRawToUi(raw, decimals){
+  var r = String(raw == null ? '' : raw).replace(/^0+(?=\d)/, '');
+  var d = Number(decimals || 0);
+  if(!/^[0-9]+$/.test(r)) return null;
+  if(d === 0) return r;
+  while(r.length <= d) r = '0' + r;
+  var ganz = r.slice(0, r.length - d), frac = r.slice(r.length - d).replace(/0+$/, '');
+  return frac ? ganz + ',' + frac : ganz;
+}
+
+/* Die Quote-Waehrungen kommen aus /health, nicht aus Konstanten — der
+ * Worker ist die Autoritaet. Das Feld heisst dort swap.quote_currencies (am
+ * LIVE-/health v1.13 abgelesen, 24.08.): Eintraege {symbol,mint,decimals,
+ * pending,note}. mint != null -> waehlbar; pending (mint: null, z. B. RUN
+ * bis zum Token-Launch) -> sichtbar gesperrte Zeile, KEIN geratener Mint —
+ * null heisst dort ausdruecklich "gibt es nicht", nicht "unbekannt".
+ * EINZIGE Ausnahme: SOL. Lamports sind Protokoll, keine Worker-Meinung.
+ * Liefert /health nichts, gibt es eben nur SOL — geraten wird nicht. */
+var _crSwapHealthCache = null;
+function _crSwapQuoteAssets(){
+  var sol = { symbol: 'SOL', mint: 'So11111111111111111111111111111111111111112', decimals: 9, sol: true };
+  var holen = (window.crTxApi && crTxApi.health)
+    ? (_crSwapHealthCache ? Promise.resolve(_crSwapHealthCache)
+        : crTxApi.health().then(function(h){ _crSwapHealthCache = h || {}; return _crSwapHealthCache; })
+          .catch(function(){ return {}; }))
+    : Promise.resolve({});
+  return holen.then(function(h){
+    var aus = [sol], gesperrt = [];
+    var q = (h && h.swap && Array.isArray(h.swap.quote_currencies)) ? h.swap.quote_currencies
+      : ((h && Array.isArray(h.quote_currencies)) ? h.quote_currencies : null);
+    if(Array.isArray(q)) q.forEach(function(e){
+      if(!e || typeof e.symbol !== 'string') return;
+      if(e.mint == null){
+        // pending-Slot (RUN bis zum Token-Launch): zeigen, nicht waehlen.
+        gesperrt.push({ symbol: e.symbol });
+        return;
+      }
+      if(typeof e.mint !== 'string' || e.mint === sol.mint) return;
+      if(_crNumOrNull(e.decimals) == null) return;
+      aus.push({ symbol: e.symbol, mint: e.mint, decimals: Number(e.decimals) });
+    });
+    aus.gesperrt = gesperrt;
+    return aus;
+  });
+}
+
+/* Eigene Bestaende via GET /v1/rpc/tokens (tx v1.12). Dieselbe Disziplin wie
+ * beim Guthaben: ein Ausfall ist KEINE leere Liste — der Worker laesst das
+ * Listenfeld dann weg, und hier wird das zu null, nicht zu []. */
+var _crSwapTokCache = {};
+function _crFetchTokens(addr){
+  var c = _crSwapTokCache[addr];
+  if(c && (Date.now() - c.t) < 10000) return Promise.resolve(c.list);
+  return fetch(CR_TX_API + '/v1/rpc/tokens?address=' + encodeURIComponent(addr) + '&cluster=mainnet')
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      var list = (j && j.read === true && Array.isArray(j.holdings)) ? j.holdings : null;
+      _crSwapTokCache[addr] = { list: list, t: Date.now() };
+      return list;
+    })
+    .catch(function(){ return null; });
+}
+
+/* Deckung, wenn der EINSATZ ein Token ist: der Bestand muss reichen (nur der
+ * verfuegbare Teil — spendable_amount_raw, nicht frozen), und daneben braucht
+ * die Wallet SOL fuer Gebuehr und ggf. Konto-Miete. Stringvergleich fuer
+ * Roheinheiten jenseits von 2^53: erst Laenge, dann lexikografisch. */
+function _crRawCmp(a, b){
+  a = String(a).replace(/^0+(?=\d)/, ''); b = String(b).replace(/^0+(?=\d)/, '');
+  if(a.length !== b.length) return a.length < b.length ? -1 : 1;
+  return a < b ? -1 : (a > b ? 1 : 0);
+}
+function _crSwapDeckungToken(tok, amountRaw, solBal, meta){
+  if(tok == null) return { ok: true, html:
+    '<div style="margin-top:6px;font-size:9px;color:var(--dim)">Dein Token-Bestand ließ sich nicht abfragen — '
+    + 'geprüft ist er also nicht. Reicht er nicht, scheitert die Transaktion auf der Kette und die Gebühr ist trotzdem weg.</div>' };
+  if(tok.frozen === true) return { ok: false, html:
+    '<div style="margin-top:7px;padding:7px 8px;border:1px solid #ff5b7f;border-radius:5px;background:rgba(255,91,127,.08)">'
+    + '<b style="color:#ff5b7f">Konto eingefroren.</b> <span style="font-size:9px;line-height:1.5">Der Bestand ist da, '
+    + 'kann aber nicht bewegt werden — die Wallet würde die Signatur ablehnen. Verkaufen ist für diesen Token nicht möglich.</span></div>' };
+  var frei = tok.spendable_amount_raw != null ? tok.spendable_amount_raw : tok.amount_raw;
+  if(frei == null || _crRawCmp(frei, amountRaw) < 0) return { ok: false, html:
+    '<div style="margin-top:7px;padding:7px 8px;border:1px solid #ff5b7f;border-radius:5px;background:rgba(255,91,127,.08)">'
+    + '<b style="color:#ff5b7f">Das reicht nicht.</b><br><span style="font-size:9px;line-height:1.5">Verfügbar: <b>'
+    + (_crFmtMenge(frei, meta && meta.decimals, meta && meta.symbol) || (frei == null ? 'nicht bekannt' : frei + ' Roheinheiten'))
+    + '</b>. Signieren würde die Gebühr kosten und nichts bewegen — deshalb steht hier kein Knopf.</span></div>' };
+  if(solBal != null && solBal < CR_FEE_HEADROOM_LAMPORTS) return { ok: true, html:
+    '<div style="margin-top:7px;padding:7px 8px;border:1px solid #f7c76b;border-radius:5px;background:rgba(247,199,107,.07)">'
+    + '<b style="color:#f7c76b">Knapp.</b> <span style="font-size:9px;line-height:1.5">Für die Wallet-Gebühr bleiben nur '
+    + _crFmtSol(solBal) + ' SOL-seitig. Setzt deine Wallet eine hohe Prioritätsgebühr an, scheitert die Transaktion — '
+    + 'und die Gebühr ist trotzdem weg.</span></div>' };
+  return { ok: true, html: '' };
+}
+
 function _crSwapDeckung(bal, einsatz){
   if(bal == null) return { ok: true, html:
     '<div style="margin-top:6px;font-size:9px;color:var(--dim)">Dein SOL-Guthaben ließ sich nicht abfragen — '
@@ -27236,15 +27384,138 @@ function _crWireSwap(host, mint){
       });
   }
 
-  var probeBtn = host.querySelector('[data-cr-cap-probe]');
-  if(probeBtn) probeBtn.addEventListener('click', function(){
-    if(busy) return;
-    busy = true;
-    ready().then(function(addr){
-      if(!addr){ busy = false; return; }
-      return _crProbeCap(addr, mint, say);
-    }).then(function(){ busy = false; });
+  /* v1.0.888 — Zustand der klassischen Ansicht. Der Deckel-pruefen-Knopf
+   * ist mit dem Deckel gegangen (_crProbeCap bleibt definiert, wird aber
+   * nicht mehr angeboten). `quote` ist die WAEHLBARE Seite: bei Kauf die
+   * Einsatz-, bei Verkauf die Erhalten-Seite. */
+  var richtung = 'kauf';
+  var SOL_ASSET = { symbol:'SOL', mint:'So11111111111111111111111111111111111111112', decimals:9, sol:true };
+  var quote = SOL_ASSET;
+  var eingabe = host.querySelector('[data-cr-swap-betrag]');
+  var curBtn  = host.querySelector('[data-cr-swap-cur]');
+  var menuEl  = host.querySelector('[data-cr-swap-menu]');
+  var erhEl   = host.querySelector('[data-cr-swap-erhalt]');
+  var bestEl  = host.querySelector('[data-cr-swap-bestand]');
+  var maxBtn  = host.querySelector('[data-cr-swap-max]');
+  var dirBtns = host.querySelectorAll('[data-cr-swap-dir]');
+
+  function _tokAsset(){
+    var m = _crTokMeta(mint) || {};
+    return { symbol: m.symbol || 'Token', mint: mint, decimals: m.decimals, token: true };
+  }
+  function _inputAsset(){ return richtung === 'kauf' ? quote : _tokAsset(); }
+  function _outputAsset(){ return richtung === 'kauf' ? _tokAsset() : quote; }
+
+  function _malDir(){
+    for(var i = 0; i < dirBtns.length; i++){
+      var an = dirBtns[i].getAttribute('data-cr-swap-dir') === richtung;
+      dirBtns[i].style.borderColor = an ? '#2E9E63' : 'var(--line)';
+      dirBtns[i].style.background  = an ? 'rgba(74,222,128,.08)' : 'transparent';
+      dirBtns[i].style.color       = an ? '#4ADE80' : 'var(--dim)';
+    }
+    if(curBtn) curBtn.textContent = _inputAsset().symbol + ' ▾';
+    if(erhEl) erhEl.textContent = 'Erhältst: ' + _outputAsset().symbol
+      + ' — die Zahl, die zählt (Mindestens), steht nach dem Angebot in der Tafel.';
+    if(bestEl) bestEl.textContent = '';
+    if(menuEl) menuEl.style.display = 'none';
+  }
+  for(var _di = 0; _di < dirBtns.length; _di++) dirBtns[_di].addEventListener('click', function(){
+    richtung = this.getAttribute('data-cr-swap-dir') === 'verkauf' ? 'verkauf' : 'kauf';
+    // Beim Verkauf ist die waehlbare Seite die ERHALTEN-Seite und damit eine
+    // Quote-Waehrung; ein als Einsatz gewaehlter Fremd-Token faellt zurueck auf SOL.
+    if(richtung === 'verkauf' && quote.token) quote = SOL_ASSET;
+    _malDir();
   });
+
+  /* Das Menue: Quote-Waehrungen aus /health (+ SOL), bei KAUF zusaetzlich die
+   * eigenen Bestaende aus /v1/rpc/tokens als Einsatz (Token->Token laeuft
+   * ueber denselben einen Anfrageweg). RUN steht sichtbar gesperrt drin, bis
+   * der Worker ihn beim Token-Launch in /health fuehrt — kein geratener Mint. */
+  function _menuBauen(addr){
+    if(!menuEl) return;
+    menuEl.innerHTML = '<div class="dim" style="font-size:9px;padding:4px 6px">Währungen werden geholt…</div>';
+    var teile = [_crSwapQuoteAssets(),
+      (richtung === 'kauf' && addr) ? _crFetchTokens(addr) : Promise.resolve(null)];
+    Promise.all(teile).then(function(r){
+      var assets = r[0] || [], tokens = r[1];
+      var h = '';
+      function zeile(a, sub){
+        h += '<button type="button" data-cr-swap-wahl="' + _tokEscA(a.mint) + '" '
+          + 'style="font:inherit;font-size:10px;display:flex;justify-content:space-between;width:100%;'
+          + 'padding:5px 7px;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer">'
+          + '<b>' + _tokEscA(a.symbol) + '</b><span class="dim">' + sub + '</span></button>';
+      }
+      assets.forEach(function(a){ zeile(a, 'Quote'); });
+      /* Gesperrte Slots kommen aus /health (pending, mint: null) — der Worker
+       * fuehrt sie, der Client raet nicht. Nur wenn /health gar nichts sagt,
+       * steht der RUN-Platzhalter als reine Beschriftung da. */
+      var gesperrt = (assets.gesperrt && assets.gesperrt.length)
+        ? assets.gesperrt : [{ symbol: 'RUN' }];
+      gesperrt.forEach(function(g){
+        h += '<div class="dim" style="font-size:10px;display:flex;justify-content:space-between;'
+          + 'padding:5px 7px;opacity:.5"><b>' + _tokEscA(g.symbol) + '</b><span>Token-Launch</span></div>';
+      });
+      if(Array.isArray(tokens) && tokens.length){
+        h += '<div class="dim" style="font-size:8px;text-transform:uppercase;letter-spacing:.5px;padding:5px 7px 2px">Deine Solana Token</div>';
+        tokens.forEach(function(t){
+          if(!t || typeof t.mint !== 'string' || t.mint === mint) return;
+          zeile({ symbol: t.symbol || (t.mint.slice(0,4) + '…'), mint: t.mint },
+            t.frozen === true ? 'eingefroren' : 'Bestand');
+        });
+      } else if(richtung === 'kauf' && addr && tokens == null){
+        h += '<div class="dim" style="font-size:9px;padding:4px 7px">Eigene Bestände ließen sich nicht abfragen.</div>';
+      }
+      menuEl.innerHTML = h;
+      var wahlen = menuEl.querySelectorAll('[data-cr-swap-wahl]');
+      for(var wi = 0; wi < wahlen.length; wi++) wahlen[wi].addEventListener('click', function(){
+        var m2 = this.getAttribute('data-cr-swap-wahl');
+        var a2 = assets.filter(function(a){ return a.mint === m2; })[0];
+        if(!a2 && Array.isArray(tokens)){
+          var t2 = tokens.filter(function(t){ return t && t.mint === m2; })[0];
+          if(t2) a2 = { symbol: t2.symbol || (m2.slice(0,4) + '…'), mint: m2,
+                        decimals: _crNumOrNull(t2.decimals), token: true };
+        }
+        if(a2){ quote = a2; _malDir(); }
+      });
+    });
+  }
+  if(curBtn) curBtn.addEventListener('click', function(){
+    if(!menuEl) return;
+    var offen = menuEl.style.display !== 'none';
+    menuEl.style.display = offen ? 'none' : '';
+    if(!offen){
+      var a = null;
+      try { a = window.crSigner && crSigner.active(); } catch(_){}
+      _menuBauen(a && a.address);
+    }
+  });
+
+  /* MAX aus dem ECHTEN Bestand: SOL abzueglich Konto-Miete und
+   * Gebuehren-Puffer (dieselben Konstanten wie die Deckungspruefung),
+   * Token ueber spendable_amount_raw aus /v1/rpc/tokens. */
+  if(maxBtn) maxBtn.addEventListener('click', function(){
+    ready().then(function(addr){
+      if(!addr) return;
+      var inA = _inputAsset();
+      if(inA.sol){
+        return _crFetchSolBalance(addr, 10000).then(function(b){
+          if(!b || b.lamports == null){ if(bestEl) bestEl.textContent = 'Guthaben nicht abrufbar'; return; }
+          var frei = Math.max(0, b.lamports - CR_ATA_RENT_LAMPORTS - CR_FEE_HEADROOM_LAMPORTS);
+          if(eingabe) eingabe.value = _crRawToUi(String(frei), 9) || '0';
+          if(bestEl) bestEl.textContent = 'Bestand: ' + _crFmtSol(b.lamports);
+        });
+      }
+      return _crFetchTokens(addr).then(function(list){
+        var t = Array.isArray(list) ? list.filter(function(x){ return x && x.mint === inA.mint; })[0] : null;
+        if(!t){ if(bestEl) bestEl.textContent = 'Bestand ließ sich nicht abfragen'; return; }
+        var frei = t.spendable_amount_raw != null ? t.spendable_amount_raw : t.amount_raw;
+        var d = _crNumOrNull(t.decimals); d = d == null ? (inA.decimals || 0) : d;
+        if(eingabe) eingabe.value = _crRawToUi(String(frei == null ? '0' : frei), d) || '0';
+        if(bestEl) bestEl.textContent = t.frozen === true ? 'Bestand eingefroren' : '';
+      });
+    });
+  });
+  _malDir();
 
   btn.addEventListener('click', function(){
     if(busy) return;
@@ -27255,7 +27526,72 @@ function _crWireSwap(host, mint){
     });
   });
 
+  function _feeKontoFlow(addr, feeMint, sym){
+    say('<div style="border:1px solid #f7c76b;border-radius:6px;padding:8px 9px;background:rgba(247,199,107,.06)">'
+      + '<b style="color:#f7c76b">Das Gebührenkonto für ' + _tokEscA(sym || 'dieses Asset') + ' fehlt noch.</b>'
+      + '<div style="font-size:9px;line-height:1.5;margin-top:4px">Die Handelsgebühr fällt auf der Eingabe-Seite an — '
+      + 'je Eingabe-Asset braucht der Gebühren-Eigner ein eigenes Token-Konto. Ohne das Konto lehnt der Worker ab, '
+      + 'statt gratis zu handeln. Anlegen kostet dich einmalig die Kontomiete (kommt beim Schließen des Kontos zurück).</div>'
+      + '<button type="button" data-cr-ata-bauen="1" style="font:inherit;font-size:10px;font-weight:700;width:100%;'
+      + 'margin-top:6px;padding:7px;border-radius:5px;border:1px solid #f7c76b;background:transparent;color:#f7c76b;cursor:pointer">'
+      + 'Gebührenkonto anlegen — Tap 1: bauen und ansehen</button></div>');
+    var b1 = panel.querySelector('[data-cr-ata-bauen]');
+    if(b1) b1.addEventListener('click', function(){
+      b1.disabled = true; b1.textContent = 'Wird gebaut …';
+      crTxApi.ata(addr, feeMint).then(function(built){
+        if(built && built.already_exists === true)
+          return say('<span style="color:var(--dim)">Das Konto existiert bereits — eine Auskunft, kein Fehler. '
+            + 'Einfach das Angebot neu holen.</span>');
+        if(!built || built.error || typeof built.transaction !== 'string')
+          return say('<span style="color:var(--dim)">Anlegen nicht möglich: '
+            + _tokEscA(String((built && (built.error || '')) || 'keine Antwort'))
+            + (built && built.detail ? ' · ' + _tokEscA(String(built.detail)) : '') + '</span>');
+        var eigner = (typeof built.owner === 'string' && built.owner) ? built.owner : null;
+        var konto  = (typeof built.fee_account === 'string' && built.fee_account) ? built.fee_account : null;
+        if(!eigner || !konto)
+          return say('<span style="color:var(--dim)">Die Antwort nennt die Adressen nicht — '
+            + 'ohne Eigner und Konto AUS DER ANTWORT wird nichts zum Signieren angeboten.</span>');
+        var miete = _crNumOrNull(built.rent_lamports);
+        say('<div style="border:1px solid var(--line);border-radius:6px;padding:8px 9px;background:rgba(10,15,28,.55)">'
+          + '<div style="text-transform:uppercase;letter-spacing:.4px;color:var(--dim);font-size:9px;margin-bottom:5px">Bevor du signierst — Gebührenkonto</div>'
+          + _crSwapRow('Eigner', eigner.slice(0,4) + '…' + eigner.slice(-4))
+          + _crSwapRow('Konto', konto.slice(0,4) + '…' + konto.slice(-4))
+          + (miete == null ? '' : _crSwapRow('Kontomiete', miete.toLocaleString('de-DE') + ' Lamports'))
+          + '<div class="dim" style="font-size:9px;margin-top:5px;line-height:1.45">Zahler bist du (die verbundene Wallet), '
+          + 'nicht der Eigner. Die Miete kommt zurück, wenn das Konto geschlossen wird.</div>'
+          + '<button type="button" data-cr-ata-go="1" style="font:inherit;font-size:11px;font-weight:700;'
+          + 'width:100%;margin-top:7px;padding:8px;border-radius:5px;border:0;background:#177A4C;color:#EAFBF1;cursor:pointer">'
+          + 'Signieren und senden</button></div>');
+        var b2 = panel.querySelector('[data-cr-ata-go]');
+        if(b2) b2.addEventListener('click', function(){
+          b2.disabled = true; b2.textContent = 'Deine Wallet fragt gleich…';
+          crSigner.signAndSend(built.transaction, { chain: 'solana:mainnet' }).then(function(sg){
+            if(sg.error === 'rejected') return say('<span style="color:var(--dim)">Abgebrochen. Es wurde nichts gesendet.</span>');
+            if(sg.error) return say('<span style="color:var(--dim)">Nicht signiert: ' + _tokEscA(String(sg.error))
+              + (sg.detail ? ' · ' + _tokEscA(String(sg.detail)) : '') + '</span>');
+            say('<span style="color:var(--dim)">Gesendet. Warte auf Bestätigung durch die Kette…</span>');
+            _crConfirmSwap(sg.signature, panel).then(function(){
+              say('<span style="color:#3ddc97"><b>Konto angelegt.</b> Jetzt das Angebot neu holen — der Handel läuft dann durch.</span>');
+            });
+          });
+        });
+      });
+    });
+  }
+
   function _handel(addr){
+    /* v1.0.888 — die Anfrage kommt aus dem Formular: Richtung, Waehrung,
+     * freier Betrag. Geparst wird OHNE Float (_crParseBetrag); mehr
+     * Nachkommastellen als das Asset hat, sind ein Fehler, kein Runden. */
+    var inA = _inputAsset(), outA = _outputAsset();
+    var dIn = inA.sol ? 9 : (_crNumOrNull(inA.decimals) != null ? Number(inA.decimals) : 0);
+    var p = _crParseBetrag(eingabe && eingabe.value, dIn);
+    if(p.error){
+      busy = false;
+      return say('<span style="color:#f7c76b">Einsatz: ' + p.error
+        + (dIn === 0 && inA.token ? ' (Nachkommastellen dieses Tokens sind nicht bekannt — Eingabe in Roheinheiten)' : '')
+        + '</span>');
+    }
     say('<span style="color:var(--dim)">Angebot wird geholt — es wird noch nichts signiert…</span>');
 
     // v1.0.878 — Guthaben MIT holen, nicht hoffen. Beim ersten echten Handel
@@ -27267,16 +27603,21 @@ function _crWireSwap(host, mint){
     // wissen: _crFetchSolBalance gibt es seit der Wallet-Watchlist.
     Promise.all([
       ChartRunnerSDK.prototype.prepareSwap({
-        payer: addr, outputMint: mint, amountRaw: String(CR_SWAP_TEST_LAMPORTS),
-        slippageBps: CR_SWAP_SLIPPAGE_BPS, cluster: 'mainnet'
+        payer: addr, inputMint: inA.mint, outputMint: outA.mint,
+        amountRaw: p.raw, slippageBps: CR_SWAP_SLIPPAGE_BPS, cluster: 'mainnet'
       }),
       (typeof _crFetchSolBalance === 'function'
         // 10s statt 60s: vor einem Handel zaehlt der aktuelle Stand.
         ? _crFetchSolBalance(addr, 10000).catch(function(){ return null; })
-        : Promise.resolve(null))
+        : Promise.resolve(null)),
+      // Bei Token-Einsatz zaehlt der Token-Bestand (inkl. frozen) VOR dem Knopf.
+      (inA.token ? _crFetchTokens(addr) : Promise.resolve(null))
     ]).then(function(both){
-      var res = both[0], balInfo = both[1];
+      var res = both[0], balInfo = both[1], tokListe = both[2];
       var bal = (balInfo && typeof balInfo.lamports === 'number') ? balInfo.lamports : null;
+      var tokEintrag = Array.isArray(tokListe)
+        ? tokListe.filter(function(t){ return t && t.mint === inA.mint; })[0] || null
+        : null;
       busy = false;
       if(res && res.error){
         // Eine Ablehnung ist hier eine gute Nachricht: die Grenze hat
@@ -27284,6 +27625,25 @@ function _crWireSwap(host, mint){
         var cap = res.cap || {};
         // Der Fund zuerst: er ist die einzige Ablehnung, die eine gute Nachricht ist.
         if(_crSwapIstFund(res.error)) return say(_crSwapFundHtml(res));
+        /* v1.0.888 — fee-account-missing ist keine Sackgasse mehr: der
+         * Fehler NENNT den Mint, also steht die Loesung daneben. Zwei Taps
+         * wie ueberall (v886): Tap 1 baut und zeigt Eigner, Konto und Miete
+         * AUS DER ANTWORT; erst Tap 2 fragt die Wallet. already_exists ist
+         * eine AUSKUNFT (dann Angebot neu holen), kein Fehler. */
+        if(res.error === 'fee-account-missing'){
+          /* Seit der Quote-Regel (tx v1.14) nennt der Fehler fee_mint und
+           * fee_side — die Gebuehr kann auf der AUSGABE-Seite liegen. Ein
+           * Rueckfall auf den Eingabe-Mint wuerde dann das FALSCHE Konto
+           * anlegen; deshalb wird NICHT geraten: nennt die Antwort keinen
+           * Mint, gibt es keinen Anlege-Knopf. */
+          var feeMint = (typeof res.fee_mint === 'string' && res.fee_mint) ? res.fee_mint
+            : ((typeof res.mint === 'string' && res.mint) ? res.mint : null);
+          if(!feeMint)
+            return say('<span style="color:var(--dim)">Das Gebührenkonto fehlt, aber die Antwort nennt den Mint nicht — '
+              + 'ohne ihn wird kein Konto angelegt (das falsche wäre schlimmer als keins).</span>');
+          var feeSym = feeMint === inA.mint ? inA.symbol : (feeMint === outA.mint ? outA.symbol : null);
+          return _feeKontoFlow(addr, feeMint, feeSym);
+        }
         if(res.error === 'over-cap')
           return say('<span style="color:#f7c76b">Über dem Deckel: angefragt ' + _crFmtSol(res.given)
             + ', erlaubt ' + _crFmtSol(cap.max_in_lamports) + '. <b>Der Deckel hat gehalten.</b></span>');
@@ -27314,8 +27674,21 @@ function _crWireSwap(host, mint){
       var tokMeta = _crTokMeta(mint);
       var builtAt = Date.now(), ttl = Number(res.expires_in_s || 0);
 
-      var einsatz = Number(q.in_raw != null ? q.in_raw : CR_SWAP_TEST_LAMPORTS);
-      var deckung = _crSwapDeckung(bal, einsatz);
+      /* v1.0.888 — die Tafel rechnet in der Richtung des Handels: der Einsatz
+       * in Einheiten der Eingabe-Seite, Erwartet/Mindestens in denen der
+       * Ausgabe-Seite. Der Worker liefert in_raw zurueck; fehlt es, gilt die
+       * eigene Anfrage — nie eine Konstante. */
+      var einsatzRaw = q.in_raw != null ? String(q.in_raw) : p.raw;
+      var inMeta  = inA.sol ? { decimals: 9, symbol: 'SOL' }
+        : (inA.mint === mint ? tokMeta
+           : { decimals: (tokEintrag && _crNumOrNull(tokEintrag.decimals) != null)
+                 ? Number(tokEintrag.decimals) : _crNumOrNull(inA.decimals),
+               symbol: inA.symbol });
+      var outMeta = outA.token ? (outA.mint === mint ? tokMeta : { decimals: _crNumOrNull(outA.decimals), symbol: outA.symbol })
+        : { decimals: outA.decimals, symbol: outA.symbol };
+      var deckung = inA.sol
+        ? _crSwapDeckung(bal, Number(einsatzRaw))
+        : _crSwapDeckungToken(tokEintrag, einsatzRaw, bal, inMeta);
 
       /* v1.0.887 — die Handelsgebuehr wird AUSGEWIESEN, nicht stillschweigend
        * eingepreist. Der Wert kommt aus der Antwort (route.platform_fee_bps),
@@ -27329,9 +27702,11 @@ function _crWireSwap(host, mint){
 
       say('<div style="border:1px solid var(--line);border-radius:6px;padding:8px 9px;background:rgba(10,15,28,.55)">'
         + '<div style="text-transform:uppercase;letter-spacing:.4px;color:var(--dim);font-size:9px;margin-bottom:5px">Bevor du signierst</div>'
-        + _crSwapRow('Einsatz', _crFmtSol(einsatz))
-        + _crSwapMengeRow('Erwartet', q.out_raw, tokMeta)
-        + _crSwapMengeRow('Mindestens', q.min_out_raw, tokMeta, '#f7c76b')
+        + (inA.sol ? _crSwapRow('Einsatz', _crFmtSol(Number(einsatzRaw)))
+            : (_crSwapMengeRow('Einsatz', einsatzRaw, inMeta)
+               || _crSwapRow('Einsatz', einsatzRaw + ' Roheinheiten')))
+        + _crSwapMengeRow('Erwartet', q.out_raw, outMeta)
+        + _crSwapMengeRow('Mindestens', q.min_out_raw, outMeta, '#f7c76b')
         + _crSwapRow('Preisauswirkung', _crFmtImpact(impPct), impCol)
         // v1.0.878 — die Basisgebuehr ist NICHT die Gebuehr. Beim ersten echten
         // Handel stand hier „5.000 Lamports"; Phantom hat 3.510.000 berechnet.
@@ -27342,17 +27717,34 @@ function _crWireSwap(host, mint){
             : (Number(fee.base_lamports || 0) + Number(fee.priority_lamports)).toLocaleString('de-DE') + ' Lamports'))
         + (pfBps == null ? ''
             : _crSwapRow('Handelsgebühr', pfBps.toLocaleString('de-DE') + ' bps an ChartRunner'))
-        + _crSwapRow('Deckel', _crFmtSol(cap.max_in_lamports))
-        + _crSwapRow('Dein Guthaben', bal == null ? 'nicht abrufbar' : _crFmtSol(bal),
-            deckung.ok ? null : '#ff5b7f')
-        + '<div class="dim" style="font-size:9px;margin-top:5px;line-height:1.45">'
+        /* Deckel-Zeile nur, solange der Worker einen fuehrt — mit `cap: none`
+         * (neuer Worker) faellt sie von selbst weg. */
+        + ((res.cap && cap.max_in_lamports != null) ? _crSwapRow('Deckel', _crFmtSol(cap.max_in_lamports)) : '')
+        + (inA.sol
+            ? _crSwapRow('Dein Guthaben', bal == null ? 'nicht abrufbar' : _crFmtSol(bal),
+                deckung.ok ? null : '#ff5b7f')
+            : _crSwapRow('Dein Bestand',
+                (tokEintrag == null ? 'nicht abrufbar'
+                  : (_crFmtMenge(tokEintrag.spendable_amount_raw != null
+                        ? tokEintrag.spendable_amount_raw : tokEintrag.amount_raw,
+                      inMeta && inMeta.decimals, inMeta && inMeta.symbol)
+                     || 'nicht bekannt')
+                  + (tokEintrag && tokEintrag.frozen === true ? ' · eingefroren' : '')),
+                deckung.ok ? null : '#ff5b7f'))
+        /* v1.0.888 — die Erklaerabsaetze wandern in ein Aufklapp-Menue
+         * (Julians Vorgabe). Inhalt unveraendert, nur eingeklappt; die
+         * Pruefzeile bleibt Teil davon. */
+        + '<details data-cr-swap-erklaerung="1" style="margin-top:5px">'
+        + '<summary style="cursor:pointer;list-style:none;font-size:9px;color:var(--dim);'
+        + 'text-transform:uppercase;letter-spacing:.4px">Was hier geprüft wird ▾</summary>'
+        + '<div class="dim" style="font-size:9px;margin-top:4px;line-height:1.45">'
         + '<b>Mindestens</b> ist die Zahl, die zählt — „Erwartet" ist eine Erwartung.'
         + '<br>Die Basisgebühr ist nicht die ganze Gebühr: deine Wallet legt eine '
         + 'Prioritätsgebühr obendrauf, die ein Vielfaches sein kann. Was du zahlst, steht in der Wallet.'
         + (pfBps == null ? ''
             : '<br>Die Handelsgebühr steckt im Einsatz — hier ausgewiesen, sie kommt nicht obendrauf.')
         + _crSwapPruefzeile(chk)
-        + '</div>'
+        + '</div></details>'
         + deckung.html
         + (deckung.ok
             ? '<button type="button" data-cr-swap-go="1" style="font:inherit;font-size:11px;font-weight:700;'
@@ -27480,16 +27872,40 @@ function _crTradeabilityHtml(q, mint){
   // v1.0.874 — ab hier kann echtes Geld fliessen. Der Knopf OEFFNET nur;
   // signiert wird erst nach einem zweiten, ausdruecklichen Tap, und erst
   // nachdem die Zahlen dastehen.
-  // v1.0.875 — daneben die Deckel-Probe: derselbe Weg wie ein echter Handel,
-  // keine zweite Anfrage-Implementierung. Es wird dabei nie signiert.
-  var btns = '<div style="margin-top:6px"><button type="button" data-cr-swap="' + _tokEscA(mint) + '" '
-    + 'style="font:inherit;font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;'
-    + 'border:1px solid #2E9E63;background:transparent;color:#4ADE80;cursor:pointer">'
-    + _tokT('tok.swapOpen','Echt handeln — 0,05 SOL') + '</button>'
-    + ' <button type="button" data-cr-cap-probe="' + _tokEscA(mint) + '" '
-    + 'style="font:inherit;font-size:10px;padding:5px 9px;border-radius:5px;'
-    + 'border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer">'
-    + _tokT('tok.capProbe','Deckel prüfen') + '</button></div>'
+  /* v1.0.888 — KLASSISCHE SWAP-ANSICHT statt Festbetrag (Julians Vorgabe
+   * 24.08.): Richtung waehlbar, Einsatz frei, Waehrung aus /health + eigenem
+   * Bestand. Der Deckel-pruefen-Knopf entfaellt mit dem Deckel; die alte
+   * feste 0,05-SOL-Anfrage gibt es nicht mehr — EIN Anfrageweg. Der Worker
+   * bleibt die Autoritaet: ein alter Worker lehnt Verkauf/fremde Waehrung ab
+   * und GENAU DAS zeigt die Tafel dann an, statt dass der Client raet. */
+  var btns = '<div data-cr-swap-form="1" style="margin-top:7px;border:1px solid var(--line);border-radius:6px;padding:8px 9px">'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:7px">'
+    +   '<button type="button" data-cr-swap-dir="kauf" style="font:inherit;font-size:10px;font-weight:700;letter-spacing:.6px;'
+    +     'padding:6px 0;border-radius:5px;border:1px solid #2E9E63;background:rgba(74,222,128,.08);color:#4ADE80;cursor:pointer">KAUFEN</button>'
+    +   '<button type="button" data-cr-swap-dir="verkauf" style="font:inherit;font-size:10px;font-weight:700;letter-spacing:.6px;'
+    +     'padding:6px 0;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer">VERKAUFEN</button>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline">'
+    +   '<span class="dim" style="font-size:9px;text-transform:uppercase;letter-spacing:.5px">Einsatz</span>'
+    +   '<span class="dim" data-cr-swap-bestand style="font-size:9px"></span>'
+    + '</div>'
+    + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">'
+    +   '<input data-cr-swap-betrag inputmode="decimal" placeholder="0" aria-label="Einsatz" '
+    +     'style="flex:1;min-width:0;font:inherit;font-size:14px;font-weight:700;padding:6px 8px;'
+    +     'border:1px solid var(--line);border-radius:5px;background:rgba(10,15,28,.55);color:inherit">'
+    +   '<button type="button" data-cr-swap-max style="font:inherit;font-size:9px;font-weight:700;padding:6px 7px;'
+    +     'border-radius:5px;border:1px solid var(--line);background:transparent;color:#4ADE80;cursor:pointer">MAX</button>'
+    +   '<button type="button" data-cr-swap-cur style="font:inherit;font-size:11px;font-weight:700;padding:6px 9px;'
+    +     'border-radius:5px;border:1px solid var(--line);background:transparent;color:inherit;cursor:pointer;white-space:nowrap">SOL ▾</button>'
+    + '</div>'
+    + '<div data-cr-swap-menu style="display:none;margin-top:5px;border:1px solid var(--line);border-radius:5px;'
+    +   'background:rgba(10,15,28,.92);padding:3px"></div>'
+    + '<div data-cr-swap-erhalt class="dim" style="font-size:9px;margin-top:5px"></div>'
+    + '<button type="button" data-cr-swap="' + _tokEscA(mint) + '" '
+    +   'style="font:inherit;font-size:10px;font-weight:700;letter-spacing:.5px;width:100%;margin-top:7px;padding:7px 0;border-radius:5px;'
+    +   'border:1px solid #2E9E63;background:transparent;color:#4ADE80;cursor:pointer">'
+    +   'ANGEBOT HOLEN — ES WIRD NICHTS SIGNIERT</button>'
+    + '</div>'
     + '<div data-cr-swap-panel="' + _tokEscA(mint) + '" style="display:none;margin-top:7px"></div>';
 
   if(!q || q.error){
@@ -55224,7 +55640,7 @@ function _crJrnRenderTable(listElId, countElId, filter){
     const ckCount = ['htf','level','volume','momentum','rr','conf'].filter(k => !!ckObj[k]).length;
     const ckColor = ckCount === 6 ? '#7ee787' : (ckCount >= 4 ? '#ffd166' : (ckCount >= 1 ? '#ffb86b' : 'var(--dim)'));
     const ckTitle = 'HTF '+(ckObj.htf?'✓':'✗')+' · Level '+(ckObj.level?'✓':'✗')+' · Vol '+(ckObj.volume?'✓':'✗')+' · Mom '+(ckObj.momentum?'✓':'✗')+' · RR '+(ckObj.rr?'✓':'✗')+' · Conf '+(ckObj.conf?'✓':'✗');
-    html += '<div style="display:grid;grid-template-columns:'+grid+';gap:0;font-size:10.5px;padding:6px 8px;border-bottom:1px solid rgba(180,200,230,0.06);align-items:center"'+(t.auto?' title="Auto-logged from SDK order"':'')+'>';
+    html += '<div style="display:grid;grid-template-columns:'+grid+';gap:0;font-size:10.5px;padding:6px 8px;border-bottom:1px solid rgba(180,200,230,0.06);align-items:center"'+(t.auto?' title="Auto-logged SIM order — nothing went on-chain"':'')+'>';
     // v0.9.31 — Auto-logged rows get a small green dot prefix on the date
     // column so the player can scan at-a-glance which entries came from
     // the live SDK stream vs which were paper-trade manual entries.
@@ -56953,7 +57369,7 @@ window.crI18n = (function(){
       'wal.connectedWith':'Verbunden mit','wal.notConnected':'Nicht verbunden — klicke Verbinden, um On-chain-Bestände zu laden','wal.connect':'Verbinden','wal.switch':'Wechseln','wal.noWallets':'Noch keine Wallets gemerkt — verbinde eins im WALLET-Tab.','wal.active':' · aktiv','wal.reconnect':'Neu verbinden','wal.forget':'Vergessen',
       'wal.d.RUN':'Run-Token · In-Game-GuV','wal.d.SOL':'Solana · Gas + nativ (live Mainnet via Helius)','wal.d.USDC':'USD-C-Stablecoin · Standard-Quote (live)','wal.d.USDT':'Tether-USD-Stablecoin · Settle-Asset (live)','wal.d.custom':'SPL-Token · benutzerdefiniert',
       'wal.txConnect':'Verbinde ein Wallet, um jüngste Aktivität zu sehen.','wal.txLoading':'Lädt…','wal.txErr':'Aktivität konnte nicht geladen werden — versuche Aktualisieren.','wal.txNone':'Keine jüngste On-chain-Aktivität.',
-      'jrn.live':'LIVE','jrn.autoline':'Jeder Trade, den du platzierst, loggt sich automatisch mit Score, Levels und Checklisten-Snapshot.','jrn.autoTrades':'Auto-geloggte Trades','jrn.exportCsv':'↓ CSV exportieren','jrn.autoCount':'{n} auto-geloggt in diesem Run','jrn.emptyAuto':'Noch keine Trades platziert — starte einen Run und platziere ein Bracket, dann erscheint es hier.','jrn.emptyPaper':'Noch keine Paper-Trades. Fülle das Formular oben aus und tippe auf Paper-Trade loggen.',
+      'jrn.live':'LIVE','jrn.autoline':'Jeder Trade, den du platzierst, loggt sich automatisch mit Score, Levels und Checklisten-Snapshot.','jrn.autoTrades':'Auto-geloggte SIM-Trades','jrn.exportCsv':'↓ CSV exportieren','jrn.autoCount':'{n} auto-geloggt in diesem Run','jrn.emptyAuto':'Noch keine Trades platziert — starte einen Run und platziere ein Bracket, dann erscheint es hier.','jrn.emptyPaper':'Noch keine Paper-Trades. Fülle das Formular oben aus und tippe auf Paper-Trade loggen.',
       'jrn.paperHdr':'✎ Paper-Trade · diskretionären Einstieg loggen','jrn.prefill':'↻ Aus Live-Zustand vorbefüllen','jrn.f.asset':'Asset','jrn.f.tf':'Zeitrahmen','jrn.f.side':'Richtung','jrn.f.setup':'Setup-Typ','jrn.f.entry':'Einstieg $','jrn.f.stop':'Stop $','jrn.f.target':'Ziel $','jrn.f.risk':'Risiko %','jrn.f.conf':'Konfluenz (0–20)','jrn.f.levels':'Levels in der Nähe','jrn.f.result':'Ergebnis','jrn.f.pnl':'GuV $',
       'jrn.checklist':'❐ Pre-Trade-Checkliste · ChartRunner','jrn.chk.htf':'HTF-Trend ausgerichtet','jrn.chk.level':'Am Referenz-Level','jrn.chk.vol':'Vol-Node-Tag','jrn.chk.div':'Divergenz (A/B)','jrn.chk.rr':'R:R ≥ 2:1','jrn.chk.score':'Score ≥ 6 (TRADEABLE)',
       'jrn.notesPh':'Notizen — warum ich ihn genommen habe · was ich sah · was ich hätte sehen sollen…','jrn.log':'✎ Paper-Trade loggen','jrn.paperTrades':'Paper-Trades','jrn.clearAll':'× Alle löschen',

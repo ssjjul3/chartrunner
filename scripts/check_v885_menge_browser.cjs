@@ -161,7 +161,10 @@ function mockWallet(){
     }, [q, meta]);
     return page.evaluate((mint) => new Promise((resolve) => {
       const host = document.createElement('div');
-      host.innerHTML = '<button data-cr-swap="' + mint + '">g</button>'
+      /* v1.0.888 — die Ansicht ist ein Formular: der Klickpfad braucht die
+       * Betragseingabe (0,05 SOL, wie der alte Festbetrag). */
+      host.innerHTML = '<input data-cr-swap-betrag value="0,05">'
+                     + '<button data-cr-swap="' + mint + '">g</button>'
                      + '<div data-cr-swap-panel="' + mint + '" style="display:none"></div>';
       document.body.appendChild(host); _crWireSwap(host, mint);
       host.querySelector('[data-cr-swap]').click();
