@@ -90,6 +90,7 @@ function mockWallet(){
 
   await page.addInitScript(([addr]) => {
     try { localStorage.setItem('cr_wallet', addr); } catch(_){}
+    try { localStorage.setItem('cr_lang_v1', 'de'); } catch(_){} // v890: Tafel-Labels sind i18n
   }, [ADDR]);
   await page.addInitScript(mockWallet);
   await page.goto(pathToFileURL(FILE).href, { waitUntil: 'domcontentloaded', timeout: 60000 });

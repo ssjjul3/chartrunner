@@ -196,3 +196,13 @@ umgehen).
 - `ChartRunnerSDK` ist die **einzige** Order-Instanz — Orders laufen nur darüber.
 - **Rendering und Abilities kreuzen sich nicht** — sauber getrennt halten.
 - **Topbar: maximal 5 Elemente.**
+
+## ROT / CRASH / GRÜN (aus dem Phase-2-Rückstand, 25.08.2026)
+
+Eine Gegenprobe zählt nur, wenn die mutierte Zeile **ROT** wird — nicht GRÜN
+(dann prüft die Zeile nichts) und nicht CRASH (dann prüft sie das Falsche).
+Ablauf: committen → Mutation einbauen → Suite läuft, die gezielte Zeile ist
+rot, alles andere grün → `git checkout` stellt her. Die Mutation und ihr
+Ergebnis gehören in die Commit-Message. Eine erste Testzeile, die bei der
+Mutation grün blieb, war zu schwach — schärfen, dann erst zählt sie
+(Beispiel: die Über-2^53-Zeile in v888, die mit 1,49e11 prüfte).
