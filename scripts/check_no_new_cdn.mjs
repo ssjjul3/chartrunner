@@ -1,12 +1,19 @@
 /* Keine NEUEN Fremdcode-Quellen in ChartRunner_Prototype.html.
  *
- * Die Single-File-Regel sagt „kein CDN". Wahr ist das nicht — drei Eintraege
- * stehen seit Langem drin, und ein Guard, der behauptet es gaebe keine, ist
- * genauso wertlos wie gar keiner. Also zaehlt dieser hier sie namentlich auf,
- * mit Grund und Fundstelle, und schlaegt an, sobald ein VIERTER dazukommt.
+ * Die Single-File-Regel sagt „kein CDN". Wahr ist das nicht — Eintraege stehen
+ * seit Langem drin, und ein Guard, der behauptet es gaebe keine, ist genauso
+ * wertlos wie gar keiner. Also zaehlt dieser hier sie namentlich auf, mit
+ * Grund und Fundstelle, und schlaegt an, sobald ein NEUER dazukommt.
  *
- * Eine Regel, die an drei Stellen gebrochen wird, leitet nichts mehr — sie
+ * Eine Regel, die an mehreren Stellen gebrochen wird, leitet nichts mehr — sie
  * wird zu etwas, um das man herumbaut. Genau das ist hier passiert.
+ *
+ * v1.0.891: DREI wurden ZWEI. unpkg.com (@solana/web3.js, 270 KB, statisches
+ * <script src>, geladen bei JEDEM Seitenaufruf) ist raus — der Anker-Bau ist
+ * in den tx-Worker gezogen, genau der Abloesepfad, der in diesem Eintrag
+ * stand. Die Zeile wird deshalb gestrichen und nicht auf null gesetzt: sie zu
+ * behalten hiesse, den Host wieder zuzulassen. Entfernen ist erlaubt,
+ * Hinzufuegen verboten — und mit ihr faellt das letzte statische <script src>.
  *
  * WAS GEZAEHLT WIRD: Hosts, von denen ausfuehrbarer Code geladen wird — per
  * <script src> oder zur Laufzeit injiziert. NICHT gezaehlt werden Daten-APIs
@@ -21,14 +28,15 @@ import fs from 'node:fs';
 const FILE = 'ChartRunner_Prototype.html';
 const html = fs.readFileSync(FILE, 'utf8');
 
-/* Die drei Altlasten. Jede mit Grund — wer eine entfernt, streicht ihre Zeile
- * und macht den Guard damit strenger. Wer eine hinzufuegt, muss hier begruenden,
- * und das ist Absicht: die Begruendung ist die eigentliche Huerde. */
+/* Die zwei verbliebenen Altlasten. Jede mit Grund — wer eine entfernt,
+ * streicht ihre Zeile und macht den Guard damit strenger. Wer eine hinzufuegt,
+ * muss hier begruenden, und das ist Absicht: die Begruendung ist die
+ * eigentliche Huerde.
+ *
+ * v1.0.891 gestrichen: unpkg.com / @solana/web3.js. Der Eintrag nannte als
+ * Abloesung „Bau in einen Worker verlegen, wie beim tx-Worker" — genau das ist
+ * passiert. */
 const ERLAUBT = [
-  { host: 'unpkg.com',
-    was:  '@solana/web3.js — baut die Karten-Transaktion (crMapsTx)',
-    wie:  'statisches <script src>, laedt bei JEDEM Seitenaufruf',
-    weg:  'Bau in einen Worker verlegen, wie beim tx-Worker. Dann faellt der Eintrag.' },
   { host: 'cdn.jsdelivr.net',
     was:  '@supabase/supabase-js — Konten-Schicht (crAccount)',
     wie:  'zur Laufzeit injiziert, nur wenn ein Konto gebraucht wird',
@@ -63,8 +71,10 @@ const verschwunden = [...erlaubteHosts].filter(h => !gefunden.has(h));
 
 /* Ein statisches <script src> ist teurer als ein injiziertes: es laedt immer,
  * blockiert potenziell, und der Host sieht jeden Seitenaufruf. Deshalb wird es
- * getrennt gezaehlt — heute genau eines, und das soll auffallen, wenn es zwei
- * werden. */
+ * getrennt gezaehlt — seit v1.0.891 sind es NULL, und genau das soll auffallen,
+ * sobald wieder eines dazukommt. Die Schranke steht deshalb jetzt bei 0 und
+ * nicht mehr bei 1: eine Grenze, die den aktuellen Stand nicht beschreibt,
+ * meldet den ersten Rueckfall nicht. */
 const statisch = [...html.matchAll(/<script[^>]*\bsrc="(https?:\/\/[^"]+)"/gi)].map(x => x[1]);
 
 console.log('Fremdcode-Quellen in ' + FILE + ':');
@@ -83,8 +93,8 @@ if(verschwunden.length){
   console.log('Wenn das Absicht war: Zeile in ERLAUBT streichen — der Guard wird dadurch strenger.');
 }
 
-if(statisch.length > 1){
-  console.error('\nFEHLER: ' + statisch.length + ' statische <script src>. Erlaubt ist genau eines (web3.js).');
+if(statisch.length > 0){
+  console.error('\nFEHLER: ' + statisch.length + ' statische <script src>. Erlaubt sind seit v1.0.891 keine.');
   console.error('Ein statisches Tag laedt bei JEDEM Seitenaufruf. Zur Laufzeit injizieren oder in einen Worker verlegen.');
   process.exit(1);
 }
@@ -95,7 +105,7 @@ if(neu.length === 0){
 }
 
 console.error('\nFEHLER: neue Fremdcode-Quelle(n): ' + neu.join(', '));
-console.error('Die Spieldatei laedt Code nur aus den drei dokumentierten Quellen.');
+console.error('Die Spieldatei laedt Code nur aus den ' + ERLAUBT.length + ' dokumentierten Quellen.');
 console.error('Fremdcode laeuft mit unseren Rechten — bei einer Datei, die Transaktionen zum');
 console.error('Signieren vorlegt, ist das keine Stilfrage.');
 console.error('Wenn es wirklich sein muss: Eintrag in ERLAUBT aufnehmen, MIT Grund und');

@@ -1,0 +1,173 @@
+# Gestrandete Commits — der Waechter fuer die Fehlerklasse „gemergt, und
+# danach weitergeschrieben".
+#
+# WARUM ES DIESEN WORKFLOW GIBT (zweimal passiert, beide Male unbemerkt):
+# Ein PR wird gemergt, die Session arbeitet auf DEMSELBEN Branch weiter und
+# committet. Der PR ist zu — die neuen Commits landen nie in main. Nichts
+# schlaegt an: CI ist gruen (sie laeuft auf dem Branch), der PR sieht
+# erledigt aus, der Branch sieht lebendig aus. Die Arbeit ist da, sie ist nur
+# nirgends. Gefunden wurde das beide Male per Zufall, Tage spaeter.
+#
+# Der Waechter prueft genau das: Branches mit Commits, die NICHT in main
+# sind und fuer die kein offener PR existiert. Er repariert nichts — er
+# nennt sie. Die Reparatur ist immer dieselbe: Branch neu von main aufsetzen
+# (gleicher Name) und die Arbeit als NEUEN PR schicken; ein gemergter PR ist
+# fertig und kann keine neue Arbeit mehr tragen.
+#
+# Was er ausdruecklich NICHT tut: Branches loeschen, force-pushen oder PRs
+# oeffnen. Ein Waechter, der aufraeumt, ist kein Waechter mehr.
+
+name: Gestrandete Commits
+
+on:
+  schedule:
+    # Taeglich 06:20 UTC. Kein :00 — dort draengeln sich alle Cron-Jobs
+    # von GitHub, und ein verspaeteter Waechter meldet spaeter.
+    - cron: '20 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  scan:
+    name: Branches gegen main pruefen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Die ganze Historie, sonst kann rev-list nichts vergleichen.
+          fetch-depth: 0
+
+      - name: Gestrandete Branches sammeln
+        id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          BASE="origin/${{ github.event.repository.default_branch }}"
+          git fetch origin --prune --quiet
+
+          # Offene PRs EINMAL holen (nicht je Branch — sonst ist der Waechter
+          # bei 40 Branches selbst das Rate-Limit-Problem).
+          gh pr list --repo "$REPO" --state open --limit 200 \
+            --json headRefName --jq '.[].headRefName' > /tmp/open_prs.txt || : > /tmp/open_prs.txt
+
+          : > /tmp/stranded.txt
+          for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin | grep -v '/HEAD$'); do
+            branch="${ref#origin/}"
+            [ "origin/$branch" = "$BASE" ] && continue
+
+            # Wie viele Commits hat dieser Branch, die nicht in main sind?
+            ahead=$(git rev-list --count "$BASE..$ref" 2>/dev/null || echo 0)
+            [ "$ahead" -eq 0 ] && continue
+
+            # Offener PR? Dann ist die Arbeit unterwegs und nicht gestrandet.
+            if grep -Fxq "$branch" /tmp/open_prs.txt; then continue; fi
+
+            last=$(git log -1 --format='%h %ad %s' --date=short "$ref" 2>/dev/null || echo '?')
+            # Gab es einen GEMERGTEN PR fuer diesen Branch? Dann ist es der
+            # teure Fall: gemergt und danach weitergeschrieben.
+            merged=$(gh pr list --repo "$REPO" --state merged --head "$branch" --limit 1 \
+                       --json number --jq '.[0].number' 2>/dev/null || echo '')
+            if [ -n "$merged" ]; then
+              printf '%s\t%s\tPR #%s war gemergt — danach weitergeschrieben\t%s\n' \
+                "$branch" "$ahead" "$merged" "$last" >> /tmp/stranded.txt
+            else
+              printf '%s\t%s\tkein PR — nie eingereicht\t%s\n' \
+                "$branch" "$ahead" "$last" >> /tmp/stranded.txt
+            fi
+          done
+
+          n=$(wc -l < /tmp/stranded.txt | tr -d ' ')
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+
+          {
+            echo '## Gestrandete Commits'
+            echo
+            if [ "$n" -eq 0 ]; then
+              echo 'Keine. Jeder Branch mit eigenen Commits hat einen offenen PR.'
+            else
+              echo "**$n Branch(es)** tragen Commits, die nicht in \`main\` sind und fuer die kein offener PR existiert."
+              echo
+              echo '| Branch | Commits vor main | Lage | letzter Commit |'
+              echo '|---|---:|---|---|'
+              while IFS=$'\t' read -r b a why last; do
+                echo "| \`$b\` | $a | $why | $last |"
+              done < /tmp/stranded.txt
+              echo
+              echo '**Reparatur** (nicht: weiter auf dem Branch committen):'
+              echo '```'
+              echo 'git fetch origin main'
+              echo 'git checkout -B <branch> origin/main    # gleicher Name, neue Basis'
+              echo '#   Commits, die schon gemergt sind, sind weg — sie sind ja in main.'
+              echo '#   Alles danach: aufsetzen und als NEUEN PR schicken.'
+              echo '```'
+              echo 'Ein gemergter PR ist fertig. Er kann keine neue Arbeit mehr tragen.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Fuer den Issue-Schritt in eine Datei, die der naechste Step liest.
+          cp /tmp/stranded.txt stranded.txt
+
+      - name: Befund als Issue fuehren
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          COUNT: ${{ steps.scan.outputs.count }}
+        run: |
+          set -euo pipefail
+          TITLE='Gestrandete Commits: Branches mit Arbeit, die nie nach main kam'
+          # EIN Issue, immer dasselbe. Ein neues je Lauf waere taeglicher Laerm,
+          # und Laerm liest niemand — dann meldet der Waechter ins Leere.
+          existing=$(gh issue list --repo "$REPO" --state open --search "$TITLE in:title" \
+                       --limit 1 --json number --jq '.[0].number' 2>/dev/null || echo '')
+
+          if [ "${COUNT:-0}" -eq 0 ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --repo "$REPO" \
+                --body 'Nichts mehr gestrandet — jeder Branch mit eigenen Commits hat einen offenen PR. Automatisch geschlossen.'
+              gh issue close "$existing" --repo "$REPO"
+            fi
+            exit 0
+          fi
+
+          body=$(mktemp)
+          {
+            echo "Der Waechter hat **${COUNT}** Branch(es) gefunden, deren Commits nicht in \`main\` sind"
+            echo 'und fuer die kein offener PR existiert.'
+            echo
+            echo '| Branch | Commits vor main | Lage | letzter Commit |'
+            echo '|---|---:|---|---|'
+            while IFS=$'\t' read -r b a why last; do
+              echo "| \`$b\` | $a | $why | $last |"
+            done < stranded.txt
+            echo
+            echo '### Warum das zaehlt'
+            echo
+            echo 'Wird auf einem Branch weitergeschrieben, dessen PR bereits gemergt ist, landet nichts davon'
+            echo 'in `main` — und nichts schlaegt an: CI ist gruen (sie laeuft auf dem Branch), der PR sieht'
+            echo 'erledigt aus. Die Arbeit ist da, sie ist nur nirgends.'
+            echo
+            echo '### Reparatur'
+            echo
+            echo '```'
+            echo 'git fetch origin main'
+            echo 'git checkout -B <branch> origin/main'
+            echo '```'
+            echo
+            echo 'Dann die noch nicht gemergte Arbeit aufsetzen und als **neuen** PR schicken.'
+            echo 'Ein gemergter PR ist fertig und kann keine neue Arbeit mehr tragen.'
+            echo
+            echo "_Automatisch gepflegt von \`.github/workflows/stranded-commits.yml\`._"
+          } > "$body"
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "$REPO" --body-file "$body"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body-file "$body"
+          fi
