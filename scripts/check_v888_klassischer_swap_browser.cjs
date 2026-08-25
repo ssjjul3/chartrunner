@@ -182,8 +182,11 @@ function mockWallet(){
     t.text.indexOf('50 bps an ChartRunner') !== -1, t.text.slice(0, 300));
 
   console.log('\n-- VERKAUF: Richtung gekippt, Bestand statt Guthaben --');
+    /* decimals: 0 — seit v889 deutet der Client getippte Ziffern in EINHEITEN
+   * des Assets; bei einem Ganzzahl-Token sind Einheiten und Roheinheiten
+   * identisch, und diese Zeile prueft weiterhin die WOERTLICHE Ankunft. */
   const bestand = { ok: true, read: true, holdings: [{ mint: BONK, amount_raw: '100000000000000000000',
-    spendable_amount_raw: '100000000000000000000', decimals: 5, frozen: false, symbol: 'BONK' }] };
+    spendable_amount_raw: '100000000000000000000', decimals: 0, frozen: false, symbol: 'BONK' }] };
   t = await run({ richtung: 'verkauf', betrag: '92233720368547758079',
     tok: bestand, q: { quote: { in_raw: '92233720368547758079', out_raw: '49200000', min_out_raw: '48900000' } } });
   rq = swapReqs[swapReqs.length - 1] || {};
