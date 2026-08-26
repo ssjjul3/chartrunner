@@ -57,6 +57,45 @@ Entscheidungen aus dem Chat.
 Leer. A·1–A·6 sind mit v890 und v891 gebaut (siehe ERLEDIGT). Was hier als
 Nächstes einzieht, entscheidet Julian.
 
+#### GEBAUT, ABNAHME STEHT AUS — v1.0.893 (das dritte Tor: echte Kerzen)
+
+Nachtrag zu v892, und zwar zu einer **fehlenden Bedingung**, nicht zu einem
+Schönheitsfehler. Julians Vorgabe vom 26.08. hatte drei Tore für SCHARF —
+Wallet, Mint **und echte Kurve** („auf synthetischen Kerzen ist SCHARF nicht
+wählbar"). Gebaut waren zwei. Das dritte fehlte im Code vollständig; im
+Banner, in der Commit-Message und im Prüfskript von v892 kommt es an keiner
+Stelle vor. Gemessen an `origin/main` (Headless, BONK-Chart ohne Pool →
+Serie `custom Solana token · Jupiter · no-solana-pool · seeded`):
+`crArm.set(true)` ergab **true**. SCHARF ließ sich also auf einer erzeugten
+Kurve scharf schalten — und ein Tap darauf wäre ein **echter** Kauf zu einem
+Preis gewesen, den der Chart sich ausgedacht hat. Genau der Widerspruch, den
+das v892-Etikett „Preis live · Kurve synthetisch" daneben geschrieben hätte.
+
+- **Das Tor** (`crArm.curveLive()`): gelesen wird `window.crChartLive`, das
+  `crSetMarketSource` seit v1.0.859 ohnehin führt — true, wenn die Serie eine
+  QUELLE getragen hat (`/v1/ohlc` bzw. Live-Tick-Aufbau), false bei
+  `seeded` / `NOT LIVE`. Kein neues Feld, kein zweiter Wahrheitsbegriff: das
+  Flag war da, es hat nur niemand gefragt. Verglichen wird gegen `=== true`,
+  also zählt `undefined` (während des Ladens) als **Nein**.
+- **Sichtbar, nicht nur rechnerisch**: `crSetMarketSource` zeichnet den
+  Schalter neu, sobald eine Serie auf seeded zurückfällt — derselbe Grund,
+  aus dem `onAssetChange()` existiert.
+- **Nebenwirkung, erwünscht**: solange der OHLC-Endpunkt nicht live ist,
+  bleibt SCHARF überall dort von selbst aus, wo die Kurve erzeugt wird. Die
+  Reihenfolge erzwingt sich per Konstruktion statt per Merkzettel.
+- **Zur Nummer**: v893 war für die Bracket-Alarme vorgesehen. Die sind hier
+  **nicht** drin und rücken auf **v894**; Bracket, Ladder und Laser bleiben
+  ausdrücklich Simulation, es gibt weiter keinen Keeper. Eine neue Nummer
+  musste es trotzdem sein, weil v892 gemerged und ausgerollt ist und der
+  Versionsstring die einzige Telefon-Probe für „angekommen" ist (CLAUDE.md:
+  „grüner Run ≠ live"). Ein Buchstaben-Suffix hätte diese Probe blind
+  gemacht — der Banner-Leser in der Datei liest nur Ziffern und Punkte und
+  hätte das `a` still verschluckt.
+- **Nicht gemessen, ausdrücklich**: auch diese Session erreicht
+  `*.workers.dev` nicht (403 auf CONNECT, Proxy-Status dieser Session),
+  `/health` ist also **nicht** gegengelesen. Alle Worker-Aussagen stammen
+  weiter aus Julians Messung vom 26.08.
+
 #### GEBAUT, ABNAHME STEHT AUS — v1.0.892 (SCHARF-Schalter + fünf Mitfahrer)
 
 Bewusst **nicht** unter ERLEDIGT: dort steht nur, was gebaut **und gemessen**
@@ -70,7 +109,8 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
   letztes Element der `header-picks`. Zustand **nur in der Closure**, nie
   persistiert — jeder Neustart beginnt SIM. SCHARF nur mit Wallet UND
   aufgelöstem Mint; `on()` prüft bei jeder Abfrage neu, der Zustand entwaffnet
-  sich also selbst.
+  sich also selbst. **Das dritte Tor (echte Kurve) fehlte hier und kam erst
+  mit v1.0.893 dazu** — siehe oben.
 - **Market vom Chart**: der Kauf-/Verkaufs-Tap öffnet die **bestehende** Tafel
   als Blatt, vorbefüllt. `_crSwapFormHtml` + `_crWireSwap` sind jetzt eine
   Quelle für Token-Fenster und Chart; `crTxApi.swap` wird weiterhin an genau
