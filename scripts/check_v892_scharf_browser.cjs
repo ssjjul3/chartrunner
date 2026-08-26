@@ -200,34 +200,60 @@ const HASH = 'a'.repeat(64);
   check('… und der Rahmen-Akzent liegt am Chart',
     await page.evaluate(() => document.body.classList.contains('cr-arm-live')));
 
-  /* Die scharfe Zeile: NICHTS DAVON UEBERLEBT EINEN NEUSTART. */
+  /* ── DIE SCHARFE ZEILE: NICHTS DAVON UEBERLEBT EINEN NEUSTART ──────────
+   *
+   * Zwei Wege, dieselbe Frage, weil der erste Versuch dieser Zeile bei der
+   * Gegenprobe GRUEN blieb und damit nichts geprueft hat (CLAUDE.md,
+   * ROT/CRASH/GRUEN):
+   *
+   *   1. Ein NAMENS-Filter ueber die Speicher-Schluessel („heisst irgendwas
+   *      arm/scharf?") faellt auf jeden Schluessel herein, der anders heisst.
+   *      Also stattdessen ein echter DIFF: alles vor dem Scharfschalten
+   *      gegen alles danach. Was sich aendert, ist gemerkt worden — egal wie
+   *      es heisst.
+   *   2. Der Neustart-Test war zu schwach, weil nach dem Reload der Chart
+   *      wieder auf BTC steht: on() waere selbst mit gemerktem Zustand
+   *      falsch, weil der MINT fehlt — die Zeile mass die falsche Haelfte.
+   *      Jetzt wird der Solana-Chart ZUERST wiederhergestellt und ERST DANN
+   *      gefragt. Damit ist die einzige verbliebene Variable der Zustand. */
   console.log('\n-- A2 · Neustart faengt bei SIM an (der Zustand wird NIE persistiert) --');
-  const armedKeys = await page.evaluate(() => {
-    const out = [];
-    try { for(let i = 0; i < localStorage.length; i++){
-      const k = localStorage.key(i);
-      const v = String(localStorage.getItem(k) || '');
-      if(/scharf|armed|\barm\b/i.test(k + ' ' + v)) out.push([k, v.slice(0, 40)]);
-    } } catch(_){}
-    return out;
+  const speicher = () => page.evaluate(() => {
+    const snap = (st) => { const o = {}; try {
+      for(let i = 0; i < st.length; i++){ const k = st.key(i); o[k] = String(st.getItem(k) || ''); }
+    } catch(_){} return o; };
+    return { l: snap(localStorage), s: snap(sessionStorage) };
   });
-  const armedState = armedKeys.filter(([k]) => !/cr_arm_cap_v1/.test(k));
-  check('kein Speicher-Schluessel haelt den scharfen Zustand',
-    armedState.length === 0, armedState);
+  await page.evaluate(() => { crArm.set(false); });
+  const vor = await speicher();
+  await page.evaluate(() => { crArm.set(true); });
+  const nach = await speicher();
+  const diff = [];
+  for(const store of ['l','s'])
+    for(const k of new Set([...Object.keys(vor[store]), ...Object.keys(nach[store])]))
+      if(vor[store][k] !== nach[store][k]) diff.push([store, k, vor[store][k], nach[store][k]]);
+  check('Scharfschalten schreibt NICHTS in local-/sessionStorage (Diff ist leer)',
+    diff.length === 0, diff);
 
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(2000);
-  check('nach dem Neustart steht der Chart wieder auf SIM',
-    await page.evaluate(() => crArm.on() === false));
-  check('… und der Schalter zeigt SIM',
-    await page.evaluate(() => document.getElementById('crArmSwitch').getAttribute('data-cr-arm-state') === 'sim'));
-
-  /* Wieder scharf schalten fuer die folgenden Bloecke. */
+  /* ZUERST den Chart wiederherstellen — sonst prueft die naechste Zeile nur,
+   * dass BTC keinen Mint hat, und das wusste sie schon. */
   await page.evaluate(async (m) => {
     const a = crEnsureCustomSolanaToken(m);
     await switchAsset(a.id);
   }, BONK).catch(() => {});
   await page.waitForTimeout(600);
+  check('… und der Chart traegt nach dem Neustart wieder seinen Mint (sonst prueft die naechste Zeile nichts)',
+    await page.evaluate((m) => crArm.mint() === m, BONK));
+  check('nach dem Neustart steht der Chart auf SIM — obwohl Wallet UND Mint wieder da sind',
+    await page.evaluate(() => crArm.on() === false));
+  check('… und der Schalter zeigt SIM',
+    await page.evaluate(() => { _crArmPaint();
+      return document.getElementById('crArmSwitch').getAttribute('data-cr-arm-state') === 'sim'; }));
+  check('… und an der Preislinie steht kein LIVE-Badge',
+    await page.evaluate(() => document.getElementById('crArmBadge').style.display === 'none'));
+
+  /* Wieder scharf schalten fuer die folgenden Bloecke. */
   await page.evaluate(() => { crArm.set(true); _crArmPaint(); });
   check('wieder scharf für die naechsten Bloecke', await page.evaluate(() => crArm.on() === true));
 
@@ -255,10 +281,17 @@ const HASH = 'a'.repeat(64);
   check('das Blatt oeffnet und traegt die BESTEHENDE Tafel', !!(sheet && sheet.offen && sheet.hatFormular && sheet.hatKnopf), sheet);
   check('… auf den Mint des Charts vorbefuellt', sheet && sheet.mint === BONK, sheet && sheet.mint);
   check('… mit einem Standard-Einsatz im Feld', !!(sheet && sheet.betrag && /\d/.test(sheet.betrag)), sheet && sheet.betrag);
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(600);
   check('VOR Tap 1 ging KEINE Handels-Anfrage raus (Auto-Fire waere hier rot)',
     zaehl(/\/v1\/tx\/swap/) === swapVor, { vor: swapVor, jetzt: zaehl(/\/v1\/tx\/swap/) });
-  check('… und die Tafel ist leer, weil nichts geholt wurde', !!(sheet && sheet.panelLeer));
+  /* Nach dem Warten gemessen, nicht davor: der Klickpfad ist asynchron, eine
+   * synchron gelesene leere Tafel haette auch ein Auto-Fire ueberlebt. */
+  const tafelVorTap1 = await page.evaluate(() => {
+    const p = document.querySelector('#crArmSheet [data-cr-swap-panel]');
+    return { text: (p && p.textContent) || '', sichtbar: !!(p && p.style.display !== 'none') };
+  });
+  check('… und die Tafel ist unberuehrt, weil nichts geholt wurde',
+    tafelVorTap1.text === '' && !tafelVorTap1.sichtbar, tafelVorTap1);
   check('VOR Tap 1 wurde nichts signiert',
     (await page.evaluate(() => window.__signs.length)) === signsVor);
 
@@ -373,6 +406,13 @@ const HASH = 'a'.repeat(64);
   check('auf SCHARF tragen dieselben Stellen LIVE und NUR LIVE', mLive.live > 0 && mLive.sim === 0, mLive);
   check('… und es sind dieselben Stellen (gleiche Zahl, kein Rest, kein Zuwachs)',
     mSim.sim === mLive.live, { sim: mSim, live: mLive });
+
+  /* Der dritte Marker-Ort (Primitives-Kopf) wird bei jedem Oeffnen neu gebaut
+   * — er kann deshalb nicht mitgezaehlt werden, solange das Menue zu ist. Also
+   * am Quelltext: er stempelt aus DERSELBEN Quelle wie der Rest. */
+  check('der Primitives-Kopf stempelt aus derselben Quelle (_crArmMarkAttr/_crArmWord)',
+    /head\.innerHTML[\s\S]{0,400}_crArmMarkAttr\(\)/.test(live)
+    && /var _pmWord = _crArmWord\(\);/.test(live));
 
   const badgeWort = await page.evaluate(() => {
     const el = document.querySelector('[data-cr-mark-word]');
