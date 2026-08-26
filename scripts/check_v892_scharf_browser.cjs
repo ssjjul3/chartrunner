@@ -124,6 +124,22 @@ const HASH = 'a'.repeat(64);
   await page.goto(pathToFileURL(FILE).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(2500);
 
+  /* v1.0.893 — DIE KURVE, DRITTE ARM-BEDINGUNG.
+   * Gesetzt wird ueber DIESELBE Funktion, die der Loader benutzt
+   * (crSetMarketSource) — nicht ueber das Flag direkt. Wer window.crChartLive
+   * von Hand setzt, prueft seine eigene Zuweisung; wer das LABEL setzt,
+   * prueft den Weg, den das Spiel geht.
+   *
+   * Gemessen im Harness: der BONK-Chart faellt hier auf
+   * „custom Solana token · Jupiter · no-solana-pool · seeded" zurueck (kein
+   * echter Pool hinter der Mock-Route). Der synthetische Fall ist also der
+   * NATUERLICHE Zustand dieses Harness — er muss nicht gestellt werden, nur
+   * der echte. */
+  const setCurve = (real) => page.evaluate((r) => {
+    crSetMarketSource(r ? 'live · ChartRunner OHLC' : 'custom Solana token · Jupiter · no-solana-pool · seeded',
+                      r ? 'OHLC' : 'Seeded');
+  }, real);
+
   const src = fs.readFileSync(FILE, 'utf8');
   /* Kommentare weg — die Aussagen unten meinen den LIVE-CODE. Die Kommentare
    * erzaehlen die Geschichte und muessen es duerfen. */
@@ -193,8 +209,77 @@ const HASH = 'a'.repeat(64);
   check('ohne Wallet ist SCHARF nicht waehlbar', ohneWallet.set === false && ohneWallet.on === false, ohneWallet);
   check('… und der Grund nennt die Wallet', /Wallet|wallet|cartera|钱包/.test(ohneWallet.reason), ohneWallet.reason);
 
-  check('mit Wallet UND Mint laesst sich scharf schalten',
+  /* ── DIE ZEILE, DIE DEN WIDERSPRUCH VERHINDERT ────────────────────────
+   *
+   * Julians dritte Bedingung vom 26.08., woertlich: „Scharf gibt es nur auf
+   * echten Kerzen." v892 hat sie nicht gebaut — eligible() fragte Wallet und
+   * Mint und war zufrieden. Auf einer ERZEUGTEN Kurve liess sich also scharf
+   * schalten, und ein Tap darauf waere ein echter Kauf zu einem Preis
+   * gewesen, den der Chart sich ausgedacht hat.
+   *
+   * Der Chart steht hier noch auf der seeded-Serie — das ist der Zustand,
+   * den der Harness von selbst herstellt, nicht einer, den diese Zeile sich
+   * zurechtlegt. */
+  const ohneKurve = await page.evaluate(() => {
+    const set = crArm.set(true);
+    return { set, on: crArm.on(), reason: crArm.eligible().reason,
+             curve: crArm.curveLive(), flag: window.crChartLive,
+             mint: crArm.mint(), wallet: !!crArm.wallet() };
+  });
+  check('auf synthetischer Kurve ist SCHARF NICHT waehlbar — obwohl Wallet UND Mint da sind',
+    ohneKurve.set === false && ohneKurve.on === false
+    && !!ohneKurve.mint && ohneKurve.wallet === true, ohneKurve);
+  check('… und der Grund ist Julians Satz, woertlich',
+    /Scharf gibt es nur auf echten Kerzen/.test(ohneKurve.reason), ohneKurve.reason);
+  check('… der Schalter ist gesperrt und traegt den Satz als Tooltip',
+    await page.evaluate(() => { _crArmPaint();
+      const b = document.getElementById('crArmSwitch');
+      return !!b && b.disabled === true && /echten Kerzen/.test(b.title || ''); }));
+  /* Waehrend des Ladens ist das Flag undefined — und undefined heisst NEIN.
+   * Ein Schalter, der beim Laden scharf ist, ist scharf, bevor irgendwer die
+   * Kurve gesehen hat. Geprueft wird gegen === true, nicht auf Wahrheit. */
+  check('… und ein noch UNBEKANNTER Zustand (undefined, waehrend des Ladens) zaehlt ebenfalls als NEIN',
+    await page.evaluate(() => {
+      const vorher = window.crChartLive;
+      try { delete window.crChartLive; } catch(_){ window.crChartLive = undefined; }
+      const r = { curve: crArm.curveLive(), set: crArm.set(true), on: crArm.on() };
+      window.crChartLive = vorher;
+      return r.curve === false && r.set === false && r.on === false;
+    }));
+
+  /* Jetzt eine ECHTE Kurve — dieselbe Funktion, die der Loader ruft. */
+  await setCurve(true);
+  check('mit Wallet UND Mint UND echter Kurve laesst sich scharf schalten',
     await page.evaluate(() => { crArm.set(true); return crArm.on() === true; }));
+
+  /* Und der Weg zurueck: faellt die Serie auf seeded, entwaffnet sich der
+   * Zustand VON SELBST — on() rechnet die Quelle bei jeder Abfrage neu mit,
+   * es sitzt kein Listener dazwischen, der das vergessen koennte. */
+  /* ZUERST einen bekannten, GEGENTEILIGEN Ausgangszustand zeichnen. Ohne das
+   * liest die Zeile unten nur Markup, das aus der synthetischen Phase noch
+   * stehengeblieben ist — sie waere „sim + gesperrt" schon vor dem
+   * Quellenwechsel und koennte nie rot werden. (Genau so ist sie im ersten
+   * Anlauf bei der Gegenprobe gruen geblieben.) */
+  await page.evaluate(() => { crArm.set(true); _crArmPaint(); });
+  check('Ausgangszustand fuer die naechste Zeile: der Schalter steht sichtbar auf SCHARF',
+    await page.evaluate(() => {
+      const b = document.getElementById('crArmSwitch');
+      return !!b && b.getAttribute('data-cr-arm-state') === 'scharf' && b.disabled === false;
+    }));
+
+  await setCurve(false);
+  check('faellt die Serie auf seeded zurueck, entwaffnet sich der scharfe Zustand von selbst',
+    await page.evaluate(() => crArm.on() === false));
+  /* KEIN _crArmPaint() in dieser Zeile — das ist ihr ganzer Punkt. Zeichnet
+   * der Quellenwechsel nicht selbst neu, steht hier noch „scharf/offen" und
+   * die Zeile wird rot. */
+  check('… und der Schalter sagt das sofort, ohne fremden Anlass zum Neuzeichnen',
+    await page.evaluate(() => {
+      const b = document.getElementById('crArmSwitch');
+      return !!b && b.getAttribute('data-cr-arm-state') === 'sim' && b.disabled === true;
+    }));
+  await setCurve(true);
+  await page.evaluate(() => { crArm.set(true); _crArmPaint(); });
   check('… das LIVE-Badge steht an der Preislinie',
     await page.evaluate(() => { _crArmPaint(); return document.getElementById('crArmBadge').style.display !== 'none'; }));
   check('… und der Rahmen-Akzent liegt am Chart',
@@ -236,6 +321,37 @@ const HASH = 'a'.repeat(64);
 
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(2000);
+  /* ── DIE PERSISTENZ-FRAGE, OHNE switchAsset ───────────────────────────
+   *
+   * v1.0.893, Befund aus der eigenen Gegenprobe: die Zeile weiter unten
+   * („nach dem Neustart steht der Chart auf SIM") blieb bei der Mutation
+   * „Zustand wird persistiert" GRUEN — sie konnte die Frage gar nicht mehr
+   * beantworten. Der Grund liegt an switchAsset: das ruft crArm.onAssetChange(),
+   * und weil die Kurve in diesem Moment noch seeded ist, entwaffnet SCHON DAS
+   * den Schalter. Ein gemerkter Zustand waere also unterwegs gestorben, und
+   * die Zeile haette sein Sterben als „hat nie gelebt" gelesen.
+   *
+   * Diese Zeile fragt deshalb VOR jedem switchAsset und umgeht den einen
+   * Entwaffner: currentAssetObj wird voruebergehend auf einen Mint gestellt
+   * (dieselbe Stummschalt-Technik, mit der oben crSigner/crWallet ersetzt
+   * werden), die Kurve auf echt — damit ist die EINZIGE verbliebene Variable
+   * der Zustand selbst. Merkt sich der Schalter irgendetwas, steht hier
+   * true. */
+  await setCurve(true);
+  const nachNeustart = await page.evaluate((m) => {
+    const orig = window.currentAssetObj;
+    window.currentAssetObj = () => ({ id:'x', mint:m, solanaToken:true });
+    const r = { mint: crArm.mint(), curve: crArm.curveLive(),
+                wallet: !!crArm.wallet(), on: crArm.on() };
+    window.currentAssetObj = orig;
+    return r;
+  }, BONK);
+  check('… und die Vorbedingungen dieser Zeile stehen (Mint, Kurve, Wallet) — sonst prueft sie nichts',
+    nachNeustart.mint === BONK && nachNeustart.curve === true && nachNeustart.wallet === true,
+    nachNeustart);
+  check('nach dem Neustart ist der Zustand SIM — auch ohne switchAsset, das ihn ohnehin entwaffnen wuerde',
+    nachNeustart.on === false, nachNeustart);
+
   /* ZUERST den Chart wiederherstellen — sonst prueft die naechste Zeile nur,
    * dass BTC keinen Mint hat, und das wusste sie schon. */
   await page.evaluate(async (m) => {
@@ -245,6 +361,14 @@ const HASH = 'a'.repeat(64);
   await page.waitForTimeout(600);
   check('… und der Chart traegt nach dem Neustart wieder seinen Mint (sonst prueft die naechste Zeile nichts)',
     await page.evaluate((m) => crArm.mint() === m, BONK));
+  /* v1.0.893 — und die KURVE ebenso wiederherstellen, aus genau demselben
+   * Grund, aus dem der Mint oben wiederhergestellt wird: sonst misst die
+   * naechste Zeile das Kurven-Tor statt den Neustart und waere GRUEN, ohne
+   * irgendetwas ueber das Gedaechtnis des Schalters zu sagen. Nach dem
+   * Wiederherstellen ist der Zustand die einzige verbliebene Variable. */
+  await setCurve(true);
+  check('… und die Kurve ist nach dem Neustart wieder echt (sonst prueft die naechste Zeile das falsche Tor)',
+    await page.evaluate(() => crArm.curveLive() === true && crArm.eligible().ok === true));
   check('nach dem Neustart steht der Chart auf SIM — obwohl Wallet UND Mint wieder da sind',
     await page.evaluate(() => crArm.on() === false));
   check('… und der Schalter zeigt SIM',
