@@ -308,8 +308,17 @@ const HASH = 'a'.repeat(64);
   check('nicht gelesen: kein Urteil, und KAUFEN wird nicht stillschweigend gesperrt',
     /nicht abrufbar/.test(t.schild) && t.kauf === false, t);
 
-  /* Das Tor im Produktionsblock selbst: es darf den Verkauf nicht anfassen. */
-  const gateSrc = (src.match(/var _safGate = function\(res\)\{[\s\S]*?\n      \};/) || [''])[0];
+  /* Das Tor im Produktionsblock selbst: es darf den Verkauf nicht anfassen.
+   * v1.0.892 — das Tor ist aus der Closure in _tokRenderProfile herausgehoben
+   * (_crSwapSafGate), weil der SCHARF-Schalter dasselbe Tor braucht und eine
+   * zweite Fassung die gefaehrlichste Doppelung dieser Datei waere. Diese
+   * Zeilen pruefen unveraendert DIESELBEN zwei Aussagen, nur am neuen Ort.
+   * Der alte Anker (`var _safGate = function(res){ … \n      };`) matchte nach
+   * dem Umbau GREEDY bis zu einer spaeteren Klammer und las damit fremden
+   * Code — er war gruen, wo er haette rot sein muessen. */
+  const gateSrc = (src.match(/function _crSwapSafGate\(host, res\)\{[\s\S]*?\n\}/) || [''])[0];
+  check('_safGate reicht an die EINE Fassung durch (keine zweite Kopie)',
+    /var _safGate = function\(res\)\{ _crSwapSafGate\(host, res\); \};/.test(src));
   check('_safGate schaltet den VERKAUFEN-Knopf nirgends ab',
     gateSrc.length > 0 && !/verkauf"\]\s*\)[\s\S]{0,120}disabled\s*=\s*true/.test(gateSrc), gateSrc.length);
   check('_safGate verzweigt auf die ENTSCHEIDUNG, nicht auf das Urteil',

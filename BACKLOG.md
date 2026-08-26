@@ -57,6 +57,43 @@ Entscheidungen aus dem Chat.
 Leer. A·1–A·6 sind mit v890 und v891 gebaut (siehe ERLEDIGT). Was hier als
 Nächstes einzieht, entscheidet Julian.
 
+#### GEBAUT, ABNAHME STEHT AUS — v1.0.892 (SCHARF-Schalter + fünf Mitfahrer)
+
+Bewusst **nicht** unter ERLEDIGT: dort steht nur, was gebaut **und gemessen**
+ist. Diese Session konnte den Worker nicht messen — beide Sandboxes sind für
+`*.workers.dev` gesperrt (403 auf CONNECT), also ist `/health` **nicht**
+gegengelesen worden. Alle Worker-Aussagen unten (tx v1.15, `git_sha 4f06899`,
+`venues`, `decision`) stammen aus Julians Messung vom 26.08., nicht aus einer
+eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
+
+- **SCHARF-Schalter** (`crArm`): SIM (Default) / SCHARF im Chart, fünftes und
+  letztes Element der `header-picks`. Zustand **nur in der Closure**, nie
+  persistiert — jeder Neustart beginnt SIM. SCHARF nur mit Wallet UND
+  aufgelöstem Mint; `on()` prüft bei jeder Abfrage neu, der Zustand entwaffnet
+  sich also selbst.
+- **Market vom Chart**: der Kauf-/Verkaufs-Tap öffnet die **bestehende** Tafel
+  als Blatt, vorbefüllt. `_crSwapFormHtml` + `_crWireSwap` sind jetzt eine
+  Quelle für Token-Fenster und Chart; `crTxApi.swap` wird weiterhin an genau
+  einer Stelle gerufen. Keine Anfrage vor Tap 1, keine Signatur vor Tap 2.
+- **Gitter**: Kauf folgt `safety.decision`, Verkauf nie (Exit-Regel);
+  Betragslimit pro Tap deckelt die Vorbefüllung (Default 0,05 SOL).
+  Bracket/Ladder/Laser bleiben ausdrücklich SIM — v893 macht sie zu Alarmen.
+- **Mitfahrer 1–4**: `venues`/`hops` aus der v1.15-Antwort · Etikett
+  „Preis live · Kurve synthetisch" · Anker-Namensprüfung VOR dem Bau
+  (kein `:`, ≤ 64 **Bytes**) · Karten-Status aus `GET /v1/anchor/list`
+  (Name + Hash), Listen-Ausfall = „Anker-Status nicht abrufbar", nie
+  OFF-CHAIN.
+- **Zwei Befunde nebenbei**, beide von der v876-Klasse (eingesperrte Funktion,
+  die von außen aussieht wie erreichbar): `renderMaps` war nie exportiert,
+  während zwei Stellen `if(typeof window.renderMaps === 'function')` prüften —
+  beide still tot. Und `_mapT` war eine dritte, eingesperrte Kopie des
+  Übersetzer-Körpers. Beides behoben (`_crT` ist der eine Körper).
+- **Stale, NICHT von v892 verursacht** (gemessen gegen `origin/main`, gleiche
+  Zahlen): `check_v874_swap` (9 FAIL) und `check_v876_tradeability` (5 FAIL)
+  prüfen die Deckel-Probe-Schaltfläche und ein Formular ohne Betragsfeld —
+  beides ist mit **v888** weggefallen. Die Prüfungen sind veraltet, nicht der
+  Code. Eigener kleiner Aufräum-Punkt, siehe C·22.
+
 1. **Symbol-Anzeige** aus `symbol` — „Token" wird „BONK". War A·5 und ist
    in der Handelstafel erledigt (v889); offen bleibt die Markt-Liste, wo
    Zeilen ohne CoinGecko-Namen noch den Ticker doppeln.
@@ -73,7 +110,19 @@ Nächstes einzieht, entscheidet Julian.
    dieser Session NICHT nachgemessen**, beide Sandboxes sind für
    `*.workers.dev` gesperrt (403 auf CONNECT). Die CI-Wächter-Hälfte ist
    mit v891 erledigt (`stranded-commits.yml`).
-10. **Anchor-Umzug, Worker-Teil** (Julians Auftrag 25.08., PDF): Memo-Pfad auf
+10. **Worker-`/v1/quote` ruft selbst noch `lite-api.jup.ag`** (Julians
+    Messung 26.08.: die Antwort trägt `"source": "lite-api.jup.ag"`). Der
+    Client ist mit v891 sauber — er fragt nur noch den eigenen Worker. Die
+    Fremdquelle ist damit **nicht weg, sondern eine Etage tiefer gezogen**,
+    und dort steht sie auf demselben Sterbebett: `quote-api` ist bereits tot,
+    `lite-api` ist laut Jupiter zum 31.01.2026 abgelöst. Der haltbare Weg ist
+    `api.jup.ag/swap/v1` MIT Schlüssel — und ein Schlüssel im Worker ist genau
+    richtig, er gehört nur nicht in den Browser. **Der Key-Umzug steht im
+    Worker aus, bevor `lite-api` stirbt.** Sonst wiederholt sich v877, diesmal
+    serverseitig: der Ausfall erschiene im Spiel als „Kursabfrage nicht
+    erreichbar", und niemand suchte ihn im Worker. Nur Eintrag — nicht in
+    dieser (öffentlichen) Session gebaut.
+11. **Anchor-Umzug, Worker-Teil** (Julians Auftrag 25.08., PDF): Memo-Pfad auf
     Mainnet, Format `cr1:map:<name>:<hash>` (ab erstem Mainnet-Memo
     eingefroren — öffentlicher Vertrag), Grenzen im Worker (name ≤ 64 Bytes,
     hash exakt 32 Bytes hex), `GET /v1/anchor/list?address=&kind=map`
@@ -126,6 +175,15 @@ Nächstes einzieht, entscheidet Julian.
     `hermes-proxy`). Die Zahl aus dem Auftrag (sechs, davon keiner mit Tor)
     schließt die Worker des privaten Repos ein — von dieser Session nicht
     einsehbar und deshalb nicht als Messwert übernommen.
+22. **Veraltete Prüfskripte aufräumen** (klein, jederzeit).
+    `check_v874_swap` und `check_v876_tradeability` prüfen zwei Dinge, die es
+    seit **v888** nicht mehr gibt: die Deckel-Probe-Schaltfläche und ein
+    Swap-Markup ohne Betragsfeld. Sie sind seither rot und waren es auch vor
+    v892 — gemessen gegen `origin/main`, gleiche Zahlen (9 bzw. 5 FAIL).
+    Gefährlich ist daran nicht das Rot, sondern die Gewöhnung: eine Suite mit
+    dauerhaft roten Zeilen wird nicht mehr gelesen. Entweder auf die heutige
+    Ansicht nachziehen oder als überholt kennzeichnen — nicht löschen, ohne zu
+    prüfen, was sie sonst noch abdecken.
 21. **Node-20-Deprecation in den Actions** (Einzeiler für die nächste private
     Session). GitHub zwingt Actions von `actions/*@v4` bereits auf Node 24
     („being forced to run on Node.js 24" im Log). `ci.yml` ist auf
