@@ -23,6 +23,17 @@ PR schreiben — nie „mach das eben lokal".
 ## Workflow-Regeln
 
 - **IMMER** Branch + PR nach `main`. **NIE** direkt auf `main` pushen.
+- **Ein gemergter PR ist fertig — nie auf einem gemergten Branch weiterbauen.**
+  Wird nach dem Merge auf demselben Branch weitergeschrieben, landet nichts
+  davon in `main`, und *nichts schlägt an*: CI ist grün (sie läuft auf dem
+  Branch), der PR sieht erledigt aus, der Branch sieht lebendig aus. Die
+  Arbeit ist da, sie ist nur nirgends. Das ist zweimal passiert und beide
+  Male per Zufall aufgefallen, Tage später. Folgearbeit setzt den Branch neu
+  auf (`git fetch origin main && git checkout -B <branch> origin/main`,
+  gleicher Name) und geht als **neuer** PR raus.
+  Der Wächter dazu ist `.github/workflows/stranded-commits.yml`: er meldet
+  täglich Branches mit Commits, die nicht in `main` sind und für die kein
+  offener PR existiert. Er repariert nichts und löscht nichts — er nennt sie.
 - **PR-Text** enthält zwingend: (1) was geändert wurde und warum, (2) exakte
   Verifikationsschritte fürs Telefon (klickbare Live-URL, was dort zu sehen sein
   soll, ggf. Versionsstring/Endpoint-Antwort).

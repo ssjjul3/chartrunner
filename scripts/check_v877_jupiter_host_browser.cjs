@@ -1,4 +1,20 @@
-/* Smoke-Verifikation fuer v1.0.877 — der Jupiter-Host steht an EINER Stelle.
+/* Smoke-Verifikation fuer v1.0.877 — der Quote-Host steht an EINER Stelle.
+ *
+ * v1.0.891 NACHGEZOGEN. Die Absicht dieses Tests ist unveraendert und weiter
+ * gueltig: EINE Stelle nennt den Host, die Parameter gehen unveraendert
+ * hinaus, die Antwort wird richtig gelesen, und die Tafel zeigt sie. Was sich
+ * geaendert hat, ist der Host — v891 hat die Abfrage hinter den eigenen
+ * Worker gezogen (GET /v1/quote), weil lite-api von Jupiter selbst abgeloest
+ * wurde und als Fremdquelle im Browser lief. Der Test prueft dieselbe Sache
+ * am neuen Ort; ohne diese Nachfuehrung wuerde er die alte Welt einfordern
+ * und rot bleiben, obwohl nichts kaputt ist.
+ *
+ * ZUR HERKUNFT DER ZAHLEN, weil dieser Test genau darauf besteht: die
+ * Betraege, Labels und Hops unten sind WEITER die echte Messung vom
+ * 22.08.2026 (1 SOL → BONK). Was NICHT gemessen ist, ist die FORM, in der
+ * unser Worker sie ausliefert — beide Sandboxes erreichen *.workers.dev
+ * nicht (403 auf CONNECT). Die Form ist der Vertrag aus dem Auftrag, und sie
+ * ist als solche gekennzeichnet, nicht als Messwert.
  *
  * Vorgeschichte: der Client nannte ZWEI Hosts fuer denselben Zweck — crQuote
  * quote-api.jup.ag/v6, die Terminal-Sonde lite-api. Einer zog um, der andere
@@ -41,20 +57,21 @@ function launchOptions(){
 const SOL  = 'So11111111111111111111111111111111111111112';
 const BONK = 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
 
-// ── Echte Messung, 22.08.2026, 1 SOL → BONK, slippageBps=50 ─────────────────
+/* ── Die Messung vom 22.08.2026 (1 SOL → BONK, slippageBps=50), gereicht in
+ * der FORM, die unser Worker laut Vertrag liefert.
+ *
+ * Zahlen = gemessen. Feldnamen = Vertrag (tx v1.15), nicht gemessen — siehe
+ * Kopfkommentar. Die Trennung steht hier ausdruecklich, damit niemand die
+ * eine Haelfte fuer die andere haelt: genau dieser Test ist aus dem Aerger
+ * darueber entstanden, dass ein nachgebauter Mock ueber einem echten Bug
+ * gruen stand. */
 const REAL = {
-  inputMint: SOL, inAmount: '1000000000', outputMint: BONK,
-  outAmount: '2854700000000', otherAmountThreshold: '2840426500000',
-  swapMode: 'ExactIn', slippageBps: 50, platformFee: null, priceImpactPct: '0',
-  routePlan: [
-    { swapInfo: { ammKey: '8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo', label: 'BisonFi',
-      inputMint: SOL, outputMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-      inAmount: '1000000000', outAmount: '94118746' }, percent: 100 },
-    { swapInfo: { ammKey: '5ZWCKP2E8LqTUmo98xhq1YELjcqvxpNsv4xfzVbKGswc', label: 'Scorch',
-      inputMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', outputMint: BONK,
-      inAmount: '94118746', outAmount: '2854700000000' }, percent: 100 },
-  ],
-  contextSlot: 440983692, timeTaken: 0.008347043, swapUsdValue: '94.1150778961712',
+  ok: true,
+  quote: {
+    in_raw: '1000000000', out_raw: '2854700000000', min_out_raw: '2840426500000',
+    slippage_bps: 50, price_impact_pct: '0',
+  },
+  route: { hops: 2, labels: ['BisonFi', 'Scorch'] },
 };
 
 (async () => {
@@ -68,7 +85,7 @@ const REAL = {
     const url = route.request().url();
     if(url.startsWith('file:')) return route.continue();
     seen.push(url);
-    if(/\/quote\?/.test(url) && /inputMint=/.test(url))
+    if(/\/v1\/quote\?/.test(url) && /input_mint=/.test(url))
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(REAL) });
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
@@ -97,28 +114,36 @@ const REAL = {
   const src = fs.readFileSync(FILE, 'utf8');
   const lit = (host) => (src.match(new RegExp("['\"]https://" + host.replace(/\./g, '\\.'), 'g')) || []).length;
   check('quote-api.jup.ag wird nirgends mehr aufgerufen', lit('quote-api.jup.ag') === 0, lit('quote-api.jup.ag'));
-  check('der Host steht GENAU EINMAL als Literal', lit('lite-api.jup.ag') === 1, lit('lite-api.jup.ag'));
-  check('CR_JUP_BASE ist zur Laufzeit da',
-    await page.evaluate(() => typeof CR_JUP_BASE === 'string' && /lite-api/.test(CR_JUP_BASE)));
+  /* v1.0.891 — auch lite-api ist jetzt weg, nicht nur sein Vorgaenger. Der
+   * Quote-Host ist der eigene Worker, und ER steht genau einmal als Literal. */
+  check('lite-api.jup.ag wird nirgends mehr aufgerufen', lit('lite-api.jup.ag') === 0, lit('lite-api.jup.ag'));
+  check('der Quote-Host steht GENAU EINMAL als Literal',
+    lit('chartrunner-tx.jsg-951.workers.dev') === 1, lit('chartrunner-tx.jsg-951.workers.dev'));
+  check('CR_TX_API ist zur Laufzeit da',
+    await page.evaluate(() => typeof CR_TX_API === 'string' && /chartrunner-tx/.test(CR_TX_API)));
+  check('CR_JUP_BASE gibt es nicht mehr',
+    await page.evaluate(() => typeof CR_JUP_BASE === 'undefined'));
 
   console.log('\n-- crQuote fragt den richtigen Host --');
   const before = seen.length;
   const res = await page.evaluate(([a, b]) =>
     crQuote.quote({ inMint: a, outMint: b, amountRaw: 1e9, slippageBps: 50 }), [SOL, BONK]);
-  const q = seen.slice(before).filter(u => /\/quote\?/.test(u));
+  const q = seen.slice(before).filter(u => /\/v1\/quote\?/.test(u));
   check('genau eine Abfrage', q.length === 1, q);
-  check('gegen lite-api', /lite-api\.jup\.ag/.test(q[0] || ''), q[0]);
-  check('auf dem Pfad /swap/v1/quote', /\/swap\/v1\/quote\?/.test(q[0] || ''), q[0]);
-  check('nichts ging an quote-api', !seen.some(u => /quote-api\.jup\.ag/.test(u)));
-  check('Parameter unveraendert',
-    /inputMint=So111/.test(q[0] || '') && /amount=1000000000/.test(q[0] || '')
-      && /slippageBps=50/.test(q[0] || ''), q[0]);
+  check('gegen den eigenen Worker', /chartrunner-tx\.jsg-951\.workers\.dev/.test(q[0] || ''), q[0]);
+  check('auf dem Pfad /v1/quote', /\/v1\/quote\?/.test(q[0] || ''), q[0]);
+  check('nichts ging an jup.ag — weder quote-api noch lite-api',
+    !seen.some(u => /jup\.ag/.test(u)), seen.filter(u => /jup\.ag/.test(u)).slice(0, 3));
+  check('Parameter unveraendert (nur die Schreibweise des Vertrags)',
+    /input_mint=So111/.test(q[0] || '') && /amount_raw=1000000000/.test(q[0] || '')
+      && /slippage_bps=50/.test(q[0] || ''), q[0]);
 
   console.log('\n-- Die echte Antwort wird richtig gelesen --');
   check('kein Fehler', !res.error, res.error);
   check('outAmount durchgereicht', res.outAmountRaw === '2854700000000', res.outAmountRaw);
   check('inAmount durchgereicht', res.inAmountRaw === '1000000000', res.inAmountRaw);
   check('Preisauswirkung ist eine Zahl', res.priceImpactPct === 0, res.priceImpactPct);
+  check('Mindest-Erhalt durchgereicht (v891)', res.minOutRaw === '2840426500000', res.minOutRaw);
   check('zwei Hops erkannt', res.hops === 2, res.hops);
   check('Routen-Labels gelesen',
     Array.isArray(res.labels) && res.labels.join(',') === 'BisonFi,Scorch', res.labels);
