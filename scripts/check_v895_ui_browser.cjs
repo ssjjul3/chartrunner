@@ -215,20 +215,53 @@ const DARK   = ['mono', 'ascii'];          // Black-Theme heisst intern 'mono'
              rows: w.querySelectorAll('[data-wiaddr]').length,
              lade: /loading|laedt|lädt|Loading/i.test((w.querySelector('#wiLbBody') || {}).textContent || '') };
   });
+  /* Zaehler statt Augenschein. Erster Anlauf dieser Datei prueft "die Liste
+   * steht, wenn ich den Tab oeffne" — und blieb bei entferntem _primeBoard
+   * GRUEN: in dieser Sandbox ist jeder Abruf abgefangen und damit sofort da,
+   * die Liste fuellt sich also auch ohne Vorwaermen innerhalb der Wartezeit.
+   * Die Zeile prueft dann nichts (CLAUDE.md, ROT/CRASH/GRUEN). Gemessen wird
+   * deshalb der MECHANISMUS: WANN wird geladen — beim Oeffnen der View oder
+   * erst beim Zeichnen der Liste? */
+  await page.evaluate(() => {
+    window.__v895 = { pf: 0, ghost: 0 };
+    const g = window.crGoldRush, gh = window.crGhost;
+    if(g && g.portfolio){ const o = g.portfolio.bind(g); g.portfolio = function(){ window.__v895.pf++; return o.apply(null, arguments); }; }
+    if(gh && gh.refresh){ const o = gh.refresh.bind(gh); gh.refresh = function(){ window.__v895.ghost++; return o.apply(null, arguments); }; }
+  });
   await page.evaluate(() => window.crWalletIntel.open());
   await page.waitForTimeout(1500);
   const s0 = await st();
+  const c0 = await page.evaluate(() => window.__v895);
   check('Intel-Fenster offen, Uebersicht ist die Landeansicht', !!s0 && s0.on && s0.tab === 'overview', s0);
   check('Uebersicht traegt KEIN Zurueck (es gibt kein Ziel)', !!s0 && s0.back === null, s0);
+  // SCHARF: beide Ladewege laufen beim OEFFNEN — waehrend noch die Uebersicht
+  // steht und niemand die Bestenliste angesehen oder ein Profil angetippt hat.
+  check('Wallet-Werte werden beim Oeffnen der View geholt (' + c0.pf + ' Abrufe)',
+        s0.tab === 'overview' && c0.pf >= 2, c0);
+  check('Runs-Abruf wird beim Oeffnen der View angestossen (' + c0.ghost + 'x)',
+        s0.tab === 'overview' && c0.ghost >= 1, c0);
 
   await page.evaluate(() => document.querySelector('#crWalletIntelWin [data-witab="board"]').click());
   await page.waitForTimeout(1200);
   const s1 = await st();
-  // Scharf: die Werte sind beim Oeffnen der View geholt worden (_primeBoard),
-  // die Liste steht also SOFORT — nicht erst nach einem Profil-Klick und nicht
-  // mit einer "lädt…"-Zeile, die auf einen Abruf wartet, der hier erst startet.
+  const c1 = await page.evaluate(() => window.__v895);
   check('Bestenliste steht sofort mit beiden Wallets', !!s1 && s1.rows === 2, s1);
   check('Bestenliste haengt nicht mehr im Ladezustand', !!s1 && s1.lade === false, s1);
+  // Die Werte lagen beim Zeichnen schon im 60s-Cache — die Liste wartet auf
+  // nichts mehr. Waeren sie es nicht, stuende hier ein zweiter Abruf.
+  check('Zeichnen der Bestenliste loest KEINEN neuen Wallet-Abruf aus',
+        c1.pf === c0.pf, { vorher: c0.pf, nachher: c1.pf });
+
+  // Und der Riegel gegen die Endlosschleife: das Zeichnen der Runs-Liste ruft
+  // crGhost.refresh() NICHT mehr — sonst haette der crGhost:updated-Repaint
+  // sich selbst nachgeladen, in Dauerschleife ueber echte RPC-Aufrufe.
+  await page.evaluate(() => document.querySelector('#crWalletIntelWin [data-wilb="runs"]').click());
+  await page.waitForTimeout(700);
+  const c2 = await page.evaluate(() => window.__v895);
+  check('Zeichnen der Runs-Liste ruft crGhost.refresh() NICHT (kein RPC-Kreis)',
+        c2.ghost === c0.ghost, { beimOeffnen: c0.ghost, nachRunsRender: c2.ghost });
+  await page.evaluate(() => document.querySelector('#crWalletIntelWin [data-wilb="wallets"]').click());
+  await page.waitForTimeout(700);
 
   await page.evaluate(() => document.querySelector('#crWalletIntelWin [data-wiaddr]').click());
   await page.waitForTimeout(900);
