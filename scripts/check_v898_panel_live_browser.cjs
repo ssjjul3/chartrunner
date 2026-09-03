@@ -175,7 +175,9 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
     return { ok, ctx: p.ctx.textContent };
   });
   check('Panel gerendert (alle Controls gefunden)', r0.ok, r0);
-  check('ohne globales ARM: RUN-Zeile zeigt paper connector', /paper connector/i.test(r0.ctx), r0.ctx);
+  /* v1.0.901 (S5a.2·A4) — Wortlaut der Paper-RUN-Zeile: „PAPIER-CONNECTOR ·
+   * kein echter Auftrag“ statt „paper connector“. Gleiche Logik, lautere Zeile. */
+  check('ohne globales ARM: RUN-Zeile zeigt PAPIER-CONNECTOR', /PAPIER-CONNECTOR/.test(r0.ctx), r0.ctx);
 
   console.log('\n-- RUN-Zeile: JUPITER LIVE mit Gebuehr VOR dem Klick --');
   let r1 = await page.evaluate(() => {

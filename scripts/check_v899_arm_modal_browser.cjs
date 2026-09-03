@@ -195,7 +195,9 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
         section,
         armed: section.querySelector('input[type=checkbox]'),
         armedLabel: section.querySelector('input[type=checkbox]').parentNode,
-        statusChip: spans.find(s => /^(Armed|Draft)$/.test(s.textContent)),
+        // v1.0.901 (S5a.2·A3) — der Status-Chip traegt jetzt die Zustands-
+        // Kopfzeile (ENTWURF/SCHARF); die alten Texte bleiben als Fallback.
+        statusChip: spans.find(s => /^(Armed|Draft)$|ENTWURF|SCHARF/.test(s.textContent || '')),
         size: Array.from(section.querySelectorAll('input')).find(i => i.type !== 'checkbox'),
         btn: (l) => Array.from(section.querySelectorAll('button')).find(b => b.textContent === l),
       };

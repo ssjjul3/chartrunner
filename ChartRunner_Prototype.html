@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.900
-     LAST UPDATED:    2026-09-03  ·  v1.0.900 (S5a·PR4): FILL-MARKER + FEINSCHLIFF — DER LETZTE SCHRITT DER S5a-STRECKE, UND DER CHART ZEIGT JETZT, WO ECHTES GELD GEFLOSSEN IST. (a) FILL-PUNKTE (crFillMarkers): jeder Live-Fill (und nur der — Paper zeichnet NICHTS Neues) setzt einen goldenen Punkt an SEINEM Ort im Chart: wx des Runners zum Fill-Zeitpunkt, Preis des Fills, Randfarbe = Seite (gruen buy, rot sell). Gezeichnet wird JEDEN FRAME NEU ueber sX/priceToY im Render-Pass direkt hinter drawPlayerPriceTag — es gibt KEINE gespeicherte Pixelposition, die bei log/auto-Skalenwechsel oder Kamera-Pan veralten koennte; die Reposition am Draw-Hook ist damit perspektivsicher per Konstruktion, nicht per Nachfuehren. Ein Fill ohne Preis bekommt keinen Punkt — ein Marker an erfundener Hoehe waere eine Luege im Chart. (b) KLICK AUF MARKER → JOURNAL: Canvas-Listener in der Capture-Phase, Treffer-Radius 10 px in Canvas-Pixeln (Client-Koordinaten werden ueber W/H skaliert, DPR-sicher); ein Treffer nennt den Fill im Terminal (Seite, Preis, sig) und oeffnet das Journal ueber DENSELBEN Weg wie der Docs-Alerts-Knopf (osOpenWindowMulti + Nav-Klick, kein zweiter Oeffnungsmechanismus). Bei LEERER Liste tut der Listener exakt NICHTS und bei Nicht-Treffern reicht er durch — Paper-Klicks erreichen das Spiel Bit fuer Bit wie heute. (c) HOTKEY-HYGIENE, ausdruecklich eingehalten: KEINE neue Taste (4 bleibt der Alarm-Laser), KEIN Element in der Topbar (Budget max 5 unangetastet). (d) GEPRUEFT: scripts/check_v900_fill_marker_browser.cjs — Marker-Geometrie gegen die ECHTEN Projektionen (sX/priceToY), Kamera-Pan-Gegenprobe (der Punkt wandert mit, die Preislinie haelt), Live-Fill→Marker-Integration ueber den echten Panel-Weg, Klick-Treffer oeffnet das Journal, Fehlklick und leere Liste lassen das Spiel unberuehrt (Paper-Nullprobe). Gegenproben ROT/CRASH/GRUEN in der Commit-Message; Regressionen v897/v898/v899 gruen. NICHT GEMESSEN: kein Worker beruehrt — reine Client-Nummer. Damit ist S5a komplett: PR 1 Weiche (v897) · PR 2 Panel (v898) · PR 3 globales ARM (v899) · PR 4 Marker (v900); der erste echte Micro-Trade ist Julians Klick mit Julians Phantom, Schritte im PR von v899.
+     CURRENT VERSION: v1.0.901
+     LAST UPDATED:    2026-09-03  ·  v1.0.901 (S5a.2·Block A): KLARHEIT IM ACTIVATION-PANEL — REINER UI-PASS, DER VERIFIZIERTE TRADE-PFAD (crWeiche, sdk.real.marketSwap, quote→swap→signAndSend) IST NICHT ANGEFASST. (a) EHRLICHE EINHEITEN (A1): auf DEX-Venue heisst SIZE „Größe (SOL-Betrag)" bzw. bei SELL „Größe (Token-Betrag)" — nie „contracts" (Perp-Sprache, P4/Phoenix); ein gespeicherter contracts-Wert wird dort nicht vorgelegt, und direkt unterm Feld steht „Erhältst du ~ …" LIVE aus dem Quote-Echo (out_raw; Decimals/Symbol aus _crTokMeta, DERSELBEN Quelle wie die Handels-Tafel; ohne Meta ehrliche Roheinheiten). Faellt die Quote weg, steht dort „—" — nie eine erfundene Zahl. (b) KLARTEXT-SATZ (A2) VOR den Fachfeldern, aus dem Ist-Zustand gebaut: „Übung: Kauf für 0,05 SOL ≈ … — nur simuliert." bzw. bei Live „Kauf für 0,05 SOL — echtes Geld ≈ … · Gebühr X % (…)"; Gegenwert/Gebuehr aus der Quote (platform_fee), ohne Fee im Echo bleibt „Gebühr —" (Live-Arm verweigert dann ohnehin, v898 unveraendert). Dafuer reicht armQuote bei fee-missing das out_raw jetzt MIT (outRaw im Fehlerobjekt) — die Verweigerung selbst ist Bit fuer Bit die alte. Der Quote laeuft auf DEX-Venue+Markt-Route auch im PAPER-Modus (fuer Satz und Erhältst-du-Zeile); Fehlwege bleiben dort leise. (c) ZUSTANDSFARBE AUF DEM GANZEN BLOCK (A3): st-draft (grau) / st-armed-paper (blau) / st-live (gold + Glow) + Kopfzeile „◇ ENTWURF · PAPIER" / „◆ SCHARF · PAPIER" / „⚡ SCHARF · LIVE · ECHTES GELD". st-live SPIEGELT die Weiche — crWeiche.armedGlobal() ∧ source.armed ∧ crWeiche.badgeGate().ok ∧ Route Market, die ORIGINAL-Funktionen der Weiche, nicht neu berechnet: Badge=median → kein st-live, und ein st-live auf einer Route, die nie feuern kann, gibt es nicht. (d) RUN-ZEILE WIRD LAUT (A4): farbiger Balken mit Punkt (der Punkt kommt per CSS-::before — textContent beginnt weiter mit 'Run: ', die v898-Sonde bleibt gueltig); Paper grau „PAPIER-CONNECTOR · kein echter Auftrag", Live gold „JUPITER LIVE · Phantom signiert gleich" + Gebuehrenstatus wie gehabt — nur Styling und Wortlaut, dieselbe Logik. (e) SIDE-VORBELEGUNG + WARNUNG (A5): SIDE kommt beim Oeffnen aus der Traeger-Richtung (overlay.side liest crRouteDefaultsForOverlay seit je; longPos/shortPos und TP-Geometrie ergaenzt crPanelKlar.overlayDir); weichen Richtung und SIDE ab, WARNT der Block („Bracket zeigt SELL, Order kauft — absichtlich?") statt still das eine gegen das andere laufen zu lassen. (f) LIVE-WELTBAND + FILL-KARTE (A6): bei globalem ARM ein schmales Goldband oben in #stage („⚡ LIVE · ECHTES GELD · Wallet xxxx… · Limit n SOL") — DOM, NICHT Topbar (Budget max 5 unangetastet), mitgezogen ueber crArmGrammar.sync (EIN Anzeigen-Abgleich, kein zweiter); nach jedem ECHTEN Fill eine gruene Erfolgskarte (Bezahlt / Erhalten / Kurs / Gebühr / Solscan-Link / „Journal · Quelle live"), gerufen NUR aus crPanelLive.fire — Paper-Fills erreichen den Pfad strukturell nie und behalten ihre leise Notiz. (g) GEPRUEFT: scripts/check_v901_klarheit_browser.cjs — Einheiten-Label + Erhältst-du gegen die Quote-Fixture, Quote-Ausfall → „—", st-live-Spiegel mit Badge=median-Gegenprobe, RUN-Zeilen-Wortlaut Paper/Live, SELL-Bracket → SIDE=SELL + Abweichungs-Warnung, Fill-Karte nur bei echtem Fill (mit sig + Gebuehr), Weltband an/aus, Paper-Nullprobe; Regressionen v897–v900 gruen (zwei Sonden an den neuen Wortlaut angepasst: v898 „PAPIER-CONNECTOR" statt „paper connector", v899 Status-Chip-Texte). Gegenproben ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN: kein Worker beruehrt, kein neuer Endpunkt — reine Client-Nummer; die Optik in allen drei Zustaenden prueft Julian nach Merge am Telefon (Schritte im PR).
+      PREV  ·  v1.0.900 (S5a·PR4): FILL-MARKER + FEINSCHLIFF — DER LETZTE SCHRITT DER S5a-STRECKE, UND DER CHART ZEIGT JETZT, WO ECHTES GELD GEFLOSSEN IST. (a) FILL-PUNKTE (crFillMarkers): jeder Live-Fill (und nur der — Paper zeichnet NICHTS Neues) setzt einen goldenen Punkt an SEINEM Ort im Chart: wx des Runners zum Fill-Zeitpunkt, Preis des Fills, Randfarbe = Seite (gruen buy, rot sell). Gezeichnet wird JEDEN FRAME NEU ueber sX/priceToY im Render-Pass direkt hinter drawPlayerPriceTag — es gibt KEINE gespeicherte Pixelposition, die bei log/auto-Skalenwechsel oder Kamera-Pan veralten koennte; die Reposition am Draw-Hook ist damit perspektivsicher per Konstruktion, nicht per Nachfuehren. Ein Fill ohne Preis bekommt keinen Punkt — ein Marker an erfundener Hoehe waere eine Luege im Chart. (b) KLICK AUF MARKER → JOURNAL: Canvas-Listener in der Capture-Phase, Treffer-Radius 10 px in Canvas-Pixeln (Client-Koordinaten werden ueber W/H skaliert, DPR-sicher); ein Treffer nennt den Fill im Terminal (Seite, Preis, sig) und oeffnet das Journal ueber DENSELBEN Weg wie der Docs-Alerts-Knopf (osOpenWindowMulti + Nav-Klick, kein zweiter Oeffnungsmechanismus). Bei LEERER Liste tut der Listener exakt NICHTS und bei Nicht-Treffern reicht er durch — Paper-Klicks erreichen das Spiel Bit fuer Bit wie heute. (c) HOTKEY-HYGIENE, ausdruecklich eingehalten: KEINE neue Taste (4 bleibt der Alarm-Laser), KEIN Element in der Topbar (Budget max 5 unangetastet). (d) GEPRUEFT: scripts/check_v900_fill_marker_browser.cjs — Marker-Geometrie gegen die ECHTEN Projektionen (sX/priceToY), Kamera-Pan-Gegenprobe (der Punkt wandert mit, die Preislinie haelt), Live-Fill→Marker-Integration ueber den echten Panel-Weg, Klick-Treffer oeffnet das Journal, Fehlklick und leere Liste lassen das Spiel unberuehrt (Paper-Nullprobe). Gegenproben ROT/CRASH/GRUEN in der Commit-Message; Regressionen v897/v898/v899 gruen. NICHT GEMESSEN: kein Worker beruehrt — reine Client-Nummer. Damit ist S5a komplett: PR 1 Weiche (v897) · PR 2 Panel (v898) · PR 3 globales ARM (v899) · PR 4 Marker (v900); der erste echte Micro-Trade ist Julians Klick mit Julians Phantom, Schritte im PR von v899.
       PREV  ·  v1.0.899 (S5a·PR3): GLOBALES ARM IM WALLET-MODAL — DAS EINZIGE NEUE UI-STUECK DER GANZEN S5a-STRECKE, GENAU WIE GEPLANT. (a) DER ABSCHNITT im CHOOSE-WALLET-Modal (#crArmSection): Schalter „ARM · echtes Geld" mit KLARTEXT-WARNUNG (ein Fill ist ein echter Swap ueber deine Wallet; die Wallet fragt IMMER, der Worker signiert NIE), Feld SESSION-LIMIT in SOL (Default 0,1 — float-frei geparst ueber _crParseBetrag und als Lamports unter cr_arm_limit_v1; die v897-Weiche summiert Live-Fills dagegen und verweigert darueber mit Meldung, hier steht auch das bereits verbrauchte Sitzungs-Volumen), Anzeige der AKTIVEN WALLET. Der Schalter traegt cr_arm_v1 — dasselbe eine Bit, das die Weiche liest; loeschen = alles Paper (Rollback unveraendert). (b) ZWEISTUFIGKEIT, beide Richtungen sichtbar: ohne globales ARM ist die ARMED-Checkbox im Panel wirkungslos (heutiges Paper-Verhalten) und sagt das im Tooltip („global nicht scharf — ARM im Wallet-Fenster"); ohne Checkbox feuert trotz globalem ARM nichts (das war v897, Tor 2). (c) ZUSTANDS-GRAMMATIK (crArmGrammar, Teil der PRs, kein Nachtrag): globales ARM an → duenne GOLDENE AURA am Runner (im drawPlayer-Pass, dieselbe Stelle wie der Indicator-Ring) + GOLDRAND am Trust-Badge (CSS ueber body.cr-arm-live — unuebersehbar live) · Arm-Klick → Ladeanimation am Panel-Rahmen, EINRASTEN (kurzes Gold-Snap) erst nach der Wallet-Bestaetigung · ARMED-Quelle → sanfter 2-s-Puls am Status-Chip · Fill → Impact + schwebende P&L-/Mengen-Zahl ueber dem Stage · Cancel/Clear einer scharfen Quelle → Partikel-Zerfall. ALLES an crWeiche.flagOn() bzw. Live-Ereignisse gebunden: Paper sieht Pixel fuer Pixel aus wie heute — Live muss sich wertiger anfuehlen, nicht Paper anders. (d) GEPRUEFT: scripts/check_v899_arm_modal_browser.cjs (Modal-Schalter → cr_arm_v1, Limit-Parsing, Wallet-Anzeige, Tooltip-Zweistufigkeit, body-Klasse + Badge-Regel, Aura-Zeichnung als Verhaltenstest mit Stub-Context, Puls-Klasse, P&L-Element nach Live-Fill, Paper-Nullprobe); Gegenproben ROT/CRASH/GRUEN in der Commit-Message; Regressionen v897 + v898 gruen. NICHT GEMESSEN: kein Worker beruehrt, kein Endpunkt neu — reine Client-Nummer.
       PREV  ·  v1.0.898 (S5a·PR2): ACTIVATION-PANEL → ECHTER CONNECTOR — DIE VORHANDENE UI WIRD VERDRAHTET, NICHT ERSETZT. Julians Leitplanke gilt weiter: kein neues Trade-UI-Element; alles hier haengt am BESTEHENDEN Activation-Panel (renderBlueRouteInputs) und an der v897-Weiche. (a) DIE RUN-ZEILE WIRD WAHRHEITSZEILE: Paper zeigt unveraendert „Run: <venue> · paper connector"; ist ROUTE=Market UND die ARMED-Checkbox an UND das globale ARM gesetzt (cr_arm_v1), holt das Panel BEIM ARMEN einen Quote (crPanelLive.armQuote → crTxApi.quote) und zeigt „JUPITER LIVE · GEBUEHR <bps/100> % (<Betrag>)" — die Gebuehr steht VOR dem Klick sichtbar im Panel, aus platform_fee{bps,amount_raw} des Quote-Echos. FEHLT platform_fee trotz Live, wird das Armen VERWEIGERT („Gebuehr nicht ausgewiesen") — Konsistenz mit der Worker-Philosophie: eine Gebuehr, die nicht ausgewiesen ist, wird nicht stillschweigend bezahlt. (b) SIZE = BETRAG IM INPUT-MINT (SOL bei Buy, Token bei Sell), nur Beschriftung + Deutung, kein Feld-Umbau: geparst wird float-frei ueber die v889-Rangfolge (_crParseBetrag; Sell-Decimals aus /v1/rpc/tokens via _crFetchTokens, unbekannte Decimals heissen ausdruecklich Roheingabe). SLIPPAGE GUARD % → slippageBps (leer = Default 50 bps). (c) ARM/UPDATE bei Live-Absicht ruft DIE WEICHE (sdk.market mit source.armed — derselbe eine Weg wie v897, KEIN zweiter Pfad; absichtlich OHNE price, damit ein Weiche-Nein hoechstens ein Null-No-Op ist und NIE eine ueberraschende Paper-Order); ohne globales ARM ist der Klick exakt das heutige Verhalten (Route-Metadaten, kein Trade). Route != Market bei Live-Absicht → ehrliche P3-Meldung im Panel. (d) CLOSE TRADE bei Live-Quelle baut den GEGEN-SWAP ueber denselben Pfad (Mints getauscht, Menge = outAmount des Fills; Exit-Prinzip: der Gegen-Swap fragt keine Arm-Gebuehr ab — Exit bleibt offen, auch bei safety-blocked auf der Eingabe-Seite, denn nur die AUSGABE-Seite blockt) und schliesst danach wie bisher. (e) FILLS → VORHANDENES JOURNAL (d.manual via _crJrnLoad/_crJrnSave, kein zweites Buchhaltungssystem): Quelle source:'live', sig, Preis (Chart-Preis = Trade-Preis, S3), Menge roh, Gebuehr roh; sichtbar ohne Renderer-Umbau ueber die notes-Zeile. Ein sig wird erst NACH /v1/tx/status beurteilt: Status nicht abrufbar heisst „gesendet, Status unbestaetigt — im Explorer pruefen", NIE „fehlgeschlagen"; ein Wallet-Reject dagegen ist ein sauberer Abbruch — Meldung, KEIN Journal-Eintrag. (f) FEHLERPFADE JE EINE KLARE PANEL-MELDUNG, nie stiller Fail: Quote-Fehler · safety-blocked (Grund/Details AUS der Worker-Antwort — der v897-Adapter reicht error/safety/cap jetzt UNVERKUERZT durch statt sie zu „swap-failed" einzudampfen) · Wallet-Reject · Status-/RPC-Ausfall. (g) GEPRUEFT: scripts/check_v898_panel_live_browser.cjs (Panel direkt gerendert und bedient: RUN-Zeilen-Wahrheit, Gebuehren-Verweigerung, genau EIN Adapter-Aufruf, Journal-live-Eintrag, Gegen-Swap-Mints, Reject ohne Journal, Paper-Bestand unangetastet, Slippage-Mapping); Gegenproben ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN: *.workers.dev ist aus der Sandbox nicht erreichbar — ob der AUSGEROLLTE Worker platform_fee wirklich traegt, misst Julian nach Merge (Schritt im PR; fehlt sie, sagt das Panel genau das).
       PREV  ·  v1.0.897 (S5a·PR1): DIE ARMED-WEICHE — MARKT-ORDERS KOENNEN ECHT WERDEN, AN GENAU EINER STELLE, OHNE EIN EINZIGES NEUES UI-ELEMENT. Julians Leitplanke (S5a, verbindlich): KEINE neue Trade-UI — diese Nummer verdrahtet nur die Weiche, UI-Zugang folgt in PR 2/3. (a) DER REALE ADAPTER: crRealAdapter.marketSwap({inputMint, outputMint, amountRaw, slippageBps}) — GET /v1/quote (die Gebuehr ist VOR dem Bau sichtbar) → POST /v1/tx/swap (unsignierte Tx; der Client baut und rechnet weiter NICHTS) → crSigner.signAndSend (die Wallet broadcastet selbst, Guard-immun) → {sig, inAmount, outAmount, feeRaw}. Jeder Fehlweg kommt als {error, detail} zurueck, nie als Wurf. Der Adapter ist EIN OBJEKT hinter ChartRunner.sdk.setRealSDK — setRealSDK(null) stellt den Ist-Zustand her; das v1.0.124-Wiring (wireModularFoundation) ueberschreibt den Geld-Adapter nicht mehr still mit der Spiel-Instanz (diese Bruecke las ohnehin niemand — gemessen: keine weiteren Aufrufer). (b) DIE WEICHE (crWeiche): real wird NUR gerufen, wenn ALLE VIER Tore offen sind — armedGlobal() (localStorage cr_arm_v1 === '1' UND Session-Volumen unter cr_arm_limit_v1, Default 0,1 SOL; die Weiche summiert Live-Fills und rechnet den bekannten SOL-Einsatz schon VOR dem Trade dagegen) · source.armed (der Aufrufer traegt den Live-Willen explizit — KEIN heutiger Aufrufer tut das, deshalb bleibt alles Bestehende Bit fuer Bit Paper) · badgeGate() (crTrustBadge.current(): ref.source === 'jupiter' UND effektives Alter <= 120 s UND Mint-gleich mit dem aktuellen Chart via crStoreMint — der Badge ist SCHALTBEDINGUNG; Binance-Charts sind per Definition nie ARMED-faehig) · crSigner.info().ready. Route !== 'Market' bei gewolltem ARM → ehrliche Meldung („wird erst mit P3 live — laeuft weiter als Paper"), KEIN stiller Fallback; bracket/ladder/oco/twap/limit sind dafuer am selben Weichenpunkt gewickelt, fuehren aber weiter NUR Paper aus. Faellt decide() um, ist die sichere Richtung Paper. (c) KEIN UI-ZUGANG in dieser Nummer: die Weiche ist nur programmatisch erreichbar (Konsole/Test) — genau deshalb ist der PR risikofrei mergebar und der Spion-Test beweisbar. crArm (v892, die SCHARF-Tafel) bleibt unberuehrt daneben stehen: die Tafel oeffnet ein Formular, die Weiche ruft den Adapter — zwei ausdruecklich getrennte Dinge, bis PR 2 sie am Activation-Panel zusammenfuehrt. (d) GEPRUEFT: scripts/check_v897_armed_weiche_browser.cjs — der Spion ersetzt den Adapter, die GESAMTE Ability-Matrix mit je einem geschlossenen Tor ruft ihn NIE; alles offen → GENAU EIN Aufruf. Dazu Limit-, Badge-, Wallet-Reject- und Ende-zu-Ende-Pfad gegen gemockte Worker-Antworten. Gegenproben nach ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN, ausdruecklich: diese Sandbox erreicht *.workers.dev nicht — die platform_fee-Form von /v1/quote und das Verhalten des AUSGEROLLTEN Workers verifiziert Julian nach dem Merge (Schritte im PR); der erste echte Micro-Trade kommt erst nach PR 3, Julians Klick, Julians Phantom.
@@ -35210,7 +35211,12 @@ window.crPanelLive = (function(){
               + (q && q.detail ? ' — ' + String(q.detail) : '') };
         var pf = q.platform_fee || (q.quote && q.quote.platform_fee) || null;
         if(!pf || pf.amount_raw == null || pf.bps == null)
+          /* v1.0.901 (S5a.2·A1/A2) — out_raw kommt bei fehlender Gebuehr MIT:
+           * das Armen bleibt verweigert (unveraendert), aber „Erhältst du ~"
+           * und der Uebungs-Satz duerfen die echte Quote-Menge zeigen, statt
+           * sie zu verschlucken. */
           return { error:'fee-missing',
+            outRaw: (q.quote && q.quote.out_raw != null) ? String(q.quote.out_raw) : '',
             msg:_crT('panel.feeMissing','Fee not disclosed (platform_fee missing in the quote) — arming refused') };
         return { feeRaw: String(pf.amount_raw), feeBps: Number(pf.bps),
                  outRaw: (q.quote && q.quote.out_raw != null) ? String(q.quote.out_raw) : '' };
@@ -35271,6 +35277,10 @@ window.crPanelLive = (function(){
           ? String(st.confirmationStatus)
           : (st && st.err ? 'chain-err' : 'unbestaetigt (' + String((st && st.error) || 'kein Status') + ')');
         _logLiveFill(t, res, stNote);
+        /* v1.0.901 (S5a.2·A6) — die gruene Erfolgskarte. NUR hier, d. h. nur
+         * nach einem ECHTEN Fill (fire laeuft ausschliesslich live); Paper-
+         * Fills erreichen den Pfad strukturell nie. */
+        try { if(window.crPanelKlar) crPanelKlar.fillCard(t, res, stNote); } catch(_){}
         if(key) _fills[String(key)] = { inputMint: t.inputMint, outputMint: t.outputMint,
           inAmount: String(res.inAmount || t.amountRaw), outAmount: String(res.outAmount || ''),
           slippageBps: t.slippageBps, sig: String(res.sig) };
@@ -35602,6 +35612,254 @@ window.crFillMarkers = (function(){
 
   return { add: add, list: list, clear: clear, draw: draw, hit: hit,
            openJournal: openJournal, _wire: _wireClick };
+})();
+
+/* =========================================================================
+ * S5a.2 · Block A (v1.0.901) — crPanelKlar: Klarheit im Activation-Panel.
+ *
+ * Reiner UI-Pass (Spec S5a.2, Block A): der verifizierte Trade-Pfad
+ * (crWeiche, sdk.real.marketSwap, quote→swap→signAndSend) wird NICHT
+ * angefasst. Dieses Modul buendelt die Anzeige-Helfer; verdrahtet wird im
+ * VORHANDENEN renderBlueRouteInputs — keine neue Trade-UI.
+ *
+ *   state()       — Panel-Zustand aus DENSELBEN Signalen wie die Weiche
+ *                   (crWeiche.armedGlobal / badgeGate — die ORIGINALE,
+ *                   gespiegelt, nicht neu berechnet) + source.armed +
+ *                   Route: st-live nur, wo die Weiche auch feuern wuerde.
+ *                   Badge auf median/stale → kein st-live, per Konstruktion.
+ *   receiveText() — „Erhältst du ~" NUR aus dem Quote-Echo (out_raw).
+ *                   Decimals/Symbol aus _crTokMeta (dieselbe Quelle wie die
+ *                   Handels-Tafel); ohne Quote „—", ohne Meta ehrliche
+ *                   Roheinheiten — NIE eine erfundene Zahl.
+ *   overlayDir()  — Traeger-Richtung (Bracket/Position) fuer die
+ *                   SIDE-Vorbelegung und den Abweichungs-Warnhinweis.
+ *   syncBand()    — das goldene Live-Weltband, DOM in #stage, NICHT Topbar
+ *                   (Budget max 5 bleibt unangetastet). Haengt am selben
+ *                   ARM-Bit wie Aura + Badge-Goldrand (v899) und wird ueber
+ *                   crArmGrammar.sync mitgezogen.
+ *   fillCard()    — gruene Erfolgskarte nach jedem ECHTEN Fill (Bezahlt /
+ *                   Erhalten / Kurs / Gebuehr / Solscan / Journal-Hinweis).
+ *                   Gerufen NUR aus crPanelLive.fire — Paper-Fills erreichen
+ *                   den Pfad strukturell nie und behalten ihre leise Notiz.
+ * ========================================================================= */
+window.crPanelKlar = (function(){
+  'use strict';
+  var GOLD = '#d4a43c';
+  var SOL_MINT = (typeof CR_SOL_MINT === 'string' && CR_SOL_MINT)
+    ? CR_SOL_MINT : 'So11111111111111111111111111111111111111112';
+
+  function _esc(v){
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch){
+      return ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;'
+        : ch === '"' ? '&quot;' : '&#39;';
+    });
+  }
+
+  function _css(){
+    if(document.getElementById('crPanelKlarCss')) return;
+    var s = document.createElement('style');
+    s.id = 'crPanelKlarCss';
+    s.textContent = ''
+      + '[data-blue-route-inputs].st-draft{border-color:#43464f!important}'
+      + '[data-blue-route-inputs].st-armed-paper{border-color:#3a86ff!important;box-shadow:0 0 0 1px rgba(58,134,255,.28)}'
+      + '[data-blue-route-inputs].st-live{border-color:' + GOLD + '!important;'
+      +   'box-shadow:0 0 0 1px rgba(212,164,60,.55),0 0 18px rgba(212,164,60,.28)}'
+      + '.cr-runline{border-radius:6px!important;padding:6px 9px!important;font:700 10px ui-monospace,monospace!important}'
+      + '.cr-runline::before{content:"● "}'
+      + '.cr-run-paper{color:#9aa0aa!important;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09)}'
+      + '.cr-run-live{color:' + GOLD + '!important;background:rgba(212,164,60,.10);border:1px solid rgba(212,164,60,.5)}'
+      + '#crLiveBand{position:absolute;left:0;right:0;top:0;z-index:55;pointer-events:none;text-align:center;'
+      +   'padding:3px 10px;color:#1a1204;'
+      +   'background:linear-gradient(90deg,rgba(212,164,60,.85),rgba(247,199,107,.92),rgba(212,164,60,.85));'
+      +   'font:800 10px ui-monospace,monospace;letter-spacing:.5px;text-transform:uppercase;'
+      +   'white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+      + '#crFillCard{position:absolute;left:50%;top:12%;transform:translateX(-50%);z-index:70;'
+      +   'min-width:250px;max-width:min(340px,86%);background:rgba(10,20,14,.96);border:1px solid #3ddc97;'
+      +   'border-radius:10px;padding:12px 14px;color:#d9ffe9;font:12px ui-monospace,monospace;'
+      +   'box-shadow:0 10px 34px rgba(0,0,0,.6)}'
+      + '#crFillCard a{color:#8ab4ff}'
+      + '@media (prefers-reduced-motion: no-preference){#crFillCard{animation:crFillCardIn .22s ease-out}}'
+      + '@keyframes crFillCardIn{0%{opacity:0;transform:translateX(-50%) translateY(-8px)}'
+      +   '100%{opacity:1;transform:translateX(-50%) translateY(0)}}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  /* Zustand aus den Weiche-Signalen. armedGlobal deckt Flag UND Limit ab,
+   * badgeGate die Chart-Referenz — beides die Original-Funktionen der
+   * Weiche, hier nur gelesen. route==='market' gehoert dazu, weil jede
+   * andere Route bei Live-Absicht die ehrliche P3-Meldung bekommt und
+   * Paper BLEIBT: ein st-live-Panel auf einer Route, die nie feuern kann,
+   * waere gelogen. Faellt eine Abfrage um, ist die sichere Richtung Paper. */
+  function state(armedChecked, routeVal){
+    if(!armedChecked) return 'draft';
+    var g = false, b = false;
+    try { g = !!(window.crWeiche && crWeiche.armedGlobal()); } catch(_){ g = false; }
+    if(g){ try { b = !!(crWeiche.badgeGate().ok); } catch(_){ b = false; } }
+    var mkt = String(routeVal || '').toLowerCase() === 'market';
+    return (g && b && mkt) ? 'live' : 'armed-paper';
+  }
+
+  function headText(st){
+    if(st === 'live') return '⚡ SCHARF · LIVE · ECHTES GELD';
+    if(st === 'armed-paper') return '◆ SCHARF · PAPIER';
+    return '◇ ENTWURF · PAPIER';
+  }
+
+  function applyState(section, statusEl, st){
+    _css();
+    try {
+      section.classList.toggle('st-draft', st === 'draft');
+      section.classList.toggle('st-armed-paper', st === 'armed-paper');
+      section.classList.toggle('st-live', st === 'live');
+    } catch(_){}
+    try {
+      if(statusEl){
+        statusEl.textContent = headText(st);
+        statusEl.style.color = st === 'live' ? GOLD : (st === 'armed-paper' ? '#3a86ff' : '#9aa0aa');
+      }
+    } catch(_){}
+  }
+
+  /* „Erhältst du ~" — NUR aus dem Quote-Echo. Kein out_raw → „—". Ohne
+   * Decimals/Symbol (Meta noch nicht geholt) → ehrliche Roheinheiten via
+   * _crFmtMenge-Fallback. Ergebnis ist HTML-sicher (Symbole escaped die
+   * Formatierer selbst) und fuer innerHTML gedacht. */
+  function receiveText(outputMint, outRaw){
+    if(!/^[0-9]+$/.test(String(outRaw == null ? '' : outRaw))) return '—';
+    if(String(outputMint) === SOL_MINT){
+      try { return _crFmtSol(Number(outRaw)); } catch(_){ return '—'; }
+    }
+    var meta = null;
+    try { meta = _crTokMeta(outputMint); } catch(_){}
+    var s = null;
+    try { s = _crFmtMenge(outRaw, meta && meta.decimals, meta && meta.symbol); } catch(_){}
+    return s == null ? '—' : s;
+  }
+
+  /* Traeger-Richtung: explizite Seite (bracket.side seit je 'buy'/'sell'),
+   * Positions-Kinds, sonst die Geometrie (TP ueber Entry = long). Traeger
+   * ohne Richtung (hline & Co.) geben '' — dann gibt es keine Warnung. */
+  function overlayDir(ov){
+    if(!ov) return '';
+    var s = String(ov.tradeSide || ov.side || '').toLowerCase();
+    if(s === 'buy' || s === 'long') return 'BUY';
+    if(s === 'sell' || s === 'short') return 'SELL';
+    if(ov.kind === 'longPos') return 'BUY';
+    if(ov.kind === 'shortPos') return 'SELL';
+    var e = Number(ov.entry), tp = Number(ov.tp);
+    if(isFinite(e) && isFinite(tp) && tp !== e) return tp > e ? 'BUY' : 'SELL';
+    return '';
+  }
+
+  function sideWarnText(ov, dir, side){
+    dir = String(dir || '').toUpperCase(); side = String(side || '').toUpperCase();
+    if(!dir || !side || dir === side) return '';
+    var was = (ov && (ov.kind === 'longPos' || ov.kind === 'shortPos')) ? 'Position'
+      : (ov && ov.kind === 'bracket') ? 'Bracket' : 'Quelle';
+    return dir === 'SELL'
+      ? '⚠ ' + was + ' zeigt SELL, Order kauft — absichtlich?'
+      : '⚠ ' + was + ' zeigt BUY, Order verkauft — absichtlich?';
+  }
+
+  /* A6 · Live-Weltband. Dasselbe Bit wie Aura/Badge-Goldrand (v899):
+   * globales ARM an → Band steht; aus → Band weg. Kein eigener Ticker —
+   * jeder crArmGrammar.sync zieht das Band mit (Wrapper unten). */
+  function syncBand(on){
+    _css();
+    if(on == null){ try { on = !!(window.crWeiche && crWeiche.flagOn()); } catch(_){ on = false; } }
+    var band = document.getElementById('crLiveBand');
+    if(!on){ if(band){ try { band.remove(); } catch(_){} } return false; }
+    var host = document.getElementById('stage');
+    if(!host) return false;
+    if(!band){ band = document.createElement('div'); band.id = 'crLiveBand'; host.appendChild(band); }
+    var addr = '';
+    try { var a = window.crSigner && crSigner.active(); if(a && a.address) addr = String(a.address); } catch(_){}
+    var lim = null;
+    try { lim = crWeiche.limitLamports(); } catch(_){}
+    band.textContent = '⚡ LIVE · ECHTES GELD'
+      + (addr ? ' · Wallet ' + addr.slice(0, 4) + '…' : '')
+      + (lim != null ? ' · Limit ' + _crFmtSol(lim) : '');
+    return true;
+  }
+
+  /* A6 · Erfolgskarte nach einem ECHTEN Fill. Kurs = Chart-Preis (S3:
+   * Chart-Preis = Trade-Preis); fehlt die Gebuehr im Echo, steht „—" —
+   * erfunden wird nichts. Karte schliesst per ✕ oder nach 30 s. */
+  function fillCard(t, res, stNote){
+    _css();
+    try {
+      if(!res || !res.sig) return null;
+      var host = document.getElementById('stage') || document.body;
+      var old = document.getElementById('crFillCard');
+      if(old){ try { old.remove(); } catch(_){} }
+      var sell = !!(t && t.inputMint && String(t.inputMint) !== SOL_MINT);
+      var inRaw = String((res.inAmount != null ? res.inAmount : (t && t.amountRaw)) || '');
+      var paid = sell
+        ? (_crFmtMenge(inRaw, t && t.decIn, t && t.sym) || (inRaw ? _esc(inRaw) + ' Roheinheiten' : '—'))
+        : (/^[0-9]+$/.test(inRaw) ? _crFmtSol(Number(inRaw)) : '—');
+      var got = receiveText(t && t.outputMint, res.outAmount);
+      var fee = '—';
+      if(res.feeRaw != null){
+        fee = sell
+          ? (_crFmtMenge(String(res.feeRaw), t && t.decIn, t && t.sym) || _esc(res.feeRaw) + ' Roheinheiten')
+          : (/^[0-9]+$/.test(String(res.feeRaw)) ? _crFmtSol(Number(res.feeRaw)) : _esc(res.feeRaw) + ' raw');
+      }
+      var kurs = null;
+      try { kurs = (typeof currentPrice === 'function') ? currentPrice() : null; } catch(_){}
+      var kursTxt = (kurs != null && isFinite(Number(kurs)))
+        ? Number(kurs).toLocaleString('de-DE', { maximumFractionDigits: 6 }) : '—';
+      var sig = String(res.sig);
+      var row = function(k, v){
+        return '<div style="display:flex;justify-content:space-between;gap:10px;padding:2px 0">'
+          + '<span style="color:#7fae93">' + k + '</span><b>' + v + '</b></div>';
+      };
+      var card = document.createElement('div');
+      card.id = 'crFillCard';
+      card.innerHTML = ''
+        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+        +   '<b style="color:#3ddc97;letter-spacing:.4px">✓ LIVE-FILL BESTÄTIGT</b>'
+        +   '<button type="button" data-cr-fillcard-x="1" style="margin-left:auto;background:transparent;'
+        +     'border:0;color:#7fae93;cursor:pointer;font-size:14px">✕</button>'
+        + '</div>'
+        + row('Bezahlt', paid)
+        + row('Erhalten', got)
+        + row('Kurs', kursTxt)
+        + row('Gebühr', fee)
+        + '<div style="margin-top:7px;display:flex;justify-content:space-between;gap:10px">'
+        +   '<a href="https://solscan.io/tx/' + encodeURIComponent(sig) + '" target="_blank" rel="noopener">Auf Solscan ansehen ↗</a>'
+        +   '<span style="color:#7fae93">Journal · Quelle live</span>'
+        + '</div>'
+        + (stNote ? '<div style="margin-top:4px;color:#7fae93;font-size:10px">Status: ' + _esc(stNote) + '</div>' : '');
+      host.appendChild(card);
+      var x = card.querySelector('[data-cr-fillcard-x]');
+      if(x) x.onclick = function(){ try { card.remove(); } catch(_){} };
+      setTimeout(function(){ try { if(card.isConnected) card.remove(); } catch(_){} }, 30000);
+      return card;
+    } catch(_){ return null; }
+  }
+
+  /* Band-Mitzug: crArmGrammar.sync ist der eine Anzeigen-Abgleich (v899) —
+   * das Band haengt sich dahinter, statt einen zweiten Abgleich zu erfinden. */
+  try {
+    if(window.crArmGrammar && typeof crArmGrammar.sync === 'function' && !crArmGrammar.__klarBand){
+      var _origArmSync = crArmGrammar.sync;
+      crArmGrammar.sync = function(){
+        var on = _origArmSync();
+        try { syncBand(on); } catch(_){}
+        return on;
+      };
+      crArmGrammar.__klarBand = true;
+    }
+  } catch(_){}
+  function _initBand(){ try { syncBand(); } catch(_){} }
+  try {
+    if(document.readyState !== 'loading') _initBand();
+    else document.addEventListener('DOMContentLoaded', _initBand);
+  } catch(_){}
+
+  return { state: state, headText: headText, applyState: applyState,
+           receiveText: receiveText, overlayDir: overlayDir, sideWarnText: sideWarnText,
+           syncBand: syncBand, fillCard: fillCard, GOLD: GOLD };
 })();
 
 // v0.8k#18 — Shared helpers used by the new ability lineup.
@@ -36646,6 +36904,15 @@ function renderBlueRouteInputs(body, overlay, helpers){
   head.appendChild(status);
   section.appendChild(head);
 
+  /* v1.0.901 (S5a.2·A2) — der Klartext-Satz VOR den Fachfeldern: ein Satz
+   * Alltagssprache aus dem Ist-Zustand (Uebung vs. echtes Geld, Betrag,
+   * ~Gegenwert aus der Quote, Gebuehr aus platform_fee). Befuellt in
+   * updateRunLine — dieselbe Stelle, die auch RUN-Zeile und Zustand setzt. */
+  const klarLine = document.createElement('div');
+  klarLine.setAttribute('data-cr-panel-klar', '1');
+  klarLine.style.cssText = 'color:#cfd3da;font:12px -apple-system,system-ui,sans-serif;line-height:1.5;border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:7px 9px;background:rgba(255,255,255,.03)';
+  section.appendChild(klarLine);
+
   const grid = document.createElement('div');
   grid.style.cssText = 'display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px';
   section.appendChild(grid);
@@ -36681,6 +36948,20 @@ function renderBlueRouteInputs(body, overlay, helpers){
     return select;
   };
 
+  /* v1.0.275/276 — Venue ist ein Run-Level-Fakt (Configure-Run-Broker-Rad).
+   * v1.0.901 (S5a.2·A1): hier VOR die Felder gezogen, weil das SIZE-Label
+   * an der Venue haengt — auf einer DEX-Venue ist SIZE ein BETRAG, nie
+   * „contracts" (Perp-Sprache, P4/Phoenix). */
+  const routeVenue = (() => {
+    try {
+      let b = (typeof game !== 'undefined' && game && game.broker) || null;
+      if(!b || !b.name){ b = JSON.parse(localStorage.getItem('cr_broker_v1') || 'null'); }
+      if(b && b.name) return (String(b.type || '').toLowerCase() === 'dex' ? 'DEX - ' : 'CEX - ') + b.name;
+    } catch(_){}
+    return route.venue || 'CEX - Binance';
+  })();
+  const dexVenue = /^dex/i.test(routeVenue);
+
   const routeSelect = makeField('Route', makeSelect([
     { v:'market', l:'Market' },
     { v:'limit', l:'Limit' },
@@ -36705,7 +36986,29 @@ function renderBlueRouteInputs(body, overlay, helpers){
     { v:'BUY', l:'BUY' },
     { v:'SELL', l:'SELL' },
   ], route.side, v => String(v || '').toUpperCase()));
-  const sizeInput = makeField('Size', makeInput(route.size || '1 contracts'));
+  /* v1.0.901 (S5a.2·A1) — ehrliche Einheiten: auf DEX heisst das Feld
+   * „Größe (SOL-Betrag)" (bzw. Token-Betrag bei SELL, nachgezogen in
+   * updateRunLine), und ein gespeicherter „… contracts"-Wert wird dort
+   * nicht vorgelegt. CEX/Paper bleibt Pixel fuer Pixel wie heute. */
+  const sizeInput = makeField(dexVenue ? 'Größe (SOL-Betrag)' : 'Size',
+    makeInput(dexVenue
+      ? ((route.size && !/contract/i.test(String(route.size))) ? route.size : '')
+      : (route.size || '1 contracts')));
+  if(dexVenue) sizeInput.placeholder = 'z. B. 0,05';
+  /* „Erhältst du ~ …" — die Zeile direkt unterm SIZE-Feld, live aus der
+   * Quote (out_raw). Faellt die Quote weg, steht hier „—". */
+  const getLine = document.createElement('span');
+  getLine.setAttribute('data-cr-panel-get', '1');
+  getLine.style.cssText = 'color:#9aa0aa;font:10px ui-monospace,monospace;text-transform:none;letter-spacing:0;display:none';
+  try { sizeInput.parentNode.appendChild(getLine); } catch(_){}
+  /* v1.0.901 (S5a.2·A5) — SIDE kommt beim Oeffnen aus der Traeger-Richtung
+   * (crRouteDefaultsForOverlay liest overlay.side seit je); weichen Richtung
+   * und SIDE ab, WARNT der Block, statt still das eine gegen das andere
+   * laufen zu lassen. */
+  const sideWarnLine = document.createElement('div');
+  sideWarnLine.setAttribute('data-cr-side-warn', '1');
+  sideWarnLine.style.cssText = 'grid-column:1 / -1;display:none;color:#f7c76b;font:11px ui-monospace,monospace;line-height:1.4;border:1px solid rgba(247,199,107,.45);border-radius:6px;padding:6px 9px;background:rgba(247,199,107,.07)';
+  grid.appendChild(sideWarnLine);
 
   // v1.0.276 — P2: the adaptive route block. A full-width sub-grid that
   // renders the CR_ROUTE_FIELD_SCHEMA fields for the selected route and
@@ -36717,18 +37020,11 @@ function renderBlueRouteInputs(body, overlay, helpers){
 
   // v1.0.275/276 — Venue, Connector AND Timeframe are run-level facts, not
   // per-activation decisions: venue from the Configure Run broker wheel
-  // (cr_broker_v1 → game.broker), connector paper-only, timeframe = the
-  // run's chart tf. All three render as ONE read-only context line and
-  // readPatch() inherits them silently. See
+  // (cr_broker_v1 → game.broker; v1.0.901: reading moved up next to the
+  // fields because the SIZE label depends on it), connector paper-only,
+  // timeframe = the run's chart tf. They render as ONE read-only context
+  // line and readPatch() inherits them silently. See
   // docs/ACTIVATION_PANE_ADAPTIVE_FIELDS_BRAINSTORM_2026-06-11.md.
-  const routeVenue = (() => {
-    try {
-      let b = (typeof game !== 'undefined' && game && game.broker) || null;
-      if(!b || !b.name){ b = JSON.parse(localStorage.getItem('cr_broker_v1') || 'null'); }
-      if(b && b.name) return (String(b.type || '').toLowerCase() === 'dex' ? 'DEX - ' : 'CEX - ') + b.name;
-    } catch(_){}
-    return route.venue || 'CEX - Binance';
-  })();
   const routeConnector = route.connector || 'paper connector';
   const runTf = (() => {
     try {
@@ -36738,7 +37034,6 @@ function renderBlueRouteInputs(body, overlay, helpers){
   })();
   const contextLine = document.createElement('div');
   contextLine.style.cssText = 'grid-column:1 / -1;color:#6f7686;font:10px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
-  contextLine.textContent = 'Run: ' + routeVenue + ' · ' + routeConnector + (runTf ? ' · ' + runTf.toUpperCase() : '');
   grid.appendChild(contextLine);
 
   /* v1.0.898 (S5a·PR2) — die RUN-Zeile wird WAHRHEITSZEILE, und das Panel
@@ -36760,9 +37055,19 @@ function renderBlueRouteInputs(body, overlay, helpers){
     } catch(_){}
   };
   const sizeLabelEl = (() => { try { return sizeInput.parentNode.firstChild; } catch(_){ return null; } })();
-  const paperRunText = 'Run: ' + routeVenue + ' · ' + routeConnector + (runTf ? ' · ' + runTf.toUpperCase() : '');
-  const liveRunBase  = 'Run: ' + routeVenue + ' · JUPITER LIVE';
+  /* v1.0.901 (S5a.2·A4) — die RUN-Zeile wird laut: farbiger Balken mit
+   * Punkt (CSS ::before, damit textContent unveraendert mit 'Run: ' beginnt).
+   * Paper grau + „PAPIER-CONNECTOR · kein echter Auftrag"; Live gold +
+   * „JUPITER LIVE · Phantom signiert gleich". Dieselbe Logik wie v898,
+   * nur Styling + Wortlaut. */
+  const paperRunText = 'Run: ' + routeVenue + ' · PAPIER-CONNECTOR · kein echter Auftrag' + (runTf ? ' · ' + runTf.toUpperCase() : '');
+  const liveRunBase  = 'Run: ' + routeVenue + ' · JUPITER LIVE · Phantom signiert gleich';
+  contextLine.textContent = paperRunText;
   let _runSeq = 0;          // Staffelschutz: nur die juengste Quote-Antwort zaehlt
+  /* v1.0.901 (S5a.2·A1–A4) — EIN Abgleich fuer Zustand, Einheiten, Klartext
+   * und RUN-Zeile. Der Quote laeuft auf DEX-Venue + Markt-Route auch im
+   * Paper-Modus (fuer „Erhältst du ~" und den Uebungs-Satz); Fehlwege
+   * bleiben dort LEISE („—"), nur die Live-Absicht meldet wie bisher. */
   const updateRunLine = () => {
     const live = window.crPanelLive && crPanelLive.liveIntent(routeSelect.value, armedInput.checked);
     const seq = ++_runSeq;
@@ -36777,13 +37082,82 @@ function renderBlueRouteInputs(body, overlay, helpers){
         : '';
       status.classList.toggle('cr-armed-pulse', !!live && armedInput.checked);
     } catch(_){}
+    /* v1.0.901 (S5a.2·A3) — Zustandsklasse + Kopfzeile: st-live spiegelt
+     * die Weiche (armedGlobal ∧ badgeGate ∧ Market), nie mehr behaupten,
+     * als die Weiche ausfuehren wuerde. */
+    const st = window.crPanelKlar ? crPanelKlar.state(armedInput.checked, routeSelect.value) : 'draft';
+    try { if(window.crPanelKlar) crPanelKlar.applyState(section, status, st); } catch(_){}
+    const sell = String(sideSelect.value || 'BUY').toUpperCase() === 'SELL';
+    /* A1 — das Einheiten-Label haengt an der VENUE, nicht am Live-Zustand:
+     * DEX heisst Betrag, „contracts" ist Perp-Sprache (P4). */
+    if(sizeLabelEl) sizeLabelEl.textContent = dexVenue
+      ? (sell ? 'Größe (Token-Betrag)' : 'Größe (SOL-Betrag)') : 'Size';
+    /* A5 — Richtungs-Warnung, wenn Traeger und SIDE auseinanderlaufen. */
+    try {
+      const dirWarn = window.crPanelKlar
+        ? crPanelKlar.sideWarnText(overlay, crPanelKlar.overlayDir(overlay), sideSelect.value) : '';
+      sideWarnLine.textContent = dirWarn;
+      sideWarnLine.style.display = dirWarn ? '' : 'none';
+    } catch(_){}
+    /* A4 — Balken-Styling (Punkt kommt per CSS, nicht in den Text). */
+    try {
+      contextLine.classList.add('cr-runline');
+      contextLine.classList.toggle('cr-run-live', !!live);
+      contextLine.classList.toggle('cr-run-paper', !live);
+    } catch(_){}
+    /* A1/A2 — „Erhältst du ~" + Klartext-Satz. Beide NUR aus der Quote;
+     * ohne Quote „—" bzw. ein Satz ohne „≈"-Teil — nie eine erfundene Zahl. */
+    const marketRoute = String(routeSelect.value || '') === 'market';
+    const setKlarGet = (t, fq) => {
+      try {
+        const out = (fq && window.crPanelKlar && fq.outRaw)
+          ? crPanelKlar.receiveText(t && t.outputMint, fq.outRaw) : '—';
+        if(!dexVenue || !marketRoute){
+          getLine.style.display = 'none';
+          klarLine.innerHTML = (st === 'live' ? '' : 'Übung: ') + (sell ? 'Verkauf' : 'Kauf')
+            + ' · Größe ' + (crRouteHtmlEscape(String(sizeInput.value || '').trim()) || '—')
+            + (st === 'live' ? '' : ' — nur simuliert.');
+          return;
+        }
+        getLine.style.display = '';
+        getLine.innerHTML = 'Erhältst du ~ ' + out;
+        const sym = sell ? ((t && t.sym) || 'Token') : 'SOL';
+        const sizeTxt = String(sizeInput.value || '').trim();
+        const betrag = sizeTxt ? crRouteHtmlEscape(sizeTxt) + ' ' + crRouteHtmlEscape(sym) : '—';
+        const verb = sell ? 'Verkauf von ' : 'Kauf für ';
+        if(st === 'live'){
+          let fee = 'Gebühr —';
+          if(fq && fq.feeBps != null && fq.feeRaw != null){
+            const pct = String(fq.feeBps / 100).replace('.', ',');
+            const amt = sell
+              ? (_crFmtMenge(fq.feeRaw, t && t.decIn, t && t.sym) || crRouteHtmlEscape(fq.feeRaw) + ' raw')
+              : _crFmtSol(Number(fq.feeRaw));
+            fee = 'Gebühr ' + pct + ' % (' + amt + ')';
+          }
+          klarLine.innerHTML = '<b>' + verb + betrag + ' — echtes Geld</b>'
+            + (out !== '—' ? ' ≈ ' + out : '') + ' · ' + fee;
+        } else {
+          klarLine.innerHTML = 'Übung: ' + verb + betrag
+            + (out !== '—' ? ' ≈ ' + out : '') + ' — nur simuliert.';
+        }
+      } catch(_){}
+    };
+    setKlarGet(null, null);
     if(!live){
       contextLine.textContent = paperRunText;
-      if(sizeLabelEl) sizeLabelEl.textContent = 'Size';
+      /* Quote auch im Paper-Modus — nur mit DEX-Venue, Markt-Route und
+       * Solana-Mint; jeder Fehlweg bleibt hier leise („—" steht schon). */
+      if(!(dexVenue && marketRoute && window.crPanelLive && crPanelLive.chartMint())) return;
+      crPanelLive.resolveTrade(sideSelect.value, sizeInput.value, params.slipGuard).then(t => {
+        if(seq !== _runSeq || t.error) return;
+        return crPanelLive.armQuote(t).then(fq => {
+          if(seq !== _runSeq) return;
+          if(fq.error && !(fq.error === 'fee-missing' && fq.outRaw)) return;
+          setKlarGet(t, fq);
+        });
+      }).catch(() => {});
       return;
     }
-    const sell = String(sideSelect.value || 'BUY').toUpperCase() === 'SELL';
-    if(sizeLabelEl) sizeLabelEl.textContent = sell ? 'Size (Token-Betrag)' : 'Size (SOL-Betrag)';
     contextLine.textContent = liveRunBase + ' · GEBUEHR WIRD GEHOLT …';
     crPanelLive.resolveTrade(sideSelect.value, sizeInput.value, params.slipGuard).then(t => {
       if(seq !== _runSeq) return;
@@ -36793,9 +37167,11 @@ function renderBlueRouteInputs(body, overlay, helpers){
         if(fq.error){
           contextLine.textContent = liveRunBase + ' · ' + (fq.error === 'fee-missing' ? 'GEBUEHR NICHT AUSGEWIESEN' : 'QUOTE FEHLGESCHLAGEN');
           sayPanel(fq.msg);
+          if(fq.error === 'fee-missing' && fq.outRaw) setKlarGet(t, fq);
           return;
         }
         contextLine.textContent = liveRunBase + ' · ' + crPanelLive.feeLine(t, fq);
+        setKlarGet(t, fq);
         sayPanel('');
       });
     }).catch(e => {
@@ -36953,7 +37329,9 @@ function renderBlueRouteInputs(body, overlay, helpers){
     active: !!armedInput.checked,
     route: routeSelect.value || 'market',
     side: sideSelect.value || 'BUY',
-    size: String(sizeInput.value || '').trim() || '1 contracts',
+    /* v1.0.901 (S5a.2·A1) — auf DEX gibt es keinen „1 contracts"-Rueckfall:
+     * leer bleibt leer, ein Betrag ist ein Betrag. */
+    size: String(sizeInput.value || '').trim() || (dexVenue ? '' : '1 contracts'),
     venue: routeVenue,
     connector: routeConnector,
     timeframe: runTf,
