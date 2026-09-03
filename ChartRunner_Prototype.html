@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.897
-     LAST UPDATED:    2026-09-03  ·  v1.0.897 (S5a·PR1): DIE ARMED-WEICHE — MARKT-ORDERS KOENNEN ECHT WERDEN, AN GENAU EINER STELLE, OHNE EIN EINZIGES NEUES UI-ELEMENT. Julians Leitplanke (S5a, verbindlich): KEINE neue Trade-UI — diese Nummer verdrahtet nur die Weiche, UI-Zugang folgt in PR 2/3. (a) DER REALE ADAPTER: crRealAdapter.marketSwap({inputMint, outputMint, amountRaw, slippageBps}) — GET /v1/quote (die Gebuehr ist VOR dem Bau sichtbar) → POST /v1/tx/swap (unsignierte Tx; der Client baut und rechnet weiter NICHTS) → crSigner.signAndSend (die Wallet broadcastet selbst, Guard-immun) → {sig, inAmount, outAmount, feeRaw}. Jeder Fehlweg kommt als {error, detail} zurueck, nie als Wurf. Der Adapter ist EIN OBJEKT hinter ChartRunner.sdk.setRealSDK — setRealSDK(null) stellt den Ist-Zustand her; das v1.0.124-Wiring (wireModularFoundation) ueberschreibt den Geld-Adapter nicht mehr still mit der Spiel-Instanz (diese Bruecke las ohnehin niemand — gemessen: keine weiteren Aufrufer). (b) DIE WEICHE (crWeiche): real wird NUR gerufen, wenn ALLE VIER Tore offen sind — armedGlobal() (localStorage cr_arm_v1 === '1' UND Session-Volumen unter cr_arm_limit_v1, Default 0,1 SOL; die Weiche summiert Live-Fills und rechnet den bekannten SOL-Einsatz schon VOR dem Trade dagegen) · source.armed (der Aufrufer traegt den Live-Willen explizit — KEIN heutiger Aufrufer tut das, deshalb bleibt alles Bestehende Bit fuer Bit Paper) · badgeGate() (crTrustBadge.current(): ref.source === 'jupiter' UND effektives Alter <= 120 s UND Mint-gleich mit dem aktuellen Chart via crStoreMint — der Badge ist SCHALTBEDINGUNG; Binance-Charts sind per Definition nie ARMED-faehig) · crSigner.info().ready. Route !== 'Market' bei gewolltem ARM → ehrliche Meldung („wird erst mit P3 live — laeuft weiter als Paper"), KEIN stiller Fallback; bracket/ladder/oco/twap/limit sind dafuer am selben Weichenpunkt gewickelt, fuehren aber weiter NUR Paper aus. Faellt decide() um, ist die sichere Richtung Paper. (c) KEIN UI-ZUGANG in dieser Nummer: die Weiche ist nur programmatisch erreichbar (Konsole/Test) — genau deshalb ist der PR risikofrei mergebar und der Spion-Test beweisbar. crArm (v892, die SCHARF-Tafel) bleibt unberuehrt daneben stehen: die Tafel oeffnet ein Formular, die Weiche ruft den Adapter — zwei ausdruecklich getrennte Dinge, bis PR 2 sie am Activation-Panel zusammenfuehrt. (d) GEPRUEFT: scripts/check_v897_armed_weiche_browser.cjs — der Spion ersetzt den Adapter, die GESAMTE Ability-Matrix mit je einem geschlossenen Tor ruft ihn NIE; alles offen → GENAU EIN Aufruf. Dazu Limit-, Badge-, Wallet-Reject- und Ende-zu-Ende-Pfad gegen gemockte Worker-Antworten. Gegenproben nach ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN, ausdruecklich: diese Sandbox erreicht *.workers.dev nicht — die platform_fee-Form von /v1/quote und das Verhalten des AUSGEROLLTEN Workers verifiziert Julian nach dem Merge (Schritte im PR); der erste echte Micro-Trade kommt erst nach PR 3, Julians Klick, Julians Phantom.
+     CURRENT VERSION: v1.0.898
+     LAST UPDATED:    2026-09-03  ·  v1.0.898 (S5a·PR2): ACTIVATION-PANEL → ECHTER CONNECTOR — DIE VORHANDENE UI WIRD VERDRAHTET, NICHT ERSETZT. Julians Leitplanke gilt weiter: kein neues Trade-UI-Element; alles hier haengt am BESTEHENDEN Activation-Panel (renderBlueRouteInputs) und an der v897-Weiche. (a) DIE RUN-ZEILE WIRD WAHRHEITSZEILE: Paper zeigt unveraendert „Run: <venue> · paper connector"; ist ROUTE=Market UND die ARMED-Checkbox an UND das globale ARM gesetzt (cr_arm_v1), holt das Panel BEIM ARMEN einen Quote (crPanelLive.armQuote → crTxApi.quote) und zeigt „JUPITER LIVE · GEBUEHR <bps/100> % (<Betrag>)" — die Gebuehr steht VOR dem Klick sichtbar im Panel, aus platform_fee{bps,amount_raw} des Quote-Echos. FEHLT platform_fee trotz Live, wird das Armen VERWEIGERT („Gebuehr nicht ausgewiesen") — Konsistenz mit der Worker-Philosophie: eine Gebuehr, die nicht ausgewiesen ist, wird nicht stillschweigend bezahlt. (b) SIZE = BETRAG IM INPUT-MINT (SOL bei Buy, Token bei Sell), nur Beschriftung + Deutung, kein Feld-Umbau: geparst wird float-frei ueber die v889-Rangfolge (_crParseBetrag; Sell-Decimals aus /v1/rpc/tokens via _crFetchTokens, unbekannte Decimals heissen ausdruecklich Roheingabe). SLIPPAGE GUARD % → slippageBps (leer = Default 50 bps). (c) ARM/UPDATE bei Live-Absicht ruft DIE WEICHE (sdk.market mit source.armed — derselbe eine Weg wie v897, KEIN zweiter Pfad; absichtlich OHNE price, damit ein Weiche-Nein hoechstens ein Null-No-Op ist und NIE eine ueberraschende Paper-Order); ohne globales ARM ist der Klick exakt das heutige Verhalten (Route-Metadaten, kein Trade). Route != Market bei Live-Absicht → ehrliche P3-Meldung im Panel. (d) CLOSE TRADE bei Live-Quelle baut den GEGEN-SWAP ueber denselben Pfad (Mints getauscht, Menge = outAmount des Fills; Exit-Prinzip: der Gegen-Swap fragt keine Arm-Gebuehr ab — Exit bleibt offen, auch bei safety-blocked auf der Eingabe-Seite, denn nur die AUSGABE-Seite blockt) und schliesst danach wie bisher. (e) FILLS → VORHANDENES JOURNAL (d.manual via _crJrnLoad/_crJrnSave, kein zweites Buchhaltungssystem): Quelle source:'live', sig, Preis (Chart-Preis = Trade-Preis, S3), Menge roh, Gebuehr roh; sichtbar ohne Renderer-Umbau ueber die notes-Zeile. Ein sig wird erst NACH /v1/tx/status beurteilt: Status nicht abrufbar heisst „gesendet, Status unbestaetigt — im Explorer pruefen", NIE „fehlgeschlagen"; ein Wallet-Reject dagegen ist ein sauberer Abbruch — Meldung, KEIN Journal-Eintrag. (f) FEHLERPFADE JE EINE KLARE PANEL-MELDUNG, nie stiller Fail: Quote-Fehler · safety-blocked (Grund/Details AUS der Worker-Antwort — der v897-Adapter reicht error/safety/cap jetzt UNVERKUERZT durch statt sie zu „swap-failed" einzudampfen) · Wallet-Reject · Status-/RPC-Ausfall. (g) GEPRUEFT: scripts/check_v898_panel_live_browser.cjs (Panel direkt gerendert und bedient: RUN-Zeilen-Wahrheit, Gebuehren-Verweigerung, genau EIN Adapter-Aufruf, Journal-live-Eintrag, Gegen-Swap-Mints, Reject ohne Journal, Paper-Bestand unangetastet, Slippage-Mapping); Gegenproben ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN: *.workers.dev ist aus der Sandbox nicht erreichbar — ob der AUSGEROLLTE Worker platform_fee wirklich traegt, misst Julian nach Merge (Schritt im PR; fehlt sie, sagt das Panel genau das).
+      PREV  ·  v1.0.897 (S5a·PR1): DIE ARMED-WEICHE — MARKT-ORDERS KOENNEN ECHT WERDEN, AN GENAU EINER STELLE, OHNE EIN EINZIGES NEUES UI-ELEMENT. Julians Leitplanke (S5a, verbindlich): KEINE neue Trade-UI — diese Nummer verdrahtet nur die Weiche, UI-Zugang folgt in PR 2/3. (a) DER REALE ADAPTER: crRealAdapter.marketSwap({inputMint, outputMint, amountRaw, slippageBps}) — GET /v1/quote (die Gebuehr ist VOR dem Bau sichtbar) → POST /v1/tx/swap (unsignierte Tx; der Client baut und rechnet weiter NICHTS) → crSigner.signAndSend (die Wallet broadcastet selbst, Guard-immun) → {sig, inAmount, outAmount, feeRaw}. Jeder Fehlweg kommt als {error, detail} zurueck, nie als Wurf. Der Adapter ist EIN OBJEKT hinter ChartRunner.sdk.setRealSDK — setRealSDK(null) stellt den Ist-Zustand her; das v1.0.124-Wiring (wireModularFoundation) ueberschreibt den Geld-Adapter nicht mehr still mit der Spiel-Instanz (diese Bruecke las ohnehin niemand — gemessen: keine weiteren Aufrufer). (b) DIE WEICHE (crWeiche): real wird NUR gerufen, wenn ALLE VIER Tore offen sind — armedGlobal() (localStorage cr_arm_v1 === '1' UND Session-Volumen unter cr_arm_limit_v1, Default 0,1 SOL; die Weiche summiert Live-Fills und rechnet den bekannten SOL-Einsatz schon VOR dem Trade dagegen) · source.armed (der Aufrufer traegt den Live-Willen explizit — KEIN heutiger Aufrufer tut das, deshalb bleibt alles Bestehende Bit fuer Bit Paper) · badgeGate() (crTrustBadge.current(): ref.source === 'jupiter' UND effektives Alter <= 120 s UND Mint-gleich mit dem aktuellen Chart via crStoreMint — der Badge ist SCHALTBEDINGUNG; Binance-Charts sind per Definition nie ARMED-faehig) · crSigner.info().ready. Route !== 'Market' bei gewolltem ARM → ehrliche Meldung („wird erst mit P3 live — laeuft weiter als Paper"), KEIN stiller Fallback; bracket/ladder/oco/twap/limit sind dafuer am selben Weichenpunkt gewickelt, fuehren aber weiter NUR Paper aus. Faellt decide() um, ist die sichere Richtung Paper. (c) KEIN UI-ZUGANG in dieser Nummer: die Weiche ist nur programmatisch erreichbar (Konsole/Test) — genau deshalb ist der PR risikofrei mergebar und der Spion-Test beweisbar. crArm (v892, die SCHARF-Tafel) bleibt unberuehrt daneben stehen: die Tafel oeffnet ein Formular, die Weiche ruft den Adapter — zwei ausdruecklich getrennte Dinge, bis PR 2 sie am Activation-Panel zusammenfuehrt. (d) GEPRUEFT: scripts/check_v897_armed_weiche_browser.cjs — der Spion ersetzt den Adapter, die GESAMTE Ability-Matrix mit je einem geschlossenen Tor ruft ihn NIE; alles offen → GENAU EIN Aufruf. Dazu Limit-, Badge-, Wallet-Reject- und Ende-zu-Ende-Pfad gegen gemockte Worker-Antworten. Gegenproben nach ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN, ausdruecklich: diese Sandbox erreicht *.workers.dev nicht — die platform_fee-Form von /v1/quote und das Verhalten des AUSGEROLLTEN Workers verifiziert Julian nach dem Merge (Schritte im PR); der erste echte Micro-Trade kommt erst nach PR 3, Julians Klick, Julians Phantom.
       PREV  ·  v1.0.896 (S3): KANONISCHE SERIE + TRUST-BADGE + PREIS-TAG — DIE EHRLICHKEIT DES STORES (v5.15: ref{source,usd,age_s,block_id} + gated an jeder /v1/ohlc-Antwort) WIRD SICHTBAR, UND ZWEI REGELN STEHEN AB JETZT, AN DENEN ACT II HAENGT. (a) EIN TOKEN = EIN CHART: crSeriesResolver ist die EINE kleine, zentrale Funktion (Mint → {serie:'ohlc-store', preis:'tx'}), damit S5 spaeter denselben Weg geht; Schluessel bleibt crStoreMint (v894), hier wird nichts Zweites erfunden. Fuer sol-Mints ist der ohlc-store die kanonische Serie — PUNKT. Der GT-Fallback im Sol-Zweig von loadCandles (stand seit v859: „GT bleibt Fallback fuer ungetrackte Mints") ist WEG: er hob bei leerem Store still eine ANDERE Quelle in den Chart, und der Spieler sah eine GT-Kurve unter einem Preis aus einer anderen Preisfamilie. Liefert der Store nichts, sagt der Chart das jetzt ehrlich MIT Quelle („sol-Mint · ohlc-store leer/nicht erreichbar · seeded (NOT LIVE)"); der v860-AUTO-UPGRADE laedt um, sobald die kanonische Serie liefert — der Track-Ping direkt darueber hat den Store ja gerade geweckt. crFetchSolanaTokenCandles bleibt fuer den Pair-Pfad (A÷B, eigenes synthetisches Asset) bestehen; CEX-Symbole (Binance-Klines) sind ausdruecklich NICHT Teil des Umbaus. (b) CHART-PREIS = TRADE-PREIS: der Topbar-Preis (#lastPx) bindet fuer sol-Mints an tx /v1/price (Jupiter Price V3 ueber den eigenen Worker, crTxApi.price — derselbe Weg wie v891) statt an den letzten Close. Der price-STRING des Workers wird UNVERAENDERT angezeigt ('$' davor ist Formatierung, kein Ersetzen) — fmtPrice haette aus 0.19594… still 0.20 gemacht, genau die Divergenz, die S3 abschafft. Ein Mint in missing zeigt „—" mit Tooltip „keine Jupiter-Referenz", NIE den letzten bekannten Wert als vermeintlich aktuell; ein Worker-Ausfall ebenso „—" mit anderem Grund. Polling 1×/10s (Worker-Cache 10s, kein eigener Cache-Layer); im RUN gehoert die Zahl weiter der Kerze unter dem Laeufer (Spielmechanik, unberuehrt), und die beiden alten Kerzen-Schreiber (finalizeCandleLoad, Live-Feed-Sol-Tick) treten fuer sol-Mints zurueck statt den Tag zu ueberschreiben. (c) TRUST-BADGE: dezent unten links im Chart (#stage, z:4), KEIN neues Topbar-Element (Budget max 5 unangetastet). Mapping (crTrustBadgeModel, pur): ref.source 'jupiter' → „✓ deckt sich mit Jupiter · block <block_id>" (Tooltip: usd-Referenz + age_s), 'median' → „~ interner Median (Jupiter-Referenz veraltet/fehlt)", 'none' ODER fehlendes ref → „unbestaetigt" (vor v5.15 WAR die Serie unverifiziert). gated>0 versteckt sich nicht: der Tooltip nennt die Zahl in JEDEM Zustand („<n> Kerzen ans Band gekappt") — kein Neuzeichnen, kein Warn-Popup, nur auffindbare Wahrheit. Der Badge ist ZUSTAND: _crRunOhlcCandles meldet ref+gated mit jeder Antwort (auch limit=3-Ticks), sync() haengt an crSetMarketSource wie Live-Flag und Arm-Anzeige; CEX-Serien tragen ihn NIE. (d) NICHT GEMESSEN, ausdruecklich: diese Sandbox erreicht *.workers.dev nicht — der Live-Vertrag (WIF ref.source jupiter/gated 0, JUP gated 40, 3 Mints in missing) ist Julians Messung vom 31.08., nicht eine eigene; die Verifikation nach Merge macht Julian mit der Extension (Schritte im PR). Geprueft ist der CLIENT gegen gemockte Worker-Antworten: scripts/check_v896_kanonische_serie_browser.cjs, Gegenproben nach ROT/CRASH/GRUEN in der Commit-Message.
       PREV  ·  v1.0.895: VIER UI-ANPASSUNGEN AUS JULIANS LISTE — ZWEI PLATZTAUSCHE, EIN GEMESSENER KONTRASTFEHLER, EINE LISTE, DIE ZU SPAET LUD. Alles Oberflaeche, kein Handelsweg beruehrt. (a) BOT TERMINAL UND EINSTELLUNGEN TAUSCHEN DIE PLAETZE, auf BEIDEN Oberflaechen: Desktop-Grid (#osGrid, CSS order) und Dock (#crOSDockFixed, DOM-Reihenfolge). Beim Grid reichte es NICHT, settings zu verschieben — bot hatte gar keine eigene order und fiel in den order:99-Eimer ans Ende; bot bekommt jetzt die 7, die settings hatte, settings die 8. data-prog bleibt ueberall gleich, kein Handler angefasst. (b) TOKENOMICS-AUFKLAPP AUS DER WALLET-APP ENTFERNT (#win-walletapp, direkt unter dem Add-Token-Feld). Es gibt vier <details class="cr-tok">; entfernt ist GENAU EINE. Die Phone-Wallet und der Run-Drawer behalten ihre Tokenomics-Bloecke, und #crVaultPanel teilt sich nur die KLASSE — das ist die Vault-Sync-Box, kein Tokenomics. (c) SESSIONS-APP WAR IM BLACK-THEME UNLESBAR, und zwar gemessen, nicht geschaetzt: Kontrast der .cr-tok-Chrome (Titel, Untertitel, "Session"/"Path", Fusszeile) 1.08:1 im Black-Theme (mono) und 1.32:1 im ASCII-Theme — 1.08 heisst dieselbe Farbe. URSACHE: der App-Styleguide (v1.0.151) setzt auf .os-window .os-wbody die Tinte HELLER Interieurs (--cr-app-text:#20231d) und erzwingt sie mit !important; .cr-tok arbeitet durchgehend mit color:inherit und erbt sie auf dunklem Fenstergrund. Dieselbe Klasse, die v1.0.862 im Intel-Fenster per Helligkeitsmessung geloest hat. DIE MESSUNG FAND EINEN ZWEITEN, GROESSEREN BEFUND, den Julians Screenshot nicht zeigen konnte: im gerenderten Markdown-Blatt (.cr-session-rendered, in JEDEM Theme dunkel) standen die h2-Abschnittsueberschriften in ALLEN FUENF Themes bei 1.20:1 und der Info-Satz "Use New to create…" bei 3.77:1 — also auch auf Platinum, wo niemand einen Themefehler vermutet haette. Deshalb zwei Bloecke: (A) theme-unabhaengig die eigene Palette des Blattes zurueck, (B) nur fuer die dunklen Themes (mono, ascii) die .cr-tok-Chrome auf die Theme-Vordergrundfarbe. platinum/bw/frontier messen 12–16:1 und bleiben unberuehrt. NACH dem Patch faellt in mono, ascii, bw und frontier KEIN Element mehr unter 4.5:1. (d) INTEL: ZURUECK-WEG AUS DEM PROFIL UND EINE BESTENLISTE, DIE BEIM OEFFNEN LAEDT. Der Drill-down (loadWallet) setzte _tab hart auf "overview" und vergass, wo er herkam — aus einem Profil fuehrte kein Weg zurueck in die Liste. loadWallet nimmt jetzt die Herkunft entgegen, das Profil traegt ein "‹ Bestenliste"/"‹ Folge ich"/"‹ zurueck"-Control (i18n in DE/ES/ZH), und der Weg zurueck LOESCHT _sel — sonst zeigte ein spaeterer Klick auf "Uebersicht" wieder das alte Profil. Und die Liste fuellte sich erst beim Antippen einzelner Profile, aus zwei Gruenden mit derselben Form: renderRuns rief crGhost.refresh() und las den Cache in derselben Zeile SYNCHRON aus (der Abruf landete danach, ohne Neuzeichnen), und knownSet() ist die Vereinigung aus Follows, Watchlist UND _sel — jedes geoeffnete Profil legte also eine Adresse dazu. Geladen wird jetzt beim Oeffnen der View (_primeBoard), und der crGhost:updated-Event zeichnet nach. Das refresh() in renderRuns MUSSTE dabei weg: es hat nur einen _inflight-Riegel, keine Zeitdrossel — zusammen mit dem Repaint-Listener waere es eine RPC-Endlosschleife gewesen. Neugezeichnet wird nur, wenn die betroffene Unterliste gerade sichtbar ist. (e) GEMESSEN wurde im echten Chromium gegen die Datei (Kontrast pro Textknoten in allen fuenf Themes, vor und nach dem Patch); Gegenproben nach ROT/CRASH/GRUEN in der Commit-Message. NICHT gemessen und ausdruecklich nicht behauptet: nichts an dieser Nummer beruehrt einen Worker-Endpunkt.
       PREV  ·  v1.0.894: EIN SCHLUESSEL FUER BEIDE APPS — EINHEITLICHES OHLC-TRACKING. ZUR NUMMER: v893 hat die Bracket-Alarme auf v894 verwiesen; die sind hier NICHT drin und ruecken weiter. Bracket, Ladder und Laser bleiben ausdruecklich Simulation, es gibt weiter keinen Keeper. (a) DER BEFUND: Run und Token Terminal treffen denselben Store (/v1/ohlc/<addr>), loesten die Adresse aber JEDER FUER SICH auf — der Run aus asset.mint, das Terminal beim LESEN aus def.mint/TOK_BIRDEYE_MINT/_tokMeta[id].contract und beim TRACKEN aus einer VIERTEN Quelle, v.contract aus der CoinGecko-Antwort. Solange alle vier dasselbe sagen, faellt nichts auf. Sagen zwei etwas Verschiedenes, traegt die eine App Kerzen unter Schluessel A ein und die andere liest unter Schluessel B: beide Charts melden 'live', beide bleiben leer, und NICHTS schlaegt an — dieselbe Klasse stiller Divergenz, die diese Datei schon zweimal bezahlt hat. (b) crStoreMint IST AB JETZT DIE EINZIGE AUFLOESUNG, und Track- wie Lese-Pfad benutzen beide sie: Run-Track, _crRunOhlcCandles, Terminal-Track und der ownAddr-Abruf in _tokFetchLive. Die Rangfolge ist die von _tokMintOf (v891, def.mint › verifizierte Worker-Antwort › TOK_BIRDEYE_MINT) plus die CoinGecko-Contract-Stufe, die der Terminal-Lesepfad ohnehin schon hatte. Der Unterschied zu _tokMintOf ist Absicht und hat einen Grund: EIN STORE-SCHLUESSEL IST KEINE HANDELSERLAUBNIS. Ueber Handel entscheidet weiter _tokMintOf, und dort gilt ein Nein des Workers als Nein. Hier geht es nur darum, welche Zeichenkette hinter /v1/ohlc/ steht — ein Kurs unter einer unverifizierten Adresse kostet niemanden Geld, ein Kurs, den nur eine der beiden Apps findet, kostet die Kurve. Kein Symbol-Match, kein Namensraten, keine eigene Liste. Der Terminal-Track behaelt fuer EVM-Contracts v.contract — crStoreMint loest Solana-Mints auf, sonst nichts. (c) DIE LISTE WAERMT DEN STORE, NICHT NUR DAS PROFIL: _tokRenderList trackt jetzt bis zu 20 NEUE Solana-Mints je Render statt nur den einen aufgeloesten Token. Wichtig und ausdruecklich: die Liste ist nicht virtualisiert, reines Scrollen loest keinen Render aus — gezaehlt wird, was einen ausloest (Tab-Wechsel, Suche, Watchlist, eintreffende Markt-Antwort). Nur echte base58-Mints (crIsSolanaMintAddress — eine 0x-Adresse faellt durch das Alphabet), sonst stuende ein EVM-Contract unter chain 'sol' im Store, den der Sampler nie fuellt. (d) crOhlcTrack MELDET JETZT, OB EIN PING RAUSGING (true) oder ob die 10-Minuten-Drossel gegriffen hat (false). Das Listen-Budget zaehlt an dieser Antwort ab: zaehlte es die betrachteten Zeilen, verbrauchten die immer gleichen ersten zwanzig das Budget fuer alle Zeit und die Liste kaeme nie tiefer. (e) NICHT GEMESSEN, ausdruecklich: diese Sandbox erreicht *.workers.dev nicht (403 auf CONNECT beim Proxy). Weder /health noch /v1/tracked noch /v1/ohlc wurden gegengelesen — die Verifikation dieser Nummer laeuft ueber Julians Telefon und steht als Schritt-Liste im PR. Geprueft ist hier der CLIENT: scripts/check_v894_schluesselparitaet_browser.cjs, Gegenproben in der Commit-Message.
@@ -34840,8 +34841,16 @@ var crRealAdapter = {
         return crTxApi.swap({ payer: addr, inputMint: p.inputMint, outputMint: p.outputMint,
                               amountRaw: amountRaw, slippageBps: slippageBps, cluster: 'mainnet' })
           .then(function(built){
+            /* v1.0.898 — der Fehler NAME des Workers bleibt stehen
+             * (safety-blocked, over-cap, fee-account-missing …), samt
+             * safety/cap-Objekt: das Panel zeigt den GRUND aus der
+             * Antwort, nicht ein eingedampftes 'swap-failed'. */
             if(!built || built.error || !built.transaction)
-              return { error: 'swap-failed', detail: (built && (String(built.error || 'no-transaction') + (built.detail ? ' — ' + built.detail : ''))) || '' };
+              return { error: (built && built.error) ? String(built.error) : 'swap-failed',
+                       detail: (built && (built.detail || built.note)) ? String(built.detail || built.note)
+                               : (built && built.error ? '' : 'no-transaction'),
+                       safety: (built && built.safety) || null,
+                       cap: (built && built.cap) || null };
             return crSigner.signAndSend(built.transaction, { chain: 'solana:mainnet' })
               .then(function(sg){
                 if(!sg || sg.error || !sg.signature)
@@ -35033,6 +35042,255 @@ window.crWeiche = (function(){
       sdk[name] = function(opts){ return W.route(others[name], opts, function(){ return orig(opts); }); };
     } catch(_){}
   });
+})();
+
+/* =========================================================================
+ * S5a · PR 2 (v1.0.898) — crPanelLive: die Bruecke Activation-Panel → Weiche.
+ *
+ * Das Panel EXISTIERT und wird verdrahtet, nicht ersetzt (Julians
+ * Leitplanke). Dieses Modul uebersetzt Panel-Eingaben (SIDE, SIZE als
+ * Betrag im Input-Mint, SLIPPAGE GUARD %) in den einen Weiche-Aufruf und
+ * traegt die Ergebnisse zurueck: Gebuehr VOR dem Klick, Fills ins
+ * VORHANDENE Journal (Quelle 'live'), Gegen-Swap fuer Close trade.
+ *
+ * Es gibt hier ausdruecklich KEINEN zweiten Ausfuehrungsweg: ausgefuehrt
+ * wird ueber sdk.market + source.armed — dieselbe Weiche, dieselben vier
+ * Tore wie v897. fire() ruft sdk.market absichtlich OHNE price: sagt die
+ * Weiche Nein, laeuft der Paper-Zweig mit price=undefined und gibt null
+ * zurueck (market() verlangt price) — hoechstens ein No-Op, NIE eine
+ * ueberraschende Paper-Order aus dem Panel.
+ * ========================================================================= */
+window.crPanelLive = (function(){
+  'use strict';
+  var SOL_MINT = (typeof CR_SOL_MINT === 'string' && CR_SOL_MINT)
+    ? CR_SOL_MINT : 'So11111111111111111111111111111111111111112';
+  /* Letzter Live-Fill je Panel-Quelle (overlay-Schluessel) — die Menge, die
+   * Close trade zurueckdreht. Sitzungs-Zustand wie das Limit-Volumen. */
+  var _fills = {};
+
+  function liveIntent(routeVal, armedChecked){
+    try {
+      return String(routeVal || '') === 'market' && !!armedChecked
+        && !!(window.crWeiche && crWeiche.flagOn());
+    } catch(_){ return false; }
+  }
+
+  function chartMint(){
+    try {
+      var a = (typeof currentAssetObj === 'function') ? currentAssetObj() : null;
+      if(a && a.solanaToken && a.mint && typeof crStoreMint === 'function') return crStoreMint(a);
+    } catch(_){}
+    return '';
+  }
+
+  /* SLIPPAGE GUARD % → bps. Leer = Default 50 bps (Spec). Komma erlaubt. */
+  function slipBps(txt){
+    var s = String(txt == null ? '' : txt).trim().replace(',', '.');
+    if(!s) return 50;
+    var n = Number(s);
+    if(!isFinite(n) || n <= 0) return null;
+    return Math.max(1, Math.round(n * 100));
+  }
+
+  /* Panel-Eingaben → {inputMint, outputMint, amountRaw, slippageBps, decIn,
+   * sym} oder {error, msg}. Buy: Einsatz in SOL (Protokoll-Decimals 9).
+   * Sell: Einsatz im Token — Decimals aus dem Bestands-Endpunkt, dieselbe
+   * v889-Rangfolge wie die Handels-Tafel; schweigt er, gilt Roheingabe und
+   * die Meldung SAGT das. Kein Float, kein Raten (_crParseBetrag). */
+  function resolveTrade(side, sizeText, slipText){
+    var m = chartMint();
+    if(!m) return Promise.resolve({ error:'no-mint',
+      msg:_crT('panel.noMint','This chart has no Solana mint — Binance charts are never ARMED-capable') });
+    var bps = slipBps(slipText);
+    if(bps == null) return Promise.resolve({ error:'bad-slippage',
+      msg:_crT('panel.badSlip','Slippage guard: not a usable percentage') });
+    var sell = String(side || 'BUY').toUpperCase() === 'SELL';
+    if(!sell){
+      var p = _crParseBetrag(sizeText, 9);
+      if(p.error) return Promise.resolve({ error:'bad-size', msg:'SIZE (SOL): ' + p.error });
+      return Promise.resolve({ inputMint: SOL_MINT, outputMint: m, amountRaw: p.raw,
+                               slippageBps: bps, decIn: 9, sym: 'SOL' });
+    }
+    var addr = '';
+    try { var a = window.crSigner && crSigner.active(); if(a && a.address) addr = String(a.address); } catch(_){}
+    if(!addr) return Promise.resolve({ error:'not-connected',
+      msg:_crT('panel.noWallet','Connect a wallet first — the sell amount needs the token balance (decimals)') });
+    return _crFetchTokens(addr).then(function(list){
+      var t = Array.isArray(list) ? list.filter(function(x){ return x && x.mint === m; })[0] : null;
+      var d = (t && t.decimals != null && isFinite(Number(t.decimals))) ? Number(t.decimals) : null;
+      var p = _crParseBetrag(sizeText, d == null ? 0 : d);
+      if(p.error) return { error:'bad-size',
+        msg:'SIZE: ' + p.error + (d == null ? ' ' + _crT('panel.rawUnits','(token decimals unknown — input reads as raw units)') : '') };
+      return { inputMint: m, outputMint: SOL_MINT, amountRaw: p.raw, slippageBps: bps,
+               decIn: d, sym: (t && typeof t.symbol === 'string' && t.symbol) || 'Token' };
+    }).catch(function(){ return { error:'tokens-failed',
+      msg:_crT('panel.tokensFailed','Token balance not readable — sell amount cannot be interpreted') }; });
+  }
+
+  /* Der Quote BEIM ARMEN — die Gebuehr steht VOR dem Klick im Panel.
+   * Fehlt platform_fee trotz Live, wird das Armen verweigert: eine
+   * Gebuehr, die nicht ausgewiesen ist, wird nicht stillschweigend
+   * bezahlt (Worker-Philosophie). */
+  function armQuote(t){
+    if(!window.crTxApi || typeof crTxApi.quote !== 'function')
+      return Promise.resolve({ error:'quote', msg:'Quote path not loaded' });
+    return crTxApi.quote({ inputMint: t.inputMint, outputMint: t.outputMint,
+                           amountRaw: t.amountRaw, slippageBps: t.slippageBps, cluster: 'mainnet' })
+      .then(function(q){
+        if(!q || q.error) return { error:'quote',
+          msg:_crT('panel.quoteFail','Quote failed: ') + String((q && q.error) || 'no-response')
+              + (q && q.detail ? ' — ' + String(q.detail) : '') };
+        var pf = q.platform_fee || (q.quote && q.quote.platform_fee) || null;
+        if(!pf || pf.amount_raw == null || pf.bps == null)
+          return { error:'fee-missing',
+            msg:_crT('panel.feeMissing','Fee not disclosed (platform_fee missing in the quote) — arming refused') };
+        return { feeRaw: String(pf.amount_raw), feeBps: Number(pf.bps),
+                 outRaw: (q.quote && q.quote.out_raw != null) ? String(q.quote.out_raw) : '' };
+      });
+  }
+
+  /* Gebuehren-Text fuer die RUN-Zeile: Prozent aus bps, Betrag in Einheiten
+   * der EINGABE-Seite (dort faellt die Gebuehr an, v886). */
+  function feeLine(t, fq){
+    var pct = String(fq.feeBps / 100).replace('.', ',');
+    var amt = null;
+    try {
+      if(t.inputMint === SOL_MINT && typeof _crFmtSol === 'function') amt = _crFmtSol(Number(fq.feeRaw));
+      else if(t.decIn != null) amt = (_crRawToUi(fq.feeRaw, t.decIn) || fq.feeRaw) + ' ' + t.sym;
+    } catch(_){}
+    if(!amt) amt = fq.feeRaw + ' raw';
+    return 'GEBUEHR ' + pct + ' % (' + amt + ')';
+  }
+
+  function _msgForError(res){
+    var e = String((res && res.error) || 'failed');
+    if(e === 'rejected')
+      return _crT('panel.rejected','Declined in the wallet — nothing was sent, no journal entry.');
+    if(e === 'safety-blocked'){
+      var why = '';
+      try {
+        var s = res.safety || {};
+        why = String(res.detail || s.note || (s.checked && s.checked.verdict) || '');
+      } catch(_){}
+      return _crT('panel.safetyBlocked','Token safety blocks the OUTPUT side') + (why ? ': ' + why : '')
+        + ' — ' + _crT('panel.exitOpen','the exit stays open (sell path is never gated).');
+    }
+    return _crT('panel.swapFail','Live swap failed: ') + e
+      + (res && res.detail ? ' — ' + String(res.detail) : '');
+  }
+
+  /* Ausfuehren — ueber die Weiche, sonst nirgends. Ein sig wird erst nach
+   * /v1/tx/status beurteilt: Status nicht abrufbar heisst „gesendet,
+   * Status unbestaetigt", nie „fehlgeschlagen". Ein Reject dagegen ist ein
+   * sauberer Abbruch: Meldung, KEIN Journal-Eintrag. */
+  function fire(t, key){
+    var side = (t.inputMint === SOL_MINT) ? 'buy' : 'sell';
+    var call;
+    try {
+      call = sdk.market({ side: side,
+        source: { armed: true, amountRaw: t.amountRaw, slippageBps: t.slippageBps,
+                  inputMint: t.inputMint, outputMint: t.outputMint } });
+    } catch(e){ return Promise.resolve({ ok:false, msg:'Weiche crashed: ' + String((e && e.message) || e) }); }
+    return Promise.resolve(call).then(function(res){
+      if(!res) return { ok:false,
+        msg:_crT('panel.notLive','The switch declined (reason in the terminal line) — nothing executed.') };
+      if(res.error) return { ok:false, msg:_msgForError(res) };
+      var stCheck = (window.crTxApi && typeof crTxApi.status === 'function')
+        ? crTxApi.status(res.sig, 'mainnet').catch(function(){ return { error:'offline' }; })
+        : Promise.resolve({ error:'status-unavailable' });
+      return stCheck.then(function(st){
+        var stNote = (st && !st.error && st.confirmationStatus)
+          ? String(st.confirmationStatus)
+          : (st && st.err ? 'chain-err' : 'unbestaetigt (' + String((st && st.error) || 'kein Status') + ')');
+        _logLiveFill(t, res, stNote);
+        if(key) _fills[String(key)] = { inputMint: t.inputMint, outputMint: t.outputMint,
+          inAmount: String(res.inAmount || t.amountRaw), outAmount: String(res.outAmount || ''),
+          slippageBps: t.slippageBps, sig: String(res.sig) };
+        var m = (st && st.err)
+          ? _crT('panel.chainErr','Sent, but the chain reports an error — check the explorer: ') + String(res.sig)
+          : (st && st.error)
+            ? _crT('panel.sentUnconfirmed','Sent — status unconfirmed (') + String(st.error) + '), sig ' + String(res.sig)
+            : _crT('panel.filled','LIVE fill · sig ') + String(res.sig)
+              + (res.feeRaw != null ? ' · fee ' + String(res.feeRaw) + ' raw' : '');
+        return { ok:true, sig: String(res.sig), feeRaw: res.feeRaw, status: stNote, msg: m };
+      });
+    });
+  }
+
+  /* Fill → VORHANDENES Journal (d.manual), kein zweites Buchhaltungssystem.
+   * Quelle 'live' + sig + Gebuehr als Felder; die notes-Zeile macht beides
+   * ohne Renderer-Umbau sichtbar. Preis = Chart-Preis (S3: Chart-Preis =
+   * Trade-Preis). auto:true, damit die Zeile im Auto-/Journal-Tab steht. */
+  function _logLiveFill(t, res, stNote){
+    try {
+      var entry = null;
+      try { entry = (typeof currentPrice === 'function') ? currentPrice() : null; } catch(_){}
+      var row = {
+        id: 'live_' + String(res.sig).slice(0, 12),
+        orderId: 'live:' + String(res.sig),
+        ts: Date.now(),
+        dateStr: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString().slice(0, 5),
+        asset: (typeof currentAsset === 'string' ? currentAsset.toUpperCase() : ''),
+        tf: (typeof timeframe === 'string') ? timeframe : '',
+        side: (t.inputMint === SOL_MINT) ? 'buy' : 'sell',
+        setup: 'live',
+        entry: entry, sl: null, tp: null, rr: null,
+        risk: null, conf: null, levels: '',
+        result: 'open', pnl: 0,
+        notes: 'LIVE · sig ' + String(res.sig) + ' · in ' + String(res.inAmount || t.amountRaw)
+          + ' · out ' + String(res.outAmount || '?')
+          + (res.feeRaw != null ? ' · fee ' + String(res.feeRaw) + ' raw' : ' · fee nicht ausgewiesen')
+          + ' · status ' + String(stNote || '?'),
+        checklist: null,
+        auto: true,
+        kind: 'market',
+        source: 'live',
+        sig: String(res.sig),
+        feeRaw: res.feeRaw != null ? String(res.feeRaw) : null,
+        amountInRaw: String(res.inAmount || t.amountRaw),
+        amountOutRaw: String(res.outAmount || '')
+      };
+      var d = _crJrnLoad();
+      d.manual.push(row);
+      _crJrnSave(d);
+      try {
+        if(typeof _crJrnRenderManual === 'function'){
+          var win = document.getElementById('win-display');
+          var jv = document.getElementById('crDocsViewJournal');
+          if(win && win.classList.contains('on') && jv && !jv.classList.contains('hidden')){
+            _crJrnRenderManual(); _crJrnRenderPaper();
+            if(typeof _crJrnRenderStats === 'function') _crJrnRenderStats();
+          }
+        }
+      } catch(_){}
+    } catch(_){}
+  }
+
+  function hasLiveFill(key){ return !!_fills[String(key)]; }
+
+  /* Close trade bei Live-Quelle: der GEGEN-SWAP ueber denselben Pfad —
+   * Mints getauscht, Menge = outAmount des Fills. Der Exit fragt KEINE
+   * Arm-Gebuehr ab (Exit-Prinzip: immer offen; safety blockt nur die
+   * AUSGABE-Seite, und die ist beim Exit SOL). */
+  function closeTrade(key){
+    var f = _fills[String(key)];
+    if(!f) return Promise.resolve({ ok:false, error:'no-live-fill',
+      msg:_crT('panel.noLiveFill','No live fill recorded for this source — paper close only.') });
+    if(!/^[1-9][0-9]*$/.test(String(f.outAmount || '')))
+      return Promise.resolve({ ok:false, error:'no-out-amount',
+        msg:_crT('panel.noOutAmount','The fill carries no usable outAmount — close manually via the trade sheet.') });
+    var t2 = { inputMint: f.outputMint, outputMint: f.inputMint, amountRaw: f.outAmount,
+               slippageBps: f.slippageBps, decIn: null, sym: '' };
+    return fire(t2, null).then(function(r){
+      if(r && r.ok) delete _fills[String(key)];
+      return r;
+    });
+  }
+
+  return { liveIntent: liveIntent, chartMint: chartMint, slipBps: slipBps,
+           resolveTrade: resolveTrade, armQuote: armQuote, feeLine: feeLine,
+           fire: fire, closeTrade: closeTrade, hasLiveFill: hasLiveFill,
+           _msgForError: _msgForError };
 })();
 
 // v0.8k#18 — Shared helpers used by the new ability lineup.
@@ -36172,6 +36430,64 @@ function renderBlueRouteInputs(body, overlay, helpers){
   contextLine.textContent = 'Run: ' + routeVenue + ' · ' + routeConnector + (runTf ? ' · ' + runTf.toUpperCase() : '');
   grid.appendChild(contextLine);
 
+  /* v1.0.898 (S5a·PR2) — die RUN-Zeile wird WAHRHEITSZEILE, und das Panel
+   * bekommt eine eigene Meldungszeile (Fehlerpfade ehrlich, nie stiller
+   * Fail). Paper zeigt exakt den bisherigen Text; nur ROUTE=Market +
+   * ARMED-Checkbox + globales ARM (cr_arm_v1) schalten auf JUPITER LIVE —
+   * dann wird BEIM ARMEN ein Quote geholt und die Gebuehr steht VOR dem
+   * Klick sichtbar hier. Fehlt platform_fee, sagt die Zeile das und das
+   * Armen wird verweigert. */
+  const msgLine = document.createElement('div');
+  msgLine.setAttribute('data-cr-panel-msg', '1');
+  msgLine.style.cssText = 'grid-column:1 / -1;display:none;color:#f7c76b;font:11px ui-monospace,monospace;white-space:normal;line-height:1.45';
+  grid.appendChild(msgLine);
+  const sayPanel = (text, tone) => {
+    try {
+      msgLine.textContent = text == null ? '' : String(text);
+      msgLine.style.color = tone === 'ok' ? '#3ddc97' : (tone === 'dim' ? '#9aa0aa' : '#f7c76b');
+      msgLine.style.display = text ? '' : 'none';
+    } catch(_){}
+  };
+  const sizeLabelEl = (() => { try { return sizeInput.parentNode.firstChild; } catch(_){ return null; } })();
+  const paperRunText = 'Run: ' + routeVenue + ' · ' + routeConnector + (runTf ? ' · ' + runTf.toUpperCase() : '');
+  const liveRunBase  = 'Run: ' + routeVenue + ' · JUPITER LIVE';
+  let _runSeq = 0;          // Staffelschutz: nur die juengste Quote-Antwort zaehlt
+  const updateRunLine = () => {
+    const live = window.crPanelLive && crPanelLive.liveIntent(routeSelect.value, armedInput.checked);
+    const seq = ++_runSeq;
+    if(!live){
+      contextLine.textContent = paperRunText;
+      if(sizeLabelEl) sizeLabelEl.textContent = 'Size';
+      return;
+    }
+    const sell = String(sideSelect.value || 'BUY').toUpperCase() === 'SELL';
+    if(sizeLabelEl) sizeLabelEl.textContent = sell ? 'Size (Token-Betrag)' : 'Size (SOL-Betrag)';
+    contextLine.textContent = liveRunBase + ' · GEBUEHR WIRD GEHOLT …';
+    crPanelLive.resolveTrade(sideSelect.value, sizeInput.value, params.slipGuard).then(t => {
+      if(seq !== _runSeq) return;
+      if(t.error){ contextLine.textContent = liveRunBase + ' · NICHT ARMBAR'; sayPanel(t.msg); return; }
+      return crPanelLive.armQuote(t).then(fq => {
+        if(seq !== _runSeq) return;
+        if(fq.error){
+          contextLine.textContent = liveRunBase + ' · ' + (fq.error === 'fee-missing' ? 'GEBUEHR NICHT AUSGEWIESEN' : 'QUOTE FEHLGESCHLAGEN');
+          sayPanel(fq.msg);
+          return;
+        }
+        contextLine.textContent = liveRunBase + ' · ' + crPanelLive.feeLine(t, fq);
+        sayPanel('');
+      });
+    }).catch(e => {
+      if(seq !== _runSeq) return;
+      contextLine.textContent = liveRunBase + ' · NICHT ARMBAR';
+      sayPanel('RUN-Zeile: ' + String((e && e.message) || e));
+    });
+  };
+  /* armedInput existiert erst weiter unten — sein Hook und der Erst-Aufruf
+   * stehen nach den Buttons, wo alles deklariert ist. */
+  sideSelect.addEventListener('change', updateRunLine);
+  sizeInput.addEventListener('change', updateRunLine);
+  routeBlock.addEventListener('change', updateRunLine);   // slipGuard & Co.
+
   // Route-block renderer. params starts from the stored bag so a re-opened
   // armed route shows what was armed; switching routes keeps foreign keys
   // in the bag (harmless intent metadata) — the visible form is always
@@ -36325,6 +36641,10 @@ function renderBlueRouteInputs(body, overlay, helpers){
       objectId: overlay.id == null ? null : overlay.id,
     }),
   });
+  /* v1.0.898 — der Schluessel, unter dem crPanelLive den Live-Fill dieser
+   * Quelle fuehrt (Close trade dreht genau diese Menge zurueck). */
+  const liveKey = (overlay.id != null ? String(overlay.id) : String(overlay.kind || 'obj'));
+  let liveBusy = false;
   armBtn.onclick = () => {
     armedInput.checked = true;
     let state = null;
@@ -36338,6 +36658,46 @@ function renderBlueRouteInputs(body, overlay, helpers){
     } catch(_){}
     try { if(typeof toast === 'function') toast('Blue Route updated'); } catch(_){}
     refresh();
+    /* v1.0.898 — Live-Zweig. Ohne globales ARM endet der Klick hier: exakt
+     * das heutige Verhalten (Metadaten, kein Trade). Mit globalem ARM und
+     * Route != Market gibt es die ehrliche P3-Meldung statt eines stillen
+     * Paper-Fallbacks. Nur Market laeuft weiter — durch die v897-Weiche,
+     * nicht an ihr vorbei. */
+    try { if(!(window.crWeiche && crWeiche.flagOn())) return; } catch(_){ return; }
+    const routeVal = String(routeSelect.value || 'market');
+    if(routeVal !== 'market'){
+      sayPanel(routeVal + ' ' + _crT('weiche.routeP3','goes live with P3 — this keeps running as paper'));
+      return;
+    }
+    if(liveBusy){ sayPanel(_crT('panel.busy','A live order is already in flight — wait for its verdict.')); return; }
+    liveBusy = true;
+    sayPanel(_crT('panel.quoting','Fetching quote — nothing is signed yet …'), 'dim');
+    crPanelLive.resolveTrade(sideSelect.value, sizeInput.value, params.slipGuard).then(t => {
+      if(t.error){ liveBusy = false; sayPanel(t.msg); return; }
+      /* Die inneren Ketten werden RETURNT — nur so erreicht ein Wurf aus
+       * armQuote/fire den catch unten, statt liveBusy festzunageln. */
+      return crPanelLive.armQuote(t).then(fq => {
+        if(fq.error){
+          liveBusy = false;
+          contextLine.textContent = liveRunBase + ' · ' + (fq.error === 'fee-missing' ? 'GEBUEHR NICHT AUSGEWIESEN' : 'QUOTE FEHLGESCHLAGEN');
+          sayPanel(fq.msg);
+          return;
+        }
+        contextLine.textContent = liveRunBase + ' · ' + crPanelLive.feeLine(t, fq);
+        sayPanel(_crT('panel.signing','Fee shown above — your wallet asks next …'), 'dim');
+        return crPanelLive.fire(t, liveKey).then(r => {
+          liveBusy = false;
+          sayPanel(r.msg, r.ok ? 'ok' : undefined);
+          refresh();
+        });
+      });
+    }).catch(e => {
+      /* Ein Wurf irgendwo in der Kette darf liveBusy nicht festnageln und
+       * nie stiller Fail sein — Gegenprobe der Gebuehren-Mutation hat genau
+       * diesen Pfad gefunden. */
+      liveBusy = false;
+      sayPanel('Arm-Pfad crashed: ' + String((e && e.message) || e));
+    });
   };
   clearBtn.onclick = () => {
     try { if(typeof crDetachRouteState === 'function') crDetachRouteState(overlay); } catch(_){}
@@ -36348,6 +36708,35 @@ function renderBlueRouteInputs(body, overlay, helpers){
     refresh();
   };
   closeBtn.onclick = () => {
+    /* v1.0.898 — Close trade bei Live-Quelle: ERST der Gegen-Swap ueber
+     * denselben Pfad (Mints getauscht, Menge = outAmount des Fills; Exit
+     * bleibt offen, auch bei safety-blocked auf der Eingabe-Seite), DANN
+     * das bisherige Schliessen der Route. Ohne Live-Fill ist der Klick
+     * exakt das heutige Paper-Close. */
+    try {
+      if(window.crPanelLive && crPanelLive.hasLiveFill(liveKey) && window.crWeiche && crWeiche.flagOn()){
+        if(liveBusy){ sayPanel(_crT('panel.busy','A live order is already in flight — wait for its verdict.')); return; }
+        liveBusy = true;
+        sayPanel(_crT('panel.closing','Counter-swap is being built — your wallet asks next …'), 'dim');
+        crPanelLive.closeTrade(liveKey).then(r => {
+          liveBusy = false;
+          sayPanel(r.msg, r.ok ? 'ok' : undefined);
+          if(!r.ok) return;          // Fill bleibt stehen — nichts wurde geschlossen
+          try {
+            if(window.cr && window.cr.blueLaser && typeof window.cr.blueLaser.closeRouteFromSettings === 'function'
+               && window.cr.blueLaser.closeRouteFromSettings(routeHit())){ /* geschlossen */ }
+            else {
+              if(typeof crClearRouteState === 'function') crClearRouteState(overlay);
+              if(window.cr && window.cr.blueLaser && typeof window.cr.blueLaser.disarm === 'function') window.cr.blueLaser.disarm(overlay, { clearTradeFields:true });
+            }
+          } catch(_){}
+          try { if(typeof toast === 'function') toast('Blue Route closed'); } catch(_){}
+          refresh();
+          updateRunLine();
+        }).catch(e => { liveBusy = false; sayPanel('Close-Pfad crashed: ' + String((e && e.message) || e)); });
+        return;
+      }
+    } catch(_){}
     let closed = false;
     try {
       if(window.cr && window.cr.blueLaser && typeof window.cr.blueLaser.closeRouteFromSettings === 'function'){
@@ -36363,6 +36752,11 @@ function renderBlueRouteInputs(body, overlay, helpers){
     try { if(typeof toast === 'function') toast('Blue Route closed'); } catch(_){}
     refresh();
   };
+
+  /* v1.0.898 — jetzt existiert alles: ARMED-Hook, Route-Hook, Erst-Stand. */
+  armedInput.addEventListener('change', updateRunLine);
+  routeSelect.addEventListener('change', updateRunLine);
+  try { updateRunLine(); } catch(_){}
 
   body.appendChild(section);
   return section;
