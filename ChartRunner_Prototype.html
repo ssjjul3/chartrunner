@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.898
-     LAST UPDATED:    2026-09-03  ·  v1.0.898 (S5a·PR2): ACTIVATION-PANEL → ECHTER CONNECTOR — DIE VORHANDENE UI WIRD VERDRAHTET, NICHT ERSETZT. Julians Leitplanke gilt weiter: kein neues Trade-UI-Element; alles hier haengt am BESTEHENDEN Activation-Panel (renderBlueRouteInputs) und an der v897-Weiche. (a) DIE RUN-ZEILE WIRD WAHRHEITSZEILE: Paper zeigt unveraendert „Run: <venue> · paper connector"; ist ROUTE=Market UND die ARMED-Checkbox an UND das globale ARM gesetzt (cr_arm_v1), holt das Panel BEIM ARMEN einen Quote (crPanelLive.armQuote → crTxApi.quote) und zeigt „JUPITER LIVE · GEBUEHR <bps/100> % (<Betrag>)" — die Gebuehr steht VOR dem Klick sichtbar im Panel, aus platform_fee{bps,amount_raw} des Quote-Echos. FEHLT platform_fee trotz Live, wird das Armen VERWEIGERT („Gebuehr nicht ausgewiesen") — Konsistenz mit der Worker-Philosophie: eine Gebuehr, die nicht ausgewiesen ist, wird nicht stillschweigend bezahlt. (b) SIZE = BETRAG IM INPUT-MINT (SOL bei Buy, Token bei Sell), nur Beschriftung + Deutung, kein Feld-Umbau: geparst wird float-frei ueber die v889-Rangfolge (_crParseBetrag; Sell-Decimals aus /v1/rpc/tokens via _crFetchTokens, unbekannte Decimals heissen ausdruecklich Roheingabe). SLIPPAGE GUARD % → slippageBps (leer = Default 50 bps). (c) ARM/UPDATE bei Live-Absicht ruft DIE WEICHE (sdk.market mit source.armed — derselbe eine Weg wie v897, KEIN zweiter Pfad; absichtlich OHNE price, damit ein Weiche-Nein hoechstens ein Null-No-Op ist und NIE eine ueberraschende Paper-Order); ohne globales ARM ist der Klick exakt das heutige Verhalten (Route-Metadaten, kein Trade). Route != Market bei Live-Absicht → ehrliche P3-Meldung im Panel. (d) CLOSE TRADE bei Live-Quelle baut den GEGEN-SWAP ueber denselben Pfad (Mints getauscht, Menge = outAmount des Fills; Exit-Prinzip: der Gegen-Swap fragt keine Arm-Gebuehr ab — Exit bleibt offen, auch bei safety-blocked auf der Eingabe-Seite, denn nur die AUSGABE-Seite blockt) und schliesst danach wie bisher. (e) FILLS → VORHANDENES JOURNAL (d.manual via _crJrnLoad/_crJrnSave, kein zweites Buchhaltungssystem): Quelle source:'live', sig, Preis (Chart-Preis = Trade-Preis, S3), Menge roh, Gebuehr roh; sichtbar ohne Renderer-Umbau ueber die notes-Zeile. Ein sig wird erst NACH /v1/tx/status beurteilt: Status nicht abrufbar heisst „gesendet, Status unbestaetigt — im Explorer pruefen", NIE „fehlgeschlagen"; ein Wallet-Reject dagegen ist ein sauberer Abbruch — Meldung, KEIN Journal-Eintrag. (f) FEHLERPFADE JE EINE KLARE PANEL-MELDUNG, nie stiller Fail: Quote-Fehler · safety-blocked (Grund/Details AUS der Worker-Antwort — der v897-Adapter reicht error/safety/cap jetzt UNVERKUERZT durch statt sie zu „swap-failed" einzudampfen) · Wallet-Reject · Status-/RPC-Ausfall. (g) GEPRUEFT: scripts/check_v898_panel_live_browser.cjs (Panel direkt gerendert und bedient: RUN-Zeilen-Wahrheit, Gebuehren-Verweigerung, genau EIN Adapter-Aufruf, Journal-live-Eintrag, Gegen-Swap-Mints, Reject ohne Journal, Paper-Bestand unangetastet, Slippage-Mapping); Gegenproben ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN: *.workers.dev ist aus der Sandbox nicht erreichbar — ob der AUSGEROLLTE Worker platform_fee wirklich traegt, misst Julian nach Merge (Schritt im PR; fehlt sie, sagt das Panel genau das).
+     CURRENT VERSION: v1.0.899
+     LAST UPDATED:    2026-09-03  ·  v1.0.899 (S5a·PR3): GLOBALES ARM IM WALLET-MODAL — DAS EINZIGE NEUE UI-STUECK DER GANZEN S5a-STRECKE, GENAU WIE GEPLANT. (a) DER ABSCHNITT im CHOOSE-WALLET-Modal (#crArmSection): Schalter „ARM · echtes Geld" mit KLARTEXT-WARNUNG (ein Fill ist ein echter Swap ueber deine Wallet; die Wallet fragt IMMER, der Worker signiert NIE), Feld SESSION-LIMIT in SOL (Default 0,1 — float-frei geparst ueber _crParseBetrag und als Lamports unter cr_arm_limit_v1; die v897-Weiche summiert Live-Fills dagegen und verweigert darueber mit Meldung, hier steht auch das bereits verbrauchte Sitzungs-Volumen), Anzeige der AKTIVEN WALLET. Der Schalter traegt cr_arm_v1 — dasselbe eine Bit, das die Weiche liest; loeschen = alles Paper (Rollback unveraendert). (b) ZWEISTUFIGKEIT, beide Richtungen sichtbar: ohne globales ARM ist die ARMED-Checkbox im Panel wirkungslos (heutiges Paper-Verhalten) und sagt das im Tooltip („global nicht scharf — ARM im Wallet-Fenster"); ohne Checkbox feuert trotz globalem ARM nichts (das war v897, Tor 2). (c) ZUSTANDS-GRAMMATIK (crArmGrammar, Teil der PRs, kein Nachtrag): globales ARM an → duenne GOLDENE AURA am Runner (im drawPlayer-Pass, dieselbe Stelle wie der Indicator-Ring) + GOLDRAND am Trust-Badge (CSS ueber body.cr-arm-live — unuebersehbar live) · Arm-Klick → Ladeanimation am Panel-Rahmen, EINRASTEN (kurzes Gold-Snap) erst nach der Wallet-Bestaetigung · ARMED-Quelle → sanfter 2-s-Puls am Status-Chip · Fill → Impact + schwebende P&L-/Mengen-Zahl ueber dem Stage · Cancel/Clear einer scharfen Quelle → Partikel-Zerfall. ALLES an crWeiche.flagOn() bzw. Live-Ereignisse gebunden: Paper sieht Pixel fuer Pixel aus wie heute — Live muss sich wertiger anfuehlen, nicht Paper anders. (d) GEPRUEFT: scripts/check_v899_arm_modal_browser.cjs (Modal-Schalter → cr_arm_v1, Limit-Parsing, Wallet-Anzeige, Tooltip-Zweistufigkeit, body-Klasse + Badge-Regel, Aura-Zeichnung als Verhaltenstest mit Stub-Context, Puls-Klasse, P&L-Element nach Live-Fill, Paper-Nullprobe); Gegenproben ROT/CRASH/GRUEN in der Commit-Message; Regressionen v897 + v898 gruen. NICHT GEMESSEN: kein Worker beruehrt, kein Endpunkt neu — reine Client-Nummer.
+      PREV  ·  v1.0.898 (S5a·PR2): ACTIVATION-PANEL → ECHTER CONNECTOR — DIE VORHANDENE UI WIRD VERDRAHTET, NICHT ERSETZT. Julians Leitplanke gilt weiter: kein neues Trade-UI-Element; alles hier haengt am BESTEHENDEN Activation-Panel (renderBlueRouteInputs) und an der v897-Weiche. (a) DIE RUN-ZEILE WIRD WAHRHEITSZEILE: Paper zeigt unveraendert „Run: <venue> · paper connector"; ist ROUTE=Market UND die ARMED-Checkbox an UND das globale ARM gesetzt (cr_arm_v1), holt das Panel BEIM ARMEN einen Quote (crPanelLive.armQuote → crTxApi.quote) und zeigt „JUPITER LIVE · GEBUEHR <bps/100> % (<Betrag>)" — die Gebuehr steht VOR dem Klick sichtbar im Panel, aus platform_fee{bps,amount_raw} des Quote-Echos. FEHLT platform_fee trotz Live, wird das Armen VERWEIGERT („Gebuehr nicht ausgewiesen") — Konsistenz mit der Worker-Philosophie: eine Gebuehr, die nicht ausgewiesen ist, wird nicht stillschweigend bezahlt. (b) SIZE = BETRAG IM INPUT-MINT (SOL bei Buy, Token bei Sell), nur Beschriftung + Deutung, kein Feld-Umbau: geparst wird float-frei ueber die v889-Rangfolge (_crParseBetrag; Sell-Decimals aus /v1/rpc/tokens via _crFetchTokens, unbekannte Decimals heissen ausdruecklich Roheingabe). SLIPPAGE GUARD % → slippageBps (leer = Default 50 bps). (c) ARM/UPDATE bei Live-Absicht ruft DIE WEICHE (sdk.market mit source.armed — derselbe eine Weg wie v897, KEIN zweiter Pfad; absichtlich OHNE price, damit ein Weiche-Nein hoechstens ein Null-No-Op ist und NIE eine ueberraschende Paper-Order); ohne globales ARM ist der Klick exakt das heutige Verhalten (Route-Metadaten, kein Trade). Route != Market bei Live-Absicht → ehrliche P3-Meldung im Panel. (d) CLOSE TRADE bei Live-Quelle baut den GEGEN-SWAP ueber denselben Pfad (Mints getauscht, Menge = outAmount des Fills; Exit-Prinzip: der Gegen-Swap fragt keine Arm-Gebuehr ab — Exit bleibt offen, auch bei safety-blocked auf der Eingabe-Seite, denn nur die AUSGABE-Seite blockt) und schliesst danach wie bisher. (e) FILLS → VORHANDENES JOURNAL (d.manual via _crJrnLoad/_crJrnSave, kein zweites Buchhaltungssystem): Quelle source:'live', sig, Preis (Chart-Preis = Trade-Preis, S3), Menge roh, Gebuehr roh; sichtbar ohne Renderer-Umbau ueber die notes-Zeile. Ein sig wird erst NACH /v1/tx/status beurteilt: Status nicht abrufbar heisst „gesendet, Status unbestaetigt — im Explorer pruefen", NIE „fehlgeschlagen"; ein Wallet-Reject dagegen ist ein sauberer Abbruch — Meldung, KEIN Journal-Eintrag. (f) FEHLERPFADE JE EINE KLARE PANEL-MELDUNG, nie stiller Fail: Quote-Fehler · safety-blocked (Grund/Details AUS der Worker-Antwort — der v897-Adapter reicht error/safety/cap jetzt UNVERKUERZT durch statt sie zu „swap-failed" einzudampfen) · Wallet-Reject · Status-/RPC-Ausfall. (g) GEPRUEFT: scripts/check_v898_panel_live_browser.cjs (Panel direkt gerendert und bedient: RUN-Zeilen-Wahrheit, Gebuehren-Verweigerung, genau EIN Adapter-Aufruf, Journal-live-Eintrag, Gegen-Swap-Mints, Reject ohne Journal, Paper-Bestand unangetastet, Slippage-Mapping); Gegenproben ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN: *.workers.dev ist aus der Sandbox nicht erreichbar — ob der AUSGEROLLTE Worker platform_fee wirklich traegt, misst Julian nach Merge (Schritt im PR; fehlt sie, sagt das Panel genau das).
       PREV  ·  v1.0.897 (S5a·PR1): DIE ARMED-WEICHE — MARKT-ORDERS KOENNEN ECHT WERDEN, AN GENAU EINER STELLE, OHNE EIN EINZIGES NEUES UI-ELEMENT. Julians Leitplanke (S5a, verbindlich): KEINE neue Trade-UI — diese Nummer verdrahtet nur die Weiche, UI-Zugang folgt in PR 2/3. (a) DER REALE ADAPTER: crRealAdapter.marketSwap({inputMint, outputMint, amountRaw, slippageBps}) — GET /v1/quote (die Gebuehr ist VOR dem Bau sichtbar) → POST /v1/tx/swap (unsignierte Tx; der Client baut und rechnet weiter NICHTS) → crSigner.signAndSend (die Wallet broadcastet selbst, Guard-immun) → {sig, inAmount, outAmount, feeRaw}. Jeder Fehlweg kommt als {error, detail} zurueck, nie als Wurf. Der Adapter ist EIN OBJEKT hinter ChartRunner.sdk.setRealSDK — setRealSDK(null) stellt den Ist-Zustand her; das v1.0.124-Wiring (wireModularFoundation) ueberschreibt den Geld-Adapter nicht mehr still mit der Spiel-Instanz (diese Bruecke las ohnehin niemand — gemessen: keine weiteren Aufrufer). (b) DIE WEICHE (crWeiche): real wird NUR gerufen, wenn ALLE VIER Tore offen sind — armedGlobal() (localStorage cr_arm_v1 === '1' UND Session-Volumen unter cr_arm_limit_v1, Default 0,1 SOL; die Weiche summiert Live-Fills und rechnet den bekannten SOL-Einsatz schon VOR dem Trade dagegen) · source.armed (der Aufrufer traegt den Live-Willen explizit — KEIN heutiger Aufrufer tut das, deshalb bleibt alles Bestehende Bit fuer Bit Paper) · badgeGate() (crTrustBadge.current(): ref.source === 'jupiter' UND effektives Alter <= 120 s UND Mint-gleich mit dem aktuellen Chart via crStoreMint — der Badge ist SCHALTBEDINGUNG; Binance-Charts sind per Definition nie ARMED-faehig) · crSigner.info().ready. Route !== 'Market' bei gewolltem ARM → ehrliche Meldung („wird erst mit P3 live — laeuft weiter als Paper"), KEIN stiller Fallback; bracket/ladder/oco/twap/limit sind dafuer am selben Weichenpunkt gewickelt, fuehren aber weiter NUR Paper aus. Faellt decide() um, ist die sichere Richtung Paper. (c) KEIN UI-ZUGANG in dieser Nummer: die Weiche ist nur programmatisch erreichbar (Konsole/Test) — genau deshalb ist der PR risikofrei mergebar und der Spion-Test beweisbar. crArm (v892, die SCHARF-Tafel) bleibt unberuehrt daneben stehen: die Tafel oeffnet ein Formular, die Weiche ruft den Adapter — zwei ausdruecklich getrennte Dinge, bis PR 2 sie am Activation-Panel zusammenfuehrt. (d) GEPRUEFT: scripts/check_v897_armed_weiche_browser.cjs — der Spion ersetzt den Adapter, die GESAMTE Ability-Matrix mit je einem geschlossenen Tor ruft ihn NIE; alles offen → GENAU EIN Aufruf. Dazu Limit-, Badge-, Wallet-Reject- und Ende-zu-Ende-Pfad gegen gemockte Worker-Antworten. Gegenproben nach ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN, ausdruecklich: diese Sandbox erreicht *.workers.dev nicht — die platform_fee-Form von /v1/quote und das Verhalten des AUSGEROLLTEN Workers verifiziert Julian nach dem Merge (Schritte im PR); der erste echte Micro-Trade kommt erst nach PR 3, Julians Klick, Julians Phantom.
       PREV  ·  v1.0.896 (S3): KANONISCHE SERIE + TRUST-BADGE + PREIS-TAG — DIE EHRLICHKEIT DES STORES (v5.15: ref{source,usd,age_s,block_id} + gated an jeder /v1/ohlc-Antwort) WIRD SICHTBAR, UND ZWEI REGELN STEHEN AB JETZT, AN DENEN ACT II HAENGT. (a) EIN TOKEN = EIN CHART: crSeriesResolver ist die EINE kleine, zentrale Funktion (Mint → {serie:'ohlc-store', preis:'tx'}), damit S5 spaeter denselben Weg geht; Schluessel bleibt crStoreMint (v894), hier wird nichts Zweites erfunden. Fuer sol-Mints ist der ohlc-store die kanonische Serie — PUNKT. Der GT-Fallback im Sol-Zweig von loadCandles (stand seit v859: „GT bleibt Fallback fuer ungetrackte Mints") ist WEG: er hob bei leerem Store still eine ANDERE Quelle in den Chart, und der Spieler sah eine GT-Kurve unter einem Preis aus einer anderen Preisfamilie. Liefert der Store nichts, sagt der Chart das jetzt ehrlich MIT Quelle („sol-Mint · ohlc-store leer/nicht erreichbar · seeded (NOT LIVE)"); der v860-AUTO-UPGRADE laedt um, sobald die kanonische Serie liefert — der Track-Ping direkt darueber hat den Store ja gerade geweckt. crFetchSolanaTokenCandles bleibt fuer den Pair-Pfad (A÷B, eigenes synthetisches Asset) bestehen; CEX-Symbole (Binance-Klines) sind ausdruecklich NICHT Teil des Umbaus. (b) CHART-PREIS = TRADE-PREIS: der Topbar-Preis (#lastPx) bindet fuer sol-Mints an tx /v1/price (Jupiter Price V3 ueber den eigenen Worker, crTxApi.price — derselbe Weg wie v891) statt an den letzten Close. Der price-STRING des Workers wird UNVERAENDERT angezeigt ('$' davor ist Formatierung, kein Ersetzen) — fmtPrice haette aus 0.19594… still 0.20 gemacht, genau die Divergenz, die S3 abschafft. Ein Mint in missing zeigt „—" mit Tooltip „keine Jupiter-Referenz", NIE den letzten bekannten Wert als vermeintlich aktuell; ein Worker-Ausfall ebenso „—" mit anderem Grund. Polling 1×/10s (Worker-Cache 10s, kein eigener Cache-Layer); im RUN gehoert die Zahl weiter der Kerze unter dem Laeufer (Spielmechanik, unberuehrt), und die beiden alten Kerzen-Schreiber (finalizeCandleLoad, Live-Feed-Sol-Tick) treten fuer sol-Mints zurueck statt den Tag zu ueberschreiben. (c) TRUST-BADGE: dezent unten links im Chart (#stage, z:4), KEIN neues Topbar-Element (Budget max 5 unangetastet). Mapping (crTrustBadgeModel, pur): ref.source 'jupiter' → „✓ deckt sich mit Jupiter · block <block_id>" (Tooltip: usd-Referenz + age_s), 'median' → „~ interner Median (Jupiter-Referenz veraltet/fehlt)", 'none' ODER fehlendes ref → „unbestaetigt" (vor v5.15 WAR die Serie unverifiziert). gated>0 versteckt sich nicht: der Tooltip nennt die Zahl in JEDEM Zustand („<n> Kerzen ans Band gekappt") — kein Neuzeichnen, kein Warn-Popup, nur auffindbare Wahrheit. Der Badge ist ZUSTAND: _crRunOhlcCandles meldet ref+gated mit jeder Antwort (auch limit=3-Ticks), sync() haengt an crSetMarketSource wie Live-Flag und Arm-Anzeige; CEX-Serien tragen ihn NIE. (d) NICHT GEMESSEN, ausdruecklich: diese Sandbox erreicht *.workers.dev nicht — der Live-Vertrag (WIF ref.source jupiter/gated 0, JUP gated 40, 3 Mints in missing) ist Julians Messung vom 31.08., nicht eine eigene; die Verifikation nach Merge macht Julian mit der Extension (Schritte im PR). Geprueft ist der CLIENT gegen gemockte Worker-Antworten: scripts/check_v896_kanonische_serie_browser.cjs, Gegenproben nach ROT/CRASH/GRUEN in der Commit-Message.
       PREV  ·  v1.0.895: VIER UI-ANPASSUNGEN AUS JULIANS LISTE — ZWEI PLATZTAUSCHE, EIN GEMESSENER KONTRASTFEHLER, EINE LISTE, DIE ZU SPAET LUD. Alles Oberflaeche, kein Handelsweg beruehrt. (a) BOT TERMINAL UND EINSTELLUNGEN TAUSCHEN DIE PLAETZE, auf BEIDEN Oberflaechen: Desktop-Grid (#osGrid, CSS order) und Dock (#crOSDockFixed, DOM-Reihenfolge). Beim Grid reichte es NICHT, settings zu verschieben — bot hatte gar keine eigene order und fiel in den order:99-Eimer ans Ende; bot bekommt jetzt die 7, die settings hatte, settings die 8. data-prog bleibt ueberall gleich, kein Handler angefasst. (b) TOKENOMICS-AUFKLAPP AUS DER WALLET-APP ENTFERNT (#win-walletapp, direkt unter dem Add-Token-Feld). Es gibt vier <details class="cr-tok">; entfernt ist GENAU EINE. Die Phone-Wallet und der Run-Drawer behalten ihre Tokenomics-Bloecke, und #crVaultPanel teilt sich nur die KLASSE — das ist die Vault-Sync-Box, kein Tokenomics. (c) SESSIONS-APP WAR IM BLACK-THEME UNLESBAR, und zwar gemessen, nicht geschaetzt: Kontrast der .cr-tok-Chrome (Titel, Untertitel, "Session"/"Path", Fusszeile) 1.08:1 im Black-Theme (mono) und 1.32:1 im ASCII-Theme — 1.08 heisst dieselbe Farbe. URSACHE: der App-Styleguide (v1.0.151) setzt auf .os-window .os-wbody die Tinte HELLER Interieurs (--cr-app-text:#20231d) und erzwingt sie mit !important; .cr-tok arbeitet durchgehend mit color:inherit und erbt sie auf dunklem Fenstergrund. Dieselbe Klasse, die v1.0.862 im Intel-Fenster per Helligkeitsmessung geloest hat. DIE MESSUNG FAND EINEN ZWEITEN, GROESSEREN BEFUND, den Julians Screenshot nicht zeigen konnte: im gerenderten Markdown-Blatt (.cr-session-rendered, in JEDEM Theme dunkel) standen die h2-Abschnittsueberschriften in ALLEN FUENF Themes bei 1.20:1 und der Info-Satz "Use New to create…" bei 3.77:1 — also auch auf Platinum, wo niemand einen Themefehler vermutet haette. Deshalb zwei Bloecke: (A) theme-unabhaengig die eigene Palette des Blattes zurueck, (B) nur fuer die dunklen Themes (mono, ascii) die .cr-tok-Chrome auf die Theme-Vordergrundfarbe. platinum/bw/frontier messen 12–16:1 und bleiben unberuehrt. NACH dem Patch faellt in mono, ascii, bw und frontier KEIN Element mehr unter 4.5:1. (d) INTEL: ZURUECK-WEG AUS DEM PROFIL UND EINE BESTENLISTE, DIE BEIM OEFFNEN LAEDT. Der Drill-down (loadWallet) setzte _tab hart auf "overview" und vergass, wo er herkam — aus einem Profil fuehrte kein Weg zurueck in die Liste. loadWallet nimmt jetzt die Herkunft entgegen, das Profil traegt ein "‹ Bestenliste"/"‹ Folge ich"/"‹ zurueck"-Control (i18n in DE/ES/ZH), und der Weg zurueck LOESCHT _sel — sonst zeigte ein spaeterer Klick auf "Uebersicht" wieder das alte Profil. Und die Liste fuellte sich erst beim Antippen einzelner Profile, aus zwei Gruenden mit derselben Form: renderRuns rief crGhost.refresh() und las den Cache in derselben Zeile SYNCHRON aus (der Abruf landete danach, ohne Neuzeichnen), und knownSet() ist die Vereinigung aus Follows, Watchlist UND _sel — jedes geoeffnete Profil legte also eine Adresse dazu. Geladen wird jetzt beim Oeffnen der View (_primeBoard), und der crGhost:updated-Event zeichnet nach. Das refresh() in renderRuns MUSSTE dabei weg: es hat nur einen _inflight-Riegel, keine Zeitdrossel — zusammen mit dem Repaint-Listener waere es eine RPC-Endlosschleife gewesen. Neugezeichnet wird nur, wenn die betroffene Unterliste gerade sichtbar ist. (e) GEMESSEN wurde im echten Chromium gegen die Datei (Kontrast pro Textknoten in allen fuenf Themes, vor und nach dem Patch); Gegenproben nach ROT/CRASH/GRUEN in der Commit-Message. NICHT gemessen und ausdruecklich nicht behauptet: nichts an dieser Nummer beruehrt einen Worker-Endpunkt.
@@ -15833,6 +15834,19 @@ window.crWallet = (function(){
        * gereicht. Die Bau-Funktionen darunter bleiben, die Tafel nutzt
        * denselben Weg (crTxApi.ata). */
       + '</div>'
+      /* v1.0.899 (S5a·PR3) — GLOBALES ARM. Das einzige neue UI-Stueck der
+       * S5a-Strecke. Der Schalter traegt cr_arm_v1 — dasselbe eine Bit, das
+       * die v897-Weiche liest; das Limit liegt als Lamports unter
+       * cr_arm_limit_v1 und wird von der Weiche gegen die Live-Fill-Summe
+       * gehalten. Warnung in Klartext, keine Juristensprache. */
+      + '<div id="crArmSection" style="margin-top:12px;border:1px solid rgba(212,164,60,.55);border-radius:8px;padding:10px 11px;background:rgba(212,164,60,.06)">'
+      + '<label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:800;color:var(--wp-fg)">'
+      + '<input type="checkbox" id="crArmGlobalToggle" style="width:16px;height:16px;accent-color:#d4a43c;margin:0"> ARM · echtes Geld</label>'
+      + '<p id="crArmWarn" style="margin:7px 0 9px;font-size:11px">Scharf heißt: ein Fill im Activation-Panel ist ein <b>echter Swap</b> über deine Wallet — echtes SOL, echte Gebühren, kein Rückgängig. Die Wallet fragt vor jedem Trade, der Worker signiert nie. Schalter aus (oder <code>cr_arm_v1</code> löschen) = alles Paper.</p>'
+      + '<label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--wp-dim)">Session-Limit (SOL gesamt)'
+      + '<input id="crArmLimitInput" inputmode="decimal" style="flex:1;min-width:0;border:1px solid var(--wp-line);border-radius:6px;background:var(--wp-btn);color:var(--wp-fg);padding:6px 8px;font:inherit;text-align:right"></label>'
+      + '<p id="crArmInfo" style="margin:8px 0 0;font-size:10px"></p>'
+      + '</div>'
       + '<p id="crWalletPickerProbe" style="display:none"></p>'
       + '<div class="wpFoot">'
       + '<button type="button" data-cr-wallet-choice="disconnect">Disconnect</button>'
@@ -15884,6 +15898,58 @@ window.crWallet = (function(){
       }
     });
     document.body.appendChild(m);
+    /* v1.0.899 — ARM-Sektion: Schalter + Limit haengen an change-Events,
+     * die laufen nicht ueber den Button-Delegator oben. */
+    var armTgl = m.querySelector('#crArmGlobalToggle');
+    if(armTgl) armTgl.addEventListener('change', function(){
+      try {
+        if(armTgl.checked) localStorage.setItem('cr_arm_v1', '1');
+        else localStorage.removeItem('cr_arm_v1');
+      } catch(_){}
+      try { if(window.crArmGrammar) crArmGrammar.sync(); } catch(_){}
+      try { if(typeof crNotify === 'function') crNotify(armTgl.checked
+        ? 'ARM · echtes Geld ist GLOBAL SCHARF — die ARMED-Checkbox im Activation-Panel kann jetzt echte Market-Swaps ausloesen'
+        : 'ARM aus — alles Paper', armTgl.checked ? 'live' : 'sim'); } catch(_){}
+      _walletPickerArmSync();
+    });
+    var armLim = m.querySelector('#crArmLimitInput');
+    if(armLim) armLim.addEventListener('change', function(){
+      var p = (typeof _crParseBetrag === 'function') ? _crParseBetrag(armLim.value, 9) : { error: 'Parser nicht geladen' };
+      if(p.error){
+        var info = m.querySelector('#crArmInfo');
+        if(info) info.textContent = 'Limit: ' + p.error + ' — es gilt weiter das bisherige.';
+        return;
+      }
+      try { localStorage.setItem('cr_arm_limit_v1', p.raw); } catch(_){}
+      _walletPickerArmSync();
+    });
+  }
+  /* v1.0.899 — den ARM-Abschnitt auf den ECHTEN Zustand stellen: das eine
+   * Bit (cr_arm_v1), das Limit in SOL, die aktive Wallet, das verbrauchte
+   * Sitzungs-Volumen. Gelesen wird ueber die Weiche — keine zweite
+   * Wahrheitsquelle neben crWeiche. */
+  function _walletPickerArmSync(){
+    var m = document.getElementById('crWalletPickerModal');
+    if(!m) return;
+    var tgl = m.querySelector('#crArmGlobalToggle');
+    var lim = m.querySelector('#crArmLimitInput');
+    var info = m.querySelector('#crArmInfo');
+    var on = false, limRaw = 100000000, vol = 0;
+    try { if(window.crWeiche){ on = crWeiche.flagOn(); limRaw = crWeiche.limitLamports(); vol = crWeiche.sessionLamports(); } } catch(_){}
+    if(tgl) tgl.checked = on;
+    if(lim && document.activeElement !== lim)
+      lim.value = (typeof _crRawToUi === 'function' ? (_crRawToUi(String(limRaw), 9) || '0,1') : '0,1');
+    if(info){
+      var addr = '';
+      try { var a = window.crSigner && crSigner.active(); if(a && a.address) addr = String(a.address); } catch(_){}
+      var wTxt = addr
+        ? ('Aktive Wallet: ' + addr.slice(0, 4) + '…' + addr.slice(-4))
+        : 'Keine Wallet verbunden — ohne signierfähige Wallet feuert die Weiche ohnehin nicht.';
+      var vTxt = '';
+      try { vTxt = ' · Sitzungs-Volumen: ' + ((typeof _crFmtSol === 'function') ? _crFmtSol(vol) : (vol + ' Lamports')); } catch(_){}
+      info.textContent = wTxt + vTxt + (on ? ' · SCHARF' : ' · Paper');
+    }
+    try { if(window.crArmGrammar) crArmGrammar.sync(); } catch(_){}
   }
   function _walletPickerRender(){
     var m = document.getElementById('crWalletPickerModal');
@@ -15933,6 +15999,7 @@ window.crWallet = (function(){
         ? ('Connected with ' + (adapter() || 'Wallet') + ': ' + truncated() + netzTxt)
         : 'Pick the signer for this ChartRunner session. One wallet is active at a time.';
     }
+    try { _walletPickerArmSync(); } catch(_){}
   }
   /* ── v1.0.869 · Devnet-Probe ────────────────────────────────────────────
    * Der erste vollstaendige Durchlauf des neuen Signierwegs:
@@ -35293,6 +35360,133 @@ window.crPanelLive = (function(){
            _msgForError: _msgForError };
 })();
 
+/* =========================================================================
+ * S5a · PR 3 (v1.0.899) — crArmGrammar: die Zustands-Grammatik.
+ *
+ * Aus dem Juice-Konzept, Teil der PRs, kein Nachtrag: der SCHARFE Zustand
+ * ist unuebersehbar, der Paper-Zustand sieht Pixel fuer Pixel aus wie
+ * heute. Jede Wirkung haengt an crWeiche.flagOn() bzw. an einem
+ * Live-Ereignis — es gibt keinen Effekt, den Paper je zu sehen bekommt.
+ *
+ *   global ARM an  → body.cr-arm-live: duenne goldene Aura am Runner
+ *                    (drawAura, im drawPlayer-Pass) + Goldrand am
+ *                    Trust-Badge (CSS-Regel, kein JS-Gefummel am Badge).
+ *   Arm-Klick      → .cr-arm-loading am Panel-Rahmen (Lauflicht),
+ *                    Einrasten (.cr-arm-snapped) erst nach der
+ *                    Wallet-Bestaetigung — verdrahtet im Panel.
+ *   ARMED-Quelle   → .cr-armed-pulse am Status-Chip, sanfter 2-s-Puls.
+ *   Fill           → fillBurst(): Impact + schwebende Zahl ueber dem Stage.
+ *   Cancel/Clear   → particleDecay(): kurzer Gold-Zerfall am Element.
+ * ========================================================================= */
+window.crArmGrammar = (function(){
+  'use strict';
+  var GOLD = '#d4a43c';
+
+  function _css(){
+    if(document.getElementById('crArmGrammarCss')) return;
+    var s = document.createElement('style');
+    s.id = 'crArmGrammarCss';
+    s.textContent = ''
+      + 'body.cr-arm-live #crTrustBadge{border-color:' + GOLD + ' !important;'
+      +   'box-shadow:0 0 9px rgba(212,164,60,.5)}'
+      + '@keyframes crArmPulse{0%,100%{box-shadow:0 0 0 0 rgba(212,164,60,.55)}'
+      +   '50%{box-shadow:0 0 0 6px rgba(212,164,60,0)}}'
+      + '.cr-armed-pulse{animation:crArmPulse 2s ease-in-out infinite;border-color:' + GOLD + ' !important;color:' + GOLD + ' !important}'
+      + '@keyframes crArmLoad{0%{background-position:0% 50%}100%{background-position:200% 50%}}'
+      + '.cr-arm-loading{border-color:' + GOLD + ' !important;'
+      +   'background-image:linear-gradient(90deg,rgba(212,164,60,0) 0%,rgba(212,164,60,.16) 50%,rgba(212,164,60,0) 100%) !important;'
+      +   'background-size:200% 100% !important;animation:crArmLoad 1.1s linear infinite}'
+      + '.cr-arm-snapped{border-color:' + GOLD + ' !important;box-shadow:0 0 0 2px rgba(212,164,60,.55),0 0 16px rgba(212,164,60,.4);'
+      +   'transition:box-shadow .18s ease-out}'
+      + '@keyframes crArmPnl{0%{transform:translate(-50%,0);opacity:0}12%{transform:translate(-50%,-8px) scale(1.12);opacity:1}'
+      +   '100%{transform:translate(-50%,-64px) scale(1);opacity:0}}'
+      + '.crArmPnl{position:absolute;left:50%;top:38%;z-index:60;pointer-events:none;'
+      +   'color:' + GOLD + ';font:900 20px ui-monospace,Menlo,monospace;text-shadow:0 0 10px rgba(212,164,60,.65);'
+      +   'animation:crArmPnl 1.6s ease-out forwards}'
+      + '.crArmDot{position:fixed;width:4px;height:4px;border-radius:50%;background:' + GOLD + ';z-index:100300;'
+      +   'pointer-events:none;transition:transform .6s ease-out,opacity .6s ease-out}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  /* Der eine Anzeigen-Abgleich: body-Klasse aus dem einen Bit. Alles
+   * Weitere (Badge-Goldrand) haengt als CSS-Regel daran. */
+  function sync(){
+    _css();
+    var on = false;
+    try { on = !!(window.crWeiche && crWeiche.flagOn()); } catch(_){}
+    try { document.body.classList.toggle('cr-arm-live', on); } catch(_){}
+    return on;
+  }
+
+  /* Die duenne goldene Aura am Runner — gerufen aus drawPlayer, an
+   * derselben Stelle wie der Indicator-Ring. Zeichnet NUR, wenn das
+   * globale ARM steht; Paper bekommt keinen einzigen Pfad. */
+  function drawAura(c, sx, sy){
+    var on = false;
+    try { on = !!(window.crWeiche && crWeiche.flagOn()); } catch(_){}
+    if(!on || !c) return false;
+    try {
+      var t = performance.now() / 1000;
+      var r = 15 + Math.sin(t * 2.2) * 1.5;
+      c.save();
+      var grd = c.createRadialGradient(sx, sy, 3, sx, sy, r * 1.5);
+      grd.addColorStop(0, 'rgba(212,164,60,.30)');
+      grd.addColorStop(0.6, 'rgba(212,164,60,.12)');
+      grd.addColorStop(1, 'rgba(212,164,60,0)');
+      c.fillStyle = grd;
+      c.beginPath(); c.arc(sx, sy, r * 1.5, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = 'rgba(212,164,60,.75)';
+      c.lineWidth = 1.25;
+      c.beginPath(); c.arc(sx, sy, r, 0, Math.PI * 2); c.stroke();
+      c.restore();
+    } catch(_){}
+    return true;
+  }
+
+  /* Fill-Impact: schwebende Zahl ueber dem Stage. text z. B. '+284,74 …'. */
+  function fillBurst(text){
+    _css();
+    try {
+      var host = document.getElementById('stage') || document.body;
+      var el = document.createElement('div');
+      el.className = 'crArmPnl';
+      el.textContent = String(text || 'LIVE FILL');
+      host.appendChild(el);
+      setTimeout(function(){ try { el.remove(); } catch(_){} }, 1700);
+      return el;
+    } catch(_){ return null; }
+  }
+
+  /* Partikel-Zerfall am Element (Cancel/Clear einer scharfen Quelle). */
+  function particleDecay(anchorEl){
+    _css();
+    try {
+      var r = anchorEl && anchorEl.getBoundingClientRect
+        ? anchorEl.getBoundingClientRect()
+        : { left: innerWidth / 2, top: innerHeight / 2, width: 0, height: 0 };
+      var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      for(var i = 0; i < 12; i++){
+        var d = document.createElement('div');
+        d.className = 'crArmDot';
+        d.style.left = cx + 'px'; d.style.top = cy + 'px';
+        document.body.appendChild(d);
+        (function(dot){
+          var ang = Math.random() * Math.PI * 2, dist = 22 + Math.random() * 34;
+          requestAnimationFrame(function(){
+            dot.style.transform = 'translate(' + (Math.cos(ang) * dist) + 'px,' + (Math.sin(ang) * dist) + 'px)';
+            dot.style.opacity = '0';
+          });
+          setTimeout(function(){ try { dot.remove(); } catch(_){} }, 700);
+        })(d);
+      }
+      return true;
+    } catch(_){ return false; }
+  }
+
+  try { sync(); } catch(_){}
+  return { sync: sync, drawAura: drawAura, fillBurst: fillBurst, particleDecay: particleDecay, GOLD: GOLD };
+})();
+
 // v0.8k#18 — Shared helpers used by the new ability lineup.
 // toggleRunTrail mirrors the old T-tap behavior (now on slot 1). It keeps the
 // menu-drawer checkbox and pill-switch in sync via syncOverlayUI.
@@ -36455,6 +36649,17 @@ function renderBlueRouteInputs(body, overlay, helpers){
   const updateRunLine = () => {
     const live = window.crPanelLive && crPanelLive.liveIntent(routeSelect.value, armedInput.checked);
     const seq = ++_runSeq;
+    /* v1.0.899 — Zweistufigkeit sichtbar + Grammatik: ohne globales ARM
+     * sagt der Tooltip, WARUM die Checkbox Paper bleibt; eine scharfe
+     * ARMED-Quelle pulsiert sanft (2 s). Paper ohne Haken: kein Titel,
+     * kein Puls — Pixel fuer Pixel wie heute. */
+    try {
+      if(window.crArmGrammar) crArmGrammar.sync();
+      armedLabel.title = (armedInput.checked && !(window.crWeiche && crWeiche.flagOn()))
+        ? _crT('panel.notGlobal','global nicht scharf — ARM · echtes Geld sitzt im Wallet-Fenster (Choose wallet); diese Checkbox bleibt bis dahin Paper, das heutige Verhalten')
+        : '';
+      status.classList.toggle('cr-armed-pulse', !!live && armedInput.checked);
+    } catch(_){}
     if(!live){
       contextLine.textContent = paperRunText;
       if(sizeLabelEl) sizeLabelEl.textContent = 'Size';
@@ -36685,8 +36890,20 @@ function renderBlueRouteInputs(body, overlay, helpers){
         }
         contextLine.textContent = liveRunBase + ' · ' + crPanelLive.feeLine(t, fq);
         sayPanel(_crT('panel.signing','Fee shown above — your wallet asks next …'), 'dim');
+        /* v1.0.899 — Ladeanimation am Rahmen, solange die Order unterwegs
+         * ist; EINGERASTET (Gold-Snap) wird erst nach der Wallet-
+         * Bestaetigung, ein Fill bekommt den Impact + die schwebende Zahl. */
+        try { section.classList.add('cr-arm-loading'); } catch(_){}
         return crPanelLive.fire(t, liveKey).then(r => {
           liveBusy = false;
+          try { section.classList.remove('cr-arm-loading'); } catch(_){}
+          if(r.ok){
+            try {
+              section.classList.add('cr-arm-snapped');
+              setTimeout(() => { try { section.classList.remove('cr-arm-snapped'); } catch(_){} }, 1400);
+              if(window.crArmGrammar) crArmGrammar.fillBurst('LIVE FILL · ' + String(sideSelect.value || '').toUpperCase());
+            } catch(_){}
+          }
           sayPanel(r.msg, r.ok ? 'ok' : undefined);
           refresh();
         });
@@ -36696,10 +36913,17 @@ function renderBlueRouteInputs(body, overlay, helpers){
        * nie stiller Fail sein — Gegenprobe der Gebuehren-Mutation hat genau
        * diesen Pfad gefunden. */
       liveBusy = false;
+      try { section.classList.remove('cr-arm-loading'); } catch(_){}
       sayPanel('Arm-Pfad crashed: ' + String((e && e.message) || e));
     });
   };
   clearBtn.onclick = () => {
+    /* v1.0.899 — Partikel-Zerfall NUR beim Entschaerfen einer scharfen
+     * Quelle (globales ARM + Haken); Paper-Clear sieht aus wie immer. */
+    try {
+      if(armedInput.checked && window.crWeiche && crWeiche.flagOn() && window.crArmGrammar)
+        crArmGrammar.particleDecay(clearBtn);
+    } catch(_){}
     try { if(typeof crDetachRouteState === 'function') crDetachRouteState(overlay); } catch(_){}
     try {
       if(window.cr && window.cr.blueLaser && typeof window.cr.blueLaser.disarm === 'function') window.cr.blueLaser.disarm(overlay, { detachOnly:true });
@@ -36722,6 +36946,7 @@ function renderBlueRouteInputs(body, overlay, helpers){
           liveBusy = false;
           sayPanel(r.msg, r.ok ? 'ok' : undefined);
           if(!r.ok) return;          // Fill bleibt stehen — nichts wurde geschlossen
+          try { if(window.crArmGrammar) crArmGrammar.fillBurst('CLOSED · LIVE'); } catch(_){}
           try {
             if(window.cr && window.cr.blueLaser && typeof window.cr.blueLaser.closeRouteFromSettings === 'function'
                && window.cr.blueLaser.closeRouteFromSettings(routeHit())){ /* geschlossen */ }
@@ -53712,6 +53937,12 @@ function drawPlayer(){
   const sx = sX(player.wx) + (Math.random()-0.5)*camera.shake;
   const sy = priceToY(player.py) - player.h/2 + (Math.random()-0.5)*camera.shake;
   const dashing = performance.now()/1000 < player.dashUntil;
+
+  /* v1.0.899 (S5a·PR3) — duenne goldene Aura, NUR bei globalem ARM
+   * (cr_arm_v1): der scharfe Zustand ist am Runner unuebersehbar.
+   * drawAura prueft crWeiche.flagOn() selbst und zeichnet auf Paper
+   * keinen einzigen Pfad — dieselbe Stelle wie der Indicator-Ring. */
+  try { if(window.crArmGrammar) crArmGrammar.drawAura(ctx, sx, sy); } catch(_){}
 
   // v0.8M#13 — Indicator-rider variant. When _onIndicator is set (the
   // flight-magnet snapped or a click-spawn landed on a poly), draw a
