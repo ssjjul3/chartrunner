@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.902
-     LAST UPDATED:    2026-09-03  ·  v1.0.902 (S5a.2·Block B): ZUEND-FX FUER HOTKEY 2 & 3 — REINER JUICE-PASS, KEINE NEUE LOGIK AM TRADE-PFAD, KEINE NEUE GAMEPLAY-REGEL. Das neue Modul crZuendFx kennt exakt zwei Wirkungsarten: Aufrufe der SECHS vorhandenen Juice-Helfer (spawnParticles/spawnFloat/screenFlash/showBanner/hitStop/confettiBurst — keiner neu erfunden; screenFlash bekam nur einen optionalen Farbparameter 'blue', Default bitgleich der alte rote Flash) und OVERLAY-REQUESTS: Felder (fxBorn/fxSnap) auf den anchorLine-Objekten, die drawAnchorLines liest — das Modul fasst die Leinwand NIE an (kein einziges ctx. darin, per Grep-Test abgesichert; der Chart zeichnet, Hard Rule 4). (a) B1 · HOTKEY 2 (Red Laser) ZUENDET MIT LADUNG: beim Commit ein radialer Lade-Ring am RUNNER (spawnParticles an sX(player.wx)/priceToY(player.py)), die platzierte Linie FAEHRT von links nach rechts aus (280 ms, lineTo(W*fxP) im Renderer) und RASTET mit hitStop(40) + kurzem Snap-Glow ein (setTimeout auf das Ausfahr-Ende, nicht auf den Klick — der vorhandene v0.9.16-Klick-hitStop bleibt daneben stehen). Das Preis-Label der freien HLine pulsiert schneller, je naeher der Preis (Frequenz ~ 1/Distanz, gekappt 0,5–6 Hz); unter 0,3 % Distanz kommt ein kleiner Wackler dazu. KREUZT der Chart-Preis die fertige Linie (Seitenwechsel-Erkennung im Renderer, panelStick ausgenommen): Funken-Burst an der Kreuzung (x = juengste Kerze) + kurzer BLAUER screenFlash — je Linie hoechstens alle 2 s, der Flash global hoechstens alle 1,5 s (Budget, kein Spam; der zentrale FX-Scheduler ist Block D). (b) B2 · HOTKEY 3 (Aktivierungs-Laser) RASTET DIE ORDER-EBENE EIN: Order-Linien (tradeKind) fahren beim Zuenden aus wie B1; bei tradeGroup-PAAREN (TWAP a1/a2, Iceberg hi/lo) NACHEINANDER (Stagger 170 ms), Einrasten mit Puls, dazu kurz showBanner('ARMED') (gedrosselt 1,2 s). Die FARBE FOLGT DER ROUTE ueber DIESELBE Tabelle wie der Renderer: TRADE_PALETTE ist aus drawAnchorLines als CR_TRADE_PALETTE auf Top-Level gezogen (eine Farbtafel, keine zweite). Zwischen den beiden Linien eines Paars ATMET eine dezente Zone (Alpha 0,035–0,065) mit feinem LICHT-SWEEP (3-s-Lauf) als „aktiv"-Signal — gezeichnet im Renderer, erst wenn beide Linien fertig ausgefahren sind. RE-ROUTE/DRAG einer Order-Linie oder eines Brackets (mouseup-Commit): Partikel-Schweif + „→ aktualisiert"-Float; CANCEL (Delete auf eine HLine): kleiner Partikel-Zerfall, kein Drama. (c) REDUCED-MOTION respektiert an JEDER Stelle (crZuendFx.calm, matchMedia prefers-reduced-motion): Ausfahrt sofort fertig, kein hitStop, keine Partikel, kein Flash, Label statisch, Zone statisch ohne Sweep — nur der informative „→ aktualisiert"-Float bleibt (Information, nicht Bewegung). Wiederhergestellte Linien (Snapshot) haben kein fxBorn und fahren NICHT aus — FX gibt es nur fuer frisch gezuendete. (d) GEPRUEFT: scripts/check_v902_zuendfx_browser.cjs — Ausfahren/Einrasten am echten commitLaserSingleClick, Stagger am echten TWAP-Commit, ARMED-Banner nur fuer Order-Linien (gedrosselt), Kreuzer-FX + blauer Flash mit Drossel, Re-Route-/Cancel-FX, calm-Nullproben unter emuliertem reduced-motion, und der Grep-Test „kein ctx. im FX-Modul". Gegenproben ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN: kein Worker, kein Endpunkt — reine Client-Optik; das Spielgefuehl prueft Julian nach Merge am Telefon (Paper reicht, Schritte im PR).
+     CURRENT VERSION: v1.0.903
+     LAST UPDATED:    2026-09-03  ·  v1.0.903 (S5a.2·Block C+D): WIN/LOSS-FX + QUERSCHNITT — REINER JUICE-PASS, KEINE NEUE LOGIK AM TRADE-PFAD, KEINE NEUE GAMEPLAY-REGEL. Das neue Modul crWinLossFx kennt wie crZuendFx nur zwei Wirkungsarten: Aufrufe der SECHS vorhandenen Juice-Helfer und Overlay-Requests (hier: ein Runner-Bob-Feld, das drawPlayer als reinen Screen-Y-Versatz liest — die Physik player.py bleibt unberuehrt). Kein ctx. im Modul (Grep-Test), die Leinwand fasst es nie an. (a) C1 · KLEINER FILL IM PLUS (winSmall): gruenes P&L-spawnFloat (steigt), Runner-Mini-Sprung (Halb-Sinus-Bogen nach oben), dezenter gruener screenFlash ueber das Budget; skaliert mit Groesse. Verdrahtet am Breakeven-Cross des Trailing-Stops (der bestehende Float/Partikel-Weg laeuft jetzt durch diesen einen Helfer, toast bleibt). (b) C2 · TP GETROFFEN (winTP): showBanner('TAKE PROFIT ✓') + Funken an der Trefferlinie + hitStop; Runner springt hoeher. (c) C3 · GROSSER WIN (winBig) ab Schwelle CR_BIG_WIN_PCT (Default 20 % des Start-Equity): confettiBurst + goldenes „BIG WIN"-Banner mit Prozent-Untertitel. Selten — das FX-Budget haelt es selten. (d) C4 · VERLUST WUERDEVOLL: kleiner Verlust nur rotes FALLENDES spawnFloat (neuer optionaler vy-Parameter am VORHANDENEN Helfer, Default-Aufstieg bitgleich) + Runner DUCKT sich, KEIN Shake; SL-Treffer (lossSL) kurzer roter screenFlash ('redsoft') + knapper hitStop + sachliches „STOP LOSS"-Banner, kein Drama. Run-Ende: ein COACHING-SATZ (coachLine) aus BESTEHENDEN Feldern (P&L-Prozent, Bracket-Zahl, Score — kein neuer Datenpfad) in der P&L-Karte (#crPnlCoach), gedaempft und nie beschaemend. Verteiler onBracketClose haengt am EINEN bracketClose-Event (TP → BIG ab Schwelle sonst TP; SL → Loss); Spiel-Outcomes sind Paper (live:false), echte Fills behalten ihre Block-A-Gold-Karte. (e) D1 · LIVE > PAPER als EIN zentraler Faktor factor(live)=live?1:0.6 (Intensitaet + Goldton-Beimischung via tint()), nicht je Effekt dupliziert. (f) D2 · FX-BUDGET: eventFx queued Ereignis-FX, hoechstens EINES ist gleichzeitig aktiv (activeEvents()<=1, Zaehler-Assertion im Test), die atmende B2-Zone ist die eine Puls-Ebene daneben → zusammen nie mehr als 1+1; harte Kappe gegen Fill-Sturm-Dauerstau. (g) D3 · REDUCED-MOTION (crZuendFx.calm): jede Bewegung (Bob, hitStop, Funken, Flash, Konfetti, Partikel) gedaempft/aus; informative Banner bleiben, das Bild ohne FX bleibt vollstaendig lesbar. (h) GEPRUEFT: scripts/check_v903_winloss_browser.cjs — TP→Banner+hitStop, BIG ab Schwelle→Konfetti, SL→roter Flash+Banner, kleiner Verlust→fallendes Float ohne Shake, Runner-Bob als Screen-Y-Versatz ohne Physik-Aenderung, Budget-Zaehler unter 5 gleichzeitigen Fills (<=1 aktiv), Coaching-Satz aus den Feldern, calm-Nullproben unter emuliertem reduced-motion, Grep-Test „kein ctx. im FX-Modul". Gegenproben ROT/CRASH/GRUEN in der Commit-Message; Regressionen v897–v902 gruen. NICHT GEMESSEN: kein Worker, kein Endpunkt — reine Client-Optik; das Spielgefuehl prueft Julian nach Merge am Telefon (Paper reicht).
+      PREV  ·  v1.0.902 (S5a.2·Block B): ZUEND-FX FUER HOTKEY 2 & 3 — REINER JUICE-PASS, KEINE NEUE LOGIK AM TRADE-PFAD, KEINE NEUE GAMEPLAY-REGEL. Das neue Modul crZuendFx kennt exakt zwei Wirkungsarten: Aufrufe der SECHS vorhandenen Juice-Helfer (spawnParticles/spawnFloat/screenFlash/showBanner/hitStop/confettiBurst — keiner neu erfunden; screenFlash bekam nur einen optionalen Farbparameter 'blue', Default bitgleich der alte rote Flash) und OVERLAY-REQUESTS: Felder (fxBorn/fxSnap) auf den anchorLine-Objekten, die drawAnchorLines liest — das Modul fasst die Leinwand NIE an (kein einziges ctx. darin, per Grep-Test abgesichert; der Chart zeichnet, Hard Rule 4). (a) B1 · HOTKEY 2 (Red Laser) ZUENDET MIT LADUNG: beim Commit ein radialer Lade-Ring am RUNNER (spawnParticles an sX(player.wx)/priceToY(player.py)), die platzierte Linie FAEHRT von links nach rechts aus (280 ms, lineTo(W*fxP) im Renderer) und RASTET mit hitStop(40) + kurzem Snap-Glow ein (setTimeout auf das Ausfahr-Ende, nicht auf den Klick — der vorhandene v0.9.16-Klick-hitStop bleibt daneben stehen). Das Preis-Label der freien HLine pulsiert schneller, je naeher der Preis (Frequenz ~ 1/Distanz, gekappt 0,5–6 Hz); unter 0,3 % Distanz kommt ein kleiner Wackler dazu. KREUZT der Chart-Preis die fertige Linie (Seitenwechsel-Erkennung im Renderer, panelStick ausgenommen): Funken-Burst an der Kreuzung (x = juengste Kerze) + kurzer BLAUER screenFlash — je Linie hoechstens alle 2 s, der Flash global hoechstens alle 1,5 s (Budget, kein Spam; der zentrale FX-Scheduler ist Block D). (b) B2 · HOTKEY 3 (Aktivierungs-Laser) RASTET DIE ORDER-EBENE EIN: Order-Linien (tradeKind) fahren beim Zuenden aus wie B1; bei tradeGroup-PAAREN (TWAP a1/a2, Iceberg hi/lo) NACHEINANDER (Stagger 170 ms), Einrasten mit Puls, dazu kurz showBanner('ARMED') (gedrosselt 1,2 s). Die FARBE FOLGT DER ROUTE ueber DIESELBE Tabelle wie der Renderer: TRADE_PALETTE ist aus drawAnchorLines als CR_TRADE_PALETTE auf Top-Level gezogen (eine Farbtafel, keine zweite). Zwischen den beiden Linien eines Paars ATMET eine dezente Zone (Alpha 0,035–0,065) mit feinem LICHT-SWEEP (3-s-Lauf) als „aktiv"-Signal — gezeichnet im Renderer, erst wenn beide Linien fertig ausgefahren sind. RE-ROUTE/DRAG einer Order-Linie oder eines Brackets (mouseup-Commit): Partikel-Schweif + „→ aktualisiert"-Float; CANCEL (Delete auf eine HLine): kleiner Partikel-Zerfall, kein Drama. (c) REDUCED-MOTION respektiert an JEDER Stelle (crZuendFx.calm, matchMedia prefers-reduced-motion): Ausfahrt sofort fertig, kein hitStop, keine Partikel, kein Flash, Label statisch, Zone statisch ohne Sweep — nur der informative „→ aktualisiert"-Float bleibt (Information, nicht Bewegung). Wiederhergestellte Linien (Snapshot) haben kein fxBorn und fahren NICHT aus — FX gibt es nur fuer frisch gezuendete. (d) GEPRUEFT: scripts/check_v902_zuendfx_browser.cjs — Ausfahren/Einrasten am echten commitLaserSingleClick, Stagger am echten TWAP-Commit, ARMED-Banner nur fuer Order-Linien (gedrosselt), Kreuzer-FX + blauer Flash mit Drossel, Re-Route-/Cancel-FX, calm-Nullproben unter emuliertem reduced-motion, und der Grep-Test „kein ctx. im FX-Modul". Gegenproben ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN: kein Worker, kein Endpunkt — reine Client-Optik; das Spielgefuehl prueft Julian nach Merge am Telefon (Paper reicht, Schritte im PR).
       PREV  ·  v1.0.901 (S5a.2·Block A): KLARHEIT IM ACTIVATION-PANEL — REINER UI-PASS, DER VERIFIZIERTE TRADE-PFAD (crWeiche, sdk.real.marketSwap, quote→swap→signAndSend) IST NICHT ANGEFASST. (a) EHRLICHE EINHEITEN (A1): auf DEX-Venue heisst SIZE „Größe (SOL-Betrag)" bzw. bei SELL „Größe (Token-Betrag)" — nie „contracts" (Perp-Sprache, P4/Phoenix); ein gespeicherter contracts-Wert wird dort nicht vorgelegt, und direkt unterm Feld steht „Erhältst du ~ …" LIVE aus dem Quote-Echo (out_raw; Decimals/Symbol aus _crTokMeta, DERSELBEN Quelle wie die Handels-Tafel; ohne Meta ehrliche Roheinheiten). Faellt die Quote weg, steht dort „—" — nie eine erfundene Zahl. (b) KLARTEXT-SATZ (A2) VOR den Fachfeldern, aus dem Ist-Zustand gebaut: „Übung: Kauf für 0,05 SOL ≈ … — nur simuliert." bzw. bei Live „Kauf für 0,05 SOL — echtes Geld ≈ … · Gebühr X % (…)"; Gegenwert/Gebuehr aus der Quote (platform_fee), ohne Fee im Echo bleibt „Gebühr —" (Live-Arm verweigert dann ohnehin, v898 unveraendert). Dafuer reicht armQuote bei fee-missing das out_raw jetzt MIT (outRaw im Fehlerobjekt) — die Verweigerung selbst ist Bit fuer Bit die alte. Der Quote laeuft auf DEX-Venue+Markt-Route auch im PAPER-Modus (fuer Satz und Erhältst-du-Zeile); Fehlwege bleiben dort leise. (c) ZUSTANDSFARBE AUF DEM GANZEN BLOCK (A3): st-draft (grau) / st-armed-paper (blau) / st-live (gold + Glow) + Kopfzeile „◇ ENTWURF · PAPIER" / „◆ SCHARF · PAPIER" / „⚡ SCHARF · LIVE · ECHTES GELD". st-live SPIEGELT die Weiche — crWeiche.armedGlobal() ∧ source.armed ∧ crWeiche.badgeGate().ok ∧ Route Market, die ORIGINAL-Funktionen der Weiche, nicht neu berechnet: Badge=median → kein st-live, und ein st-live auf einer Route, die nie feuern kann, gibt es nicht. (d) RUN-ZEILE WIRD LAUT (A4): farbiger Balken mit Punkt (der Punkt kommt per CSS-::before — textContent beginnt weiter mit 'Run: ', die v898-Sonde bleibt gueltig); Paper grau „PAPIER-CONNECTOR · kein echter Auftrag", Live gold „JUPITER LIVE · Phantom signiert gleich" + Gebuehrenstatus wie gehabt — nur Styling und Wortlaut, dieselbe Logik. (e) SIDE-VORBELEGUNG + WARNUNG (A5): SIDE kommt beim Oeffnen aus der Traeger-Richtung (overlay.side liest crRouteDefaultsForOverlay seit je; longPos/shortPos und TP-Geometrie ergaenzt crPanelKlar.overlayDir); weichen Richtung und SIDE ab, WARNT der Block („Bracket zeigt SELL, Order kauft — absichtlich?") statt still das eine gegen das andere laufen zu lassen. (f) LIVE-WELTBAND + FILL-KARTE (A6): bei globalem ARM ein schmales Goldband oben in #stage („⚡ LIVE · ECHTES GELD · Wallet xxxx… · Limit n SOL") — DOM, NICHT Topbar (Budget max 5 unangetastet), mitgezogen ueber crArmGrammar.sync (EIN Anzeigen-Abgleich, kein zweiter); nach jedem ECHTEN Fill eine gruene Erfolgskarte (Bezahlt / Erhalten / Kurs / Gebühr / Solscan-Link / „Journal · Quelle live"), gerufen NUR aus crPanelLive.fire — Paper-Fills erreichen den Pfad strukturell nie und behalten ihre leise Notiz. (g) GEPRUEFT: scripts/check_v901_klarheit_browser.cjs — Einheiten-Label + Erhältst-du gegen die Quote-Fixture, Quote-Ausfall → „—", st-live-Spiegel mit Badge=median-Gegenprobe, RUN-Zeilen-Wortlaut Paper/Live, SELL-Bracket → SIDE=SELL + Abweichungs-Warnung, Fill-Karte nur bei echtem Fill (mit sig + Gebuehr), Weltband an/aus, Paper-Nullprobe; Regressionen v897–v900 gruen (zwei Sonden an den neuen Wortlaut angepasst: v898 „PAPIER-CONNECTOR" statt „paper connector", v899 Status-Chip-Texte). Gegenproben ROT/CRASH/GRUEN in der Commit-Message. NICHT GEMESSEN: kein Worker beruehrt, kein neuer Endpunkt — reine Client-Nummer; die Optik in allen drei Zustaenden prueft Julian nach Merge am Telefon (Schritte im PR).
       PREV  ·  v1.0.900 (S5a·PR4): FILL-MARKER + FEINSCHLIFF — DER LETZTE SCHRITT DER S5a-STRECKE, UND DER CHART ZEIGT JETZT, WO ECHTES GELD GEFLOSSEN IST. (a) FILL-PUNKTE (crFillMarkers): jeder Live-Fill (und nur der — Paper zeichnet NICHTS Neues) setzt einen goldenen Punkt an SEINEM Ort im Chart: wx des Runners zum Fill-Zeitpunkt, Preis des Fills, Randfarbe = Seite (gruen buy, rot sell). Gezeichnet wird JEDEN FRAME NEU ueber sX/priceToY im Render-Pass direkt hinter drawPlayerPriceTag — es gibt KEINE gespeicherte Pixelposition, die bei log/auto-Skalenwechsel oder Kamera-Pan veralten koennte; die Reposition am Draw-Hook ist damit perspektivsicher per Konstruktion, nicht per Nachfuehren. Ein Fill ohne Preis bekommt keinen Punkt — ein Marker an erfundener Hoehe waere eine Luege im Chart. (b) KLICK AUF MARKER → JOURNAL: Canvas-Listener in der Capture-Phase, Treffer-Radius 10 px in Canvas-Pixeln (Client-Koordinaten werden ueber W/H skaliert, DPR-sicher); ein Treffer nennt den Fill im Terminal (Seite, Preis, sig) und oeffnet das Journal ueber DENSELBEN Weg wie der Docs-Alerts-Knopf (osOpenWindowMulti + Nav-Klick, kein zweiter Oeffnungsmechanismus). Bei LEERER Liste tut der Listener exakt NICHTS und bei Nicht-Treffern reicht er durch — Paper-Klicks erreichen das Spiel Bit fuer Bit wie heute. (c) HOTKEY-HYGIENE, ausdruecklich eingehalten: KEINE neue Taste (4 bleibt der Alarm-Laser), KEIN Element in der Topbar (Budget max 5 unangetastet). (d) GEPRUEFT: scripts/check_v900_fill_marker_browser.cjs — Marker-Geometrie gegen die ECHTEN Projektionen (sX/priceToY), Kamera-Pan-Gegenprobe (der Punkt wandert mit, die Preislinie haelt), Live-Fill→Marker-Integration ueber den echten Panel-Weg, Klick-Treffer oeffnet das Journal, Fehlklick und leere Liste lassen das Spiel unberuehrt (Paper-Nullprobe). Gegenproben ROT/CRASH/GRUEN in der Commit-Message; Regressionen v897/v898/v899 gruen. NICHT GEMESSEN: kein Worker beruehrt — reine Client-Nummer. Damit ist S5a komplett: PR 1 Weiche (v897) · PR 2 Panel (v898) · PR 3 globales ARM (v899) · PR 4 Marker (v900); der erste echte Micro-Trade ist Julians Klick mit Julians Phantom, Schritte im PR von v899.
       PREV  ·  v1.0.899 (S5a·PR3): GLOBALES ARM IM WALLET-MODAL — DAS EINZIGE NEUE UI-STUECK DER GANZEN S5a-STRECKE, GENAU WIE GEPLANT. (a) DER ABSCHNITT im CHOOSE-WALLET-Modal (#crArmSection): Schalter „ARM · echtes Geld" mit KLARTEXT-WARNUNG (ein Fill ist ein echter Swap ueber deine Wallet; die Wallet fragt IMMER, der Worker signiert NIE), Feld SESSION-LIMIT in SOL (Default 0,1 — float-frei geparst ueber _crParseBetrag und als Lamports unter cr_arm_limit_v1; die v897-Weiche summiert Live-Fills dagegen und verweigert darueber mit Meldung, hier steht auch das bereits verbrauchte Sitzungs-Volumen), Anzeige der AKTIVEN WALLET. Der Schalter traegt cr_arm_v1 — dasselbe eine Bit, das die Weiche liest; loeschen = alles Paper (Rollback unveraendert). (b) ZWEISTUFIGKEIT, beide Richtungen sichtbar: ohne globales ARM ist die ARMED-Checkbox im Panel wirkungslos (heutiges Paper-Verhalten) und sagt das im Tooltip („global nicht scharf — ARM im Wallet-Fenster"); ohne Checkbox feuert trotz globalem ARM nichts (das war v897, Tor 2). (c) ZUSTANDS-GRAMMATIK (crArmGrammar, Teil der PRs, kein Nachtrag): globales ARM an → duenne GOLDENE AURA am Runner (im drawPlayer-Pass, dieselbe Stelle wie der Indicator-Ring) + GOLDRAND am Trust-Badge (CSS ueber body.cr-arm-live — unuebersehbar live) · Arm-Klick → Ladeanimation am Panel-Rahmen, EINRASTEN (kurzes Gold-Snap) erst nach der Wallet-Bestaetigung · ARMED-Quelle → sanfter 2-s-Puls am Status-Chip · Fill → Impact + schwebende P&L-/Mengen-Zahl ueber dem Stage · Cancel/Clear einer scharfen Quelle → Partikel-Zerfall. ALLES an crWeiche.flagOn() bzw. Live-Ereignisse gebunden: Paper sieht Pixel fuer Pixel aus wie heute — Live muss sich wertiger anfuehlen, nicht Paper anders. (d) GEPRUEFT: scripts/check_v899_arm_modal_browser.cjs (Modal-Schalter → cr_arm_v1, Limit-Parsing, Wallet-Anzeige, Tooltip-Zweistufigkeit, body-Klasse + Badge-Regel, Aura-Zeichnung als Verhaltenstest mit Stub-Context, Puls-Klasse, P&L-Element nach Live-Fill, Paper-Nullprobe); Gegenproben ROT/CRASH/GRUEN in der Commit-Message; Regressionen v897 + v898 gruen. NICHT GEMESSEN: kein Worker beruehrt, kein Endpunkt neu — reine Client-Nummer.
@@ -2024,6 +2025,10 @@ window.crShare = function (o) {
   .hitflash{position:absolute;inset:0;z-index:4;pointer-events:none;background:radial-gradient(circle at center,rgba(255,91,127,0) 40%,rgba(255,91,127,.55) 100%);opacity:0;transition:opacity .15s}
   /* v1.0.902 (S5a.2·B1) — blaue Tonung fuer den Linien-Kreuzer (screenFlash('blue')). */
   .hitflash.blue{background:radial-gradient(circle at center,rgba(122,214,255,0) 40%,rgba(122,214,255,.5) 100%)}
+  /* v1.0.903 (S5a.2·C1/C4) — gruen (kleiner Win) / rot-sanft (SL) — dieselbe
+     Tonung wie blue, damit Win/Loss ohne neuen Helfer eine eigene Farbe hat. */
+  .hitflash.green{background:radial-gradient(circle at center,rgba(61,220,151,0) 40%,rgba(61,220,151,.42) 100%)}
+  .hitflash.redsoft{background:radial-gradient(circle at center,rgba(255,91,127,0) 45%,rgba(255,91,127,.38) 100%)}
   /* v0.8k#24ch — Light Profile panel for in-game. Compact card that
      hovers above the chart canvas. Theme overrides repaint per palette. */
   #crLightProfile{position:fixed;top:74px;right:18px;z-index:99000;
@@ -9445,6 +9450,12 @@ window.crShare = function (o) {
     text-align:center;font-size:14px;color:#cfd2db;font-weight:600;
     font-variant-numeric:tabular-nums;letter-spacing:.3px;
   }
+  /* v1.0.903 (S5a.2·C4) — Coaching-Satz: gedaempft, mittig, nie schreiend. */
+  .crPnlCoach{
+    text-align:center;font-size:11px;line-height:1.45;color:#8b93a0;
+    margin:8px 10px 2px;letter-spacing:.2px;
+  }
+  .crPnlCoach:empty{display:none}
   .crPnlSpark{
     width:100%;height:60px;display:block;margin:8px 0 2px;
     background:rgba(255,255,255,.03);border-radius:6px;
@@ -15110,6 +15121,9 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
             <span class="crPnlSign" id="crPnlSign">+</span><span class="crPnlPct" id="crPnlPct">0.0</span><span class="crPnlPctSym">%</span>
           </div>
           <div class="crPnlAmount" id="crPnlAmount">$0.00</div>
+
+          <!-- v1.0.903 (S5a.2·C4) — Coaching-Satz aus bestehenden Feldern. -->
+          <div class="crPnlCoach" id="crPnlCoach"></div>
 
           <canvas id="crPnlSpark" class="crPnlSpark" width="340" height="60"></canvas>
 
@@ -42494,17 +42508,28 @@ function confettiBurst(sx, sy, color){
     });
   }
 }
-function spawnFloat(sx, sy, text, color){
-  game.floats.push({ sx, sy, text, color, life:1.1, maxLife:1.1 });
+function spawnFloat(sx, sy, text, color, vy){
+  /* v1.0.903 (S5a.2·C1/C4) — optionale Steig-/Fallgeschwindigkeit am
+   * VORHANDENEN Helfer (kein neuer Helfer): vy in px/s (Screen-Y). Fehlt
+   * das Argument, gilt der bisherige Standard-Aufstieg (-40 px/s) — Bit
+   * fuer Bit wie bisher. Positiver Wert = faellt (rotes Verlust-Float). */
+  game.floats.push({ sx, sy, text, color, life:1.1, maxLife:1.1,
+                     vy: (typeof vy === 'number' && isFinite(vy)) ? vy : -40 });
 }
+const CR_FLASH_TINTS = ['blue', 'green', 'redsoft'];
 function screenFlash(color){
-  /* v1.0.902 (S5a.2·B1) — optionale Tonung desselben Helfers (kein neuer
-   * Helfer): 'blue' fuer den Linien-Kreuzer, Default bleibt Bit fuer Bit
-   * der rote Treffer-Flash. */
+  /* v1.0.902/903 (S5a.2·B1/C1/C4) — optionale Tonung desselben Helfers (kein
+   * neuer Helfer): 'blue' Linien-Kreuzer, 'green' kleiner Win, 'redsoft' SL;
+   * ohne/unbekanntes Argument bleibt es Bit fuer Bit der rote Treffer-Flash. */
   const el = document.getElementById('hitflash');
-  try { el.classList.toggle('blue', color === 'blue'); } catch(_){}
+  try {
+    CR_FLASH_TINTS.forEach(t => el.classList.toggle(t, color === t));
+  } catch(_){}
   el.classList.add('on');
-  setTimeout(()=>{ el.classList.remove('on'); try { el.classList.remove('blue'); } catch(_){} }, 140);
+  setTimeout(()=>{
+    el.classList.remove('on');
+    try { CR_FLASH_TINTS.forEach(t => el.classList.remove(t)); } catch(_){}
+  }, 140);
 }
 function showBanner(text, sub){
   // v0.9.28 — Re-routed to the bottom-right terminal stack. The legacy
@@ -42714,6 +42739,181 @@ window.crZuendFx = (function(){
            priceCross: priceCross, zonePhase: zonePhase,
            reRoute: reRoute, decay: decay,
            EXTEND_MS: EXTEND_MS, STAGGER_MS: STAGGER_MS };
+})();
+
+/* =========================================================================
+ * S5a.2 · Block C+D (v1.0.903) — crWinLossFx: Win/Loss-Juice + Querschnitt.
+ *
+ * Reiner Juice-Pass (Spec S5a.2, Block C+D): keine neue Logik am Trade-Pfad,
+ * keine neue Gameplay-Regel. Wie crZuendFx kennt dieses Modul nur zwei
+ * Wirkungsarten — Aufrufe der SECHS vorhandenen Helfer und Overlay-Requests
+ * (hier: ein Runner-Bob-Feld, das drawPlayer als Screen-Y-Versatz liest).
+ * Kein ctx. im Modul (Grep-Test), die Leinwand fasst es nie an.
+ *
+ *   C1 winSmall — kleiner Fill im Plus: gruenes P&L-spawnFloat (steigt),
+ *       Runner-Mini-Sprung, dezenter gruener screenFlash. Skaliert mit Groesse.
+ *   C2 winTP    — TP getroffen: showBanner('TAKE PROFIT ✓') + Funken + hitStop.
+ *   C3 winBig   — grosser Win ab Schwelle (CR_BIG_WIN_PCT, Default 20 %):
+ *       confettiBurst + goldenes „BIG WIN"-Banner. Selten (Budget).
+ *   C4 lossSmall/lossSL — wuerdevoll: kleiner Verlust nur rotes FALLENDES
+ *       spawnFloat + Runner duckt sich, KEIN Shake; SL-Treffer kurzer roter
+ *       screenFlash + knapper hitStop + sachliches „STOP LOSS"-Banner.
+ *       coachLine() — ein Coaching-Satz aus BESTEHENDEN Feldern (kein neuer
+ *       Datenpfad) fuer die Run-Ende-Bilanz.
+ *
+ * Querschnitt:
+ *   D1 factor(live) — EIN zentraler Faktor fxLive?1:0.6 (Intensitaet +
+ *       Goldton-Beimischung), nicht je Effekt dupliziert. Echte Fills haben
+ *       ihre eigene Gold-Karte (Block A); die Spiel-Outcomes hier sind Paper
+ *       (live=false), der Faktor steht zentral bereit.
+ *   D2 eventFx — FX-Budget: hoechstens EIN Ereignis-FX gleichzeitig aktiv,
+ *       Rest gequeued (die atmende B2-Zone ist die eine Puls-Ebene daneben →
+ *       zusammen nie mehr als 1+1). activeEvents() fuer die Zaehler-Assertion.
+ *   D3 reduced-motion (crZuendFx.calm): jede Bewegung (Bob, hitStop, Funken,
+ *       Flash, Konfetti) gedaempft/aus; informative Banner bleiben, das Bild
+ *       ohne FX bleibt vollstaendig lesbar.
+ * ========================================================================= */
+var CR_BIG_WIN_PCT = 20;      // Schwelle fuer C3 (Prozent des Start-Equity)
+window.crWinLossFx = (function(){
+  'use strict';
+  var GOLD = '#ffd166', GREEN = '#3ddc97', RED = '#ff5b7f';
+
+  function calm(){ try { return !!(window.crZuendFx && crZuendFx.calm()); } catch(_){ return false; } }
+
+  /* D1 — der EINE Faktor. Live volle Intensitaet, Paper gedaempft. */
+  function factor(live){ return live ? 1 : 0.6; }
+  function tint(live, paperCol){ return live ? GOLD : paperCol; }
+
+  /* D2 — Ereignis-FX-Budget. Nur EIN Ereignis-FX-Fenster ist gleichzeitig
+   * aktiv; weitere warten in der Schlange (harte Kappe, damit ein Fill-Sturm
+   * nicht endlos nachstaut). Die atmende Zone (B2) zaehlt als die eine
+   * Puls-Ebene daneben — zusammen nie mehr als 1+1. */
+  var _eventUntil = 0, _queue = [];
+  function activeEvents(){ return (performance.now() < _eventUntil) ? 1 : 0; }
+  function queueLen(){ return _queue.length; }
+  function _pump(){
+    if(activeEvents()) return;
+    var job = _queue.shift();
+    if(!job) return;
+    _eventUntil = performance.now() + (job.dur || 600);
+    try { job.fn(); } catch(_){}
+    if(_queue.length) setTimeout(_pump, (job.dur || 600) + 20);
+  }
+  function eventFx(fn, dur){
+    _queue.push({ fn: fn, dur: dur || 600 });
+    if(_queue.length > 6) _queue.length = 6;   // Kappe gegen Dauerstau
+    _pump();
+  }
+
+  /* Runner-Bob — Overlay-Request: drawPlayer liest runnerBob() als
+   * Screen-Y-Versatz. Positive Amplitude = Sprung nach oben (Screen-Y minus),
+   * negative = Ducken (Screen-Y plus). calm → 0 (kein Versatz). */
+  var _bobStart = 0, _bobAmp = 0, _bobDur = 420;
+  function bob(amp, dur){ if(calm()) return; _bobStart = performance.now(); _bobAmp = amp; _bobDur = dur || 420; }
+  function runnerBob(){
+    if(!_bobAmp) return 0;
+    var p = (performance.now() - _bobStart) / _bobDur;
+    if(p >= 1){ _bobAmp = 0; return 0; }
+    /* Sofortiger Voll-Ausschlag (Pop) der zur Ruhe abklingt: bei p=0 voll,
+     * bei p=1 null. Positive Amplitude = Sprung (Screen-Y minus), negative =
+     * Ducken (Screen-Y plus). Ein Impact liest sich als Pop, nicht als
+     * langsamer Bogen — und ein sofortiges Auslesen ist deterministisch. */
+    return -_bobAmp * (1 - p) * Math.cos(p * Math.PI * 0.5);
+  }
+
+  /* C1 — kleiner Fill im Plus. Skaliert mit Groesse (mag = |P&L| oder ein
+   * Groessen-Proxy). Float + Mini-Sprung immer (leicht), gruener Flash ueber
+   * das Budget. */
+  function winSmall(sx, sy, label, mag, live){
+    var f = factor(live);
+    var scale = Math.min(1.6, 0.6 + (Number(mag) || 0) / 50);
+    try { spawnFloat(sx, sy - 16, String(label == null ? '+' : label), tint(live, GREEN)); } catch(_){}
+    if(!calm()){
+      try { spawnParticles(sx, sy, tint(live, GREEN), Math.round(6 * f * scale), 120); } catch(_){}
+    }
+    bob(7 * scale);
+    eventFx(function(){ if(!calm()) { try { screenFlash('green'); } catch(_){} } }, 200);
+  }
+
+  /* C2 — TP getroffen. Banner + Funken + hitStop; Runner springt hoeher. */
+  function winTP(sx, sy, pnl, live){
+    var f = factor(live);
+    bob(11);
+    eventFx(function(){
+      try { showBanner('TAKE PROFIT ✓'); } catch(_){}
+      if(!calm()){
+        try { spawnParticles(sx, sy, tint(live, GREEN), Math.round(16 * f), 190); } catch(_){}
+        try { hitStop(60); } catch(_){}
+      }
+    }, 700);
+  }
+
+  /* C3 — grosser Win. Konfetti + goldenes Banner. Selten (Budget haelt es). */
+  function winBig(sx, sy, pct, live){
+    bob(13);
+    eventFx(function(){
+      try { showBanner('BIG WIN', (isFinite(pct) ? '+' + Math.round(pct) + '%' : '')); } catch(_){}
+      if(!calm()){ try { confettiBurst(sx, sy, GOLD); } catch(_){} }
+    }, 1200);
+  }
+
+  /* C4a — kleiner Verlust: nur rotes FALLENDES Float + Runner duckt sich.
+   * KEIN Shake, kein Flash — wuerdevoll. */
+  function lossSmall(sx, sy, pnl){
+    try { spawnFloat(sx, sy + 8, '−$' + Math.abs(Number(pnl) || 0).toFixed(0), RED, 46); } catch(_){}
+    bob(-6, 360);
+  }
+
+  /* C4b — SL-Treffer: kurzer roter screenFlash + knapper hitStop + sachliches
+   * Banner. Kein Drama. */
+  function lossSL(sx, sy, pnl){
+    bob(-6, 360);
+    eventFx(function(){
+      try { showBanner('STOP LOSS'); } catch(_){}
+      if(!calm()){
+        try { screenFlash('redsoft'); } catch(_){}
+        try { hitStop(40); } catch(_){}
+      }
+    }, 600);
+  }
+
+  /* Der eine Verteiler fuer bracketClose: TP → BIG (ab Schwelle) oder TP,
+   * SL → Loss. pct = P&L in Prozent des Start-Equity. */
+  function onBracketClose(o){
+    o = o || {};
+    if(o.outcome === 'tp'){
+      if(Number(o.pct) >= CR_BIG_WIN_PCT) winBig(o.sx, o.sy, o.pct, !!o.live);
+      else winTP(o.sx, o.sy, o.pnl, !!o.live);
+    } else {
+      lossSL(o.sx, o.sy, o.pnl);
+    }
+  }
+
+  /* C4 — Coaching-Satz aus BESTEHENDEN Feldern (kein neuer Datenpfad):
+   * P&L-Prozent, Zahl der Brackets, Score. Ein sachlicher, hilfreicher Satz
+   * fuer die Run-Ende-Bilanz — nie beschaemend. */
+  function coachLine(s){
+    s = s || {};
+    var pct = Number(s.pnlPct) || 0;
+    var brackets = Number(s.brackets) || 0;
+    if(brackets === 0)
+      return 'Kein Bracket in diesem Run — setz beim naechsten Mal wenigstens einen: ein definierter Stop ist die halbe Miete.';
+    if(pct >= CR_BIG_WIN_PCT)
+      return 'Starker Run (+' + Math.round(pct) + ' %). Wiederholbar wird das nur mit demselben Stop-Abstand — nicht mit groesserer Size.';
+    if(pct > 0.05)
+      return 'Im Plus geschlossen. Schau im Journal, ob die Gewinner denselben R-Abstand hatten wie die Verlierer.';
+    if(pct < -0.05)
+      return 'Roter Run — das gehoert dazu. Die Frage ist nicht ob, sondern ob die Verluste kleiner waren als die Gewinner.';
+    return 'Flach geschlossen. Ein Run ohne grossen Fehler ist kein schlechter Run — das Kapital steht noch.';
+  }
+
+  return { calm: calm, factor: factor, tint: tint,
+           activeEvents: activeEvents, queueLen: queueLen, eventFx: eventFx,
+           bob: bob, runnerBob: runnerBob,
+           winSmall: winSmall, winTP: winTP, winBig: winBig,
+           lossSmall: lossSmall, lossSL: lossSL,
+           onBracketClose: onBracketClose, coachLine: coachLine,
+           GOLD: GOLD, GREEN: GREEN, RED: RED };
 })();
 
 /* =========================================================================
@@ -44587,6 +44787,15 @@ function _crPaintPnlCard(reason){
   // Tier badge.
   document.getElementById('crPnlTier').textContent = tierTxt;
 
+  // v1.0.903 (S5a.2·C4) — Coaching-Satz aus BESTEHENDEN Feldern (pnlPct,
+  // Brackets, Score). Gedaempfte, hilfreiche Bilanz — nie beschaemend.
+  try {
+    const coachEl = document.getElementById('crPnlCoach');
+    if(coachEl && window.crWinLossFx){
+      coachEl.textContent = crWinLossFx.coachLine({ pnlPct: pnlPct, brackets: brackets, score: (game.score|0) });
+    }
+  } catch(_){}
+
   // Sparkline of equity history (or synth if empty).
   _crDrawPnlSpark();
 }
@@ -45074,6 +45283,19 @@ sdk.on('bracketClose', e=>{
   } else {
     log('bracket SL @ '+o.exitPrice.toFixed(2)+'  -$'+(-o.pnl).toFixed(2));
   }
+  /* v1.0.903 (S5a.2·C2/C3/C4) — Win/Loss-Juice am EINEN Outcome-Event.
+   * pct = P&L in Prozent des Start-Equity; die Screen-Position kommt vom
+   * Visual-Bracket (Fallbacks, falls es schon despawnt ist). Spiel-Outcomes
+   * sind Paper (live:false) — echte Fills haben ihre eigene Gold-Karte. */
+  try {
+    if(window.crWinLossFx){
+      const sx = v ? sX(v.wx) : W*0.6;
+      const sy = v ? priceToY(o.exitPrice != null ? o.exitPrice : (v.tp != null ? v.tp : v.entry)) : H*0.4;
+      const baseEq = (Array.isArray(game.equityHistory) && game.equityHistory.length) ? game.equityHistory[0] : 10000;
+      const pct = baseEq > 0 ? (o.pnl / baseEq) * 100 : 0;
+      crWinLossFx.onBracketClose({ outcome:o.outcome, pnl:o.pnl, pct:pct, sx:sx, sy:sy, live:false });
+    }
+  } catch(_){}
 });
 
 // v0.8d #8 — Keep visualBrackets in sync with SDK edits. Covers both manual drag
@@ -45095,8 +45317,13 @@ sdk.on('edit', e => {
     // Tiny dust along the SL as it ratchets — never a particle storm.
     spawnParticles(sx, sy, '#b388ff', 2, 40);
     if(e.crossedBE){
-      spawnFloat(sx, sy - 14, 'BREAKEVEN', '#3ddc97');
-      spawnParticles(sx, sy, '#3ddc97', 10, 160);
+      /* v1.0.903 (S5a.2·C1) — der Breakeven-Cross ist ein kleiner Fill im
+       * Plus: der eine Win-Stufe-1-Helfer (Float steigt, Mini-Sprung,
+       * dezenter gruener Flash ueber das Budget). toast bleibt. */
+      try {
+        if(window.crWinLossFx) crWinLossFx.winSmall(sx, sy, 'BREAKEVEN', 12, false);
+        else { spawnFloat(sx, sy - 14, 'BREAKEVEN', '#3ddc97'); spawnParticles(sx, sy, '#3ddc97', 10, 160); }
+      } catch(_){ spawnFloat(sx, sy - 14, 'BREAKEVEN', '#3ddc97'); }
       toast('Trail locked breakeven');
     }
   }
@@ -47327,9 +47554,10 @@ function updateFxOnly(dt){
     p.life -= dt;
   }
   game.particles = game.particles.filter(p=>p.life>0);
-  // Floats rise + fade
+  // Floats rise + fade (v1.0.903 — vy per float: default -40 px/s rise,
+  // positive = fall for loss floats. Missing vy stays the old rise.)
   for(const f of game.floats){
-    f.sy -= 40*dt;
+    f.sy += (typeof f.vy === 'number' ? f.vy : -40)*dt;
     f.life -= dt;
   }
   game.floats = game.floats.filter(f=>f.life>0);
@@ -54700,7 +54928,11 @@ function drawPlayer(){
   // doubles up. Snapping resumes when the cursor leaves the phone.
   if(game.cursorMode && game._cursorOverPhone) return;
   const sx = sX(player.wx) + (Math.random()-0.5)*camera.shake;
-  const sy = priceToY(player.py) - player.h/2 + (Math.random()-0.5)*camera.shake;
+  /* v1.0.903 (S5a.2·C1/C4) — Runner-Bob als reiner Screen-Y-Versatz
+   * (Overlay-Request): Win = Mini-Sprung (nach oben), Loss = Ducken. Die
+   * Physik (player.py) bleibt unberuehrt; das ist reine Anzeige. */
+  let _bobDy = 0; try { if(window.crWinLossFx) _bobDy = crWinLossFx.runnerBob(); } catch(_){}
+  const sy = priceToY(player.py) - player.h/2 + (Math.random()-0.5)*camera.shake + _bobDy;
   const dashing = performance.now()/1000 < player.dashUntil;
 
   /* v1.0.899 (S5a·PR3) — duenne goldene Aura, NUR bei globalem ARM
