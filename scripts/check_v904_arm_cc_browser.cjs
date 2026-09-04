@@ -271,6 +271,26 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
   check('header-picks hat hoechstens 5 Elemente', topbar.children >= 0 && topbar.children <= 5, topbar);
   check('… und enthaelt kein #crArmBox mehr', !topbar.hasArmbox, topbar);
 
+  console.log('\n-- 7 · Buy/Sell-Blatt verdeckt das Popover nicht (z-index-Regression) --');
+  // Der Schalter wohnt jetzt IM Popover (z-index 99999); das Handels-Blatt
+  // (#crArmSheet, z-index 60) wuerde sonst DAHINTER aufgehen. _crArmOpenSheet
+  // muss das Popover schliessen. Wallet+Mint+echte Kurve stehen aus der
+  // Werkbank, also laesst crArm sich scharf schalten.
+  const sheet = await page.evaluate(() => {
+    const pop = document.getElementById('crCCPop');
+    if(pop) pop.classList.add('on');                 // Popover offen
+    localStorage.removeItem('cr_arm_v1');
+    try { crArm.set(true); } catch(_){}
+    const armed = (function(){ try { return !!crArm.on(); } catch(_){ return false; } })();
+    try { _crArmOpenSheet('kauf'); } catch(e){ return { err: String((e && e.message) || e) }; }
+    const sh = document.getElementById('crArmSheet');
+    return { armed, sheetOpen: !!(sh && sh.classList.contains('on')),
+             popStillOpen: !!(pop && pop.classList.contains('on')) };
+  });
+  check('crArm scharf → Handels-Blatt oeffnet', sheet.armed && sheet.sheetOpen, sheet);
+  check('… und das Control-Center-Popover ist danach geschlossen (kein Verdecken)', !sheet.popStillOpen, sheet);
+  await page.evaluate(() => { try { crArm.set(false); if(window._crArmCloseSheet) _crArmCloseSheet(); } catch(_){} });
+
   console.log('\n== ' + pass + ' ok, ' + fail + ' fail ==');
   await browser.close();
   process.exit(fail ? 1 : 0);
