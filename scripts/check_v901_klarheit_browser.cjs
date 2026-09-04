@@ -315,22 +315,24 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
   check('… Solscan-Link traegt die sig', a6.href === 'https://solscan.io/tx/KLARSIG901', a6);
   check('… Erhalten aus dem Fill-Echo (2.847,42 BONK)', /2\.847,42\s?BONK/.test(a6.txt), a6);
 
-  console.log('\n-- A6 · Live-Weltband in #stage --');
+  console.log('\n-- A6 · Live-Weltband — RETIRED in v1.0.904 (S5a.3) --');
+  /* Das schwebende Weltband ist ersatzlos von der #stage verschwunden und in
+   * die CC-Sektion „ARM · Echtgeld" (Zustandszeile #crCCArmState) gewandert.
+   * Die v901-Sonde prueft jetzt genau das Gegenteil von frueher: bei globalem
+   * ARM entsteht KEIN Band mehr in der Stage (Details: check_v904). */
   let band = await page.evaluate(() => {
     localStorage.setItem('cr_arm_v1', '1');
     crArmGrammar.sync();
     const b = document.getElementById('crLiveBand');
-    return { there: !!b, inStage: !!(b && b.closest('#stage')), txt: b ? b.textContent : '' };
+    return { there: !!b, inStage: !!(b && b.closest('#stage')) };
   });
-  check('globales ARM → Goldband in #stage', band.there && band.inStage, band);
-  check('… nennt ECHTES GELD, Wallet und Limit',
-    /ECHTES GELD/.test(band.txt) && /Wallet CRte…/.test(band.txt) && /Limit .*SOL/.test(band.txt), band);
+  check('globales ARM → KEIN Band mehr in #stage (v904-Verlagerung)', !band.there && !band.inStage, band);
   band = await page.evaluate(() => {
     localStorage.removeItem('cr_arm_v1');
     crArmGrammar.sync();
     return { there: !!document.getElementById('crLiveBand') };
   });
-  check('ARM aus → Band weg', !band.there, band);
+  check('ARM aus → weiterhin kein Band', !band.there, band);
   const topbarCount = await page.evaluate(() => {
     const tb = document.querySelector('.topbar');
     return tb ? tb.children.length : -1;
