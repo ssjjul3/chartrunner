@@ -113,11 +113,14 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
   check('Banner meldet mindestens v1.0.899',
     bv.length === 3 && (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 899)))), bv);
 
-  console.log('\n-- Modal: der ARM-Abschnitt --');
+  console.log('\n-- CC: der ARM-Abschnitt (v1.0.904: aus dem Wallet-Modal ins Control Center verlagert) --');
   const m1 = await page.evaluate(() => {
     crSigner.active();
-    crWallet.openWalletPicker();
-    const sec = document.getElementById('crArmSection');
+    // v1.0.904 (S5a.3): die ARM-Sektion wohnt jetzt im Control Center
+    // (#crCCArmSection unter #crCCPop), nicht mehr im Wallet-Modal.
+    // _crCCRenderArm stellt Feld + Info auf den echten Zustand.
+    _crCCRenderArm();
+    const sec = document.getElementById('crCCArmSection');
     const tgl = document.getElementById('crArmGlobalToggle');
     const warn = document.getElementById('crArmWarn');
     const lim = document.getElementById('crArmLimitInput');
@@ -178,7 +181,8 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
     const lim = document.getElementById('crArmLimitInput');
     lim.value = '10';
     lim.dispatchEvent(new Event('change'));
-    document.getElementById('crWalletPickerModal').classList.remove('on');
+    // v1.0.904: ARM-Sektion ist im CC, kein Wallet-Modal mehr offen zu schliessen.
+    const m = document.getElementById('crWalletPickerModal'); if(m) m.classList.remove('on');
   });
 
   console.log('\n-- Zweistufigkeit: der Tooltip sagt warum --');
