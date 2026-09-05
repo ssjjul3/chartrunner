@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.906
-     LAST UPDATED:    2026-09-04  ·  v1.0.906 (S5a.2·Block C+D FEINSCHLIFF): DREI LUECKEN DES v903-JUICE-PASSES GESCHLOSSEN — REINE OPTIK/OVERLAY, KEINE NEUE LOGIK AM TRADE-PFAD, KEINE NEUE GAMEPLAY-REGEL. crWinLossFx haelt Hard Rule 4: kein ctx. im Modul, nur die sechs vorhandenen Helfer + Overlay-Requests. (a) C2/C3 · TP-HAEKCHEN: die getroffene TP-Sprosse rastet mit gruenem Haekchen ein — der Overlay-Request tpCheck(bracket) setzt fxTpCheck auf dem Visual-Bracket, drawVisualBrackets zeichnet das Haekchen am rechten Sprossen-Ende (Pop nur die ersten 900 ms; unter reduced-motion statisch, denn das Haekchen ist INFORMATION und bleibt stehen). winTP UND winBig rasten ein (ein BIG WIN ist ein TP-Treffer). (b) C4 · SL-BLITZ: die SL-Linie blitzt EINMAL und klingt ab — der Overlay-Request slFlash(bracket) setzt fxSlFlash, der Renderer legt ein transientes rotes Glimmen ueber die Linie (520 ms). Die Linie selbst LOEST SICH NICHT auf — die no-fade-Direktive fuer gesetzte Brackets bleibt; unter reduced-motion wird der Blitz gar nicht erst gesetzt (reine Bewegung). (c) C4 · COACHING AUS JOURNAL-FELDERN: coachLine liest jetzt den LETZTEN geschlossenen Trade des vorhandenen Journals (cr_journal_v1, Felder setup/rr/conf/result) und baut einen konkreten Satz („Setup … hielt nicht, RR war mit x R knapp"). KEIN neuer Datenpfad, KEIN Fetch: das manual-Array wird als Argument hereingereicht (_crJrnLoad().manual — dieselbe Quelle wie die Journal-Tafel); fehlt es oder traegt es keine verwertbaren Felder, faellt der Satz BITGLEICH auf die v903-Aggregate (P&L%, Brackets) zurueck. (d) TRADE-PFAD & HOTKEYS UNBERUEHRT: onBracketClose bleibt ein reiner Listener, HK1–HK4 unveraendert (HK4 Alarm-Laser), kein Topbar-Element neu. (e) GEPRUEFT: scripts/check_v906_winloss_overlay_browser.cjs — fxTpCheck bei TP UND BIG (nicht bei SL), fxSlFlash bei SL (nicht bei TP, nicht unter reduced-motion), Haekchen persistiert, Coaching liest setup/rr/conf des letzten Trades und faellt ohne Journal auf v903 zurueck, Grep-Test „kein ctx. im FX-Modul". Gegenproben ROT/CRASH/GRUEN in der Commit-Message; Regressionen v901–v903 gruen; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: kein Worker, kein Endpunkt — reine Client-Optik; Haekchen, Blitz und Coaching-Satz prueft Julian nach Merge am Telefon (Paper reicht).
+     CURRENT VERSION: v1.0.907
+     LAST UPDATED:    2026-09-05  ·  v1.0.907 (P3.1 · VAULT-LIMIT): EINE EINFACHE, RUHENDE LIMIT-ORDER UEBER DEN JUPITER-VAULT — EIN ADDITIVER route==='Limit'-ZWEIG AN DER WEICHE, MARKET BIT FUER BIT UNBERUEHRT. (a) VAULT-FLOW (Julians V2-Vault-Spec): auth/challenge → Wallet signiert die Challenge (FREIE Nachricht, crSigner.signMessage neu; kein Geld, keine Kette) → auth/verify → JWT NUR IM SPEICHER (crVaultApi._jwt in der Closure; NIE localStorage, NIE Journal, NIE ein Log — ein Token, das einen Neustart ueberlebt, beweist nichts mehr und kann missbraucht werden). vault/register (JWT, idempotent). Order = deposit/craft (JWT) → unsignierte Einzahlung + Gebuehren-Echo → Wallet signiert EINMAL (die eine finanzwirksame Signatur) → orders/price (single). Bestaetigung ueber orders/active. Die Worker-Pfade sind an EINER Stelle (crVaultApi.PATHS) gebuendelt, gegen GET /health gegenzupruefen — Doku ist keine Messung. (b) WEICHE, EIN ADDITIVER ZWEIG: decide() macht 'Limit' zusaetzlich live-faehig (die vier Tore davor unveraendert: armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign); _fireLive ruft bei 'Limit' real.limitVault statt real.marketSwap; jede ANDERE Route bekommt weiter die ehrliche P3-Meldung. crRealAdapter traegt limitVault NEBEN marketSwap; der Market-Weg (quote→swap→signAndSend) ist Bit fuer Bit derselbe. (c) SESSION-LIMIT ZAEHLT DEN DEPOSIT: bei Erfolg (res.orderPubkey) bucht _fireLive die SOL-Seite — bei einer Kauf-Limit genau der eingezahlte Betrag; ueber dem Limit verweigert die Weiche. (d) PANEL: der Limit-Zweig zeigt im st-live-Gold den PFLICHTTEXT „⚡ RUHENDE ORDER · Guthaben geht in den Jupiter-Vault · füllt später ohne dich" (crPanelKlar.restingText, EINE Konstante) plus die 50-bps-Gebuehr aus dem deposit/craft-Echo; ohne ausgewiesene Gebuehr → KEINE Signatur (dieselbe Philosophie wie der Market-Arm). crPanelKlar.state() gibt jetzt auch fuer 'limit' st-live, wenn die Weiche feuern wuerde. Journal: die Erstellung als Quelle 'live', Status 'open', mit orderPubkey — OHNE JWT. (e) GEPRUEFT: scripts/check_v907_vault_limit_browser.cjs — Spion (real.limitVault NUR bei allen vier Toren + route==='Limit', sonst nie; Gegenprobe alles offen → genau ein Aufruf), JWT-nur-Memory (nach ensureAuth kein Token in localStorage, wohl aber in crVaultApi.token()), Vault-Klartext + Gebuehr (Pflichttext im Panel + feeBps/feeRaw aus dem Echo; ohne Fee → commit verweigert), Market unberuehrt (marketSwap-Spion + Diff der Market-Weiche unveraendert). Gegenproben ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: der ausgerollte V2-Vault-Worker (P3.0) — die Endpunkte muessen in GET /health unter `endpoints` stehen, bevor sich der Client darauf verlaesst; Julian prueft nach Merge am Telefon (Reject-Pfad ohne Bestaetigung, dann eine echte kleine Order ~0,01 SOL, Order in Jupiters Liste gegengeprueft).
+     PREV  ·  v1.0.906 (S5a.2·Block C+D FEINSCHLIFF): DREI LUECKEN DES v903-JUICE-PASSES GESCHLOSSEN — REINE OPTIK/OVERLAY, KEINE NEUE LOGIK AM TRADE-PFAD, KEINE NEUE GAMEPLAY-REGEL. crWinLossFx haelt Hard Rule 4: kein ctx. im Modul, nur die sechs vorhandenen Helfer + Overlay-Requests. (a) C2/C3 · TP-HAEKCHEN: die getroffene TP-Sprosse rastet mit gruenem Haekchen ein — der Overlay-Request tpCheck(bracket) setzt fxTpCheck auf dem Visual-Bracket, drawVisualBrackets zeichnet das Haekchen am rechten Sprossen-Ende (Pop nur die ersten 900 ms; unter reduced-motion statisch, denn das Haekchen ist INFORMATION und bleibt stehen). winTP UND winBig rasten ein (ein BIG WIN ist ein TP-Treffer). (b) C4 · SL-BLITZ: die SL-Linie blitzt EINMAL und klingt ab — der Overlay-Request slFlash(bracket) setzt fxSlFlash, der Renderer legt ein transientes rotes Glimmen ueber die Linie (520 ms). Die Linie selbst LOEST SICH NICHT auf — die no-fade-Direktive fuer gesetzte Brackets bleibt; unter reduced-motion wird der Blitz gar nicht erst gesetzt (reine Bewegung). (c) C4 · COACHING AUS JOURNAL-FELDERN: coachLine liest jetzt den LETZTEN geschlossenen Trade des vorhandenen Journals (cr_journal_v1, Felder setup/rr/conf/result) und baut einen konkreten Satz („Setup … hielt nicht, RR war mit x R knapp"). KEIN neuer Datenpfad, KEIN Fetch: das manual-Array wird als Argument hereingereicht (_crJrnLoad().manual — dieselbe Quelle wie die Journal-Tafel); fehlt es oder traegt es keine verwertbaren Felder, faellt der Satz BITGLEICH auf die v903-Aggregate (P&L%, Brackets) zurueck. (d) TRADE-PFAD & HOTKEYS UNBERUEHRT: onBracketClose bleibt ein reiner Listener, HK1–HK4 unveraendert (HK4 Alarm-Laser), kein Topbar-Element neu. (e) GEPRUEFT: scripts/check_v906_winloss_overlay_browser.cjs — fxTpCheck bei TP UND BIG (nicht bei SL), fxSlFlash bei SL (nicht bei TP, nicht unter reduced-motion), Haekchen persistiert, Coaching liest setup/rr/conf des letzten Trades und faellt ohne Journal auf v903 zurueck, Grep-Test „kein ctx. im FX-Modul". Gegenproben ROT/CRASH/GRUEN in der Commit-Message; Regressionen v901–v903 gruen; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: kein Worker, kein Endpunkt — reine Client-Optik; Haekchen, Blitz und Coaching-Satz prueft Julian nach Merge am Telefon (Paper reicht).
       PREV  ·  v1.0.905 (S5a.4): ARM NUR SICHTBAR BEI ANMELDUNG ODER WALLET-VERBINDUNG — REINES UI-SICHTBARKEITS-GATE, KEIN EINGRIFF IN DEN TRADE-PFAD, KEINE NEUE WEICHE. Die ARM-Sektion „ARM · Echtgeld" im Control Center (#crCCArmSection, seit v904) taucht jetzt erst auf, wenn der User ANGEMELDET ODER MIT WALLET VERBUNDEN ist; ein Gast ohne Wallet sieht keine Echtgeld-Steuerung. (a) GATE-PRAEDIKAT: armAvailable = signedIn() ∨ walletConnected(). signedIn() = crAccount.isSignedIn() — DASSELBE Signal, das #crSetAccStatus von „Not signed in" auf den Account umschaltet; AUSDRUECKLICH NICHT cr_stealth_auth_v1 (das Auto-Guest-Boot, crArchivedLoginAutoGuest, setzt es fuer JEDEN Besucher auf '1' — es waere immer wahr und das Gate nie zu), und der Gast-Runner-Name (cr_profile_name_v1) zaehlt nicht. walletConnected() = crWalletConnected()/crWallet.isConnected() (cr_wallet gesetzt) bzw. crWeiche.walletCanSign(). (b) SICHTBARKEIT: armAvailable → Sektion gerendert wie zuvor (Checkbox, SIM/LIVE, Limit, Wallet, Zustandszeile); sonst #crCCArmSection hidden, an seiner Stelle die ruhige Hinweiszeile #crCCArmGateHint „ARM (Echtgeld) — verfügbar nach Anmeldung oder Wallet-Verbindung." (kein Schalter, kein Limit-Feld). Theme/Sprache/Notifications unberuehrt. (c) LIVE-REAKTIV ohne Reload: _crCCRenderArm() haengt an crApplyAccessGates — der EINEN Stelle, die crWallet.on und crAccount._gatesSync bei jeder Verbindungs-/Auth-Aenderung ohnehin rufen. Wallet verbinden/anmelden → Sektion erscheint sofort; beide Signale weg → verschwindet. (d) SICHERHEITS-DEFAULT: verliert der User BEIDE Signale, waehrend #crArmSwitch auf LIVE stand, faellt der MODUS auf SIM (crArm.set(false), idempotent); das Bit cr_arm_v1 bleibt unberuehrt. (e) TRADE-PFAD UNBERUEHRT: die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ wallet.canSign(), Route=Market) + marketSwap bleiben Bit fuer Bit — dieses Gate ist reine UI-Sichtbarkeit, die visuelle Entsprechung dessen, was die Weiche mit wallet.canSign() laengst erzwingt. (f) GEPRUEFT: scripts/check_v905_arm_gate_browser.cjs — Gast versteckt (auch nur mit Gast-Runner-Name), Wallet/Anmeldung → sichtbar, Live-Uebergang ohne Reload, Sicherheits-Default LIVE→SIM, Weiche-Spion unveraendert. Gegenproben ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: kein Worker, kein Endpunkt — reiner Client-PR; die Optik prueft Julian nach Merge am Telefon.
      PREV  ·  v1.0.904 (S5a.3): ARM-SCHALTER & LIVE-BAND INS CONTROL CENTER — REINE UI-VERLAGERUNG + EINE WAHRHEITS-KORREKTUR, KEIN EINGRIFF IN DEN TRADE-PFAD, KEINE NEUE GAMEPLAY-REGEL. Der Echtgeld-Zustand hatte drei Oberflaechen an drei Orten: das schwebende Live-Band auf der #stage, die globale ARM-Sektion „ARM · echtes Geld" im Wallet-Fenster (#win-walletapp) und den SIM/SCHARF-Schnellschalter (#crArmBox) in der Topbar. Jetzt wohnt alles im Control Center (#crCCPop, neue Sektion „ARM · Echtgeld"). (a) LIVE-BAND WEG: #crLiveBand wird nicht mehr in #stage gerendert; syncBand ist zum reinen Aufraeumer geworden (raeumt jedes Band weg, rendert nie eines), der crArmGrammar.sync-Wrapper laeuft unveraendert weiter. Kein Ersatz-Signal aussen (kein Glow, kein Punkt) — Julians Entscheidung. (b) EINE HEIMAT im CC: die Checkbox „ARM · echtes Geld" (das eine Bit cr_arm_v1) + Warnung, der SIM↔LIVE-Schalter (#crArmBox Bit fuer Bit aus der Topbar hierher verlagert — crArm-Verdrahtung findet die Elemente per getElementById, ortsunabhaengig), das Session-Limit (cr_arm_limit_v1, float-frei ueber _crParseBetrag), die aktive Wallet (Kurzform) und eine Zustandszeile. (c) BEIDE ALTEN STELLEN LEER: #crArmSection ist aus dem Wallet-Modal raus (dort nur noch Wallet-Auswahl / Disconnect / Close), #crArmBox ist aus .header-picks raus (die Topbar traegt wieder 4 Elemente, ≤5 bleibt). Kein doppeltes ARM-UI im DOM. (d) MODUS-WAHRHEIT (der Kern-Fix): das alte Band schrie „LIVE · ECHTES GELD" schon bei cr_arm_v1='1', auch wenn der Schalter SIM stand (Band = nur „Box global an"). Die CC-Zeile spiegelt den WAHREN Modus: „⚡ LIVE · ECHTES GELD · LIMIT x SOL · Wallet …" nur wenn cr_arm_v1='1' ∧ crArm.on() (Schalter=LIVE), sonst ruhig „◇ SIM · Übung · kein echtes Geld". Gelesen wird ueber die ORIGINAL-Signale (crWeiche.flagOn ∧ crArm.on), nicht neu berechnet. (e) TRADE-PFAD UNBERUEHRT: die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ Wallet, Route=Market) + marketSwap/quote→swap→signAndSend bleiben Bit fuer Bit; verlagert wird NUR, wo die Steuerung sitzt und wie ehrlich der Statustext ist. (f) GEPRUEFT: scripts/check_v904_cc_arm_browser.cjs — Stage frei (kein #crLiveBand, kein Ersatzsignal), CC ist die einzige ARM-Heimat (Checkbox/#crArmSwitch/Limit/Wallet Nachfahren von #crCCPop; #crArmBox NICHT unter .header-picks; #crArmSection NICHT unter #win-walletapp), Modus-Wahrheit (SIM bei Schalter=SIM trotz cr_arm_v1='1'; LIVE nur bei beiden), Weiche-Spion (Real-Adapter feuert unveraendert nur bei allen Toren + Market; Modus SIM → kein Aufruf), Limit-Persistenz (cr_arm_limit_v1). Gegenproben ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: kein Worker, kein Endpunkt — reine Client-Verlagerung; die Optik prueft Julian nach Merge am Telefon.
      PREV  ·  v1.0.903 (S5a.2·Block C+D): WIN/LOSS-FX + QUERSCHNITT — REINER JUICE-PASS, KEINE NEUE LOGIK AM TRADE-PFAD, KEINE NEUE GAMEPLAY-REGEL. Das neue Modul crWinLossFx kennt wie crZuendFx nur zwei Wirkungsarten: Aufrufe der SECHS vorhandenen Juice-Helfer und Overlay-Requests (hier: ein Runner-Bob-Feld, das drawPlayer als reinen Screen-Y-Versatz liest — die Physik player.py bleibt unberuehrt). Kein ctx. im Modul (Grep-Test), die Leinwand fasst es nie an. (a) C1 · KLEINER FILL IM PLUS (winSmall): gruenes P&L-spawnFloat (steigt), Runner-Mini-Sprung (Halb-Sinus-Bogen nach oben), dezenter gruener screenFlash ueber das Budget; skaliert mit Groesse. Verdrahtet am Breakeven-Cross des Trailing-Stops (der bestehende Float/Partikel-Weg laeuft jetzt durch diesen einen Helfer, toast bleibt). (b) C2 · TP GETROFFEN (winTP): showBanner('TAKE PROFIT ✓') + Funken an der Trefferlinie + hitStop; Runner springt hoeher. (c) C3 · GROSSER WIN (winBig) ab Schwelle CR_BIG_WIN_PCT (Default 20 % des Start-Equity): confettiBurst + goldenes „BIG WIN"-Banner mit Prozent-Untertitel. Selten — das FX-Budget haelt es selten. (d) C4 · VERLUST WUERDEVOLL: kleiner Verlust nur rotes FALLENDES spawnFloat (neuer optionaler vy-Parameter am VORHANDENEN Helfer, Default-Aufstieg bitgleich) + Runner DUCKT sich, KEIN Shake; SL-Treffer (lossSL) kurzer roter screenFlash ('redsoft') + knapper hitStop + sachliches „STOP LOSS"-Banner, kein Drama. Run-Ende: ein COACHING-SATZ (coachLine) aus BESTEHENDEN Feldern (P&L-Prozent, Bracket-Zahl, Score — kein neuer Datenpfad) in der P&L-Karte (#crPnlCoach), gedaempft und nie beschaemend. Verteiler onBracketClose haengt am EINEN bracketClose-Event (TP → BIG ab Schwelle sonst TP; SL → Loss); Spiel-Outcomes sind Paper (live:false), echte Fills behalten ihre Block-A-Gold-Karte. (e) D1 · LIVE > PAPER als EIN zentraler Faktor factor(live)=live?1:0.6 (Intensitaet + Goldton-Beimischung via tint()), nicht je Effekt dupliziert. (f) D2 · FX-BUDGET: eventFx queued Ereignis-FX, hoechstens EINES ist gleichzeitig aktiv (activeEvents()<=1, Zaehler-Assertion im Test), die atmende B2-Zone ist die eine Puls-Ebene daneben → zusammen nie mehr als 1+1; harte Kappe gegen Fill-Sturm-Dauerstau. (g) D3 · REDUCED-MOTION (crZuendFx.calm): jede Bewegung (Bob, hitStop, Funken, Flash, Konfetti, Partikel) gedaempft/aus; informative Banner bleiben, das Bild ohne FX bleibt vollstaendig lesbar. (h) GEPRUEFT: scripts/check_v903_winloss_browser.cjs — TP→Banner+hitStop, BIG ab Schwelle→Konfetti, SL→roter Flash+Banner, kleiner Verlust→fallendes Float ohne Shake, Runner-Bob als Screen-Y-Versatz ohne Physik-Aenderung, Budget-Zaehler unter 5 gleichzeitigen Fills (<=1 aktiv), Coaching-Satz aus den Feldern, calm-Nullproben unter emuliertem reduced-motion, Grep-Test „kein ctx. im FX-Modul". Gegenproben ROT/CRASH/GRUEN in der Commit-Message; Regressionen v897–v902 gruen. NICHT GEMESSEN: kein Worker, kein Endpunkt — reine Client-Optik; das Spielgefuehl prueft Julian nach Merge am Telefon (Paper reicht).
@@ -16811,6 +16812,43 @@ window.crSigner = (function(){
       });
   }
 
+  /* v1.0.907 (P3.1) — signMessage(text): eine FREIE Nachrichten-Signatur, kein
+   * Geld, keine Kette. Der Vault-Auth-Flow (auth/challenge → auth/verify)
+   * braucht sie: die Wallet beweist den Besitz des Pubkeys, indem sie die
+   * Challenge signiert. Das ist AUSDRUECKLICH keine Transaktion — „Wallet
+   * signiert einmal" (die eine finanzwirksame Signatur) meint die Einzahlung,
+   * nicht diesen Handshake. Feature solana:signMessage (Phantom kann es).
+   * Rueckgabe: base58-Signatur, wie bei signAndSend; jeder Fehlweg als {error}. */
+  var FEAT_SIGN_MSG = 'solana:signMessage';
+  function signMessage(message){
+    var w = _active ? _active.wallet : null;
+    var acc = _active ? _active.account : null;
+    if(!w)   return Promise.resolve({ error: 'no-wallet' });
+    if(!acc) return Promise.resolve({ error: 'not-connected',
+      note: 'Erst verbinden — signiert wird nur für ein bekanntes Konto.' });
+    var f = (w.features || {})[FEAT_SIGN_MSG];
+    if(!f || typeof f.signMessage !== 'function')
+      return Promise.resolve({ error: 'no-feature', wallet: w.name, feature: FEAT_SIGN_MSG });
+    var bytes;
+    try { bytes = new TextEncoder().encode(String(message == null ? '' : message)); }
+    catch(e){ return Promise.resolve({ error: 'bad-message', detail: String((e && e.message) || e) }); }
+    if(!bytes.length) return Promise.resolve({ error: 'bad-message', note: 'Leere Challenge.' });
+    return Promise.resolve()
+      .then(function(){ return f.signMessage({ message: bytes, account: acc }); })
+      .then(function(res){
+        var first = Array.isArray(res) ? res[0] : res;
+        var sig = first && (first.signature || first.signedMessage);
+        if(!sig) return { error: 'no-signature', wallet: w.name,
+          note: 'Die Wallet meldete Erfolg, lieferte aber keine Signatur.' };
+        return { signature: bytesToB58(sig), wallet: w.name, address: acc.address };
+      })
+      .catch(function(e){
+        var m = String((e && e.message) || e || '');
+        if(/reject|denied|cancel|abbruch/i.test(m)) return { error: 'rejected', wallet: w.name };
+        return { error: 'sign-failed', wallet: w.name, detail: m };
+      });
+  }
+
   /* ── Auskunft ──────────────────────────────────────────────────────── */
 
   function info(){
@@ -16832,6 +16870,7 @@ window.crSigner = (function(){
     active: active,
     chainReady: chainReady,
     signAndSend: signAndSend,
+    signMessage: signMessage,
     info: info,
     // Für Tests und Fehlersuche — die Kodierung ist von Hand geschrieben und
     // muss einzeln prüfbar sein.
@@ -17125,6 +17164,178 @@ window.crTxApi = (function(){
   return { memo: memo, ata: ata, health: health, status: status, swap: swap,
            mints: mints, price: price, quote: quote,
            anchor: anchor, anchorList: anchorList };
+})();
+
+/* =========================================================================
+ * crVaultApi — v1.0.907 (P3.1) — die Vault-Gegenseite zu crTxApi.
+ *
+ * Eine EINFACHE Limit-Order (eine ruhende Order) laeuft nicht wie der
+ * Market-Swap, der einmal baut, signiert und sofort ausfuehrt. Sie ruht: das
+ * Guthaben liegt im Jupiter-Vault, und Jupiters Keeper fuellt spaeter — ohne
+ * dich. Dafuer braucht der Worker einen ANGEMELDETEN Aufrufer (JWT), nicht nur
+ * eine Wallet-Adresse. Der Flow, Julians V2-Vault-Spec:
+ *
+ *   auth/challenge  →  Wallet signiert die Challenge (FREIE Nachricht, kein
+ *                      Geld, keine Kette)  →  auth/verify  →  JWT.
+ *   vault/register  (JWT)  →  der Vault existiert.
+ *   deposit/craft   (JWT)  →  unsignierte Einzahlungs-Tx + Gebuehren-Echo.
+ *   Wallet signiert EINMAL (die Einzahlung, das eine finanzwirksame Signatur).
+ *   orders/price    (JWT)  →  die eine ruhende Order wird gelegt.
+ *   orders/active   (JWT)  →  Bestaetigung, dass sie liegt.
+ *
+ * DER JWT LEBT NUR IM SPEICHER. Nie localStorage, nie Journal, nie ein Log.
+ * Ein Token, das einen Neustart ueberlebt, ist ein Token, das ein zweites
+ * Geraet oder ein geteilter Browser missbrauchen kann — und es beweist beim
+ * naechsten Mal nichts mehr, weil die Challenge laengst abgelaufen ist. Der
+ * einzige Halter ist die Closure-Variable _jwt; sie ist per Konstruktion nicht
+ * persistierbar. `token()` gibt sie fuer Tests/Fehlersuche her, schreibt sie
+ * aber nirgendwo hin.
+ *
+ * Fehler-Disziplin wie crTxApi: jeder Ausfall bekommt einen NAMEN
+ * ('offline', 'not-deployed', 'http-NNN', 'no-token'), nie ein stilles leeres
+ * Ergebnis. Ein Bericht ueber gebauten Worker-Code ist keine Messung — welche
+ * dieser Endpunkte der AUSGEROLLTE Worker wirklich fuehrt, steht in
+ * GET /health unter `endpoints`; die Pfade hier sind an EINER Stelle (PATHS)
+ * gebuendelt, damit ein Abgleich mit dem Ist-Stand eine Zeile ist.
+ * ========================================================================= */
+window.crVaultApi = (function(){
+  'use strict';
+
+  /* Die Worker-Pfade der V2-Vault-Spec — an EINER Stelle, gegen /health
+   * gegenzupruefen (Doku ist keine Messung). auth/* sind unauthentifiziert
+   * (es gibt noch keinen Token); alles unter dem JWT ist Bearer-authed. */
+  var PATHS = {
+    challenge: '/v1/auth/challenge',
+    verify:    '/v1/auth/verify',
+    register:  '/v1/vault/register',
+    deposit:   '/v1/deposit/craft',
+    ordersPrice:  '/v1/orders/price',
+    ordersActive: '/v1/orders/active'
+  };
+
+  /* NUR im Speicher. Kein localStorage, kein sessionStorage — das ist die
+   * ganze Sicherheitsaussage dieses Moduls. */
+  var _jwt = null, _jwtWallet = '', _jwtExp = 0;
+
+  function _honest(r){
+    if(r.status === 404) return { error: 'not-deployed' };
+    return r.json().catch(function(){ return null; }).then(function(j){
+      if(!r.ok) return { error: (j && j.error) || ('http-' + r.status),
+                         detail: (j && (j.note || j.detail)) || '' };
+      if(!j || j.ok === false) return { error: (j && j.error) || 'bad-response',
+                                        detail: (j && (j.note || j.detail)) || '' };
+      return j;
+    });
+  }
+  function _post(path, body, auth){
+    var h = { 'content-type': 'application/json' };
+    if(auth){ if(!_jwt) return Promise.resolve({ error: 'no-token' }); h.authorization = 'Bearer ' + _jwt; }
+    return fetch(CR_TX_API + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}) })
+      .then(_honest).catch(function(){ return { error: 'offline' }; });
+  }
+  function _get(path, auth){
+    var h = {};
+    if(auth){ if(!_jwt) return Promise.resolve({ error: 'no-token' }); h.authorization = 'Bearer ' + _jwt; }
+    return fetch(CR_TX_API + path + (path.indexOf('?') < 0 ? '?' : '&') + '_=' + Date.now(), { headers: h })
+      .then(_honest).catch(function(){ return { error: 'offline' }; });
+  }
+
+  /* auth/challenge → { challenge, expires_in_s? }. Die Wallet signiert die
+   * `challenge` als Nachricht (crSigner.signMessage). */
+  function authChallenge(wallet){
+    if(!wallet) return Promise.resolve({ error: 'no-wallet' });
+    return _post(PATHS.challenge, { wallet: String(wallet), cluster: 'mainnet' });
+  }
+  /* auth/verify → { token (JWT), expires_in_s? }. */
+  function authVerify(wallet, challenge, signature){
+    if(!wallet)    return Promise.resolve({ error: 'no-wallet' });
+    if(!challenge) return Promise.resolve({ error: 'no-challenge' });
+    if(!signature) return Promise.resolve({ error: 'no-signature' });
+    return _post(PATHS.verify, { wallet: String(wallet), challenge: String(challenge),
+                                 signature: String(signature), cluster: 'mainnet' });
+  }
+
+  /* ensureAuth(wallet, signFn): challenge → signFn(challenge) → verify → JWT
+   * IN DEN SPEICHER. signFn ist crSigner.signMessage (hereingereicht, damit
+   * dieses Modul die Wallet nie direkt anfasst). Ein gueltiger Token derselben
+   * Wallet wird wiederverwendet (kein zweiter Popup pro Sitzung). */
+  function ensureAuth(wallet, signFn){
+    wallet = String(wallet || '');
+    if(!wallet) return Promise.resolve({ error: 'no-wallet' });
+    if(typeof signFn !== 'function') return Promise.resolve({ error: 'no-signer' });
+    if(_jwt && _jwtWallet === wallet && _jwtExp > Date.now()) return Promise.resolve({ ok: true, cached: true });
+    /* Wallet gewechselt → alter Token ist wertlos, wegwerfen. */
+    _clear();
+    return authChallenge(wallet).then(function(ch){
+      if(!ch || ch.error || !ch.challenge)
+        return { error: (ch && ch.error) || 'challenge-failed', detail: ch && ch.detail };
+      return Promise.resolve(signFn(String(ch.challenge))).then(function(sg){
+        if(!sg || sg.error || !sg.signature)
+          return { error: (sg && sg.error) || 'sign-message-failed', detail: sg && sg.detail };
+        return authVerify(wallet, ch.challenge, sg.signature).then(function(vr){
+          if(!vr || vr.error || !vr.token)
+            return { error: (vr && vr.error) || 'verify-failed', detail: vr && vr.detail };
+          _jwt = String(vr.token); _jwtWallet = wallet;
+          var ttl = Number(vr.expires_in_s);
+          _jwtExp = Date.now() + ((isFinite(ttl) && ttl > 0) ? ttl * 1000 : 600000);
+          return { ok: true };
+        });
+      });
+    });
+  }
+
+  /* vault/register (JWT): stellt sicher, dass die Wallet einen Vault hat.
+   * Idempotent — ein bereits registrierter Vault ist kein Fehler. */
+  function vaultRegister(wallet){
+    return _post(PATHS.register, { wallet: String(wallet || _jwtWallet || ''), cluster: 'mainnet' }, true);
+  }
+
+  /* deposit/craft (JWT) → { transaction (base64, UNSIGNIERT), fee{bps,amount_raw},
+   * deposit{amount_raw} }. Die Gebuehr steht im Echo — VOR dem Signieren. */
+  function depositCraft(opts){
+    opts = opts || {};
+    if(!opts.inputMint) return Promise.resolve({ error: 'no-mint' });
+    if(!/^[1-9][0-9]*$/.test(String(opts.amountRaw || ''))) return Promise.resolve({ error: 'bad-amount' });
+    return _post(PATHS.deposit, {
+      wallet: String(opts.wallet || _jwtWallet || ''),
+      input_mint: String(opts.inputMint),
+      amount_raw: String(opts.amountRaw),
+      cluster: opts.cluster || 'mainnet'
+    }, true);
+  }
+
+  /* orders/price (JWT) → { order/orderPubkey, fee?, status }. Legt die EINE
+   * ruhende Order (single) gegen das eingezahlte Guthaben. */
+  function ordersPrice(opts){
+    opts = opts || {};
+    if(!opts.inputMint || !opts.outputMint) return Promise.resolve({ error: 'no-mint' });
+    return _post(PATHS.ordersPrice, {
+      wallet: String(opts.wallet || _jwtWallet || ''),
+      input_mint: String(opts.inputMint),
+      output_mint: String(opts.outputMint),
+      side: String(opts.side || 'buy'),
+      making_amount: String(opts.amountRaw || ''),
+      trigger_price: opts.triggerPrice == null ? null : String(opts.triggerPrice),
+      slippage_bps: Number(opts.slippageBps || 50),
+      deposit_sig: opts.depositSig ? String(opts.depositSig) : null,
+      cluster: opts.cluster || 'mainnet'
+    }, true);
+  }
+
+  /* orders/active (JWT) → { orders:[...] }. Read-only Bestaetigung. Ein
+   * Ausfall ist KEINE leere Liste (dieselbe Regel wie anchorList). */
+  function ordersActive(wallet){
+    return _get(PATHS.ordersActive + '?wallet=' + encodeURIComponent(String(wallet || _jwtWallet || '')), true);
+  }
+
+  function token(){ return _jwt; }
+  function hasToken(wallet){ return !!(_jwt && (!wallet || _jwtWallet === String(wallet)) && _jwtExp > Date.now()); }
+  function _clear(){ _jwt = null; _jwtWallet = ''; _jwtExp = 0; }
+
+  return { authChallenge: authChallenge, authVerify: authVerify, ensureAuth: ensureAuth,
+           vaultRegister: vaultRegister, depositCraft: depositCraft,
+           ordersPrice: ordersPrice, ordersActive: ordersActive,
+           token: token, hasToken: hasToken, clear: _clear, PATHS: PATHS };
 })();
 
 /* =========================================================================
@@ -34909,6 +35120,168 @@ try {
  * ausdruecklich getrennte Wege, bis PR 2 sie am Panel zusammenfuehrt.
  * ========================================================================= */
 
+/* =========================================================================
+ * crVaultLimit — v1.0.907 (P3.1) — der Ablauf hinter EINER ruhenden Order.
+ *
+ * Zwei Phasen, absichtlich getrennt, weil die Panel-Wahrheit dazwischen liegt:
+ *
+ *   prepare(opts)  — auth (freie Nachrichten-Signatur) → vault/register →
+ *                    deposit/craft. Baut die unsignierte Einzahlung und HOLT
+ *                    DIE GEBUEHR. Nichts Finanzwirksames ist signiert. Gibt den
+ *                    Gebuehren-Echo + einen `handle` zurueck.
+ *   commit(handle) — Wallet signiert die Einzahlung EINMAL → orders/price →
+ *                    orders/active (Bestaetigung). Verweigert, wenn die Gebuehr
+ *                    im Echo fehlt (dieselbe Philosophie wie der Market-Arm:
+ *                    eine nicht ausgewiesene Gebuehr wird nicht bezahlt).
+ *
+ * Die Weiche ruft `execute` (mit oder ohne vorbereiteten handle) — so laeuft
+ * die eine ruhende Order durch dieselben vier Tore wie der Market-Swap. Das
+ * Journal bekommt die Erstellung (Quelle 'live', Status 'open', mit
+ * orderPubkey) — OHNE den JWT: der lebt nur im Speicher.
+ * ========================================================================= */
+window.crVaultLimit = (function(){
+  'use strict';
+  var SOL_MINT = (typeof CR_SOL_MINT === 'string' && CR_SOL_MINT)
+    ? CR_SOL_MINT : 'So11111111111111111111111111111111111111112';
+
+  function _addr(){
+    try { var a = window.crSigner && crSigner.active(); if(a && a.address) return String(a.address); } catch(_){}
+    return '';
+  }
+
+  /* prepare — auth + register + deposit/craft. NICHTS finanzwirksames signiert
+   * (nur die freie Challenge-Nachricht). Rueckgabe traegt das Gebuehren-Echo. */
+  function prepare(opts){
+    opts = opts || {};
+    var addr = _addr();
+    if(!addr) return Promise.resolve({ error: 'not-connected' });
+    if(!window.crVaultApi) return Promise.resolve({ error: 'vault-api-missing' });
+    if(!/^[1-9][0-9]*$/.test(String(opts.amountRaw || ''))) return Promise.resolve({ error: 'bad-amount' });
+    if(!opts.inputMint || !opts.outputMint || opts.inputMint === opts.outputMint)
+      return Promise.resolve({ error: 'bad-mints' });
+    return crVaultApi.ensureAuth(addr, function(msg){
+        try { return crSigner.signMessage(msg); } catch(e){ return Promise.resolve({ error: 'sign-message-crashed', detail: String((e && e.message) || e) }); }
+      })
+      .then(function(au){
+        if(!au || au.error) return { error: (au && au.error) || 'auth-failed', detail: au && au.detail };
+        return crVaultApi.vaultRegister(addr).then(function(rg){
+          if(rg && rg.error) return { error: 'register-failed', detail: rg.error + (rg.detail ? ' — ' + rg.detail : '') };
+          return crVaultApi.depositCraft({ wallet: addr, inputMint: opts.inputMint, amountRaw: opts.amountRaw, cluster: 'mainnet' })
+            .then(function(dc){
+              if(!dc || dc.error || !dc.transaction)
+                return { error: (dc && dc.error) || 'deposit-craft-failed', detail: dc && dc.detail };
+              var fee = dc.fee || dc.platform_fee || null;
+              var feeRaw = (fee && fee.amount_raw != null) ? String(fee.amount_raw) : null;
+              var feeBps = (fee && fee.bps != null) ? Number(fee.bps) : null;
+              var depRaw = (dc.deposit && dc.deposit.amount_raw != null) ? String(dc.deposit.amount_raw) : String(opts.amountRaw);
+              return { ok: true, transaction: dc.transaction, feeRaw: feeRaw, feeBps: feeBps, depositRaw: depRaw,
+                       handle: { addr: addr, transaction: dc.transaction, opts: opts,
+                                 feeRaw: feeRaw, feeBps: feeBps, depositRaw: depRaw } };
+            });
+        });
+      });
+  }
+
+  /* commit — Wallet signiert die Einzahlung EINMAL, dann orders/price und
+   * orders/active. Ohne ausgewiesene Gebuehr im Echo: KEINE Signatur. */
+  function commit(handle){
+    if(!handle || !handle.transaction) return Promise.resolve({ error: 'no-handle' });
+    if(handle.feeRaw == null || handle.feeBps == null) return Promise.resolve({ error: 'fee-missing' });
+    if(!window.crVaultApi || !window.crSigner) return Promise.resolve({ error: 'vault-deps-missing' });
+    var addr = handle.addr, o = handle.opts || {};
+    return crSigner.signAndSend(handle.transaction, { chain: 'solana:mainnet' }).then(function(sg){
+      if(!sg || sg.error || !sg.signature) return { error: (sg && sg.error) || 'sign-failed' };
+      var depSig = String(sg.signature);
+      return crVaultApi.ordersPrice({ wallet: addr, inputMint: o.inputMint, outputMint: o.outputMint,
+          side: o.side, amountRaw: o.amountRaw, triggerPrice: o.triggerPrice,
+          slippageBps: o.slippageBps, depositSig: depSig, cluster: 'mainnet' })
+        .then(function(op){
+          if(!op || op.error)
+            return { error: (op && op.error) || 'orders-price-failed', detail: op && op.detail, depositSig: depSig };
+          var orderPubkey = op.orderPubkey || (op.order && (op.order.orderKey || op.order.orderPubkey)) || op.order || null;
+          var opFee = op.fee || op.platform_fee || null;
+          var feeRaw = handle.feeRaw != null ? handle.feeRaw : (opFee && opFee.amount_raw != null ? String(opFee.amount_raw) : null);
+          var feeBps = handle.feeBps != null ? handle.feeBps : (opFee && opFee.bps != null ? Number(opFee.bps) : null);
+          /* Bestaetigung ueber orders/active — ein Ausfall dort macht die Order
+           * NICHT ungueltig (sie liegt bereits), er bleibt nur unbestaetigt. */
+          return crVaultApi.ordersActive(addr).then(function(ac){
+            var confirmed = false, confirmError = null;
+            if(ac && ac.error){ confirmError = String(ac.error); }
+            else if(ac && Array.isArray(ac.orders)){
+              confirmed = orderPubkey
+                ? ac.orders.some(function(x){ return String(x && (x.orderKey || x.orderPubkey || x.order) || '') === String(orderPubkey); })
+                : ac.orders.length > 0;
+            }
+            var res = { ok: true, orderPubkey: orderPubkey, sig: depSig, depositSig: depSig,
+                        feeRaw: feeRaw, feeBps: feeBps, depositRaw: handle.depositRaw,
+                        confirmed: confirmed, confirmError: confirmError };
+            _journalOpen(res, o);
+            return res;
+          });
+        });
+    });
+  }
+
+  /* execute — der eine Einstieg fuer die Weiche. Mit vorbereitetem handle nur
+   * committen (das Panel hat die Gebuehr schon gezeigt); ohne handle den ganzen
+   * Weg. */
+  function execute(p){
+    p = p || {};
+    if(p.vaultHandle && p.vaultHandle.transaction) return commit(p.vaultHandle);
+    return prepare(p).then(function(pr){
+      if(!pr || pr.error) return pr || { error: 'prepare-failed' };
+      return commit(pr.handle);
+    });
+  }
+
+  /* Die Erstellung ins VORHANDENE Journal (cr_journal_v1), Quelle 'live',
+   * Status 'open', mit orderPubkey — und OHNE JWT (der lebt nur im Speicher). */
+  function _journalOpen(order, opts){
+    try {
+      var entry = null;
+      try { entry = (opts.triggerPrice != null && isFinite(Number(opts.triggerPrice))) ? Number(opts.triggerPrice)
+                    : ((typeof currentPrice === 'function') ? currentPrice() : null); } catch(_){}
+      var side = String(opts.side || 'buy').toLowerCase() === 'sell' ? 'sell' : 'buy';
+      var row = {
+        id: 'limit_' + String(order.orderPubkey || order.sig || Date.now()).slice(0, 16),
+        orderId: 'live:limit:' + String(order.orderPubkey || order.sig || ''),
+        ts: Date.now(),
+        dateStr: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString().slice(0, 5),
+        asset: (typeof currentAsset === 'string' ? currentAsset.toUpperCase() : ''),
+        tf: (typeof timeframe === 'string') ? timeframe : '',
+        side: side, setup: 'limit',
+        entry: entry, sl: null, tp: null, rr: null, risk: null, conf: null, levels: '',
+        result: 'open', pnl: 0,
+        notes: 'RUHENDE ORDER (Vault-Limit) · order ' + String(order.orderPubkey || '?')
+          + ' · deposit sig ' + String(order.sig || '?')
+          + ' · trigger ' + String(opts.triggerPrice == null ? '?' : opts.triggerPrice)
+          + ' · in ' + String(opts.amountRaw || '?')
+          + (order.feeRaw != null ? ' · fee ' + String(order.feeRaw) + ' raw' : ' · fee nicht ausgewiesen')
+          + (order.confirmed ? ' · bestätigt (orders/active)' : ' · Bestätigung ausstehend'),
+        checklist: null, auto: true, kind: 'limit', source: 'live',
+        sig: String(order.sig || ''), orderPubkey: String(order.orderPubkey || ''),
+        feeRaw: order.feeRaw != null ? String(order.feeRaw) : null,
+        amountInRaw: String(opts.amountRaw || ''), amountOutRaw: ''
+      };
+      var d = _crJrnLoad();
+      d.manual.push(row);
+      _crJrnSave(d);
+      try {
+        if(typeof _crJrnRenderManual === 'function'){
+          var win = document.getElementById('win-display');
+          var jv = document.getElementById('crDocsViewJournal');
+          if(win && win.classList.contains('on') && jv && !jv.classList.contains('hidden')){
+            _crJrnRenderManual();
+            if(typeof _crJrnRenderStats === 'function') _crJrnRenderStats();
+          }
+        }
+      } catch(_){}
+    } catch(_){}
+  }
+
+  return { prepare: prepare, commit: commit, execute: execute, SOL_MINT: SOL_MINT };
+})();
+
 /* Der reale Adapter — das Objekt hinter ChartRunner.sdk.setRealSDK.
  * Zunaechst NUR marketSwap; der Client baut und rechnet weiter NICHTS:
  * /v1/quote ist die Auskunft (Gebuehr VOR dem Bau sichtbar), /v1/tx/swap
@@ -34965,6 +35338,17 @@ var crRealAdapter = {
           });
       })
       .catch(function(e){ return { error: 'adapter-failed', detail: String((e && e.message) || e) }; });
+  },
+  /* v1.0.907 (P3.1) — die EINE ruhende Order. Additiv neben marketSwap; der
+   * Market-Weg ist Bit fuer Bit unberuehrt. Der Ablauf lebt in crVaultLimit
+   * (auth → register → deposit/craft → EINE Signatur → orders/price →
+   * orders/active); der Adapter reicht nur durch und faengt jeden Wurf ein. */
+  limitVault: function(p){
+    p = p || {};
+    if(!window.crVaultLimit || typeof crVaultLimit.execute !== 'function')
+      return Promise.resolve({ error: 'vault-flow-missing' });
+    return Promise.resolve(crVaultLimit.execute(p))
+      .catch(function(e){ return { error: 'vault-adapter-failed', detail: String((e && e.message) || e) }; });
   }
 };
 try { window.crRealAdapter = crRealAdapter; } catch(_){}
@@ -35045,7 +35429,11 @@ window.crWeiche = (function(){
     if(!walletCanSign())
       return { live:false, why:'wallet',
                msg:_crT('weiche.wallet','Wallet cannot sign (connect one with signAndSendTransaction) — this order stays paper') };
-    if(routeName !== 'Market')
+    /* v1.0.907 (P3.1) — EIN additiver Zweig: 'Limit' wird ebenfalls live-faehig
+     * (eine ruhende Order ueber den Vault). Alle vier Tore davor gelten
+     * unveraendert; Market ist Bit fuer Bit dasselbe. Jede ANDERE Route bekommt
+     * weiter die ehrliche P3-Meldung statt eines stillen Paper-Fallbacks. */
+    if(routeName !== 'Market' && routeName !== 'Limit')
       return { live:false, why:'route',
                msg: String(routeName) + ' ' + _crT('weiche.routeP3','goes live with P3 — this keeps running as paper') };
     return { live:true };
@@ -35056,9 +35444,14 @@ window.crWeiche = (function(){
     try { if(typeof toast === 'function') toast('ARM · ' + msg); } catch(_){}
   }
 
-  function _fireLive(opts){
+  function _fireLive(routeName, opts){
     var o = opts || {}, src = o.source || {};
     var side = String(o.side || 'buy').toLowerCase();
+    /* v1.0.907 (P3.1) — 'Limit' ist die zweite live-faehige Route. Market ist
+     * Bit fuer Bit unveraendert; Limit reicht zusaetzlich den Trigger-Preis und
+     * einen etwaigen vorbereiteten Vault-handle durch und ruft real.limitVault
+     * statt real.marketSwap. */
+    var isLimit = (routeName === 'Limit');
     var m = '';
     try { m = (typeof crStoreMint === 'function') ? crStoreMint(currentAssetObj()) : ''; } catch(_){}
     var inputMint  = src.inputMint  || (side === 'buy' ? SOL_MINT : m);
@@ -35077,24 +35470,35 @@ window.crWeiche = (function(){
     }
     var real = null;
     try { real = (typeof ChartRunnerSDK_Foundation !== 'undefined') ? ChartRunnerSDK_Foundation.real : null; } catch(_){}
-    if(!real || typeof real.marketSwap !== 'function'){
+    var need = isLimit ? 'limitVault' : 'marketSwap';
+    if(!real || typeof real[need] !== 'function'){
       _say(_crT('weiche.noAdapter','No live adapter registered (setRealSDK) — nothing executed'));
       return Promise.resolve({ error:'no-adapter' });
     }
     var call = { inputMint: inputMint, outputMint: outputMint, amountRaw: amountRaw,
                  slippageBps: (Number(src.slippageBps) > 0) ? Math.floor(Number(src.slippageBps)) : 50 };
-    return Promise.resolve(real.marketSwap(call)).then(function(res){
-      if(res && res.sig){
-        /* Volumen-Buchung in Lamports der SOL-Seite; ein Paar ganz ohne SOL
-         * zaehlt konservativ den Input-Rohbetrag — lieber ein Limit, das zu
-         * frueh greift, als eins, das nie greift. */
+    var exec;
+    if(isLimit){
+      call.side = side;
+      call.triggerPrice = src.triggerPrice;
+      call.vaultHandle = src.vaultHandle;
+      exec = real.limitVault(call);
+    } else {
+      exec = real.marketSwap(call);
+    }
+    return Promise.resolve(exec).then(function(res){
+      /* Erfolg: Market traegt res.sig, die ruhende Order res.orderPubkey.
+       * Beides bucht die SOL-Seite ins Session-Limit — bei einer Kauf-Limit
+       * ist das genau der EINGEZAHLTE Betrag (Spec: „Session-Limit zaehlt den
+       * Deposit mit"). */
+      if(res && (res.sig || res.orderPubkey)){
         var lam = 0;
         if(call.inputMint === SOL_MINT) lam = Number(call.amountRaw) || 0;
         else if(call.outputMint === SOL_MINT) lam = Number(res.outAmount) || 0;
         else lam = Number(call.amountRaw) || 0;
         _liveLamports += lam; _liveFills += 1;
       } else if(res && res.error){
-        _say('Live swap failed: ' + String(res.error) + (res.detail ? ' — ' + String(res.detail) : ''));
+        _say((isLimit ? 'Live limit failed: ' : 'Live swap failed: ') + String(res.error) + (res.detail ? ' — ' + String(res.detail) : ''));
       }
       return res;
     }, function(e){
@@ -35104,12 +35508,13 @@ window.crWeiche = (function(){
   }
 
   /* DIE eine Stelle. Jede gewickelte Order-Primitive laeuft hier durch;
-   * nur route === 'Market' kann je den Adapter erreichen. Ein Crash in
-   * decide() faellt in die sichere Richtung: Paper, still. */
+   * nur route === 'Market' und (seit v907) 'Limit' koennen je den Adapter
+   * erreichen. Ein Crash in decide() faellt in die sichere Richtung: Paper,
+   * still. */
   function route(routeName, opts, paperFn){
     var d;
     try { d = decide(routeName, opts); } catch(_){ d = { live:false, silent:true, why:'decide-crashed' }; }
-    if(d.live) return _fireLive(opts);
+    if(d.live) return _fireLive(routeName, opts);
     if(!d.silent && d.msg) _say(d.msg);
     return paperFn();
   }
@@ -35680,6 +36085,13 @@ window.crPanelKlar = (function(){
   var SOL_MINT = (typeof CR_SOL_MINT === 'string' && CR_SOL_MINT)
     ? CR_SOL_MINT : 'So11111111111111111111111111111111111111112';
 
+  /* v1.0.907 (P3.1) — der Panel-PFLICHTTEXT einer ruhenden Order, im st-live-
+   * Gold. Genau dieser Wortlaut (Julians Spec): das Guthaben geht in den
+   * Vault, die Order fuellt spaeter ohne dich — das ist die eine Wahrheit, die
+   * vor dem Signieren stehen MUSS. Als Konstante, damit Panel und Test
+   * denselben Satz teilen. */
+  var RESTING_TEXT = '⚡ RUHENDE ORDER · Guthaben geht in den Jupiter-Vault · füllt später ohne dich';
+
   function _esc(v){
     return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch){
       return ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;'
@@ -35724,8 +36136,12 @@ window.crPanelKlar = (function(){
     var g = false, b = false;
     try { g = !!(window.crWeiche && crWeiche.armedGlobal()); } catch(_){ g = false; }
     if(g){ try { b = !!(crWeiche.badgeGate().ok); } catch(_){ b = false; } }
-    var mkt = String(routeVal || '').toLowerCase() === 'market';
-    return (g && b && mkt) ? 'live' : 'armed-paper';
+    /* v1.0.907 (P3.1) — 'limit' ist ebenfalls live-faehig (ruhende Order ueber
+     * den Vault), deshalb bekommt auch sie den st-live-Goldzustand, wenn die
+     * Weiche feuern wuerde. Jede andere Route bleibt Paper. */
+    var r = String(routeVal || '').toLowerCase();
+    var liveRoute = (r === 'market' || r === 'limit');
+    return (g && b && liveRoute) ? 'live' : 'armed-paper';
   }
 
   function headText(st){
@@ -35878,9 +36294,11 @@ window.crPanelKlar = (function(){
     else document.addEventListener('DOMContentLoaded', _initBand);
   } catch(_){}
 
+  function restingText(){ return RESTING_TEXT; }
   return { state: state, headText: headText, applyState: applyState,
            receiveText: receiveText, overlayDir: overlayDir, sideWarnText: sideWarnText,
-           syncBand: syncBand, fillCard: fillCard, GOLD: GOLD };
+           syncBand: syncBand, fillCard: fillCard, restingText: restingText,
+           RESTING_TEXT: RESTING_TEXT, GOLD: GOLD };
 })();
 
 // v0.8k#18 — Shared helpers used by the new ability lineup.
@@ -37129,8 +37547,35 @@ function renderBlueRouteInputs(body, overlay, helpers){
     /* A1/A2 — „Erhältst du ~" + Klartext-Satz. Beide NUR aus der Quote;
      * ohne Quote „—" bzw. ein Satz ohne „≈"-Teil — nie eine erfundene Zahl. */
     const marketRoute = String(routeSelect.value || '') === 'market';
+    const limitRoute = String(routeSelect.value || '') === 'limit';
     const setKlarGet = (t, fq) => {
       try {
+        klarLine.style.color = '';
+        /* v1.0.907 (P3.1) — die ruhende Order hat ihren eigenen Pflichttext.
+         * Im st-live-Gold der Vault-Klartext + die 50-bps-Gebuehr aus dem
+         * deposit/craft-Echo (fq); solange nicht vorbereitet, ehrlich „wird
+         * bei Vorbereitung geholt" statt einer erfundenen Zahl. */
+        if(limitRoute){
+          getLine.style.display = 'none';
+          const rt = (window.crPanelKlar && crPanelKlar.restingText)
+            ? crPanelKlar.restingText()
+            : '⚡ RUHENDE ORDER · Guthaben geht in den Jupiter-Vault · füllt später ohne dich';
+          if(st === 'live'){
+            let fee = 'Gebühr wird bei Vorbereitung geholt';
+            if(fq && fq.feeBps != null && fq.feeRaw != null){
+              const pct = String(fq.feeBps / 100).replace('.', ',');
+              let amt = '';
+              try { amt = _crFmtSol(Number(fq.feeRaw)); } catch(_){ amt = String(fq.feeRaw) + ' raw'; }
+              fee = 'Gebühr ' + pct + ' % (' + amt + ')';
+            }
+            klarLine.innerHTML = '<b>' + crRouteHtmlEscape(rt) + '</b> · ' + crRouteHtmlEscape(fee);
+            klarLine.style.color = '#d4a43c';
+          } else {
+            klarLine.innerHTML = 'Ruhende Order (Limit)'
+              + (st === 'armed-paper' ? ' · Papier — global nicht scharf' : ' · Entwurf');
+          }
+          return;
+        }
         const out = (fq && window.crPanelKlar && fq.outRaw)
           ? crPanelKlar.receiveText(t && t.outputMint, fq.outRaw) : '—';
         if(!dexVenue || !marketRoute){
@@ -37164,6 +37609,21 @@ function renderBlueRouteInputs(body, overlay, helpers){
       } catch(_){}
     };
     setKlarGet(null, null);
+    /* v1.0.907 (P3.1) — Limit hat keinen Market-Quote-Weg; die Run-Zeile
+     * spiegelt schlicht den Weiche-Zustand (st), die Gebuehr kommt erst bei
+     * der Vorbereitung (deposit/craft) im Arm-Klick. */
+    if(limitRoute){
+      const liveLimit = (st === 'live');
+      try {
+        contextLine.classList.add('cr-runline');
+        contextLine.classList.toggle('cr-run-live', liveLimit);
+        contextLine.classList.toggle('cr-run-paper', !liveLimit);
+      } catch(_){}
+      contextLine.textContent = liveLimit
+        ? 'Run: ' + routeVenue + ' · VAULT-LIMIT · ruhende Order' + (runTf ? ' · ' + runTf.toUpperCase() : '')
+        : paperRunText;
+      return;
+    }
     if(!live){
       contextLine.textContent = paperRunText;
       /* Quote auch im Paper-Modus — nur mit DEX-Venue, Markt-Route und
@@ -37366,6 +37826,95 @@ function renderBlueRouteInputs(body, overlay, helpers){
    * Quelle fuehrt (Close trade dreht genau diese Menge zurueck). */
   const liveKey = (overlay.id != null ? String(overlay.id) : String(overlay.kind || 'obj'));
   let liveBusy = false;
+  /* v1.0.907 (P3.1) — der Arm-Weg der EINEN ruhenden Order. Erst die vier
+   * Tore der Weiche (decide, read-only) — nur wenn sie offen sind, folgt die
+   * Vorbereitung (auth + vault/register + deposit/craft): so gibt es keinen
+   * Wallet-Popup fuer eine Order, die ohnehin nicht feuern koennte. Die
+   * Gebuehr aus dem deposit/craft-Echo steht VOR der Einzahlungs-Signatur im
+   * Panel (Gold-Pflichttext); fehlt sie, wird NICHT signiert. Committet wird
+   * ueber sdk.limit → dieselbe Weiche (vier Tore), nicht an ihr vorbei; das
+   * Session-Limit bucht den Deposit dort. */
+  const _armVaultLimit = () => {
+    if(liveBusy){ sayPanel(_crT('panel.busy','A live order is already in flight — wait for its verdict.')); return; }
+    if(!(window.crVaultLimit && window.crWeiche && window.crPanelLive)){
+      sayPanel(_crT('panel.notLive','The switch declined (reason in the terminal line) — nothing executed.')); return;
+    }
+    const side = String(sideSelect.value || 'BUY').toUpperCase() === 'SELL' ? 'sell' : 'buy';
+    liveBusy = true;
+    sayPanel('Vault-Limit wird vorbereitet — nichts signiert …', 'dim');
+    crPanelLive.resolveTrade(sideSelect.value, sizeInput.value, params.slipGuard).then(t => {
+      if(t.error){ liveBusy = false; sayPanel(t.msg); return; }
+      const triggerPrice = String(params.price == null ? '' : params.price).trim().replace(',', '.');
+      if(!triggerPrice || !isFinite(Number(triggerPrice)) || Number(triggerPrice) <= 0){
+        liveBusy = false;
+        sayPanel('Trigger-Preis fehlt oder ist ungültig — die Limit-Route braucht einen Zielpreis (Feld „Price").');
+        return;
+      }
+      const opts = { inputMint: t.inputMint, outputMint: t.outputMint, side: side,
+                     amountRaw: t.amountRaw, slippageBps: t.slippageBps, triggerPrice: triggerPrice };
+      /* Tore ZUERST (kein Wallet-Popup, wenn zu). */
+      let d = null;
+      try {
+        d = crWeiche.decide('Limit', { side: side, source: { armed: true, inputMint: opts.inputMint,
+          outputMint: opts.outputMint, amountRaw: opts.amountRaw, slippageBps: opts.slippageBps,
+          triggerPrice: opts.triggerPrice } });
+      } catch(_){ d = { live: false, msg: 'Weiche-Vorprüfung abgestürzt' }; }
+      if(!d || !d.live){
+        liveBusy = false;
+        sayPanel((d && d.msg) || _crT('panel.notLive','The switch declined (reason in the terminal line) — nothing executed.'));
+        return;
+      }
+      sayPanel('Vault-Anmeldung — bestätige die Nachricht in der Wallet (kein Geld) …', 'dim');
+      try { section.classList.add('cr-arm-loading'); } catch(_){}
+      return crVaultLimit.prepare(opts).then(pr => {
+        if(!pr || pr.error){
+          liveBusy = false; try { section.classList.remove('cr-arm-loading'); } catch(_){}
+          sayPanel('Vault-Vorbereitung fehlgeschlagen: ' + String((pr && pr.error) || 'unbekannt')
+            + ((pr && pr.detail) ? ' — ' + String(pr.detail) : ''));
+          return;
+        }
+        if(pr.feeRaw == null || pr.feeBps == null){
+          liveBusy = false; try { section.classList.remove('cr-arm-loading'); } catch(_){}
+          sayPanel('Gebühr nicht ausgewiesen (deposit/craft ohne fee-Echo) — es wurde nichts signiert.');
+          return;
+        }
+        /* Gebuehr + Gold-Pflichttext VOR der Einzahlungs-Signatur. */
+        try {
+          const rt = crPanelKlar && crPanelKlar.restingText ? crPanelKlar.restingText()
+            : '⚡ RUHENDE ORDER · Guthaben geht in den Jupiter-Vault · füllt später ohne dich';
+          const pct = String(pr.feeBps / 100).replace('.', ',');
+          let amt = ''; try { amt = _crFmtSol(Number(pr.feeRaw)); } catch(_){ amt = String(pr.feeRaw) + ' raw'; }
+          klarLine.innerHTML = '<b>' + crRouteHtmlEscape(rt) + '</b> · Gebühr ' + pct + ' % (' + crRouteHtmlEscape(amt) + ')';
+          klarLine.style.color = '#d4a43c';
+          contextLine.textContent = 'Run: ' + routeVenue + ' · VAULT-LIMIT · GEBUEHR ' + pct + ' %';
+        } catch(_){}
+        sayPanel('Gebühr oben — deine Wallet fragt jetzt nach der Einzahlung in den Vault …', 'dim');
+        return Promise.resolve(sdk.limit({ side: side, price: Number(triggerPrice), size: 1,
+          source: { armed: true, inputMint: opts.inputMint, outputMint: opts.outputMint,
+                    amountRaw: opts.amountRaw, slippageBps: opts.slippageBps,
+                    triggerPrice: opts.triggerPrice, vaultHandle: pr.handle } })).then(res => {
+          liveBusy = false; try { section.classList.remove('cr-arm-loading'); } catch(_){}
+          if(!res){ sayPanel(_crT('panel.notLive','The switch declined (reason in the terminal line) — nothing executed.')); return; }
+          if(res.error){
+            sayPanel((crPanelLive._msgForError ? crPanelLive._msgForError(res) : ('Limit fehlgeschlagen: ' + String(res.error))));
+            return;
+          }
+          try {
+            section.classList.add('cr-arm-snapped');
+            setTimeout(() => { try { section.classList.remove('cr-arm-snapped'); } catch(_){} }, 1400);
+            if(window.crArmGrammar) crArmGrammar.fillBurst('RUHENDE ORDER');
+          } catch(_){}
+          sayPanel('RUHENDE ORDER liegt' + (res.orderPubkey ? ' · ' + String(res.orderPubkey) : '')
+            + (res.confirmed ? ' · bestätigt (orders/active)' : ' · Bestätigung ausstehend')
+            + ' · Einzahlung sig ' + String(res.sig || '?'), 'ok');
+          refresh();
+        });
+      });
+    }).catch(e => {
+      liveBusy = false; try { section.classList.remove('cr-arm-loading'); } catch(_){}
+      sayPanel('Vault-Limit-Pfad crashed: ' + String((e && e.message) || e));
+    });
+  };
   armBtn.onclick = () => {
     armedInput.checked = true;
     let state = null;
@@ -37386,6 +37935,9 @@ function renderBlueRouteInputs(body, overlay, helpers){
      * nicht an ihr vorbei. */
     try { if(!(window.crWeiche && crWeiche.flagOn())) return; } catch(_){ return; }
     const routeVal = String(routeSelect.value || 'market');
+    /* v1.0.907 (P3.1) — additiver Zweig: 'limit' geht in den Vault-Limit-Weg;
+     * Market unveraendert; jede andere Route bekommt weiter die P3-Meldung. */
+    if(routeVal === 'limit'){ _armVaultLimit(); return; }
     if(routeVal !== 'market'){
       sayPanel(routeVal + ' ' + _crT('weiche.routeP3','goes live with P3 — this keeps running as paper'));
       return;
