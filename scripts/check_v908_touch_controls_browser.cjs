@@ -95,7 +95,11 @@ async function boot(browser, ctxOpts){
   const bv = (banner.match(/CURRENT VERSION:\s*v(\d+)\.(\d+)\.(\d+)/) || []).slice(1).map(Number);
   check('Banner meldet mindestens v1.0.908',
     bv.length === 3 && (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 908)))), bv);
-  check('Touch-Kontext: crTouch.active === true und Layer sichtbar', await T.page.evaluate(() => {
+  // v1.0.909 (M0.1): der Layer rendert jetzt CHART-ONLY — nach Boot (OS-Desktop,
+  // kein Run) ist er bewusst versteckt; im Chart (game.running) sichtbar.
+  check('Touch-Kontext: crTouch.active === true und Layer im Chart sichtbar', await T.page.evaluate(() => {
+    try { restart(); } catch(_){}
+    try { crTouch.refresh(); } catch(_){}
     const l = document.getElementById('crTouchLayer');
     return !!(window.crTouch && crTouch.active && l && !l.hidden);
   }));

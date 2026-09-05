@@ -56,9 +56,27 @@ through `crApplyAccessGates`. Desktop/keyboard is unchanged (the layer never app
 the auto-run hook returns 0 there). The older `#crTouchPad` move-pad is superseded while the M0 layer
 is active.
 
+#### M0.1 · Feinschliff (`v1.0.909`)
+
+Visibility/position/optics only — no logic change (the buttons fire the exact same actions as M0):
+
+- **Chart-only.** The whole layer (HK1–HK4 + Auto-Run + Stick + Order) now renders **only in the
+  chart/play view** (`game.running` and not `crSplashUp`). On the ChartRunnerOS surface
+  (Home/Desktop, Profile, Terminal, Token) and on the splash it is off — same state that already
+  separates “Desktop” from “Chart”. `crTouch.active` stays pure touch-detection; a light 250 ms tick
+  keeps `#crTouchLayer[hidden]` reactive.
+- **Phantom-/safe-area-safe.** Height uses `svh` (vh fallback); the bottom anchor is one variable,
+  `--cr-tl-lift = env(safe-area-inset-bottom) + 20px`, referenced by both docks; a `visualViewport`
+  fallback aligns the layer to the truly-visible area so no button row hides behind the in-app
+  browser bar. Hit targets stay ≥ 44 px.
+- **Minimalist** like the timeframe pills/topbar: flat/semi-transparent ground instead of a filled
+  box, thin accent ring in the ability colour (cyan/red/blue/gold), icon-forward with a small quiet
+  label, Auto-Run & Stick as slim pills.
+
 Mobile regression smoke:
 
 ```sh
 node scripts/check_v908_touch_controls_browser.cjs   # M0 touch cockpit (parity, gating, auto-run, trade-path)
+node scripts/check_v909_touch_polish_browser.cjs     # M0.1 polish (chart-only, safe-area, hit-area, parity)
 node scripts/check_play_mobile_adaptive_shell_browser.cjs
 ```
