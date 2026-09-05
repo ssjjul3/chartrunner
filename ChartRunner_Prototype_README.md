@@ -38,8 +38,27 @@ Open `ChartRunner_Prototype.html` in a browser, or use the live public build at 
 
 `/play/` includes an adaptive mobile shell for phones and tablets: portrait uses compact top-bar commands, a bottom-left collapsible HOT tray for hotkeys, bottom-right runner controls, mobile app sheets, tap-to-run movement, two-finger chart movement, one-active-laser routing, and a `12H`+ timeframe dropdown (after `4H`) that keeps the toolbar on a single row. The desktop-only guided drag-and-drop tour demo is suppressed on phones. Landscape phone and tablet layouts keep more desktop chrome while preserving the touch controls.
 
+### M0 · Touch-Steuerungsschicht (`v1.0.908`)
+
+The first working mobile ground-access cut. On touch devices (`crTouch.active`, detected via
+`pointer:coarse` / `maxTouchPoints`, forceable with `?crTouchLayer=on|off`) `/play/` shows a
+thumb cockpit: a right-hand dock with on-screen **HK1–HK4** (Vehikel · Ausricht-Laser ·
+Aktivierungs-Laser · Alarm-Laser) plus an **Order** button that opens the existing
+Activation-Panel (Market/Limit), and a left-hand move zone with **Auto-Run** by default plus an
+optional on-screen **Stick** (toggle, persisted in `cr_touch_stick_v1`, default off).
+
+Each ability button is only a *second trigger*: it dispatches the exact same real keyboard
+sequence as the physical key (via `ChartRunner.control.tap`), so every existing handler — and its
+guest/feature gate — applies bit-for-bit. No new trade path, no new switch: the Order button only
+opens the view; the four gates + Weiche are untouched. Visibility is staged like the ARM gate
+(guest sees the base; HK3/HK4 appear once signed-in/wallet-connected — same `crGuest`), live-reactive
+through `crApplyAccessGates`. Desktop/keyboard is unchanged (the layer never appears on non-touch and
+the auto-run hook returns 0 there). The older `#crTouchPad` move-pad is superseded while the M0 layer
+is active.
+
 Mobile regression smoke:
 
 ```sh
+node scripts/check_v908_touch_controls_browser.cjs   # M0 touch cockpit (parity, gating, auto-run, trade-path)
 node scripts/check_play_mobile_adaptive_shell_browser.cjs
 ```

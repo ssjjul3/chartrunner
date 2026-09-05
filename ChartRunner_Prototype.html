@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.907
-     LAST UPDATED:    2026-09-05  ·  v1.0.907 (P3.1 · VAULT-LIMIT): EINE EINFACHE, RUHENDE LIMIT-ORDER UEBER DEN JUPITER-VAULT — EIN ADDITIVER route==='Limit'-ZWEIG AN DER WEICHE, MARKET BIT FUER BIT UNBERUEHRT. (a) VAULT-FLOW (Julians V2-Vault-Spec): auth/challenge → Wallet signiert die Challenge (FREIE Nachricht, crSigner.signMessage neu; kein Geld, keine Kette) → auth/verify → JWT NUR IM SPEICHER (crVaultApi._jwt in der Closure; NIE localStorage, NIE Journal, NIE ein Log — ein Token, das einen Neustart ueberlebt, beweist nichts mehr und kann missbraucht werden). vault/register (JWT, idempotent). Order = deposit/craft (JWT) → unsignierte Einzahlung + Gebuehren-Echo → Wallet signiert EINMAL (die eine finanzwirksame Signatur) → orders/price (single). Bestaetigung ueber orders/active. Die Worker-Pfade sind an EINER Stelle (crVaultApi.PATHS) gebuendelt, gegen GET /health gegenzupruefen — Doku ist keine Messung. (b) WEICHE, EIN ADDITIVER ZWEIG: decide() macht 'Limit' zusaetzlich live-faehig (die vier Tore davor unveraendert: armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign); _fireLive ruft bei 'Limit' real.limitVault statt real.marketSwap; jede ANDERE Route bekommt weiter die ehrliche P3-Meldung. crRealAdapter traegt limitVault NEBEN marketSwap; der Market-Weg (quote→swap→signAndSend) ist Bit fuer Bit derselbe. (c) SESSION-LIMIT ZAEHLT DEN DEPOSIT: bei Erfolg (res.orderPubkey) bucht _fireLive die SOL-Seite — bei einer Kauf-Limit genau der eingezahlte Betrag; ueber dem Limit verweigert die Weiche. (d) PANEL: der Limit-Zweig zeigt im st-live-Gold den PFLICHTTEXT „⚡ RUHENDE ORDER · Guthaben geht in den Jupiter-Vault · füllt später ohne dich" (crPanelKlar.restingText, EINE Konstante) plus die 50-bps-Gebuehr aus dem deposit/craft-Echo; ohne ausgewiesene Gebuehr → KEINE Signatur (dieselbe Philosophie wie der Market-Arm). crPanelKlar.state() gibt jetzt auch fuer 'limit' st-live, wenn die Weiche feuern wuerde. Journal: die Erstellung als Quelle 'live', Status 'open', mit orderPubkey — OHNE JWT. (e) GEPRUEFT: scripts/check_v907_vault_limit_browser.cjs — Spion (real.limitVault NUR bei allen vier Toren + route==='Limit', sonst nie; Gegenprobe alles offen → genau ein Aufruf), JWT-nur-Memory (nach ensureAuth kein Token in localStorage, wohl aber in crVaultApi.token()), Vault-Klartext + Gebuehr (Pflichttext im Panel + feeBps/feeRaw aus dem Echo; ohne Fee → commit verweigert), Market unberuehrt (marketSwap-Spion + Diff der Market-Weiche unveraendert). Gegenproben ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: der ausgerollte V2-Vault-Worker (P3.0) — die Endpunkte muessen in GET /health unter `endpoints` stehen, bevor sich der Client darauf verlaesst; Julian prueft nach Merge am Telefon (Reject-Pfad ohne Bestaetigung, dann eine echte kleine Order ~0,01 SOL, Order in Jupiters Liste gegengeprueft).
+     CURRENT VERSION: v1.0.908
+     LAST UPDATED:    2026-09-05  ·  v1.0.908 (M0 · TOUCH-STEUERUNGSSCHICHT): ON-SCREEN-GRUNDZUGRIFF AM HANDY — HK1–HK4, AUTO-RUN (+ OPTIONALER STICK) UND EIN EINSTIEG INS BESTEHENDE ACTIVATION-PANEL. STRENG ADDITIV, KEIN NEUER TRADE-PFAD, KEINE NEUE WEICHE. (a) ZWEITER AUSLOESER STATT NEUER LOGIK: jeder Fähigkeits-Button routet ueber die vorhandene, dokumentierte ChartRunner.control.tap-API und dispatcht EXAKT dieselbe echte Tastatur-Sequenz wie ein Tastendruck (keydown+keyup, gleiche Felder) — dadurch greift jeder bestehende Handler INKL. seiner Gast-/Feature-Gates (useAbility fuer HK2/HK3, crAlarm.arm fuer HK4, toggleVehicle fuer HK1) Bit fuer Bit; die Paritaet ist by construction, nicht nachgebaut. (b) BEWEGUNG: Default Auto-Run — der Runner laeuft ohne Eingabe nach rechts; ein optionaler On-Screen-Stick (unten links, Kippschalter cr_touch_stick_v1, Default AUS) ueberschreibt die Richtung analog. Der Update-Loop liest genau EINEN gestuften Hook (crTouch.autoMoveAxis), und NUR wenn keine Taste haelt (ax===0). (c) ACTIVATION-PANEL: der Order-Button legt eine ruhende Preislinie (reines Visual, KEIN Auftrag) am aktuellen Kurs an und oeffnet deren Blue-Laser-Route-Oberflaeche (Market/Limit) — dieselbe, die der Desktop nach Klick auf ein platziertes Werkzeug zeigt; es feuert NICHTS, die vier Tore + Weiche bleiben unberuehrt bis der Nutzer im Panel scharf schaltet. (d) DESKTOP UNBERUEHRT: die Schicht erscheint nur auf Touch/ohne Maus (crTouch.active via pointer:coarse / maxTouchPoints, Override ?crTouchLayer=on|off); auf Nicht-Touch wird nichts eingeblendet und autoMoveAxis liefert 0 (ax bleibt exakt das der Tastatur). Layer ueber dem Overlay, NIE ins Canvas (Container pointer-events:none, nur die Elemente fangen Taps; Hard Rule 4), Topbar unberuehrt (≤5), Touch-Ziele ≥44px, prefers-reduced-motion respektiert. (e) GATE GESTUFT WIE ARM (S5a.4): Basis fuer alle (Bewegung, HK1, HK2, Order-Einstieg), HK3 (Aktivierungs-Laser) + HK4 (Alarm-Laser) erst bei Verbindung — dasselbe crGuest (= !crConnected), das schon das ARM-UI schaltet; live-reaktiv ueber crApplyAccessGates (die EINE Stelle). (f) GEPRUEFT: scripts/check_v908_touch_controls_browser.cjs — Paritaet je HK1–HK4 (Taste vs. Button rufen dieselbe Funktion mit demselben Argument bzw. liefern denselben key), Desktop unberuehrt (kein Layer, kein Auto-Run auf Nicht-Touch), Gating (Gast versteckt HK3/HK4, verbunden zeigt sie), Trade-Pfad/Weiche-Spion feuert bei keinem Touch-Element (Auto-Run/Stick/Order oeffnen nur), Auto-Run bewegt den Runner ohne Eingabe, Stick zusaetzlich, kein Canvas-Direktzugriff. Gegenproben ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: kein Worker, kein Endpunkt — reiner Client-PR; die Antippbarkeit (HK1–HK4 loesen aus, Auto-Run laeuft, Panel oeffnet) prueft Julian nach Merge am Telefon (Phantom-Browser), womit direkt die P3.1-Limit-Verifikation fortgesetzt werden kann.
+     PREV  ·  v1.0.907 (P3.1 · VAULT-LIMIT): EINE EINFACHE, RUHENDE LIMIT-ORDER UEBER DEN JUPITER-VAULT — EIN ADDITIVER route==='Limit'-ZWEIG AN DER WEICHE, MARKET BIT FUER BIT UNBERUEHRT. (a) VAULT-FLOW (Julians V2-Vault-Spec): auth/challenge → Wallet signiert die Challenge (FREIE Nachricht, crSigner.signMessage neu; kein Geld, keine Kette) → auth/verify → JWT NUR IM SPEICHER (crVaultApi._jwt in der Closure; NIE localStorage, NIE Journal, NIE ein Log — ein Token, das einen Neustart ueberlebt, beweist nichts mehr und kann missbraucht werden). vault/register (JWT, idempotent). Order = deposit/craft (JWT) → unsignierte Einzahlung + Gebuehren-Echo → Wallet signiert EINMAL (die eine finanzwirksame Signatur) → orders/price (single). Bestaetigung ueber orders/active. Die Worker-Pfade sind an EINER Stelle (crVaultApi.PATHS) gebuendelt, gegen GET /health gegenzupruefen — Doku ist keine Messung. (b) WEICHE, EIN ADDITIVER ZWEIG: decide() macht 'Limit' zusaetzlich live-faehig (die vier Tore davor unveraendert: armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign); _fireLive ruft bei 'Limit' real.limitVault statt real.marketSwap; jede ANDERE Route bekommt weiter die ehrliche P3-Meldung. crRealAdapter traegt limitVault NEBEN marketSwap; der Market-Weg (quote→swap→signAndSend) ist Bit fuer Bit derselbe. (c) SESSION-LIMIT ZAEHLT DEN DEPOSIT: bei Erfolg (res.orderPubkey) bucht _fireLive die SOL-Seite — bei einer Kauf-Limit genau der eingezahlte Betrag; ueber dem Limit verweigert die Weiche. (d) PANEL: der Limit-Zweig zeigt im st-live-Gold den PFLICHTTEXT „⚡ RUHENDE ORDER · Guthaben geht in den Jupiter-Vault · füllt später ohne dich" (crPanelKlar.restingText, EINE Konstante) plus die 50-bps-Gebuehr aus dem deposit/craft-Echo; ohne ausgewiesene Gebuehr → KEINE Signatur (dieselbe Philosophie wie der Market-Arm). crPanelKlar.state() gibt jetzt auch fuer 'limit' st-live, wenn die Weiche feuern wuerde. Journal: die Erstellung als Quelle 'live', Status 'open', mit orderPubkey — OHNE JWT. (e) GEPRUEFT: scripts/check_v907_vault_limit_browser.cjs — Spion (real.limitVault NUR bei allen vier Toren + route==='Limit', sonst nie; Gegenprobe alles offen → genau ein Aufruf), JWT-nur-Memory (nach ensureAuth kein Token in localStorage, wohl aber in crVaultApi.token()), Vault-Klartext + Gebuehr (Pflichttext im Panel + feeBps/feeRaw aus dem Echo; ohne Fee → commit verweigert), Market unberuehrt (marketSwap-Spion + Diff der Market-Weiche unveraendert). Gegenproben ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: der ausgerollte V2-Vault-Worker (P3.0) — die Endpunkte muessen in GET /health unter `endpoints` stehen, bevor sich der Client darauf verlaesst; Julian prueft nach Merge am Telefon (Reject-Pfad ohne Bestaetigung, dann eine echte kleine Order ~0,01 SOL, Order in Jupiters Liste gegengeprueft).
      PREV  ·  v1.0.906 (S5a.2·Block C+D FEINSCHLIFF): DREI LUECKEN DES v903-JUICE-PASSES GESCHLOSSEN — REINE OPTIK/OVERLAY, KEINE NEUE LOGIK AM TRADE-PFAD, KEINE NEUE GAMEPLAY-REGEL. crWinLossFx haelt Hard Rule 4: kein ctx. im Modul, nur die sechs vorhandenen Helfer + Overlay-Requests. (a) C2/C3 · TP-HAEKCHEN: die getroffene TP-Sprosse rastet mit gruenem Haekchen ein — der Overlay-Request tpCheck(bracket) setzt fxTpCheck auf dem Visual-Bracket, drawVisualBrackets zeichnet das Haekchen am rechten Sprossen-Ende (Pop nur die ersten 900 ms; unter reduced-motion statisch, denn das Haekchen ist INFORMATION und bleibt stehen). winTP UND winBig rasten ein (ein BIG WIN ist ein TP-Treffer). (b) C4 · SL-BLITZ: die SL-Linie blitzt EINMAL und klingt ab — der Overlay-Request slFlash(bracket) setzt fxSlFlash, der Renderer legt ein transientes rotes Glimmen ueber die Linie (520 ms). Die Linie selbst LOEST SICH NICHT auf — die no-fade-Direktive fuer gesetzte Brackets bleibt; unter reduced-motion wird der Blitz gar nicht erst gesetzt (reine Bewegung). (c) C4 · COACHING AUS JOURNAL-FELDERN: coachLine liest jetzt den LETZTEN geschlossenen Trade des vorhandenen Journals (cr_journal_v1, Felder setup/rr/conf/result) und baut einen konkreten Satz („Setup … hielt nicht, RR war mit x R knapp"). KEIN neuer Datenpfad, KEIN Fetch: das manual-Array wird als Argument hereingereicht (_crJrnLoad().manual — dieselbe Quelle wie die Journal-Tafel); fehlt es oder traegt es keine verwertbaren Felder, faellt der Satz BITGLEICH auf die v903-Aggregate (P&L%, Brackets) zurueck. (d) TRADE-PFAD & HOTKEYS UNBERUEHRT: onBracketClose bleibt ein reiner Listener, HK1–HK4 unveraendert (HK4 Alarm-Laser), kein Topbar-Element neu. (e) GEPRUEFT: scripts/check_v906_winloss_overlay_browser.cjs — fxTpCheck bei TP UND BIG (nicht bei SL), fxSlFlash bei SL (nicht bei TP, nicht unter reduced-motion), Haekchen persistiert, Coaching liest setup/rr/conf des letzten Trades und faellt ohne Journal auf v903 zurueck, Grep-Test „kein ctx. im FX-Modul". Gegenproben ROT/CRASH/GRUEN in der Commit-Message; Regressionen v901–v903 gruen; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: kein Worker, kein Endpunkt — reine Client-Optik; Haekchen, Blitz und Coaching-Satz prueft Julian nach Merge am Telefon (Paper reicht).
       PREV  ·  v1.0.905 (S5a.4): ARM NUR SICHTBAR BEI ANMELDUNG ODER WALLET-VERBINDUNG — REINES UI-SICHTBARKEITS-GATE, KEIN EINGRIFF IN DEN TRADE-PFAD, KEINE NEUE WEICHE. Die ARM-Sektion „ARM · Echtgeld" im Control Center (#crCCArmSection, seit v904) taucht jetzt erst auf, wenn der User ANGEMELDET ODER MIT WALLET VERBUNDEN ist; ein Gast ohne Wallet sieht keine Echtgeld-Steuerung. (a) GATE-PRAEDIKAT: armAvailable = signedIn() ∨ walletConnected(). signedIn() = crAccount.isSignedIn() — DASSELBE Signal, das #crSetAccStatus von „Not signed in" auf den Account umschaltet; AUSDRUECKLICH NICHT cr_stealth_auth_v1 (das Auto-Guest-Boot, crArchivedLoginAutoGuest, setzt es fuer JEDEN Besucher auf '1' — es waere immer wahr und das Gate nie zu), und der Gast-Runner-Name (cr_profile_name_v1) zaehlt nicht. walletConnected() = crWalletConnected()/crWallet.isConnected() (cr_wallet gesetzt) bzw. crWeiche.walletCanSign(). (b) SICHTBARKEIT: armAvailable → Sektion gerendert wie zuvor (Checkbox, SIM/LIVE, Limit, Wallet, Zustandszeile); sonst #crCCArmSection hidden, an seiner Stelle die ruhige Hinweiszeile #crCCArmGateHint „ARM (Echtgeld) — verfügbar nach Anmeldung oder Wallet-Verbindung." (kein Schalter, kein Limit-Feld). Theme/Sprache/Notifications unberuehrt. (c) LIVE-REAKTIV ohne Reload: _crCCRenderArm() haengt an crApplyAccessGates — der EINEN Stelle, die crWallet.on und crAccount._gatesSync bei jeder Verbindungs-/Auth-Aenderung ohnehin rufen. Wallet verbinden/anmelden → Sektion erscheint sofort; beide Signale weg → verschwindet. (d) SICHERHEITS-DEFAULT: verliert der User BEIDE Signale, waehrend #crArmSwitch auf LIVE stand, faellt der MODUS auf SIM (crArm.set(false), idempotent); das Bit cr_arm_v1 bleibt unberuehrt. (e) TRADE-PFAD UNBERUEHRT: die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ wallet.canSign(), Route=Market) + marketSwap bleiben Bit fuer Bit — dieses Gate ist reine UI-Sichtbarkeit, die visuelle Entsprechung dessen, was die Weiche mit wallet.canSign() laengst erzwingt. (f) GEPRUEFT: scripts/check_v905_arm_gate_browser.cjs — Gast versteckt (auch nur mit Gast-Runner-Name), Wallet/Anmeldung → sichtbar, Live-Uebergang ohne Reload, Sicherheits-Default LIVE→SIM, Weiche-Spion unveraendert. Gegenproben ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: kein Worker, kein Endpunkt — reiner Client-PR; die Optik prueft Julian nach Merge am Telefon.
      PREV  ·  v1.0.904 (S5a.3): ARM-SCHALTER & LIVE-BAND INS CONTROL CENTER — REINE UI-VERLAGERUNG + EINE WAHRHEITS-KORREKTUR, KEIN EINGRIFF IN DEN TRADE-PFAD, KEINE NEUE GAMEPLAY-REGEL. Der Echtgeld-Zustand hatte drei Oberflaechen an drei Orten: das schwebende Live-Band auf der #stage, die globale ARM-Sektion „ARM · echtes Geld" im Wallet-Fenster (#win-walletapp) und den SIM/SCHARF-Schnellschalter (#crArmBox) in der Topbar. Jetzt wohnt alles im Control Center (#crCCPop, neue Sektion „ARM · Echtgeld"). (a) LIVE-BAND WEG: #crLiveBand wird nicht mehr in #stage gerendert; syncBand ist zum reinen Aufraeumer geworden (raeumt jedes Band weg, rendert nie eines), der crArmGrammar.sync-Wrapper laeuft unveraendert weiter. Kein Ersatz-Signal aussen (kein Glow, kein Punkt) — Julians Entscheidung. (b) EINE HEIMAT im CC: die Checkbox „ARM · echtes Geld" (das eine Bit cr_arm_v1) + Warnung, der SIM↔LIVE-Schalter (#crArmBox Bit fuer Bit aus der Topbar hierher verlagert — crArm-Verdrahtung findet die Elemente per getElementById, ortsunabhaengig), das Session-Limit (cr_arm_limit_v1, float-frei ueber _crParseBetrag), die aktive Wallet (Kurzform) und eine Zustandszeile. (c) BEIDE ALTEN STELLEN LEER: #crArmSection ist aus dem Wallet-Modal raus (dort nur noch Wallet-Auswahl / Disconnect / Close), #crArmBox ist aus .header-picks raus (die Topbar traegt wieder 4 Elemente, ≤5 bleibt). Kein doppeltes ARM-UI im DOM. (d) MODUS-WAHRHEIT (der Kern-Fix): das alte Band schrie „LIVE · ECHTES GELD" schon bei cr_arm_v1='1', auch wenn der Schalter SIM stand (Band = nur „Box global an"). Die CC-Zeile spiegelt den WAHREN Modus: „⚡ LIVE · ECHTES GELD · LIMIT x SOL · Wallet …" nur wenn cr_arm_v1='1' ∧ crArm.on() (Schalter=LIVE), sonst ruhig „◇ SIM · Übung · kein echtes Geld". Gelesen wird ueber die ORIGINAL-Signale (crWeiche.flagOn ∧ crArm.on), nicht neu berechnet. (e) TRADE-PFAD UNBERUEHRT: die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ Wallet, Route=Market) + marketSwap/quote→swap→signAndSend bleiben Bit fuer Bit; verlagert wird NUR, wo die Steuerung sitzt und wie ehrlich der Statustext ist. (f) GEPRUEFT: scripts/check_v904_cc_arm_browser.cjs — Stage frei (kein #crLiveBand, kein Ersatzsignal), CC ist die einzige ARM-Heimat (Checkbox/#crArmSwitch/Limit/Wallet Nachfahren von #crCCPop; #crArmBox NICHT unter .header-picks; #crArmSection NICHT unter #win-walletapp), Modus-Wahrheit (SIM bei Schalter=SIM trotz cr_arm_v1='1'; LIVE nur bei beiden), Weiche-Spion (Real-Adapter feuert unveraendert nur bei allen Toren + Market; Modus SIM → kein Aufruf), Limit-Persistenz (cr_arm_limit_v1). Gegenproben ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: kein Worker, kein Endpunkt — reine Client-Verlagerung; die Optik prueft Julian nach Merge am Telefon.
@@ -48361,6 +48362,13 @@ function update(dt){
   if(!player._vehicleSkipGravity){
     if(keys['a']||keys['arrowleft'])  ax -= 1;
     if(keys['d']||keys['arrowright']) ax += 1;
+    // v1.0.908 (M0 · Touch) — Auto-Run + optionaler Stick. NUR auf der
+    // Touch-Schicht (crTouch.active): der Runner laeuft ohne Tastatur weiter,
+    // der Stick (falls aktiviert) ueberschreibt die Richtung. Tastatur hat
+    // Vorrang (nur wenn ax===0, also keine Taste haelt, greift Auto-Run).
+    // Desktop/Nicht-Touch ist Bit fuer Bit unberuehrt: dort ist crTouch.active
+    // false, der Zweig wird nie betreten und ax bleibt genau das der Tastatur.
+    if(ax===0){ try { if(window.crTouch && crTouch.active && typeof crTouch.autoMoveAxis==='function') ax = crTouch.autoMoveAxis(); } catch(_){} }
     // Dash direction influences motion even if no key held briefly
     if(dashing && ax===0) ax = player.dashDir;
     player.wx += ax*speed*dt;
@@ -90365,6 +90373,11 @@ function log(msg){
     // mit dran, damit die Sektion ohne Reload erscheint/verschwindet und der
     // Sicherheits-Default (Modus→SIM) beim Verlust beider Signale greift.
     try { if(typeof _crCCRenderArm === 'function') _crCCRenderArm(); } catch(_){}
+    // v1.0.908 (M0 · Touch) — dieselbe eine Stelle haelt auch das gestufte
+    // Touch-Cockpit im Takt: Gast sieht die Basis, angemeldet/scharf mehr
+    // (HK3 Aktivierungs-Laser + HK4 Alarm-Laser), konsistent mit dem ARM-Gate
+    // (crGuest === !crConnected). Erscheint/verschwindet ohne Reload.
+    try { if(window.crTouch && typeof crTouch.syncGates === 'function') crTouch.syncGates(); } catch(_){}
   }
   function _crMaybePromptNameClaim(){
     try {
@@ -109139,6 +109152,361 @@ window.crVault = (function(){
     }, 500);
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+
+/* ─────────────────────────────────────────────────────────────────────────
+   v1.0.908 — M0 · TOUCH-STEUERUNGSSCHICHT (Mobile-Grundzugriff)
+   ---------------------------------------------------------------------------
+   Der erste Mobile-Schnitt: On-Screen-Zugriff auf HK1–HK4, Auto-Run (+ optio-
+   naler Stick) und ein Einstieg ins bestehende Activation-Panel. STRENG additiv.
+
+   Leitplanken (Julians Spec + CLAUDE.md):
+   · KEIN neuer Trade-Pfad, KEINE neue Weiche. Jeder Fähigkeits-Button ist NUR
+     ein zweiter Auslöser: er dispatcht — über die vorhandene, dokumentierte
+     ChartRunner.control.tap-API — exakt dieselbe echte Tastatur-Sequenz wie ein
+     menschlicher Tastendruck. Damit greift jeder bestehende Handler (inkl. der
+     Gast-/Feature-Gates in useAbility bzw. crAlarm.arm) Bit für Bit weiter; die
+     Parität ist by construction, nicht nachgebaut.
+   · Desktop bleibt unberührt: die Schicht erscheint nur auf Touch/ohne Maus
+     (crTouch.active). Auf Nicht-Touch wird nichts eingeblendet, und der
+     Auto-Run-Hook im Update liefert 0 (ax bleibt exakt das der Tastatur).
+   · Sichtbarkeit gestuft wie das ARM-Gate (S5a.4): Basis für alle, HK3
+     (Aktivierungs-Laser) + HK4 (Alarm-Laser) erst bei Verbindung — dasselbe
+     crGuest (= !crConnected), das schon das ARM-UI schaltet.
+   · Layer über dem Overlay, NIE ins Canvas (Hard Rule 4). Container ist
+     pointer-events:none, nur die Bedienelemente fangen Taps. Topbar unberührt
+     (≤5). Touch-Ziele ≥ 44 px. prefers-reduced-motion respektiert.
+   ───────────────────────────────────────────────────────────────────────── */
+window.crTouch = (function(){
+  'use strict';
+  var VERSION = '1.0.908';
+  var STICK_KEY = 'cr_touch_stick_v1';   // Kippschalter Stick (Default AUS → nur Auto-Run)
+  var FORCE_KEY = 'cr_touch_force_v1';   // Test/Debug-Override der Erkennung ('on'|'off')
+
+  var _layer = null, _dock = null, _moveZone = null, _stickBase = null, _stickKnob = null, _stickChip = null;
+  var _built = false, _stickPointerId = null, _stickR = 46;
+
+  var API = {
+    version: VERSION,
+    active: false,
+    autoRun: true,          // Default: Runner läuft automatisch (Daumen frei fürs Trading)
+    stickEnabled: false,    // optionaler Bewegungs-Stick — Default AUS (dokumentiert)
+    _stickDir: 0            // [-1..1], nur wenn der Stick gehalten wird
+  };
+
+  /* ── kleine Helfer (alle defensiv — die Datei ist groß und boot-abhängig) ── */
+  function _toast(m){ try { if(typeof window.toast==='function') window.toast(m); } catch(_){} }
+  function _isGuest(){ try { return (typeof window.crGuest==='function') ? !!window.crGuest() : false; } catch(_){ return false; } }
+  function _isArmed(){ try { return !!(window.crArm && crArm.on && crArm.on()); } catch(_){ return false; } }
+  function _reduced(){ try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch(_){ return false; } }
+
+  function _forceMode(){
+    try {
+      var q = new URLSearchParams(location.search || '').get('crTouchLayer');
+      if(q==='on'||q==='1') return 'on';
+      if(q==='off'||q==='0') return 'off';
+    } catch(_){}
+    try { var s = localStorage.getItem(FORCE_KEY); if(s==='on'||s==='off') return s; } catch(_){}
+    return null;
+  }
+  function _detect(){
+    var f = _forceMode();
+    if(f) return f === 'on';
+    // „Touch bzw. ohne Tastatur" (Spec §1): grobe Zeigegeräte / Touch-Punkte,
+    // solange kein feiner Zeiger (Maus) vorhanden ist.
+    try {
+      var coarse = !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
+      var fine   = !!(window.matchMedia && window.matchMedia('(pointer:fine)').matches);
+      var touch  = (navigator.maxTouchPoints > 0) || ('ontouchstart' in window);
+      return coarse || (touch && !fine);
+    } catch(_){ return false; }
+  }
+
+  /* ── Parität: EIN zweiter Auslöser, sonst nichts ─────────────────────────
+     Route jeden Button über die vorhandene semantische Eingabe-API, die REALE
+     Tastatur-Events dispatcht (v0.9.x, „drives the exact same handlers a human
+     player would trigger"). Keine Sonderlogik, kein Extra-Gate hier: das Gate
+     sitzt im jeweiligen Tastatur-Handler und greift dadurch identisch. */
+  API.fireHotkey = function(n){
+    n = String(n);
+    if(!/^[1-4]$/.test(n)) return false;
+    try {
+      if(window.ChartRunner && ChartRunner.control && typeof ChartRunner.control.tap==='function'){
+        ChartRunner.control.tap(n);
+        return true;
+      }
+    } catch(_){}
+    // Fallback bitgleich zu control.tap (keydown+keyup, gleiche Felder).
+    try {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key:n, code:n, bubbles:true }));
+      window.dispatchEvent(new KeyboardEvent('keyup',   { key:n, code:n, bubbles:true }));
+      return true;
+    } catch(_){}
+    return false;
+  };
+
+  /* ── Bewegung: Auto-Run + optionaler Stick (vom Update-Loop gelesen) ────── */
+  API.autoMoveAxis = function(){
+    if(!this.active) return 0;
+    if(this.stickEnabled && this._stickDir !== 0) return this._stickDir;   // Stick hat Vorrang
+    return this.autoRun ? 1 : 0;                                           // sonst: nach rechts laufen
+  };
+
+  /* ── Zugang zum bestehenden Activation-/Order-Panel (öffnet NUR die Ansicht) ─
+     Legt eine ruhende Preislinie (reines Visual, KEIN Auftrag) am aktuellen
+     Kurs an und öffnet deren Route-Einstellungen — dieselbe Blue-Laser-Route-
+     Oberfläche mit Market/Limit, die der Desktop nach dem Klick auf ein
+     platziertes Werkzeug zeigt. Es feuert nichts: der Trade-Pfad (vier Tore +
+     Weiche) bleibt unberührt, bis der Nutzer im Panel scharf schaltet. */
+  API.openActivationPanel = function(){
+    var price = NaN;
+    try { if(typeof currentPrice==='function') price = currentPrice(); } catch(_){}
+    if(!(typeof price==='number' && isFinite(price))){ _toast('Noch kein Kurs — Run starten'); return false; }
+    try {
+      var wx = (typeof player!=='undefined' && player) ? player.wx : 0;
+      var id = 0;
+      try { id = (typeof game!=='undefined' && game && game.anchorNextId!=null) ? game.anchorNextId++ : Date.now(); } catch(_){ id = Date.now(); }
+      var overlay = { id:id, kind:'hline', py:price, wx:wx, t:0, mobileOrder:true };
+      var hit = { kind:'hline', overlay:overlay };
+      if(window.cr && cr.blueLaser && typeof cr.blueLaser.openRouteSettings==='function'){
+        var ok = cr.blueLaser.openRouteSettings(hit);
+        if(ok){ _toast('Order-Panel · Route wählen (Market/Limit)'); return true; }
+      }
+      // Fallback: der direkte Dialog-Öffner, falls die Blue-Laser-Route fehlt.
+      if(typeof openTvSettingsDialog==='function'){
+        openTvSettingsDialog(overlay, { activeTab:'Inputs', blueRouteSettings:true, hit:hit });
+        _toast('Order-Panel · Route wählen (Market/Limit)');
+        return true;
+      }
+    } catch(_){}
+    _toast('Order-Panel nicht verfügbar');
+    return false;
+  };
+
+  /* ── CSS (injiziert; kein Build, kein CDN, inline wie crPanelKlar) ──────── */
+  function _css(){
+    if(document.getElementById('crTouchCss')) return;
+    var s = document.createElement('style');
+    s.id = 'crTouchCss';
+    s.textContent = ''
+      + '#crTouchLayer{position:fixed;inset:0;z-index:46;pointer-events:none;'
+      +   'font:600 12px ui-monospace,Menlo,monospace;-webkit-user-select:none;user-select:none;'
+      +   'touch-action:none}'
+      + '#crTouchLayer[hidden]{display:none!important}'
+      + '#crTouchLayer .crTouchBtn{pointer-events:auto;width:52px;height:52px;min-width:44px;min-height:44px;'
+      +   'border-radius:14px;border:1px solid rgba(255,255,255,.16);background:rgba(14,18,28,.82);'
+      +   'color:#e9eefb;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'
+      +   'box-shadow:0 6px 18px rgba(0,0,0,.42);backdrop-filter:blur(3px);cursor:pointer;padding:0}'
+      + '#crTouchLayer .crTouchBtn .ic{font-size:18px;line-height:1}'
+      + '#crTouchLayer .crTouchBtn .lbl{font-size:8.5px;letter-spacing:.2px;opacity:.82;text-transform:uppercase}'
+      + '#crTouchLayer .crTouchBtn[data-cr-hk="1"]{border-color:rgba(120,200,255,.5)}'
+      + '#crTouchLayer .crTouchBtn[data-cr-hk="2"]{border-color:rgba(239,83,80,.55)}'
+      + '#crTouchLayer .crTouchBtn[data-cr-hk="3"]{border-color:rgba(58,134,255,.6)}'
+      + '#crTouchLayer .crTouchBtn[data-cr-hk="4"]{border-color:rgba(255,179,0,.6)}'
+      + '#crTouchLayer .crTouchBtn[hidden]{display:none!important}'
+      + '#crTouchDock{position:absolute;right:14px;bottom:22px;display:grid;'
+      +   'grid-template-columns:repeat(2,52px);gap:10px;justify-items:center}'
+      + '#crTouchOrder{grid-column:1 / span 2;width:100%;height:44px;pointer-events:auto;'
+      +   'border-radius:12px;border:1px solid rgba(212,164,60,.55);background:rgba(30,24,10,.86);'
+      +   'color:#f4d99a;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;'
+      +   'box-shadow:0 6px 18px rgba(0,0,0,.42)}'
+      + '#crTouchMove{position:absolute;left:14px;bottom:22px;display:flex;flex-direction:column;'
+      +   'align-items:flex-start;gap:8px}'
+      + '#crTouchStick{position:relative;width:104px;height:104px;border-radius:50%;pointer-events:auto;'
+      +   'border:1px solid rgba(255,255,255,.14);background:rgba(14,18,28,.55);box-shadow:0 6px 18px rgba(0,0,0,.4)}'
+      + '#crTouchStick .knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;'
+      +   'border-radius:50%;background:rgba(120,200,255,.8);box-shadow:0 2px 10px rgba(0,0,0,.5)}'
+      + '#crTouchMove[data-stick="0"] #crTouchStick{display:none}'
+      + '#crTouchAuto{pointer-events:none;color:#8fe3b7;font-size:9px;letter-spacing:.4px;'
+      +   'background:rgba(10,20,14,.7);border:1px solid rgba(61,220,151,.35);border-radius:8px;padding:3px 7px}'
+      + '#crTouchStickChip{pointer-events:auto;font-size:9px;letter-spacing:.3px;color:#cfe;'
+      +   'background:rgba(14,18,28,.82);border:1px solid rgba(255,255,255,.16);border-radius:8px;'
+      +   'padding:4px 8px;cursor:pointer}'
+      + '@media (prefers-reduced-motion: no-preference){'
+      +   '#crTouchLayer .crTouchBtn:active,#crTouchOrder:active{transform:scale(.94);transition:transform .06s}'
+      +   '#crTouchStick .knob{transition:left .05s,top .05s}}'
+      // Loest den alten, schmaleren Move-Pad (v1.0.430, #crTouchPad: nur ◀▶↑↓
+      // + Taste 1/2, kein HK3/HK4, kein Auto-Run/Stick, kein Order, kein Gate)
+      // ab, solange diese Schicht aktiv ist — EIN kohaerentes Daumen-Cockpit,
+      // keine doppelte Bedienung. Die Regel gewinnt gegen dessen 300ms-tick,
+      // der sonst .cr-tp-hidden wieder entfernt.
+      + 'body.cr-touch-on #crTouchPad{display:none!important}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  function _btn(hk, ic, lbl){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'crTouchBtn';
+    b.setAttribute('data-cr-hk', hk);
+    b.setAttribute('aria-label', 'Hotkey ' + hk + ' · ' + lbl);
+    b.innerHTML = '<span class="ic">' + ic + '</span><span class="lbl">' + lbl + '</span>';
+    b.addEventListener('click', function(e){ e.preventDefault(); API.fireHotkey(hk); });
+    return b;
+  }
+
+  function _build(){
+    if(_built) return;
+    if(!document.body) return;
+    _css();
+    _layer = document.createElement('div');
+    _layer.id = 'crTouchLayer';
+    _layer.setAttribute('aria-label', 'Touch-Steuerung');
+
+    // Rechtes Fähigkeits-Dock (Daumen-Ecke) — HK1..HK4 + Order-Einstieg.
+    _dock = document.createElement('div');
+    _dock.id = 'crTouchDock';
+    _dock.appendChild(_btn('1', '🛞', 'Vehikel'));
+    _dock.appendChild(_btn('2', '📏', 'Ausricht'));
+    _dock.appendChild(_btn('3', '⚡', 'Aktiv'));
+    _dock.appendChild(_btn('4', '🔔', 'Alarm'));
+    var order = document.createElement('button');
+    order.type = 'button';
+    order.id = 'crTouchOrder';
+    order.setAttribute('data-cr-order', '1');
+    order.setAttribute('aria-label', 'Activation-Panel öffnen (Market/Limit)');
+    order.innerHTML = '<span>⊞ Order</span>';
+    order.addEventListener('click', function(e){ e.preventDefault(); API.openActivationPanel(); });
+    _dock.appendChild(order);
+    _layer.appendChild(_dock);
+
+    // Linke Bewegungs-Zone — Auto-Run-Anzeige, Stick (optional), Kippschalter.
+    _moveZone = document.createElement('div');
+    _moveZone.id = 'crTouchMove';
+    _stickBase = document.createElement('div');
+    _stickBase.id = 'crTouchStick';
+    _stickKnob = document.createElement('div');
+    _stickKnob.className = 'knob';
+    _stickBase.appendChild(_stickKnob);
+    var auto = document.createElement('div');
+    auto.id = 'crTouchAuto';
+    auto.textContent = '▶ AUTO-RUN';
+    _stickChip = document.createElement('button');
+    _stickChip.type = 'button';
+    _stickChip.id = 'crTouchStickChip';
+    _stickChip.setAttribute('data-cr-stick-toggle', '1');
+    _stickChip.addEventListener('click', function(e){ e.preventDefault(); API.setStick(!API.stickEnabled); });
+    _moveZone.appendChild(_stickBase);
+    _moveZone.appendChild(auto);
+    _moveZone.appendChild(_stickChip);
+    _layer.appendChild(_moveZone);
+
+    document.body.appendChild(_layer);
+    _wireStick();
+    _built = true;
+
+    // gespeicherten Stick-Zustand übernehmen (Default AUS).
+    try { API.stickEnabled = (localStorage.getItem(STICK_KEY) === '1'); } catch(_){ API.stickEnabled = false; }
+    _reflectStick();
+    syncGates();
+  }
+
+  function _wireStick(){
+    if(!_stickBase) return;
+    function setDirFromEvent(ev){
+      var r = _stickBase.getBoundingClientRect();
+      var cx = r.left + r.width/2, cy = r.top + r.height/2;
+      var dx = (ev.clientX != null ? ev.clientX : cx) - cx;
+      var dy = (ev.clientY != null ? ev.clientY : cy) - cy;
+      var max = _stickR;
+      var nx = Math.max(-1, Math.min(1, dx / max));
+      API._stickDir = nx;
+      // Knob visuell (horizontale Achse ist gameplay-relevant; vertikal nur Optik).
+      var kx = Math.max(-max, Math.min(max, dx));
+      var ky = Math.max(-max, Math.min(max, dy));
+      _stickKnob.style.left = (52 + kx) + 'px';
+      _stickKnob.style.top  = (52 + ky) + 'px';
+    }
+    function reset(){
+      API._stickDir = 0;
+      _stickPointerId = null;
+      if(_stickKnob){ _stickKnob.style.left = '52px'; _stickKnob.style.top = '52px'; }
+    }
+    _stickBase.addEventListener('pointerdown', function(ev){
+      if(!API.stickEnabled) return;
+      _stickPointerId = ev.pointerId;
+      try { _stickBase.setPointerCapture(ev.pointerId); } catch(_){}
+      setDirFromEvent(ev); ev.preventDefault();
+    });
+    _stickBase.addEventListener('pointermove', function(ev){
+      if(_stickPointerId==null || ev.pointerId!==_stickPointerId) return;
+      setDirFromEvent(ev); ev.preventDefault();
+    });
+    var up = function(ev){ if(_stickPointerId!=null && ev.pointerId===_stickPointerId){ reset(); ev.preventDefault(); } };
+    _stickBase.addEventListener('pointerup', up);
+    _stickBase.addEventListener('pointercancel', up);
+    _stickBase.addEventListener('lostpointercapture', function(){ reset(); });
+  }
+
+  function _reflectStick(){
+    if(!_moveZone) return;
+    _moveZone.setAttribute('data-stick', API.stickEnabled ? '1' : '0');
+    if(_stickChip) _stickChip.textContent = API.stickEnabled ? '🕹 Stick AN' : '🕹 Stick AUS';
+    if(!API.stickEnabled){ API._stickDir = 0; if(_stickKnob){ _stickKnob.style.left='52px'; _stickKnob.style.top='52px'; } }
+  }
+
+  API.setStick = function(on){
+    API.stickEnabled = !!on;
+    try { localStorage.setItem(STICK_KEY, API.stickEnabled ? '1' : '0'); } catch(_){}
+    _reflectStick();
+    return API.stickEnabled;
+  };
+
+  function _setHkVisible(hk, vis){
+    if(!_dock) return;
+    var b = _dock.querySelector('[data-cr-hk="' + hk + '"]');
+    if(b) b.hidden = !vis;
+  }
+
+  /* ── Sichtbarkeit gestuft wie das ARM-Gate ───────────────────────────────
+     Basis (Gast): Bewegung, HK1 (Vehikel), HK2 (Ausricht-Laser), Order-Einstieg.
+     Angemeldet/Wallet: zusätzlich HK3 (Aktivierungs-Laser) + HK4 (Alarm-Laser)
+     — exakt die Fähigkeiten, die auch der Tastaturpfad Gästen verwehrt. */
+  function syncGates(){
+    if(!_layer) return;
+    var guest = _isGuest();
+    var armed = _isArmed();
+    _setHkVisible('1', true);
+    _setHkVisible('2', true);
+    _setHkVisible('3', !guest);
+    _setHkVisible('4', !guest);
+    _layer.setAttribute('data-cr-tier', guest ? 'guest' : (armed ? 'armed' : 'connected'));
+    try { document.body.setAttribute('data-cr-touch-tier', guest ? 'guest' : (armed ? 'armed' : 'connected')); } catch(_){}
+  }
+  API.syncGates = syncGates;
+
+  /* ── Aktivierung / Erkennung ─────────────────────────────────────────── */
+  function apply(){
+    var on = _detect();
+    API.active = on;
+    if(on && !_built) _build();
+    if(_layer) _layer.hidden = !on;
+    try { document.body.classList.toggle('cr-touch-on', on); } catch(_){}
+    try { document.body.classList.toggle('cr-touch-reduced', on && _reduced()); } catch(_){}
+    if(on) syncGates();
+  }
+  API.refresh = apply;
+  // Test/Debug-Seam: erzwingt Zustand ohne echtes Touch-Gerät.
+  API.setActive = function(on){
+    try { localStorage.setItem(FORCE_KEY, on ? 'on' : 'off'); } catch(_){}
+    apply();
+    return API.active;
+  };
+
+  function boot(){
+    try { apply(); } catch(_){}
+    // Re-Detektion bei Orientierungs-/Größenwechsel (Tablet ↔ Phone ↔ Desktop).
+    try {
+      window.addEventListener('resize', function(){ try { apply(); } catch(_){} });
+      window.addEventListener('orientationchange', function(){ try { apply(); } catch(_){} });
+      if(window.matchMedia){
+        try { window.matchMedia('(pointer:coarse)').addEventListener('change', apply); } catch(_){}
+      }
+    } catch(_){}
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+
+  return API;
 })();
 
 </script>
