@@ -100,6 +100,30 @@ no logic change** to actions/trade-path/Weiche/desktop:
   stays as the one-gesture shortcut; a hub tap reveals the slots (now `pointer-events:auto`), another
   hub tap while open = abort/collapse; a slot tap collapses after firing. Slots are ≥ 44 px.
 
+#### M0.6 · One-button selector + touch Shoot + mobile Support (`v1.0.915`)
+
+The right control side is now **one** transparent, glassy selector button (`#crSelBtn`) at 3/4
+height — no radial, no separate FIRE, icons only. **Tap** (short) opens the icon fan (`#crSelFan`:
+Shoot · HK1 Vehicle · HK2 Align · HK3 Active · HK4 Alarm · Order, each in its own colour);
+**tap a fan icon** selects it (the button then shows that icon); **press-and-hold** runs the
+selected function while held (a sweep-ring shows "running"), with exact trigger parity —
+`kind:'key'` holds the matching key (`crTouch.holdKey` → keydown on press / keyup on release;
+Shoot = Space = continuous fire), Order-hold opens **only** the Activation-Panel (no trade without
+the four gates; the Weiche/spy fires on no touch element).
+
+- **Shoot on touch (new).** Same Space action, no new combat path. On the phone there is no cursor,
+  so the shot direction follows the movement-**stick tilt** (`crTouch.aimVec`; neutral stick → last
+  direction, fallback to run/facing). `shoot()` reads the aim vector **only** while `crTouch.active`
+  — the desktop "aim at cursor" path is bit-for-bit untouched. Movement (`crTouch.moveAxis`) stays
+  horizontal and unchanged; the aim vector is a separate read.
+- **Guest gate.** HK3 (Active) + HK4 (Alarm) do **not** appear in the fan for guests
+  (`crGuest`/`crApplyAccessGates` → `crTouch.syncGates`, live-reactive); Shoot/HK1/HK2/Order are the
+  base set for everyone. The per-ability feature gate still also sits in each key handler.
+- **Support overlay mobile fix.** `drawSetupGuide()`'s setup card is now responsive: width ≤ the
+  visible viewport (minus `env(safe-area-inset-left/right)` + margin), the step text **wraps** (or
+  ellipsises) instead of running off the **left** edge, and it stays clear of the top-bar and the
+  3/4 controls. Desktop (wide) rendering is unchanged.
+
 Mobile regression smoke:
 
 ```sh
@@ -107,5 +131,6 @@ node scripts/check_v908_touch_controls_browser.cjs   # M0 touch cockpit (parity,
 node scripts/check_v909_touch_polish_browser.cjs     # M0.1 polish (chart-only, safe-area, hit-area, parity)
 node scripts/check_v910_cockpit_browser.cjs          # M0.2 two-thumb cockpit (stick, radial, order-gate, parity)
 node scripts/check_v911_hoch_tap_browser.cjs         # M0.3 higher + tap-to-fire (position, tap parity, flick regression)
+node scripts/check_v915_selektor_browser.cjs         # M0.6 one-button selector + touch Shoot + mobile Support
 node scripts/check_play_mobile_adaptive_shell_browser.cjs
 ```
