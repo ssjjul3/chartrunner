@@ -73,10 +73,39 @@ Visibility/position/optics only — no logic change (the buttons fire the exact 
   box, thin accent ring in the ability colour (cyan/red/blue/gold), icon-forward with a small quiet
   label, Auto-Run & Stick as slim pills.
 
+#### M0.2 · Two-thumb cockpit (`v1.0.910`)
+
+Touch input redesign, no logic change to actions/trade-path: **Auto-Run deleted** (no thumb on the
+stick ⇒ the runner stands still; `crTouch.autoMoveAxis` → `crTouch.moveAxis`, stick axis only), the
+movement **Stick is always on** (no toggle), the four ability boxes collapse into **one radial hub**
+(`#crTouchRadial`, press-and-flick: up=HK1/right=HK2/down=HK3/left=HK4), and the **Order** button is
+guest-gated (not in the DOM until `signedIn() ∨ walletConnected()`). Every flick routes through
+`crTouch.flick → fireHotkey → ChartRunner.control.tap` — parity by construction.
+
+#### M0.3 · Controls higher + tap-to-fire (`v1.0.911`)
+
+Two focused fixes to the M0.2 controls from the phone test — **position + one extra trigger gesture,
+no logic change** to actions/trade-path/Weiche/desktop:
+
+- **Higher (visualViewport-anchored).** The whole layer (Stick, Radial, Order) is bound to
+  `window.visualViewport`: `_syncViewport()` sizes and shifts it to the *visible* area
+  (`height = vv.height`, `top = vv.offsetTop`), re-run on `visualViewport` resize/scroll **and** when
+  the layer un-hides. The comfortable minimum gap `--cr-tl-lift` rises from 20 → **30 px** (spec
+  24–32) *on top of* `env(safe-area-inset-bottom)`. Reason: the in-app browser bar (Phantom/Brave) is
+  not a safe-area inset and the layout viewport (`svh`/`vh`) ends behind it — `env` alone wasn't
+  enough. Result: Stick, all four radial slots (incl. the lowest AKTIV slot) and Order sit clearly
+  above the bar.
+- **Tap-to-fire.** Each visible radial slot fires its ability on **tap** (`click → fireHotkey →
+  ChartRunner.control.tap`) — the exact same action as flick and key, parity by construction. Flick
+  stays as the one-gesture shortcut; a hub tap reveals the slots (now `pointer-events:auto`), another
+  hub tap while open = abort/collapse; a slot tap collapses after firing. Slots are ≥ 44 px.
+
 Mobile regression smoke:
 
 ```sh
 node scripts/check_v908_touch_controls_browser.cjs   # M0 touch cockpit (parity, gating, auto-run, trade-path)
 node scripts/check_v909_touch_polish_browser.cjs     # M0.1 polish (chart-only, safe-area, hit-area, parity)
+node scripts/check_v910_cockpit_browser.cjs          # M0.2 two-thumb cockpit (stick, radial, order-gate, parity)
+node scripts/check_v911_hoch_tap_browser.cjs         # M0.3 higher + tap-to-fire (position, tap parity, flick regression)
 node scripts/check_play_mobile_adaptive_shell_browser.cjs
 ```
