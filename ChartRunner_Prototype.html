@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.918
-     LAST UPDATED:    2026-09-06  ·  v1.0.918 (B6 + M1-LITE · IN-FLIGHT SICHTBAR + VAULT-TIMEOUT + TOUCH-GRIFF): REIN ANZEIGE/ZUSTAND/TOUCH-ZIELE — KEIN TRADE-PFAD-CHANGE, Weiche/Adapter/Worker/Vault-Ablauf (Auth → Deposit → orders/price) Bit fuer Bit gleich, Desktop-Maus unveraendert, single-file, keine neue Dep. BEFUND (Handy, v917): Arm/Update auf der Limit-HLine → keine Signatur, keine Meldung, nur „Blue Route updated". URSACHE (Code): (a) der Arm-Klick rief refresh() → renderBody() VOR dem Flow, der Dialog-Body wurde neu gebaut und der Flow lief im ALTEN, abgehaengten Abschnitt weiter — jede sayPanel-Zeile ging in ein DOM-Fragment, das niemand sah; liveBusy war je Abschnitt, ein zweiter Arm startete einen ZWEITEN Flow; (b) toast() → crNotify rendert nur den Terminal-Stack unten rechts, am Handy unter Selektor/Browserleiste — die Meldungen landeten still im CC; (c) crVaultApi._post/_get hatten KEINEN Timeout. B6·0 SICHTFELD: crLoud = Top-Center-HUD (unter der Topbar, nicht in ihr; ≥4 s, mit Text, reduced-motion-fest) fuer jede Live-Order-Meldung; sayLoud schreibt Panel + Toast (CC-Verlauf) + HUD + Flight-Zustand. B6·1 TIMEOUT: crVaultApi._post/_get mit AbortController (15 s), /health-Preflight 8 s → { error:'timeout', detail:<pfad> }; jeder Fehlweg/Timeout setzt busy zurueck (_fail), die Meldung nennt den HAENGENDEN Schritt („Vault-Anfrage abgelaufen (challenge) — Worker/Netz pruefen"). B6·2 IN-FLIGHT LAUT: crVaultFlight = EIN globaler Zustand (busy, Schritt, Text, Spur) fuer Panel, HUD und den persistenten Status-Chip am Ein-Button-Selektor (#crSelChip: „⏳ Vault … <schritt>" / „✍️ Wallet …", bleibt bei manuell geschlossenem Panel, nach dem Verdikt kurz das Ergebnis); jeder Zwischenschritt geht ueber sayLoud. B6·3 PANEL BLEIBT OFFEN: bei Route Limit + globalem ARM wartet das Neu-Rendern bis zum Verdikt; sayPanel schreibt zusaetzlich in den aktuell eingehaengten Abschnitt; jeder Abschnitt spiegelt den Flight-Zustand (auch ein neu gerenderter). B6·3b DIAGNOSE-SPUR: preflight → resolveTrade → decide → challenge → signMessage → verify → register → depositCraft → commit (depositSign → ordersPrice → ordersActive), je Zeile Name/Dauer/Ergebnis, aufklappbar „Diagnose" im Panel und als CC-Notification beim Verdikt. B6·4 KEIN SIGNER: no-signer/no-wallet/no-feature → „Wallet kann keine Nachricht signieren — im Phantom-Browser oeffnen oder Wallet neu verbinden". M1-LITE·1 HIT-SLOP: crTouchGrip (nur pointer:coarse/crTouch.active) probt hitOverlay von der Tap-Position nach aussen bis ±22 px (44-px-Zone), das naechstliegende Objekt gewinnt, Tap oeffnet dessen Panel; Maus = eine Probe = unveraendert. M1-LITE·2 PILL-GRIFF: jede freie Linie traegt am Touch auf der Preis-Achse eine Pille mit Preis (drawAnchorLines, nur Zeichnung); Tap oeffnet das Panel, Ziehen verschiebt den Preis (Magnet auf den Kurs, Loupe = groessere Pille), Order-Sync ueber DENSELBEN Helfer wie die Maus (crSyncHLinePriceToOrder, aus dem Maus-Drag extrahiert). M1-LITE·3 OFFENE ORDERS: Order-Scheibe (Halten) → Liste der Chart-Objekte/ruhenden Orders (LIVE/PAPER/SIM-getaggt, LIVE oben) → Tap oeffnet das Panel; erste Zeile „Neue Order am Kurs" = bisheriges Verhalten; ohne Objekte direkt ins Panel. Terminal OFFENE POSITIONEN: Zeile → Panel (SIM-Zeilen ueber Objekt-Referenz, LIVE-Zeilen ueber die Linie mit Live-Fill/aktiver Limit-Route, sonst Order-Liste). GEPRUEFT: scripts/check_v918_inflight_touch_browser.cjs — haengender challenge-Fetch → timeout nach der Frist (Default 15 s/8 s bestaetigt), sayLoud + HUD, busy=false, zweiter Arm laeuft; Zwischenschritte als Toast + Chip; Dialog bleibt bei Route Limit in Flight offen + Diagnose-Zeilen; Tap 20 px neben der HLine oeffnet das Panel (coarse), Maus-Klick 20 px daneben oeffnet nichts; Pille oeffnet/zieht; Order-Liste → Panel; Terminal-Zeile → Panel; Real-Adapter-Spion = 0; reduced-motion-Guards; Topbar ≤5. Gegenprobe ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: der ausgerollte Worker (CORS fuer /health + die sechs Vault-Aliasse ist Teil A, privat) — Julian prueft nach Merge am Telefon: Limit-HLine → Arm/Update → Chip „⏳ Vault …" sichtbar → Phantom-Signatur ODER nach ≤15 s eine klare Fehlerzeile (timeout/challenge-failed/no-signer); danach Linie/Pille antippen → Panel; Order-Scheibe → Liste → Panel.  PREV  ·  v1.0.917 (PATCH B · LIMIT-FEHLER LAUT + /health-PREFLIGHT + DEX-JUPITER-VENUE + ARM-HINWEIS + FEE-ECHO bps-only): REIN ANZEIGE/PREFLIGHT/BINDUNG — KEIN NEUER TRADE-PFAD, Weiche/Spion/Market Bit fuer Bit unberuehrt, single-file, keine neue Dep. (B1) LIMIT-ARM-FEHLER LAUT: jede Abbruchstelle in _armVaultLimit und jeder crVaultLimit.prepare-Fehler zeigt jetzt eine persistente Panel-Meldung MIT dem exakten Grund (challenge-failed / offline / auth-failed / no-signer / sign-message-crashed / register-failed / deposit-craft-failed / fee-missing / bad-mints / bad-amount / not-connected) UND toastet denselben Grund (sayLoud), damit das Schliessen des Panels ihn nicht mehr verschluckt — der naechste Arm-Versuch SAGT, woran es lag. (B2) PREFLIGHT GET /health VOR dem Vault-Flow: crVaultApi.preflight() prueft, ob der ausgerollte Worker die sechs Vault-Endpunkte unter `endpoints` fuehrt; fehlen sie (oder offline), bricht der Flow VOR jeder Signatur ab („Ruhende Orders sind serverseitig noch nicht scharf (Vault-Endpunkte fehlen im Worker).") — kein Wallet-Popup, keine Stille. Ergebnis kurz gecacht (OK 60 s, Fehler 15 s). (B3) RUN-VENUE an den GECHARTETEN Token gebunden: routeVenue ist fuer eine ueber crStoreMint(currentAssetObj()) AUFLOESBARE Solana-Mint jetzt „DEX - Jupiter" (dexVenue=true), nie mehr faelschlich „CEX - Binance" aus dem Broker-Rad — dieselbe Aufloesung wie crWeiche.badgeGate. Rein Anzeige/Kontext; die Order-Route nutzt weiter die Mint. (B4) STILLER No-Op weg: armBtn.onclick meldet bei globalem ARM aus „Globales ARM ist aus — im Control Center scharfschalten." statt kommentarlos zurueckzukehren (Market & Limit gleich). (B5) FEE-ECHO bps-only: Worker v1.21 liefert das deposit/craft-Gebuehren-Echo als bps OHNE amount_raw; der Gate (Panel + crVaultLimit.commit) verlangt jetzt NUR noch feeBps, feeRaw ist optional — kein stiller Abbruch mehr vor der Deposit-Signatur. Die Gebuehrenzeile zeigt bei fehlendem feeRaw NUR den Prozentsatz („Gebühr 0,5 %"), kein _crFmtSol(null)-Krampf; mit feeRaw weiter „0,5 % (… SOL)". Fehlt feeBps ganz → weiterhin ehrlicher Abbruch. GEPRUEFT: scripts/check_v917_patchB_browser.cjs — B1 je Grund sichtbar+Toast, B2 Preflight ohne Vault-Endpunkte bricht VOR jeder Signatur ab / mit ihnen laeuft weiter, B3 Solana-Token → „DEX - JUPITER" (kein CEX-Binance), B4 ARM aus → Hinweis, B5 bps-only → Flow laeuft + „0,5 %" ohne SOL. Gegenprobe ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: der ausgerollte Vault-Worker (Patch A) — Julian prueft nach Merge am Telefon (gut: Nachrichten-Signatur → Gebuehr → Einzahlungs-Signatur ablehnen; schlecht: klare „Vault-Endpunkte fehlen"-Meldung statt Stille).  PREV  ·  v1.0.916 (T-SYNC · TERMINAL SPIEGELT ECHTE LIVE-TRADES, REIN LESEND): Das Terminal spiegelte bisher NUR die SIM-Engine (crL3). Jetzt speisen sich die LIVE-gebadgten Kacheln aus dem VORHANDENEN Journal (cr_journal_v1, Einträge mit source:'live') und dem tatsächlich gecharteten Token — ohne jede Änderung an Weiche/Trade-Pfad/Adapter/Worker (kein marketSwap/limitVault/deposit/sign berührt, kein neuer Endpunkt, keine neue Dep, single-file). (1) ◆ LETZTE TRANSAKTIONEN (crTermTx, gespiegelt crPhTermTx) liest echte Live-Journal-Einträge, neueste zuerst: Seite/Menge (SOL-Seite)/Preis/Gebühr/Zeit + Solscan-Link aus sig; SIM-SDK-Fills (crL3.getTxs) erscheinen NICHT mehr in dieser LIVE-Kachel, Leerzustand ehrlich ("no live transactions yet"). Desktop und Phone bauen dieselbe HTML über einen gemeinsamen Helfer (_crLiveTxHTML) → Parität by construction. (2) ◇ TRADE-AUSFÜHRUNG (crTermExecLog/crPhTermExecLog) zeigt echte Trades als LIVE-getaggte Zeilen (aus dem Journal abgeleitet) neben den unveränderten SIM-Zeilen; jede Zeile trägt ein SIM/LIVE-Badge. (3) ◇ OFFENE POSITIONEN (crTermOpenList) zeigt reale offene Exposure als LIVE-Zeile getrennt von den SIM-Brackets; Entry = Fill-Preis, Größe = SOL-Seite, PnL NUR mark-basiert wenn der gehaltene Token der aktive Chart ist (sonst "—", kein Fake). (4) ◎ CURRENT TOKEN / MARKT-SCAN nutzen den gecharteten Token (currentAssetObj via _crActiveTokenSym / currentAsset-id), nicht game.asset (nie gesetzt → fiel immer auf BTC); _crTermActiveTokenId priorisiert jetzt currentAssetObj. (5) Badge-Ehrlichkeit: keine LIVE-Kachel rendert SIM-Daten, SIM ist überall als SIM markiert. GEPRÜFT: node --check des Skriptblocks, 4 CI-Checks (Parse-Blöcke, Leakage, Duplikate, CDN) grün, Gegenprobe ROT/CRASH/GRÜN in der Commit-Message. REIN LESEND: Terminal-Renderer rufen keinen Trade-/Adapter-/Weiche-Pfad. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; echten Live-Fill im Terminal + Solscan-Link prüft Julian nach Merge am Telefon (danach P3.1-Limit-Prüfung).  PREV  ·  v1.0.915 (M0.6 · EIN-BUTTON-SELEKTOR + SHOOT AM TOUCH + SUPPORT MOBIL): Die rechte Steuer-Seite ist EIN transparenter, glasiger Selektor-Button auf 3/4 Hoehe (kein Radial, kein separater FIRE, kein Text — nur Icons). TIPPEN (kurz) oeffnet den Icon-Faecher (Shoot/HK1 Vehikel/HK2 Ausricht/HK3 Aktiv/HK4 Alarm/Order, je in ihrer Farbe: orange/cyan/rot/mint/violett/gold); TIPPEN auf ein Icon waehlt (der Button zeigt es fortan); GEDRUECKT-HALTEN fuehrt die gewaehlte Funktion aus, solange gehalten (Sweep-Ring = laeuft), mit exakter Ausloese-Paritaet — kind:'key' haelt die zugehoerige Taste (keydown auf Druck / keyup auf Loslassen, ueber ChartRunner.control.hold), Shoot=Leertaste (Dauerfeuer, respektiert die Feuerrate). SHOOT am Touch ist neu: die Schussrichtung folgt der Stick-Neigung (crTouch.aimVec; neutraler Stick → letzte Richtung, Fallback Lauf-/Blickrichtung), am Handy gibt es keinen Cursor — shoot() nimmt die Stick-Neigung NUR auf der Touch-Schicht (crTouch.active), Desktop-Cursor-Zielen Bit fuer Bit unberuehrt. Order-Halten oeffnet NUR das Activation-Panel (kein Trade ohne die vier Tore; Weiche/Spion feuert bei KEINEM Touch-Element). Gast-Gate: HK3 (Aktiv) + HK4 (Alarm) erscheinen fuer Gaeste NICHT im Faecher (crGuest/crApplyAccessGates→syncGates, live-reaktiv); Shoot/HK1/HK2/Order sind Basis fuer alle. Support-Overlay (drawSetupGuide) mobil gefixt: Karten-Breite ≤ sichtbare Viewport-Breite, Text bricht um/kuerzt statt links abzuschneiden, env(safe-area-inset-left/right) beachtet, klar unter der Topbar und frei von den 3/4-Controls. UNVERAENDERT: Bewegungs-Stick (moveAxis horizontal), Trade-Pfad, Vier-Tore-Weiche, Desktop-Keyboard/Maus (inkl. Shoot-Richtung-Cursor), Activation-Panel selbst, chart-only, 3/4-Position, reduced-motion, Topbar≤5, kein Canvas-Direktzugriff. GEPRUEFT: scripts/check_v915_selektor_browser.cjs — EIN Selektor-Control im Ruhezustand, Tippen→Faecher→Waehlen, Halten→Taste-Paritaet (Shoot/HK1–HK4/Order), Shoot-Ziel=Stick-Neigung, Order oeffnet nur die Ansicht (Trade-Spion=0), Gast ohne HK3/HK4 im Faecher, Support-Karte im Bild bei kleiner UND grosser Viewport, Desktop unberuehrt. Gegenprobe ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse-Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; Handy-Optik + Tappbarkeit prueft Julian nach Merge am Telefon (danach P3.1-Limit-Pruefung).  PREV  ·  v1.0.914 (M0.5 · STEUERUNG AUF 3/4 HOEHE + HINTERGRUND-PUNKTE WEG): ZWEI KLEINE VISUELLE FIXES AM CHART-/PLAY-VIEW. KEINE LOGIK-AENDERUNG AN AKTIONEN/TRADE-PFAD/VIER-TORE-WEICHE/DESKTOP. FIX 1 (STEUERUNG TIEFER): vertikaler Anker der Touch-Cluster von top:50% auf top:75% (Stick #crTouchMove links, Ability-Radial + Order #crTouchRight rechts); transform:translateY(-50%) bleibt → die Cluster-MITTE sitzt auf drei Viertel der SICHTBAREN Hoehe, tiefer im Daumenbereich, weiterhin klar UEBER jeder unteren Browser-/System-Leiste, weil top sich auf den ueber _syncViewport an window.visualViewport gebundenen Layer (M0.3/M0.4) bezieht, NICHT auf den Layout-Viewport; env(safe-area-inset-left/right) unveraendert. FIX 2 (PUNKTE WEG): das dekorative Punkt-/Sternfeld im Chart-Hintergrund entfernt — drawBgDefault() zeichnet nur noch den Verlauf, die zuvor dort gestreuten 90 parallaxenden 1x1-Punkte (mulberry32(7)) sind raus; Kerzen/Gitter/Preis-Labels/Achsen/Runner/Laser/HUD unveraendert. (Der Idle-Ambient-Twinkle-Overlay drawAmbient() ist bereits seit v0.8k#24bn ein No-op — nichts weiter zu tun.) UNVERAENDERT: Tap-to-fire + Flick, Paritaet HK1–HK4, Order-Gast-Gate, chart-only, Auto-Run bleibt geloescht, Stick immer an, seitliche Verankerung, Weiche/Spion/Desktop-Keyboard bit-fuer-bit. GEPRUEFT: scripts/check_v914_controls_dots_browser.cjs — Cluster-Mitte ~75% der sichtbaren Hoehe bei kleiner UND grosser simulierter Viewport-Hoehe (NICHT in der unteren Chrome-Zone), seitlich im Safe-Inset (Stick links / Radial+Order rechts), kein Background-Dot-Rendering mehr im Chart-View (Gitter/Achsen weiter da), Tap==Flick==Taste, Order oeffnet nur die Ansicht (Trade-Spion=0), Desktop unberuehrt/reduced-motion/Topbar≤5/kein Canvas-Direktzugriff. Gegenprobe ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse-Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; Position/Tappbarkeit + „keine Punkte mehr" in Brave/Phantom/Safari prueft Julian nach Merge am Telefon (danach P3.1-Limit-Pruefung).
+     CURRENT VERSION: v1.0.919
+     LAST UPDATED:    2026-09-06  ·  v1.0.919 (UI · ARM NACH SETTINGS + EINE HANDELSFLAECHE): REINE UI-VERLAGERUNG/ENTFERNUNG — KEINE LOGIK-AENDERUNG AN ARM-BIT, SESSION-LIMIT-RECHNUNG, VIER TOREN, SPION, WEICHE, MARKET-/LIMIT-PFAD. (A) ARM → SETTINGS: der komplette ARM-Block (Checkbox „ARM · echtes Geld" + Erklaertext, MODUS-Schalter SCHARF/▲/▼/⚙, Session-Limit, Zeile Aktive Wallet · Sitzungs-Volumen · Modus, Gold-Band LIVE · ECHTES GELD · LIMIT …) zieht 1:1 aus dem Control Center in die Settings-App (#win-settings, eigener Abschnitt „ARM · Echtgeld" ganz oben, Wrapper #crArmHome). Dieselben Elemente/IDs, dieselben Handler (crArm, cr_arm_v1, cr_arm_limit_v1, #crArmBox/#crArmSwitch, _crCCRenderArm, crApplyAccessGates) — nur der Mount-Punkt wechselt; kein doppeltes ARM-UI im DOM (S5a.3), Gast-Gate (S5a.4) und Modus-Wahrheit bleiben. Das Control Center behaelt Theme/Sprache/Apps/Notifications und zeigt nur noch EINE Statuszeile „◇ SIM" / „⚡ LIVE · Limit x SOL" mit Link „→ Einstellungen" (kein Schalter dort; #crCCArmStatus, _crCCRenderArmStatus). Mobile: ≥44 px Ziele bei pointer:coarse, Session-Limit mit Dezimal-Tastatur. (B) EINE HANDELSFLAECHE: das Bottom-Sheet „Handeln vom Chart" (#crArmSheet, arm.sheetTitle) ist hinter dem Flag window.CR_CHART_SHEET (Default AUS). Ohne Flag fuehrt jeder frueherer Ausloeser (Market BUY/SELL bei SCHARF im Primitives-Menue, ▲/▼ am Modus-Schalter) ueber _crArmOpenSheet → _crArmOpenActivation NUR noch in das Activation-Panel (crTouch.openActivationPanel → cr.blueLaser.openRouteSettings, Route Market/Limit, dieselbe Weiche); die Safety-Regel bleibt davor (Kauf zu bei decision deny, Verkauf nie gesperrt). Das Token-Fenster behaelt seine klassische Swap-Ansicht. Toasts/Tooltips (arm.toastOn/tipOn/tapBuy/tapSell, de/es/zh) sagen jetzt „oeffnet das Activation-Panel". TESTS: scripts/check_v919_arm_settings_browser.cjs (ARM-UI genau EINMAL, unter #win-settings; CC ohne Schalter; Handler aus Settings; Gast-Gate; Sheet unerreichbar + Tap oeffnet Panel; Weiche-Spion; Topbar ≤5); v904-Fixture auf die neue Heimat umgestellt. Keine neue Dep, single-file, kein Trade-Pfad-Change.
+     PREV  ·  v1.0.918 (B6 + M1-LITE · IN-FLIGHT SICHTBAR + VAULT-TIMEOUT + TOUCH-GRIFF): REIN ANZEIGE/ZUSTAND/TOUCH-ZIELE — KEIN TRADE-PFAD-CHANGE, Weiche/Adapter/Worker/Vault-Ablauf (Auth → Deposit → orders/price) Bit fuer Bit gleich, Desktop-Maus unveraendert, single-file, keine neue Dep. BEFUND (Handy, v917): Arm/Update auf der Limit-HLine → keine Signatur, keine Meldung, nur „Blue Route updated". URSACHE (Code): (a) der Arm-Klick rief refresh() → renderBody() VOR dem Flow, der Dialog-Body wurde neu gebaut und der Flow lief im ALTEN, abgehaengten Abschnitt weiter — jede sayPanel-Zeile ging in ein DOM-Fragment, das niemand sah; liveBusy war je Abschnitt, ein zweiter Arm startete einen ZWEITEN Flow; (b) toast() → crNotify rendert nur den Terminal-Stack unten rechts, am Handy unter Selektor/Browserleiste — die Meldungen landeten still im CC; (c) crVaultApi._post/_get hatten KEINEN Timeout. B6·0 SICHTFELD: crLoud = Top-Center-HUD (unter der Topbar, nicht in ihr; ≥4 s, mit Text, reduced-motion-fest) fuer jede Live-Order-Meldung; sayLoud schreibt Panel + Toast (CC-Verlauf) + HUD + Flight-Zustand. B6·1 TIMEOUT: crVaultApi._post/_get mit AbortController (15 s), /health-Preflight 8 s → { error:'timeout', detail:<pfad> }; jeder Fehlweg/Timeout setzt busy zurueck (_fail), die Meldung nennt den HAENGENDEN Schritt („Vault-Anfrage abgelaufen (challenge) — Worker/Netz pruefen"). B6·2 IN-FLIGHT LAUT: crVaultFlight = EIN globaler Zustand (busy, Schritt, Text, Spur) fuer Panel, HUD und den persistenten Status-Chip am Ein-Button-Selektor (#crSelChip: „⏳ Vault … <schritt>" / „✍️ Wallet …", bleibt bei manuell geschlossenem Panel, nach dem Verdikt kurz das Ergebnis); jeder Zwischenschritt geht ueber sayLoud. B6·3 PANEL BLEIBT OFFEN: bei Route Limit + globalem ARM wartet das Neu-Rendern bis zum Verdikt; sayPanel schreibt zusaetzlich in den aktuell eingehaengten Abschnitt; jeder Abschnitt spiegelt den Flight-Zustand (auch ein neu gerenderter). B6·3b DIAGNOSE-SPUR: preflight → resolveTrade → decide → challenge → signMessage → verify → register → depositCraft → commit (depositSign → ordersPrice → ordersActive), je Zeile Name/Dauer/Ergebnis, aufklappbar „Diagnose" im Panel und als CC-Notification beim Verdikt. B6·4 KEIN SIGNER: no-signer/no-wallet/no-feature → „Wallet kann keine Nachricht signieren — im Phantom-Browser oeffnen oder Wallet neu verbinden". M1-LITE·1 HIT-SLOP: crTouchGrip (nur pointer:coarse/crTouch.active) probt hitOverlay von der Tap-Position nach aussen bis ±22 px (44-px-Zone), das naechstliegende Objekt gewinnt, Tap oeffnet dessen Panel; Maus = eine Probe = unveraendert. M1-LITE·2 PILL-GRIFF: jede freie Linie traegt am Touch auf der Preis-Achse eine Pille mit Preis (drawAnchorLines, nur Zeichnung); Tap oeffnet das Panel, Ziehen verschiebt den Preis (Magnet auf den Kurs, Loupe = groessere Pille), Order-Sync ueber DENSELBEN Helfer wie die Maus (crSyncHLinePriceToOrder, aus dem Maus-Drag extrahiert). M1-LITE·3 OFFENE ORDERS: Order-Scheibe (Halten) → Liste der Chart-Objekte/ruhenden Orders (LIVE/PAPER/SIM-getaggt, LIVE oben) → Tap oeffnet das Panel; erste Zeile „Neue Order am Kurs" = bisheriges Verhalten; ohne Objekte direkt ins Panel. Terminal OFFENE POSITIONEN: Zeile → Panel (SIM-Zeilen ueber Objekt-Referenz, LIVE-Zeilen ueber die Linie mit Live-Fill/aktiver Limit-Route, sonst Order-Liste). GEPRUEFT: scripts/check_v918_inflight_touch_browser.cjs — haengender challenge-Fetch → timeout nach der Frist (Default 15 s/8 s bestaetigt), sayLoud + HUD, busy=false, zweiter Arm laeuft; Zwischenschritte als Toast + Chip; Dialog bleibt bei Route Limit in Flight offen + Diagnose-Zeilen; Tap 20 px neben der HLine oeffnet das Panel (coarse), Maus-Klick 20 px daneben oeffnet nichts; Pille oeffnet/zieht; Order-Liste → Panel; Terminal-Zeile → Panel; Real-Adapter-Spion = 0; reduced-motion-Guards; Topbar ≤5. Gegenprobe ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: der ausgerollte Worker (CORS fuer /health + die sechs Vault-Aliasse ist Teil A, privat) — Julian prueft nach Merge am Telefon: Limit-HLine → Arm/Update → Chip „⏳ Vault …" sichtbar → Phantom-Signatur ODER nach ≤15 s eine klare Fehlerzeile (timeout/challenge-failed/no-signer); danach Linie/Pille antippen → Panel; Order-Scheibe → Liste → Panel.  PREV  ·  v1.0.917 (PATCH B · LIMIT-FEHLER LAUT + /health-PREFLIGHT + DEX-JUPITER-VENUE + ARM-HINWEIS + FEE-ECHO bps-only): REIN ANZEIGE/PREFLIGHT/BINDUNG — KEIN NEUER TRADE-PFAD, Weiche/Spion/Market Bit fuer Bit unberuehrt, single-file, keine neue Dep. (B1) LIMIT-ARM-FEHLER LAUT: jede Abbruchstelle in _armVaultLimit und jeder crVaultLimit.prepare-Fehler zeigt jetzt eine persistente Panel-Meldung MIT dem exakten Grund (challenge-failed / offline / auth-failed / no-signer / sign-message-crashed / register-failed / deposit-craft-failed / fee-missing / bad-mints / bad-amount / not-connected) UND toastet denselben Grund (sayLoud), damit das Schliessen des Panels ihn nicht mehr verschluckt — der naechste Arm-Versuch SAGT, woran es lag. (B2) PREFLIGHT GET /health VOR dem Vault-Flow: crVaultApi.preflight() prueft, ob der ausgerollte Worker die sechs Vault-Endpunkte unter `endpoints` fuehrt; fehlen sie (oder offline), bricht der Flow VOR jeder Signatur ab („Ruhende Orders sind serverseitig noch nicht scharf (Vault-Endpunkte fehlen im Worker).") — kein Wallet-Popup, keine Stille. Ergebnis kurz gecacht (OK 60 s, Fehler 15 s). (B3) RUN-VENUE an den GECHARTETEN Token gebunden: routeVenue ist fuer eine ueber crStoreMint(currentAssetObj()) AUFLOESBARE Solana-Mint jetzt „DEX - Jupiter" (dexVenue=true), nie mehr faelschlich „CEX - Binance" aus dem Broker-Rad — dieselbe Aufloesung wie crWeiche.badgeGate. Rein Anzeige/Kontext; die Order-Route nutzt weiter die Mint. (B4) STILLER No-Op weg: armBtn.onclick meldet bei globalem ARM aus „Globales ARM ist aus — im Control Center scharfschalten." statt kommentarlos zurueckzukehren (Market & Limit gleich). (B5) FEE-ECHO bps-only: Worker v1.21 liefert das deposit/craft-Gebuehren-Echo als bps OHNE amount_raw; der Gate (Panel + crVaultLimit.commit) verlangt jetzt NUR noch feeBps, feeRaw ist optional — kein stiller Abbruch mehr vor der Deposit-Signatur. Die Gebuehrenzeile zeigt bei fehlendem feeRaw NUR den Prozentsatz („Gebühr 0,5 %"), kein _crFmtSol(null)-Krampf; mit feeRaw weiter „0,5 % (… SOL)". Fehlt feeBps ganz → weiterhin ehrlicher Abbruch. GEPRUEFT: scripts/check_v917_patchB_browser.cjs — B1 je Grund sichtbar+Toast, B2 Preflight ohne Vault-Endpunkte bricht VOR jeder Signatur ab / mit ihnen laeuft weiter, B3 Solana-Token → „DEX - JUPITER" (kein CEX-Binance), B4 ARM aus → Hinweis, B5 bps-only → Flow laeuft + „0,5 %" ohne SOL. Gegenprobe ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse 7 Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: der ausgerollte Vault-Worker (Patch A) — Julian prueft nach Merge am Telefon (gut: Nachrichten-Signatur → Gebuehr → Einzahlungs-Signatur ablehnen; schlecht: klare „Vault-Endpunkte fehlen"-Meldung statt Stille).  PREV  ·  v1.0.916 (T-SYNC · TERMINAL SPIEGELT ECHTE LIVE-TRADES, REIN LESEND): Das Terminal spiegelte bisher NUR die SIM-Engine (crL3). Jetzt speisen sich die LIVE-gebadgten Kacheln aus dem VORHANDENEN Journal (cr_journal_v1, Einträge mit source:'live') und dem tatsächlich gecharteten Token — ohne jede Änderung an Weiche/Trade-Pfad/Adapter/Worker (kein marketSwap/limitVault/deposit/sign berührt, kein neuer Endpunkt, keine neue Dep, single-file). (1) ◆ LETZTE TRANSAKTIONEN (crTermTx, gespiegelt crPhTermTx) liest echte Live-Journal-Einträge, neueste zuerst: Seite/Menge (SOL-Seite)/Preis/Gebühr/Zeit + Solscan-Link aus sig; SIM-SDK-Fills (crL3.getTxs) erscheinen NICHT mehr in dieser LIVE-Kachel, Leerzustand ehrlich ("no live transactions yet"). Desktop und Phone bauen dieselbe HTML über einen gemeinsamen Helfer (_crLiveTxHTML) → Parität by construction. (2) ◇ TRADE-AUSFÜHRUNG (crTermExecLog/crPhTermExecLog) zeigt echte Trades als LIVE-getaggte Zeilen (aus dem Journal abgeleitet) neben den unveränderten SIM-Zeilen; jede Zeile trägt ein SIM/LIVE-Badge. (3) ◇ OFFENE POSITIONEN (crTermOpenList) zeigt reale offene Exposure als LIVE-Zeile getrennt von den SIM-Brackets; Entry = Fill-Preis, Größe = SOL-Seite, PnL NUR mark-basiert wenn der gehaltene Token der aktive Chart ist (sonst "—", kein Fake). (4) ◎ CURRENT TOKEN / MARKT-SCAN nutzen den gecharteten Token (currentAssetObj via _crActiveTokenSym / currentAsset-id), nicht game.asset (nie gesetzt → fiel immer auf BTC); _crTermActiveTokenId priorisiert jetzt currentAssetObj. (5) Badge-Ehrlichkeit: keine LIVE-Kachel rendert SIM-Daten, SIM ist überall als SIM markiert. GEPRÜFT: node --check des Skriptblocks, 4 CI-Checks (Parse-Blöcke, Leakage, Duplikate, CDN) grün, Gegenprobe ROT/CRASH/GRÜN in der Commit-Message. REIN LESEND: Terminal-Renderer rufen keinen Trade-/Adapter-/Weiche-Pfad. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; echten Live-Fill im Terminal + Solscan-Link prüft Julian nach Merge am Telefon (danach P3.1-Limit-Prüfung).  PREV  ·  v1.0.915 (M0.6 · EIN-BUTTON-SELEKTOR + SHOOT AM TOUCH + SUPPORT MOBIL): Die rechte Steuer-Seite ist EIN transparenter, glasiger Selektor-Button auf 3/4 Hoehe (kein Radial, kein separater FIRE, kein Text — nur Icons). TIPPEN (kurz) oeffnet den Icon-Faecher (Shoot/HK1 Vehikel/HK2 Ausricht/HK3 Aktiv/HK4 Alarm/Order, je in ihrer Farbe: orange/cyan/rot/mint/violett/gold); TIPPEN auf ein Icon waehlt (der Button zeigt es fortan); GEDRUECKT-HALTEN fuehrt die gewaehlte Funktion aus, solange gehalten (Sweep-Ring = laeuft), mit exakter Ausloese-Paritaet — kind:'key' haelt die zugehoerige Taste (keydown auf Druck / keyup auf Loslassen, ueber ChartRunner.control.hold), Shoot=Leertaste (Dauerfeuer, respektiert die Feuerrate). SHOOT am Touch ist neu: die Schussrichtung folgt der Stick-Neigung (crTouch.aimVec; neutraler Stick → letzte Richtung, Fallback Lauf-/Blickrichtung), am Handy gibt es keinen Cursor — shoot() nimmt die Stick-Neigung NUR auf der Touch-Schicht (crTouch.active), Desktop-Cursor-Zielen Bit fuer Bit unberuehrt. Order-Halten oeffnet NUR das Activation-Panel (kein Trade ohne die vier Tore; Weiche/Spion feuert bei KEINEM Touch-Element). Gast-Gate: HK3 (Aktiv) + HK4 (Alarm) erscheinen fuer Gaeste NICHT im Faecher (crGuest/crApplyAccessGates→syncGates, live-reaktiv); Shoot/HK1/HK2/Order sind Basis fuer alle. Support-Overlay (drawSetupGuide) mobil gefixt: Karten-Breite ≤ sichtbare Viewport-Breite, Text bricht um/kuerzt statt links abzuschneiden, env(safe-area-inset-left/right) beachtet, klar unter der Topbar und frei von den 3/4-Controls. UNVERAENDERT: Bewegungs-Stick (moveAxis horizontal), Trade-Pfad, Vier-Tore-Weiche, Desktop-Keyboard/Maus (inkl. Shoot-Richtung-Cursor), Activation-Panel selbst, chart-only, 3/4-Position, reduced-motion, Topbar≤5, kein Canvas-Direktzugriff. GEPRUEFT: scripts/check_v915_selektor_browser.cjs — EIN Selektor-Control im Ruhezustand, Tippen→Faecher→Waehlen, Halten→Taste-Paritaet (Shoot/HK1–HK4/Order), Shoot-Ziel=Stick-Neigung, Order oeffnet nur die Ansicht (Trade-Spion=0), Gast ohne HK3/HK4 im Faecher, Support-Karte im Bild bei kleiner UND grosser Viewport, Desktop unberuehrt. Gegenprobe ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse-Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; Handy-Optik + Tappbarkeit prueft Julian nach Merge am Telefon (danach P3.1-Limit-Pruefung).  PREV  ·  v1.0.914 (M0.5 · STEUERUNG AUF 3/4 HOEHE + HINTERGRUND-PUNKTE WEG): ZWEI KLEINE VISUELLE FIXES AM CHART-/PLAY-VIEW. KEINE LOGIK-AENDERUNG AN AKTIONEN/TRADE-PFAD/VIER-TORE-WEICHE/DESKTOP. FIX 1 (STEUERUNG TIEFER): vertikaler Anker der Touch-Cluster von top:50% auf top:75% (Stick #crTouchMove links, Ability-Radial + Order #crTouchRight rechts); transform:translateY(-50%) bleibt → die Cluster-MITTE sitzt auf drei Viertel der SICHTBAREN Hoehe, tiefer im Daumenbereich, weiterhin klar UEBER jeder unteren Browser-/System-Leiste, weil top sich auf den ueber _syncViewport an window.visualViewport gebundenen Layer (M0.3/M0.4) bezieht, NICHT auf den Layout-Viewport; env(safe-area-inset-left/right) unveraendert. FIX 2 (PUNKTE WEG): das dekorative Punkt-/Sternfeld im Chart-Hintergrund entfernt — drawBgDefault() zeichnet nur noch den Verlauf, die zuvor dort gestreuten 90 parallaxenden 1x1-Punkte (mulberry32(7)) sind raus; Kerzen/Gitter/Preis-Labels/Achsen/Runner/Laser/HUD unveraendert. (Der Idle-Ambient-Twinkle-Overlay drawAmbient() ist bereits seit v0.8k#24bn ein No-op — nichts weiter zu tun.) UNVERAENDERT: Tap-to-fire + Flick, Paritaet HK1–HK4, Order-Gast-Gate, chart-only, Auto-Run bleibt geloescht, Stick immer an, seitliche Verankerung, Weiche/Spion/Desktop-Keyboard bit-fuer-bit. GEPRUEFT: scripts/check_v914_controls_dots_browser.cjs — Cluster-Mitte ~75% der sichtbaren Hoehe bei kleiner UND grosser simulierter Viewport-Hoehe (NICHT in der unteren Chrome-Zone), seitlich im Safe-Inset (Stick links / Radial+Order rechts), kein Background-Dot-Rendering mehr im Chart-View (Gitter/Achsen weiter da), Tap==Flick==Taste, Order oeffnet nur die Ansicht (Trade-Spion=0), Desktop unberuehrt/reduced-motion/Topbar≤5/kein Canvas-Direktzugriff. Gegenprobe ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse-Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; Position/Tappbarkeit + „keine Punkte mehr" in Brave/Phantom/Safari prueft Julian nach Merge am Telefon (danach P3.1-Limit-Pruefung).
      PREV  ·  v1.0.913 (M0.5 · ROUTE-/ORDER-SETTINGS ALS MOBILES BOTTOM-SHEET): REINE PRAESENTATION — MACHT DIE EINE ORDER-/AKTIVIERUNGS-OBERFLAECHE (TV-SETTINGS-DIALOG #tvSettingsOverlay, openTvSettingsDialog) AUF DEM TELEFON NUTZBAR. KEINE LOGIK-/DOM-AENDERUNG, KEIN NEUER TRADE-PFAD, KEINE NEUE WEICHE. BEFUND (HANDY-TEST, BRAVE/PHANTOM): der Dialog ist komplett inline-gestylt; das Karten-Element traegt ein hartes min-width:540px, das auf einem 390px-Viewport gegen width:min(720px,92vw) gewinnt → die Karte ragt ~150px ueber beide Raender und wird beidseitig abgeschnitten (Header, PRICE, TAKE PROFIT, ACTIVATION, Market/Simulate alle geclippt). FIX: ein neuer, media-query-gegateter Style-Block (#cr-mobile-route-sheet-v1) ueberschreibt NUR unter @media (max-width:560px) die Inline-Styles per !important zu einem randlosen Bottom-Sheet — (1) Backdrop align-items:flex-end (Karte am unteren Rand), (2) Karte min-width:0/width:100%/max-width:100%, oben abgerundet, max-height:92svh + padding-bottom:env(safe-area-inset-bottom), (3) Tab-Leiste horizontal scrollbar (fuenf Tabs passen sonst nicht), (4) Zwei-Spalten-Raster (Activation-Pane + Bracket-Felder) → eine Spalte. Die Karte ist flex-column: Header+Tabs bleiben fix, der Body (flex:1, overflow-y:auto) scrollt — kein sticky noetig. Der Aktivierungs-/Fire-Pfad (crWeiche → decide → _fireLive, die EINZIGE Stelle am Real-Adapter) und die Felder selbst sind bit-fuer-bit unberuehrt; die Aktivierung laeuft weiter ueber dieselbe Blue-Laser-Route wie am Desktop. Paritaet by construction. DESKTOP UNBERUEHRT (media-query-gated). GEPRUEFT: scripts/check_v913_route_sheet_browser.cjs — mobil (390px) liegt die Dialog-Karte vollstaendig im Viewport (kein Ueberlauf links/rechts), sitzt als Bottom-Sheet am unteren Rand, Breite ≤ Viewport; Desktop (1280px) unveraendert zentriert mit min-width 540; Order oeffnet nur die Ansicht (Trade-Spion=0); Topbar≤5/kein Canvas-Direktzugriff. Gegenprobe ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse-Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; Lesbarkeit/Tappbarkeit des Sheets in Brave/Phantom/Safari prueft Julian nach Merge am Telefon. HINWEIS: gestapelt auf M0.4 (v1.0.912, PR #186) — dieses PR enthaelt auch die M0.4-Aenderung, bis #186 gemergt ist.
      PREV  ·  v1.0.912 (M0.4 · STEUERUNG VERTIKAL MITTIG AN DEN SEITENRAENDERN): REINER POSITIONS-FIX AN DER TOUCH-STEUERUNG — ERSETZT DIE BODEN-VERANKERUNG DURCH VERTIKALE ZENTRIERUNG. KEINE LOGIK-AENDERUNG AN AKTIONEN/TRADE-PFAD/VIER-TORE-WEICHE/DESKTOP. BEFUND (HANDY-TEST, MEHRERE BROWSER): der Boden-Anker ist geraete-/browserunabhaengig NICHT zuverlaessig — jeder In-App-Browser (Brave/Phantom/Safari) hat eine andere untere Leiste; auch env(safe-area-inset-bottom) + der visualViewport-Anker aus M0.3 platzieren die Controls nicht ueberall sauber, sie bleiben zu tief bzw. werden abgeschnitten. FIX: (1) STICK links, VERTIKAL MITTIG — #crTouchMove nicht mehr bottom:var(--cr-tl-lift), sondern top:50% + transform:translateY(-50%); left:calc(env(safe-area-inset-left,0px)+12px). (2) ABILITY-RADIAL + ORDER rechts, vertikal mittig analog — #crTouchRight top:50% + translateY(-50%); right:calc(env(safe-area-inset-right,0px)+12px). (3) top:50% bezieht sich auf den ueber _syncViewport an window.visualViewport gebundenen Layer (M0.3 bleibt), also auf die SICHTBARE Flaeche → weder obere noch untere Browser-Leiste kann die mittig sitzenden Cluster verdecken (Kern der „funktioniert ueberall"-Loesung). (4) HORIZONTALE SAFE-INSETS beachtet (left/right), --cr-tl-lift (Boden-Anker) entfaellt, --cr-tl-edge = 12px Komfort-Abstand; die halbtransparenten Grund-/Blur-Flaechen (M0.1) lassen die rechts liegenden Preis-Achsen-Labels hinter dem Radial durchscheinen. UNVERAENDERT: Tap-to-fire + Flick, Paritaet HK1–HK4, Order-Gast-Gate, chart-only, Stick-immer-an, Weiche/Desktop bit-fuer-bit. GEPRUEFT: scripts/check_v912_mittig_browser.cjs — vertikal zentriert bei simuliert KLEINER UND GROSSER Viewport-Hoehe (Cluster-Mitte ~50% der sichtbaren Hoehe, NICHT in der Chrome-Zone), seitlich im Safe-Inset (Stick links / Radial+Order rechts, innerhalb inset-left/right), Tap-Paritaet (Tap==Flick==Taste), Order oeffnet nur die Ansicht (Trade-Spion=0), Desktop unberuehrt/reduced-motion/Topbar≤5/kein Canvas-Direktzugriff. Gegenproben ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse-Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; Position/Tappbarkeit in Brave/Phantom/Safari prueft Julian nach Merge am Telefon (danach P3.1-Limit-Pruefung).
      PREV  ·  v1.0.911 (M0.3 · CONTROLS HÖHER + TAP-TO-FIRE): ZWEI FOKUSSIERTE FIXES AN DER M0.2-TOUCH-STEUERUNG AUS DEM HANDY-TEST. KEINE LOGIK-AENDERUNG AN AKTIONEN/TRADE-PFAD/VIER-TORE-WEICHE/DESKTOP — NUR POSITION UND EINE ZUSAETZLICHE AUSLOESE-GESTE. (1) HOEHER: die gesamte Touch-Schicht (Stick, Radial, Order) wird an window.visualViewport ausgerichtet statt am Layout-Viewport — _syncViewport() bindet Hoehe und Verschiebung an die SICHTBARE Flaeche (height=vv.height, top=vv.offsetTop, left/width analog) und wird auf visualViewport-resize/scroll UND beim Einblenden neu aufgerufen. Der komfortable Mindestabstand --cr-tl-lift steigt von 20 auf 30px (Spec 24–32) ZUSAETZLICH zu env(safe-area-inset-bottom); beide Docks referenzieren weiter dieselbe Variable. Begruendung: die In-App-Browserleiste (Phantom/Brave) ist KEIN safe-area-inset und der Layout-Viewport (svh/vh) endet hinter ihr — env allein reichte nicht. Ergebnis: Stick, alle vier Radial-Slots (inkl. unterstem AKTIV-Slot) und Order liegen klar ueber der Leiste. (2) TAP-TO-FIRE: jeder sichtbare Radial-Slot feuert seine Faehigkeit beim ANTIPPEN (click → API.fireHotkey → ChartRunner.control.tap) — EXAKT dieselbe Aktion wie Flick und Taste, kein neuer Pfad, Paritaet by construction. Der Flick bleibt als Shortcut erhalten; ein Hub-Tap blendet die Slots ein (jetzt pointer-events:auto), ein weiterer Hub-Tap bei offenem Rad = Abbruch/Collapse; nach einem Slot-Tap klappt das Rad ein. Slots sind ≥44px (min-width/height). (3) GEPRUEFT: scripts/check_v911_hoch_tap_browser.cjs — Position (mit gestubbter kleinerer visualViewport.height liegt die Unterkante von Stick, AKTIV-Slot und Order ≥ Mindestabstand ueber der sichtbaren Viewport-Unterkante, kein Control darunter), Tap-je-Slot-Paritaet (Tap auf Slot oben/rechts/unten/links ruft dieselbe Funktion wie Taste und Flick), Flick-Regression (press-and-flick feuert weiter korrekt), Weiche/Spion (Tap/Order feuern keinen Trade), Desktop unberuehrt/reduced-motion/Topbar≤5/kein Canvas-Direktzugriff; v910-Regression gruen. Gegenproben ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse-Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; die Antippbarkeit/Position im Phantom-Browser prueft Julian nach Merge am Telefon (danach P3.1-Limit-Pruefung).
@@ -3305,33 +3306,56 @@ window.crShare = function (o) {
   .crCCPop #crCCNotifList .crCCNoteTxt{font-size:10.5px;color:#1a1f2b;word-break:break-word}
   .crCCPop #crCCNotifList .crCCNoteAge{font-size:9px;color:#1a1f2b;opacity:.55;white-space:nowrap;flex:none}
   .crCCPop #crCCNotifList .crCCNoteEmpty{font-size:10.5px;color:#1a1f2b;opacity:.5;font-style:italic;padding:4px 2px;text-align:center}
-  /* v1.0.904 (S5a.3) — ARM · Echtgeld im Control Center. Gleiche helle Optik
-     wie Theme/Sprache/Notifications; die Zustandszeile ist im SIM-Fall ruhig
-     (grau/blau) und im LIVE-Fall laut (gold). */
-  .crCCPop .crCCArm{border:1px solid rgba(212,164,60,.5);border-radius:10px;padding:9px 10px;background:rgba(212,164,60,.06);margin-top:4px}
-  .crCCPop .crCCArmToggle{display:flex;align-items:center;gap:9px;cursor:pointer;font:800 12px system-ui,-apple-system,sans-serif;color:#1a1f2b}
-  .crCCPop .crCCArmToggle input[type="checkbox"]{width:16px;height:16px;accent-color:#d4a43c;margin:0;flex:none;cursor:pointer}
-  .crCCPop .crCCArmWarn{margin:7px 0 9px;font-size:10.5px;line-height:1.35;color:#4a4033}
-  .crCCPop .crCCArmWarn code{font:600 10px ui-monospace,Menlo,monospace;background:rgba(127,127,127,.16);padding:1px 3px;border-radius:4px}
-  .crCCPop .crCCArmModeRow{display:flex;align-items:center;gap:9px;margin-bottom:9px}
-  .crCCPop .crCCArmModeLbl{font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#1a1f2b;opacity:.55;flex:none;width:38px}
+  /* v1.0.904 (S5a.3) — ARM · Echtgeld, helle Optik; die Zustandszeile ist im
+     SIM-Fall ruhig (grau/blau) und im LIVE-Fall laut (gold).
+     v1.0.919 — der Block wohnt jetzt in der Settings-App (#crArmHome, helle
+     Platinum-Flaeche wie zuvor das CC). Die Regeln sind auf .crArmHome
+     umgehaengt — Markup und IDs sind 1:1 dieselben. */
+  .crArmHome .crCCArm{border:1px solid rgba(212,164,60,.5);border-radius:10px;padding:9px 10px;background:rgba(212,164,60,.06);margin-top:4px}
+  .crArmHome .crCCArmToggle{display:flex;align-items:center;gap:9px;cursor:pointer;font:800 12px system-ui,-apple-system,sans-serif;color:#1a1f2b}
+  .crArmHome .crCCArmToggle input[type="checkbox"]{width:16px;height:16px;accent-color:#d4a43c;margin:0;flex:none;cursor:pointer}
+  .crArmHome .crCCArmWarn{margin:7px 0 9px;font-size:10.5px;line-height:1.35;color:#4a4033}
+  .crArmHome .crCCArmWarn code{font:600 10px ui-monospace,Menlo,monospace;background:rgba(127,127,127,.16);padding:1px 3px;border-radius:4px}
+  .crArmHome .crCCArmModeRow{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+  .crArmHome .crCCArmModeLbl{font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#1a1f2b;opacity:.55;flex:none;width:38px}
   /* Der Schnellschalter (#crArmBox) traegt seine dunkle Topbar-Optik — hier
      im hellen CC auf eine helle Flaeche umgestellt. Die body.cr-arm-live-
      Regeln (gruener Rand im scharfen Zustand) greifen unveraendert daneben. */
-  .crCCPop .cr-armbox{flex:1 1 auto;background:rgba(127,127,127,.12);border-color:rgba(127,127,127,.28);padding:3px 5px}
-  .crCCPop .cr-armbox .cr-armSwitch{color:#1a1f2b;border-color:rgba(127,127,127,.4)}
-  .crCCPop .cr-armbox .cr-armTap{color:#1a1f2b;border-color:rgba(127,127,127,.4)}
-  .crCCPop .cr-armbox .cr-armCfg{color:#1a1f2b}
-  .crCCPop .crCCArmLimit{display:flex;align-items:center;gap:8px;font-size:10.5px;color:#1a1f2b;opacity:.85}
-  .crCCPop .crCCArmLimit input{flex:1;min-width:0;border:1px solid rgba(127,127,127,.28);border-radius:6px;background:rgba(255,255,255,.55);color:#1a1f2b;padding:6px 8px;font:inherit;text-align:right}
-  .crCCPop .crCCArmInfo{margin:8px 0 0;font-size:9.5px;line-height:1.3;color:#4a4033}
-  .crCCPop .crCCArmState{margin-top:9px;padding:7px 9px;border-radius:8px;font:800 10px ui-monospace,Menlo,monospace;letter-spacing:.4px;text-align:center;
+  .crArmHome .cr-armbox{flex:1 1 auto;background:rgba(127,127,127,.12);border-color:rgba(127,127,127,.28);padding:3px 5px}
+  .crArmHome .cr-armbox .cr-armSwitch{color:#1a1f2b;border-color:rgba(127,127,127,.4)}
+  .crArmHome .cr-armbox .cr-armTap{color:#1a1f2b;border-color:rgba(127,127,127,.4)}
+  .crArmHome .cr-armbox .cr-armCfg{color:#1a1f2b}
+  .crArmHome .crCCArmLimit{display:flex;align-items:center;gap:8px;font-size:10.5px;color:#1a1f2b;opacity:.85}
+  .crArmHome .crCCArmLimit input{flex:1;min-width:0;border:1px solid rgba(127,127,127,.28);border-radius:6px;background:rgba(255,255,255,.55);color:#1a1f2b;padding:6px 8px;font:inherit;text-align:right}
+  .crArmHome .crCCArmInfo{margin:8px 0 0;font-size:9.5px;line-height:1.3;color:#4a4033}
+  .crArmHome .crCCArmState{margin-top:9px;padding:7px 9px;border-radius:8px;font:800 10px ui-monospace,Menlo,monospace;letter-spacing:.4px;text-align:center;
     color:#3d4a63;background:rgba(120,140,180,.14);border:1px solid rgba(120,140,180,.22)}
-  .crCCPop .crCCArmState[data-cr-arm-state="live"]{color:#7a5a10;background:linear-gradient(90deg,rgba(212,164,60,.9),rgba(247,199,107,.95),rgba(212,164,60,.9));border-color:rgba(212,164,60,.9);text-shadow:0 1px 0 rgba(255,255,255,.25)}
+  .crArmHome .crCCArmState[data-cr-arm-state="live"]{color:#7a5a10;background:linear-gradient(90deg,rgba(212,164,60,.9),rgba(247,199,107,.95),rgba(212,164,60,.9));border-color:rgba(212,164,60,.9);text-shadow:0 1px 0 rgba(255,255,255,.25)}
   /* v1.0.905 (S5a.4) — Gast-Hinweis an der Stelle der ARM-Sektion, wenn weder
      angemeldet noch Wallet verbunden. Ruhig, gestrichelt, kein Schalter — die
      Echtgeld-Steuerung taucht erst mit einem der beiden Signale auf. */
-  .crCCPop .crCCArmGate{border:1px dashed rgba(127,127,127,.38);border-radius:10px;padding:10px 11px;background:rgba(127,127,127,.06);margin-top:4px;font-size:10.5px;line-height:1.4;color:#4a4033;opacity:.9}
+  .crArmHome .crCCArmGate{border:1px dashed rgba(127,127,127,.38);border-radius:10px;padding:10px 11px;background:rgba(127,127,127,.06);margin-top:4px;font-size:10.5px;line-height:1.4;color:#4a4033;opacity:.9}
+  /* v1.0.919 — Settings-Abschnitt: kein Zusatz-Rand ueber dem Block; am Touch
+     (pointer:coarse) sind alle Ziele daumen-tauglich (≥44 px) und das
+     Limit-Feld ist 16 px gross (kein iOS-Zoom beim Fokus). */
+  .crArmHome .crCCArm{margin-top:0}
+  .crArmHome .crCCArmGate{margin-top:0}
+  @media (pointer:coarse){
+    .crArmHome .crCCArmToggle{min-height:44px}
+    .crArmHome .crCCArmToggle input[type="checkbox"]{width:22px;height:22px}
+    .crArmHome .cr-armbox .cr-armSwitch,.crArmHome .cr-armbox .cr-armTap,.crArmHome .cr-armbox .cr-armCfg{min-height:44px;min-width:44px}
+    .crArmHome .crCCArmLimit input{min-height:44px;font-size:16px}
+  }
+  /* v1.0.919 — Control Center: nur noch EINE Statuszeile fuer ARM (kein
+     Schalter). SIM ruhig, LIVE gold — dieselbe Farbsprache wie die
+     Zustandszeile in Settings. Der Link fuehrt in die Settings-App. */
+  .crCCPop .crCCArmStatus{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px;padding:7px 9px;border-radius:8px;
+    font:800 10px ui-monospace,Menlo,monospace;letter-spacing:.4px;color:#3d4a63;background:rgba(120,140,180,.14);border:1px solid rgba(120,140,180,.22)}
+  .crCCPop .crCCArmStatus[data-cr-arm-state="live"]{color:#7a5a10;background:linear-gradient(90deg,rgba(212,164,60,.9),rgba(247,199,107,.95),rgba(212,164,60,.9));border-color:rgba(212,164,60,.9)}
+  .crCCPop .crCCArmStatus #crCCArmStatusTxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .crCCPop .crCCArmGoSet{appearance:none;border:0;background:transparent;color:#3454a8;font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.4px;cursor:pointer;padding:4px 2px;flex:none;min-height:24px}
+  .crCCPop .crCCArmStatus[data-cr-arm-state="live"] .crCCArmGoSet{color:#4a3608}
+  .crCCPop .crCCArmGoSet[hidden]{display:none}
   .os-section:first-child{margin-top:0;padding-top:0;border-top:0}
   .os-section h4{margin:0 0 6px;font-size:10px;letter-spacing:.6px;color:var(--dim);text-transform:uppercase}
   .os-shop-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
@@ -10613,7 +10637,7 @@ window.crShare = function (o) {
              sichtbar; im SIM-Zustand steht hier nichts (ein "SIM"-Badge
              neben dem Preis waere Laerm — SIM ist der Normalfall). -->
         <span id="crArmBadge" data-cr-arm-badge="1" style="display:none"
-              title="This chart is ARMED — a buy/sell tap opens the real trade sheet.">LIVE</span>
+              title="This chart is ARMED — a buy/sell tap opens the Activation Panel.">LIVE</span>
         <span id="symLabel" style="display:none">BTC/USDT</span>
       </div>
       <!-- v0.8k#13 — Strat promoted to the same hud-wrap/hud-toggle grid pattern as
@@ -10677,7 +10701,9 @@ window.crShare = function (o) {
            Elemente (Asset · Strat · Abilities · Indicators); die Topbar-Regel
            (hoechstens 5) bleibt unangetastet. Das Markup selbst steht jetzt
            unter #crCCPop; die crArm-Verdrahtung (getElementById) laeuft
-           ortsunabhaengig weiter. -->
+           ortsunabhaengig weiter.
+           v1.0.919 — und von dort weiter in die Settings-App (#crArmHome);
+           das CC zeigt nur noch Status + Link. -->
     </div>
     <!-- v0.8k#24ce — Chart-overlay action toolbar retired. The same
          buttons (Restart / Coins / Profile / Terminal) now live on the
@@ -11321,45 +11347,18 @@ window.crShare = function (o) {
            itself sits above. Reuses the .cr-cc-* classes from the Settings ·
            Game Control Center panel (v1.0.658) for visual consistency. -->
       <div class="crCCPop" id="crCCPop">
-        <!-- v1.0.904 (S5a.3) — ARM · Echtgeld: die EINE Heimat. Frueher auf
-             zwei Stellen verteilt (globaler ARM-Schalter im Wallet-Fenster,
-             SIM/SCHARF-Schnellschalter in der Topbar) und ein schwebendes
-             Live-Band auf der Spielflaeche. Jetzt alles hier: der globale
-             ARM-Schalter (das eine Bit cr_arm_v1), der SIM↔LIVE-Schalter
-             (#crArmBox, ortsunabhaengig verdrahtet), das Session-Limit und
-             eine Zustandszeile, die den WAHREN Modus spiegelt. Nichts davon
-             mehr frei auf der Stage. -->
+        <!-- v1.0.919 — ARM · Echtgeld wohnt jetzt in der Settings-App
+             (#crArmHome, Abschnitt ganz oben). Hier im Control Center steht
+             nur noch EINE Statuszeile („◇ SIM" / „⚡ LIVE · Limit x SOL") mit
+             dem Link „→ Einstellungen" — KEIN Schalter, KEIN Limit-Feld.
+             _crCCRenderArmStatus() haelt die Zeile im Takt (Gast: Hinweis,
+             Link versteckt). Der Hex-Badge-Zustand (Live/Not-Live) am
+             Menubar-Icon bleibt unveraendert. -->
         <div class="cr-cc-lbl" style="margin-top:0">ARM · Echtgeld</div>
-        <div class="crCCArm" id="crCCArmSection">
-          <label class="crCCArmToggle" for="crArmGlobalToggle">
-            <input type="checkbox" id="crArmGlobalToggle"> ARM · echtes Geld
-          </label>
-          <p id="crArmWarn" class="crCCArmWarn">Scharf heißt: ein Fill im Activation-Panel ist ein <b>echter Swap</b> über deine Wallet — echtes SOL, echte Gebühren, kein Rückgängig. Die Wallet fragt vor jedem Trade, der Worker signiert nie. Schalter aus = alles Paper.</p>
-          <div class="crCCArmModeRow">
-            <span class="crCCArmModeLbl">Modus</span>
-            <!-- v1.0.904 — der Schnellschalter aus der Topbar, hierher verlagert.
-                 Markup Bit fuer Bit wie zuvor; die crArm-Verdrahtung findet die
-                 Elemente per getElementById, unabhaengig vom Ort. -->
-            <div class="cr-armbox" id="crArmBox" title="SIM / LIVE — LIVE turns a buy/sell tap into the real trade sheet. Your wallet still signs.">
-              <button class="cr-armSwitch" id="crArmSwitch" type="button" aria-pressed="false"
-                      data-cr-arm-switch="1" data-cr-arm-state="sim">SIM</button>
-              <button class="cr-armTap" id="crArmBuy"  type="button" data-cr-arm-tap="kauf"    disabled>▲</button>
-              <button class="cr-armTap" id="crArmSell" type="button" data-cr-arm-tap="verkauf" disabled>▼</button>
-              <button class="cr-armCfg" id="crArmCfg"  type="button" title="Amount limit per tap">⚙</button>
-            </div>
-          </div>
-          <label class="crCCArmLimit" for="crArmLimitInput">Session-Limit (SOL gesamt)
-            <input id="crArmLimitInput" inputmode="decimal">
-          </label>
-          <p id="crArmInfo" class="crCCArmInfo"></p>
-          <div id="crCCArmState" class="crCCArmState" data-cr-arm-state="sim">◇ SIM · Übung · kein echtes Geld</div>
+        <div class="crCCArmStatus" id="crCCArmStatus" data-cr-arm-state="sim">
+          <span id="crCCArmStatusTxt">◇ SIM</span>
+          <button type="button" class="crCCArmGoSet" id="crCCArmGoSettings" title="ARM · Echtgeld einstellen (Settings)">→ Einstellungen</button>
         </div>
-        <!-- v1.0.905 (S5a.4) — Sichtbarkeits-Gate: ohne Anmeldung UND ohne
-             Wallet ist die ARM-Sektion oben nicht gerendert; an ihrer Stelle
-             steht diese ruhige Hinweiszeile. Kein Schalter, kein Limit-Feld —
-             der Rest des CC (Theme/Sprache/Notifications) bleibt unberuehrt.
-             _crCCRenderArm() kippt die beiden per hidden-Attribut. -->
-        <div id="crCCArmGateHint" class="crCCArmGate" hidden>ARM (Echtgeld) — verfügbar nach Anmeldung oder Wallet-Verbindung.</div>
         <div class="cr-cc-lbl" style="margin-top:12px">Theme</div>
         <div class="cr-cc-pillrow" id="crCCThemeChips">
           <button type="button" class="crCCThemeChip cr-cc-pill" data-theme-pick="platinum">Platinum</button>
@@ -13323,6 +13322,51 @@ window.crShare = function (o) {
           <button class="wclose" data-close title="Close" aria-label="Close">✕</button>
         </div>
         <div class="os-wbody">
+          <!-- v1.0.919 — ARM · Echtgeld: die EINE Heimat, jetzt in Settings.
+               v1.0.904 (S5a.3) hatte den Block ins Control Center gezogen
+               (globaler ARM-Schalter = das eine Bit cr_arm_v1, SIM↔LIVE-
+               Schalter #crArmBox, Session-Limit, Zustandszeile mit dem WAHREN
+               Modus). Julians Vorgabe 06.09.: die ganze ARM-UI wandert aus dem
+               CC in die Settings-App, eigener Abschnitt ganz oben. Markup und
+               IDs sind 1:1 dieselben — crArm (_crArmWire), die CC-Verdrahtung
+               (wireControlCenterPopover: crArmGlobalToggle / crArmLimitInput)
+               und _crCCRenderArm finden die Elemente per getElementById,
+               unabhaengig vom Ort. Kein doppeltes ARM-UI im DOM (S5a.3), das
+               Gast-Gate (S5a.4, #crCCArmSection/#crCCArmGateHint) und die
+               Modus-Wahrheit bleiben. Das CC zeigt nur noch Status + Link. -->
+          <div class="os-section crArmHome" id="crArmHome" style="margin:0 0 14px;padding:0;border-top:0">
+          <h4 style="margin:0 0 6px" id="crArmHomeTitle">ARM · Echtgeld</h4>
+          <div class="crCCArm" id="crCCArmSection">
+            <label class="crCCArmToggle" for="crArmGlobalToggle">
+              <input type="checkbox" id="crArmGlobalToggle"> ARM · echtes Geld
+            </label>
+            <p id="crArmWarn" class="crCCArmWarn">Scharf heißt: ein Fill im Activation-Panel ist ein <b>echter Swap</b> über deine Wallet — echtes SOL, echte Gebühren, kein Rückgängig. Die Wallet fragt vor jedem Trade, der Worker signiert nie. Schalter aus = alles Paper.</p>
+            <div class="crCCArmModeRow">
+              <span class="crCCArmModeLbl">Modus</span>
+              <!-- v1.0.904 — der Schnellschalter aus der Topbar, hierher verlagert.
+                   Markup Bit fuer Bit wie zuvor; die crArm-Verdrahtung findet die
+                   Elemente per getElementById, unabhaengig vom Ort. -->
+              <div class="cr-armbox" id="crArmBox" title="SIM / LIVE — LIVE turns a buy/sell tap into the Activation Panel (Market/Limit). Your wallet still signs.">
+                <button class="cr-armSwitch" id="crArmSwitch" type="button" aria-pressed="false"
+                        data-cr-arm-switch="1" data-cr-arm-state="sim">SIM</button>
+                <button class="cr-armTap" id="crArmBuy"  type="button" data-cr-arm-tap="kauf"    disabled>▲</button>
+                <button class="cr-armTap" id="crArmSell" type="button" data-cr-arm-tap="verkauf" disabled>▼</button>
+                <button class="cr-armCfg" id="crArmCfg"  type="button" title="Amount limit per tap">⚙</button>
+              </div>
+            </div>
+            <label class="crCCArmLimit" for="crArmLimitInput">Session-Limit (SOL gesamt)
+              <input id="crArmLimitInput" inputmode="decimal" autocomplete="off" enterkeyhint="done">
+            </label>
+            <p id="crArmInfo" class="crCCArmInfo"></p>
+            <div id="crCCArmState" class="crCCArmState" data-cr-arm-state="sim">◇ SIM · Übung · kein echtes Geld</div>
+          </div>
+          <!-- v1.0.905 (S5a.4) — Sichtbarkeits-Gate: ohne Anmeldung UND ohne
+               Wallet ist die ARM-Sektion oben nicht gerendert; an ihrer Stelle
+               steht diese ruhige Hinweiszeile. Kein Schalter, kein Limit-Feld —
+               der Rest des CC (Theme/Sprache/Notifications) bleibt unberuehrt.
+               _crCCRenderArm() kippt die beiden per hidden-Attribut. -->
+          <div id="crCCArmGateHint" class="crCCArmGate" hidden>ARM (Echtgeld) — verfügbar nach Anmeldung oder Wallet-Verbindung.</div>
+          </div>
           <div class="crTerm-tabs">
             <button class="crTerm-tab active" data-setview="tools" type="button">TOOLS</button>
             <button class="crTerm-tab" data-setview="account" type="button">ACCOUNT</button>
@@ -29610,6 +29654,41 @@ function _crArmPrefetchSafety(mint){
   } catch(_){ try { window.__crArmSafPending = null; } catch(__){} }
 }
 
+/* ── v1.0.919 — EINE HANDELSFLAECHE ───────────────────────────────────────
+ * Julians Vorgabe 06.09.: die zweite Swap-Stelle („Handeln vom Chart", das
+ * Bottom-Sheet #crArmSheet) ist nicht noetig — es gibt EINE Handelsflaeche,
+ * das Activation-Panel (Route Market/Limit, dieselben vier Tore, dieselbe
+ * Weiche). Das Sheet steht hinter window.CR_CHART_SHEET (Default AUS) und
+ * wird ohne Flag nie gebaut. Jeder fruehere Ausloeser (Market BUY/SELL bei
+ * SCHARF, ▲/▼ am Modus-Schalter) fuehrt ueber _crArmOpenSheet hierher.
+ * Das Token-Fenster behaelt seine klassische Swap-Ansicht — das ist keine
+ * zweite Stelle am Chart. Kein neuer Trade-Pfad: geoeffnet wird eine
+ * Ansicht, gefeuert wird nur im Panel und nur ueber die Weiche. */
+function _crChartSheetOn(){
+  try { var f = window.CR_CHART_SHEET; return f === 1 || f === '1' || f === true; } catch(_){ return false; }
+}
+function _crArmOpenActivation(side){
+  /* Derselbe Einstieg wie der Order-Knopf am Touch-Cockpit (M0/M1-lite):
+   * ruhende Preislinie am Kurs + Route-Einstellungen (Market/Limit). */
+  try {
+    if(window.crTouch && typeof crTouch.openActivationPanel === 'function')
+      return !!crTouch.openActivationPanel();
+  } catch(_){}
+  /* Fallback ohne crTouch: der direkte Dialog-Oeffner mit demselben Overlay. */
+  try {
+    var price = (typeof currentPrice === 'function') ? currentPrice() : NaN;
+    if(!(typeof price === 'number' && isFinite(price))) return false;
+    var wx = (typeof player !== 'undefined' && player) ? player.wx : 0;
+    var id = Date.now();
+    try { if(typeof game !== 'undefined' && game && game.anchorNextId != null) id = game.anchorNextId++; } catch(_){}
+    var overlay = { id:id, kind:'hline', py:price, wx:wx, t:0, mobileOrder:true };
+    var hit = { kind:'hline', overlay:overlay };
+    if(window.cr && cr.blueLaser && typeof cr.blueLaser.openRouteSettings === 'function' && cr.blueLaser.openRouteSettings(hit)) return true;
+    if(typeof openTvSettingsDialog === 'function'){ openTvSettingsDialog(overlay, { activeTab:'Inputs', blueRouteSettings:true, hit:hit }); return true; }
+  } catch(_){}
+  return false;
+}
+
 /* side: 'kauf' | 'verkauf' */
 function _crArmOpenSheet(side){
   side = (side === 'verkauf') ? 'verkauf' : 'kauf';
@@ -29628,6 +29707,10 @@ function _crArmOpenSheet(side){
         + ' · ' + _tokT('tok.safSellOn','Selling stays open — you can always exit a position.')); } catch(_){}
     return null;
   }
+  /* v1.0.919 — ohne CR_CHART_SHEET fuehrt der Tap in die EINE Handelsflaeche
+   * (Activation-Panel) und das Sheet unten wird nie gebaut. `true` sagt dem
+   * Aufrufer „behandelt" — kein Paper-Market hinterher. */
+  if(!_crChartSheetOn()) return _crArmOpenActivation(side) ? true : null;
   var sheet = _crArmSheetEl();
   var card = sheet.firstElementChild;
 
@@ -29696,7 +29779,7 @@ function _crArmPaint(){
       sw.setAttribute('aria-pressed', live ? 'true' : 'false');
       sw.disabled = !st.ok && !live;
       sw.title = st.ok
-        ? (live ? _crT('arm.tipOn','SCHARF — a buy/sell tap opens the real trade sheet. Tap to go back to SIM.')
+        ? (live ? _crT('arm.tipOn','SCHARF — a buy/sell tap opens the Activation Panel. Tap to go back to SIM.')
                 : _crT('arm.tipOff','SIM — nothing leaves this browser. Tap to arm the chart.'))
         : st.reason;
     }
@@ -29715,7 +29798,7 @@ function _crArmPaint(){
       bb.setAttribute('data-cr-arm-buy-off', (!live || deny) ? '1' : '0');
       bb.title = !live ? _crT('arm.tapOff','Chart is on SIM — arm it first.')
         : deny ? _tokT('tok.safBuyOff','Buying is off — the issuer can freeze your account.')
-        : _crT('arm.tapBuy','Buy — opens the prefilled trade sheet. Nothing is signed yet.');
+        : _crT('arm.tapBuy','Buy — opens the Activation Panel (Market/Limit). Nothing is signed yet.');
     }
     /* Der VERKAUFS-Tap haengt AUSSCHLIESSLICH am scharfen Zustand. `deny`
      * kommt in dieser Zeile nicht vor, und das ist Absicht: das ist der
@@ -29725,7 +29808,7 @@ function _crArmPaint(){
       sb.disabled = !live;
       sb.setAttribute('data-cr-arm-sell-off', (!live) ? '1' : '0');
       sb.title = !live ? _crT('arm.tapOff','Chart is on SIM — arm it first.')
-        : _crT('arm.tapSell','Sell — opens the trade sheet. Selling is never gated.');
+        : _crT('arm.tapSell','Sell — opens the Activation Panel. Selling is never gated.');
     }
 
     var badge = document.getElementById('crArmBadge');
@@ -29777,7 +29860,7 @@ function _crArmAskCap(){
           _crArmPaint();
           try {
             if(typeof toast === 'function')
-              toast(crArm.on() ? _crT('arm.toastOn','◎ SCHARF — a buy/sell tap opens the real trade sheet. Your wallet signs.')
+              toast(crArm.on() ? _crT('arm.toastOn','◎ SCHARF — a buy/sell tap opens the Activation Panel (Market/Limit). Your wallet signs.')
                                : _crT('arm.toastOff','SIM — nothing leaves this browser.'));
           } catch(_){}
         });
@@ -29813,7 +29896,7 @@ function _crArmAskCap(){
     });
   } catch(_){}
 })();
-try { window._crArmPaint = _crArmPaint; window._crArmOpenSheet = _crArmOpenSheet; } catch(_){}
+try { window._crArmPaint = _crArmPaint; window._crArmOpenSheet = _crArmOpenSheet; window._crArmOpenActivation = _crArmOpenActivation; window._crChartSheetOn = _crChartSheetOn; } catch(_){}
 
 function _crProbeRow(label, amountRaw, verdict, detail){
   var col = verdict === 'ok' ? '#3ddc97' : (verdict === 'fail' ? '#ff5b7f' : 'var(--dim)');
@@ -62326,12 +62409,12 @@ window.crI18n = (function(){
       'arm.needMint':'Dieser Chart hat keinen handelbaren Solana-Mint — nur SIM.',
       'arm.needRealCurve':'Scharf gibt es nur auf echten Kerzen.',
       'arm.notArmed':'Der Chart steht auf SIM — erst scharf schalten.',
-      'arm.tipOn':'SCHARF — ein Kauf-/Verkaufs-Tap öffnet die echte Handels-Tafel. Tippen für zurück auf SIM.',
+      'arm.tipOn':'SCHARF — ein Kauf-/Verkaufs-Tap öffnet das Activation-Panel. Tippen für zurück auf SIM.',
       'arm.tipOff':'SIM — nichts verlässt diesen Browser. Tippen, um den Chart scharf zu schalten.',
-      'arm.tapBuy':'Kaufen — öffnet die vorbefüllte Handels-Tafel. Es wird noch nichts signiert.',
-      'arm.tapSell':'Verkaufen — öffnet die Handels-Tafel. Verkaufen wird nie gesperrt.',
+      'arm.tapBuy':'Kaufen — öffnet das Activation-Panel (Market/Limit). Es wird noch nichts signiert.',
+      'arm.tapSell':'Verkaufen — öffnet das Activation-Panel. Verkaufen wird nie gesperrt.',
       'arm.tapOff':'Der Chart steht auf SIM — erst scharf schalten.',
-      'arm.toastOn':'◎ SCHARF — ein Kauf-/Verkaufs-Tap öffnet die echte Handels-Tafel. Deine Wallet signiert.',
+      'arm.toastOn':'◎ SCHARF — ein Kauf-/Verkaufs-Tap öffnet das Activation-Panel (Market/Limit). Deine Wallet signiert.',
       'arm.toastOff':'SIM — nichts verlässt diesen Browser.',
       'arm.sheetTitle':'Handeln vom Chart',
       'arm.sheetNote':'Dieselbe Tafel, derselbe eine Anfrageweg wie im Token-Fenster. Tap 1 holt das Angebot — es wird nichts signiert. Tap 2 fragt deine Wallet.',
@@ -62533,12 +62616,12 @@ window.crI18n = (function(){
       'arm.needMint':'Este gráfico no tiene un mint de Solana negociable — solo SIM.',
       'arm.needRealCurve':'Solo hay modo real sobre velas reales.',
       'arm.notArmed':'El gráfico está en SIM — actívalo primero.',
-      'arm.tipOn':'ARMADO — un toque de compra/venta abre la tabla real. Toca para volver a SIM.',
+      'arm.tipOn':'ARMADO — un toque de compra/venta abre el Activation-Panel. Toca para volver a SIM.',
       'arm.tipOff':'SIM — nada sale de este navegador. Toca para armar el gráfico.',
-      'arm.tapBuy':'Comprar — abre la tabla precargada. Todavía no se firma nada.',
-      'arm.tapSell':'Vender — abre la tabla. Vender nunca se bloquea.',
+      'arm.tapBuy':'Comprar — abre el Activation-Panel (Market/Limit). Todavía no se firma nada.',
+      'arm.tapSell':'Vender — abre el Activation-Panel. Vender nunca se bloquea.',
       'arm.tapOff':'El gráfico está en SIM — actívalo primero.',
-      'arm.toastOn':'◎ ARMADO — un toque de compra/venta abre la tabla real. Tu cartera firma.',
+      'arm.toastOn':'◎ ARMADO — un toque de compra/venta abre el Activation-Panel (Market/Limit). Tu cartera firma.',
       'arm.toastOff':'SIM — nada sale de este navegador.',
       'arm.sheetTitle':'Operar desde el gráfico',
       'arm.sheetNote':'La misma tabla y la misma única ruta de petición que en la ventana de Token. El toque 1 pide el precio — no se firma nada. El toque 2 pregunta a tu cartera.',
@@ -62741,12 +62824,12 @@ window.crI18n = (function(){
       'arm.needMint':'该图表没有可交易的 Solana 铸币地址 — 仅模拟。',
       'arm.needRealCurve':'只有真实K线才能进入实弹模式。',
       'arm.notArmed':'图表处于模拟状态 — 请先切换到实弹。',
-      'arm.tipOn':'实弹 — 买/卖点击会打开真实交易面板。点击可切回模拟。',
+      'arm.tipOn':'实弹 — 买/卖点击会打开 Activation-Panel。点击可切回模拟。',
       'arm.tipOff':'模拟 — 任何东西都不会离开此浏览器。点击以启用实弹。',
-      'arm.tapBuy':'买入 — 打开已预填的交易面板。此时不会签名。',
-      'arm.tapSell':'卖出 — 打开交易面板。卖出永不被锁定。',
+      'arm.tapBuy':'买入 — 打开 Activation-Panel（Market/Limit）。此时不会签名。',
+      'arm.tapSell':'卖出 — 打开 Activation-Panel。卖出永不被锁定。',
       'arm.tapOff':'图表处于模拟状态 — 请先切换到实弹。',
-      'arm.toastOn':'◎ 实弹 — 买/卖点击会打开真实交易面板。由你的钱包签名。',
+      'arm.toastOn':'◎ 实弹 — 买/卖点击会打开 Activation-Panel（Market/Limit）。由你的钱包签名。',
       'arm.toastOff':'模拟 — 任何东西都不会离开此浏览器。',
       'arm.sheetTitle':'从图表交易',
       'arm.sheetNote':'与代币窗口相同的面板、相同的唯一请求路径。第一次点击获取报价 — 不会签名。第二次点击才询问钱包。',
@@ -66568,6 +66651,9 @@ function osRefreshSettings(){
   try { _crSetRenderNotif(); } catch(_){}
   try { _crSetRenderAppsLoc(); } catch(_){}
   try { _crSetRenderTheme(); } catch(_){}
+  // v1.0.919 — ARM · Echtgeld wohnt jetzt hier (#crArmHome): Gate + Detail-
+  // Render beim Oeffnen, damit Checkbox/Limit/Zustandszeile aktuell sind.
+  try { if(typeof _crCCRenderArm === 'function') _crCCRenderArm(); } catch(_){}
   // v1.0.667 — Tools tab moved in from the retired Tools-App window;
   // repaint it here too so it's current if it's the active tab on open.
   try { if(typeof _wbRenderTools === 'function') _wbRenderTools(); } catch(_){}
@@ -66678,6 +66764,35 @@ function _crCCArmWalletConnected(){
   return false;
 }
 function _crCCArmAvailable(){ return _crCCArmSignedIn() || _crCCArmWalletConnected(); }
+// v1.0.919 — die EINE Statuszeile im Control Center (kein Schalter). Liest
+// dieselben Signale wie die Zustandszeile in Settings (_crCCArmIsLive:
+// cr_arm_v1 UND Modus=LIVE) und das Gast-Gate (_crCCArmAvailable). Gast:
+// Hinweis, Link versteckt — Settings ist ohnehin wallet-/login-gated.
+function _crCCRenderArmStatus(){
+  const row = document.getElementById('crCCArmStatus');
+  if(!row) return;
+  const txt = document.getElementById('crCCArmStatusTxt');
+  const go  = document.getElementById('crCCArmGoSettings');
+  const avail = _crCCArmAvailable();
+  const live = avail && _crCCArmIsLive();
+  row.setAttribute('data-cr-arm-state', live ? 'live' : 'sim');
+  if(txt){
+    if(live){
+      let limRaw = 100000000, limTxt = '';
+      try { if(window.crWeiche) limRaw = crWeiche.limitLamports(); } catch(_){}
+      try { limTxt = ' · Limit ' + ((typeof _crFmtSol === 'function') ? _crFmtSol(limRaw) : (limRaw + ' Lamports')); } catch(_){}
+      txt.textContent = '⚡ LIVE' + limTxt;
+      txt.title = 'LIVE · ECHTES GELD — Schalter und Limit in den Einstellungen';
+    } else if(avail){
+      txt.textContent = '◇ SIM';
+      txt.title = 'SIM · Übung · kein echtes Geld — scharf schalten in den Einstellungen';
+    } else {
+      txt.textContent = '◇ SIM · ARM nach Anmeldung/Wallet';
+      txt.title = 'ARM (Echtgeld) — verfügbar nach Anmeldung oder Wallet-Verbindung.';
+    }
+  }
+  if(go) go.hidden = !avail;
+}
 function _crCCRenderArm(){
   // v1.0.905 (S5a.4) — zuerst das Gate: keine Signale → Sektion aus, Hinweis an,
   // und der Sicherheits-Default (Modus faellt auf SIM). Danach erst der Detail-
@@ -66694,6 +66809,7 @@ function _crCCRenderArm(){
     // bleibt unberuehrt; nur crArm (der Modus) wird entwaffnet. set(false)
     // emittiert nur bei echtem Wechsel, ist also idempotent.
     try { if(window.crArm && crArm.set) crArm.set(false); } catch(_){}
+    try { _crCCRenderArmStatus(); } catch(_){}
     return;
   }
   const tgl = document.getElementById('crArmGlobalToggle');
@@ -66727,6 +66843,7 @@ function _crCCRenderArm(){
       line.textContent = '◇ SIM · Übung · kein echtes Geld';
     }
   }
+  try { _crCCRenderArmStatus(); } catch(_){}
 }
 function _crCCRender(){
   try { _crCCRenderArm(); } catch(_){}
@@ -66779,10 +66896,22 @@ try { _crCCRenderBadge(); } catch(_){} // initial paint at boot, popover closed 
     try { if(window.crNotifLog) crNotifLog.clear(); } catch(_){}
     _crCCRenderNotifs();
   });
+  /* v1.0.919 — „→ Einstellungen": der einzige ARM-Einstieg aus dem CC. Er
+     schliesst das Popover und oeffnet die Settings-App (deren Refresh-Hook
+     osRefreshSettings rendert den ARM-Block). Kein Schalter hier. */
+  const goSet = document.getElementById('crCCArmGoSettings');
+  if(goSet) goSet.addEventListener('click', e => {
+    e.stopPropagation();
+    close();
+    try { if(typeof window.osOpenWindowMulti === 'function') window.osOpenWindowMulti('settings'); } catch(_){}
+    try { _crCCRenderArm(); } catch(_){}
+  });
   /* v1.0.904 (S5a.3) — ARM · Echtgeld verdrahten. Der globale Schalter setzt/
      loescht GENAU das eine Bit cr_arm_v1 (die Weiche liest es unveraendert),
      das Limit geht float-frei ueber _crParseBetrag nach cr_arm_limit_v1. Die
      Logik ist dieselbe wie zuvor im Wallet-Modal, nur wohnt sie jetzt hier.
+     v1.0.919 — die Elemente stehen jetzt in der Settings-App (#crArmHome);
+     die Verdrahtung per getElementById bleibt woertlich dieselbe.
      crArmGrammar.sync haelt Aura/Badge-Grammatik am Leben; die CC-Zeile
      spiegelt danach den WAHREN Modus. */
   const armTgl = document.getElementById('crArmGlobalToggle');
