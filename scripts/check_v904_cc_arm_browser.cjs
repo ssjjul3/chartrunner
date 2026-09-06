@@ -128,9 +128,11 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
   });
   check('kein ARM-Glow/Punkt am #crCCBadge (kein Aussen-Signal)', s1b.badgeGlow === false, s1b);
 
-  console.log('\n-- 2 · CC ist die einzige ARM-Heimat --');
+  // v1.0.919 — die EINE Heimat ist jetzt die Settings-App (#crArmHome in
+  // #win-settings); das CC zeigt nur Status + Link. Dieselben Elemente, neuer Ort.
+  console.log('\n-- 2 · Settings (#crArmHome) ist die einzige ARM-Heimat --');
   const s2 = await page.evaluate(() => {
-    const cc = document.getElementById('crCCPop');
+    const cc = document.getElementById('crArmHome');
     const q = id => document.getElementById(id);
     const inCC = el => !!(cc && el && cc.contains(el));
     return {
@@ -148,11 +150,11 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
       boxes:    document.querySelectorAll('#crArmBox').length,
     };
   });
-  check('Checkbox „ARM · echtes Geld" ist Nachfahre von #crCCPop', s2.tglInCC === true, s2);
-  check('#crArmSwitch ist Nachfahre von #crCCPop', s2.swInCC === true, s2);
-  check('#crArmBox ist Nachfahre von #crCCPop', s2.boxInCC === true, s2);
-  check('Session-Limit-Feld ist Nachfahre von #crCCPop', s2.limInCC === true, s2);
-  check('Zustandszeile ist Nachfahre von #crCCPop', s2.stateInCC === true, s2);
+  check('Checkbox „ARM · echtes Geld" ist Nachfahre von #crArmHome (Settings)', s2.tglInCC === true, s2);
+  check('#crArmSwitch ist Nachfahre von #crArmHome (Settings)', s2.swInCC === true, s2);
+  check('#crArmBox ist Nachfahre von #crArmHome (Settings)', s2.boxInCC === true, s2);
+  check('Session-Limit-Feld ist Nachfahre von #crArmHome (Settings)', s2.limInCC === true, s2);
+  check('Zustandszeile ist Nachfahre von #crArmHome (Settings)', s2.stateInCC === true, s2);
   check('#crArmBox ist NICHT mehr Nachfahre von .header-picks', s2.boxInHeader === false, s2);
   check('#crArmSwitch ist NICHT mehr in .header-picks', s2.swInHeader === false, s2);
   check('kein doppeltes ARM-UI (genau 1x Switch, Toggle, Box)',

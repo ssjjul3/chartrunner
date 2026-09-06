@@ -56,6 +56,17 @@ through `crApplyAccessGates`. Desktop/keyboard is unchanged (the layer never app
 the auto-run hook returns 0 there). The older `#crTouchPad` move-pad is superseded while the M0 layer
 is active.
 
+**ARM · Echtgeld lives in Settings (v1.0.919).** The whole real-money block — the "ARM · echtes Geld"
+checkbox, the SIM/SCHARF mode switch with ▲/▼/⚙, the session limit and the state line / gold
+LIVE band — sits at the top of the **Settings** app (`#crArmHome`). Same elements, same handlers,
+same single bit (`cr_arm_v1`) and limit (`cr_arm_limit_v1`); only the mount point moved. The
+Control Center keeps Theme · Language · Apps · Notifications and shows one status line
+("◇ SIM" / "⚡ LIVE · Limit x SOL") with a "→ Einstellungen" link — no switch there. Guests see
+neither. There is **one trading surface**: a buy/sell tap while SCHARF opens the Activation-Panel
+(Market/Limit, same four gates + Weiche). The former "Trade from the chart" bottom-sheet is off by
+default (`window.CR_CHART_SHEET = 1` re-enables it for debugging); the Token window keeps its classic
+swap view.
+
 #### M0.1 · Feinschliff (`v1.0.909`)
 
 Visibility/position/optics only — no logic change (the buttons fire the exact same actions as M0):
