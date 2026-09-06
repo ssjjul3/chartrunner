@@ -124,9 +124,37 @@ the four gates; the Weiche/spy fires on no touch element).
   ellipsises) instead of running off the **left** edge, and it stays clear of the top-bar and the
   3/4 controls. Desktop (wide) rendering is unchanged.
 
+#### B6 + M1-lite · In-flight visible, vault timeout, touch grip for chart objects (`v1.0.918`)
+
+Two fixes to the **Limit-order experience on the phone** — display/state/touch targets only, no
+trade-path change (Weiche, adapter, worker and the vault sequence Auth → Deposit → orders/price are
+bit-for-bit the same; desktop mouse unchanged):
+
+- **In-flight visible (B6).** Every Live-order message (`sayLoud`) now also renders as a
+  **top-centre HUD** (`#crLoudHud`, ≥ 4 s, reduced-motion-safe, below the topbar — never in it) and
+  drives a shared flight state (`crVaultFlight`): the Activation-Panel shows each intermediate step,
+  a persistent **status chip** above the selector (`#crSelChip`: “⏳ Vault … ‹step›” / “✍️ Wallet …”)
+  stays even if the panel is closed by hand, and the panel **stays open** while a Limit request is
+  in flight (the re-render waits for the verdict). A collapsible **Diagnose** block lists the trace
+  `preflight → resolveTrade → decide → challenge → signMessage → verify → register → depositCraft →
+  commit` with duration and result per step; the same line lands in Control Center → Notifications.
+  `crVaultApi._post/_get` carry a **15 s timeout** (`/health` preflight 8 s) → `{ error:'timeout' }`;
+  every error path resets the busy flag and names the **hanging step** (“Vault-Anfrage abgelaufen
+  (challenge) — Worker/Netz prüfen”). A wallet that cannot sign a message (`no-signer`/`no-wallet`/
+  `no-feature`) gets a plain-text hint to open the Phantom browser or reconnect.
+- **Touch grip (M1-lite).** On coarse pointers only (`crTouchGrip`): a **tap within ±22 px** (44-px
+  zone) of an HLine/laser/anchor/price line opens the object's panel (nearest object wins; the mouse
+  keeps its single 6-px probe); every free line carries a **price pill on the price axis** — tap
+  opens the panel, **drag moves the price** (magnet to the current price, loupe while dragging, SDK
+  order sync via the same helper the mouse uses, no chart pan); the **Order** function of the
+  selector (hold) opens a list of your chart objects / resting orders (LIVE/PAPER/SIM-tagged, LIVE on
+  top) — tap a row to open its panel, first row = new order at the current price; a row in the
+  terminal's **OPEN POSITIONS** opens the object's panel too.
+
 Mobile regression smoke:
 
 ```sh
+node scripts/check_v918_inflight_touch_browser.cjs   # B6 + M1-lite (timeout, in-flight, panel open, hit-slop, pill, order list)
 node scripts/check_v908_touch_controls_browser.cjs   # M0 touch cockpit (parity, gating, auto-run, trade-path)
 node scripts/check_v909_touch_polish_browser.cjs     # M0.1 polish (chart-only, safe-area, hit-area, parity)
 node scripts/check_v910_cockpit_browser.cjs          # M0.2 two-thumb cockpit (stick, radial, order-gate, parity)
