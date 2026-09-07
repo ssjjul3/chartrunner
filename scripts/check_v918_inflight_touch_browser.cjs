@@ -337,8 +337,12 @@ const VAULT_PATHS = ['/v1/auth/challenge','/v1/auth/verify','/v1/vault/register'
   });
   check('Verdikt: RUHENDE ORDER liegt — im (weiter offenen, neu gerenderten) Dialog sichtbar',
     b63.dialogOpen && /RUHENDE ORDER liegt/.test(b63.msg) && b63.busy === false, b63);
+  /* v1.0.922 (Patch F·5) — commit ist eine GRUPPE: depositSign/ordersPrice/
+   * ordersActive stehen eingerueckt mit „↳" darunter, nummeriert ist nur
+   * Tiefe 0. Die Sonde liest beide Formen (Nummer ODER „↳"). */
   check('Diagnose nach dem Verdikt: signMessage, depositCraft, commit, depositSign, ordersPrice, ordersActive je mit Dauer',
-    ['signMessage','depositCraft','commit','depositSign','ordersPrice','ordersActive'].every(k => b63.lines.some(l => new RegExp('^\\d+\\. ' + k + ' \\d+ ms').test(l))), b63.lines);
+    ['signMessage','depositCraft','commit'].every(k => b63.lines.some(l => new RegExp('^\\d+\\. ' + k + ' \\d+ ms').test(l)))
+      && ['depositSign','ordersPrice','ordersActive'].every(k => b63.lines.some(l => new RegExp('^↳ ' + k + ' \\d+ ms').test(l))), b63.lines);
   check('Zwischenschritt „Gebühr oben" + Verdikt als Toast; Chip zeigt das Ergebnis',
     b63.toasts.some(t => /Gebühr oben/.test(t)) && b63.toasts.some(t => /RUHENDE ORDER liegt/.test(t)) && /✅/.test(b63.chip), { toasts: b63.toasts, chip: b63.chip });
   cfg.depositDelay = 0;

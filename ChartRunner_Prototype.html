@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.921
-     LAST UPDATED:    2026-09-07  ·  v1.0.921 (PATCH E · TEIL B · CLIENT · DEPOSIT NUR SIGNIEREN): KEIN BROADCAST DER EINZAHLUNG MEHR — signierte Tx geht in orders/price, ehrliche Fehler. Market-Pfad (quote→swap→signAndSend) Bit fuer Bit unberuehrt, vier Tore + Spion unveraendert, single-file, keine neue Dep. BEFUND (Trace 00:46, v920): register ok · depositCraft ok · commit/depositSign → sign-failed; Phantom liess „Bestaetigen" nie zu, keine Aktivitaet. Ursache: commit rief crSigner.signAndSend(handle.transaction) — Phantom simuliert die Jupiter-Craft-Tx als EIGENSTAENDIGEN Send; die ist nur gueltig, wenn Jupiter sie zusammen mit der Order landet → Simulation scheitert → Phantom blockiert → sign-failed. Der Client hatte keinen Sign-only-Pfad, prepare erfasste die request_id aus deposit/craft nicht, ordersPrice sendete deposit_sig statt signierter Bytes, commit verwarf detail und unterschied rejected nicht. FIX: (1) crSigner.signTransaction(txBase64,{chain}) — Sign-only ueber Wallet Standard solana:signTransaction (Fallback: injizierter Provider signTransaction, nicht gemessen); Rueckgabe { signedTx: base64 }; KEIN sendTransaction, KEIN signAndSend; Fehlwege rejected / sign-failed(+detail) / no-signer. (2) crVaultLimit.prepare nimmt request_id aus dem Craft-Echo in handle.depositRequestId; fehlt sie → deposit-request-id-missing, KEIN Signieren. (3) crVaultLimit.commit: signTransaction → crVaultApi.ordersPrice({ depositSignedTx, depositRequestId }); Antwort { id, txSignature, depositConfirmed } wird durchgereicht; Journal source live · kind limit · orderPubkey/id · sig=txSignature · status open (depositConfirmed oder orders/active) sonst pending; Bestaetigung ueber orders/active wie bisher (Ausfall dort ≠ ungueltig). (4) crVaultApi.ordersPrice: Body deposit_signed_tx + deposit_request_id statt deposit_sig; fehlt eines, verlaesst kein Request die Seite. (5) Fehler ehrlich in Panel + HUD + Trace: detail ueberall durch; rejected → „Einzahlung nicht signiert — nichts bewegt.", sign-failed → „Wallet konnte nicht signieren: <detail>"; im Limit-Pfad nie mehr „Live swap failed" (Weiche + Panel sagen „Ruhende Order: …"). (6) Session-Limit zaehlt den Deposit bei Erfolg wie bisher; Fill-Marker/T-Sync unveraendert. VORAUSSETZUNG: Worker Patch E · Teil A (v1.24) ausgerollt — /health muss orders/price fuehren; ob der AUSGEROLLTE Worker deposit_signed_tx annimmt, ist eine Messung am Telefon, kein Bericht. TESTS: scripts/check_v921_patchE_browser.cjs (E1 signTransaction sendet NICHT — Spion: sendTransaction/signAndSend 0 Aufrufe im Limit-Commit, liefert base64; E2 commit → orders/price mit deposit_signed_tx + deposit_request_id, ohne request_id kein Signieren; E3 Fehlermapping rejected/sign-failed mit detail in Panel/HUD/Trace; E4 Journal mit txSignature/depositConfirmed, T-Sync zeigt die Order LIVE; E5 Market-Pfad unveraendert ueber signAndSend). Fixtures v907/v917/v918/v920 auf signTransaction + request_id nachgezogen. Gegenproben ROT (siehe Commit). Rollback: v1.0.920 (Limit-Commit ueber signAndSend — funktionslos, aber ungefaehrlich, da Phantom blockiert).
+     CURRENT VERSION: v1.0.922
+     LAST UPDATED:    2026-09-07  ·  v1.0.922 (PATCH F · CLIENT · WALLET-GUARD EHRLICH ANZEIGEN): KEIN TRADE-PFAD-CHANGE — Market-Pfad (quote→swap→signAndSend) unberuehrt, vier Tore + Spion unveraendert, keine neue Signatur, kein Broadcast, single-file, keine neue Dep. BEFUND (Handy, 06.09. 14:52 Phantom · 15:41 Solflare, Worker v1.25 mit deposit_diff): beide Wallets haengen beim Sign-only der Jupiter-Einzahlung Lighthouse-Guard-Instruktionen an (accounts_added L2TE…3S95, instructions_added #8/#9; Solflare ersetzt zusaetzlich ComputeBudget #0), signature_valid_for_crafted_message=false. Jupiter Trigger V2 prueft die signierte Tx bytegenau gegen ihren Craft → „Transaction accounts modified". Worker und Client sind sauber; die Veraenderung passiert in der Wallet und ist nicht reparierbar (Guards entfernen = Signatur ungueltig). Phantom dokumentiert keinen Opt-out, nur ein Domain-Review-Formular; Solflare dokumentiert nichts. FIX: (1) crVaultApi._honest reicht deposit_diff aus der Fehlerantwort durch (dieselbe Whitelist-Falle wie safety in v890). (2) crWalletGuard (neu): detect/classify — deposit_diff mit dem Lighthouse-Programm unter accounts_added ODER „Lighthouse" unter instructions_added → Fehlercode wallet-guard; ein blosses blockhash_changed bleibt der generische Fehler mit detail. crVaultLimit.commit klassifiziert den orders/price-Fehler; der Roh-Diff geht als crVaultFlight.note NUR in den Diagnose-Block (aufklappbar), nie in die Hauptzeile. (3) EINE Meldung (crWalletGuard.text) in Panel + HUD + Trace + Weiche: „Deine Wallet hat die Einzahlung mit Schutz-Instruktionen veraendert (Lighthouse-Guard). Jupiter nimmt nur die unveraenderte Einzahlung an. Nichts bewegt." — letzter Satz „Ruhende Orders laufen deshalb derzeit ueber die On-Chain-Route (Trigger V1)." NUR, wenn crVaultApi.triggerV1Live() den Fallback in der letzten /health-Antwort misst (trigger_v1 / features.trigger_v1 / Pfad /v1/orders/trigger unter endpoints); sonst „… sind mit dieser Wallet derzeit nicht moeglich." (4) Merken, nicht nerven: sessionStorage cr_wallet_guard_v1 = Wallet-Name nach dem ersten Treffer (KEIN localStorage — Wallet-Verhalten kann sich mit Domain-Review aendern). Solange gesetzt, zeigt _armVaultLimit den Hinweis nach dem Preflight und VOR Auth/Signatur (Spur-Schritt walletGuard; 0 signMessage, 0 signTransaction, kein auth/challenge); ist Trigger V1 live, laeuft die Order weiter ueber die On-Chain-Route. (5) Setup-Guide/Gebuehren-Blatt: aufklappbarer Absatz „Ruhende Orders & Wallet-Schutz" unter dem Klartext (nur Route Limit) mit demselben Text; Zeile Vault-Rente ~0,004 SOL NUR, wenn der V2-Pfad genutzt wird (data-cr-guide-path v2/v1/none). (6) Spur als Gruppe: crVaultFlight fuehrt einen Stapel offener Schritte — depositSign/ordersPrice/ordersActive stehen als Kinder (depth 1) unter commit, der Diagnose-Block nummeriert nur Tiefe 0 und rueckt Kinder mit „↳" ein; lines() bleibt flach (Sonden v918–v921), linesTree()/traceText() zeigen die Gruppe; end() schliesst alle offenen Schritte. TESTS: scripts/check_v922_patchF_browser.cjs (F1 Fixture deposit_diff mit Lighthouse → wallet-guard, „Nichts bewegt" in Panel/HUD/Toast, Rohdiff NUR im Diagnose-Block; F1b Lighthouse nur unter instructions_added; F2 Fixture ohne Lighthouse (blockhash_changed) → generischer Text mit detail, KEIN Merker; F3 cr_wallet_guard_v1 gesetzt → Hinweis vor Auth/Signatur, 0 signMessage, 0 signTransaction, kein auth/challenge-Request; F3b Trigger V1 live per /health → Textvariante + Flow laeuft weiter; F4 Spur-Gruppe (depth) + Diagnose-Einrueckung; F5 Guide-Absatz nur auf Route Limit, Renten-Zeile nur bei V2-Pfad; F6 Market-Pfad unveraendert; sessionStorage statt localStorage). Regressionen v907/v917–v921 gruen. Gegenproben ROT (siehe Commit). NICHT GEMESSEN: die genaue Ablageform von deposit_diff im ausgerollten Worker v1.25 (oben, unter detail, oder detail ist der Diff — alle drei werden gelesen) und ob /health einen Trigger-V1-Marker fuehrt; beides prueft Julian am Telefon. Rollback: v1.0.921.
+     PREV  ·  v1.0.921 (PATCH E · TEIL B · CLIENT · DEPOSIT NUR SIGNIEREN): KEIN BROADCAST DER EINZAHLUNG MEHR — signierte Tx geht in orders/price, ehrliche Fehler. Market-Pfad (quote→swap→signAndSend) Bit fuer Bit unberuehrt, vier Tore + Spion unveraendert, single-file, keine neue Dep. BEFUND (Trace 00:46, v920): register ok · depositCraft ok · commit/depositSign → sign-failed; Phantom liess „Bestaetigen" nie zu, keine Aktivitaet. Ursache: commit rief crSigner.signAndSend(handle.transaction) — Phantom simuliert die Jupiter-Craft-Tx als EIGENSTAENDIGEN Send; die ist nur gueltig, wenn Jupiter sie zusammen mit der Order landet → Simulation scheitert → Phantom blockiert → sign-failed. Der Client hatte keinen Sign-only-Pfad, prepare erfasste die request_id aus deposit/craft nicht, ordersPrice sendete deposit_sig statt signierter Bytes, commit verwarf detail und unterschied rejected nicht. FIX: (1) crSigner.signTransaction(txBase64,{chain}) — Sign-only ueber Wallet Standard solana:signTransaction (Fallback: injizierter Provider signTransaction, nicht gemessen); Rueckgabe { signedTx: base64 }; KEIN sendTransaction, KEIN signAndSend; Fehlwege rejected / sign-failed(+detail) / no-signer. (2) crVaultLimit.prepare nimmt request_id aus dem Craft-Echo in handle.depositRequestId; fehlt sie → deposit-request-id-missing, KEIN Signieren. (3) crVaultLimit.commit: signTransaction → crVaultApi.ordersPrice({ depositSignedTx, depositRequestId }); Antwort { id, txSignature, depositConfirmed } wird durchgereicht; Journal source live · kind limit · orderPubkey/id · sig=txSignature · status open (depositConfirmed oder orders/active) sonst pending; Bestaetigung ueber orders/active wie bisher (Ausfall dort ≠ ungueltig). (4) crVaultApi.ordersPrice: Body deposit_signed_tx + deposit_request_id statt deposit_sig; fehlt eines, verlaesst kein Request die Seite. (5) Fehler ehrlich in Panel + HUD + Trace: detail ueberall durch; rejected → „Einzahlung nicht signiert — nichts bewegt.", sign-failed → „Wallet konnte nicht signieren: <detail>"; im Limit-Pfad nie mehr „Live swap failed" (Weiche + Panel sagen „Ruhende Order: …"). (6) Session-Limit zaehlt den Deposit bei Erfolg wie bisher; Fill-Marker/T-Sync unveraendert. VORAUSSETZUNG: Worker Patch E · Teil A (v1.24) ausgerollt — /health muss orders/price fuehren; ob der AUSGEROLLTE Worker deposit_signed_tx annimmt, ist eine Messung am Telefon, kein Bericht. TESTS: scripts/check_v921_patchE_browser.cjs (E1 signTransaction sendet NICHT — Spion: sendTransaction/signAndSend 0 Aufrufe im Limit-Commit, liefert base64; E2 commit → orders/price mit deposit_signed_tx + deposit_request_id, ohne request_id kein Signieren; E3 Fehlermapping rejected/sign-failed mit detail in Panel/HUD/Trace; E4 Journal mit txSignature/depositConfirmed, T-Sync zeigt die Order LIVE; E5 Market-Pfad unveraendert ueber signAndSend). Fixtures v907/v917/v918/v920 auf signTransaction + request_id nachgezogen. Gegenproben ROT (siehe Commit). Rollback: v1.0.920 (Limit-Commit ueber signAndSend — funktionslos, aber ungefaehrlich, da Phantom blockiert).
      PREV  ·  v1.0.920 (PATCH D · CLIENT · output_mint AM DEPOSIT/CRAFT): EIN-FELD-FIX IN GENAU ZWEI FUNKTIONEN — KEIN TRADE-PFAD-CHANGE, Auth, Register, Fee-Echo (bps-only), Commit, Weiche, Spion unveraendert, single-file, keine neue Dep. BEFUND (Handy, Diagnose-Spur 06.09. 00:01): 1 preflight ok · 2 resolveTrade ok · 3 decide ok · 4 challenge ok · 5 signMessage ok · 6 verify ok · 7 register ok · 8 depositCraft → vault-contract-invalid. Der Worker (Patch C) meldet: deposit/craft braucht wallet, input_mint, output_mint (base58) und amount_raw; order_sub_type optional single|oco|otoco; Upstream verlangt { inputMint, outputMint, userAddress, amount, orderType:price, orderSubType } — output_mint ist schon am Deposit Pflicht, weil Jupiter die Token-Konten der Order daran bindet; cluster faehrt nicht mit. Damit ist die Auth-Kette (challenge → signMessage → verify → register) end-to-end bewiesen; es fehlte EIN Feld. FIX: (1) crVaultApi.depositCraft(opts) verlangt inputMint UND outputMint (ungleich; sonst { error:no-mint } OHNE Request) und sendet { wallet, input_mint, output_mint, amount_raw, order_sub_type (Default single) } — kein cluster mehr. (2) crVaultLimit.prepare(opts) reicht opts.outputMint (dort schon validiert) an depositCraft durch, orderSubType single; handle.opts behaelt outputMint, sodass commit → ordersPrice denselben Mint nennt (dort wurde output_mint schon gesendet). TESTS: scripts/check_v920_patchD_browser.cjs (D1 depositCraft ohne outputMint / gleiche Mints → no-mint, KEIN Request; D2 Body traegt output_mint + order_sub_type, KEIN cluster; D3 prepare reicht outputMint durch (Spion auf den deposit/craft-Body); D4 commit → orders/price nennt denselben output_mint wie der Deposit; D5 Panel-Flow Limit-HLine → Gebuehr 0,5 % + Deposit-Signatur). Gegenproben ROT (siehe Commit). v917/v918/v919-Regressionen gruen. Rollback: zwei Stellen zurueck = v1.0.919.
      PREV  ·  v1.0.919 (UI · ARM NACH SETTINGS + EINE HANDELSFLAECHE): REINE UI-VERLAGERUNG/ENTFERNUNG — KEINE LOGIK-AENDERUNG AN ARM-BIT, SESSION-LIMIT-RECHNUNG, VIER TOREN, SPION, WEICHE, MARKET-/LIMIT-PFAD. ARM-Block zieht 1:1 aus dem Control Center in die Settings-App (#crArmHome); CC zeigt nur noch EINE Statuszeile mit Link „→ Einstellungen". Bottom-Sheet „Handeln vom Chart" hinter window.CR_CHART_SHEET (Default AUS); jeder Ausloeser fuehrt ins Activation-Panel (EINE Handelsflaeche).
      PREV  ·  v1.0.913 (M0.5 · ROUTE-/ORDER-SETTINGS ALS MOBILES BOTTOM-SHEET): REINE PRAESENTATION — MACHT DIE EINE ORDER-/AKTIVIERUNGS-OBERFLAECHE (TV-SETTINGS-DIALOG #tvSettingsOverlay, openTvSettingsDialog) AUF DEM TELEFON NUTZBAR. KEINE LOGIK-/DOM-AENDERUNG, KEIN NEUER TRADE-PFAD, KEINE NEUE WEICHE. BEFUND (HANDY-TEST, BRAVE/PHANTOM): der Dialog ist komplett inline-gestylt; das Karten-Element traegt ein hartes min-width:540px, das auf einem 390px-Viewport gegen width:min(720px,92vw) gewinnt → die Karte ragt ~150px ueber beide Raender und wird beidseitig abgeschnitten (Header, PRICE, TAKE PROFIT, ACTIVATION, Market/Simulate alle geclippt). FIX: ein neuer, media-query-gegateter Style-Block (#cr-mobile-route-sheet-v1) ueberschreibt NUR unter @media (max-width:560px) die Inline-Styles per !important zu einem randlosen Bottom-Sheet — (1) Backdrop align-items:flex-end (Karte am unteren Rand), (2) Karte min-width:0/width:100%/max-width:100%, oben abgerundet, max-height:92svh + padding-bottom:env(safe-area-inset-bottom), (3) Tab-Leiste horizontal scrollbar (fuenf Tabs passen sonst nicht), (4) Zwei-Spalten-Raster (Activation-Pane + Bracket-Felder) → eine Spalte. Die Karte ist flex-column: Header+Tabs bleiben fix, der Body (flex:1, overflow-y:auto) scrollt — kein sticky noetig. Der Aktivierungs-/Fire-Pfad (crWeiche → decide → _fireLive, die EINZIGE Stelle am Real-Adapter) und die Felder selbst sind bit-fuer-bit unberuehrt; die Aktivierung laeuft weiter ueber dieselbe Blue-Laser-Route wie am Desktop. Paritaet by construction. DESKTOP UNBERUEHRT (media-query-gated). GEPRUEFT: scripts/check_v913_route_sheet_browser.cjs — mobil (390px) liegt die Dialog-Karte vollstaendig im Viewport (kein Ueberlauf links/rechts), sitzt als Bottom-Sheet am unteren Rand, Breite ≤ Viewport; Desktop (1280px) unveraendert zentriert mit min-width 540; Order oeffnet nur die Ansicht (Trade-Spion=0); Topbar≤5/kein Canvas-Direktzugriff. Gegenprobe ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse-Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; Lesbarkeit/Tappbarkeit des Sheets in Brave/Phantom/Safari prueft Julian nach Merge am Telefon. HINWEIS: gestapelt auf M0.4 (v1.0.912, PR #186) — dieses PR enthaelt auch die M0.4-Aenderung, bis #186 gemergt ist.
@@ -17372,10 +17373,17 @@ window.crVaultApi = (function(){
   function _honest(r){
     if(r.status === 404) return { error: 'not-deployed' };
     return r.json().catch(function(){ return null; }).then(function(j){
+      /* v1.0.922 (Patch F) — der Ablehnungs-Whitelist-Fall von v890 (safety)
+       * noch einmal: Worker v1.25 legt bei einer von Jupiter verworfenen
+       * Einzahlung `deposit_diff` bei (accounts_added / instructions_added /
+       * blockhash_changed / signature_valid_for_crafted_message). Ohne diese
+       * Zeile bliebe davon nur der Kurztext uebrig, und der Client koennte den
+       * Wallet-Guard nicht vom generischen Fehler unterscheiden. */
+      var diff = j && (j.deposit_diff || (j.detail && typeof j.detail === 'object' && j.detail.deposit_diff)) || undefined;
       if(!r.ok) return { error: (j && j.error) || ('http-' + r.status),
-                         detail: (j && (j.note || j.detail)) || '' };
+                         detail: (j && (j.note || j.detail)) || '', deposit_diff: diff };
       if(!j || j.ok === false) return { error: (j && j.error) || 'bad-response',
-                                        detail: (j && (j.note || j.detail)) || '' };
+                                        detail: (j && (j.note || j.detail)) || '', deposit_diff: diff };
       return j;
     });
   }
@@ -17587,18 +17595,37 @@ window.crVaultApi = (function(){
         var missing = need.filter(function(p){ return listed.indexOf(p) < 0; });
         res = missing.length ? { error: 'vault-endpoints-missing', missing: missing } : { ok: true };
       }
-      _pf = { at: now, res: res, ttl: res.ok ? 60000 : 15000 };
+      _pf = { at: now, res: res, ttl: res.ok ? 60000 : 15000, health: (h && typeof h === 'object') ? h : null };
       try { pfDone(res.ok ? 'ok' : String(res.error)); } catch(_){}
       return res;
     });
   }
-  function _pfReset(){ _pf = { at: 0, res: null, ttl: 0 }; }
+  function _pfReset(){ _pf = { at: 0, res: null, ttl: 0, health: null }; }
+  /* v1.0.922 (Patch F) — ist der Trigger-V1-Fallback (Spec „ruhende Orders
+   * ueber die On-Chain-Route") im AUSGEROLLTEN Worker live? Gemessen an der
+   * letzten /health-Antwort des Preflights, nie an einem Bericht: entweder ein
+   * ausdrueckliches Flag (trigger_v1 / features.trigger_v1) oder der Pfad
+   * /v1/orders/trigger unter `endpoints`. Ohne Preflight (oder ohne Marker)
+   * gilt: NICHT live — dann sagt der Client „mit dieser Wallet derzeit nicht
+   * moeglich" statt eine Route zu versprechen, die niemand gemessen hat. */
+  var PATH_TRIGGER_V1 = '/v1/orders/trigger';
+  function triggerV1Live(){
+    var h = _pf && _pf.health;
+    if(!h) return false;
+    try {
+      if(h.trigger_v1 === true) return true;
+      if(h.features && (h.features.trigger_v1 === true || h.features.triggerV1 === true)) return true;
+      var listed = JSON.stringify(h.endpoints != null ? h.endpoints : (h.routes != null ? h.routes : {}));
+      return listed.indexOf(PATH_TRIGGER_V1) >= 0;
+    } catch(_){ return false; }
+  }
 
   return { authChallenge: authChallenge, authVerify: authVerify, ensureAuth: ensureAuth,
            vaultRegister: vaultRegister, depositCraft: depositCraft,
            ordersPrice: ordersPrice, ordersActive: ordersActive, preflight: preflight,
            token: token, hasToken: hasToken, clear: _clear, _pfReset: _pfReset, PATHS: PATHS,
-           timeouts: _timeouts, _setTimeouts: _setTimeouts, stepFor: _stepFor };
+           timeouts: _timeouts, _setTimeouts: _setTimeouts, stepFor: _stepFor,
+           triggerV1Live: triggerV1Live, PATH_TRIGGER_V1: PATH_TRIGGER_V1 };
 })();
 
 /* =========================================================================
@@ -35467,7 +35494,14 @@ window.crVaultFlight = (function(){
   'use strict';
   var S = _fresh();
   var _subs = [];
-  function _fresh(){ return { busy: false, label: '', text: '', tone: '', trace: [], startedAt: 0, endedAt: 0, ok: null, current: null }; }
+  /* v1.0.922 (Patch F·5) — `open` ist der Stapel der noch laufenden Schritte:
+   * ein Schritt, der beginnt, waehrend ein anderer offen ist, ist dessen
+   * Kind (depth+1). So wird „commit" zur Gruppe ueber depositSign →
+   * ordersPrice → ordersActive, statt dass 6/7 in der Spur nebeneinander
+   * stehen und die Reihenfolge verwirrt. `notes` sind Roh-Befunde (z. B.
+   * der deposit_diff der Wallet) — NUR fuer den Diagnose-Block, nie fuer
+   * die Hauptzeile. */
+  function _fresh(){ return { busy: false, label: '', text: '', tone: '', trace: [], startedAt: 0, endedAt: 0, ok: null, current: null, open: [], notes: [] }; }
   function _emit(){
     var snap = state();
     _subs = _subs.filter(function(s){ try { return !(s.alive && !s.alive()); } catch(_){ return false; } });
@@ -35481,23 +35515,40 @@ window.crVaultFlight = (function(){
   /* step(name) → done(result). Ein Schritt ist offen, bis done() laeuft;
    * offen heisst in der Spur „… laeuft" und im Chip „⏳/✍️ … <schritt>". */
   function step(name){
-    var rec = { name: String(name || 'step'), t0: Date.now(), ms: null, result: null };
-    S.trace.push(rec); S.current = rec; _emit();
+    var parent = S.open.length ? S.open[S.open.length - 1] : null;
+    var rec = { name: String(name || 'step'), t0: Date.now(), ms: null, result: null,
+                depth: parent ? (parent.depth + 1) : 0, parent: parent ? parent.name : '' };
+    S.trace.push(rec); S.open.push(rec); S.current = rec; _emit();
     var fin = false;
     return function(result){
       if(fin) return result;
       fin = true;
       rec.ms = Date.now() - rec.t0;
       rec.result = (result == null) ? 'ok' : String(result);
-      if(S.current === rec) S.current = null;
+      S.open = S.open.filter(function(x){ return x !== rec; });
+      /* Der haengende Schritt ist der INNERSTE offene — nach depositSign ist
+       * das wieder commit (die Gruppe), nicht „nichts". */
+      if(S.current === rec) S.current = S.open.length ? S.open[S.open.length - 1] : null;
       _emit();
       return result;
     };
   }
   function status(text, tone){ S.text = text == null ? '' : String(text); S.tone = tone || ''; _emit(); }
+  /* note(label, text) — ein Roh-Befund fuer den Diagnose-Block (aufklappbar),
+   * z. B. der deposit_diff, den die Wallet erzeugt hat. Nie in der Hauptzeile. */
+  function note(label, text){
+    if(text == null || text === '') return;
+    var t = (typeof text === 'string') ? text : (function(){ try { return JSON.stringify(text); } catch(_){ return String(text); } })();
+    S.notes.push({ label: String(label || 'Befund'), text: String(t).slice(0, 4000) });
+    _emit();
+  }
   function end(ok, text){
     S.busy = false; S.ok = !!ok; S.endedAt = Date.now();
-    if(S.current){ S.current.ms = Date.now() - S.current.t0; if(S.current.result == null) S.current.result = ok ? 'ok' : 'abgebrochen'; S.current = null; }
+    /* Alle noch offenen Schritte schliessen — auch die Gruppe (commit), wenn
+     * ein Kind (depositSign) der Abbruchpunkt war. */
+    var now = Date.now();
+    S.open.forEach(function(r){ r.ms = now - r.t0; if(r.result == null) r.result = ok ? 'ok' : 'abgebrochen'; });
+    S.open = []; S.current = null;
     if(text != null) S.text = String(text);
     S.tone = ok ? 'ok' : 'err';
     _emit();
@@ -35507,10 +35558,15 @@ window.crVaultFlight = (function(){
     var last = S.trace[S.trace.length - 1];
     return last ? last.name : '';
   }
-  function lines(){
-    return S.trace.map(function(r){ return r.name + (r.ms == null ? ' … läuft' : ' ' + r.ms + ' ms · ' + r.result); });
+  function _line(r){ return r.name + (r.ms == null ? ' … läuft' : ' ' + r.ms + ' ms · ' + r.result); }
+  function lines(){ return S.trace.map(_line); }
+  /* v1.0.922 (Patch F·5) — dieselben Zeilen als GRUPPE: Kinder eingerueckt
+   * mit „↳", damit commit → depositSign → ordersPrice als EIN Vorgang lesbar
+   * ist. lines() bleibt flach (Sonden v918–v921 lesen sie so). */
+  function linesTree(){
+    return S.trace.map(function(r){ var pad = ''; for(var i = 0; i < r.depth; i++) pad += '   '; return pad + (r.depth ? '↳ ' : '') + _line(r); });
   }
-  function traceText(){ return lines().join(' → '); }
+  function traceText(){ return linesTree().join(' → '); }
   function chip(){
     if(!S.busy) return '';
     var cur = hanging();
@@ -35525,12 +35581,13 @@ window.crVaultFlight = (function(){
   function state(){
     return { busy: S.busy, label: S.label, text: S.text, tone: S.tone, ok: S.ok, startedAt: S.startedAt, endedAt: S.endedAt,
              current: S.current ? S.current.name : '', hanging: hanging(),
-             trace: S.trace.map(function(r){ return { name: r.name, ms: r.ms, result: r.result }; }),
-             lines: lines(), chip: chip() };
+             trace: S.trace.map(function(r){ return { name: r.name, ms: r.ms, result: r.result, depth: r.depth, parent: r.parent }; }),
+             lines: lines(), linesTree: linesTree(), chip: chip(),
+             notes: S.notes.map(function(n){ return { label: n.label, text: n.text }; }) };
   }
   function reset(){ S = _fresh(); _emit(); }
-  return { busy: busy, begin: begin, step: step, status: status, end: end, hanging: hanging,
-           lines: lines, traceText: traceText, chip: chip, onChange: onChange, state: state, reset: reset };
+  return { busy: busy, begin: begin, step: step, status: status, note: note, end: end, hanging: hanging,
+           lines: lines, linesTree: linesTree, traceText: traceText, chip: chip, onChange: onChange, state: state, reset: reset };
 })();
 
 /* =========================================================================
@@ -35594,6 +35651,107 @@ window.crLoud = (function(){
   function text(){ return (_el && _el.classList.contains('on')) ? _el.textContent : ''; }
   function last(){ return _last; }
   return { show: show, hide: hide, text: text, last: last, MIN_MS: MIN_MS };
+})();
+
+/* =========================================================================
+ * crWalletGuard — v1.0.922 (Patch F). Die Wallet veraendert die Einzahlung.
+ *
+ * Befund (Handy, 06.09. 14:52 Phantom · 15:41 Solflare, Worker v1.25 mit
+ * deposit_diff): beide Wallets haengen beim Sign-only der Jupiter-Einzahlung
+ * Lighthouse-Guard-Instruktionen an (accounts_added L2TE…3S95, instructions
+ * #8/#9; Solflare ersetzt zusaetzlich ComputeBudget #0). Damit ist die
+ * Signatur fuer die GEBAUTE Nachricht ungueltig
+ * (signature_valid_for_crafted_message=false), und Jupiter Trigger V2 prueft
+ * die signierte Tx bytegenau gegen ihren Craft → „Transaction accounts
+ * modified". Worker und Client sind sauber; die Veraenderung passiert in der
+ * Wallet und ist NICHT reparierbar (Guards entfernen = Signatur ungueltig).
+ *
+ * Dieses Modul (a) ERKENNT den Fall am deposit_diff der Antwort (Lighthouse-
+ * Programm unter accounts_added oder „Lighthouse" unter instructions_added)
+ * und macht daraus den Fehlercode `wallet-guard`; (b) liefert die EINE
+ * ehrliche Meldung (Panel + HUD + Trace lesen dieselbe Konstante); (c) MERKT
+ * den Treffer fuer diese Sitzung (sessionStorage, Wallet-Name) — beim
+ * naechsten Arm steht der Hinweis VOR Auth und Signatur, statt dass der
+ * Nutzer beide noch einmal durchlaeuft. Kein localStorage: das Verhalten der
+ * Wallet kann sich mit einem Domain-Review aendern, und ein Merker, der
+ * einen Neustart ueberlebt, wuerde dann etwas Falsches behaupten.
+ * Reine Erkennung/Anzeige — keine neue Signatur, kein Broadcast, keine
+ * Aenderung an Weiche, Toren oder Market-Pfad.
+ * ===================================================================== */
+window.crWalletGuard = (function(){
+  'use strict';
+  var LIGHTHOUSE = 'L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95';
+  var KEY = 'cr_wallet_guard_v1';
+  var CODE = 'wallet-guard';
+  var HEAD = 'Deine Wallet hat die Einzahlung mit Schutz-Instruktionen verändert (Lighthouse-Guard). '
+           + 'Jupiter nimmt nur die unveränderte Einzahlung an. Nichts bewegt.';
+  var TAIL_V1   = 'Ruhende Orders laufen deshalb derzeit über die On-Chain-Route (Trigger V1).';
+  var TAIL_NONE = 'Ruhende Orders sind mit dieser Wallet derzeit nicht möglich.';
+
+  function _str(v){ try { return typeof v === 'string' ? v : JSON.stringify(v == null ? '' : v); } catch(_){ return String(v); } }
+
+  /* diffOf(res) — der deposit_diff, wo immer der Worker ihn ablegt: oben im
+   * Fehlerobjekt (crVaultApi._honest reicht ihn durch), unter detail, oder
+   * detail IST der Diff (accounts_added/instructions_added direkt). Ein
+   * detail-String, der JSON ist, wird einmal geparst. Sonst null. */
+  function diffOf(res){
+    if(!res || typeof res !== 'object') return null;
+    var d = res.deposit_diff || res.depositDiff || null;
+    var det = res.detail;
+    if(!d && det && typeof det === 'string' && /^\s*\{/.test(det)){ try { det = JSON.parse(det); } catch(_){ det = res.detail; } }
+    if(!d && det && typeof det === 'object'){
+      d = det.deposit_diff || det.depositDiff
+        || ((det.accounts_added != null || det.instructions_added != null) ? det : null);
+    }
+    return (d && typeof d === 'object') ? d : null;
+  }
+
+  /* detect(res) — { hit, diff, why }. hit NUR, wenn der Diff das Lighthouse-
+   * Programm unter accounts_added fuehrt oder „Lighthouse" unter
+   * instructions_added — ein blosses blockhash_changed ist KEIN Guard. */
+  function detect(res){
+    var d = diffOf(res);
+    if(!d) return { hit: false, diff: null, why: '' };
+    var acc = _str(d.accounts_added != null ? d.accounts_added : (d.accountsAdded != null ? d.accountsAdded : ''));
+    var ins = _str(d.instructions_added != null ? d.instructions_added : (d.instructionsAdded != null ? d.instructionsAdded : ''));
+    var why = '';
+    if(acc.indexOf(LIGHTHOUSE) >= 0) why = 'accounts_added führt das Lighthouse-Programm (' + LIGHTHOUSE.slice(0, 4) + '…' + LIGHTHOUSE.slice(-4) + ')';
+    else if(/lighthouse/i.test(ins)) why = 'instructions_added nennt Lighthouse';
+    return { hit: !!why, diff: d, why: why };
+  }
+
+  /* text(v1Live) — die EINE Meldung. Der letzte Satz haengt davon ab, ob der
+   * Trigger-V1-Fallback im ausgerollten Worker gemessen live ist. */
+  function text(v1Live){ return HEAD + ' ' + tail(v1Live); }
+  function tail(v1Live){ return v1Live ? TAIL_V1 : TAIL_NONE; }
+  function v1Live(){ try { return !!(window.crVaultApi && crVaultApi.triggerV1Live && crVaultApi.triggerV1Live()); } catch(_){ return false; } }
+
+  function walletName(){
+    try { var a = window.crSigner && crSigner.active(); if(a && a.wallet) return String(a.wallet); } catch(_){}
+    return 'wallet';
+  }
+  function remember(name){
+    var n = String(name || walletName() || 'wallet');
+    try { sessionStorage.setItem(KEY, n); } catch(_){}
+    return n;
+  }
+  function flagged(){ try { return sessionStorage.getItem(KEY) || ''; } catch(_){ return ''; } }
+  function forget(){ try { sessionStorage.removeItem(KEY); } catch(_){} }
+
+  /* classify(res) — aus einem orders/price-Fehler das wallet-guard-Ergebnis
+   * bauen (oder null, wenn es keiner ist). Merkt den Treffer sofort. */
+  function classify(res){
+    var t = detect(res);
+    if(!t.hit) return null;
+    var name = remember();
+    return { error: CODE, detail: t.why + ' · Wallet ' + name,
+             walletGuard: { wallet: name, why: t.why, diff: t.diff },
+             depositDiff: t.diff, upstreamError: res && res.error ? String(res.error) : '',
+             upstreamDetail: (res && typeof res.detail === 'string') ? res.detail : '' };
+  }
+
+  return { LIGHTHOUSE: LIGHTHOUSE, KEY: KEY, CODE: CODE, diffOf: diffOf, detect: detect, classify: classify,
+           text: text, tail: tail, v1Live: v1Live, walletName: walletName, remember: remember, flagged: flagged, forget: forget };
 })();
 
 window.crVaultLimit = (function(){
@@ -35700,8 +35858,19 @@ window.crVaultLimit = (function(){
           slippageBps: o.slippageBps, depositSignedTx: signedTx,
           depositRequestId: String(handle.depositRequestId), cluster: 'mainnet' })
         .then(function(op){
-          if(!op || op.error)
+          if(!op || op.error){
+            /* v1.0.922 (Patch F) — traegt die Antwort einen deposit_diff mit
+             * Lighthouse (die Wallet hat die Einzahlung veraendert), heisst der
+             * Fehler `wallet-guard`, nicht der rohe Upstream-Code. Der Roh-Diff
+             * geht als Spur-Notiz in den Diagnose-Block, nicht in die Zeile. */
+            var wg = null;
+            try { wg = window.crWalletGuard ? crWalletGuard.classify(op) : null; } catch(_){ wg = null; }
+            if(wg){
+              try { if(window.crVaultFlight && crVaultFlight.busy()) crVaultFlight.note('deposit_diff', wg.depositDiff); } catch(_){}
+              return wg;
+            }
             return { error: (op && op.error) || 'orders-price-failed', detail: op && op.detail };
+          }
           /* Worker v1.24 antwortet { id, txSignature, depositConfirmed }; aeltere
            * Formen (orderPubkey / order.orderKey) bleiben lesbar. */
           var orderId = (op.id != null && op.id !== '') ? String(op.id) : null;
@@ -36030,6 +36199,9 @@ window.crWeiche = (function(){
           var le = String(res.error), ld = res.detail ? String(res.detail) : '';
           if(le === 'rejected') _say('Ruhende Order: Einzahlung nicht signiert — nichts bewegt.');
           else if(le === 'sign-failed') _say('Ruhende Order: Wallet konnte nicht signieren' + (ld ? ': ' + ld : '.'));
+          /* v1.0.922 (Patch F) — Wallet-Guard: die EINE Meldung aus
+           * crWalletGuard, kein Rohfehler; der Diff bleibt im Diagnose-Block. */
+          else if(le === 'wallet-guard' && window.crWalletGuard) _say('Ruhende Order: ' + crWalletGuard.text(crWalletGuard.v1Live()));
           else _say('Ruhende Order: ' + le + (ld ? ' — ' + ld : ''));
         } else {
           _say('Live swap failed: ' + String(res.error) + (res.detail ? ' — ' + String(res.detail) : ''));
@@ -36235,6 +36407,11 @@ window.crPanelLive = (function(){
       return 'Einzahlung nicht signiert — nichts bewegt.';
     if(e === 'sign-failed')
       return 'Wallet konnte nicht signieren' + (d ? ': ' + d : ' (kein detail).');
+    /* v1.0.922 (Patch F) — die Wallet hat die Einzahlung veraendert
+     * (Lighthouse-Guard): Klartext statt Rohfehler; der Roh-Diff steht NUR im
+     * Diagnose-Block (crVaultFlight.note), nie in dieser Zeile. */
+    if(e === 'wallet-guard' && window.crWalletGuard)
+      return crWalletGuard.text(crWalletGuard.v1Live());
     if(e === 'no-signer' || e === 'no-feature')
       return 'Wallet kann die Einzahlung nicht nur-signieren (' + e + ') — im Phantom-Browser öffnen oder Wallet neu verbinden. Nichts bewegt.';
     if(e === 'deposit-request-id-missing')
@@ -37909,6 +38086,49 @@ function renderBlueRouteInputs(body, overlay, helpers){
   klarLine.setAttribute('data-cr-panel-klar', '1');
   klarLine.style.cssText = 'color:#cfd3da;font:12px -apple-system,system-ui,sans-serif;line-height:1.5;border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:7px 9px;background:rgba(255,255,255,.03)';
   section.appendChild(klarLine);
+  /* v1.0.922 (Patch F·4) — Setup-Guide / Gebuehren-Blatt der RUHENDEN ORDER,
+   * aufklappbar unter dem Klartext, nur auf Route Limit. Ein Absatz „Ruhende
+   * Orders & Wallet-Schutz" mit DEMSELBEN Text wie die Fehlermeldung
+   * (crWalletGuard.text — eine Konstante, kein zweiter Wortlaut), dazu die
+   * Gebuehren-Zeilen: die Gebuehr kommt aus dem deposit/craft-Echo (steht vor
+   * der Signatur oben), die Vault-Rente (~0,004 SOL, Spec) NUR, wenn der
+   * V2-Pfad (Jupiter-Vault) auch der genutzte Pfad ist — nicht, wenn diese
+   * Sitzung den Wallet-Guard schon getroffen hat und deshalb kein V2-Deposit
+   * mehr zustande kommt. */
+  const guideBox = document.createElement('details');
+  guideBox.setAttribute('data-cr-panel-guide', '1');
+  guideBox.style.cssText = 'display:none;color:#aab1bd;font:11px -apple-system,system-ui,sans-serif;line-height:1.5;border:1px dashed rgba(212,164,60,.35);border-radius:6px;padding:4px 9px;margin-top:6px';
+  const guideSum = document.createElement('summary');
+  guideSum.textContent = 'Ruhende Orders & Wallet-Schutz';
+  guideSum.style.cssText = 'cursor:pointer;color:#d4a43c;letter-spacing:.35px;text-transform:uppercase;font-size:10px';
+  const guideBody = document.createElement('div');
+  guideBody.setAttribute('data-cr-panel-guide-body', '1');
+  guideBox.appendChild(guideSum); guideBox.appendChild(guideBody);
+  section.appendChild(guideBox);
+  const renderGuide = (show) => {
+    try {
+      if(!show || !window.crWalletGuard){ guideBox.style.display = 'none'; return; }
+      const flagged = crWalletGuard.flagged();
+      const v1 = crWalletGuard.v1Live();
+      /* Welcher Pfad traegt die Order? v2 = Jupiter-Vault (Deposit + Rente);
+       * v1 = On-Chain-Route (nur bei gemerktem Guard UND gemessenem Fallback);
+       * none = mit dieser Wallet derzeit keine. */
+      const pathUsed = flagged ? (v1 ? 'v1' : 'none') : 'v2';
+      guideBox.setAttribute('data-cr-guide-path', pathUsed);
+      const p1 = document.createElement('div');
+      p1.setAttribute('data-cr-guide-guard', '1');
+      p1.textContent = (flagged ? 'Bekannt aus dieser Sitzung (' + flagged + '): ' : 'Manche Wallets (Phantom, Solflare) hängen der Einzahlung beim Signieren Schutz-Instruktionen an. Dann gilt: ')
+        + crWalletGuard.text(v1);
+      const p2 = document.createElement('div');
+      p2.setAttribute('data-cr-guide-fee', '1');
+      p2.style.cssText = 'margin-top:4px;color:#8b93a3;font:10px ui-monospace,monospace';
+      p2.textContent = 'Gebühr: aus dem deposit/craft-Echo — steht oben, bevor du signierst; ohne Echo wird nicht signiert.'
+        + (pathUsed === 'v2' ? ' · Vault-Rente ~0,004 SOL (Jupiter-Vault, V2-Pfad)' : '');
+      guideBody.textContent = '';
+      guideBody.appendChild(p1); guideBody.appendChild(p2);
+      guideBox.style.display = '';
+    } catch(_){}
+  };
 
   const grid = document.createElement('div');
   grid.style.cssText = 'display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px';
@@ -38071,11 +38291,29 @@ function renderBlueRouteInputs(body, overlay, helpers){
   const renderDiag = (st) => {
     try {
       const ls = (st && st.lines) || [];
+      const tr = (st && st.trace) || [];
       diagList.textContent = '';
+      /* v1.0.922 (Patch F·5) — Gruppen: nur Schritte der Tiefe 0 zaehlen
+       * (1., 2., …); Kinder (depositSign, ordersPrice, ordersActive unter
+       * commit) stehen eingerueckt mit „↳" darunter, damit die Reihenfolge
+       * commit → depositSign → ordersPrice als EIN Vorgang lesbar ist. */
+      let n = 0;
       ls.forEach((l, i) => {
         const d = document.createElement('div');
-        d.textContent = (i + 1) + '. ' + l;
+        const depth = (tr[i] && tr[i].depth) || 0;
+        d.setAttribute('data-cr-diag-depth', String(depth));
+        d.textContent = depth ? ('↳ ' + l) : ((++n) + '. ' + l);
+        d.style.paddingLeft = depth ? (10 + 10 * depth) + 'px' : '0';
         d.style.color = /… läuft/.test(l) ? '#f7c76b' : (/ · ok$/.test(l) ? '#9fd8b8' : '#f2a0a0');
+        diagList.appendChild(d);
+      });
+      /* Roh-Befunde (z. B. der deposit_diff der Wallet): NUR hier, aufklappbar,
+       * umbruchfest — nie in der Hauptzeile. */
+      ((st && st.notes) || []).forEach(nt => {
+        const d = document.createElement('div');
+        d.setAttribute('data-cr-diag-note', nt.label || 'Befund');
+        d.textContent = (nt.label || 'Befund') + ': ' + nt.text;
+        d.style.cssText = 'color:#8b93a3;white-space:pre-wrap;word-break:break-all;margin-top:3px;border-top:1px dotted rgba(255,255,255,.1);padding-top:3px';
         diagList.appendChild(d);
       });
       if(st && st.busy){
@@ -38201,6 +38439,7 @@ function renderBlueRouteInputs(body, overlay, helpers){
          * Im st-live-Gold der Vault-Klartext + die 50-bps-Gebuehr aus dem
          * deposit/craft-Echo (fq); solange nicht vorbereitet, ehrlich „wird
          * bei Vorbereitung geholt" statt einer erfundenen Zahl. */
+        renderGuide(limitRoute);
         if(limitRoute){
           getLine.style.display = 'none';
           const rt = (window.crPanelKlar && crPanelKlar.restingText)
@@ -38580,6 +38819,26 @@ function renderBlueRouteInputs(body, overlay, helpers){
           _fail('Ruhende Orders sind serverseitig noch nicht scharf (Vault-Endpunkte fehlen im Worker).');
         return;
       }
+      /* v1.0.922 (Patch F·3) — Merken, nicht nerven: hat diese Sitzung den
+       * Wallet-Guard schon einmal getroffen (cr_wallet_guard_v1), steht der
+       * Hinweis HIER — vor Auth, vor jeder Signatur — statt dass der Nutzer
+       * Nachricht + Einzahlung noch einmal signiert, nur um dieselbe Absage zu
+       * bekommen. Ist der Trigger-V1-Fallback im ausgerollten Worker gemessen
+       * live (/health-Marker), laeuft die Order weiter — ueber die On-Chain-
+       * Route, die den Diff nicht bytegenau prueft; sonst endet der Arm hier. */
+      try {
+        const gName = window.crWalletGuard ? crWalletGuard.flagged() : '';
+        if(gName){
+          const gDone = _flightStep('walletGuard');
+          const v1 = crWalletGuard.v1Live();
+          gDone(v1 ? 'gemerkt (' + gName + ') · Trigger V1 live' : 'gemerkt (' + gName + ')');
+          if(!v1){
+            _fail('Bekannt aus dieser Sitzung (' + gName + '): ' + crWalletGuard.text(false));
+            return;
+          }
+          sayLoud('Wallet-Schutz bekannt (' + gName + ') — ' + crWalletGuard.tail(true) + ' Nichts signiert …', 'dim');
+        }
+      } catch(_){}
       sayLoud('Vault-Limit wird vorbereitet — nichts signiert …', 'dim');
       const rtDone = _flightStep('resolveTrade');
       return crPanelLive.resolveTrade(sideSelect.value, sizeInput.value, params.slipGuard).then(t => {
