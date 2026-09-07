@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.922
-     LAST UPDATED:    2026-09-07  ·  v1.0.922 (PATCH F · CLIENT · WALLET-GUARD EHRLICH ANZEIGEN): KEIN TRADE-PFAD-CHANGE — Market-Pfad (quote→swap→signAndSend) unberuehrt, vier Tore + Spion unveraendert, keine neue Signatur, kein Broadcast, single-file, keine neue Dep. BEFUND (Handy, 06.09. 14:52 Phantom · 15:41 Solflare, Worker v1.25 mit deposit_diff): beide Wallets haengen beim Sign-only der Jupiter-Einzahlung Lighthouse-Guard-Instruktionen an (accounts_added L2TE…3S95, instructions_added #8/#9; Solflare ersetzt zusaetzlich ComputeBudget #0), signature_valid_for_crafted_message=false. Jupiter Trigger V2 prueft die signierte Tx bytegenau gegen ihren Craft → „Transaction accounts modified". Worker und Client sind sauber; die Veraenderung passiert in der Wallet und ist nicht reparierbar (Guards entfernen = Signatur ungueltig). Phantom dokumentiert keinen Opt-out, nur ein Domain-Review-Formular; Solflare dokumentiert nichts. FIX: (1) crVaultApi._honest reicht deposit_diff aus der Fehlerantwort durch (dieselbe Whitelist-Falle wie safety in v890). (2) crWalletGuard (neu): detect/classify — deposit_diff mit dem Lighthouse-Programm unter accounts_added ODER „Lighthouse" unter instructions_added → Fehlercode wallet-guard; ein blosses blockhash_changed bleibt der generische Fehler mit detail. crVaultLimit.commit klassifiziert den orders/price-Fehler; der Roh-Diff geht als crVaultFlight.note NUR in den Diagnose-Block (aufklappbar), nie in die Hauptzeile. (3) EINE Meldung (crWalletGuard.text) in Panel + HUD + Trace + Weiche: „Deine Wallet hat die Einzahlung mit Schutz-Instruktionen veraendert (Lighthouse-Guard). Jupiter nimmt nur die unveraenderte Einzahlung an. Nichts bewegt." — letzter Satz „Ruhende Orders laufen deshalb derzeit ueber die On-Chain-Route (Trigger V1)." NUR, wenn crVaultApi.triggerV1Live() den Fallback in der letzten /health-Antwort misst (trigger_v1 / features.trigger_v1 / Pfad /v1/orders/trigger unter endpoints); sonst „… sind mit dieser Wallet derzeit nicht moeglich." (4) Merken, nicht nerven: sessionStorage cr_wallet_guard_v1 = Wallet-Name nach dem ersten Treffer (KEIN localStorage — Wallet-Verhalten kann sich mit Domain-Review aendern). Solange gesetzt, zeigt _armVaultLimit den Hinweis nach dem Preflight und VOR Auth/Signatur (Spur-Schritt walletGuard; 0 signMessage, 0 signTransaction, kein auth/challenge); ist Trigger V1 live, laeuft die Order weiter ueber die On-Chain-Route. (5) Setup-Guide/Gebuehren-Blatt: aufklappbarer Absatz „Ruhende Orders & Wallet-Schutz" unter dem Klartext (nur Route Limit) mit demselben Text; Zeile Vault-Rente ~0,004 SOL NUR, wenn der V2-Pfad genutzt wird (data-cr-guide-path v2/v1/none). (6) Spur als Gruppe: crVaultFlight fuehrt einen Stapel offener Schritte — depositSign/ordersPrice/ordersActive stehen als Kinder (depth 1) unter commit, der Diagnose-Block nummeriert nur Tiefe 0 und rueckt Kinder mit „↳" ein; lines() bleibt flach (Sonden v918–v921), linesTree()/traceText() zeigen die Gruppe; end() schliesst alle offenen Schritte. TESTS: scripts/check_v922_patchF_browser.cjs (F1 Fixture deposit_diff mit Lighthouse → wallet-guard, „Nichts bewegt" in Panel/HUD/Toast, Rohdiff NUR im Diagnose-Block; F1b Lighthouse nur unter instructions_added; F2 Fixture ohne Lighthouse (blockhash_changed) → generischer Text mit detail, KEIN Merker; F3 cr_wallet_guard_v1 gesetzt → Hinweis vor Auth/Signatur, 0 signMessage, 0 signTransaction, kein auth/challenge-Request; F3b Trigger V1 live per /health → Textvariante + Flow laeuft weiter; F4 Spur-Gruppe (depth) + Diagnose-Einrueckung; F5 Guide-Absatz nur auf Route Limit, Renten-Zeile nur bei V2-Pfad; F6 Market-Pfad unveraendert; sessionStorage statt localStorage). Regressionen v907/v917–v921 gruen. Gegenproben ROT (siehe Commit). NICHT GEMESSEN: die genaue Ablageform von deposit_diff im ausgerollten Worker v1.25 (oben, unter detail, oder detail ist der Diff — alle drei werden gelesen) und ob /health einen Trigger-V1-Marker fuehrt; beides prueft Julian am Telefon. Rollback: v1.0.921.
+     CURRENT VERSION: v1.0.923
+     LAST UPDATED:    2026-09-07  ·  v1.0.923 (PATCH G · TEIL B · CLIENT · ABGLEICH GEGEN JUPITER): KEIN TRADE-PFAD-CHANGE — Market-Pfad (quote→swap→signAndSend) unberuehrt, vier Tore + Spion unveraendert, keine neue Signatur ausser der bekannten Auth-Nachricht (nur auf Knopfdruck oder bei vorhandenem JWT), kein Broadcast, single-file, keine neue Dep. VORAUSSETZUNG: Worker Patch G · Teil A (v1.26) deployt — orders/history ist NICHT Teil des Preflight-Pflichtsatzes (404 → not-deployed → Abgleich laeuft mit orders/active allein weiter und sagt das). BEFUND (Handy, 07.09. 19:48, Backpack): Backpack signiert ohne Lighthouse-Guard → kompletter V2-Fluss lief durch, Jupiter legte die Order an (jup.ag Open Orders: SOL→JTO 0,120 SOL, Limit unter 0,432, 30 d, Gebuehr 0,5 %). Der Worker (v1.25) hielt die Antwort zurueck → Client meldete trigger-fee-echo-fehlt, kein Journal-Eintrag, Terminal leer. Der Client hatte keine Moeglichkeit, den Zustand bei Jupiter zu sehen. FIX: (1) crOrderReconcile (neu, read-only): orders/active + orders/history (crVaultApi.ordersHistory, neu) abfragen, Orders dieser Wallet, die im Journal fehlen, als { source:'live', kind:'limit', status, id, txSignature, reconciled:true } eintragen — nur ergaenzen, nie loeschen, bekannte id/orderPubkey/txSignature nie duplizieren; Panel/HUD/CC: „Order bei Jupiter gefunden und ins Journal uebernommen (id …)". (2) crVaultLimit.commit: nach JEDEM ordersPrice-Ergebnis ohne sauberes {id} (Fehler, Timeout, Netzabbruch, auch wallet-guard) laeuft der Abgleich mit dem vorhandenen JWT; Ergebnis als res.reconcile am unveraenderten Fehlerobjekt; _msgForLimitError und die Weiche haengen den Fund an. Ein ok OHNE id: Abgleich zuerst, Fund per txSignature → kein zweiter Journal-Eintrag. (3) Laden: der JWT lebt nur im Speicher, also haengt der einmalige Lade-Abgleich (je Wallet und Sitzung, crOrderReconcile.onAuth) an der ersten erfolgreichen Anmeldung (crVaultApi.ensureAuth); laeuft gerade ein Flow, wartet er bis zu dessen Ende. Ohne JWT beim Laden: CC-/Terminal-Hinweis „Ruhende Orders: Abgleich wartet auf Wallet-Signatur" — KEIN automatisches Signieren. (4) Terminal → OFFENE POSITIONEN → Knopf „Bei Jupiter nachsehen" (ensureAuth, ggf. EINE Nachrichten-Signatur, kein Geld) + Statuszeile (Hinweis / letztes Ergebnis / laeuft); LIM-Zeilen tragen id (kurz) und Ablauf. (5) Erfolgsantwort { id, txSignature, depositConfirmed, fee{bps, bound_at}, warnings[] }: fee.bound_at 'craft' → „Gebuehr 0,5 % — bei der Einzahlung gebunden" in Panel/Journal/Gebuehren-Blatt; 'craft-cache-miss' → „Gebuehrenstand: siehe Einzahlung" (kein Fehler); warnings[] als Hinweiszeile (Panel, CC, Diagnose-Notiz), nie als Abbruch; Ablauf (expiredAt) in Journal/Terminal, sonst „Laufzeit 30 Tage (Jupiter)". (6) TIF-Label: Option GTC heisst jetzt „30 Tage (Jupiter)" (Wert bleibt GTC — gespeicherte Route-States; ob orders/price ein Ablaufdatum annimmt, ist im Worker-Vertrag nicht gemessen, nichts mitgegeben). (7) Patch-F-Text: „Ruhende Orders sind mit dieser Wallet derzeit nicht moeglich. Mit Backpack funktioniert es (kein Guard)." — eine Konstante (crWalletGuard), Setup-Guide-Absatz gleich. (8) Spur: eigener Schritt reconcile (Dauer, N gefunden, M neu; history-Fehler benannt); am Knopf ein eigener Flight „reconcile". NICHT GEBAUT: ein Cancel-Pfad im Client (orders/price/cancel/:id → Auszahlungs-Tx signieren → confirm-cancel) existiert im oeffentlichen Client nicht — das waere eine neue finanzwirksame Signatur und liegt ausserhalb dieses Patches; Cancel der 19:48-Order bis dahin ueber jup.ag. TESTS: scripts/check_v923_patchG_browser.cjs (G1 ordersPrice-Fehler → orders/active + orders/history werden gerufen, fremde Fixture-Order landet mit reconciled:true im Journal + Terminal, bekannte id nicht dupliziert, Panel-Text nennt den Fund; G2 Laden: ohne JWT kein Aufruf + Hinweis sichtbar, nach ensureAuth genau EIN Abgleich, zweite (gecachte) Anmeldung loest keinen zweiten aus; G3 Erfolg mit fee.bound_at:'craft' → Journal + Fee-Text, craft-cache-miss → „siehe Einzahlung", warnings[] blockieren nicht; G4 TIF-Label „30 Tage (Jupiter)", Backpack-Satz in Guard-Text + Guide; G5 Knopf „Bei Jupiter nachsehen" → ensureAuth (1 signMessage) → Fund → Journal, Spur reconcile; history 404 → Abgleich laeuft mit active allein; G6 Market-Pfad unveraendert). Regressionen v907/v917–v922 gruen. Gegenproben ROT (siehe Commit). NICHT GEMESSEN: die Antwortform des ausgerollten Workers v1.26 fuer orders/history (orders[] / history[] / Array werden alle gelesen) und die Feldnamen der Jupiter-Orders (camel + snake werden gelesen; Ablauf nur, wenn genannt). Rollback: v1.0.922 (dann fehlt der Abgleich wieder — nur mit Worker v1.26 vertretbar).
+     PREV  ·  v1.0.922 (PATCH F · CLIENT · WALLET-GUARD EHRLICH ANZEIGEN): KEIN TRADE-PFAD-CHANGE — Market-Pfad (quote→swap→signAndSend) unberuehrt, vier Tore + Spion unveraendert, keine neue Signatur, kein Broadcast, single-file, keine neue Dep. BEFUND (Handy, 06.09. 14:52 Phantom · 15:41 Solflare, Worker v1.25 mit deposit_diff): beide Wallets haengen beim Sign-only der Jupiter-Einzahlung Lighthouse-Guard-Instruktionen an (accounts_added L2TE…3S95, instructions_added #8/#9; Solflare ersetzt zusaetzlich ComputeBudget #0), signature_valid_for_crafted_message=false. Jupiter Trigger V2 prueft die signierte Tx bytegenau gegen ihren Craft → „Transaction accounts modified". Worker und Client sind sauber; die Veraenderung passiert in der Wallet und ist nicht reparierbar (Guards entfernen = Signatur ungueltig). Phantom dokumentiert keinen Opt-out, nur ein Domain-Review-Formular; Solflare dokumentiert nichts. FIX: (1) crVaultApi._honest reicht deposit_diff aus der Fehlerantwort durch (dieselbe Whitelist-Falle wie safety in v890). (2) crWalletGuard (neu): detect/classify — deposit_diff mit dem Lighthouse-Programm unter accounts_added ODER „Lighthouse" unter instructions_added → Fehlercode wallet-guard; ein blosses blockhash_changed bleibt der generische Fehler mit detail. crVaultLimit.commit klassifiziert den orders/price-Fehler; der Roh-Diff geht als crVaultFlight.note NUR in den Diagnose-Block (aufklappbar), nie in die Hauptzeile. (3) EINE Meldung (crWalletGuard.text) in Panel + HUD + Trace + Weiche: „Deine Wallet hat die Einzahlung mit Schutz-Instruktionen veraendert (Lighthouse-Guard). Jupiter nimmt nur die unveraenderte Einzahlung an. Nichts bewegt." — letzter Satz „Ruhende Orders laufen deshalb derzeit ueber die On-Chain-Route (Trigger V1)." NUR, wenn crVaultApi.triggerV1Live() den Fallback in der letzten /health-Antwort misst (trigger_v1 / features.trigger_v1 / Pfad /v1/orders/trigger unter endpoints); sonst „… sind mit dieser Wallet derzeit nicht moeglich." (4) Merken, nicht nerven: sessionStorage cr_wallet_guard_v1 = Wallet-Name nach dem ersten Treffer (KEIN localStorage — Wallet-Verhalten kann sich mit Domain-Review aendern). Solange gesetzt, zeigt _armVaultLimit den Hinweis nach dem Preflight und VOR Auth/Signatur (Spur-Schritt walletGuard; 0 signMessage, 0 signTransaction, kein auth/challenge); ist Trigger V1 live, laeuft die Order weiter ueber die On-Chain-Route. (5) Setup-Guide/Gebuehren-Blatt: aufklappbarer Absatz „Ruhende Orders & Wallet-Schutz" unter dem Klartext (nur Route Limit) mit demselben Text; Zeile Vault-Rente ~0,004 SOL NUR, wenn der V2-Pfad genutzt wird (data-cr-guide-path v2/v1/none). (6) Spur als Gruppe: crVaultFlight fuehrt einen Stapel offener Schritte — depositSign/ordersPrice/ordersActive stehen als Kinder (depth 1) unter commit, der Diagnose-Block nummeriert nur Tiefe 0 und rueckt Kinder mit „↳" ein; lines() bleibt flach (Sonden v918–v921), linesTree()/traceText() zeigen die Gruppe; end() schliesst alle offenen Schritte. TESTS: scripts/check_v922_patchF_browser.cjs (F1 Fixture deposit_diff mit Lighthouse → wallet-guard, „Nichts bewegt" in Panel/HUD/Toast, Rohdiff NUR im Diagnose-Block; F1b Lighthouse nur unter instructions_added; F2 Fixture ohne Lighthouse (blockhash_changed) → generischer Text mit detail, KEIN Merker; F3 cr_wallet_guard_v1 gesetzt → Hinweis vor Auth/Signatur, 0 signMessage, 0 signTransaction, kein auth/challenge-Request; F3b Trigger V1 live per /health → Textvariante + Flow laeuft weiter; F4 Spur-Gruppe (depth) + Diagnose-Einrueckung; F5 Guide-Absatz nur auf Route Limit, Renten-Zeile nur bei V2-Pfad; F6 Market-Pfad unveraendert; sessionStorage statt localStorage). Regressionen v907/v917–v921 gruen. Gegenproben ROT (siehe Commit). NICHT GEMESSEN: die genaue Ablageform von deposit_diff im ausgerollten Worker v1.25 (oben, unter detail, oder detail ist der Diff — alle drei werden gelesen) und ob /health einen Trigger-V1-Marker fuehrt; beides prueft Julian am Telefon. Rollback: v1.0.921.
      PREV  ·  v1.0.921 (PATCH E · TEIL B · CLIENT · DEPOSIT NUR SIGNIEREN): KEIN BROADCAST DER EINZAHLUNG MEHR — signierte Tx geht in orders/price, ehrliche Fehler. Market-Pfad (quote→swap→signAndSend) Bit fuer Bit unberuehrt, vier Tore + Spion unveraendert, single-file, keine neue Dep. BEFUND (Trace 00:46, v920): register ok · depositCraft ok · commit/depositSign → sign-failed; Phantom liess „Bestaetigen" nie zu, keine Aktivitaet. Ursache: commit rief crSigner.signAndSend(handle.transaction) — Phantom simuliert die Jupiter-Craft-Tx als EIGENSTAENDIGEN Send; die ist nur gueltig, wenn Jupiter sie zusammen mit der Order landet → Simulation scheitert → Phantom blockiert → sign-failed. Der Client hatte keinen Sign-only-Pfad, prepare erfasste die request_id aus deposit/craft nicht, ordersPrice sendete deposit_sig statt signierter Bytes, commit verwarf detail und unterschied rejected nicht. FIX: (1) crSigner.signTransaction(txBase64,{chain}) — Sign-only ueber Wallet Standard solana:signTransaction (Fallback: injizierter Provider signTransaction, nicht gemessen); Rueckgabe { signedTx: base64 }; KEIN sendTransaction, KEIN signAndSend; Fehlwege rejected / sign-failed(+detail) / no-signer. (2) crVaultLimit.prepare nimmt request_id aus dem Craft-Echo in handle.depositRequestId; fehlt sie → deposit-request-id-missing, KEIN Signieren. (3) crVaultLimit.commit: signTransaction → crVaultApi.ordersPrice({ depositSignedTx, depositRequestId }); Antwort { id, txSignature, depositConfirmed } wird durchgereicht; Journal source live · kind limit · orderPubkey/id · sig=txSignature · status open (depositConfirmed oder orders/active) sonst pending; Bestaetigung ueber orders/active wie bisher (Ausfall dort ≠ ungueltig). (4) crVaultApi.ordersPrice: Body deposit_signed_tx + deposit_request_id statt deposit_sig; fehlt eines, verlaesst kein Request die Seite. (5) Fehler ehrlich in Panel + HUD + Trace: detail ueberall durch; rejected → „Einzahlung nicht signiert — nichts bewegt.", sign-failed → „Wallet konnte nicht signieren: <detail>"; im Limit-Pfad nie mehr „Live swap failed" (Weiche + Panel sagen „Ruhende Order: …"). (6) Session-Limit zaehlt den Deposit bei Erfolg wie bisher; Fill-Marker/T-Sync unveraendert. VORAUSSETZUNG: Worker Patch E · Teil A (v1.24) ausgerollt — /health muss orders/price fuehren; ob der AUSGEROLLTE Worker deposit_signed_tx annimmt, ist eine Messung am Telefon, kein Bericht. TESTS: scripts/check_v921_patchE_browser.cjs (E1 signTransaction sendet NICHT — Spion: sendTransaction/signAndSend 0 Aufrufe im Limit-Commit, liefert base64; E2 commit → orders/price mit deposit_signed_tx + deposit_request_id, ohne request_id kein Signieren; E3 Fehlermapping rejected/sign-failed mit detail in Panel/HUD/Trace; E4 Journal mit txSignature/depositConfirmed, T-Sync zeigt die Order LIVE; E5 Market-Pfad unveraendert ueber signAndSend). Fixtures v907/v917/v918/v920 auf signTransaction + request_id nachgezogen. Gegenproben ROT (siehe Commit). Rollback: v1.0.920 (Limit-Commit ueber signAndSend — funktionslos, aber ungefaehrlich, da Phantom blockiert).
      PREV  ·  v1.0.920 (PATCH D · CLIENT · output_mint AM DEPOSIT/CRAFT): EIN-FELD-FIX IN GENAU ZWEI FUNKTIONEN — KEIN TRADE-PFAD-CHANGE, Auth, Register, Fee-Echo (bps-only), Commit, Weiche, Spion unveraendert, single-file, keine neue Dep. BEFUND (Handy, Diagnose-Spur 06.09. 00:01): 1 preflight ok · 2 resolveTrade ok · 3 decide ok · 4 challenge ok · 5 signMessage ok · 6 verify ok · 7 register ok · 8 depositCraft → vault-contract-invalid. Der Worker (Patch C) meldet: deposit/craft braucht wallet, input_mint, output_mint (base58) und amount_raw; order_sub_type optional single|oco|otoco; Upstream verlangt { inputMint, outputMint, userAddress, amount, orderType:price, orderSubType } — output_mint ist schon am Deposit Pflicht, weil Jupiter die Token-Konten der Order daran bindet; cluster faehrt nicht mit. Damit ist die Auth-Kette (challenge → signMessage → verify → register) end-to-end bewiesen; es fehlte EIN Feld. FIX: (1) crVaultApi.depositCraft(opts) verlangt inputMint UND outputMint (ungleich; sonst { error:no-mint } OHNE Request) und sendet { wallet, input_mint, output_mint, amount_raw, order_sub_type (Default single) } — kein cluster mehr. (2) crVaultLimit.prepare(opts) reicht opts.outputMint (dort schon validiert) an depositCraft durch, orderSubType single; handle.opts behaelt outputMint, sodass commit → ordersPrice denselben Mint nennt (dort wurde output_mint schon gesendet). TESTS: scripts/check_v920_patchD_browser.cjs (D1 depositCraft ohne outputMint / gleiche Mints → no-mint, KEIN Request; D2 Body traegt output_mint + order_sub_type, KEIN cluster; D3 prepare reicht outputMint durch (Spion auf den deposit/craft-Body); D4 commit → orders/price nennt denselben output_mint wie der Deposit; D5 Panel-Flow Limit-HLine → Gebuehr 0,5 % + Deposit-Signatur). Gegenproben ROT (siehe Commit). v917/v918/v919-Regressionen gruen. Rollback: zwei Stellen zurueck = v1.0.919.
      PREV  ·  v1.0.919 (UI · ARM NACH SETTINGS + EINE HANDELSFLAECHE): REINE UI-VERLAGERUNG/ENTFERNUNG — KEINE LOGIK-AENDERUNG AN ARM-BIT, SESSION-LIMIT-RECHNUNG, VIER TOREN, SPION, WEICHE, MARKET-/LIMIT-PFAD. ARM-Block zieht 1:1 aus dem Control Center in die Settings-App (#crArmHome); CC zeigt nur noch EINE Statuszeile mit Link „→ Einstellungen". Bottom-Sheet „Handeln vom Chart" hinter window.CR_CHART_SHEET (Default AUS); jeder Ausloeser fuehrt ins Activation-Panel (EINE Handelsflaeche).
@@ -13863,7 +13864,7 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                 </div>
               </div>
               <div class="crTerm-pane" data-pane-id="openPositions">
-                <div class="crTerm-paneHd"><span>◇ OPEN POSITIONS</span><span class="hd-tag">LIVE</span></div>
+                <div class="crTerm-paneHd"><span>◇ OPEN POSITIONS</span><span style="display:flex;align-items:center;gap:8px"><button type="button" id="crTermReconcileBtn" data-cr-reconcile-btn="1" title="Ruhende Orders bei Jupiter abgleichen — nur lesen; ggf. eine Nachrichten-Signatur, kein Geld" style="font:inherit;font-size:9px;letter-spacing:.5px;color:#d4a43c;background:rgba(212,164,60,.08);border:1px solid rgba(212,164,60,.45);border-radius:4px;padding:2px 7px;cursor:pointer;min-height:22px">Bei Jupiter nachsehen</button><span class="hd-tag">LIVE</span></span></div>
                 <div class="crTerm-paneBd small" id="crTermOpenList">
                   <div class="crTerm-tblHd"><span>Asset</span><span>Type</span><span>Entry</span><span class="r">P&amp;L</span></div>
                 </div>
@@ -17363,7 +17364,12 @@ window.crVaultApi = (function(){
     register:  '/v1/vault/register',
     deposit:   '/v1/deposit/craft',
     ordersPrice:  '/v1/orders/price',
-    ordersActive: '/v1/orders/active'
+    ordersActive: '/v1/orders/active',
+    /* v1.0.923 (Patch G · Teil B) — Verlauf der Orders dieser Wallet (Worker
+     * Patch G · Teil A, v1.26). NICHT Teil des Preflight-Pflichtsatzes: fehlt
+     * der Pfad im ausgerollten Worker, antwortet er 404 → 'not-deployed', und
+     * der Abgleich laeuft mit orders/active allein weiter (und sagt das). */
+    ordersHistory: '/v1/orders/history'
   };
 
   /* NUR im Speicher. Kein localStorage, kein sessionStorage — das ist die
@@ -17476,6 +17482,12 @@ window.crVaultApi = (function(){
           _jwt = String(vr.token); _jwtWallet = wallet;
           var ttl = Number(vr.expires_in_s);
           _jwtExp = Date.now() + ((isFinite(ttl) && ttl > 0) ? ttl * 1000 : 600000);
+          /* v1.0.923 (Patch G · Teil B) — der Token lebt nur im Speicher, also
+           * gibt es „Laden mit gueltigem JWT" erst ab HIER: der einmalige
+           * Abgleich ruhender Orders (orders/active → Journal) haengt sich an
+           * die erste erfolgreiche Anmeldung dieser Wallet in dieser Sitzung.
+           * Keine zweite Signatur, keine Wartezeit fuer den Aufrufer. */
+          try { if(window.crOrderReconcile && typeof crOrderReconcile.onAuth === 'function') crOrderReconcile.onAuth(wallet); } catch(_){}
           return { ok: true };
         });
       });
@@ -17546,6 +17558,12 @@ window.crVaultApi = (function(){
    * Ausfall ist KEINE leere Liste (dieselbe Regel wie anchorList). */
   function ordersActive(wallet){
     return _get(PATHS.ordersActive + '?wallet=' + encodeURIComponent(String(wallet || _jwtWallet || '')), true);
+  }
+  /* v1.0.923 (Patch G · Teil B) — orders/history (JWT) → { orders:[...] }.
+   * Read-only wie ordersActive; 404 heisst 'not-deployed' (Worker < v1.26),
+   * nie „leer". */
+  function ordersHistory(wallet){
+    return _get(PATHS.ordersHistory + '?wallet=' + encodeURIComponent(String(wallet || _jwtWallet || '')), true);
   }
 
   function token(){ return _jwt; }
@@ -17622,7 +17640,7 @@ window.crVaultApi = (function(){
 
   return { authChallenge: authChallenge, authVerify: authVerify, ensureAuth: ensureAuth,
            vaultRegister: vaultRegister, depositCraft: depositCraft,
-           ordersPrice: ordersPrice, ordersActive: ordersActive, preflight: preflight,
+           ordersPrice: ordersPrice, ordersActive: ordersActive, ordersHistory: ordersHistory, preflight: preflight,
            token: token, hasToken: hasToken, clear: _clear, _pfReset: _pfReset, PATHS: PATHS,
            timeouts: _timeouts, _setTimeouts: _setTimeouts, stepFor: _stepFor,
            triggerV1Live: triggerV1Live, PATH_TRIGGER_V1: PATH_TRIGGER_V1 };
@@ -35686,7 +35704,11 @@ window.crWalletGuard = (function(){
   var HEAD = 'Deine Wallet hat die Einzahlung mit Schutz-Instruktionen verändert (Lighthouse-Guard). '
            + 'Jupiter nimmt nur die unveränderte Einzahlung an. Nichts bewegt.';
   var TAIL_V1   = 'Ruhende Orders laufen deshalb derzeit über die On-Chain-Route (Trigger V1).';
-  var TAIL_NONE = 'Ruhende Orders sind mit dieser Wallet derzeit nicht möglich.';
+  /* v1.0.923 (Patch G · Teil B) — Befund 07.09. 19:48: Backpack signiert die
+   * Einzahlung OHNE Lighthouse-Guard, der V2-Fluss lief durch, Jupiter legte
+   * die Order an. Der Satz sagt das dazu — als eigener Satz, damit die
+   * Sonden v922 den ersten unveraendert lesen. */
+  var TAIL_NONE = 'Ruhende Orders sind mit dieser Wallet derzeit nicht möglich. Mit Backpack funktioniert es (kein Guard).';
 
   function _str(v){ try { return typeof v === 'string' ? v : JSON.stringify(v == null ? '' : v); } catch(_){ return String(v); } }
 
@@ -35754,10 +35776,396 @@ window.crWalletGuard = (function(){
            text: text, tail: tail, v1Live: v1Live, walletName: walletName, remember: remember, flagged: flagged, forget: forget };
 })();
 
+/* =========================================================================
+ * crOrderReconcile — v1.0.923 (Patch G · Teil B). Abgleich gegen Jupiter.
+ *
+ * Befund (Handy, 07.09. 19:48, Backpack): Backpack signiert ohne Lighthouse-
+ * Guard → der komplette V2-Fluss lief durch, Jupiter hat die Order angelegt
+ * (jup.ag Open Orders: SOL→JTO 0,120 SOL, Limit <0,432, 30 d, Gebuehr 0,5 %).
+ * Der Worker (v1.25) hielt die Antwort zurueck → der Client meldete
+ * trigger-fee-echo-fehlt, kein Journal-Eintrag, Terminal leer, Backpack zeigt
+ * keine Aktivitaet. Der Client hatte KEINE Moeglichkeit, den Zustand bei
+ * Jupiter zu sehen — die Order lag, nur hier stand sie nirgends.
+ *
+ * Dieses Modul liest (orders/active + orders/history, JWT nur im Speicher)
+ * und ERGAENZT das vorhandene Journal (cr_journal_v1, source 'live', kind
+ * 'limit', reconciled:true) um Orders dieser Wallet, die dort fehlen. Es
+ * loescht nie, es dupliziert nie (bekannte id/orderPubkey/txSignature).
+ * Drei Ausloeser:
+ *   commit → nach JEDEM ordersPrice-Ergebnis ohne sauberes {id} (Fehler,
+ *            Timeout, Netzabbruch) — mit dem vorhandenen JWT, ohne Signatur;
+ *   load   → einmal je Wallet und Sitzung, sobald ein JWT da ist (der lebt
+ *            nur im Speicher, also nach der ersten Anmeldung); ohne JWT nur
+ *            der Hinweis „Abgleich wartet auf Wallet-Signatur" — KEIN
+ *            automatisches Signieren;
+ *   button → Terminal → OFFENE POSITIONEN → „Bei Jupiter nachsehen": mit
+ *            ensureAuth (ggf. EINE Nachrichten-Signatur, kein Geld).
+ * Read-only. Keine neue Signatur ausser der bekannten Auth-Nachricht, kein
+ * Broadcast, keine Aenderung an Weiche, Toren, Spion oder Market-Pfad.
+ * Spur: eigener Schritt „reconcile" (Dauer, gefunden, neu).
+ * ===================================================================== */
+window.crOrderReconcile = (function(){
+  'use strict';
+  var SOL_MINT = (typeof CR_SOL_MINT === 'string' && CR_SOL_MINT)
+    ? CR_SOL_MINT : 'So11111111111111111111111111111111111111112';
+  var HINT_NO_JWT = 'Ruhende Orders: Abgleich wartet auf Wallet-Signatur';
+  var BTN_LABEL = 'Bei Jupiter nachsehen';
+  var _done = {};        // addr → true: der Lade-Abgleich dieser Sitzung ist gelaufen (genau einmal)
+  var _hinted = {};      // addr → true: Hinweis ohne JWT wurde gezeigt
+  var _authWait = {};    // addr → true: onAuth wartet auf das Ende eines laufenden Flows
+  var _running = null;   // Promise des laufenden Abgleichs (kein Doppel-Lauf)
+  var _last = null;      // { at, ok, text, found, added, source, error }
+  var _calls = 0;        // Zaehler fuer Sonden: wie oft lief run() wirklich (Requests raus)
+
+  function _addr(){
+    try { var a = window.crSigner && crSigner.active(); if(a && a.address) return String(a.address); } catch(_){}
+    return '';
+  }
+  function _tr(name){
+    try { if(window.crVaultFlight && crVaultFlight.busy()) return crVaultFlight.step(name); } catch(_){}
+    return function(r){ return r; };
+  }
+  function _s(v){ return v == null ? '' : String(v); }
+  function _pick(x){ for(var i = 1; i < arguments.length; i++){ var k = arguments[i]; if(x && x[k] != null && x[k] !== '') return x[k]; } return null; }
+  function _short(id){ id = _s(id); return id.length > 12 ? id.slice(0, 6) + '…' + id.slice(-4) : id; }
+  /* Zeitangabe → ms. Der Worker/Jupiter liefert ISO-Strings oder Sekunden/
+   * Millisekunden; alles andere bleibt null (nichts wird geraten). */
+  function _ms(v){
+    if(v == null || v === '') return null;
+    if(typeof v === 'number' && isFinite(v)) return v < 1e11 ? v * 1000 : v;
+    var s = String(v);
+    if(/^\d+$/.test(s)){ var nn = Number(s); return nn < 1e11 ? nn * 1000 : nn; }
+    var t = Date.parse(s);
+    return isFinite(t) ? t : null;
+  }
+  function fmtDate(ms){
+    if(ms == null) return '';
+    try {
+      var d = new Date(ms);
+      if(!isFinite(d.getTime())) return '';
+      return d.toLocaleDateString() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    } catch(_){ return ''; }
+  }
+  function symOf(mint){
+    mint = _s(mint);
+    if(!mint) return '';
+    if(mint === SOL_MINT) return 'SOL';
+    try { var m = window._crMintMeta && window._crMintMeta[mint]; if(m && m.symbol) return String(m.symbol).toUpperCase(); } catch(_){}
+    return _short(mint);
+  }
+
+  /* _listOf(res) — die Order-Liste einer Antwort, oder null bei Fehler/Ausfall
+   * (ein Ausfall ist KEINE leere Liste — dieselbe Regel wie orders/active). */
+  function _listOf(res){
+    if(!res || res.error) return null;
+    var arr = Array.isArray(res) ? res : (res.orders || res.history || res.items || res.data || null);
+    if(arr && !Array.isArray(arr) && typeof arr === 'object' && Array.isArray(arr.orders)) arr = arr.orders;
+    return Array.isArray(arr) ? arr : [];
+  }
+  /* normalize(x) — eine Order in der Form, die Journal und Terminal lesen.
+   * Jupiter-/Worker-Feldnamen (camel + snake) werden alle gelesen; ohne id
+   * UND ohne Signatur ist es keine Order. */
+  function normalize(x, fromHistory){
+    if(!x || typeof x !== 'object') return null;
+    var inner = (x.order && typeof x.order === 'object') ? x.order : null;
+    var id = _s(_pick(x, 'id', 'orderKey', 'orderPubkey', 'order_key', 'order_pubkey', 'publicKey', 'pubkey')
+              || (inner ? _pick(inner, 'id', 'orderKey', 'orderPubkey') : null) || (typeof x.order === 'string' ? x.order : ''));
+    var sig = _s(_pick(x, 'txSignature', 'tx_signature', 'openTx', 'open_tx', 'signature', 'txid'));
+    if(!id && !sig) return null;
+    var src = inner || x;
+    var status = _s(_pick(x, 'status', 'state') || _pick(src, 'status', 'state') || 'open').toLowerCase();
+    if(status === 'active') status = 'open';
+    var inputMint  = _s(_pick(src, 'inputMint', 'input_mint') || _pick(x, 'inputMint', 'input_mint'));
+    var outputMint = _s(_pick(src, 'outputMint', 'output_mint') || _pick(x, 'outputMint', 'output_mint'));
+    var making = _pick(src, 'rawMakingAmount', 'raw_making_amount', 'making_amount', 'makingAmountRaw', 'makingAmount');
+    making = (making != null && /^[0-9]+$/.test(String(making))) ? String(making) : '';
+    var taking = _pick(src, 'rawTakingAmount', 'raw_taking_amount', 'taking_amount', 'takingAmountRaw', 'takingAmount');
+    taking = (taking != null && /^[0-9]+$/.test(String(taking))) ? String(taking) : '';
+    var trig = _pick(src, 'triggerPrice', 'trigger_price', 'price');
+    trig = (trig != null && isFinite(Number(trig))) ? Number(trig) : null;
+    return {
+      id: id || sig, txSignature: sig, status: status,
+      wallet: _s(_pick(x, 'wallet', 'userPubkey', 'user_pubkey', 'maker', 'owner') || _pick(src, 'userPubkey', 'user_pubkey', 'maker', 'owner')),
+      inputMint: inputMint, outputMint: outputMint,
+      side: (inputMint && inputMint !== SOL_MINT && outputMint === SOL_MINT) ? 'sell' : 'buy',
+      makingRaw: making, takingRaw: taking, triggerPrice: trig,
+      expiresAt: _ms(_pick(src, 'expiredAt', 'expired_at', 'expiresAt', 'expires_at', 'expiry')),
+      createdAt: _ms(_pick(src, 'createdAt', 'created_at', 'ts', 'time')),
+      fromHistory: !!fromHistory
+    };
+  }
+  /* Die Schluessel, unter denen das Journal eine Order schon fuehrt:
+   * vaultOrderId, orderPubkey, txSignature/sig — jede Live-Limit-Zeile. */
+  function knownKeys(){
+    var keys = {};
+    try {
+      var d = _crJrnLoad();
+      (d.manual || []).forEach(function(r){
+        if(!r || r.source !== 'live') return;
+        ['vaultOrderId', 'orderPubkey', 'txSignature', 'sig'].forEach(function(k){ var v = _s(r[k]); if(v) keys[v] = true; });
+      });
+    } catch(_){}
+    return keys;
+  }
+  function _row(o){
+    var key = o.id || o.txSignature || '';
+    var sym = symOf(o.side === 'sell' ? o.inputMint : o.outputMint);
+    var live = o.status === 'open';
+    var when = o.createdAt != null ? o.createdAt : Date.now();
+    var notes = 'RUHENDE ORDER (bei Jupiter gefunden, Abgleich) · order ' + (o.id || '?')
+      + ' · tx ' + (o.txSignature || '?')
+      + ' · status ' + o.status
+      + (o.triggerPrice != null ? ' · trigger ' + o.triggerPrice : '')
+      + (o.makingRaw ? ' · in ' + o.makingRaw + ' raw' : '')
+      + (o.expiresAt != null ? ' · Ablauf ' + fmtDate(o.expiresAt) : ' · Laufzeit 30 Tage (Jupiter)');
+    return {
+      id: 'limit_' + String(key || Date.now()).slice(0, 16),
+      orderId: 'live:limit:' + String(key),
+      ts: when,
+      dateStr: fmtDate(when),
+      asset: sym, tf: '',
+      side: o.side, setup: 'limit',
+      entry: o.triggerPrice, sl: null, tp: null, rr: null, risk: null, conf: null, levels: '',
+      result: live ? 'open' : o.status, pnl: 0,
+      notes: notes,
+      checklist: null, auto: true, kind: 'limit', source: 'live',
+      sig: _s(o.txSignature), txSignature: _s(o.txSignature),
+      orderPubkey: _s(o.id), vaultOrderId: _s(o.id),
+      depositConfirmed: live, status: o.status,
+      feeRaw: null, amountInRaw: o.makingRaw, amountOutRaw: '',
+      reconciled: true, expiresAt: o.expiresAt, inputMint: o.inputMint, outputMint: o.outputMint
+    };
+  }
+  function _jrnAdd(rows){
+    if(!rows.length) return;
+    try {
+      var d = _crJrnLoad();
+      rows.forEach(function(r){ d.manual.push(r); });
+      _crJrnSave(d);
+    } catch(_){}
+    _jrnRefresh();
+  }
+  function _jrnRefresh(){
+    try {
+      if(typeof _crJrnRenderManual === 'function'){
+        var win = document.getElementById('win-display');
+        var jv = document.getElementById('crDocsViewJournal');
+        if(win && win.classList.contains('on') && jv && !jv.classList.contains('hidden')){
+          _crJrnRenderManual();
+          if(typeof _crJrnRenderStats === 'function') _crJrnRenderStats();
+        }
+      }
+    } catch(_){}
+  }
+  function foundText(o){ return 'Order bei Jupiter gefunden und ins Journal übernommen (id ' + _short(o.id) + ')'; }
+  function _say(text, tone, quiet){
+    try { if(typeof crNotify === 'function') crNotify('Ruhende Orders · ' + text, tone === 'err' ? 'warn' : 'sim'); } catch(_){}
+    if(quiet) return;
+    try { if(window.crLoud) crLoud.show(text, tone || 'dim'); } catch(_){}
+    try { if(typeof toast === 'function') toast(text); } catch(_){}
+  }
+
+  /* run(opts) — der eine Abgleich. opts.auth: ensureAuth (Knopf; ggf. EINE
+   * Nachrichten-Signatur); sonst nur mit vorhandenem JWT ('no-token' ohne
+   * Request). opts.source: 'commit' | 'load' | 'button'. opts.quiet: kein HUD/
+   * Toast (der Aufrufer spricht selbst — commit → Panel). Ergebnis
+   * { ok, found:[…], added:[…], text, activeError?, historyError? } oder
+   * { error, detail }. Wirft nie. */
+  function run(opts){
+    opts = opts || {};
+    var addr = _addr();
+    if(!addr) return Promise.resolve(_finish({ error: 'not-connected', text: 'Abgleich nicht möglich: keine Wallet verbunden.' }, opts, false));
+    if(!window.crVaultApi) return Promise.resolve(_finish({ error: 'vault-api-missing', text: 'Abgleich nicht möglich: Vault-Schnittstelle fehlt.' }, opts, false));
+    if(_running) return _running;
+    var own = false;
+    try {
+      if(opts.source === 'button' && window.crVaultFlight && !crVaultFlight.busy()){ crVaultFlight.begin('reconcile'); own = true; crVaultFlight.status('Abgleich mit Jupiter …', 'dim'); }
+    } catch(_){ own = false; }
+    var authP;
+    if(opts.auth){
+      authP = crVaultApi.ensureAuth(addr, function(msg){
+        var d = _tr('signMessage'); var p;
+        try { p = Promise.resolve(crSigner.signMessage(msg)); }
+        catch(e){ p = Promise.resolve({ error: 'sign-message-crashed', detail: String((e && e.message) || e) }); }
+        return p.then(function(r){ try { d(r && r.error ? String(r.error) : 'ok'); } catch(_){} return r; });
+      });
+    } else {
+      authP = Promise.resolve(crVaultApi.hasToken(addr) ? { ok: true } : { error: 'no-token' });
+    }
+    _calls++;
+    _running = Promise.resolve(authP).then(function(au){
+      if(!au || au.error){
+        var ae = (au && au.error) || 'auth-failed';
+        var at = ae === 'no-token' ? HINT_NO_JWT
+               : (ae === 'rejected' || ae === 'sign-message-failed') ? 'Abgleich nicht möglich: Nachricht nicht signiert (' + ae + ') — nichts bewegt.'
+               : 'Abgleich nicht möglich: ' + ae + (au && au.detail ? ' — ' + au.detail : '');
+        return _finish({ error: ae, detail: au && au.detail, text: at }, opts, own);
+      }
+      var done = _tr('reconcile');
+      /* Nacheinander, nicht parallel: die Spur (Stapel offener Schritte, F·5)
+       * fuehrt beide sonst als Kind und Enkel statt als Geschwister unter
+       * reconcile. Zwei kurze GETs; die Reihenfolge ist Anzeige, nicht Logik. */
+      return crVaultApi.ordersActive(addr).then(function(ac){
+        return crVaultApi.ordersHistory(addr).then(function(hi){ return [ac, hi]; });
+      }).then(function(pair){
+        var ac = pair[0], hi = pair[1];
+        var actList = _listOf(ac), hisList = _listOf(hi);
+        var acErr = (ac && ac.error) ? String(ac.error) : null;
+        var hiErr = (hi && hi.error) ? String(hi.error) : null;
+        if(!actList && !hisList){
+          var e = acErr || hiErr || 'reconcile-failed';
+          try { done(e); } catch(_){}
+          return _finish({ error: e, detail: (ac && ac.detail) || (hi && hi.detail) || '', activeError: acErr, historyError: hiErr,
+                           text: 'Abgleich nicht möglich: orders/active ' + (acErr || '?') + (hiErr ? ' · orders/history ' + hiErr : '') }, opts, own);
+        }
+        var keys = knownKeys(), seen = {}, found = [], rows = [];
+        (actList || []).map(function(x){ return normalize(x, false); })
+          .concat((hisList || []).map(function(x){ return normalize(x, true); }))
+          .forEach(function(o){
+            if(!o) return;
+            if(o.wallet && o.wallet !== addr) return;          // fremde Wallet — nie ins Journal
+            if(seen[o.id]) return; seen[o.id] = true;
+            o.known = !!(keys[o.id] || (o.txSignature && keys[o.txSignature]));
+            found.push(o);
+            if(!o.known){ o.addedNow = true; rows.push(_row(o)); }
+          });
+        _jrnAdd(rows);
+        _done[addr] = true;
+        var added = found.filter(function(o){ return o.addedNow; });
+        try { done('ok · ' + found.length + ' gefunden · ' + added.length + ' neu' + (hiErr ? ' · history ' + hiErr : '')); } catch(_){}
+        var text = added.length
+          ? foundText(added[0]) + (added.length > 1 ? ' · +' + (added.length - 1) + ' weitere' : '')
+          : 'Abgleich: keine unbekannte Order bei Jupiter (' + found.length + ' bekannt' + (hiErr === 'not-deployed' ? ', ohne Verlauf' : '') + ')';
+        return _finish({ ok: true, found: found, added: added, rows: rows, text: text, activeError: acErr, historyError: hiErr }, opts, own);
+      });
+    }).catch(function(e){
+      return _finish({ error: 'reconcile-crashed', detail: String((e && e.message) || e), text: 'Abgleich abgestürzt: ' + String((e && e.message) || e) }, opts, own);
+    });
+    return _running;
+  }
+  function _finish(r, opts, own){
+    _running = null;
+    r.source = opts.source || '';
+    _last = { at: Date.now(), ok: !!r.ok, text: r.text || '', found: r.found ? r.found.length : 0, added: r.added ? r.added.length : 0,
+              source: r.source, error: r.error || null };
+    if(own){ try { crVaultFlight.end(!!r.ok, r.text); } catch(_){} }
+    var tone = r.ok ? (r.added && r.added.length ? 'ok' : 'dim') : 'err';
+    if(r.error === 'no-token' && opts.source === 'load') tone = 'dim';
+    _say(r.text, tone, !!opts.quiet);
+    return r;
+  }
+
+  /* onAuth(addr) — aus crVaultApi.ensureAuth (Erfolg): der einmalige Lade-
+   * Abgleich, sobald ein JWT da ist. Laeuft ein Flow (Limit-Arm), wartet er
+   * bis zu dessen Ende, damit die Spur des Flows sauber bleibt. */
+  function onAuth(addr){
+    addr = _s(addr) || _addr();
+    if(!addr || _done[addr] || _authWait[addr]) return false;
+    var busy = false;
+    try { busy = !!(window.crVaultFlight && crVaultFlight.busy()); } catch(_){}
+    if(!busy){ setTimeout(function(){ if(!_done[addr] && !_running) run({ source: 'load', quiet: true }); }, 0); return true; }
+    _authWait[addr] = true;
+    var off = null;
+    try {
+      off = crVaultFlight.onChange(function(st){
+        if(st && st.busy) return;
+        try { if(off) off(); } catch(_){}
+        _authWait[addr] = false;
+        setTimeout(function(){ if(!_done[addr] && !_running) run({ source: 'load', quiet: true }); }, 0);
+      });
+    } catch(_){ _authWait[addr] = false; }
+    return true;
+  }
+  /* onLoad() — beim Laden mit verbundener Wallet: mit JWT einmal abgleichen,
+   * ohne JWT nur der Hinweis (Terminal/CC) — KEIN automatisches Signieren. */
+  function onLoad(){
+    var addr = _addr();
+    if(!addr) return 'no-wallet';
+    var tok = false;
+    try { tok = !!(window.crVaultApi && crVaultApi.hasToken(addr)); } catch(_){}
+    if(tok){ if(!_done[addr] && !_running){ run({ source: 'load', quiet: true }); return 'run'; } return 'done'; }
+    if(!_hinted[addr]){ _hinted[addr] = true; _say(HINT_NO_JWT, 'dim', true); }
+    return 'hint';
+  }
+  /* paneLine() — die Zeile fuer Terminal → OFFENE POSITIONEN. */
+  function paneLine(){
+    var addr = _addr();
+    if(_running) return { text: 'Abgleich mit Jupiter läuft …', tone: 'dim' };
+    if(_last && _last.text) return { text: _last.text + ' · ' + fmtDate(_last.at).split(' ').slice(-1)[0], tone: _last.ok ? (_last.added ? 'ok' : 'dim') : 'err' };
+    if(!addr) return { text: '', tone: 'dim' };
+    var tok = false;
+    try { tok = !!(window.crVaultApi && crVaultApi.hasToken(addr)); } catch(_){}
+    if(!tok) return { text: HINT_NO_JWT, tone: 'dim' };
+    return { text: 'Noch kein Abgleich — „' + BTN_LABEL + '"', tone: 'dim' };
+  }
+  function paneHTML(){
+    var l = paneLine();
+    if(!l.text) return '';
+    var esc = (typeof _crTokEsc === 'function') ? _crTokEsc : function(x){ return String(x == null ? '' : x).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+    var col = l.tone === 'ok' ? '#3ddc97' : (l.tone === 'err' ? '#f2a0a0' : '');
+    return '<div data-cr-reconcile-line="' + esc(l.tone) + '" class="dim" style="padding:3px 0;font-style:italic' + (col ? ';color:' + col : '') + '">' + esc(l.text) + '</div>';
+  }
+  function fromButton(){ return run({ auth: true, source: 'button' }); }
+  function _boot(){
+    try {
+      document.addEventListener('click', function(ev){
+        var b = ev.target && ev.target.closest ? ev.target.closest('[data-cr-reconcile-btn]') : null;
+        if(!b) return;
+        ev.preventDefault();
+        fromButton();
+      }, true);
+    } catch(_){}
+    setTimeout(onLoad, 1500);
+    try { if(window.crWallet && typeof crWallet.on === 'function') crWallet.on(function(){ setTimeout(onLoad, 300); }); } catch(_){}
+  }
+  try {
+    if(document.readyState !== 'loading') setTimeout(_boot, 0);
+    else document.addEventListener('DOMContentLoaded', _boot);
+  } catch(_){}
+
+  return { run: run, onAuth: onAuth, onLoad: onLoad, fromButton: fromButton, paneLine: paneLine, paneHTML: paneHTML,
+           normalize: normalize, knownKeys: knownKeys, symOf: symOf, fmtDate: fmtDate, foundText: foundText,
+           last: function(){ return _last; }, calls: function(){ return _calls; }, running: function(){ return !!_running; },
+           done: function(addr){ return !!_done[_s(addr) || _addr()]; },
+           _reset: function(){ _done = {}; _hinted = {}; _authWait = {}; _last = null; _calls = 0; },
+           HINT_NO_JWT: HINT_NO_JWT, BTN_LABEL: BTN_LABEL };
+})();
+
 window.crVaultLimit = (function(){
   'use strict';
   var SOL_MINT = (typeof CR_SOL_MINT === 'string' && CR_SOL_MINT)
     ? CR_SOL_MINT : 'So11111111111111111111111111111111111111112';
+  /* v1.0.923 (Patch G · Teil B) — die Gebuehren-Bindung der letzten
+   * erfolgreichen Antwort (fee.bound_at) fuer Panel/Terminal/Gebuehren-Blatt. */
+  var _lastFee = null;
+  function feeText(r){
+    r = r || {};
+    var bps = (r.feeBps != null && isFinite(Number(r.feeBps))) ? Number(r.feeBps) : null;
+    var pct = bps == null ? '' : String(bps / 100).replace('.', ',');
+    if(r.feeBoundAt === 'craft-cache-miss') return 'Gebührenstand: siehe Einzahlung';
+    if(r.feeBoundAt === 'craft') return 'Gebühr ' + (pct ? pct + ' %' : '(Satz siehe Einzahlung)') + ' — bei der Einzahlung gebunden';
+    if(pct) return 'Gebühr ' + pct + ' %';
+    return 'Gebühr nicht ausgewiesen';
+  }
+  /* Woran die Gebuehr der Antwort gebunden ist: fee.bound_at 'craft' (bei der
+   * Einzahlung), 'craft-cache-miss' (Worker fand den Craft nicht mehr — KEIN
+   * Fehler, der Stand steht in der Einzahlung), sonst null. Auch als Warnung
+   * oder Notiz lesbar. */
+  function feeBoundOf(op, fee){
+    var b = fee && (fee.bound_at || fee.boundAt || fee.bound);
+    if(!b && op){
+      b = op.fee_bound_at || op.feeBoundAt || null;
+      var w = op.warnings;
+      if(!b && Array.isArray(w) && w.some(function(x){ return /craft-cache-miss/.test(String(x && (x.code || x.message || x))); })) b = 'craft-cache-miss';
+      if(!b && /craft-cache-miss/.test(String((fee && fee.note) || op.note || ''))) b = 'craft-cache-miss';
+    }
+    return b ? String(b) : null;
+  }
+  function warningsOf(op){
+    var w = op && op.warnings;
+    if(!Array.isArray(w)) return [];
+    return w.map(function(x){ return typeof x === 'string' ? x : String((x && (x.message || x.code)) || JSON.stringify(x)); }).filter(Boolean);
+  }
 
   /* v1.0.918 (B6·3b) — Spur-Schritt, nur waehrend einer laufenden Anfrage. */
   function _tr(name){
@@ -35865,11 +36273,18 @@ window.crVaultLimit = (function(){
              * geht als Spur-Notiz in den Diagnose-Block, nicht in die Zeile. */
             var wg = null;
             try { wg = window.crWalletGuard ? crWalletGuard.classify(op) : null; } catch(_){ wg = null; }
+            var errRes = wg;
             if(wg){
               try { if(window.crVaultFlight && crVaultFlight.busy()) crVaultFlight.note('deposit_diff', wg.depositDiff); } catch(_){}
-              return wg;
+            } else {
+              errRes = { error: (op && op.error) || 'orders-price-failed', detail: op && op.detail };
             }
-            return { error: (op && op.error) || 'orders-price-failed', detail: op && op.detail };
+            /* v1.0.923 (Patch G · Teil B) — nach JEDEM ordersPrice-Ergebnis ohne
+             * sauberes {id} (Fehler, Timeout, Netzabbruch): bei Jupiter nachsehen.
+             * Befund 07.09. 19:48: der Worker hielt die Antwort zurueck, die
+             * Order lag trotzdem. Der Fehlercode bleibt, der Abgleich haengt als
+             * res.reconcile daran (Panel/Weiche sagen „gefunden … uebernommen"). */
+            return _reconcileAfter(errRes);
           }
           /* Worker v1.24 antwortet { id, txSignature, depositConfirmed }; aeltere
            * Formen (orderPubkey / order.orderKey) bleiben lesbar. */
@@ -35882,6 +36297,18 @@ window.crVaultLimit = (function(){
           var opFee = op.fee || op.platform_fee || null;
           var feeRaw = handle.feeRaw != null ? handle.feeRaw : (opFee && opFee.amount_raw != null ? String(opFee.amount_raw) : null);
           var feeBps = handle.feeBps != null ? handle.feeBps : (opFee && opFee.bps != null ? Number(opFee.bps) : null);
+          /* v1.0.923 (Patch G · Teil B) — Worker v1.26 antwortet { id,
+           * txSignature, depositConfirmed, fee{bps, bound_at}, warnings[] }:
+           * bound_at 'craft' heisst „bei der Einzahlung gebunden",
+           * 'craft-cache-miss' heisst „Stand siehe Einzahlung" (kein Fehler);
+           * warnings sind Hinweise, nie ein Abbruch. Ablauf, falls genannt. */
+          var feeBoundAt = feeBoundOf(op, opFee);
+          var warnings = warningsOf(op);
+          var expiresAt = null;
+          try {
+            var ex = op.expiredAt || op.expired_at || op.expiresAt || op.expires_at || (op.order && (op.order.expiredAt || op.order.expired_at)) || null;
+            if(ex != null){ var exN = (typeof ex === 'number') ? ex : (/^\d+$/.test(String(ex)) ? Number(ex) : Date.parse(String(ex))); if(isFinite(exN)) expiresAt = exN < 1e11 ? exN * 1000 : exN; }
+          } catch(_){ expiresAt = null; }
           /* Bestaetigung ueber orders/active — ein Ausfall dort macht die Order
            * NICHT ungueltig (sie liegt bereits), er bleibt nur unbestaetigt. */
           return crVaultApi.ordersActive(addr).then(function(ac){
@@ -35899,12 +36326,38 @@ window.crVaultLimit = (function(){
                         txSignature: txSig, sig: txSig, depositConfirmed: depositConfirmed,
                         depositRequestId: String(handle.depositRequestId),
                         feeRaw: feeRaw, feeBps: feeBps, depositRaw: handle.depositRaw,
+                        feeBoundAt: feeBoundAt, warnings: warnings, expiresAt: expiresAt,
                         confirmed: confirmed, confirmError: confirmError };
+            _lastFee = { feeBps: feeBps, feeRaw: feeRaw, feeBoundAt: feeBoundAt, at: Date.now() };
+            /* v1.0.923 (Patch G · Teil B) — ok, aber OHNE sauberes {id}: erst bei
+             * Jupiter nachsehen. Fuehrt der Abgleich die Order (per txSignature),
+             * steht sie schon im Journal — kein zweiter Eintrag. */
+            if(!orderId && !orderPubkey && window.crOrderReconcile){
+              return crOrderReconcile.run({ source: 'commit', quiet: true }).then(function(rc){
+                res.reconcile = rc;
+                var hit = null;
+                try { if(rc && rc.ok && txSig) hit = (rc.found || []).filter(function(f){ return f.txSignature === txSig; })[0] || null; } catch(_){ hit = null; }
+                if(hit){ res.id = hit.id; res.orderPubkey = hit.id; res.confirmed = true; if(hit.addedNow) return res; }
+                _journalOpen(res, o);
+                return res;
+              }, function(){ _journalOpen(res, o); return res; });
+            }
             _journalOpen(res, o);
             return res;
           });
         });
     });
+  }
+
+  /* v1.0.923 (Patch G · Teil B) — Abgleich nach einem ordersPrice-Fehler: mit
+   * dem vorhandenen JWT (keine Signatur), Ergebnis als res.reconcile am
+   * unveraenderten Fehlerobjekt. Ohne Modul oder bei Absturz: der Fehler
+   * bleibt, wie er war. */
+  function _reconcileAfter(res){
+    if(!window.crOrderReconcile || typeof crOrderReconcile.run !== 'function') return res;
+    var p;
+    try { p = crOrderReconcile.run({ source: 'commit', quiet: true }); } catch(_){ return res; }
+    return Promise.resolve(p).then(function(rc){ res.reconcile = rc; return res; }, function(){ return res; });
   }
 
   /* execute — der eine Einstieg fuer die Weiche. Mit vorbereitetem handle nur
@@ -35948,13 +36401,19 @@ window.crVaultLimit = (function(){
           + ' · trigger ' + String(opts.triggerPrice == null ? '?' : opts.triggerPrice)
           + ' · in ' + String(opts.amountRaw || '?')
           + (order.feeRaw != null ? ' · fee ' + String(order.feeRaw) + ' raw' : ' · fee nicht ausgewiesen')
+          + (order.feeBoundAt ? ' · ' + feeText(order) : '')
           + (order.depositConfirmed ? ' · Einzahlung bestätigt' : ' · Einzahlung unbestätigt')
-          + (order.confirmed ? ' · bestätigt (orders/active)' : ' · Bestätigung ausstehend'),
+          + (order.confirmed ? ' · bestätigt (orders/active)' : ' · Bestätigung ausstehend')
+          + (order.expiresAt != null ? ' · Ablauf ' + (window.crOrderReconcile ? crOrderReconcile.fmtDate(order.expiresAt) : new Date(order.expiresAt).toLocaleString()) : ' · Laufzeit 30 Tage (Jupiter)')
+          + (order.warnings && order.warnings.length ? ' · Hinweis: ' + order.warnings.join(' · ') : ''),
         checklist: null, auto: true, kind: 'limit', source: 'live',
         sig: String(order.txSignature || ''), txSignature: String(order.txSignature || ''),
         orderPubkey: String(order.orderPubkey || order.id || ''), vaultOrderId: String(order.id || ''),
         depositConfirmed: !!order.depositConfirmed, status: live ? 'open' : 'pending',
         feeRaw: order.feeRaw != null ? String(order.feeRaw) : null,
+        feeBps: order.feeBps != null ? Number(order.feeBps) : null, feeBoundAt: order.feeBoundAt || null,
+        expiresAt: order.expiresAt != null ? order.expiresAt : null,
+        warnings: (order.warnings && order.warnings.length) ? order.warnings.slice() : [],
         amountInRaw: String(opts.amountRaw || ''), amountOutRaw: ''
       };
       var d = _crJrnLoad();
@@ -35973,7 +36432,8 @@ window.crVaultLimit = (function(){
     } catch(_){}
   }
 
-  return { prepare: prepare, commit: commit, execute: execute, SOL_MINT: SOL_MINT };
+  return { prepare: prepare, commit: commit, execute: execute, SOL_MINT: SOL_MINT,
+           feeText: feeText, feeBoundOf: feeBoundOf, warningsOf: warningsOf, lastFee: function(){ return _lastFee; } };
 })();
 
 /* Der reale Adapter — das Objekt hinter ChartRunner.sdk.setRealSDK.
@@ -36203,6 +36663,9 @@ window.crWeiche = (function(){
            * crWalletGuard, kein Rohfehler; der Diff bleibt im Diagnose-Block. */
           else if(le === 'wallet-guard' && window.crWalletGuard) _say('Ruhende Order: ' + crWalletGuard.text(crWalletGuard.v1Live()));
           else _say('Ruhende Order: ' + le + (ld ? ' — ' + ld : ''));
+          /* v1.0.923 (Patch G · Teil B) — hat der Abgleich nach dem Fehler eine
+           * Order bei Jupiter gefunden, sagt die Weiche das dazu. */
+          try { if(res.reconcile && res.reconcile.ok && res.reconcile.added && res.reconcile.added.length) _say('Ruhende Order: ' + res.reconcile.text); } catch(_){}
         } else {
           _say('Live swap failed: ' + String(res.error) + (res.detail ? ' — ' + String(res.detail) : ''));
         }
@@ -36401,6 +36864,23 @@ window.crPanelLive = (function(){
    * swap failed" (nichts wurde geswappt): ein Reject heisst „nichts bewegt",
    * ein Wallet-Fehler traegt sein detail, alles andere den Worker-Code. */
   function _msgForLimitError(res){
+    return _limitErrorBase(res) + _reconcileTail(res);
+  }
+  /* v1.0.923 (Patch G · Teil B) — der Abgleich nach dem Fehler, als Nachsatz:
+   * „Order bei Jupiter gefunden und ins Journal übernommen (id …)" — ein
+   * Zustand wie am 07.09. 19:48 wird damit sofort sichtbar. Ohne Fund
+   * (oder ohne Abgleich) bleibt die Zeile, wie sie war. */
+  function _reconcileTail(res){
+    try {
+      var rc = res && res.reconcile;
+      if(!rc) return '';
+      if(rc.ok && rc.added && rc.added.length) return ' · ' + rc.text;
+      if(rc.ok) return ' · Abgleich: keine offene Order bei Jupiter gefunden.';
+      if(rc.error && rc.error !== 'no-token') return ' · Abgleich nicht möglich (' + String(rc.error) + ').';
+    } catch(_){}
+    return '';
+  }
+  function _limitErrorBase(res){
     var e = String((res && res.error) || 'failed');
     var d = (res && res.detail) ? String(res.detail) : '';
     if(e === 'rejected')
@@ -36550,7 +37030,7 @@ window.crPanelLive = (function(){
   return { liveIntent: liveIntent, chartMint: chartMint, slipBps: slipBps,
            resolveTrade: resolveTrade, armQuote: armQuote, feeLine: feeLine,
            fire: fire, closeTrade: closeTrade, hasLiveFill: hasLiveFill,
-           _msgForError: _msgForError, _msgForLimitError: _msgForLimitError };
+           _msgForError: _msgForError, _msgForLimitError: _msgForLimitError, _reconcileTail: _reconcileTail };
 })();
 
 /* =========================================================================
@@ -37985,7 +38465,11 @@ const CR_ROUTE_FIELD_SCHEMA = {
   ],
   limit: [
     { key:'price', label:'Price', type:'price', from:'carrierPrice' },
-    { key:'tif', label:'TIF', type:'select', items:[{ v:'GTC', l:'GTC' },{ v:'IOC', l:'IOC' }], def:'GTC' },
+    /* v1.0.923 (Patch G · Teil B) — Jupiter setzt 30 Tage Laufzeit; „GTC"
+     * versprach unbegrenzt. Wert bleibt 'GTC' (gespeicherte Route-States),
+     * nur das Label sagt die Wahrheit. Ob orders/price ein Ablaufdatum
+     * annimmt, ist im Worker-Vertrag nicht gemessen — nichts mitgegeben. */
+    { key:'tif', label:'TIF', type:'select', items:[{ v:'GTC', l:'30 Tage (Jupiter)' },{ v:'IOC', l:'IOC' }], def:'GTC' },
     { key:'postOnly', label:'Post-only', type:'toggle', def:true },
   ],
   bracket: [
@@ -38122,8 +38606,13 @@ function renderBlueRouteInputs(body, overlay, helpers){
       const p2 = document.createElement('div');
       p2.setAttribute('data-cr-guide-fee', '1');
       p2.style.cssText = 'margin-top:4px;color:#8b93a3;font:10px ui-monospace,monospace';
+      /* v1.0.923 (Patch G · Teil B) — die Bindung der letzten Antwort
+       * (fee.bound_at: „bei der Einzahlung gebunden" / „siehe Einzahlung"). */
+      let lastFeeTxt = '';
+      try { const lf = window.crVaultLimit && crVaultLimit.lastFee && crVaultLimit.lastFee(); if(lf && lf.feeBoundAt) lastFeeTxt = ' · Letzte Order: ' + crVaultLimit.feeText(lf); } catch(_){ lastFeeTxt = ''; }
       p2.textContent = 'Gebühr: aus dem deposit/craft-Echo — steht oben, bevor du signierst; ohne Echo wird nicht signiert.'
-        + (pathUsed === 'v2' ? ' · Vault-Rente ~0,004 SOL (Jupiter-Vault, V2-Pfad)' : '');
+        + (pathUsed === 'v2' ? ' · Vault-Rente ~0,004 SOL (Jupiter-Vault, V2-Pfad)' : '')
+        + lastFeeTxt;
       guideBody.textContent = '';
       guideBody.appendChild(p1); guideBody.appendChild(p2);
       guideBox.style.display = '';
@@ -38912,11 +39401,26 @@ function renderBlueRouteInputs(body, overlay, helpers){
                     : ('Ruhende Order: ' + String(res.error) + (res.detail ? ' — ' + String(res.detail) : ''))));
               return;
             }
+            /* v1.0.923 (Patch G · Teil B) — die Antwort des Workers v1.26 im
+             * Klartext: Gebuehr mit Bindung (fee.bound_at), Ablauf (30 Tage,
+             * Jupiter), warnings[] als Hinweis — nie als Abbruch. */
+            let feeSentence = '';
+            try { feeSentence = (window.crVaultLimit && crVaultLimit.feeText) ? ' · ' + crVaultLimit.feeText(res) : ''; } catch(_){ feeSentence = ''; }
+            let expirySentence = '';
+            try { expirySentence = res.expiresAt != null ? ' · Ablauf ' + crOrderReconcile.fmtDate(res.expiresAt) : ' · Laufzeit 30 Tage (Jupiter)'; } catch(_){ expirySentence = ''; }
             const okText = 'RUHENDE ORDER liegt' + (res.orderPubkey ? ' · ' + String(res.orderPubkey) : '')
               + (res.id && res.id !== res.orderPubkey ? ' · id ' + String(res.id) : '')
               + (res.depositConfirmed ? ' · Einzahlung bestätigt' : ' · Einzahlung unbestätigt')
               + (res.confirmed ? ' · bestätigt (orders/active)' : ' · Bestätigung ausstehend')
-              + ' · tx ' + String(res.txSignature || res.sig || '?');
+              + ' · tx ' + String(res.txSignature || res.sig || '?')
+              + feeSentence + expirySentence
+              + (Array.isArray(res.warnings) && res.warnings.length ? ' · Hinweis: ' + res.warnings.join(' · ') : '');
+            try {
+              if(Array.isArray(res.warnings) && res.warnings.length){
+                if(window.crVaultFlight) crVaultFlight.note('warnings', res.warnings.join(' · '));
+                if(typeof crNotify === 'function') crNotify('Ruhende Order · Hinweis: ' + res.warnings.join(' · '), 'warn');
+              }
+            } catch(_){}
             _flightEnd(true, okText);
             try {
               section.classList.add('cr-arm-snapped');
@@ -95647,7 +96151,11 @@ function _crLivePositions(){
       const side = String(r.side || 'buy').toLowerCase() === 'sell' ? 'SELL' : 'BUY';
       return { sym, side,
                entry: (r.entry != null && isFinite(+r.entry)) ? +r.entry : null,
-               sol: _crLiveRowSol(r), kind: r.kind || 'market', asset: String(r.asset || '') };
+               sol: _crLiveRowSol(r), kind: r.kind || 'market', asset: String(r.asset || ''),
+               /* v1.0.923 (Patch G · Teil B) — id, Ablauf, Herkunft (Abgleich) */
+               vaultOrderId: String(r.vaultOrderId || r.orderPubkey || ''),
+               expiresAt: (r.expiresAt != null && isFinite(+r.expiresAt)) ? +r.expiresAt : null,
+               reconciled: !!r.reconciled };
     });
   } catch(_){ return []; }
 }
@@ -95748,6 +96256,9 @@ function _crTermTagBadge(live){
       const lastP = pxEl ? parseFloat((pxEl.textContent || '').replace(/[,$]/g,'')) : NaN;
       const entryFmt = e => e != null ? '$' + (Math.abs(e) >= 100 ? e.toFixed(2) : (Math.abs(e) >= 1 ? e.toFixed(4) : e.toFixed(6))) : '—';
       let html = '<div class="crTerm-tblHd"><span>Asset</span><span>Type</span><span>Entry</span><span class="r">P&amp;L</span></div>';
+      /* v1.0.923 (Patch G · Teil B) — Stand des Jupiter-Abgleichs (Hinweis ohne
+       * JWT, letztes Ergebnis, laeuft). */
+      try { if(window.crOrderReconcile && typeof crOrderReconcile.paneHTML === 'function') html += crOrderReconcile.paneHTML(); } catch(_){}
 
       // --- LIVE rows: real spot exposure from the journal ---
       const liveRows = (typeof _crLivePositions === 'function') ? _crLivePositions() : [];
@@ -95764,9 +96275,19 @@ function _crTermTagBadge(live){
           cls = pct >= 0 ? 'pos' : 'neg';
           pnlHtml = '<span class="r">' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%</span>';
         }
-        html += '<div class="crTerm-tblRow ' + cls + '" data-cr-live="1" style="cursor:pointer"><span>' + p.sym + '</span>'
+        /* v1.0.923 (Patch G · Teil B) — LIM-Zeile traegt id (kurz) und Ablauf. */
+        let limMeta = '';
+        try {
+          if(p.kind === 'limit'){
+            const idS = p.vaultOrderId ? (p.vaultOrderId.length > 10 ? p.vaultOrderId.slice(0, 4) + '…' + p.vaultOrderId.slice(-4) : p.vaultOrderId) : '';
+            const exS = p.expiresAt != null ? new Date(p.expiresAt).toLocaleDateString() : '';
+            limMeta = (idS ? ' <span class="dim" title="' + p.vaultOrderId.replace(/"/g, '') + '">' + idS + '</span>' : '')
+                    + (exS ? ' <span class="dim">bis ' + exS + '</span>' : '');
+          }
+        } catch(_){ limMeta = ''; }
+        html += '<div class="crTerm-tblRow ' + cls + '" data-cr-live="1"' + (p.vaultOrderId ? ' data-cr-order-id="' + p.vaultOrderId.replace(/"/g, '') + '"' : '') + (p.reconciled ? ' data-cr-reconciled="1"' : '') + ' style="cursor:pointer"><span>' + p.sym + '</span>'
               + '<span class="' + (isBuy ? 'up' : 'dn') + '">' + tag(true) + (p.kind === 'limit' ? 'LIM ' : 'SPOT ') + (isBuy ? 'B' : 'S')
-              + (p.sol != null ? ' <span class="dim">' + p.sol.toFixed(3) + '◎</span>' : '') + '</span>'
+              + (p.sol != null ? ' <span class="dim">' + p.sol.toFixed(3) + '◎</span>' : '') + limMeta + '</span>'
               + '<span>' + entryFmt(p.entry) + '</span>'
               + pnlHtml + '</div>';
       });

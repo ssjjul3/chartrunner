@@ -203,3 +203,45 @@ broadcast, the four gates and the market path are untouched:
 ```sh
 node scripts/check_v922_patchF_browser.cjs   # Patch F (detect, wording, session memory, guide, trace group, market untouched)
 ```
+
+#### Patch G · Teil B · Reconcile against Jupiter (`v1.0.923`)
+
+Measured on the phone 07.09. 19:48 with **Backpack** (no Lighthouse guard): the whole V2 flow ran,
+Jupiter created the order (SOL→JTO 0,120 SOL, limit <0,432, 30 d, 0,5 %), but the worker (v1.25)
+withheld the reply — the client reported `trigger-fee-echo-fehlt`, no journal row, empty terminal.
+The client had no way to see the state at Jupiter. Read-only reconcile, no new signature except
+the known auth message, no broadcast; the four gates and the market path are untouched. Requires
+worker Patch G · Teil A (v1.26); `orders/history` is **not** part of the preflight set (404 →
+`not-deployed` → the reconcile continues with `orders/active` alone and says so):
+
+- **Reconcile.** `crOrderReconcile` reads `orders/active` + `orders/history`
+  (`crVaultApi.ordersHistory`, new) and **adds** orders of this wallet missing from the journal as
+  `{ source:'live', kind:'limit', status, id, txSignature, reconciled:true }` — never deletes, never
+  duplicates a known id / orderPubkey / txSignature. Panel, HUD and CC say *“Order bei Jupiter
+  gefunden und ins Journal übernommen (id …)”*.
+- **After every `orders/price` result without a clean `{id}`** (error, timeout, network drop, also
+  wallet-guard) the reconcile runs with the JWT already in memory; the error code stays, the result
+  rides along as `res.reconcile`. An `ok` without id reconciles first (match by txSignature) so
+  there is one journal row, not two.
+- **On load.** The JWT lives in memory only, so the once-per-wallet-and-session reconcile hooks the
+  first successful `ensureAuth` (waits for a running flow to end). Without a JWT: CC/terminal hint
+  *“Ruhende Orders: Abgleich wartet auf Wallet-Signatur”* — **no automatic signing**.
+- **Terminal → OFFENE POSITIONEN → “Bei Jupiter nachsehen”.** Runs the reconcile with `ensureAuth`
+  (at most one message signature, no funds) in its own flight; a status line shows hint / last
+  result / running; LIM rows carry the short id and the expiry.
+- **Success reply** `{ id, txSignature, depositConfirmed, fee{bps, bound_at}, warnings[] }`:
+  `bound_at:'craft'` → *“Gebühr 0,5 % — bei der Einzahlung gebunden”* (panel, journal, fee sheet);
+  `craft-cache-miss` → *“Gebührenstand: siehe Einzahlung”* (not an error); `warnings[]` become a
+  hint line (panel, CC, Diagnose note), never an abort; expiry shown when named, else “Laufzeit 30
+  Tage (Jupiter)”.
+- **TIF label.** The GTC option reads “30 Tage (Jupiter)” (value stays `GTC`). Whether
+  `orders/price` accepts an expiry is not measured in the worker contract — nothing is sent.
+- **Patch F wording.** *“…derzeit nicht möglich. Mit Backpack funktioniert es (kein Guard).”* — one
+  constant, the guide paragraph follows.
+- **Not built:** a cancel path in the client (`orders/price/cancel/:id` → sign payout tx →
+  `confirm-cancel`) does not exist in the public client; it would be a new funds-moving signature
+  and is outside this patch. Cancel the 19:48 order on jup.ag until then.
+
+```sh
+node scripts/check_v923_patchG_browser.cjs   # Patch G·B (reconcile after error/timeout, load once, button, fee bound_at, TIF, Backpack, market untouched)
+```
