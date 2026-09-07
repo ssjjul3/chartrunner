@@ -86,7 +86,9 @@ const VAULT_PATHS = ['/v1/auth/challenge','/v1/auth/verify','/v1/vault/register'
     }
     if(/\/v1\/deposit\/craft/.test(url)){
       if(!cfg.depositOk) return J({ ok:false, error:'deposit-denied', note:'insufficient' }, 400);
-      const body = { ok:true, transaction:'AQIDBAU=', expires_in_s:40,
+      /* v921 (Patch E · Teil B): request_id im Craft-Echo — ohne sie signiert
+       * der Client nicht mehr. */
+      const body = { ok:true, transaction:'AQIDBAU=', expires_in_s:40, request_id:'REQ917',
                      deposit:{ amount_raw:'1000000' }, cluster:'mainnet' };
       if(cfg.feeShape === 'both')    body.fee = { bps:50, amount_raw:'5000' };
       else if(cfg.feeShape === 'bpsOnly') body.fee = { bps:50 };            // amount_raw FEHLT (Worker v1.21)
@@ -117,8 +119,12 @@ const VAULT_PATHS = ['/v1/auth/challenge','/v1/auth/verify','/v1/vault/register'
             signMessage: async (i) => { window.__msgs.push(i && i.message ? i.message.length : 0);
               const s = new Uint8Array(64); s[0] = 7; return [{ signature:s }]; } },
           'solana:signAndSendTransaction':{ version:'1.0.0',
-            signAndSendTransaction: async (i) => { window.__signs.push({ chain: i && i.chain });
-              const s = new Uint8Array(64); s[0] = 9; return [{ signature:s }]; } } } });
+            signAndSendTransaction: async (i) => { window.__signs.push({ chain: i && i.chain, mode:'send' });
+              const s = new Uint8Array(64); s[0] = 9; return [{ signature:s }]; } },
+          /* v921 (Patch E · Teil B): die Einzahlung wird NUR signiert. */
+          'solana:signTransaction':{ version:'1.0.0',
+            signTransaction: async (i) => { window.__signs.push({ chain: i && i.chain, mode:'sign' });
+              return [{ signedTransaction: new Uint8Array([1,2,3,4,5,0xAA]) }]; } } } });
     });
   };
   await page.addInitScript(initWallet, [ADDR]);

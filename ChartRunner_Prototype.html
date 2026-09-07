@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.920
-     LAST UPDATED:    2026-09-06  ·  v1.0.920 (PATCH D · CLIENT · output_mint AM DEPOSIT/CRAFT): EIN-FELD-FIX IN GENAU ZWEI FUNKTIONEN — KEIN TRADE-PFAD-CHANGE, Auth, Register, Fee-Echo (bps-only), Commit, Weiche, Spion unveraendert, single-file, keine neue Dep. BEFUND (Handy, Diagnose-Spur 06.09. 00:01): 1 preflight ok · 2 resolveTrade ok · 3 decide ok · 4 challenge ok · 5 signMessage ok · 6 verify ok · 7 register ok · 8 depositCraft → vault-contract-invalid. Der Worker (Patch C) meldet: deposit/craft braucht wallet, input_mint, output_mint (base58) und amount_raw; order_sub_type optional single|oco|otoco; Upstream verlangt { inputMint, outputMint, userAddress, amount, orderType:price, orderSubType } — output_mint ist schon am Deposit Pflicht, weil Jupiter die Token-Konten der Order daran bindet; cluster faehrt nicht mit. Damit ist die Auth-Kette (challenge → signMessage → verify → register) end-to-end bewiesen; es fehlte EIN Feld. FIX: (1) crVaultApi.depositCraft(opts) verlangt inputMint UND outputMint (ungleich; sonst { error:no-mint } OHNE Request) und sendet { wallet, input_mint, output_mint, amount_raw, order_sub_type (Default single) } — kein cluster mehr. (2) crVaultLimit.prepare(opts) reicht opts.outputMint (dort schon validiert) an depositCraft durch, orderSubType single; handle.opts behaelt outputMint, sodass commit → ordersPrice denselben Mint nennt (dort wurde output_mint schon gesendet). TESTS: scripts/check_v920_patchD_browser.cjs (D1 depositCraft ohne outputMint / gleiche Mints → no-mint, KEIN Request; D2 Body traegt output_mint + order_sub_type, KEIN cluster; D3 prepare reicht outputMint durch (Spion auf den deposit/craft-Body); D4 commit → orders/price nennt denselben output_mint wie der Deposit; D5 Panel-Flow Limit-HLine → Gebuehr 0,5 % + Deposit-Signatur). Gegenproben ROT (siehe Commit). v917/v918/v919-Regressionen gruen. Rollback: zwei Stellen zurueck = v1.0.919.
+     CURRENT VERSION: v1.0.921
+     LAST UPDATED:    2026-09-07  ·  v1.0.921 (PATCH E · TEIL B · CLIENT · DEPOSIT NUR SIGNIEREN): KEIN BROADCAST DER EINZAHLUNG MEHR — signierte Tx geht in orders/price, ehrliche Fehler. Market-Pfad (quote→swap→signAndSend) Bit fuer Bit unberuehrt, vier Tore + Spion unveraendert, single-file, keine neue Dep. BEFUND (Trace 00:46, v920): register ok · depositCraft ok · commit/depositSign → sign-failed; Phantom liess „Bestaetigen" nie zu, keine Aktivitaet. Ursache: commit rief crSigner.signAndSend(handle.transaction) — Phantom simuliert die Jupiter-Craft-Tx als EIGENSTAENDIGEN Send; die ist nur gueltig, wenn Jupiter sie zusammen mit der Order landet → Simulation scheitert → Phantom blockiert → sign-failed. Der Client hatte keinen Sign-only-Pfad, prepare erfasste die request_id aus deposit/craft nicht, ordersPrice sendete deposit_sig statt signierter Bytes, commit verwarf detail und unterschied rejected nicht. FIX: (1) crSigner.signTransaction(txBase64,{chain}) — Sign-only ueber Wallet Standard solana:signTransaction (Fallback: injizierter Provider signTransaction, nicht gemessen); Rueckgabe { signedTx: base64 }; KEIN sendTransaction, KEIN signAndSend; Fehlwege rejected / sign-failed(+detail) / no-signer. (2) crVaultLimit.prepare nimmt request_id aus dem Craft-Echo in handle.depositRequestId; fehlt sie → deposit-request-id-missing, KEIN Signieren. (3) crVaultLimit.commit: signTransaction → crVaultApi.ordersPrice({ depositSignedTx, depositRequestId }); Antwort { id, txSignature, depositConfirmed } wird durchgereicht; Journal source live · kind limit · orderPubkey/id · sig=txSignature · status open (depositConfirmed oder orders/active) sonst pending; Bestaetigung ueber orders/active wie bisher (Ausfall dort ≠ ungueltig). (4) crVaultApi.ordersPrice: Body deposit_signed_tx + deposit_request_id statt deposit_sig; fehlt eines, verlaesst kein Request die Seite. (5) Fehler ehrlich in Panel + HUD + Trace: detail ueberall durch; rejected → „Einzahlung nicht signiert — nichts bewegt.", sign-failed → „Wallet konnte nicht signieren: <detail>"; im Limit-Pfad nie mehr „Live swap failed" (Weiche + Panel sagen „Ruhende Order: …"). (6) Session-Limit zaehlt den Deposit bei Erfolg wie bisher; Fill-Marker/T-Sync unveraendert. VORAUSSETZUNG: Worker Patch E · Teil A (v1.24) ausgerollt — /health muss orders/price fuehren; ob der AUSGEROLLTE Worker deposit_signed_tx annimmt, ist eine Messung am Telefon, kein Bericht. TESTS: scripts/check_v921_patchE_browser.cjs (E1 signTransaction sendet NICHT — Spion: sendTransaction/signAndSend 0 Aufrufe im Limit-Commit, liefert base64; E2 commit → orders/price mit deposit_signed_tx + deposit_request_id, ohne request_id kein Signieren; E3 Fehlermapping rejected/sign-failed mit detail in Panel/HUD/Trace; E4 Journal mit txSignature/depositConfirmed, T-Sync zeigt die Order LIVE; E5 Market-Pfad unveraendert ueber signAndSend). Fixtures v907/v917/v918/v920 auf signTransaction + request_id nachgezogen. Gegenproben ROT (siehe Commit). Rollback: v1.0.920 (Limit-Commit ueber signAndSend — funktionslos, aber ungefaehrlich, da Phantom blockiert).
+     PREV  ·  v1.0.920 (PATCH D · CLIENT · output_mint AM DEPOSIT/CRAFT): EIN-FELD-FIX IN GENAU ZWEI FUNKTIONEN — KEIN TRADE-PFAD-CHANGE, Auth, Register, Fee-Echo (bps-only), Commit, Weiche, Spion unveraendert, single-file, keine neue Dep. BEFUND (Handy, Diagnose-Spur 06.09. 00:01): 1 preflight ok · 2 resolveTrade ok · 3 decide ok · 4 challenge ok · 5 signMessage ok · 6 verify ok · 7 register ok · 8 depositCraft → vault-contract-invalid. Der Worker (Patch C) meldet: deposit/craft braucht wallet, input_mint, output_mint (base58) und amount_raw; order_sub_type optional single|oco|otoco; Upstream verlangt { inputMint, outputMint, userAddress, amount, orderType:price, orderSubType } — output_mint ist schon am Deposit Pflicht, weil Jupiter die Token-Konten der Order daran bindet; cluster faehrt nicht mit. Damit ist die Auth-Kette (challenge → signMessage → verify → register) end-to-end bewiesen; es fehlte EIN Feld. FIX: (1) crVaultApi.depositCraft(opts) verlangt inputMint UND outputMint (ungleich; sonst { error:no-mint } OHNE Request) und sendet { wallet, input_mint, output_mint, amount_raw, order_sub_type (Default single) } — kein cluster mehr. (2) crVaultLimit.prepare(opts) reicht opts.outputMint (dort schon validiert) an depositCraft durch, orderSubType single; handle.opts behaelt outputMint, sodass commit → ordersPrice denselben Mint nennt (dort wurde output_mint schon gesendet). TESTS: scripts/check_v920_patchD_browser.cjs (D1 depositCraft ohne outputMint / gleiche Mints → no-mint, KEIN Request; D2 Body traegt output_mint + order_sub_type, KEIN cluster; D3 prepare reicht outputMint durch (Spion auf den deposit/craft-Body); D4 commit → orders/price nennt denselben output_mint wie der Deposit; D5 Panel-Flow Limit-HLine → Gebuehr 0,5 % + Deposit-Signatur). Gegenproben ROT (siehe Commit). v917/v918/v919-Regressionen gruen. Rollback: zwei Stellen zurueck = v1.0.919.
      PREV  ·  v1.0.919 (UI · ARM NACH SETTINGS + EINE HANDELSFLAECHE): REINE UI-VERLAGERUNG/ENTFERNUNG — KEINE LOGIK-AENDERUNG AN ARM-BIT, SESSION-LIMIT-RECHNUNG, VIER TOREN, SPION, WEICHE, MARKET-/LIMIT-PFAD. ARM-Block zieht 1:1 aus dem Control Center in die Settings-App (#crArmHome); CC zeigt nur noch EINE Statuszeile mit Link „→ Einstellungen". Bottom-Sheet „Handeln vom Chart" hinter window.CR_CHART_SHEET (Default AUS); jeder Ausloeser fuehrt ins Activation-Panel (EINE Handelsflaeche).
      PREV  ·  v1.0.913 (M0.5 · ROUTE-/ORDER-SETTINGS ALS MOBILES BOTTOM-SHEET): REINE PRAESENTATION — MACHT DIE EINE ORDER-/AKTIVIERUNGS-OBERFLAECHE (TV-SETTINGS-DIALOG #tvSettingsOverlay, openTvSettingsDialog) AUF DEM TELEFON NUTZBAR. KEINE LOGIK-/DOM-AENDERUNG, KEIN NEUER TRADE-PFAD, KEINE NEUE WEICHE. BEFUND (HANDY-TEST, BRAVE/PHANTOM): der Dialog ist komplett inline-gestylt; das Karten-Element traegt ein hartes min-width:540px, das auf einem 390px-Viewport gegen width:min(720px,92vw) gewinnt → die Karte ragt ~150px ueber beide Raender und wird beidseitig abgeschnitten (Header, PRICE, TAKE PROFIT, ACTIVATION, Market/Simulate alle geclippt). FIX: ein neuer, media-query-gegateter Style-Block (#cr-mobile-route-sheet-v1) ueberschreibt NUR unter @media (max-width:560px) die Inline-Styles per !important zu einem randlosen Bottom-Sheet — (1) Backdrop align-items:flex-end (Karte am unteren Rand), (2) Karte min-width:0/width:100%/max-width:100%, oben abgerundet, max-height:92svh + padding-bottom:env(safe-area-inset-bottom), (3) Tab-Leiste horizontal scrollbar (fuenf Tabs passen sonst nicht), (4) Zwei-Spalten-Raster (Activation-Pane + Bracket-Felder) → eine Spalte. Die Karte ist flex-column: Header+Tabs bleiben fix, der Body (flex:1, overflow-y:auto) scrollt — kein sticky noetig. Der Aktivierungs-/Fire-Pfad (crWeiche → decide → _fireLive, die EINZIGE Stelle am Real-Adapter) und die Felder selbst sind bit-fuer-bit unberuehrt; die Aktivierung laeuft weiter ueber dieselbe Blue-Laser-Route wie am Desktop. Paritaet by construction. DESKTOP UNBERUEHRT (media-query-gated). GEPRUEFT: scripts/check_v913_route_sheet_browser.cjs — mobil (390px) liegt die Dialog-Karte vollstaendig im Viewport (kein Ueberlauf links/rechts), sitzt als Bottom-Sheet am unteren Rand, Breite ≤ Viewport; Desktop (1280px) unveraendert zentriert mit min-width 540; Order oeffnet nur die Ansicht (Trade-Spion=0); Topbar≤5/kein Canvas-Direktzugriff. Gegenprobe ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse-Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; Lesbarkeit/Tappbarkeit des Sheets in Brave/Phantom/Safari prueft Julian nach Merge am Telefon. HINWEIS: gestapelt auf M0.4 (v1.0.912, PR #186) — dieses PR enthaelt auch die M0.4-Aenderung, bis #186 gemergt ist.
      PREV  ·  v1.0.912 (M0.4 · STEUERUNG VERTIKAL MITTIG AN DEN SEITENRAENDERN): REINER POSITIONS-FIX AN DER TOUCH-STEUERUNG — ERSETZT DIE BODEN-VERANKERUNG DURCH VERTIKALE ZENTRIERUNG. KEINE LOGIK-AENDERUNG AN AKTIONEN/TRADE-PFAD/VIER-TORE-WEICHE/DESKTOP. BEFUND (HANDY-TEST, MEHRERE BROWSER): der Boden-Anker ist geraete-/browserunabhaengig NICHT zuverlaessig — jeder In-App-Browser (Brave/Phantom/Safari) hat eine andere untere Leiste; auch env(safe-area-inset-bottom) + der visualViewport-Anker aus M0.3 platzieren die Controls nicht ueberall sauber, sie bleiben zu tief bzw. werden abgeschnitten. FIX: (1) STICK links, VERTIKAL MITTIG — #crTouchMove nicht mehr bottom:var(--cr-tl-lift), sondern top:50% + transform:translateY(-50%); left:calc(env(safe-area-inset-left,0px)+12px). (2) ABILITY-RADIAL + ORDER rechts, vertikal mittig analog — #crTouchRight top:50% + translateY(-50%); right:calc(env(safe-area-inset-right,0px)+12px). (3) top:50% bezieht sich auf den ueber _syncViewport an window.visualViewport gebundenen Layer (M0.3 bleibt), also auf die SICHTBARE Flaeche → weder obere noch untere Browser-Leiste kann die mittig sitzenden Cluster verdecken (Kern der „funktioniert ueberall"-Loesung). (4) HORIZONTALE SAFE-INSETS beachtet (left/right), --cr-tl-lift (Boden-Anker) entfaellt, --cr-tl-edge = 12px Komfort-Abstand; die halbtransparenten Grund-/Blur-Flaechen (M0.1) lassen die rechts liegenden Preis-Achsen-Labels hinter dem Radial durchscheinen. UNVERAENDERT: Tap-to-fire + Flick, Paritaet HK1–HK4, Order-Gast-Gate, chart-only, Stick-immer-an, Weiche/Desktop bit-fuer-bit. GEPRUEFT: scripts/check_v912_mittig_browser.cjs — vertikal zentriert bei simuliert KLEINER UND GROSSER Viewport-Hoehe (Cluster-Mitte ~50% der sichtbaren Hoehe, NICHT in der Chrome-Zone), seitlich im Safe-Inset (Stick links / Radial+Order rechts, innerhalb inset-left/right), Tap-Paritaet (Tap==Flick==Taste), Order oeffnet nur die Ansicht (Trade-Spion=0), Desktop unberuehrt/reduced-motion/Topbar≤5/kein Canvas-Direktzugriff. Gegenproben ROT/CRASH/GRUEN in der Commit-Message; die 4 CI-Checks (Parse-Bloecke, Leakage, Duplikate, CDN) gruen. NICHT GEMESSEN: reiner Client-PR, kein Worker/Endpunkt; Position/Tappbarkeit in Brave/Phantom/Safari prueft Julian nach Merge am Telefon (danach P3.1-Limit-Pruefung).
@@ -16863,6 +16864,104 @@ window.crSigner = (function(){
       });
   }
 
+  /* v1.0.921 (Patch E · Teil B) — signTransaction(base64Transaction, { chain }):
+   * NUR SIGNIEREN, NICHT SENDEN.
+   *
+   * Befund (Trace 00:46, v920): register ok · depositCraft ok · commit →
+   * depositSign `sign-failed`; Phantom liess „Bestaetigen" nie zu, keine
+   * Aktivitaet. Ursache: commit rief signAndSend — Phantom SIMULIERT die
+   * Jupiter-Craft-Tx dann als eigenstaendigen Send. Die ist aber nur gueltig,
+   * wenn Jupiter sie ZUSAMMEN mit der Order landet; allein simuliert scheitert
+   * sie, Phantom blockiert, `sign-failed`. Die Einzahlung darf also nie von uns
+   * gesendet werden: Wallet Standard solana:signTransaction (Phantom kann es)
+   * liefert die signierten Bytes zurueck, der Worker reicht sie an Jupiter,
+   * Jupiter landet Deposit + Order in einem Zug. Kein sendTransaction, kein
+   * signAndSend, kein verwaistes Vault-Guthaben ohne Order.
+   *
+   * Rueckgabe { signedTx: <base64> } — dieselben Fehlwege wie signAndSend:
+   * 'rejected' (Nutzer), 'sign-failed' (+detail), 'no-signer' (weder Standard-
+   * Feature noch Provider-Fallback). Fallback: der injizierte Provider
+   * (window.phantom.solana / window.solana) mit signTransaction — NICHT
+   * GEMESSEN, der Provider erwartet ein web3.js-Objekt; wir reichen ein
+   * Duck-Type mit serialize() hinein und lesen serialize() zurueck. Der
+   * gemessene Weg ist der Wallet Standard. */
+  function bytesToB64(bytes){
+    var b = (bytes instanceof Uint8Array) ? bytes : new Uint8Array(bytes || []);
+    var s = '';
+    for(var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+    return btoa(s);
+  }
+  function _providerSigner(){
+    try {
+      var p = (window.phantom && window.phantom.solana) || window.solana || null;
+      if(p && typeof p.signTransaction === 'function') return p;
+    } catch(_){}
+    return null;
+  }
+  function signTransaction(b64tx, opts){
+    opts = opts || {};
+    var chain = opts.chain || 'solana:devnet';
+
+    if(!b64tx || typeof b64tx !== 'string')
+      return Promise.resolve({ error: 'bad-tx', note: 'Keine Transaktion übergeben.' });
+    if(String(chain).indexOf(SOL) !== 0)
+      return Promise.resolve({ error: 'bad-chain', chain: chain });
+
+    var w = _active ? _active.wallet : _byName(opts.wallet);
+    var acc = _active ? _active.account : null;
+    if(!w)   return Promise.resolve({ error: 'no-wallet' });
+    if(!acc) return Promise.resolve({ error: 'not-connected',
+      note: 'Erst verbinden — signiert wird nur für ein bekanntes Konto.' });
+
+    var supported = _chains(w).slice();
+    try { (acc.chains || []).forEach(function(c){ if(supported.indexOf(c) === -1) supported.push(c); }); } catch(_){}
+    if(supported.length && supported.indexOf(chain) === -1)
+      return Promise.resolve({ error: 'chain-unsupported', chain: chain, supported: supported, wallet: w.name });
+
+    var bytes;
+    try { bytes = b64ToBytes(b64tx); }
+    catch(e){ return Promise.resolve({ error: 'bad-tx', detail: String((e && e.message) || e) }); }
+    if(!bytes.length) return Promise.resolve({ error: 'bad-tx', note: 'Transaktion ist leer.' });
+
+    var f = (w.features || {})[FEAT_SIGN];
+    var viaStandard = !!(f && typeof f.signTransaction === 'function');
+    var prov = viaStandard ? null : _providerSigner();
+    if(!viaStandard && !prov)
+      return Promise.resolve({ error: 'no-signer', wallet: w.name, feature: FEAT_SIGN,
+        note: 'Wallet kann nicht nur-signieren (solana:signTransaction fehlt).' });
+
+    return Promise.resolve()
+      .then(function(){
+        if(viaStandard) return f.signTransaction({ transaction: bytes, chain: chain, account: acc });
+        /* Provider-Fallback (nicht gemessen, s. o.): Duck-Type statt web3.js. */
+        var duck = { version: 0, serialize: function(){ return bytes; }, signatures: [] };
+        return prov.signTransaction(duck);
+      })
+      .then(function(res){
+        var first = Array.isArray(res) ? res[0] : res;
+        var out = null;
+        try {
+          if(first && first.signedTransaction) out = first.signedTransaction;
+          else if(first && typeof first.serialize === 'function') out = first.serialize();
+          else if(first instanceof Uint8Array) out = first;
+        } catch(_){ out = null; }
+        if(!out || !out.length) return { error: 'no-signature', wallet: w.name,
+          note: 'Die Wallet meldete Erfolg, lieferte aber keine signierte Transaktion.' };
+        return {
+          signedTx: bytesToB64(out),
+          wallet: w.name,
+          chain: chain,
+          address: acc.address,
+          via: viaStandard ? 'wallet-standard' : 'provider'
+        };
+      })
+      .catch(function(e){
+        var m = String((e && e.message) || e || '');
+        if(/reject|denied|cancel|abbruch/i.test(m)) return { error: 'rejected', wallet: w.name };
+        return { error: 'sign-failed', wallet: w.name, detail: m };
+      });
+  }
+
   /* v1.0.907 (P3.1) — signMessage(text): eine FREIE Nachrichten-Signatur, kein
    * Geld, keine Kette. Der Vault-Auth-Flow (auth/challenge → auth/verify)
    * braucht sie: die Wallet beweist den Besitz des Pubkeys, indem sie die
@@ -16921,12 +17020,14 @@ window.crSigner = (function(){
     active: active,
     chainReady: chainReady,
     signAndSend: signAndSend,
+    signTransaction: signTransaction,
     signMessage: signMessage,
     info: info,
     // Für Tests und Fehlersuche — die Kodierung ist von Hand geschrieben und
     // muss einzeln prüfbar sein.
     _b64ToBytes: b64ToBytes,
-    _bytesToB58: bytesToB58
+    _bytesToB58: bytesToB58,
+    _bytesToB64: bytesToB64
   };
 })();
 
@@ -17404,11 +17505,21 @@ window.crVaultApi = (function(){
     }, true);
   }
 
-  /* orders/price (JWT) → { order/orderPubkey, fee?, status }. Legt die EINE
-   * ruhende Order (single) gegen das eingezahlte Guthaben. */
+  /* orders/price (JWT) → { id, txSignature, depositConfirmed, fee?, status }.
+   * Legt die EINE ruhende Order (single) gegen die Einzahlung.
+   *
+   * v1.0.921 (Patch E · Teil B) — der Body traegt die SIGNIERTE Einzahlungs-Tx
+   * (deposit_signed_tx, base64) plus die request_id aus dem deposit/craft-Echo
+   * (deposit_request_id) — statt einer deposit_sig, die es nie geben kann, weil
+   * der Client die Einzahlung nicht mehr selbst sendet (Phantom blockiert den
+   * eigenstaendigen Send der Craft-Tx; Worker v1.24 reicht die Bytes an
+   * Jupiter, Jupiter landet Deposit + Order zusammen). Fehlt eines von beiden,
+   * verlaesst KEIN Request die Seite. */
   function ordersPrice(opts){
     opts = opts || {};
     if(!opts.inputMint || !opts.outputMint) return Promise.resolve({ error: 'no-mint' });
+    if(!opts.depositSignedTx) return Promise.resolve({ error: 'deposit-signed-tx-missing' });
+    if(!opts.depositRequestId) return Promise.resolve({ error: 'deposit-request-id-missing' });
     return _post(PATHS.ordersPrice, {
       wallet: String(opts.wallet || _jwtWallet || ''),
       input_mint: String(opts.inputMint),
@@ -17417,7 +17528,8 @@ window.crVaultApi = (function(){
       making_amount: String(opts.amountRaw || ''),
       trigger_price: opts.triggerPrice == null ? null : String(opts.triggerPrice),
       slippage_bps: Number(opts.slippageBps || 50),
-      deposit_sig: opts.depositSig ? String(opts.depositSig) : null,
+      deposit_signed_tx: String(opts.depositSignedTx),
+      deposit_request_id: String(opts.depositRequestId),
       cluster: opts.cluster || 'mainnet'
     }, true);
   }
@@ -35535,8 +35647,19 @@ window.crVaultLimit = (function(){
               var feeRaw = (fee && fee.amount_raw != null) ? String(fee.amount_raw) : null;
               var feeBps = (fee && fee.bps != null) ? Number(fee.bps) : null;
               var depRaw = (dc.deposit && dc.deposit.amount_raw != null) ? String(dc.deposit.amount_raw) : String(opts.amountRaw);
+              /* v1.0.921 (Patch E · Teil B) — die request_id aus dem Craft-Echo
+               * ist der Schluessel, unter dem der Worker die signierte Einzahlung
+               * spaeter Jupiter vorlegt (orders/price). Fehlt sie, wird NICHT
+               * signiert: eine Signatur ohne Adresse waere verwaistes Guthaben. */
+              var reqId = dc.request_id != null ? dc.request_id
+                        : (dc.requestId != null ? dc.requestId
+                        : (dc.deposit && dc.deposit.request_id != null ? dc.deposit.request_id : null));
+              reqId = (reqId == null || reqId === '') ? '' : String(reqId);
+              if(!reqId) return { error: 'deposit-request-id-missing' };
               return { ok: true, transaction: dc.transaction, feeRaw: feeRaw, feeBps: feeBps, depositRaw: depRaw,
+                       depositRequestId: reqId,
                        handle: { addr: addr, transaction: dc.transaction, opts: opts,
+                                 depositRequestId: reqId,
                                  feeRaw: feeRaw, feeBps: feeBps, depositRaw: depRaw } };
             });
         });
@@ -35554,19 +35677,39 @@ window.crVaultLimit = (function(){
      * Abbruch von vorher. */
     if(handle.feeBps == null) return Promise.resolve({ error: 'fee-missing' });
     if(!window.crVaultApi || !window.crSigner) return Promise.resolve({ error: 'vault-deps-missing' });
+    /* v1.0.921 (Patch E · Teil B) — ohne request_id aus dem Craft-Echo KEINE
+     * Signatur: der Worker koennte die signierten Bytes keiner Einzahlung
+     * zuordnen, und eine Signatur ohne Ziel ist verwaistes Guthaben. */
+    if(!handle.depositRequestId) return Promise.resolve({ error: 'deposit-request-id-missing' });
+    if(typeof crSigner.signTransaction !== 'function') return Promise.resolve({ error: 'no-signer' });
     var addr = handle.addr, o = handle.opts || {};
     var signDone = _tr('depositSign');
-    return crSigner.signAndSend(handle.transaction, { chain: 'solana:mainnet' }).then(function(sg){
-      try { signDone(sg && sg.error ? String(sg.error) : (sg && sg.signature ? 'ok' : 'no-signature')); } catch(_){}
-      if(!sg || sg.error || !sg.signature) return { error: (sg && sg.error) || 'sign-failed' };
-      var depSig = String(sg.signature);
+    /* NUR SIGNIEREN (signTransaction) — kein signAndSend, kein Broadcast. Die
+     * Craft-Tx ist allein nicht gueltig; Phantom simuliert sie als Send und
+     * blockiert (Befund v920). Landen tut sie Jupiter, zusammen mit der Order,
+     * ueber orders/price. */
+    return crSigner.signTransaction(handle.transaction, { chain: 'solana:mainnet' }).then(function(sg){
+      /* Die Spur traegt den Fehlercode UND das detail — ein `sign-failed` ohne
+       * Grund war genau die Sackgasse vom 00:46-Trace. */
+      try { signDone(sg && sg.error ? (String(sg.error) + (sg.detail ? ': ' + String(sg.detail) : '')) : (sg && sg.signedTx ? 'ok' : 'no-signature')); } catch(_){}
+      if(!sg || sg.error || !sg.signedTx)
+        return { error: (sg && sg.error) || 'sign-failed', detail: (sg && sg.detail) || (sg && sg.note) || '' };
+      var signedTx = String(sg.signedTx);
       return crVaultApi.ordersPrice({ wallet: addr, inputMint: o.inputMint, outputMint: o.outputMint,
           side: o.side, amountRaw: o.amountRaw, triggerPrice: o.triggerPrice,
-          slippageBps: o.slippageBps, depositSig: depSig, cluster: 'mainnet' })
+          slippageBps: o.slippageBps, depositSignedTx: signedTx,
+          depositRequestId: String(handle.depositRequestId), cluster: 'mainnet' })
         .then(function(op){
           if(!op || op.error)
-            return { error: (op && op.error) || 'orders-price-failed', detail: op && op.detail, depositSig: depSig };
-          var orderPubkey = op.orderPubkey || (op.order && (op.order.orderKey || op.order.orderPubkey)) || op.order || null;
+            return { error: (op && op.error) || 'orders-price-failed', detail: op && op.detail };
+          /* Worker v1.24 antwortet { id, txSignature, depositConfirmed }; aeltere
+           * Formen (orderPubkey / order.orderKey) bleiben lesbar. */
+          var orderId = (op.id != null && op.id !== '') ? String(op.id) : null;
+          var orderPubkey = op.orderPubkey || (op.order && (op.order.orderKey || op.order.orderPubkey))
+                            || (typeof op.order === 'string' ? op.order : null) || orderId || null;
+          var txSig = op.txSignature || op.tx_signature || op.signature || null;
+          txSig = txSig ? String(txSig) : null;
+          var depositConfirmed = !!(op.depositConfirmed != null ? op.depositConfirmed : op.deposit_confirmed);
           var opFee = op.fee || op.platform_fee || null;
           var feeRaw = handle.feeRaw != null ? handle.feeRaw : (opFee && opFee.amount_raw != null ? String(opFee.amount_raw) : null);
           var feeBps = handle.feeBps != null ? handle.feeBps : (opFee && opFee.bps != null ? Number(opFee.bps) : null);
@@ -35576,11 +35719,16 @@ window.crVaultLimit = (function(){
             var confirmed = false, confirmError = null;
             if(ac && ac.error){ confirmError = String(ac.error); }
             else if(ac && Array.isArray(ac.orders)){
-              confirmed = orderPubkey
-                ? ac.orders.some(function(x){ return String(x && (x.orderKey || x.orderPubkey || x.order) || '') === String(orderPubkey); })
+              var keys = [orderPubkey, orderId].filter(Boolean).map(String);
+              confirmed = keys.length
+                ? ac.orders.some(function(x){
+                    var k = String(x && (x.orderKey || x.orderPubkey || x.order || x.id) || '');
+                    return keys.indexOf(k) !== -1; })
                 : ac.orders.length > 0;
             }
-            var res = { ok: true, orderPubkey: orderPubkey, sig: depSig, depositSig: depSig,
+            var res = { ok: true, orderPubkey: orderPubkey, id: orderId,
+                        txSignature: txSig, sig: txSig, depositConfirmed: depositConfirmed,
+                        depositRequestId: String(handle.depositRequestId),
                         feeRaw: feeRaw, feeBps: feeBps, depositRaw: handle.depositRaw,
                         confirmed: confirmed, confirmError: confirmError };
             _journalOpen(res, o);
@@ -35610,24 +35758,33 @@ window.crVaultLimit = (function(){
       try { entry = (opts.triggerPrice != null && isFinite(Number(opts.triggerPrice))) ? Number(opts.triggerPrice)
                     : ((typeof currentPrice === 'function') ? currentPrice() : null); } catch(_){}
       var side = String(opts.side || 'buy').toLowerCase() === 'sell' ? 'sell' : 'buy';
+      /* v1.0.921 (Patch E · Teil B) — der Eintrag traegt txSignature (Jupiters
+       * Landung von Deposit + Order) und depositConfirmed. Status 'open', sobald
+       * der Worker die Einzahlung bestaetigt ODER orders/active die Order fuehrt;
+       * sonst 'pending' — sie liegt, nur die Bestaetigung steht aus. */
+      var key = order.orderPubkey || order.id || order.txSignature || '';
+      var live = !!(order.depositConfirmed || order.confirmed);
       var row = {
-        id: 'limit_' + String(order.orderPubkey || order.sig || Date.now()).slice(0, 16),
-        orderId: 'live:limit:' + String(order.orderPubkey || order.sig || ''),
+        id: 'limit_' + String(key || Date.now()).slice(0, 16),
+        orderId: 'live:limit:' + String(key),
         ts: Date.now(),
         dateStr: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString().slice(0, 5),
         asset: (typeof currentAsset === 'string' ? currentAsset.toUpperCase() : ''),
         tf: (typeof timeframe === 'string') ? timeframe : '',
         side: side, setup: 'limit',
         entry: entry, sl: null, tp: null, rr: null, risk: null, conf: null, levels: '',
-        result: 'open', pnl: 0,
-        notes: 'RUHENDE ORDER (Vault-Limit) · order ' + String(order.orderPubkey || '?')
-          + ' · deposit sig ' + String(order.sig || '?')
+        result: live ? 'open' : 'pending', pnl: 0,
+        notes: 'RUHENDE ORDER (Vault-Limit) · order ' + String(order.orderPubkey || order.id || '?')
+          + ' · tx ' + String(order.txSignature || '?')
           + ' · trigger ' + String(opts.triggerPrice == null ? '?' : opts.triggerPrice)
           + ' · in ' + String(opts.amountRaw || '?')
           + (order.feeRaw != null ? ' · fee ' + String(order.feeRaw) + ' raw' : ' · fee nicht ausgewiesen')
+          + (order.depositConfirmed ? ' · Einzahlung bestätigt' : ' · Einzahlung unbestätigt')
           + (order.confirmed ? ' · bestätigt (orders/active)' : ' · Bestätigung ausstehend'),
         checklist: null, auto: true, kind: 'limit', source: 'live',
-        sig: String(order.sig || ''), orderPubkey: String(order.orderPubkey || ''),
+        sig: String(order.txSignature || ''), txSignature: String(order.txSignature || ''),
+        orderPubkey: String(order.orderPubkey || order.id || ''), vaultOrderId: String(order.id || ''),
+        depositConfirmed: !!order.depositConfirmed, status: live ? 'open' : 'pending',
         feeRaw: order.feeRaw != null ? String(order.feeRaw) : null,
         amountInRaw: String(opts.amountRaw || ''), amountOutRaw: ''
       };
@@ -35866,7 +36023,17 @@ window.crWeiche = (function(){
         else lam = Number(call.amountRaw) || 0;
         _liveLamports += lam; _liveFills += 1;
       } else if(res && res.error){
-        _say((isLimit ? 'Live limit failed: ' : 'Live swap failed: ') + String(res.error) + (res.detail ? ' — ' + String(res.detail) : ''));
+        /* v1.0.921 (Patch E · Teil B) — der Limit-Pfad sagt NIE „Live swap
+         * failed": nichts wurde geswappt. Reject heisst „nichts bewegt", ein
+         * Wallet-Fehler nennt sein detail. Market bleibt Bit fuer Bit. */
+        if(isLimit){
+          var le = String(res.error), ld = res.detail ? String(res.detail) : '';
+          if(le === 'rejected') _say('Ruhende Order: Einzahlung nicht signiert — nichts bewegt.');
+          else if(le === 'sign-failed') _say('Ruhende Order: Wallet konnte nicht signieren' + (ld ? ': ' + ld : '.'));
+          else _say('Ruhende Order: ' + le + (ld ? ' — ' + ld : ''));
+        } else {
+          _say('Live swap failed: ' + String(res.error) + (res.detail ? ' — ' + String(res.detail) : ''));
+        }
       }
       return res;
     }, function(e){
@@ -36058,6 +36225,29 @@ window.crPanelLive = (function(){
       + (res && res.detail ? ' — ' + String(res.detail) : '');
   }
 
+  /* v1.0.921 (Patch E · Teil B) — Fehlertext der RUHENDEN ORDER. Nie „Live
+   * swap failed" (nichts wurde geswappt): ein Reject heisst „nichts bewegt",
+   * ein Wallet-Fehler traegt sein detail, alles andere den Worker-Code. */
+  function _msgForLimitError(res){
+    var e = String((res && res.error) || 'failed');
+    var d = (res && res.detail) ? String(res.detail) : '';
+    if(e === 'rejected')
+      return 'Einzahlung nicht signiert — nichts bewegt.';
+    if(e === 'sign-failed')
+      return 'Wallet konnte nicht signieren' + (d ? ': ' + d : ' (kein detail).');
+    if(e === 'no-signer' || e === 'no-feature')
+      return 'Wallet kann die Einzahlung nicht nur-signieren (' + e + ') — im Phantom-Browser öffnen oder Wallet neu verbinden. Nichts bewegt.';
+    if(e === 'deposit-request-id-missing')
+      return 'Einzahlung ohne request_id (deposit/craft) — nichts signiert, nichts bewegt.';
+    if(e === 'deposit-signed-tx-missing')
+      return 'Signierte Einzahlung fehlt (deposit-signed-tx-missing) — nichts gesendet.';
+    if(e === 'no-signature')
+      return 'Wallet lieferte keine signierte Transaktion (no-signature) — nichts bewegt.';
+    if(e === 'not-connected' || e === 'no-wallet')
+      return 'Keine Wallet verbunden (' + e + ') — nichts bewegt.';
+    return 'Ruhende Order: ' + e + (d ? ' — ' + d : '');
+  }
+
   /* Ausfuehren — ueber die Weiche, sonst nirgends. Ein sig wird erst nach
    * /v1/tx/status beurteilt: Status nicht abrufbar heisst „gesendet,
    * Status unbestaetigt", nie „fehlgeschlagen". Ein Reject dagegen ist ein
@@ -36183,7 +36373,7 @@ window.crPanelLive = (function(){
   return { liveIntent: liveIntent, chartMint: chartMint, slipBps: slipBps,
            resolveTrade: resolveTrade, armQuote: armQuote, feeLine: feeLine,
            fire: fire, closeTrade: closeTrade, hasLiveFill: hasLiveFill,
-           _msgForError: _msgForError };
+           _msgForError: _msgForError, _msgForLimitError: _msgForLimitError };
 })();
 
 /* =========================================================================
@@ -38321,7 +38511,10 @@ function renderBlueRouteInputs(body, overlay, helpers){
       'no-wallet': 'Wallet kann keine Nachricht signieren (no-wallet) — im Phantom-Browser öffnen oder Wallet neu verbinden.',
       'no-feature': 'Wallet kann keine Nachricht signieren (no-feature) — im Phantom-Browser öffnen oder Wallet neu verbinden.',
       'no-signature': 'Wallet lieferte keine Signatur (no-signature) — Wallet neu verbinden. Nichts signiert.',
-      'rejected': 'Nachricht in der Wallet abgelehnt (rejected) — nichts finanzwirksames signiert.'
+      'rejected': 'Nachricht in der Wallet abgelehnt (rejected) — nichts finanzwirksames signiert.',
+      /* v1.0.921 (Patch E · Teil B) — das Craft-Echo ohne request_id: der
+       * Worker koennte die signierte Einzahlung nicht zuordnen → nicht signiert. */
+      'deposit-request-id-missing': 'Einzahlung ohne request_id (deposit/craft) — nichts signiert, nichts bewegt.'
     };
     /* v1.0.918 (B6·1) — Timeout nennt den HAENGENDEN Schritt: aus dem Pfad
      * im detail (crVaultApi.stepFor) oder aus der Diagnose-Spur. */
@@ -38442,7 +38635,10 @@ function renderBlueRouteInputs(body, overlay, helpers){
             klarLine.style.color = '#d4a43c';
             contextLine.textContent = 'Run: ' + routeVenue + ' · VAULT-LIMIT · GEBUEHR ' + pct + ' %';
           } catch(_){}
-          sayLoud('Gebühr oben (' + pct + ' %) — deine Wallet fragt jetzt nach der Einzahlung in den Vault …', 'dim');
+          /* v1.0.921 (Patch E · Teil B) — Phantom zeigt „Transaktion signieren",
+           * nicht „Bestätigen": die Einzahlung wird nur signiert, Jupiter landet
+           * sie zusammen mit der Order. Der Text sagt, was die Wallet zeigt. */
+          sayLoud('Gebühr oben (' + pct + ' %) — deine Wallet fragt jetzt „Transaktion signieren" (Einzahlung in den Vault; nur signieren, gesendet wird sie mit der Order) …', 'dim');
           const cmDone = _flightStep('commit');
           return Promise.resolve(sdk.limit({ side: side, price: Number(triggerPrice), size: 1,
             source: { armed: true, inputMint: opts.inputMint, outputMint: opts.outputMint,
@@ -38451,12 +38647,17 @@ function renderBlueRouteInputs(body, overlay, helpers){
             cmDone(!res ? 'zu' : (res.error ? String(res.error) : 'ok'));
             if(!res){ _fail(_crT('panel.notLive','The switch declined (reason in the terminal line) — nothing executed.')); return; }
             if(res.error){
-              _fail((crPanelLive._msgForError ? crPanelLive._msgForError(res) : ('Limit fehlgeschlagen: ' + String(res.error))));
+              /* v1.0.921 (Patch E · Teil B) — Limit-Fehler heissen nie „Live
+               * swap failed"; detail geht mit (Panel + HUD + Trace). */
+              _fail((crPanelLive._msgForLimitError ? crPanelLive._msgForLimitError(res)
+                    : ('Ruhende Order: ' + String(res.error) + (res.detail ? ' — ' + String(res.detail) : ''))));
               return;
             }
             const okText = 'RUHENDE ORDER liegt' + (res.orderPubkey ? ' · ' + String(res.orderPubkey) : '')
+              + (res.id && res.id !== res.orderPubkey ? ' · id ' + String(res.id) : '')
+              + (res.depositConfirmed ? ' · Einzahlung bestätigt' : ' · Einzahlung unbestätigt')
               + (res.confirmed ? ' · bestätigt (orders/active)' : ' · Bestätigung ausstehend')
-              + ' · Einzahlung sig ' + String(res.sig || '?');
+              + ' · tx ' + String(res.txSignature || res.sig || '?');
             _flightEnd(true, okText);
             try {
               section.classList.add('cr-arm-snapped');

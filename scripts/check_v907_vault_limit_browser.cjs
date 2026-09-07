@@ -64,9 +64,11 @@ const JWT  = 'HEAD.PAYLOAD.SIG-TESTONLY-907';
     if(/\/v1\/auth\/challenge/.test(url)) return J({ ok:true, challenge:'CR-CHALLENGE-907-abc', expires_in_s:120 });
     if(/\/v1\/auth\/verify/.test(url))    return J({ ok:true, token:JWT, expires_in_s:600 });
     if(/\/v1\/vault\/register/.test(url)) return J({ ok:true, registered:true });
-    if(/\/v1\/deposit\/craft/.test(url))  return J({ ok:true, transaction:'AQIDBAU=', expires_in_s:40,
+    /* v921 (Patch E · Teil B): das Craft-Echo traegt request_id, orders/price
+     * antwortet { id, txSignature, depositConfirmed } (Worker v1.24). */
+    if(/\/v1\/deposit\/craft/.test(url))  return J({ ok:true, transaction:'AQIDBAU=', expires_in_s:40, request_id:'REQ907',
       fee:{ bps:50, amount_raw:'5000' }, deposit:{ amount_raw:'1000000' }, cluster:'mainnet' });
-    if(/\/v1\/orders\/price/.test(url))   return J({ ok:true, orderPubkey:'ORDERKEY907', status:'Open',
+    if(/\/v1\/orders\/price/.test(url))   return J({ ok:true, orderPubkey:'ORDERKEY907', id:'ORDERKEY907', txSignature:'TXSIG907', depositConfirmed:true, status:'Open',
       fee:{ bps:50, amount_raw:'5000' } });
     if(/\/v1\/orders\/active/.test(url))  return J({ ok:true, orders:[{ orderKey:'ORDERKEY907', status:'Open' }] });
 
@@ -105,8 +107,14 @@ const JWT  = 'HEAD.PAYLOAD.SIG-TESTONLY-907';
           'solana:signAndSendTransaction':{ version:'1.0.0',
             signAndSendTransaction: async (i) => {
               if(window.__rejectSign) throw new Error('User rejected the request.');
-              window.__signs.push({ chain: i && i.chain });
-              const s = new Uint8Array(64); s[0] = 9; return [{ signature:s }]; } } } });
+              window.__signs.push({ chain: i && i.chain, mode:'send' });
+              const s = new Uint8Array(64); s[0] = 9; return [{ signature:s }]; } },
+          /* v921 (Patch E · Teil B): die Einzahlung wird NUR signiert. */
+          'solana:signTransaction':{ version:'1.0.0',
+            signTransaction: async (i) => {
+              if(window.__rejectSign) throw new Error('User rejected the request.');
+              window.__signs.push({ chain: i && i.chain, mode:'sign' });
+              return [{ signedTransaction: new Uint8Array([1,2,3,4,5,0xAA]) }]; } } } });
     });
   };
   await page.addInitScript(initWallet, [ADDR]);
@@ -278,7 +286,7 @@ const JWT  = 'HEAD.PAYLOAD.SIG-TESTONLY-907';
   const noFee = await page.evaluate(async () => {
     const before = window.__signs.length;
     const r = await crVaultLimit.commit({ addr: crSigner.active().address, transaction:'AQIDBAU=',
-      feeRaw:null, feeBps:null, opts:{ inputMint:'So11111111111111111111111111111111111111112',
+      feeRaw:null, feeBps:null, depositRequestId:'REQ907', opts:{ inputMint:'So11111111111111111111111111111111111111112',
         outputMint:'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', side:'buy', amountRaw:'1000000' } });
     return { err: r && r.error, signed: window.__signs.length - before };
   });
@@ -309,7 +317,7 @@ const JWT  = 'HEAD.PAYLOAD.SIG-TESTONLY-907';
   const jrn = await page.evaluate(async () => {
     const before = _crJrnLoad().manual.length;
     await crVaultLimit.commit({ addr: crSigner.active().address, transaction:'AQIDBAU=',
-      feeRaw:'5000', feeBps:50, depositRaw:'1000000',
+      feeRaw:'5000', feeBps:50, depositRaw:'1000000', depositRequestId:'REQ907',
       opts:{ inputMint:'So11111111111111111111111111111111111111112',
         outputMint:'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', side:'buy',
         amountRaw:'1000000', triggerPrice:'0.00001' } });

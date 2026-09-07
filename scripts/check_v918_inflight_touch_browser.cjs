@@ -93,7 +93,8 @@ const VAULT_PATHS = ['/v1/auth/challenge','/v1/auth/verify','/v1/vault/register'
     if(/\/v1\/vault\/register/.test(url)) return J({ ok:true, registered:true });
     if(/\/v1\/deposit\/craft/.test(url)){
       if(cfg.depositDelay) await sleep(cfg.depositDelay);
-      return J({ ok:true, transaction:'AQIDBAU=', expires_in_s:40, deposit:{ amount_raw:'1000000' },
+      /* v921 (Patch E · Teil B): request_id im Craft-Echo. */
+      return J({ ok:true, transaction:'AQIDBAU=', expires_in_s:40, request_id:'REQ918', deposit:{ amount_raw:'1000000' },
                  fee:{ bps:50 }, cluster:'mainnet' });
     }
     if(/\/v1\/orders\/price/.test(url))   return J({ ok:true, orderPubkey:'ORDER918', status:'Open', fee:{ bps:50 } });
@@ -120,8 +121,12 @@ const VAULT_PATHS = ['/v1/auth/challenge','/v1/auth/verify','/v1/vault/register'
           signMessage: async (i) => { window.__msgs.push(i && i.message ? i.message.length : 0);
             const s = new Uint8Array(64); s[0] = 7; return [{ signature:s }]; } },
         'solana:signAndSendTransaction':{ version:'1.0.0',
-          signAndSendTransaction: async (i) => { window.__signs.push({ chain: i && i.chain });
-            const s = new Uint8Array(64); s[0] = 9; return [{ signature:s }]; } } };
+          signAndSendTransaction: async (i) => { window.__signs.push({ chain: i && i.chain, mode:'send' });
+            const s = new Uint8Array(64); s[0] = 9; return [{ signature:s }]; } },
+        /* v921 (Patch E · Teil B): die Einzahlung wird NUR signiert. */
+        'solana:signTransaction':{ version:'1.0.0',
+          signTransaction: async (i) => { window.__signs.push({ chain: i && i.chain, mode:'sign' });
+            return [{ signedTransaction: new Uint8Array([1,2,3,4,5,0xAA]) }]; } } };
       const w = { name:'M', version:'1', icon:'', chains:['solana:mainnet'], get accounts(){ return [acct]; }, features: feats };
       window.__mockWallet = w;
       (typeof r === 'function' ? r : r.register)(w);
