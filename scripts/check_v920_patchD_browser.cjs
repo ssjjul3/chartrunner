@@ -99,7 +99,8 @@ function depositContract(b){
       const b = bodyOf(req); seen.deposit.push(b);
       const bad = depositContract(b);
       if(bad) return J({ ok:false, error:bad, note:'deposit/craft braucht wallet, input_mint, output_mint (base58) und amount_raw; order_sub_type optional single|oco|otoco' }, 400);
-      return J({ ok:true, transaction:'AQIDBAU=', expires_in_s:40, deposit:{ amount_raw:String(b.amount_raw) }, fee:{ bps:50 } });
+      /* v921 (Patch E · Teil B): request_id im Craft-Echo. */
+      return J({ ok:true, transaction:'AQIDBAU=', expires_in_s:40, request_id:'REQ920', deposit:{ amount_raw:String(b.amount_raw) }, fee:{ bps:50 } });
     }
     if(/\/v1\/orders\/price/.test(url)){
       const b = bodyOf(req); seen.price.push(b);
@@ -125,8 +126,12 @@ function depositContract(b){
             signMessage: async (i) => { window.__msgs.push(i && i.message ? i.message.length : 0);
               const s = new Uint8Array(64); s[0] = 7; return [{ signature:s }]; } },
           'solana:signAndSendTransaction':{ version:'1.0.0',
-            signAndSendTransaction: async (i) => { window.__signs.push({ chain: i && i.chain });
-              const s = new Uint8Array(64); s[0] = 9; return [{ signature:s }]; } } } });
+            signAndSendTransaction: async (i) => { window.__signs.push({ chain: i && i.chain, mode:'send' });
+              const s = new Uint8Array(64); s[0] = 9; return [{ signature:s }]; } },
+          /* v921 (Patch E · Teil B): die Einzahlung wird NUR signiert. */
+          'solana:signTransaction':{ version:'1.0.0',
+            signTransaction: async (i) => { window.__signs.push({ chain: i && i.chain, mode:'sign' });
+              return [{ signedTransaction: new Uint8Array([1,2,3,4,5,0xAA]) }]; } } } });
     });
   };
   await page.addInitScript(initWallet, [ADDR]);
