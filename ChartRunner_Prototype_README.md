@@ -173,3 +173,33 @@ node scripts/check_v911_hoch_tap_browser.cjs         # M0.3 higher + tap-to-fire
 node scripts/check_v915_selektor_browser.cjs         # M0.6 one-button selector + touch Shoot + mobile Support
 node scripts/check_play_mobile_adaptive_shell_browser.cjs
 ```
+
+#### Patch F · Wallet guard shown honestly (`v1.0.922`)
+
+Some wallets (Phantom, Solflare — measured on the phone 06.09.) append **Lighthouse guard
+instructions** to the vault deposit while sign-only signing it. Jupiter Trigger V2 compares the
+signed transaction byte-for-byte against its own craft and rejects it (“Transaction accounts
+modified”). Worker and client are clean; the change happens inside the wallet and cannot be repaired
+(stripping the guards invalidates the signature). Display/state only — no new signature, no
+broadcast, the four gates and the market path are untouched:
+
+- **Detect.** `crWalletGuard` reads the worker's `deposit_diff` (`accounts_added` carrying the
+  Lighthouse program, or “Lighthouse” under `instructions_added`) → error code `wallet-guard`. A
+  plain `blockhash_changed` stays the generic error with its detail.
+- **Say it plainly** (panel, HUD, trace, switch — one constant): *“Deine Wallet hat die Einzahlung
+  mit Schutz-Instruktionen verändert (Lighthouse-Guard). Jupiter nimmt nur die unveränderte
+  Einzahlung an. Nichts bewegt.”* The closing sentence names the on-chain route (Trigger V1) only
+  when the deployed worker's `/health` measurably lists that fallback; otherwise “…sind mit dieser
+  Wallet derzeit nicht möglich.” The raw diff lives in the collapsible **Diagnose** block only.
+- **Remember, don't nag.** `sessionStorage.cr_wallet_guard_v1 = <wallet name>` after the first hit
+  (never localStorage — wallet behaviour can change with a domain review). While set, the Limit
+  route shows the notice **before** auth and signature; no message and no transaction is signed.
+- **Guide + fee sheet.** A collapsible “Ruhende Orders & Wallet-Schutz” paragraph under the
+  Limit-route plain-text line carries the same wording; the vault-rent line (~0,004 SOL) shows only
+  while the V2 (Jupiter-Vault) path is the one in use.
+- **Trace as a group.** `commit` now groups `depositSign → ordersPrice → ordersActive` (indented
+  “↳” children in the Diagnose block), so step order no longer reads as a jumble.
+
+```sh
+node scripts/check_v922_patchF_browser.cjs   # Patch F (detect, wording, session memory, guide, trace group, market untouched)
+```
