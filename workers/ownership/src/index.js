@@ -67,9 +67,19 @@ function json(status, obj, request) {
 function base(env) {
   return String(env.SUPABASE_URL || '').replace(/\/+$/, '');
 }
+/**
+ * Headers for a service-role call. The key rides on `apikey` and NOWHERE else.
+ *
+ * The key in use is a new-format Supabase secret key (`sb_secret_…`), and those
+ * are not JWTs: Supabase asks for them on `apikey` and keeps
+ * `Authorization: Bearer` only as migration compatibility that goes away.
+ * Sending it on both headers costs nothing today and breaks silently the day
+ * that scaffolding is removed — so it is sent once, on the header that is the
+ * contract. (rpc() below is the other side of this: with a caller token,
+ * `Authorization` carries the USER's JWT, which is exactly where it belongs.)
+ */
 function svcHeaders(env) {
-  const k = env.SUPABASE_SERVICE_ROLE_KEY;
-  return { apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' };
+  return { apikey: env.SUPABASE_SERVICE_ROLE_KEY, 'Content-Type': 'application/json' };
 }
 
 /** Verify the caller's Supabase JWT. The uid comes ONLY from this response. */

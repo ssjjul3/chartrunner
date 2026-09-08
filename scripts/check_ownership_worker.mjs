@@ -66,9 +66,13 @@ function jsonResponse(status, obj) {
 // The fake PostgREST enforces the SAME owner rule the migration enforces, so a
 // worker that stopped forwarding the caller's JWT would fail these checks.
 function callerUid(headers) {
+  // Der Service-Schluessel wird auf `apikey` erkannt, NICHT auf Authorization —
+  // so wie ein neuer sb_secret_-Schluessel bei Supabase ankommt. Stuende die
+  // Erkennung weiter auf dem Bearer-Header, wuerde dieser Stub einen Worker
+  // gruen durchlassen, den Supabase ablehnt.
+  if ((headers.get('apikey') || '') === SERVICE_KEY) return { service: true, uid: null };
   const m = (headers.get('Authorization') || '').match(/^Bearer\s+(.+)$/i);
   const tok = m ? m[1] : '';
-  if (tok === SERVICE_KEY) return { service: true, uid: null };
   return { service: false, uid: USERS[tok] ? USERS[tok].id : null };
 }
 function ownerIsCaller(kind, id, uid) {
@@ -588,6 +592,23 @@ test('the service-role key appears in NO response, NO header and NO log', async 
   const logged = logs.join('\n');
   assert.ok(!logged.includes(SERVICE_KEY), 'service-role key in a log line');
   assert.ok(!logged.includes('nonce-secret') && !logged.includes('admin-secret'), 'a secret was logged');
+});
+
+test('der Service-Schluessel faehrt auf `apikey` — und auf KEINEM Authorization-Header', async () => {
+  // Neue Supabase-Schluessel (sb_secret_...) sind keine JWTs; Supabase will sie
+  // auf `apikey` und nimmt den Bearer-Weg nur noch als Uebergangskompatibilitaet
+  // an, die irgendwann wegfaellt. Faehrt der Schluessel wieder auf beiden
+  // Headern, wird diese Zeile rot — nicht erst der Tag, an dem das Geruest faellt.
+  // Die zweite Haelfte ist genauso wichtig: mindestens EIN Aufruf muss ihn auf
+  // `apikey` tragen, sonst waere der Test auch fuer einen Worker gruen, der gar
+  // keine Service-Role-Aufrufe mehr macht.
+  let onApikey = 0;
+  for (const s of sentTo) {
+    const auth = String(s.headers.authorization || '');
+    assert.ok(!auth.includes(SERVICE_KEY), 'service-role key on Authorization → ' + s.url);
+    if (String(s.headers.apikey || '').includes(SERVICE_KEY)) onApikey++;
+  }
+  assert.ok(onApikey > 0, 'kein einziger Aufruf trug den Service-Schluessel auf apikey');
 });
 
 test('the service-role key is sent to Supabase and to nowhere else', async () => {
