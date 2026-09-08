@@ -337,21 +337,54 @@ async function newPage(browser, port, opts){
     check('T4 ihre data-mode-Ziele sind unveraendert',
       ['racing','monster','snake'].every(m => tabs.modes.indexOf(m) >= 0), tabs.modes);
 
-    // Unter KEINEM Tab darf eine Minigame-Karte sichtbar werden.
+    /* Unter KEINEM Tab darf eine Minigame-Karte sichtbar werden — und JEDER Tab
+     * muss etwas zeigen.
+     *
+     * GEKLICKT WIRD MIT ECHTEN KOORDINATEN, und das ist kein Detail: ein
+     * synthetisches element.click() traegt clientX/clientY = 0. Sobald der
+     * Regular-Tab das Configure-Run einbettet (#win-configs bekommt .on),
+     * ist wireConfigControlHitboxes (v1.0.202-local) dokumentweit scharf —
+     * ein Capture-Handler, der einen Klick auf die naechstgelegene
+     * Config-Schaltflaeche UMLENKT und stopPropagation() ruft. Bei (0,0)
+     * schluckt er jeden Folgeklick, und die Messung haette einen Fehler
+     * gesehen, den ein echter Finger nie ausloest. Geklickt wird deshalb auf
+     * die Elementmitte, mit genau den clientX/clientY, die dieser Handler
+     * liest — derselbe Weg wie Julians Daumen. */
     const perTab = await pg.evaluate(() => {
+      // Das Play-Fenster oeffnen, so wie ein Spieler es tut — ohne sichtbares
+      // Fenster hat die Tab-Leiste kein Rechteck und damit keine Mitte.
+      try { if(typeof osOpenWindowMulti === 'function') osOpenWindowMulti('run'); } catch(_){}
+      const tap = (el) => {
+        const r = el.getBoundingClientRect();
+        const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);
+        ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(type => {
+          const Ctor = /pointer/.test(type) ? (window.PointerEvent || MouseEvent) : MouseEvent;
+          el.dispatchEvent(new Ctor(type, { bubbles:true, cancelable:true, view:window, clientX:x, clientY:y, button:0 }));
+        });
+      };
+      const cats = [...document.querySelectorAll('#crModeTabs button')].map(b => b.getAttribute('data-cat'));
       const out = {};
-      [...document.querySelectorAll('#crModeTabs button')].forEach(b => {
-        b.click();
-        const cat = b.getAttribute('data-cat');
-        out[cat] = [...document.querySelectorAll('#crModeGrid [data-cat="minigame"]')]
-          .filter(c => !c.classList.contains('modeCatHidden')).length;
+      cats.forEach(cat => {
+        tap(document.querySelector('#crModeTabs button[data-cat="regular"]'));
+        tap(document.querySelector('#crModeTabs button[data-cat="' + cat + '"]'));
+        const vis = sel => [...document.querySelectorAll('#crModeGrid ' + sel)]
+          .filter(x => !x.classList.contains('modeCatHidden')).length;
+        const on = document.querySelector('#crModeTabs button.on');
+        out[cat] = {
+          on: on ? on.getAttribute('data-cat') : null,
+          minigameVisible: vis('[data-cat="minigame"]'),
+          ownVisible: vis('[data-cat="' + cat + '"]'),
+          cfgEmbedded: !!document.querySelector('#crRegularCfgHost.on'),
+        };
       });
       return out;
     });
+    check('T4 jeder Tab wird beim Antippen wirklich aktiv',
+      Object.entries(perTab).every(([cat, v]) => v.on === cat), perTab);
     check('T4 keine Minigame-Karte taucht unter einem anderen Tab auf',
-      Object.values(perTab).every(n => n === 0), perTab);
-    check('T4 kein Filter laeuft ins Leere (jeder Tab zeigt Inhalt oder das eingebettete Configure Run)',
-      Object.keys(perTab).length === 4, perTab);
+      Object.values(perTab).every(v => v.minigameVisible === 0), perTab);
+    check('T4 kein Filter laeuft ins Leere: jeder Tab zeigt eigene Karten oder das eingebettete Configure Run',
+      Object.entries(perTab).every(([cat, v]) => v.ownVisible > 0 || (cat === 'regular' && v.cfgEmbedded)), perTab);
     await ctx.close();
   }
   {
@@ -492,28 +525,60 @@ async function newPage(browser, port, opts){
       check('T7 ' + v + ': gemeinsame Karten-/Listen-Klasse', heads[v].boxes >= 1, heads[v]);
     });
 
-    // Geometrie pro Theme: alle Karten/Listen der fuenf Ansichten muessen
-    // innerhalb EINES Themes dieselben Werte messen.
+    /* Geometrie pro Theme. Verglichen wird INNERHALB einer Rolle ueber die
+     * Ansichten hinweg — also: messen alle .crDocs-head derselben fuenf
+     * Ansichten dasselbe, alle .crDocs-card dasselbe, alle .crDocs-scroll
+     * dasselbe. Das ist die Aussage des Auftrags („pro Theme darf es anders
+     * aussehen, aber innerhalb eines Themes muessen die fuenf Ansichten gleich
+     * aussehen"), und nur so ist sie falsifizierbar: Karte und Scrollliste
+     * unterscheiden sich absichtlich im Innenabstand, ein Vergleich ueber
+     * beide Rollen hinweg haette also entweder immer gemeckert oder — wie die
+     * erste Fassung dieser Zeile — nur das gemessen, was eine !important-
+     * Themenregel ohnehin gleichschaltet. Genau das ist bei der Gegenprobe
+     * aufgefallen: die Zeile blieb GRUEN, obwohl der Radius einer Rolle
+     * veraendert war, weil die Themenregel ihn ueberschreibt. Gemessen wird
+     * deshalb ein breiterer Satz Eigenschaften, darunter die NICHT
+     * ueberschriebenen Abstaende. */
     const THEMES = ['platinum','ascii','frontier','bw','mono'];
+    const ROLES = ['crDocs-head','crDocs-cardHead','crDocs-card','crDocs-scroll','crDocs-secTitle'];
+    /* Bei randlosen, grundlosen Rollen (Kopfzeilen, Abschnittstitel) wird die
+     * geerbte Textfarbe NICHT verglichen: sie haengt daran, in welcher Tafel
+     * das Element sitzt, ist dort aber unsichtbar — die sichtbare Farbe setzt
+     * .crDocs-headTitle selbst. Verglichen wird, was man sieht: Kasten-Geometrie. */
+    const COLORLESS = new Set(['crDocs-head','crDocs-cardHead','crDocs-secTitle']);
     for(const th of THEMES){
-      const geo = await pg.evaluate(async ({ th, views }) => {
-        window.crApplyTheme ? window.crApplyTheme(th) : null;
-        await new Promise(r => setTimeout(r, 60));
-        const seen = [];
+      const geo = await pg.evaluate(async ({ th, views, roles, colorless }) => {
+        try { if(window.crApplyTheme) window.crApplyTheme(th); } catch(_){}
+        await new Promise(r => setTimeout(r, 80));
+        const out = {};
+        roles.forEach(r => { out[r] = {}; });
         views.forEach(v => {
           const nav = document.querySelector('.crDocsNavItem[data-docsview="' + v + '"]');
           if(nav) nav.click();
-          document.querySelectorAll('.crDocsView:not(.hidden) .crDocs-card, .crDocsView:not(.hidden) .crDocs-scroll')
-            .forEach(el => {
+          const scope = (v === 'paper')   ? document.getElementById('crJournalViewPaper')
+                      : (v === 'pnl')     ? document.getElementById('crJournalViewPnl')
+                      : (v === 'journal') ? document.getElementById('crJournalViewManual')
+                      : document.querySelector('.crDocsView:not(.hidden)');
+          if(!scope) return;
+          roles.forEach(role => {
+            scope.querySelectorAll('.' + role).forEach(el => {
               const cs = getComputedStyle(el);
-              seen.push({ v, k: [cs.borderTopWidth, cs.borderTopStyle, cs.borderTopLeftRadius, cs.backgroundColor, cs.borderTopColor].join('|') });
+              const box = [cs.borderTopWidth, cs.borderTopStyle, cs.borderTopLeftRadius,
+                           cs.paddingTop, cs.paddingLeft, cs.paddingBottom,
+                           cs.marginTop, cs.marginBottom, cs.display];
+              const k = (colorless.indexOf(role) >= 0 ? box : box.concat([cs.backgroundColor, cs.borderTopColor])).join('|');
+              (out[role][k] = out[role][k] || []).push(v);
             });
+          });
         });
-        return seen;
-      }, { th, views: VIEWS });
-      const keys = Array.from(new Set(geo.map(g => g.k)));
-      check('T7 Theme ' + th + ': alle Docs-Karten/Listen messen dieselbe Geometrie',
-        geo.length > 0 && keys.length === 1, { n: geo.length, keys });
+        return out;
+      }, { th, views: VIEWS, roles: ROLES, colorless: [...COLORLESS] });
+      ROLES.forEach(role => {
+        const variants = Object.keys(geo[role] || {});
+        const n = Object.values(geo[role] || {}).reduce((a, b) => a + b.length, 0);
+        check('T7 Theme ' + th + ' · .' + role + ': in allen Ansichten dieselbe Geometrie',
+          n > 0 && variants.length === 1, { n, variants: variants.length, byVariant: geo[role] });
+      });
     }
     await ctx.close();
   }
