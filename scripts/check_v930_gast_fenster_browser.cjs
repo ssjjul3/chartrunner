@@ -53,7 +53,8 @@ const FILE = 'ChartRunner_Prototype.html';
 let pass = 0, fail = 0;
 function check(n, c, x){
   if(c){ pass++; console.log('  ok   ' + n); }
-  else { fail++; console.log('  FAIL ' + n + (x !== undefined ? ' :: ' + JSON.stringify(x) : '')); }
+  else { fail++; const d = x === undefined ? '' : ' :: ' + JSON.stringify(x).slice(0, 600);
+         console.log('  FAIL ' + n + d); }
 }
 function launchOptions(){
   const o = { headless: true };
@@ -158,7 +159,14 @@ async function run(browser, emptyList){
     /* ── Abmelden. Derselbe Aufruf, den crAccount._gatesSync macht. ───── */
     signedIn = false;
     window.crApplyAccessGates();
-    await sleep(150);
+    /* 1.4 s statt 150 ms, und das ist kein Zufallswert: die Live-Rooms-Direktory
+       von Docs haengt an einem 1-s-Waechter, der seinen 60-s-Kindtakt erst beim
+       naechsten Tick nach dem Schliessen loescht. Der Takt haelt also von selbst
+       an — gemessen wird der eingeschwungene Zustand, nicht ein Schnappschuss
+       mitten im Ausklingen. Der Takt des Bot-Terminals (crAgentEvents, 3 s)
+       loescht sich NIE von selbst; wer den stop-Eintrag entfernt, wird auch nach
+       jeder Wartezeit rot. */
+    await sleep(1400);
 
     const afterOut = {};
     list.forEach(e => {
@@ -258,6 +266,15 @@ async function run(browser, emptyList){
   check('T2b jedes weitere Fenster der Liste ist nach dem Abmelden geschlossen',
     others.every(e => r.afterOut[e.id] && r.afterOut[e.id].on === false && r.afterOut[e.id].visible === false),
     others.map(e => [e.id, r.afterOut[e.id]]));
+  /* T2a/T2b lesen die Liste zur Laufzeit — ein SPAETER ERGAENZTES Fenster wird
+     dadurch automatisch mitgeprueft. Genau deshalb koennen sie eine ENTFERNTE
+     Zeile nicht sehen: die Menge schrumpft mit. Gegengewicht ist dieser eine
+     festgeschriebene Satz — der, den Julian im PR bestaetigt hat. Wer eine
+     Zeile herausnimmt, wird hier rot. */
+  const BESTAETIGT = ['win-bot','win-walletapp','win-settings','win-display','crArenaWin','crWalletIntelWin'];
+  check('T2c die Liste enthaelt mindestens die bestaetigten Fenster',
+    BESTAETIGT.every(w => r.list.some(e => e.win === w)),
+    { erwartet: BESTAETIGT, ist: r.list.map(e => e.win) });
 
   // ── T3 ──────────────────────────────────────────────────────────────
   check('T3a der Takt des Bot-Terminals lief waehrend der Anmeldung', r.agentPollStarted === true);
