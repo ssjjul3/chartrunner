@@ -40,6 +40,8 @@
  *   F5  Guide-Absatz „Ruhende Orders & Wallet-Schutz" NUR auf Route Limit;
  *       Renten-Zeile (~0,004 SOL) nur bei V2-Pfad (kein Merker), mit Merker
  *       ohne V1 → Pfad none, keine Renten-Zeile, Wortlaut = crWalletGuard.text.
+ *       (v924: das Blatt fuehrt beide Routen als zwei Zeilen unter
+ *        data-cr-guide-fee; die Renten-Zeile haengt weiter am V2-Pfad.)
  *   F6  Market-Pfad unveraendert: genau 1 signAndSendTransaction, 0
  *       signTransaction, quote VOR swap.
  *
@@ -285,7 +287,10 @@ function bodyOf(req){ try { return req.postDataJSON(); } catch(_){ return { __un
   });
 
   const HEAD = /Deine Wallet hat die Einzahlung mit Schutz-Instruktionen verändert \(Lighthouse-Guard\)\. Jupiter nimmt nur die unveränderte Einzahlung an\. Nichts bewegt\./;
-  const TAIL_NONE = /Ruhende Orders sind mit dieser Wallet derzeit nicht möglich\./;
+  /* v1.0.924 — der Halbsatz „mit dieser Wallet derzeit nicht möglich" ist weg
+   * (ruhende Orders laufen ueber die On-Chain-Route); uebrig bleibt der
+   * gemessene Befund vom 07.09.: Backpack haengt nichts an. */
+  const TAIL_NONE = /Mit Backpack funktioniert es \(hängt keine Schutz-Instruktionen an\)\./;
   const TAIL_V1 = /Ruhende Orders laufen deshalb derzeit über die On-Chain-Route \(Trigger V1\)\./;
 
   /* ===================== F1 — Lighthouse unter accounts_added → wallet-guard ===================== */
@@ -309,7 +314,7 @@ function bodyOf(req){ try { return req.postDataJSON(); } catch(_){ return { __un
       && f1.direct.r.upstreamError === 'jupiter-rejected' && f1.direct.signs === 1, f1.direct.r);
   check('Merker: sessionStorage cr_wallet_guard_v1 = „M" (Wallet-Name), localStorage traegt NICHTS',
     f1.direct.flagged === 'M' && f1.direct.ls === null, { flagged: f1.direct.flagged, ls: f1.direct.ls });
-  check('_msgForLimitError(wallet-guard): Klartext + „Nichts bewegt" + „derzeit nicht möglich" (V1 nicht live)',
+  check('_msgForLimitError(wallet-guard): Klartext + „Nichts bewegt" + Backpack-Satz (V1 nicht live)',
     HEAD.test(f1.direct.weiche) && TAIL_NONE.test(f1.direct.weiche) && !TAIL_V1.test(f1.direct.weiche), f1.direct.weiche);
   check('Panel-Meldung: derselbe Klartext, kein Rohfehler (kein jupiter-rejected, keine Programm-ID, kein accounts_added)',
     HEAD.test(f1.panel.msg) && TAIL_NONE.test(f1.panel.msg) && !/jupiter-rejected|accounts_added|L2TE/.test(f1.panel.msg), f1.panel.msg);
@@ -392,7 +397,8 @@ function bodyOf(req){ try { return req.postDataJSON(); } catch(_){ return { __un
   check('Mit Merker + V1 live: Hinweis im Toast, Flow laeuft weiter → Order liegt (1 Signatur, 1 signMessage)',
     f3b.panel.toasts.some(t => /Wallet-Schutz bekannt \(Phantom\)/.test(t) && TAIL_V1.test(t)) && /RUHENDE ORDER liegt · ORDER922/.test(f3b.panel.msg)
       && f3b.panel.signs === 1 && f3b.panel.msgs === 1 && f3b.panel.journalGrew === 1, f3b.panel);
-  check('Spur: walletGuard … gemerkt (Phantom) · Trigger V1 live', f3b.panel.lines.some(l => /^walletGuard \d+ ms · gemerkt \(Phantom\) · Trigger V1 live$/.test(l)), f3b.panel.lines);
+  check('Spur: walletGuard … gemerkt (Phantom) · On-Chain-Route live (v924: der Marker heisst nach der Route, nicht nach dem alten Pfad)',
+    f3b.panel.lines.some(l => /^walletGuard \d+ ms · gemerkt \(Phantom\) · On-Chain-Route live$/.test(l)), f3b.panel.lines);
   cfg.priceMode = 'guard-accounts';
   const f3c = await page.evaluate(async () => {
     crWalletGuard.forget();
