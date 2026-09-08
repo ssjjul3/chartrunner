@@ -1,0 +1,58 @@
+# ChartRunner — Ownership worker.
+#
+# Serves chartrunner.xyz/ownership/* and chartrunner.xyz/loadout (same-origin as
+# the game). It is the ONLY writer of `verified = true` rows in cr_ownership:
+# the client can create unverified rows itself through the cr_ownership_claim
+# RPC, and nothing else. Every verified row here is written only AFTER the
+# evidence was checked against something outside the request (a Solana tx, a
+# live subscription, an admin secret).
+#
+# NO secrets in this file. Set them out-of-band (see README):
+#   SUPABASE_SERVICE_ROLE_KEY   service-role — writes verified rows + wallet links
+#   OWNERSHIP_NONCE_SECRET      HMAC key for the link-wallet challenge
+#   OWNERSHIP_ADMIN_SECRET      required for provenance 'grant'
+#   STRIPE_SECRET_KEY           optional — without it 'subscription' is refused (503)
+# The publishable (anon) key is public (it ships in the game), so it lives as a
+# plaintext var below and is used only to verify the caller's JWT and to run the
+# owner-scoped RPCs AS THE CALLER.
+#
+# account_id is omitted on purpose — supplied at deploy time via
+# CLOUDFLARE_ACCOUNT_ID (deploy-workers.yml). Deploying the routes needs the API
+# token to hold "Workers Routes:Edit" on the chartrunner.xyz zone (same as the
+# account worker).
+
+name = "chartrunner-ownership"
+main = "src/index.js"
+compatibility_date = "2026-07-21"
+
+routes = [
+  { pattern = "chartrunner.xyz/ownership/*", zone_name = "chartrunner.xyz" },
+  { pattern = "chartrunner.xyz/loadout*",    zone_name = "chartrunner.xyz" }
+]
+
+[vars]
+SUPABASE_URL      = "https://gjaaxqnqohseyesctbcd.supabase.co"
+# Publishable/anon key — already public (ships in the client).
+SUPABASE_ANON_KEY = "sb_publishable_JcwYmWfxSbBGIbLHxJmSpQ_5SAl-LfF"
+
+# Where an on-chain purchase must land. NOT set: with no treasury address the
+# worker cannot check who was paid, so every purchase_onchain grant is refused
+# with 503 not_configured. That is the honest state until a treasury exists.
+# OWNERSHIP_TREASURY = "<base58 wallet>"
+
+# Read-only mainnet lookups (getTransaction). Override with a secret of the same
+# name to use a paid RPC.
+SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
+
+# Server-side price catalog, JSON, keyed "<item_kind>:<item_id>":
+#   {"tier:pro":{"price_lamports":250000000}}
+# Empty = ChartRunner sells nothing for SOL today (bots/gear cost $RUN, which is
+# a soft currency and never verified). Prices NEVER come from the request.
+OWNERSHIP_CATALOG_JSON = "{}"
+
+# Kill switch: "1" stops every WRITE (grant, wallet link, loadout set) without a
+# deploy of new code. Reads keep answering.
+OWNERSHIP_KILL = "0"
+
+[observability]
+enabled = true
