@@ -111,8 +111,8 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.926
-     LAST UPDATED:    2026-09-08  ·  v1.0.926 (OWNERSHIP C · CLIENT · DEN SERVER-VERTRAG SPRECHEN, WÄHRUNGS-ETIKETT ZURÜCKGENOMMEN): SPIELLOGIK, RENDERING UND ABILITIES UNBERUEHRT; MARKET- UND LIMIT-PFAD BIT FUER BIT UNVERAENDERT (vier Tore + Spion, crRealAdapter/crWeiche/crVaultLimit/crOnchainLimit nur als Regression geprueft); single-file, keine neue Dep, kein CDN. BEFUND, GEMESSEN AM GEMERGTEN STAND cac2882: Server (PR #199) und Client (PR #200) wurden UNABHAENGIG voneinander gebaut, und niemand hat die Vertraege gegeneinander gelesen — sie passten an VIER Stellen nicht zusammen. (1) crOwnership.claim rief cr_ownership_claim(p_kind, p_id, p_provenance); die Funktion heisst (p_owner_kind, p_owner_id, p_item_kind, p_item_id, p_provenance) — PostgREST loest dreistellig nicht auf, JEDER Claim war ein 404. (2) cr_loadout_get() ohne Argumente; der Server verlangt den Eigner UND liefert EIN jsonb `data` statt drei Spalten — kein Loadout-Sync. (3) items[] wurde als it.kind/it.id gelesen; cr_ownership_list liefert item_kind/item_id — jede Server-Zeile fiel als undefined durch. (4) GET /ownership/list?wallet=<addr> im Wallet-ohne-Konto-Fall; der Worker liest `wallet` gar nicht, er verlangt ein JWT (401 no_token). WEIL crOwnership BEI JEDEM FEHLER WEICH AUF DEN LOKALBETRIEB ZURUECKFAELLT, BRACH NICHTS — das Register blieb einfach leer und wirkungslos. Genau der stille Fehlschlag, vor dem v1.0.925 im eigenen Modulkopf gewarnt hat; er hat sich prompt selbst getroffen. RICHTUNG: DER CLIENT ZIEHT NACH. Migration und Worker bleiben unangetastet — kein SQL, kein Redeploy. Der Server-Vertrag ist der bewusstere: explizite Eigner-Identitaet erlaubt die Eignerpruefung IN der Datenbank (cr_owner_is_caller) statt im Aufrufer, und er deckt sich mit cr_names. ANGEGLICHEN: claim/_flushPending/Bestandsuebernahme rufen cr_ownership_claim mit ALLEN FUENF p_*-Parametern, Eigner aus crAccount.userId(); items[] wird als item_kind/item_id gelesen und TOLERANT verworfen (fehlt ein Feld, wird die Zeile uebersprungen und in _state().trace gezaehlt — nie geraten); /ownership/list geht angemeldet OHNE Eigner-Parameter raus (der Worker leitet ihn aus dem JWT ab, ein selbst mitgeschickter owner_id waere eine zweite Wahrheit ueber dieselbe Sache), die verknuepfte Wallet als zweiter Eigner mit ?owner_kind=wallet&owner_id=<addr> PLUS JWT. LOADOUT-VARIANTE GEWAEHLT UND IM MODULKOPF FESTGEHALTEN: die RPC cr_loadout_get/_set(p_owner_kind, p_owner_id[, p_data, p_updated_at]), NICHT die Worker-Route GET|POST /loadout — derselbe Identitaetsweg wie claim, ein Mechanismus statt zwei. p_data ist EIN Objekt {equipped_bots, equipped_tools, loadout}; p_updated_at ist der Stand, den der Schreiber zu ueberschreiben glaubt, damit ein STALER Schreiber gegen ein neueres Geraet verliert statt es still zu ueberbuegeln. WALLET OHNE KONTO EHRLICH: der Server bindet Wallets ueber cr_wallet_link an ein Supabase-Konto; ohne JWT weisen RPCs (anon hat kein EXECUTE) und Worker (401) ab. Ein Spieler ohne Konto kann also serverseitig gar keinen Besitz haben — keine Luecke, sondern die Folge davon, dass Identitaet an einem Konto haengt. Also wird GAR NICHT ERST ANGEFRAGT (kein provoziertes 401), rein lokal gearbeitet, und an genau EINER Stelle — dort wo die Herkunft steht — gesagt: „Belegter Besitz braucht ein Konto. Ohne Konto bleibt alles lokal auf diesem Geraet.“ Kein Nag, kein Modal, keine Sperre. WAEHRUNGS-ETIKETT ZURUECKGENOMMEN (Fehler des Auftrags B, nicht des Clients): es gibt ZWEI Staende — game.chart (Topbar #chart, $CHART, lila) und game.run (Topbar #run, $RUN, gold). Abgezogen wird game.run, also nannte „Need 25 $CHART (you have 3)“ den falschen Saldo. CR_INGAME_CUR steht wieder auf '$RUN'; der grep-Test aus v925 ist entsprechend UMGEDREHT. Dafuer EINE Offenlegung dort, wo der Saldo erklaert wird (Menu-Drawer → Wallet, Element crRunDisclosure): „$RUN ist ein Guthaben im Spiel. Der Token ist nicht gelauncht; ein Umtausch ist weder verfuegbar noch zugesagt.“ Die „Not launched yet“-Korrektur in beiden Tokenomics-Tafeln aus v1.0.925 BLEIBT. Die spielweite Umbenennung (~100 Fundstellen) wird NICHT umgesetzt — das ist eine Produktentscheidung. UNVERAENDERT GUELTIG: Vereinigung (Server ∪ lokal, ein Ausfall nimmt nichts weg), keine Herabstufung eines verified:true, nie blockieren (abgewiesener Claim wandert in die Schlange), Gast = null Netz. TESTS: scripts/check_v926_ownership_contract_browser.cjs (C1 fuenf p_*-Parameter · C2 item_kind/item_id vollstaendig uebernommen, Zeile ohne item_id uebersprungen UND gezaehlt · C3 angemeldet ohne Eigner-Parameter, Wallet-Eigner mit owner_kind/owner_id, Wallet ohne Konto NULL Anfragen · C4 Loadout ueber die RPC mit Eigner, p_data als Objekt, letzter Schreiber · C5 Kauf-Text sagt $RUN und die Offenlegungszeile steht da · C6 Regression v917–v925 + Market-/Limit-Pfad). Gegenproben ROT (siehe Commit). NICHT VON DIESER SESSION GEMESSEN: der ausgerollte Worker — die Sandbox erreicht chartrunner.xyz nicht (Proxy 403). Julian hat /ownership/health gemessen: Worker chartrunner-ownership, Version 908d63b0, service_role_key/nonce_secret/admin_secret = true, Migration ausgefuehrt. Der Vertrag hier ist gegen chartrunner_ownership_migration.sql und workers/ownership/src/index.js GELESEN, nicht geraten. Rollback: v1.0.925 (dann wieder stiller Leerlauf des Registers — funktional wie v1.0.924).
+     CURRENT VERSION: v1.0.927
+     LAST UPDATED:    2026-09-08  ·  v1.0.927 (IN-GAME-UI-PASS · SIEBEN OBERFLAECHEN-AENDERUNGEN, KEINE HANDELSLOGIK): DIE VIER TORE (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), SPION, WEICHE, MARKET-PFAD, crVaultLimit, crOnchainLimit UND DIE SESSION-LIMIT-RECHNUNG SIND BIT FUER BIT UNVERAENDERT; single-file, keine neue Dep, keine neue Fremdcode-Quelle. (1) VORGABE-THEME IST BLACK (mono). Die Falle war die Boot-Reihenfolge, nicht der Endzustand: platinum/dark ist die ATTRIBUTLOSE Vorgabe (applyTheme ENTFERNT data-theme/data-os-theme fuer sie, v1.0.351/v1.0.538), und der Persistenz-Block laeuft ganz unten in der Datei — ein blosses _crThemeFallback()="mono" haette Platinum erst malen lassen und dann getauscht. Die Attribute stehen deshalb im STATISCHEN MARKUP (<body data-os-theme="mono"> + #splash data-theme="mono"); THEME_DEFAULT vereint Fallback, Listen-Rueckfall und den Startzeiger themeIdx (sonst waere der erste Klick auf „Theme" von Platinum aus weitergelaufen). Ein gespeichertes Theme ueberlebt unveraendert — der Persistenz-Block setzt bzw. entfernt die Attribute wie zuvor. Gemessen wird die Reihenfolge, nicht der Endzustand: ein MutationObserver ab document-start haelt den ALLERERSTEN Wert fest, den die beiden Attribute je getragen haben. (2) ARM · ECHTGELD WANDERT ALS WIDGET AN DEN CHART. Reine Verlagerung der Oberflaeche: dieselben zwei Speicher (cr_arm_v1 / cr_arm_limit_v1), dieselben zwei Handler, kein zusaetzliches Tor, KEIN Scharf-Bit pro Token. Aus Control Center UND Settings verschwindet die Bedienung; beide behalten je EINE Statuszeile mit „→ Terminal". Das Markup wird NICHT im Widget neu gebaut, sondern UMGEHAENGT (#crArmWidgetHome ↔ Widget-Koerper): jede Verdrahtung dieses Blocks bindet beim Boot per getElementById, ein neu gebautes Markup haette die Bindungen LAUTLOS verloren — der Schalter waere da und taete nichts. Der Test prueft deshalb Knoten-IDENTITAET, nicht „es kracht nicht". Auf das Mindeste reduziert: EIN Schalter (SIM ⇄ SCHARF, #crArmSwitch), EIN Feld (Session-Limit in SOL), EINE Statuszeile im Kontext des gecharteten Tokens (aus currentAssetObj via _crActiveTokenSym, wie T-Sync v1.0.916). Nebenschalter (▲▼⚙), Erklaertext und Wallet-/Volumen-Zeile liegen hinter einem Aufklapp. BENANNT, WEIL ES DIE VORGABE BERUEHRT: LIVE braucht ZWEI Bits (cr_arm_v1 UND crArm.on(), _crCCArmIsLive seit v1.0.904). Aus zwei Bits kann kein EINZELNER Schalter werden, ohne die Logik zu aendern — also blieb das globale Bit im Aufklapp, und die Statuszeile SAGT „ARM global aus", wenn es der fehlende Teil ist. Ein stilles „SIM" haette wie ein kaputter Schalter ausgesehen. (3) MINIGAME-TAB ENTFERNT, KARTEN ARCHIVIERT: der Knopf data-cat="minigame" ist weg, die drei Karten (#modeRacing/#modeMonster/#modeSnake), ihre data-mode-Ziele und die Startpfade inkl. ?mg=… bleiben unveraendert. Weil kein Knopf mehr diese Kategorie traegt, blendet der bestehende Filter sie unter JEDEM Tab aus — geprueft wird das pro Tab, nicht nur im Startzustand. (4) ROOMS UND CAMPAIGN GETAUSCHT: Regular · Rooms · Campaign · PVP. (5) TOKEN-LOGOS: KETTE STATT EINER QUELLE — und der Auftrag lag hier falsch, was die Messung zeigt. Das Logo kam NICHT aus Birdeye: _tokLogoUrl las AUSSCHLIESSLICH def.cgImg. Birdeyes logoURI wird seit v1.0.64 geholt und in _tokLiveCache abgelegt und wurde NIE gelesen. Damit erklaeren sich die fuenf gemeldeten Token anders als vermutet: sie bekamen nur dann ein Bild, wenn vorher jemand den ALL-Tab geoeffnet hatte (nur der stempelt cgImg). Neue Kette: Birdeye-logoURI › def.cgImg › cr_cg_markets_v3 nach Symbol (DIESE Stufe rettet TIA und OP — Nicht-Solana-Token koennen bei Birdeye nie ein Logo haben) › das Bildfeld aus DERSELBEN verifizierten Worker-Antwort, die crMarkets fuer die Mint-Aufloesung ohnehin holt (crMarkets.logoOf; KEIN neuer Endpunkt, KEIN zweiter Abruf, also auch keine Wette auf etwas Unausgerolltes) › Platzhalter aus Buchstabe + einer aus dem Symbol GERECHNETEN Farbe. onerror faellt auf denselben Platzhalter: nie ein kaputtes <img>, nie ein leerer Kasten. (6) INTEL UND EINSTELLUNGEN GETAUSCHT, in BEIDEN Anordnungen: Desktop-Grid ueber CSS order (intel 8, settings 9) UND App-Dock ueber die DOM-Reihenfolge in #osGrid, die _crBuildAppDock liest (Intel-Selbstinjektion: insertBefore statt appendChild). Ein reiner order-Tausch waere im Dock wirkungslos geblieben — genau der halbe Tausch, den v1.0.895 schon einmal gekostet hat. (7) DOCS-ANSICHTEN VEREINHEITLICHT, Referenz ist #crDocsViewAlerts. Die Zahlen der Alarms-Ansicht stecken jetzt in gemeinsamen .crDocs-*-Klassen (Kopf, Karte, Abschnitts-Ueberschrift, Listen-/Scroll-Geometrie, Leerzustand, KPI-Raster); Paper, P&L, Journal und Sessions benutzen DIESELBEN. URSACHE DES ALTEN AUSEINANDERLAUFENS, gemessen: die Theme-Ueberschreibungen matchten auf INLINE-STYLE-TEXT (#crDocsViewJournal div[style*="border:1px"]) — das trifft genau die eine Ansicht, die zufaellig so geschrieben ist. Die Klassen stehen jetzt in denselben :is()-Listen, also gilt die Regel fuer alle fuenf. Die PnL-Sonderregel fuers 4er-Raster (v1.0.822) ist in .crDocs-grid4 AUFGEGANGEN statt daneben kopiert zu werden. Inhalt und Daten unveraendert. TESTS: scripts/check_v927_ingame_ui_browser.cjs (T1 Boot-Reihenfolge des Themes · T2 gespeichertes Theme · T3 ARM-Widget: IDs genau einmal, CC/Settings ohne Bedienung, Knoten-Identitaet, GENAU zwei Speicher, Spion ohne Handelsaufruf · T4 Tab-Leiste + ?mg=snake · T5 Logo-Kette mit Fixtures fuer TIA/BONK/WIF/JTO/OP + tote URL · T6 beide Anordnungen · T7 fuenf Ansichten × fuenf Themes, gemessene Geometrie · T8 Regression + Version). Gegenproben ROT siehe Commit. NICHT VON DIESER SESSION GEMESSEN und ausdruecklich nicht behauptet: nichts hiervon beruehrt einen Worker-Endpunkt; *.workers.dev ist aus dieser Sandbox nicht erreichbar (Proxy 403). Stufe 4 der Logo-Kette ist deshalb bewusst so gebaut, dass ihr Ausbleiben NICHTS kostet. Rollback: v1.0.926.  PREV  ·  v1.0.926 (OWNERSHIP C · CLIENT · DEN SERVER-VERTRAG SPRECHEN, WÄHRUNGS-ETIKETT ZURÜCKGENOMMEN): SPIELLOGIK, RENDERING UND ABILITIES UNBERUEHRT; MARKET- UND LIMIT-PFAD BIT FUER BIT UNVERAENDERT (vier Tore + Spion, crRealAdapter/crWeiche/crVaultLimit/crOnchainLimit nur als Regression geprueft); single-file, keine neue Dep, kein CDN. BEFUND, GEMESSEN AM GEMERGTEN STAND cac2882: Server (PR #199) und Client (PR #200) wurden UNABHAENGIG voneinander gebaut, und niemand hat die Vertraege gegeneinander gelesen — sie passten an VIER Stellen nicht zusammen. (1) crOwnership.claim rief cr_ownership_claim(p_kind, p_id, p_provenance); die Funktion heisst (p_owner_kind, p_owner_id, p_item_kind, p_item_id, p_provenance) — PostgREST loest dreistellig nicht auf, JEDER Claim war ein 404. (2) cr_loadout_get() ohne Argumente; der Server verlangt den Eigner UND liefert EIN jsonb `data` statt drei Spalten — kein Loadout-Sync. (3) items[] wurde als it.kind/it.id gelesen; cr_ownership_list liefert item_kind/item_id — jede Server-Zeile fiel als undefined durch. (4) GET /ownership/list?wallet=<addr> im Wallet-ohne-Konto-Fall; der Worker liest `wallet` gar nicht, er verlangt ein JWT (401 no_token). WEIL crOwnership BEI JEDEM FEHLER WEICH AUF DEN LOKALBETRIEB ZURUECKFAELLT, BRACH NICHTS — das Register blieb einfach leer und wirkungslos. Genau der stille Fehlschlag, vor dem v1.0.925 im eigenen Modulkopf gewarnt hat; er hat sich prompt selbst getroffen. RICHTUNG: DER CLIENT ZIEHT NACH. Migration und Worker bleiben unangetastet — kein SQL, kein Redeploy. Der Server-Vertrag ist der bewusstere: explizite Eigner-Identitaet erlaubt die Eignerpruefung IN der Datenbank (cr_owner_is_caller) statt im Aufrufer, und er deckt sich mit cr_names. ANGEGLICHEN: claim/_flushPending/Bestandsuebernahme rufen cr_ownership_claim mit ALLEN FUENF p_*-Parametern, Eigner aus crAccount.userId(); items[] wird als item_kind/item_id gelesen und TOLERANT verworfen (fehlt ein Feld, wird die Zeile uebersprungen und in _state().trace gezaehlt — nie geraten); /ownership/list geht angemeldet OHNE Eigner-Parameter raus (der Worker leitet ihn aus dem JWT ab, ein selbst mitgeschickter owner_id waere eine zweite Wahrheit ueber dieselbe Sache), die verknuepfte Wallet als zweiter Eigner mit ?owner_kind=wallet&owner_id=<addr> PLUS JWT. LOADOUT-VARIANTE GEWAEHLT UND IM MODULKOPF FESTGEHALTEN: die RPC cr_loadout_get/_set(p_owner_kind, p_owner_id[, p_data, p_updated_at]), NICHT die Worker-Route GET|POST /loadout — derselbe Identitaetsweg wie claim, ein Mechanismus statt zwei. p_data ist EIN Objekt {equipped_bots, equipped_tools, loadout}; p_updated_at ist der Stand, den der Schreiber zu ueberschreiben glaubt, damit ein STALER Schreiber gegen ein neueres Geraet verliert statt es still zu ueberbuegeln. WALLET OHNE KONTO EHRLICH: der Server bindet Wallets ueber cr_wallet_link an ein Supabase-Konto; ohne JWT weisen RPCs (anon hat kein EXECUTE) und Worker (401) ab. Ein Spieler ohne Konto kann also serverseitig gar keinen Besitz haben — keine Luecke, sondern die Folge davon, dass Identitaet an einem Konto haengt. Also wird GAR NICHT ERST ANGEFRAGT (kein provoziertes 401), rein lokal gearbeitet, und an genau EINER Stelle — dort wo die Herkunft steht — gesagt: „Belegter Besitz braucht ein Konto. Ohne Konto bleibt alles lokal auf diesem Geraet.“ Kein Nag, kein Modal, keine Sperre. WAEHRUNGS-ETIKETT ZURUECKGENOMMEN (Fehler des Auftrags B, nicht des Clients): es gibt ZWEI Staende — game.chart (Topbar #chart, $CHART, lila) und game.run (Topbar #run, $RUN, gold). Abgezogen wird game.run, also nannte „Need 25 $CHART (you have 3)“ den falschen Saldo. CR_INGAME_CUR steht wieder auf '$RUN'; der grep-Test aus v925 ist entsprechend UMGEDREHT. Dafuer EINE Offenlegung dort, wo der Saldo erklaert wird (Menu-Drawer → Wallet, Element crRunDisclosure): „$RUN ist ein Guthaben im Spiel. Der Token ist nicht gelauncht; ein Umtausch ist weder verfuegbar noch zugesagt.“ Die „Not launched yet“-Korrektur in beiden Tokenomics-Tafeln aus v1.0.925 BLEIBT. Die spielweite Umbenennung (~100 Fundstellen) wird NICHT umgesetzt — das ist eine Produktentscheidung. UNVERAENDERT GUELTIG: Vereinigung (Server ∪ lokal, ein Ausfall nimmt nichts weg), keine Herabstufung eines verified:true, nie blockieren (abgewiesener Claim wandert in die Schlange), Gast = null Netz. TESTS: scripts/check_v926_ownership_contract_browser.cjs (C1 fuenf p_*-Parameter · C2 item_kind/item_id vollstaendig uebernommen, Zeile ohne item_id uebersprungen UND gezaehlt · C3 angemeldet ohne Eigner-Parameter, Wallet-Eigner mit owner_kind/owner_id, Wallet ohne Konto NULL Anfragen · C4 Loadout ueber die RPC mit Eigner, p_data als Objekt, letzter Schreiber · C5 Kauf-Text sagt $RUN und die Offenlegungszeile steht da · C6 Regression v917–v925 + Market-/Limit-Pfad). Gegenproben ROT (siehe Commit). NICHT VON DIESER SESSION GEMESSEN: der ausgerollte Worker — die Sandbox erreicht chartrunner.xyz nicht (Proxy 403). Julian hat /ownership/health gemessen: Worker chartrunner-ownership, Version 908d63b0, service_role_key/nonce_secret/admin_secret = true, Migration ausgefuehrt. Der Vertrag hier ist gegen chartrunner_ownership_migration.sql und workers/ownership/src/index.js GELESEN, nicht geraten. Rollback: v1.0.925 (dann wieder stiller Leerlauf des Registers — funktional wie v1.0.924).
      PREV  ·  v1.0.925 (OWNERSHIP B · CLIENT · crOwnership, DER SERVER ALS AUTORITAET FUER BELEGTEN BESITZ, EHRLICHE KENNZEICHNUNG): SPIELLOGIK, RENDERING UND ABILITIES UNBERUEHRT; MARKET- UND LIMIT-PFAD BIT FUER BIT UNVERAENDERT (vier Tore + Spion, crRealAdapter/crWeiche/crVaultLimit/crOnchainLimit nur noch als Regression geprueft); single-file, keine neue Dep, kein CDN. AUSGANGSLAGE (gemessen): Besitz lebte allein im Browser — zwei Sets in localStorage (cr_owned_bots_v1, cr_owned_gear_v1), die jeder aufmachen und beschreiben kann. Fuer das Spiel reicht das, fuer Turniere und Marketplace nicht. MESSUNG VOR DEM BAU, UND SIE IST DER WICHTIGSTE SATZ DIESER ZEILE: DER SERVER AUS AUFTRAG A IST NICHT AUSGEROLLT. Supabase-Projekt gjaaxqnqohseyesctbcd fuehrt in pg_proc weder cr_ownership_claim noch cr_loadout_get/_set (14 Funktionen, alle aus den Namen-/Alerts-/Follows-Migrationen); workers/ enthaelt account, alerts-cron, hermes-proxy — keinen ownership-Worker; es gibt keinen offenen PR dafuer. Der Client ist trotzdem gebaut, WEIL sein Vertrag genau diesen Fall traegt: ohne antwortenden Server faellt jeder Pfad auf den reinen Lokalbetrieb zurueck und das Spiel verhaelt sich wie v1.0.924. Das ist Testfall O1b, kein Notbehelf. NEU crOwnership: (1) init() liest GET /ownership/list (same-origin wie /account/*, JWT im Header, ?wallet= wenn nur eine Wallet da ist) in den SPEICHER — nie in localStorage, denn ein gecachtes verified:true, das einen Neustart ueberlebt, ist eine Behauptung ohne Beleg. (2) has(kind,id) liefert {owned,verified,provenance}; crBotOwned/crGearOwned rufen hier an, die alten Sets bleiben Fallback UND Cache (Server-Bestand wird ergaenzend hineingespiegelt, damit es nach einer Sitzung online auch offline weiterlaeuft). VEREINIGUNG: angezeigter Besitz = Server ∪ lokal; der Server entfernt NIE etwas lokal Vorhandenes, und Lokales stuft NIE ein verified:true herab (beide Regeln an je EINER Stelle: has() und _note()). (3) claim(kind,id,provenance) ruft RPC cr_ownership_claim, nur 'campaign' | 'softcurrency', IMMER unverifiziert — der Client behauptet, er beweist nicht. Fehlschlag blockiert nie: der Anspruch wandert in eine Schlange und wird beim naechsten Start nachgereicht. crUnlockBot(id, provenance) traegt den Grant, crBuyBot reicht 'softcurrency' herein — genau EIN claim je Erwerb, kein doppelter. (4) syncLoadout() ueber cr_loadout_get/_set fuer equipped bots/tools/loadout, letzter Schreiber gewinnt (updated_at); ausdruecklich KEIN Autoritaetsanspruch. EINMALIGE UEBERNAHME: beim ersten Start mit Identitaet werden die vorhandenen lokalen Sets EINMAL gemeldet (Bots 'campaign', bepreiste Gear 'softcurrency'), Merker cr_ownership_migrated_v1. Starter- und Gast-Bots bleiben draussen — die bekommt jeder geschenkt, da gibt es nichts zu beanspruchen. WALLET VERKNUEPFEN: Settings → Wallet → „Link wallet to account“ (POST /ownership/link-wallet, challenge → crSigner.signMessage → verify). Eine reine NACHRICHTEN-Signatur; der Text sagt das auch so („No payment, no transaction, nothing on-chain“). Freiwillig, nicht erzwungen. EHRLICHE KENNZEICHNUNG: im Loadout-Picker traegt jeder Eintrag seine HERKUNFT — „im Spiel freigespielt“ bzw. „gekauft, belegt“. Kein Schloss, keine rote Farbe, keine Abwertung: belegter Besitz wird hervorgehoben, freigespielter steht ruhig daneben. Ein Tooltip erklaert einmal, was wofuer zaehlt. GAESTE: ohne Konto UND ohne Wallet aendert sich NICHTS — null Requests an /ownership/*, null RPCs, keine Kennzeichnung. WAEHRUNG KORRIGIERT: die Kauf-Texte sagten „$RUN“ fuer das, was aus game.run abgezogen wird. $RUN ist NICHT gelauncht (letzter Baustein der Roadmap). Sichtbar laeuft jetzt alles ueber EINE Konstante CR_INGAME_CUR = '$CHART'; die Variablennamen (CR_BOT_PRICE_RUN, game.run) bleiben absichtlich. Beide Tokenomics-Tafeln sagen jetzt „Not launched yet“ statt „Scarce on-chain SPL on Solana“ im Praesens. OFFENER WIDERSPRUCH, BEWUSST STEHENGELASSEN UND IM PR BENANNT: abgezogen wird weiter game.run, waehrend die Kauf-Zeile „$CHART“ sagt und die Topbar zwei getrennte Staende fuehrt ($CHART je Run, $RUN persistiert). Der Auftrag verlangt genau diese Umbenennung und prueft sie per grep; die restlichen rund 100 $RUN-Stellen (Topbar, Shop-Fahrzeuge, Kampagnen-Belohnungen, Missionen) sind eine spielweite Waehrungsumbenennung und brauchen Julians Entscheidung, nicht meine. SICHERHEIT: der Client behauptet nur, er beweist nicht; verifizierter Besitz entsteht ausschliesslich im Worker, dieser Auftrag baut KEINEN Weg dorthin. Keine Secrets im Client (nur der Supabase-Anon-Key wie bisher). Handelspfad, die vier Tore und der Spion unberuehrt. TESTS: scripts/check_v925_ownership_browser.cjs (O1 Vereinigung · O1b Serverausfall nimmt nichts weg · O2 keine Herabstufung · O3 genau ein claim je Erwerb mit richtiger Provenienz · O3b RPC-Ausfall blockiert den Kauf nicht · O4 Migration genau einmal, Starter ausgenommen · O5 Gast = null Netz, null RPC, null Kennzeichnung · O6 grep auf die Kauf-Strings PLUS der echte Toast · O7 Kennzeichnung ohne Schloss, verified unterscheidbar · O8 Wallet-Link: ohne Anmeldung kein Request, angemeldet genau eine Nachrichten-Signatur · O9 Loadout letzter Schreiber · O10 Handelspfade unveraendert). Gegenproben ROT (siehe Commit). NICHT GEMESSEN: der ausgerollte Server, weil es ihn nicht gibt — die Wire-Formate (Feldnamen von /ownership/list, /ownership/link-wallet und der drei RPCs) stehen im Modulkopf und muessen zum Server-Auftrag passen; ein Feldname, den beide Seiten anders schreiben, ist genau der Fehler, der v1.0.883 gekostet hat. Rollback: v1.0.924 (dann wieder rein lokaler Besitz — funktional identisch, solange der Server fehlt).
      PREV  ·  v1.0.924 (PATCH H · CLIENT · RUHENDE ORDERS UEBER DIE ON-CHAIN-ROUTE + CANCEL): MARKET-PFAD (quote→swap→signAndSend) BIT FUER BIT UNBERUEHRT, vier Tore + Spion unveraendert, kein Broadcast, single-file, keine neue Dep. BEFUND (06.–08.09.2026): (a) Phantom und Solflare haengen beim Sign-only Lighthouse-Guard-Instruktionen an die V2-Einzahlung (Programm L2TE…3S95, #8/#9; Solflare tauscht zusaetzlich ComputeBudget #0); Jupiter Trigger V2 verlangt die Tx bytegenau -> dauerhaft 400 „Transaction accounts modified". Backpack haengt nichts an, dort lief V2 durch (Order real angelegt und spaeter gefuellt). (b) Jupiter V2 nimmt derzeit KEINE Integrator-Gebuehr — auf dem V2-Pfad verdient ChartRunner nichts. KONSEQUENZ: ruhende Orders laufen ueber Jupiter Trigger V1 (on-chain, Worker v1.26, nachlesbar unter /health.trigger.onchain); dort geht die Order-Tx SO RAUS, WIE SIE SIGNIERT WURDE, und die 50-bps-Gebuehr laeuft ueber das Referral-Konto. Der V2-Vault-Pfad bleibt als Rueckweg eingebaut. FIX: (1) crVaultApi bekommt die vier V1-Aufrufe OHNE JWT (orders/onchain/create|execute|cancel|active, PATHS_ONCHAIN getrennt von PATHS); _honest reicht missing[]/code/signature/status/verify am FEHLER durch (dieselbe Whitelist-Falle wie safety v890 und deposit_diff v922). (2) preflight(route) prueft den Pflichtsatz JE ROUTE ('health' = nur Erreichbarkeit, 'v1', 'v2'); gecacht wird die /health-Antwort, nicht das Urteil — sonst haette der V2-Pflichtsatz die Route-Wahl verdeckt. (3) crRestingRoute (neu): routeVenue() liest /health -> trigger.resting_default (heute 'v1'); ein gesetztes sessionStorage.cr_wallet_guard_v1 erzwingt V1, ABER nur wenn onchainLive() die Route misst; kein UI-Schalter. Panel-Zeile „RUN: <venue> · ON-CHAIN-LIMIT · RUHENDE ORDER". (4) crOnchainLimit (neu, Schwester zu crVaultLimit mit demselben Handle-Vertrag): prepare -> create (zeigt VOR dem Signieren Gebuehr, beide Mengen im Klartext „0,1 SOL → mind. 27,3 JTO" und den Ablauf), commit -> crSigner.signTransaction (Sign-only, KEIN signAndSend) -> execute mit signed_tx + request_id + making_amount; Journal { source:'live', kind:'limit', venue:'jupiter-v1', order, sig, status:'open' }. (5) taking_amount wird gerechnet: BUY taking = making_SOL / trigger_usd × SOL_usd, SELL umgekehrt, gerundet auf die Token-Decimals aus GET /v1/mints/resolve; SOL-Preis aus GET /v1/price. Fehlt EIN Preis oder fehlen die Decimals -> KEINE Signatur, ehrliche Meldung (kein geschaetzter Wert). (6) CANCEL (neu, es gab im Client fuer KEINE Route einen): Terminal -> OFFENE POSITIONEN -> eine Zeile mit venue jupiter-v1 traegt CANCEL -> orders/onchain/cancel -> signTransaction -> execute OHNE making_amount -> Journal status 'cancelled' + sig. Eine V2-Order zeigt stattdessen „Cancel über jup.ag" — bewusst kein V2-Cancel im Client. (7) TEXTE KORRIGIERT: „Gebuehr … bei der Einzahlung gebunden" (v923) ist WEG — er war falsch, V2 bindet nichts, weil V2 nichts nimmt. Je Route ein Satz aus EINER Konstante (crRestingRoute.feeText): v1 „Gebühr 0,5 % bei Ausführung (Referral)", v2 „Keine ChartRunner-Gebühr (Jupiter V2 unterstützt derzeit keine Integrator-Gebühr)"; das Gebuehren-Blatt fuehrt beide als zwei getrennte Zeilen mit Markierung der aktiven. Wallet-Guard-Text: „…mit dieser Wallet derzeit nicht moeglich" faellt weg, uebrig bleibt der gemessene Befund „Mit Backpack funktioniert es (hängt keine Schutz-Instruktionen an)." (8) ABGLEICH erweitert: orders/onchain/active (OHNE JWT) laeuft NEBEN orders/active + orders/history; orderKey -> orderPubkey, venue jupiter-v1. Nur ergaenzen, nie loeschen, bekannte id/txSignature nie doppelt. Zusaetzlich crOrderReconcile.runOnchain(): beim Laden OHNE JWT wird die V1-Liste trotzdem gelesen (sie braucht keinen Token) und meldet sich nur, wenn sie etwas Neues findet. (9) DIAGNOSE: verify.jupiter aus der create-Antwort steht als Notiz im Diagnose-Block; onchain-tx-unexpected traegt seinen otx-Code WOERTLICH ins Panel — das ist der Live-Beweis fuer das Argument-Layout von initialize_order, das der Worker prueft. SICHERHEIT unveraendert: jede finanzwirksame Aktion ist ein Klick plus Wallet-Signatur, der Client sendet nie selbst (signAndSend bleibt dem Market-Pfad vorbehalten), die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign) und der Spion sind unberuehrt; der Adapter traegt limitOnchain NEBEN limitVault (eigenes Spion-Ereignis), das Session-Limit zaehlt das making_amount wie bisher. TESTS: scripts/check_v924_patchH_browser.cjs (H1 commit -> execute mit signed_tx + request_id + making_amount, 0 signAndSend/sendTransaction; H2 Cancel -> cancel -> signTransaction -> execute OHNE making_amount, V2-Zeile zeigt den jup.ag-Hinweis; H3 taking_amount BUY/SELL mit Decimals 6 und 9, fehlender SOL-Preis -> kein Signieren; H4 Routing nach resting_default und nach cr_wallet_guard_v1; H5 Fee-Text je Venue + grep: „bei der Einzahlung gebunden" kommt im Build nicht mehr vor; H6 Abgleich nimmt On-Chain-Orders auf, ohne bekannte zu duplizieren; H7 Market-Pfad unveraendert). Regressionen v907/v917–v923 gruen (v922/v923 tragen die drei Textzeilen nach, die dieser Patch ausdruecklich aendert — Fee-Wortlaut, Guard-Satz, dritter Abgleich-Schritt). Gegenproben ROT (siehe Commit). NICHT GEMESSEN: der AUSGEROLLTE Worker v1.26 — ob /health trigger.resting_default und trigger.onchain wirklich fuehrt, ob orders/onchain/create die hier gesendeten Feldnamen annimmt und ob /v1/mints/resolve decimals traegt, misst Julian am Telefon (Schritte im PR). Ohne die Endpunkte in /health bricht der Arm VOR jeder Signatur ab und sagt, welche fehlen. Rollback: v1.0.923 (dann wieder V2-only, fuer Phantom/Solflare funktionslos).
      PREV  ·  v1.0.923 (PATCH G · TEIL B · CLIENT · ABGLEICH GEGEN JUPITER): KEIN TRADE-PFAD-CHANGE — Market-Pfad (quote→swap→signAndSend) unberuehrt, vier Tore + Spion unveraendert, keine neue Signatur ausser der bekannten Auth-Nachricht (nur auf Knopfdruck oder bei vorhandenem JWT), kein Broadcast, single-file, keine neue Dep. VORAUSSETZUNG: Worker Patch G · Teil A (v1.26) deployt — orders/history ist NICHT Teil des Preflight-Pflichtsatzes (404 → not-deployed → Abgleich laeuft mit orders/active allein weiter und sagt das). BEFUND (Handy, 07.09. 19:48, Backpack): Backpack signiert ohne Lighthouse-Guard → kompletter V2-Fluss lief durch, Jupiter legte die Order an (jup.ag Open Orders: SOL→JTO 0,120 SOL, Limit unter 0,432, 30 d, Gebuehr 0,5 %). Der Worker (v1.25) hielt die Antwort zurueck → Client meldete trigger-fee-echo-fehlt, kein Journal-Eintrag, Terminal leer. Der Client hatte keine Moeglichkeit, den Zustand bei Jupiter zu sehen. FIX: (1) crOrderReconcile (neu, read-only): orders/active + orders/history (crVaultApi.ordersHistory, neu) abfragen, Orders dieser Wallet, die im Journal fehlen, als { source:'live', kind:'limit', status, id, txSignature, reconciled:true } eintragen — nur ergaenzen, nie loeschen, bekannte id/orderPubkey/txSignature nie duplizieren; Panel/HUD/CC: „Order bei Jupiter gefunden und ins Journal uebernommen (id …)". (2) crVaultLimit.commit: nach JEDEM ordersPrice-Ergebnis ohne sauberes {id} (Fehler, Timeout, Netzabbruch, auch wallet-guard) laeuft der Abgleich mit dem vorhandenen JWT; Ergebnis als res.reconcile am unveraenderten Fehlerobjekt; _msgForLimitError und die Weiche haengen den Fund an. Ein ok OHNE id: Abgleich zuerst, Fund per txSignature → kein zweiter Journal-Eintrag. (3) Laden: der JWT lebt nur im Speicher, also haengt der einmalige Lade-Abgleich (je Wallet und Sitzung, crOrderReconcile.onAuth) an der ersten erfolgreichen Anmeldung (crVaultApi.ensureAuth); laeuft gerade ein Flow, wartet er bis zu dessen Ende. Ohne JWT beim Laden: CC-/Terminal-Hinweis „Ruhende Orders: Abgleich wartet auf Wallet-Signatur" — KEIN automatisches Signieren. (4) Terminal → OFFENE POSITIONEN → Knopf „Bei Jupiter nachsehen" (ensureAuth, ggf. EINE Nachrichten-Signatur, kein Geld) + Statuszeile (Hinweis / letztes Ergebnis / laeuft); LIM-Zeilen tragen id (kurz) und Ablauf. (5) Erfolgsantwort { id, txSignature, depositConfirmed, fee{bps, bound_at}, warnings[] }: fee.bound_at 'craft' → ein Gebuehrensatz, der laut v923 an die Einzahlung gebunden sei, in Panel/Journal/Gebuehren-Blatt (v924 hat diesen Satz als falsch verworfen: V2 nimmt gar keine Integrator-Gebuehr); 'craft-cache-miss' → „Gebuehrenstand: siehe Einzahlung" (kein Fehler); warnings[] als Hinweiszeile (Panel, CC, Diagnose-Notiz), nie als Abbruch; Ablauf (expiredAt) in Journal/Terminal, sonst „Laufzeit 30 Tage (Jupiter)". (6) TIF-Label: Option GTC heisst jetzt „30 Tage (Jupiter)" (Wert bleibt GTC — gespeicherte Route-States; ob orders/price ein Ablaufdatum annimmt, ist im Worker-Vertrag nicht gemessen, nichts mitgegeben). (7) Patch-F-Text: „Ruhende Orders sind mit dieser Wallet derzeit nicht moeglich. Mit Backpack funktioniert es (kein Guard)." — eine Konstante (crWalletGuard), Setup-Guide-Absatz gleich. (8) Spur: eigener Schritt reconcile (Dauer, N gefunden, M neu; history-Fehler benannt); am Knopf ein eigener Flight „reconcile". NICHT GEBAUT: ein Cancel-Pfad im Client (orders/price/cancel/:id → Auszahlungs-Tx signieren → confirm-cancel) existiert im oeffentlichen Client nicht — das waere eine neue finanzwirksame Signatur und liegt ausserhalb dieses Patches; Cancel der 19:48-Order bis dahin ueber jup.ag. TESTS: scripts/check_v923_patchG_browser.cjs (G1 ordersPrice-Fehler → orders/active + orders/history werden gerufen, fremde Fixture-Order landet mit reconciled:true im Journal + Terminal, bekannte id nicht dupliziert, Panel-Text nennt den Fund; G2 Laden: ohne JWT kein Aufruf + Hinweis sichtbar, nach ensureAuth genau EIN Abgleich, zweite (gecachte) Anmeldung loest keinen zweiten aus; G3 Erfolg mit fee.bound_at:'craft' → Journal + Fee-Text, craft-cache-miss → „siehe Einzahlung", warnings[] blockieren nicht; G4 TIF-Label „30 Tage (Jupiter)", Backpack-Satz in Guard-Text + Guide; G5 Knopf „Bei Jupiter nachsehen" → ensureAuth (1 signMessage) → Fund → Journal, Spur reconcile; history 404 → Abgleich laeuft mit active allein; G6 Market-Pfad unveraendert). Regressionen v907/v917–v922 gruen. Gegenproben ROT (siehe Commit). NICHT GEMESSEN: die Antwortform des ausgerollten Workers v1.26 fuer orders/history (orders[] / history[] / Array werden alle gelesen) und die Feldnamen der Jupiter-Orders (camel + snake werden gelesen; Ablauf nur, wenn genannt). Rollback: v1.0.922 (dann fehlt der Abgleich wieder — nur mit Worker v1.26 vertretbar).
@@ -3214,6 +3214,52 @@ window.crShare = function (o) {
   /* v1.0.758+ — Alert Engine form controls (Docs → Alerts tab). */
   .cr-ae-ctl{width:100%;box-sizing:border-box;background:var(--bg,#070b16);border:1px solid var(--line);border-radius:8px;color:var(--fg);padding:8px 10px;font:12.5px ui-monospace,Menlo,monospace;outline:none}
   .cr-ae-ctl:focus{border-color:rgba(20,241,149,.5)}
+  /* ═══ v1.0.927 — DOCS-STRUKTUR: EINE GEOMETRIE FUER FUENF ANSICHTEN ═════
+     Alarms (#crDocsViewAlerts) ist die Referenz — und zwar buchstaeblich:
+     die Zahlen hier unten sind die, die sein Renderer bisher inline getragen
+     hat. Er wurde auf diese Klassen zurueckgefuehrt, nicht umgestaltet; Paper,
+     P&L, Journal und Sessions bekommen DIESELBEN Klassen. Damit sehen die
+     fuenf innerhalb eines Themes gleich aus, ohne dass irgendwo eine
+     Sonderregel kopiert werden muesste.
+
+     WARUM KLASSEN UND NICHT INLINE-STYLES: die Theme-Ueberschreibungen weiter
+     unten haben bisher auf INLINE-STYLE-TEXT gematcht — Selektoren der Form
+     #crDocsViewJournal div[style*="border:1px"]. Das trifft genau die eine
+     Ansicht, die zufaellig so geschrieben ist, und niemanden sonst; genau
+     deshalb sahen Alarms und Journal im selben Theme verschieden aus. Die
+     Klassen stehen jetzt in denselben :is()-Listen, also gilt die Theme-Regel
+     fuer alle fuenf gleichzeitig.
+
+     Alle Farben kommen aus den Theme-Variablen (--fg / --dim / --line). Pro
+     Theme darf es also anders aussehen — innerhalb eines Themes nicht. */
+  .crDocsView .crDocs-head{display:flex;align-items:center;gap:8px;margin:8px 0 10px}
+  .crDocsView .crDocs-headTitle{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+  .crDocsView .crDocs-headNote{margin:0;font-size:11px;color:var(--dim)}
+  .crDocsView .crDocs-headAct{margin-left:auto;flex:none;font-size:10px;padding:5px 10px;background:transparent;border:1px solid var(--line);color:var(--dim)}
+  .crDocsView .crDocs-card{border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.45);padding:12px;margin:0 0 14px}
+  .crDocsView .crDocs-cardTitle{font-size:12px;font-weight:700;margin:0 0 10px}
+  /* Ein Kopf INNERHALB einer Karte ist eine eigene Rolle: er sitzt im
+     Karten-Innenraum und erbt dessen Tinte. Gleiche Geometrie wie .crDocs-head,
+     aber ohne den oberen Aussenabstand — die Karte bringt ihren Rand schon mit. */
+  .crDocsView .crDocs-cardHead{display:flex;align-items:center;gap:8px;margin:0 0 10px}
+  .crDocsView .crDocs-secTitle{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px}
+  .crDocsView .crDocs-list{display:flex;flex-direction:column;gap:10px}
+  .crDocsView .crDocs-list.crDocs-listTight{gap:6px}
+  /* Die scrollende Tabellenflaeche teilt Rand, Radius und Grund mit .crDocs-card —
+     das ist der Punkt: „gleiche Tabellen-/Listen-Geometrie". */
+  .crDocsView .crDocs-scroll{border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.45);max-height:340px;overflow:auto}
+  .crDocsView .crDocs-empty{font-size:11px;color:var(--dim);padding:14px;text-align:center;border:1px dashed var(--line);border-radius:10px}
+  .crDocsView .crDocs-grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:12px}
+  .crDocsView .crDocs-grid4 > div{min-width:0;overflow:hidden}
+  .crDocsView .crDocs-fieldRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+  .crDocsView .crDocs-field{display:block;margin-bottom:8px}
+  .crDocsView .crDocs-fieldLbl{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim);margin-bottom:4px}
+  .crDocsView .crDocs-hint{font-size:10px;color:var(--dim);margin-bottom:10px}
+  .crDocsView .crDocs-note{display:flex;align-items:center;gap:8px;margin-top:14px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.5);font-size:10.5px;color:var(--dim)}
+  @media (max-width:600px){
+    .crDocsView .crDocs-grid4{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .crDocsView .crDocs-fieldRow{grid-template-columns:1fr}
+  }
   .cr-ae-mini{appearance:none;background:none;border:0;color:var(--dim);cursor:pointer;font:inherit;font-size:14px;padding:2px 5px;border-radius:6px}
   .cr-ae-mini:hover{background:rgba(255,255,255,.06);color:var(--fg)}
   .os-wbody h2{margin:0 0 8px;font-size:18px}
@@ -3362,6 +3408,64 @@ window.crShare = function (o) {
   .crCCPop .crCCArmGoSet{appearance:none;border:0;background:transparent;color:#3454a8;font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.4px;cursor:pointer;padding:4px 2px;flex:none;min-height:24px}
   .crCCPop .crCCArmStatus[data-cr-arm-state="live"] .crCCArmGoSet{color:#4a3608}
   .crCCPop .crCCArmGoSet[hidden]{display:none}
+  /* v1.0.927 — dieselbe EINE Statuszeile jetzt auch in der Settings-App: dort
+     steht seit dieser Nummer nur noch sie, die Bedienung liegt am Chart. Die
+     Regeln sind eine Kopie der CC-Zeile auf .crArmHome umgehaengt, weil die
+     CC-Regeln auf .crCCPop scopen und hier nicht greifen wuerden. */
+  .crArmHome .crCCArmStatus{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px;padding:7px 9px;border-radius:8px;
+    font:800 10px ui-monospace,Menlo,monospace;letter-spacing:.4px;color:#3d4a63;background:rgba(120,140,180,.14);border:1px solid rgba(120,140,180,.22)}
+  .crArmHome .crCCArmStatus[data-cr-arm-state="live"]{color:#7a5a10;background:linear-gradient(90deg,rgba(212,164,60,.9),rgba(247,199,107,.95),rgba(212,164,60,.9));border-color:rgba(212,164,60,.9)}
+  .crArmHome .crCCArmStatus #crSetArmStatusTxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .crArmHome .crCCArmGoSet{appearance:none;border:0;background:transparent;color:#3454a8;font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.4px;cursor:pointer;padding:4px 2px;flex:none;min-height:24px}
+  .crArmHome .crCCArmStatus[data-cr-arm-state="live"] .crCCArmGoSet{color:#4a3608}
+  .crArmHome .crCCArmGoSet[hidden]{display:none}
+
+  /* ═══ v1.0.927 — ARM · ECHTGELD ALS CHART-WIDGET ═══════════════════════
+     Das Widget sitzt ueber dem Chart, nicht in einer hellen App-Flaeche —
+     die Farben kommen deshalb aus den Theme-Variablen (--fg / --dim /
+     --line) statt aus der Platinum-Palette der Settings-Fassung. Damit sieht
+     es in allen fuenf Themes wie das umgebende Terminal aus, ohne pro Theme
+     eine Sonderregel zu brauchen. Die GOLD-Sprache fuer LIVE bleibt: sie ist
+     der einzige Ort in dieser Datei, an dem Gold „echtes Geld" heisst.
+     #crArmWidgetHome ist das Zuhause, in dem der Block parkt, solange kein
+     Widget haengt — [hidden] genuegt, der Block wird nie doppelt gerendert. */
+  #crArmWidgetHome[hidden]{display:none!important}
+  .crArmW{display:block;font:600 10px ui-monospace,Menlo,monospace;color:var(--fg)}
+  .crArmW .crCCArm{border:1px solid rgba(212,164,60,.45);border-radius:8px;padding:7px 8px;background:rgba(212,164,60,.07);margin:0}
+  .crArmW .crCCArm[hidden]{display:none}
+  .crArmW-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .crArmW .cr-armSwitch{flex:none;min-width:66px}
+  .crArmW .crCCArmLimit{flex:1 1 auto;display:flex;align-items:center;gap:5px;min-width:0;font-size:9px;letter-spacing:.4px;text-transform:uppercase;color:var(--dim)}
+  .crArmW .crCCArmLimit input{flex:1 1 auto;min-width:0;width:100%;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.45);
+    color:var(--fg);padding:4px 6px;font:700 10px ui-monospace,Menlo,monospace;text-align:right}
+  .crArmW .crArmW-unit{flex:none;color:var(--dim)}
+  .crArmW .crCCArmState{padding:5px 7px;border-radius:6px;font:800 9.5px ui-monospace,Menlo,monospace;letter-spacing:.4px;text-align:center;
+    color:var(--fg);background:rgba(120,140,180,.16);border:1px solid var(--line)}
+  .crArmW .crCCArmState[data-cr-arm-state="live"]{color:#3a2a04;background:linear-gradient(90deg,rgba(212,164,60,.92),rgba(247,199,107,.96),rgba(212,164,60,.92));border-color:rgba(212,164,60,.9)}
+  .crArmW-more{margin-top:7px}
+  .crArmW-more > summary{cursor:pointer;list-style:none;font:700 9px ui-monospace,Menlo,monospace;letter-spacing:.5px;
+    text-transform:uppercase;color:var(--dim);padding:3px 0;min-height:22px;display:flex;align-items:center;gap:5px}
+  .crArmW-more > summary::-webkit-details-marker{display:none}
+  .crArmW-more > summary::before{content:"▸";font-size:9px}
+  .crArmW-more[open] > summary::before{content:"▾"}
+  .crArmW-more > summary:hover{color:var(--fg)}
+  .crArmW .crCCArmToggle{display:flex;align-items:center;gap:7px;cursor:pointer;font:700 10px ui-monospace,Menlo,monospace;color:var(--fg);margin:5px 0 6px}
+  .crArmW .crCCArmToggle input[type="checkbox"]{width:14px;height:14px;accent-color:#d4a43c;margin:0;flex:none;cursor:pointer}
+  .crArmW .crCCArmWarn{margin:0 0 7px;font:400 9px/1.35 ui-monospace,Menlo,monospace;color:var(--dim)}
+  .crArmW .cr-armbox{display:flex;align-items:center;gap:4px;margin-bottom:6px}
+  .crArmW .crCCArmInfo{margin:0;font:400 9px/1.3 ui-monospace,Menlo,monospace;color:var(--dim)}
+  .crArmW .crCCArmGate{border:1px dashed var(--line);border-radius:8px;padding:8px 9px;background:rgba(127,127,127,.08);
+    font:400 9.5px/1.4 ui-monospace,Menlo,monospace;color:var(--dim)}
+  .crArmW .crCCArmGate[hidden]{display:none}
+  /* Der Widget-Koerper scrollt ohnehin; der Aufhaengepunkt darf ihn nur nicht
+     zusammenschieben. */
+  .crArmW-host{display:block;width:100%}
+  @media (pointer:coarse){
+    .crArmW .cr-armSwitch{min-height:38px}
+    .crArmW .crCCArmLimit input{min-height:38px;font-size:16px}
+    .crArmW .crCCArmToggle{min-height:38px}
+    .crArmW .cr-armbox .cr-armTap,.crArmW .cr-armbox .cr-armCfg{min-height:38px;min-width:38px}
+  }
   .os-section:first-child{margin-top:0;padding-top:0;border-top:0}
   .os-section h4{margin:0 0 6px;font-size:10px;letter-spacing:.6px;color:var(--dim);text-transform:uppercase}
   .os-shop-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
@@ -6354,12 +6458,15 @@ window.crShare = function (o) {
     #win-workbench #wbAppList > div:not(.wb-subtabs),
     #win-workbench #wbBackHistory > div,
     #crDocsViewJournal .crTerm-view div[style*="border:1px"],
-    #crDocsViewJournal #crJrnAutoList,
-    #crDocsViewJournal #crJrnList,
-    #crDocsViewJournal #crJrnBotList,
-    #crDocsViewJournal #crJrnPnlList,
+    /* v1.0.927 — die gemeinsamen Docs-Struktur-Klassen. Sie ersetzen die
+       Inline-Style-Treffer oben, die NUR die Journal-Ansicht erwischt haben —
+       genau deshalb sahen Alarms, Paper, P&L, Journal und Sessions im selben
+       Theme verschieden aus. Jetzt trifft die Regel alle fuenf. */
+    .crDocsView .crDocs-card,
+    .crDocsView .crDocs-scroll,
+    .crDocsView .crDocs-grid4 > div,
+    .crDocsView .crDocs-note,
     #crDocsViewJournal #crJrnStats > div,
-    #crDocsViewJournal #crJrnPnlSummary > div,
     #crDocsViewMaps .cr-mapCard,
     #win-wallet .crTerm-view div[style*="border:1px"],
     #win-wallet .os-stat,
@@ -6387,12 +6494,15 @@ window.crShare = function (o) {
     #win-workbench #wbAppList > div:not(.wb-subtabs),
     #win-workbench #wbBackHistory > div,
     #crDocsViewJournal .crTerm-view div[style*="border:1px"],
-    #crDocsViewJournal #crJrnAutoList,
-    #crDocsViewJournal #crJrnList,
-    #crDocsViewJournal #crJrnBotList,
-    #crDocsViewJournal #crJrnPnlList,
+    /* v1.0.927 — die gemeinsamen Docs-Struktur-Klassen. Sie ersetzen die
+       Inline-Style-Treffer oben, die NUR die Journal-Ansicht erwischt haben —
+       genau deshalb sahen Alarms, Paper, P&L, Journal und Sessions im selben
+       Theme verschieden aus. Jetzt trifft die Regel alle fuenf. */
+    .crDocsView .crDocs-card,
+    .crDocsView .crDocs-scroll,
+    .crDocsView .crDocs-grid4 > div,
+    .crDocsView .crDocs-note,
     #crDocsViewJournal #crJrnStats > div,
-    #crDocsViewJournal #crJrnPnlSummary > div,
     #crDocsViewMaps .cr-mapCard,
     #win-wallet .crTerm-view div[style*="border:1px"],
     #win-wallet .os-stat,
@@ -6417,12 +6527,15 @@ window.crShare = function (o) {
     #win-workbench #wbAppList > div:not(.wb-subtabs),
     #win-workbench #wbBackHistory > div,
     #crDocsViewJournal .crTerm-view div[style*="border:1px"],
-    #crDocsViewJournal #crJrnAutoList,
-    #crDocsViewJournal #crJrnList,
-    #crDocsViewJournal #crJrnBotList,
-    #crDocsViewJournal #crJrnPnlList,
+    /* v1.0.927 — die gemeinsamen Docs-Struktur-Klassen. Sie ersetzen die
+       Inline-Style-Treffer oben, die NUR die Journal-Ansicht erwischt haben —
+       genau deshalb sahen Alarms, Paper, P&L, Journal und Sessions im selben
+       Theme verschieden aus. Jetzt trifft die Regel alle fuenf. */
+    .crDocsView .crDocs-card,
+    .crDocsView .crDocs-scroll,
+    .crDocsView .crDocs-grid4 > div,
+    .crDocsView .crDocs-note,
     #crDocsViewJournal #crJrnStats > div,
-    #crDocsViewJournal #crJrnPnlSummary > div,
     #crDocsViewMaps .cr-mapCard,
     #win-wallet .crTerm-view div[style*="border:1px"],
     #win-wallet .os-stat,
@@ -6461,21 +6574,19 @@ window.crShare = function (o) {
   #crDocsViewJournal .crTerm-view h4,
   #win-tokenterm .crTerm-view h4{
     color:var(--cr-app-green) !important}
-  #crDocsViewJournal #crJrnAutoList > div,
-  #crDocsViewJournal #crJrnList > div,
-  #crDocsViewJournal #crJrnBotList > div,
-  #crDocsViewJournal #crJrnPnlList > div{
+  /* v1.0.927 — Zeilen in JEDER der scrollenden Docs-Listen, nicht nur im Journal. */
+  .crDocsView .crDocs-scroll > div,
+  .crDocsView .crDocs-list > div{
     color:#ecffef !important;border-bottom-color:rgba(106,203,58,.18) !important}
   /* v1.0.822 — PnL page (Docs) KPI grids ran off the right edge on mobile. The
      inline grid-template-columns:repeat(4,1fr) tracks default to min-width:auto,
      so the big "+$0.00" values force each row wider than the screen (COMBINED got
      clipped). Let tracks shrink (minmax(0,1fr)) + clamp card children, and drop to
-     2 columns on phones so the cards fit and stay readable. */
-  #crJrnPnlSummary, #crJrnPnlStats{ grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
-  #crJrnPnlSummary > div, #crJrnPnlStats > div{ min-width:0 !important; overflow:hidden !important; }
-  @media (max-width:600px){
-    #crJrnPnlSummary, #crJrnPnlStats{ grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
-  }
+     2 columns on phones so the cards fit and stay readable.
+     v1.0.927 — diese Sonderregel ist AUFGEGANGEN in .crDocs-grid4 (dieselben
+     minmax(0,1fr)-Spuren, dieselbe 2-Spalten-Schwelle bei 600px). Sie steht
+     nicht mehr hier, weil sie sonst als Kopie neben der gemeinsamen Klasse
+     laege — und zwei Orte fuer dieselbe Zahl laufen auseinander. */
   :is(
     #win-workbench .crTerm-view div[style*="border: 1px"],
     #win-workbench #wbToolList > div[style*="cursor: pointer"],
@@ -9742,7 +9853,15 @@ window.crShare = function (o) {
   });
 </script>
 </head>
-<body>
+<body data-os-theme="mono">
+<!-- v1.0.927 — VORGABE-THEME IST BLACK (mono), und zwar SCHON IM MARKUP.
+     platinum/dark ist die ATTRIBUTLOSE Vorgabe (applyTheme entfernt data-theme /
+     data-os-theme fuer sie, siehe v1.0.351 / v1.0.538) — genau deshalb genuegt es
+     NICHT, _crThemeFallback() auf mono zu drehen: bis der Persistenz-Block ganz
+     unten laeuft, stuende das Attribut nicht da und Platinum haette bereits
+     gemalt. Das Attribut steht deshalb hier, im statischen Markup, zusammen mit
+     data-theme="mono" am #splash. Ein Nutzer MIT gespeichertem Theme behaelt
+     seins: der Persistenz-Block setzt bzw. entfernt die Attribute wie bisher. -->
 <!-- v1.0.320 — Deep-link boot cover. A chart-bound deep-link (?room / ?sharedMap /
      ?symbol / ?map / ?mint) used to FLASH the #crBoot login splash, then the OS
      desktop, then reload the chart before finally landing on the right frame (see
@@ -10624,6 +10743,76 @@ window.crShare = function (o) {
        Terminal window pins it to the chart background here.
        pointer-events:none on the layer; widgets re-enable pointer-events. -->
   <div id="crChartWidgetLayer"></div>
+  <!-- ═══ v1.0.927 — ARM · ECHTGELD ALS CHART-WIDGET ══════════════════════
+       WAS SICH AENDERT: der Ort. WAS SICH NICHT AENDERT: alles andere.
+       Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign),
+       der Spion, die Weiche, der Market-Pfad, crVaultLimit, crOnchainLimit und
+       die Session-Limit-Rechnung sind Bit fuer Bit unberuehrt. Die beiden
+       Speicher heissen weiter cr_arm_v1 und cr_arm_limit_v1 und werden von
+       denselben zwei Handlern in wireControlCenterPopover geschrieben.
+
+       WARUM DAS MARKUP HIER PARKT UND NICHT IM WIDGET ERZEUGT WIRD:
+       jede Verdrahtung dieses Blocks (crArm/_crArmWire, die CC-Handler,
+       _crCCRenderArm) bindet EINMAL beim Boot per getElementById. Ein Widget,
+       das sein Markup bei jedem Zeichnen neu baut, haette diese Bindungen
+       verloren — und zwar lautlos: der Schalter waere da und taete nichts.
+       Deshalb existiert der Block genau einmal, wohnt hier, und wird beim
+       Zeichnen in den Widget-Koerper UMGEHAENGT (_crArmWidgetMount) bzw. beim
+       Leeren der Ebene wieder hierher zurueckgeholt (_crArmWidgetParkFrom).
+
+       AUF DAS MINDESTE REDUZIERT: ein Schalter (SIM ⇄ SCHARF), ein Feld
+       (Session-Limit in SOL), eine Statuszeile mit dem gerade gecharteten
+       Token. Die Nebenschalter (▲ ▼ ⚙), der Erklaertext und die Wallet-/
+       Volumen-Zeile stehen eine Ebene tiefer hinter dem Aufklapp.
+
+       ZWEI BITS, EIN SICHTBARER SCHALTER — und das ist der Grund fuer die
+       ausfuehrliche Statuszeile: LIVE gilt nur, wenn das globale Bit
+       cr_arm_v1 UND der Modus (crArm.on()) es zeigen (_crCCArmIsLive, v904).
+       Aus zwei Bits kann kein einzelner Schalter werden, ohne die Logik zu
+       aendern — also bleibt der zweite im Aufklapp, und die Zeile SAGT, wenn
+       er der fehlende Teil ist. Ein stilles „SIM" waere hier das Schlimmste:
+       es saehe aus wie ein kaputter Schalter. -->
+  <div id="crArmWidgetHome" hidden aria-hidden="true">
+    <div class="crArmW" id="crArmWidgetBlock">
+      <!-- v1.0.905 (S5a.4) — Sichtbarkeits-Gate: ohne Anmeldung UND ohne Wallet
+           keine Bedienung, nur diese ruhige Zeile. _crCCRenderArm() kippt die
+           beiden per hidden-Attribut. -->
+      <div id="crCCArmGateHint" class="crCCArmGate" hidden>ARM (Echtgeld) — verfügbar nach Anmeldung oder Wallet-Verbindung.</div>
+      <div class="crCCArm" id="crCCArmSection">
+        <div class="crArmW-row">
+          <!-- (1) DER EINE SCHALTER. Markup und ID wie zuvor; _crArmPaint
+               beschriftet ihn SIM / SCHARF und sperrt ihn, solange
+               crArm.eligible() nein sagt (Wallet, Mint, echte Kerzen). -->
+          <button class="cr-armSwitch" id="crArmSwitch" type="button" aria-pressed="false"
+                  data-cr-arm-switch="1" data-cr-arm-state="sim">SIM</button>
+          <!-- (2) DAS EINE FELD. Schreibt ueber _crParseBetrag float-frei
+               nach cr_arm_limit_v1 — derselbe Handler wie zuvor. -->
+          <label class="crCCArmLimit crArmW-lim" for="crArmLimitInput">Limit
+            <input id="crArmLimitInput" inputmode="decimal" autocomplete="off" enterkeyhint="done">
+            <span class="crArmW-unit">SOL</span>
+          </label>
+        </div>
+        <!-- (3) DIE EINE STATUSZEILE, im Kontext des gecharteten Tokens. -->
+        <div id="crCCArmState" class="crCCArmState" data-cr-arm-state="sim">◇ SIM</div>
+        <details class="crArmW-more">
+          <summary>Details</summary>
+          <label class="crCCArmToggle" for="crArmGlobalToggle">
+            <input type="checkbox" id="crArmGlobalToggle"> ARM · echtes Geld (global)
+          </label>
+          <p id="crArmWarn" class="crCCArmWarn">Scharf heißt: ein Fill im Activation-Panel ist ein <b>echter Swap</b> über deine Wallet — echtes SOL, echte Gebühren, kein Rückgängig. Die Wallet fragt vor jedem Trade, der Worker signiert nie. Schalter aus = alles Paper.</p>
+          <!-- Die Nebenschalter. Bit fuer Bit dasselbe Markup wie zuvor, nur
+               ohne den Schalter, der eine Ebene hoeher steht. #crArmBox behaelt
+               seine ID, weil _crArmPaint den Sperrgrund als title darauf legt. -->
+          <div class="cr-armbox" id="crArmBox" title="SIM / LIVE — LIVE turns a buy/sell tap into the Activation Panel (Market/Limit). Your wallet still signs.">
+            <button class="cr-armTap" id="crArmBuy"  type="button" data-cr-arm-tap="kauf"    disabled>▲</button>
+            <button class="cr-armTap" id="crArmSell" type="button" data-cr-arm-tap="verkauf" disabled>▼</button>
+            <button class="cr-armCfg" id="crArmCfg"  type="button" title="Amount limit per tap">⚙</button>
+          </div>
+          <p id="crArmInfo" class="crCCArmInfo"></p>
+        </details>
+      </div>
+    </div>
+  </div>
 
   <div class="overlay topbar">
     <!-- v0.8k#3 — Asset + Strategy selectors replace the static BTC/USDT label
@@ -11298,7 +11487,8 @@ window.crShare = function (o) {
        elsewhere in the OS-app surface. -->
 
 
-  <div class="splash" id="splash">
+  <!-- v1.0.927 — data-theme="mono" im Markup: siehe die Begruendung am <body>. -->
+  <div class="splash" id="splash" data-theme="mono">
     <div class="os-desktop">
       <!-- v0.8k#24ae — Widget layer: floats over the icon grid but under
            the open windows so dragged Map/Chat/Terminal previews persist
@@ -11359,16 +11549,17 @@ window.crShare = function (o) {
            Game Control Center panel (v1.0.658) for visual consistency. -->
       <div class="crCCPop" id="crCCPop">
         <!-- v1.0.919 — ARM · Echtgeld wohnt jetzt in der Settings-App
-             (#crArmHome, Abschnitt ganz oben). Hier im Control Center steht
-             nur noch EINE Statuszeile („◇ SIM" / „⚡ LIVE · Limit x SOL") mit
-             dem Link „→ Einstellungen" — KEIN Schalter, KEIN Limit-Feld.
+             (#crArmHome, Abschnitt ganz oben). v1.0.927 — und von dort weiter
+             als Widget an den Chart. Hier im Control Center steht nur noch EINE
+             Statuszeile („◇ SIM · JTO" / „⚡ LIVE · JTO · Limit x SOL") mit
+             dem Link „→ Terminal" — KEIN Schalter, KEIN Limit-Feld.
              _crCCRenderArmStatus() haelt die Zeile im Takt (Gast: Hinweis,
              Link versteckt). Der Hex-Badge-Zustand (Live/Not-Live) am
              Menubar-Icon bleibt unveraendert. -->
         <div class="cr-cc-lbl" style="margin-top:0">ARM · Echtgeld</div>
         <div class="crCCArmStatus" id="crCCArmStatus" data-cr-arm-state="sim">
           <span id="crCCArmStatusTxt">◇ SIM</span>
-          <button type="button" class="crCCArmGoSet" id="crCCArmGoSettings" title="ARM · Echtgeld einstellen (Settings)">→ Einstellungen</button>
+          <button type="button" class="crCCArmGoSet" id="crCCArmGoSettings" title="ARM · Echtgeld liegt als Widget am Chart-Terminal">→ Terminal</button>
         </div>
         <div class="cr-cc-lbl" style="margin-top:12px">Theme</div>
         <div class="cr-cc-pillrow" id="crCCThemeChips">
@@ -11643,12 +11834,25 @@ window.crShare = function (o) {
                  Terminal-view tabs) so they render identically. Container keeps .modeTabs so the
                  shared `.os-window .modeTabs button.on` active-highlight + the data-cat filter
                  (handler toggles .on) keep working. -->
+            <!-- v1.0.927 — ZWEI AENDERUNGEN AN DIESER LEISTE, beide reine Oberflaeche:
+                 (1) DER MINIGAME-KNOPF IST WEG — ARCHIVIERT, NICHT GELOESCHT. Die drei
+                     Karten (#modeRacing / #modeMonster / #modeSnake) mit data-cat="minigame"
+                     stehen unveraendert weiter unten in #crModeGrid, ihre data-mode-Ziele
+                     (racing / monster / snake / timeismoney) und die Startpfade
+                     (crLaunchMinigameRandom, Deep-Link ?mg=…) sind Bit fuer Bit dieselben.
+                     Nur der Weg ueber einen Tab entfaellt. Damit die Karten nicht unter
+                     einem FREMDEN Tab auftauchen, haelt der Filter unten sie dauerhaft
+                     verborgen: der Vergleich card.data-cat !== cat blendet jede
+                     minigame-Karte in jeder Auswahl aus, weil kein Knopf mehr
+                     data-cat="minigame" traegt. Und weil der Startzustand „regular" ist,
+                     laeuft auch kein Filter ins Leere.
+                 (2) ROOMS UND CAMPAIGN TAUSCHEN DIE PLAETZE. Ergebnis:
+                     Regular · Rooms · Campaign · PVP. -->
             <div class="modeTabs crTerm-tabs" id="crModeTabs">
               <button class="crTerm-tab on" data-cat="regular">Regular</button>
-              <button class="crTerm-tab" data-cat="campaign">Campaign</button>
-              <button class="crTerm-tab" data-cat="minigame">Minigame</button>
               <!-- v1.0.641 — ROOMS: rooms live in the Play window now (guests AND connected). -->
               <button class="crTerm-tab" data-cat="rooms">Rooms</button>
+              <button class="crTerm-tab" data-cat="campaign">Campaign</button>
               <button class="crTerm-tab" data-cat="pvp">PVP</button>
             </div>
             <!-- v1.0.354 — Regular tab embeds the Configure Run content inline.
@@ -13333,50 +13537,23 @@ window.crShare = function (o) {
           <button class="wclose" data-close title="Close" aria-label="Close">✕</button>
         </div>
         <div class="os-wbody">
-          <!-- v1.0.919 — ARM · Echtgeld: die EINE Heimat, jetzt in Settings.
-               v1.0.904 (S5a.3) hatte den Block ins Control Center gezogen
-               (globaler ARM-Schalter = das eine Bit cr_arm_v1, SIM↔LIVE-
-               Schalter #crArmBox, Session-Limit, Zustandszeile mit dem WAHREN
-               Modus). Julians Vorgabe 06.09.: die ganze ARM-UI wandert aus dem
-               CC in die Settings-App, eigener Abschnitt ganz oben. Markup und
-               IDs sind 1:1 dieselben — crArm (_crArmWire), die CC-Verdrahtung
-               (wireControlCenterPopover: crArmGlobalToggle / crArmLimitInput)
-               und _crCCRenderArm finden die Elemente per getElementById,
-               unabhaengig vom Ort. Kein doppeltes ARM-UI im DOM (S5a.3), das
-               Gast-Gate (S5a.4, #crCCArmSection/#crCCArmGateHint) und die
-               Modus-Wahrheit bleiben. Das CC zeigt nur noch Status + Link. -->
+          <!-- v1.0.927 — ARM · Echtgeld WOHNT NICHT MEHR HIER. Die Bedienung
+               (Schalter, Limit-Feld, Nebenschalter) ist als Widget an den Chart
+               gezogen (#crArmWidgetHome bei #crChartWidgetLayer, Widget-Typ
+               'arm'). Settings behaelt — wie das Control Center — GENAU EINE
+               Statuszeile, die aufs Terminal verweist. Dieselbe Idee wie zuvor
+               der Link auf Settings, nur das Ziel hat sich geaendert.
+               KEIN zweites ARM-UI im DOM: die IDs crArmGlobalToggle /
+               crArmLimitInput / crArmSwitch / crCCArmSection / crCCArmGateHint
+               gibt es weiterhin GENAU EINMAL, naemlich im verlagerten Block.
+               Die gesamte Verdrahtung (crArm/_crArmWire, wireControlCenterPopover,
+               _crCCRenderArm) sucht per getElementById und ist unveraendert. -->
           <div class="os-section crArmHome" id="crArmHome" style="margin:0 0 14px;padding:0;border-top:0">
-          <h4 style="margin:0 0 6px" id="crArmHomeTitle">ARM · Echtgeld</h4>
-          <div class="crCCArm" id="crCCArmSection">
-            <label class="crCCArmToggle" for="crArmGlobalToggle">
-              <input type="checkbox" id="crArmGlobalToggle"> ARM · echtes Geld
-            </label>
-            <p id="crArmWarn" class="crCCArmWarn">Scharf heißt: ein Fill im Activation-Panel ist ein <b>echter Swap</b> über deine Wallet — echtes SOL, echte Gebühren, kein Rückgängig. Die Wallet fragt vor jedem Trade, der Worker signiert nie. Schalter aus = alles Paper.</p>
-            <div class="crCCArmModeRow">
-              <span class="crCCArmModeLbl">Modus</span>
-              <!-- v1.0.904 — der Schnellschalter aus der Topbar, hierher verlagert.
-                   Markup Bit fuer Bit wie zuvor; die crArm-Verdrahtung findet die
-                   Elemente per getElementById, unabhaengig vom Ort. -->
-              <div class="cr-armbox" id="crArmBox" title="SIM / LIVE — LIVE turns a buy/sell tap into the Activation Panel (Market/Limit). Your wallet still signs.">
-                <button class="cr-armSwitch" id="crArmSwitch" type="button" aria-pressed="false"
-                        data-cr-arm-switch="1" data-cr-arm-state="sim">SIM</button>
-                <button class="cr-armTap" id="crArmBuy"  type="button" data-cr-arm-tap="kauf"    disabled>▲</button>
-                <button class="cr-armTap" id="crArmSell" type="button" data-cr-arm-tap="verkauf" disabled>▼</button>
-                <button class="cr-armCfg" id="crArmCfg"  type="button" title="Amount limit per tap">⚙</button>
-              </div>
+            <h4 style="margin:0 0 6px" id="crArmHomeTitle">ARM · Echtgeld</h4>
+            <div class="crCCArmStatus" id="crSetArmStatus" data-cr-arm-state="sim">
+              <span id="crSetArmStatusTxt">◇ SIM</span>
+              <button type="button" class="crCCArmGoSet" id="crSetArmGoTerminal" title="ARM · Echtgeld liegt als Widget am Chart-Terminal">→ Terminal</button>
             </div>
-            <label class="crCCArmLimit" for="crArmLimitInput">Session-Limit (SOL gesamt)
-              <input id="crArmLimitInput" inputmode="decimal" autocomplete="off" enterkeyhint="done">
-            </label>
-            <p id="crArmInfo" class="crCCArmInfo"></p>
-            <div id="crCCArmState" class="crCCArmState" data-cr-arm-state="sim">◇ SIM · Übung · kein echtes Geld</div>
-          </div>
-          <!-- v1.0.905 (S5a.4) — Sichtbarkeits-Gate: ohne Anmeldung UND ohne
-               Wallet ist die ARM-Sektion oben nicht gerendert; an ihrer Stelle
-               steht diese ruhige Hinweiszeile. Kein Schalter, kein Limit-Feld —
-               der Rest des CC (Theme/Sprache/Notifications) bleibt unberuehrt.
-               _crCCRenderArm() kippt die beiden per hidden-Attribut. -->
-          <div id="crCCArmGateHint" class="crCCArmGate" hidden>ARM (Echtgeld) — verfügbar nach Anmeldung oder Wallet-Verbindung.</div>
           </div>
           <div class="crTerm-tabs">
             <button class="crTerm-tab active" data-setview="tools" type="button">TOOLS</button>
@@ -14748,7 +14925,16 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                  Der CHAT im Terminal ist jetzt ein echter Chat; hier wird
                  gelesen, umbenannt, exportiert, geankert, archiviert, gelöscht. -->
             <div class="crDocsView hidden" id="crDocsViewSessions">
-              <details class="cr-tok cr-session-doc" open>
+              <!-- v1.0.927 — gleicher Kopfbereich und dieselbe Karten-Geometrie
+                   wie die Referenz (#crDocsViewAlerts): die beiden <details>
+                   tragen zusaetzlich .crDocs-card, damit Rand, Radius, Grund
+                   und Innenabstand dieselben sind. Die .cr-tok-Klasse bleibt
+                   dran — die v1.0.895-Kontrastregeln fuer die dunklen Themes
+                   (mono, ascii) haengen daran und sollen weiter greifen. -->
+              <div class="crDocs-head">
+                <div class="crDocs-headTitle">Sessions · session documents</div>
+              </div>
+              <details class="cr-tok cr-session-doc crDocs-card" open>
                 <summary>
                   <span class="cr-tok-head">
                     <span class="cr-tok-title" id="crBotSessionSummary">Session Documentation</span>
@@ -14780,7 +14966,7 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
               <!-- v1.0.853 — ☁ Vault: E2E-verschlüsselter Sync für Sessions/
                    Journal/Notes/Maps. Passphrase → Schlüssel bleibt im Gerät,
                    der Server sieht nur Ciphertext. -->
-              <details class="cr-tok" id="crVaultPanel" style="margin-top:10px">
+              <details class="cr-tok crDocs-card" id="crVaultPanel">
                 <summary>
                   <span class="cr-tok-head">
                     <span class="cr-tok-title">☁ Vault · encrypted sync</span>
@@ -14833,13 +15019,13 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
             <style>@keyframes crJrnPulse{0%,100%{opacity:1}50%{opacity:.35}}</style>
             <!-- v0.9.40 — Auto-only entries list (mirror of #crJrnList but
                  filtered to t.auto === true). Renderer fans out to both. -->
-            <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 6px">
-              <h4 style="margin:0"><span data-i18n="jrn.autoTrades">Auto-Logged SIM Trades</span> <span data-cr-sim="1" data-cr-mark-word="1" data-cr-mark-title="1" title="Simulated orders — no keeper, nothing goes on-chain" style="font-size:9px;font-weight:700;color:#0d0d12;background:#9b8cff;border-radius:3px;padding:1px 5px;letter-spacing:.4px;vertical-align:middle">SIM</span> <span id="crJrnAutoCount2" style="color:var(--dim);font-weight:400">(0)</span></h4>
-              <div style="display:flex;gap:6px">
-                <button class="cr-go" id="crJrnAutoExport" type="button" style="font-size:10px;padding:4px 10px;background:transparent;border:1px solid var(--line);color:var(--dim)" data-i18n="jrn.exportCsv">↓ Export CSV</button>
-              </div>
+            <!-- v1.0.927 — Kopf + Liste auf die gemeinsamen .crDocs-*-Klassen
+                 (Referenz: #crDocsViewAlerts). -->
+            <div class="crDocs-head">
+              <div class="crDocs-headTitle"><span data-i18n="jrn.autoTrades">Auto-Logged SIM Trades</span> <span data-cr-sim="1" data-cr-mark-word="1" data-cr-mark-title="1" title="Simulated orders — no keeper, nothing goes on-chain" style="font-size:9px;font-weight:700;color:#0d0d12;background:#9b8cff;border-radius:3px;padding:1px 5px;letter-spacing:.4px;vertical-align:middle">SIM</span> <span id="crJrnAutoCount2" style="font-weight:400">(0)</span></div>
+              <button class="cr-go crDocs-headAct" id="crJrnAutoExport" type="button" data-i18n="jrn.exportCsv">↓ Export CSV</button>
             </div>
-            <div id="crJrnAutoList" style="border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.4);max-height:340px;overflow:auto"></div>
+            <div id="crJrnAutoList" class="crDocs-scroll"></div>
           </div>
 
           <!-- ── PAPER TAB ─────────────────────────────────────────────── -->
@@ -14847,11 +15033,17 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                trade you took OUTSIDE the SDK (real exchange, mental rehearsal,
                etc.). Entries are tagged auto:false and appear separately
                below the form. -->
+          <!-- v1.0.927 — auf die gemeinsamen .crDocs-*-Klassen zurueckgefuehrt
+               (Referenz: #crDocsViewAlerts): das Eingabeformular ist jetzt
+               dieselbe .crDocs-card wie „＋ New alert" dort, mit demselben
+               Rand, Radius, Grund und Innenabstand. Die violette Sonder-
+               Umrandung faellt damit weg — sie war der Grund, warum Paper in
+               JEDEM Theme anders aussah als Alarms. Felder und IDs bleiben. -->
           <div class="crTerm-view hidden" id="crJournalViewPaper">
-            <div style="border:1px solid rgba(155,140,255,0.30);border-radius:8px;padding:10px 12px;margin:10px 0 10px;background:rgba(155,140,255,0.06)">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <div style="font-size:11px;font-weight:700;color:#9b8cff;text-transform:uppercase;letter-spacing:.4px" data-i18n="jrn.paperHdr">✎ Paper trade · log a discretionary entry</div>
-                <button class="cr-go" id="crJrnPrefill" type="button" style="font-size:10px;padding:4px 10px;background:transparent;border:1px solid var(--line);color:var(--dim)" data-i18n="jrn.prefill">↻ Prefill from live state</button>
+            <div class="crDocs-card">
+              <div class="crDocs-cardHead">
+                <div class="crDocs-cardTitle" style="margin:0" data-i18n="jrn.paperHdr">✎ Paper trade · log a discretionary entry</div>
+                <button class="cr-go crDocs-headAct" id="crJrnPrefill" type="button" data-i18n="jrn.prefill">↻ Prefill from live state</button>
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;font-size:11px">
                 <label style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--dim)" data-i18n="jrn.f.asset">Asset</span>
@@ -14935,24 +15127,23 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
             </div>
             <!-- v0.9.40 — Paper-only entries table. Manual tab gets its own
                  list (crJrnAutoList) populated with auto-logged rows only. -->
-            <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 6px">
-              <h4 style="margin:0"><span data-i18n="jrn.paperTrades">Paper Trades</span> <span id="crJrnCount" style="color:var(--dim);font-weight:400">(0)</span></h4>
-              <div style="display:flex;gap:6px">
-                <button class="cr-go" id="crJrnExport" type="button" style="font-size:10px;padding:4px 10px;background:transparent;border:1px solid var(--line);color:var(--dim)" data-i18n="jrn.exportCsv">↓ Export CSV</button>
-                <button class="cr-go" id="crJrnClear" type="button" style="font-size:10px;padding:4px 10px;background:transparent;border:1px solid var(--line);color:#ff5b7f" data-i18n="jrn.clearAll">× Clear all</button>
-              </div>
+            <div class="crDocs-head">
+              <div class="crDocs-headTitle"><span data-i18n="jrn.paperTrades">Paper Trades</span> <span id="crJrnCount" style="font-weight:400">(0)</span></div>
+              <button class="cr-go crDocs-headAct" id="crJrnExport" type="button" data-i18n="jrn.exportCsv">↓ Export CSV</button>
+              <button class="cr-go crDocs-headAct" id="crJrnClear" type="button" style="margin-left:0;color:#ff5b7f" data-i18n="jrn.clearAll">× Clear all</button>
             </div>
-            <div id="crJrnList" style="border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.4);max-height:340px;overflow:auto"></div>
+            <div id="crJrnList" class="crDocs-scroll"></div>
           </div>
 
           <!-- ── BOT TAB ───────────────────────────────────────────────── -->
           <div class="crTerm-view hidden" id="crJournalViewBot">
-            <p style="margin:10px 0 8px;font-size:11px;color:var(--dim)">Auto-imported from <code>sdk.openOrders</code> for orders fired by equipped bots (flagged <code>bot:true</code>). Each row supports a free comment for after-action review.</p>
-            <div style="display:flex;gap:6px;margin-bottom:8px">
-              <button class="cr-go" id="crJrnBotRefresh" type="button" style="font-size:11px;padding:5px 11px">↻ Refresh from SDK</button>
-              <button class="cr-go" id="crJrnBotExport" type="button" style="font-size:11px;padding:5px 11px;background:transparent;border:1px solid var(--line);color:var(--dim)">↓ Export CSV</button>
+            <!-- v1.0.927 — gemeinsame .crDocs-*-Klassen (Referenz: Alarms). -->
+            <div class="crDocs-head">
+              <p class="crDocs-headNote">Auto-imported from <code>sdk.openOrders</code> for orders fired by equipped bots (flagged <code>bot:true</code>). Each row supports a free comment for after-action review.</p>
+              <button class="cr-go crDocs-headAct" id="crJrnBotRefresh" type="button">↻ Refresh from SDK</button>
+              <button class="cr-go crDocs-headAct" id="crJrnBotExport" type="button" style="margin-left:0">↓ Export CSV</button>
             </div>
-            <div id="crJrnBotList" style="border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.4);max-height:480px;overflow:auto"></div>
+            <div id="crJrnBotList" class="crDocs-scroll"></div>
           </div>
 
           <!-- ── SESSIONS TAB ──────────────────────────────────────────── -->
@@ -15036,19 +15227,26 @@ sdk.on('bracketClose', e =&gt; { /* { order, reason } */ })</div>
                realized + unrealized across all journal entries with
                session breakdown. Pure derived view — reads game state +
                journal history, no separate persistence. -->
+          <!-- v1.0.927 — auf die gemeinsamen .crDocs-*-Klassen zurueckgefuehrt
+               (Referenz: #crDocsViewAlerts). Kopf, Abschnitts-Ueberschriften,
+               KPI-Raster und Listen-Geometrie sind jetzt dieselben wie dort;
+               die eigene 4er-Raster-Sonderregel weiter unten in der Theme-CSS
+               (repeat(4,minmax(0,1fr)) + 2 Spalten unter 600px) steckt jetzt in
+               .crDocs-grid4 und gilt fuer alle fuenf Ansichten. Inhalt und
+               Daten sind unveraendert. -->
           <div class="crTerm-view hidden" id="crJournalViewPnl">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px">
-              <p style="margin:0;font-size:11px;color:var(--dim)" data-i18n="pnl.intro">Realized + unrealized P&amp;L across this session and historical journal entries. Updates every second while a run is active.</p>
-              <button class="cr-go" id="crJrnPnlExport" type="button" style="font-size:10px;padding:5px 11px;background:transparent;border:1px solid var(--line);color:var(--dim)" data-i18n="jrn.exportCsv">↓ Export CSV</button>
+            <div class="crDocs-head">
+              <p class="crDocs-headNote" data-i18n="pnl.intro">Realized + unrealized P&amp;L across this session and historical journal entries. Updates every second while a run is active.</p>
+              <button class="cr-go crDocs-headAct" id="crJrnPnlExport" type="button" data-i18n="jrn.exportCsv">↓ Export CSV</button>
             </div>
-            <div id="crJrnPnlSummary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px"></div>
+            <div id="crJrnPnlSummary" class="crDocs-grid4"></div>
             <!-- v1.0.291 — Stats tab folded in: expectancy cards (Total trades /
                  Win rate / Total PnL / Avg R:R) render here; the old STATS view
                  div stays in the DOM as archive. -->
-            <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px" data-i18n="pnl.perf">Performance stats</div>
-            <div id="crJrnPnlStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px"></div>
-            <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px" data-i18n="pnl.fills">Recent fills</div>
-            <div id="crJrnPnlList" style="border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,0.4);max-height:280px;overflow:auto"></div>
+            <div class="crDocs-secTitle" data-i18n="pnl.perf">Performance stats</div>
+            <div id="crJrnPnlStats" class="crDocs-grid4"></div>
+            <div class="crDocs-secTitle" data-i18n="pnl.fills">Recent fills</div>
+            <div id="crJrnPnlList" class="crDocs-scroll"></div>
           </div>
             </div>
           </div>
@@ -17979,6 +18177,13 @@ window.crMarkets = (function(){
   'use strict';
 
   var _mint = {};              // marktId -> { mint: string|null, reason: string }
+  /* v1.0.927 — marktId -> Logo-URL, aus DERSELBEN verifizierten Antwort.
+   * Der Worker fuehrt die verifizierte (Jupiter-)Liste; traegt eine Zeile ein
+   * Bildfeld, merken wir es uns hier. Es entsteht KEIN zusaetzlicher Abruf und
+   * KEIN neuer Endpunkt — und deshalb auch keine Wette auf etwas, das erst
+   * ausgerollt werden muesste. Fehlt das Feld, bleibt die Karte leer und die
+   * Logo-Kette faellt eine Stufe weiter (auf den Platzhalter). */
+  var _logo = {};
   var _px   = {};              // mint    -> { usd: number|null, at: number }
   var _mintPending = {};       // marktId -> true, solange eine Anfrage laeuft
   var _pxPending   = {};
@@ -18022,6 +18227,9 @@ window.crMarkets = (function(){
     return e ? (e.reason || '') : '';
   }
   function knows(id){ return Object.prototype.hasOwnProperty.call(_mint, String(id || '')); }
+  /* v1.0.927 — leerer String = kein Bild bekannt. Die Logo-Kette behandelt das
+   * als „diese Stufe hat nichts", nicht als Fehler. */
+  function logoOf(id){ return _logo[String(id || '')] || ''; }
 
   /* resolve(ids) — gebuendelt, idempotent. Aufloest wird jede noch unbekannte
    * ID; bekannte kosten nichts. Aufloesung liefert wahr, wenn sich der
@@ -18055,6 +18263,14 @@ window.crMarkets = (function(){
           } else {
             _mint[r.key] = { mint: m, reason: String(v.reason || (m ? '' : 'kein Solana-Mint')) };
           }
+          // v1.0.927 — Logo aus derselben Zeile, falls sie eines traegt.
+          // Nur absolute http(s)-URLs; alles andere ist kein Bild, das ein
+          // <img> laden koennte, und ein kaputtes <img> ist genau das, was
+          // die Logo-Kette verhindern soll.
+          try {
+            var lg = v.logoURI || v.logo || v.icon || v.image || '';
+            if(typeof lg === 'string' && /^https?:\/\//.test(lg)) _logo[r.key] = lg;
+          } catch(_){}
           changed = true;
         });
         return changed;
@@ -18116,8 +18332,9 @@ window.crMarkets = (function(){
   }
 
   return { resolve: resolve, mintOf: mintOf, reasonOf: reasonOf, knows: knows,
+           logoOf: logoOf,                                   // v1.0.927 — Stufe 4 der Logo-Kette
            prices: prices, pxOf: pxOf, pxKnown: pxKnown,
-           _mint: _mint, _px: _px };
+           _mint: _mint, _px: _px, _logo: _logo };
 })();
 
 /* =========================================================================
@@ -30684,7 +30901,11 @@ async function crCgMarkets(limit){
     try { if(window.crReport) crReport(e, 'coingecko/markets'); } catch(_){}
     return _crCgCacheRead(limit) || [];
   }
-  if(rows.length){ try { localStorage.setItem(CR_CG_CACHE_KEY, JSON.stringify({ ts:Date.now(), rows: rows.slice(0, 500) })); } catch(_){} }
+  if(rows.length){ try { localStorage.setItem(CR_CG_CACHE_KEY, JSON.stringify({ ts:Date.now(), rows: rows.slice(0, 500) })); } catch(_){}
+    // v1.0.927 — die Logo-Kette leitet aus genau diesem Cache eine Symbol->Bild-
+    // Karte ab. Wird der Cache neu geschrieben, ist die Karte veraltet.
+    try { if(window._crTokCgLogoInvalidate) window._crTokCgLogoInvalidate(); } catch(_){}
+  }
   return rows.slice(0, limit);
 }
 window.crCgMarkets = crCgMarkets;
@@ -66309,24 +66530,29 @@ window.crAlertEngine = (function(){
     const filterOpts = '<option value="__all__"' + (_mapFilter === '__all__' ? ' selected' : '') + '>' + _esc(T('alerts.allMaps','All maps')) + '</option>' +
       '<option value=""' + (_mapFilter === '' ? ' selected' : '') + '>' + _esc(T('alerts.globalNoMap','Global (no map)')) + '</option>' +
       maps.map(m => '<option value="' + _esc(m.id) + '"' + (m.id === _mapFilter ? ' selected' : '') + '>' + _esc(m.name) + '</option>').join('');
+    /* v1.0.927 — REFERENZ. Diese Ansicht traegt ihre Geometrie nicht mehr
+       inline, sondern in den .crDocs-*-Klassen; die Zahlen dort sind
+       eins zu eins die, die hier standen. Paper, P&L, Journal und Sessions
+       benutzen jetzt DIESELBEN Klassen — deshalb ist das hier die
+       Definition der gemeinsamen Struktur und keine Umgestaltung. */
     host.innerHTML =
-      '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 10px">' +
-        '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">' + _esc(T('alerts.summary','{n} alerts · {armed} armed · {fired} fired',{n:rules.length,armed:armed,fired:fired})) + '</div>' +
-        '<button id="crAeCheck" type="button" class="cr-go" style="margin-left:auto;font-size:10px;padding:5px 10px">' + _esc(T('alerts.checkNow','↻ Check now')) + '</button>' +
+      '<div class="crDocs-head">' +
+        '<div class="crDocs-headTitle">' + _esc(T('alerts.summary','{n} alerts · {armed} armed · {fired} fired',{n:rules.length,armed:armed,fired:fired})) + '</div>' +
+        '<button id="crAeCheck" type="button" class="cr-go crDocs-headAct">' + _esc(T('alerts.checkNow','↻ Check now')) + '</button>' +
       '</div>' +
       // create form
-      '<div style="border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.45);padding:12px;margin-bottom:14px">' +
-        '<div style="font-size:12px;font-weight:700;margin-bottom:10px">' + _esc(T('alerts.newAlert','＋ New alert')) + '</div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">' +
-          '<div><label style="display:block;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim);margin-bottom:4px">' + _esc(T('alerts.token','Token')) + '</label>' +
+      '<div class="crDocs-card">' +
+        '<div class="crDocs-cardTitle">' + _esc(T('alerts.newAlert','＋ New alert')) + '</div>' +
+        '<div class="crDocs-fieldRow">' +
+          '<div><label class="crDocs-fieldLbl">' + _esc(T('alerts.token','Token')) + '</label>' +
             '<select id="crAeTok" class="cr-ae-ctl">' + tokOpts + '</select></div>' +
-          '<div><label style="display:block;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim);margin-bottom:4px">' + _esc(T('alerts.condition','Condition')) + '</label>' +
+          '<div><label class="crDocs-fieldLbl">' + _esc(T('alerts.condition','Condition')) + '</label>' +
             '<select id="crAeType" class="cr-ae-ctl">' + typeOpts + '</select></div>' +
         '</div>' +
-        '<div style="margin-bottom:8px"><label style="display:block;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim);margin-bottom:4px">' + _esc(T('alerts.value','Value')) + ' <span id="crAeUnit" style="color:var(--fg)"></span></label>' +
+        '<div class="crDocs-field"><label class="crDocs-fieldLbl">' + _esc(T('alerts.value','Value')) + ' <span id="crAeUnit" style="color:var(--fg)"></span></label>' +
           '<input id="crAeVal" type="number" step="any" class="cr-ae-ctl" placeholder="' + _esc(T('alerts.valuePh','e.g. 0.000032')) + '"></div>' +
-        '<div id="crAeHint" style="font-size:10px;color:var(--dim);margin-bottom:10px"></div>' +
-        '<div style="margin-bottom:10px"><label style="display:block;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim);margin-bottom:4px">' + _esc(T('alerts.map','Map')) + (defMap ? ' <span style="color:#3ddc97">' + _esc(T('alerts.loadedMap','· loaded map')) + '</span>' : '') + '</label>' +
+        '<div id="crAeHint" class="crDocs-hint"></div>' +
+        '<div class="crDocs-field"><label class="crDocs-fieldLbl">' + _esc(T('alerts.map','Map')) + (defMap ? ' <span style="color:#3ddc97">' + _esc(T('alerts.loadedMap','· loaded map')) + '</span>' : '') + '</label>' +
           '<select id="crAeMap" class="cr-ae-ctl">' + mapOpts + '</select></div>' +
         '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:11px">' +
           '<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="crAeApp" checked> ' + _esc(T('alerts.inApp','🔔 In-app')) + '</label>' +
@@ -66336,19 +66562,19 @@ window.crAlertEngine = (function(){
         '<button id="crAeArm" type="button" class="cr-go" style="width:100%;border-color:#14f195;color:#bff7df;background:linear-gradient(180deg,rgba(20,241,149,.20),rgba(20,241,149,.05));font-weight:700">' + _esc(T('alerts.arm','⚡ Arm alert')) + '</button>' +
       '</div>' +
       // list + map filter
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
-        '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">' + _esc(T('alerts.mine','My alerts')) + '</div>' +
+      '<div class="crDocs-head">' +
+        '<div class="crDocs-headTitle">' + _esc(T('alerts.mine','My alerts')) + '</div>' +
         '<select id="crAeFilter" class="cr-ae-ctl" style="margin-left:auto;width:auto;font-size:10px;padding:5px 8px">' + filterOpts + '</select>' +
       '</div>' +
-      '<div id="crAeList" style="display:flex;flex-direction:column;gap:10px"></div>' +
+      '<div id="crAeList" class="crDocs-list"></div>' +
       // chart-alarm laser (hotkey-4) — managed here too, one unified place
-      '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px">' + _esc(T('alerts.laserTitle','Chart alarms · Laser (hotkey 4)')) + '</div>' +
-      '<div id="crAeLaser" style="display:flex;flex-direction:column;gap:10px"></div>' +
+      '<div class="crDocs-secTitle">' + _esc(T('alerts.laserTitle','Chart alarms · Laser (hotkey 4)')) + '</div>' +
+      '<div id="crAeLaser" class="crDocs-list"></div>' +
       // fired-event log (engine + chart-alarm laser both publish to crAlertBus)
-      '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px">' + _esc(T('alerts.logTitle','History · fired alarms')) + '</div>' +
-      '<div id="crAeLog" style="display:flex;flex-direction:column;gap:6px"></div>' +
+      '<div class="crDocs-secTitle">' + _esc(T('alerts.logTitle','History · fired alarms')) + '</div>' +
+      '<div id="crAeLog" class="crDocs-list crDocs-listTight"></div>' +
       // server note
-      '<div style="display:flex;align-items:center;gap:8px;margin-top:14px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.5);font-size:10.5px;color:var(--dim)">' +
+      '<div class="crDocs-note">' +
         (mailReady
           ? '<span>' + _esc(T('alerts.noteMail','✉ Server checks fire by mail even offline — once the worker route is live (server tier). Until then the client checks while the app is open.')) + '</span>'
           : '<span>' + _esc(T('alerts.noteGuest','🔒 Sign in so your alerts sync and later fire by mail offline too. Without login they run locally while the app is open.')) + '</span>') +
@@ -66364,7 +66590,7 @@ window.crAlertEngine = (function(){
     try { if(window.crAlertBus && crAlertBus.list) evs = crAlertBus.list() || []; } catch(_){}
     // newest first, cap 20
     evs = evs.slice().sort((a,b) => (b.ts||0)-(a.ts||0)).slice(0, 20);
-    if(!evs.length){ box.innerHTML = '<div style="font-size:11px;color:var(--dim);padding:10px;text-align:center;border:1px dashed var(--line);border-radius:8px">' + _esc(T('alerts.logEmpty','Nothing fired yet.')) + '</div>'; return; }
+    if(!evs.length){ box.innerHTML = '<div class="crDocs-empty">' + _esc(T('alerts.logEmpty','Nothing fired yet.')) + '</div>'; return; }
     const ago = (ts) => { const d = Date.now() - (ts||0); if(!(d>=0)) return ''; const m = Math.floor(d/60000); if(m<1) return T('alerts.justNow','now'); if(m<60) return m+'m'; const h=Math.floor(m/60); if(h<24) return h+'h'; return Math.floor(h/24)+'d'; };
     box.innerHTML = evs.map(e => {
       const sev = e.severity === 'critical' ? '#ff5b7f' : (e.severity === 'warn' ? '#ffd166' : '#7aa2ff');
@@ -66378,7 +66604,7 @@ window.crAlertEngine = (function(){
     const box = document.getElementById('crAeList'); if(!box) return;
     const all = _load();
     const rules = all.filter(r => _matchesFilter(r.mapId));
-    if(!rules.length){ box.innerHTML = '<div style="font-size:11px;color:var(--dim);padding:14px;text-align:center;border:1px dashed var(--line);border-radius:10px">' + _esc(all.length ? T('alerts.noneInMap','No alerts in this map view.') : T('alerts.noneYet','No alerts yet. Create one above.')) + '</div>'; return; }
+    if(!rules.length){ box.innerHTML = '<div class="crDocs-empty">' + _esc(all.length ? T('alerts.noneInMap','No alerts in this map view.') : T('alerts.noneYet','No alerts yet. Create one above.')) + '</div>'; return; }
     const stateChip = (s) => s === 'triggered'
       ? '<span style="margin-left:auto;font-size:9px;letter-spacing:.5px;text-transform:uppercase;padding:3px 9px;border-radius:999px;background:#14f195;color:#06110b;font-weight:700">' + _esc(T('alerts.stateFired','● fired')) + '</span>'
       : s === 'paused'
@@ -66428,7 +66654,7 @@ window.crAlertEngine = (function(){
     alarms = alarms.filter(a => a && _matchesFilter(a.anchorMapId || ''));
     if(!alarms.length){
       const anyAlarm = (function(){ try { return !!(window.crAlarm && crAlarm.alarms && crAlarm.alarms.length); } catch(_){ return false; } })();
-      box.innerHTML = '<div style="font-size:10.5px;color:var(--dim);padding:10px;text-align:center;border:1px dashed var(--line);border-radius:8px">' +
+      box.innerHTML = '<div class="crDocs-empty">' +
         (anyAlarm ? T('alerts.noLaserInMap','No laser alarms in this map view.') : T('alerts.noLaser','No chart alarms. In the chart, use hotkey <b>4</b> (alarm laser) and click a level.')) + '</div>';
       return;
     }
@@ -67750,7 +67976,7 @@ window.crWalletIntel = (function(){
       + '#crWalletIntelWin .wiStatus{margin-top:11px;padding-top:8px;border-top:1px solid rgba(127,127,127,.2);color:inherit;opacity:.55;font-size:10px;letter-spacing:.3px}'
       + '#crWalletIntelWin .wiMuted{color:inherit;opacity:.55;font-size:11px}'
       + '#crWalletIntelWin .wiProLock{padding:12px;border:1px dashed rgba(127,127,127,.35);border-radius:10px;background:rgba(127,127,127,.05);font-size:12px}'   /* v1.0.806 — Intel 30D-curve Pro lock */
-      + '#osIconWalletIntel{position:relative}#osGrid #osIconWalletIntel{order:9}'
+      + '#osIconWalletIntel{position:relative}#osGrid #osIconWalletIntel{order:8}'   // v1.0.927 — Tausch mit settings (war 9)
       + 'body.cr-guest #osIconWalletIntel{display:none!important}'   // v1.0.769 — Intel is connect-exclusive
       + 'body.cr-guest #crWalletIntelWin{display:none!important}'
       + '@media(max-width:620px){#crWalletIntelWin .wiCards{grid-template-columns:1fr 1fr}}';
@@ -68496,7 +68722,17 @@ window.crWalletIntel = (function(){
       var w = document.getElementById('crWalletIntelWin');
       if(w && w.classList.contains('on')) close(); else open();
     });
-    grid.appendChild(b);
+    /* v1.0.927 — Intel steht VOR den Einstellungen, und zwar in BEIDEN
+       Anordnungen. Das Desktop-Grid ordnet per CSS `order` (dort: intel 8,
+       settings 9); der App-Dock (_crBuildAppDock) liest dagegen die DOM-
+       Reihenfolge von #osGrid — ein reiner order-Tausch waere im Dock also
+       wirkungslos geblieben. Deshalb hier insertBefore statt appendChild.
+       Fehlt das Settings-Icon (Gast-Gate, archivierte Variante), faellt es
+       auf appendChild zurueck: eine fehlende Nachbarschaft darf die Injektion
+       nicht verhindern. */
+    var _crIntelBefore = grid.querySelector('.os-icon[data-prog="settings"]');
+    if(_crIntelBefore && _crIntelBefore.parentNode === grid) grid.insertBefore(b, _crIntelBefore);
+    else grid.appendChild(b);
     return true;
   }
   (function boot(){
@@ -68786,32 +69022,79 @@ function _crCCArmAvailable(){ return _crCCArmSignedIn() || _crCCArmWalletConnect
 // dieselben Signale wie die Zustandszeile in Settings (_crCCArmIsLive:
 // cr_arm_v1 UND Modus=LIVE) und das Gast-Gate (_crCCArmAvailable). Gast:
 // Hinweis, Link versteckt — Settings ist ohnehin wallet-/login-gated.
-function _crCCRenderArmStatus(){
-  const row = document.getElementById('crCCArmStatus');
-  if(!row) return;
-  const txt = document.getElementById('crCCArmStatusTxt');
-  const go  = document.getElementById('crCCArmGoSettings');
+/* v1.0.927 — der Token, den das ARM-Widget gerade BETRIFFT. Genau die Quelle,
+ * die T-Sync (v1.0.916) fuer die Terminal-Kacheln benutzt: currentAssetObj ueber
+ * _crActiveTokenSym. game.asset wird in dieser Datei nie gesetzt und waere immer
+ * BTC — der bekannte ◎-Fehlstand. */
+function _crArmTokenSym(){
+  try { if(typeof _crActiveTokenSym === 'function') return _crActiveTokenSym(); } catch(_){}
+  return '';
+}
+function _crArmLimitTxt(){
+  let limRaw = 100000000;
+  try { if(window.crWeiche) limRaw = crWeiche.limitLamports(); } catch(_){}
+  try { return (typeof _crFmtSol === 'function') ? _crFmtSol(limRaw) : (limRaw + ' Lamports'); } catch(_){ return String(limRaw) + ' Lamports'; }
+}
+/* Eine Zeile, drei Wahrheiten, und die dritte ist die, die frueher gefehlt hat:
+ *   ⚡ LIVE · <TOK> · Limit x SOL   — beide Bits stehen auf scharf
+ *   ◇ SIM · <TOK>                   — global scharf, Modus SIM
+ *   ◇ SIM · <TOK> · ARM global aus  — der Modus steht auf SCHARF, aber das
+ *                                     globale Bit fehlt. Ohne diesen Zusatz
+ *                                     saehe der Schalter kaputt aus.
+ * Gast ohne Wallet/Anmeldung bekommt statt dessen den Hinweis. */
+function _crArmStatusText(){
   const avail = _crCCArmAvailable();
-  const live = avail && _crCCArmIsLive();
-  row.setAttribute('data-cr-arm-state', live ? 'live' : 'sim');
-  if(txt){
-    if(live){
-      let limRaw = 100000000, limTxt = '';
-      try { if(window.crWeiche) limRaw = crWeiche.limitLamports(); } catch(_){}
-      try { limTxt = ' · Limit ' + ((typeof _crFmtSol === 'function') ? _crFmtSol(limRaw) : (limRaw + ' Lamports')); } catch(_){}
-      txt.textContent = '⚡ LIVE' + limTxt;
-      txt.title = 'LIVE · ECHTES GELD — Schalter und Limit in den Einstellungen';
-    } else if(avail){
-      txt.textContent = '◇ SIM';
-      txt.title = 'SIM · Übung · kein echtes Geld — scharf schalten in den Einstellungen';
-    } else {
-      txt.textContent = '◇ SIM · ARM nach Anmeldung/Wallet';
-      txt.title = 'ARM (Echtgeld) — verfügbar nach Anmeldung oder Wallet-Verbindung.';
+  const sym = _crArmTokenSym();
+  const tok = sym ? (' · ' + sym) : '';
+  if(!avail) return { live:false, avail:false,
+    text: '◇ SIM' + tok + ' · ARM nach Anmeldung/Wallet',
+    title:'ARM (Echtgeld) — verfügbar nach Anmeldung oder Wallet-Verbindung.' };
+  let flag = false, mode = false;
+  try { flag = !!(window.crWeiche && crWeiche.flagOn()); } catch(_){}
+  try { mode = !!(window.crArm && crArm.on()); } catch(_){}
+  if(flag && mode) return { live:true, avail:true,
+    text: '⚡ LIVE' + tok + ' · Limit ' + _crArmLimitTxt(),
+    title:'LIVE · ECHTES GELD — ein Fill im Activation-Panel ist ein echter Swap.' };
+  if(mode && !flag) return { live:false, avail:true,
+    text: '◇ SIM' + tok + ' · ARM global aus',
+    title:'Der Chart steht auf SCHARF, das globale ARM-Bit (cr_arm_v1) ist aus — im Aufklapp „Details" einschalten.' };
+  return { live:false, avail:true,
+    text: '◇ SIM' + tok,
+    title:'SIM · Übung · kein echtes Geld — scharf schalten am ARM-Widget im Chart-Terminal.' };
+}
+/* Die Zeile im Control Center UND die in Settings sind dieselbe Auskunft an
+ * zwei Orten. Sie teilen sich deshalb einen Renderer statt zweier Kopien, die
+ * auseinanderlaufen koennen. */
+function _crArmRenderStatusRow(rowId, txtId, goId){
+  const row = document.getElementById(rowId);
+  if(!row) return;
+  const st = _crArmStatusText();
+  row.setAttribute('data-cr-arm-state', st.live ? 'live' : 'sim');
+  const txt = document.getElementById(txtId);
+  if(txt){ txt.textContent = st.text; txt.title = st.title; }
+  const go = document.getElementById(goId);
+  if(go) go.hidden = !st.avail;
+}
+function _crCCRenderArmStatus(){
+  _crArmRenderStatusRow('crCCArmStatus', 'crCCArmStatusTxt', 'crCCArmGoSettings');
+  _crArmRenderStatusRow('crSetArmStatus', 'crSetArmStatusTxt', 'crSetArmGoTerminal');
+}
+/* v1.0.927 — der Widget-Titel nennt den Token, den das Widget betrifft, und
+ * wird bei jedem Render nachgezogen. renderChartWidgets zeichnet nicht bei
+ * jedem Asset-Wechsel neu; ohne diese Zeile stuende dort der Token von vorhin. */
+function _crArmWidgetRetitle(){
+  try {
+    const blk = document.getElementById('crArmWidgetBlock');
+    const host = blk && blk.closest ? blk.closest('.cr-widget') : null;
+    const nm = host && host.querySelector('.wTitle .nm');
+    if(nm){
+      const sym = _crArmTokenSym();
+      nm.textContent = 'ARM · Echtgeld' + (sym ? (' · ' + sym) : '');
     }
-  }
-  if(go) go.hidden = !avail;
+  } catch(_){}
 }
 function _crCCRenderArm(){
+  try { _crArmWidgetRetitle(); } catch(_){}
   // v1.0.905 (S5a.4) — zuerst das Gate: keine Signale → Sektion aus, Hinweis an,
   // und der Sicherheits-Default (Modus faellt auf SIM). Danach erst der Detail-
   // Render der (sichtbaren) Sektion.
@@ -68851,15 +69134,13 @@ function _crCCRenderArm(){
     info.textContent = wTxt + vTxt + (flag ? ' · SCHARF' : ' · Paper');
   }
   if(line){
-    const live = _crCCArmIsLive();
-    line.setAttribute('data-cr-arm-state', live ? 'live' : 'sim');
-    if(live){
-      let limTxt = '';
-      try { limTxt = ' · LIMIT ' + ((typeof _crFmtSol === 'function') ? _crFmtSol(limRaw) : (limRaw + ' Lamports')); } catch(_){}
-      line.textContent = '⚡ LIVE · ECHTES GELD' + limTxt + (addr ? ' · Wallet ' + addr.slice(0, 4) + '…' : '');
-    } else {
-      line.textContent = '◇ SIM · Übung · kein echtes Geld';
-    }
+    // v1.0.927 — dieselbe Zeile wie CC/Settings, aus derselben Quelle. Sie
+    // nennt den gecharteten Token; „Limit" steht nur im scharfen Zustand, weil
+    // es dort die Zahl ist, die zaehlt.
+    const st = _crArmStatusText();
+    line.setAttribute('data-cr-arm-state', st.live ? 'live' : 'sim');
+    line.textContent = st.text;
+    line.title = st.title;
   }
   try { _crCCRenderArmStatus(); } catch(_){}
 }
@@ -68917,13 +69198,35 @@ try { _crCCRenderBadge(); } catch(_){} // initial paint at boot, popover closed 
   /* v1.0.919 — „→ Einstellungen": der einzige ARM-Einstieg aus dem CC. Er
      schliesst das Popover und oeffnet die Settings-App (deren Refresh-Hook
      osRefreshSettings rendert den ARM-Block). Kein Schalter hier. */
+  /* v1.0.927 — der Knopf fuehrt ans ARM-Widget am Chart. Das Control Center
+     schliesst sich dabei, sonst laege es ueber dem Widget, das es gerade
+     geoeffnet hat. */
   const goSet = document.getElementById('crCCArmGoSettings');
   if(goSet) goSet.addEventListener('click', e => {
     e.stopPropagation();
     close();
-    try { if(typeof window.osOpenWindowMulti === 'function') window.osOpenWindowMulti('settings'); } catch(_){}
+    try { if(typeof crArmOpenWidget === 'function') crArmOpenWidget(); } catch(_){}
     try { _crCCRenderArm(); } catch(_){}
   });
+  /* Dieselbe Geste aus der Settings-App. Auch dort steht nur noch die Zeile. */
+  const goTerm = document.getElementById('crSetArmGoTerminal');
+  if(goTerm) goTerm.addEventListener('click', e => {
+    e.stopPropagation();
+    try { if(typeof crArmOpenWidget === 'function') crArmOpenWidget(); } catch(_){}
+    try { _crCCRenderArm(); } catch(_){}
+  });
+  /* v1.0.927 — solange das Widget am Chart haengt, haelt dieser Takt die
+     Zustandszeile und den Titel am gecharteten Token. Der Asset-Wechsel loest
+     kein Neuzeichnen der Widget-Ebene aus; ohne den Takt stuende dort der Token
+     von vorhin. Kostet nichts, wenn kein Widget haengt: eine getElementById-
+     Abfrage. _crCCRenderArm ist idempotent (crArm.set(false) emittiert nur bei
+     echtem Wechsel, das Limit-Feld wird beim Tippen nicht ueberschrieben). */
+  setInterval(() => {
+    try {
+      const blk = document.getElementById('crArmWidgetBlock');
+      if(blk && blk.closest && blk.closest('.cr-widget')) _crCCRenderArm();
+    } catch(_){}
+  }, 1000);
   /* v1.0.904 (S5a.3) — ARM · Echtgeld verdrahten. Der globale Schalter setzt/
      loescht GENAU das eine Bit cr_arm_v1 (die Weiche liest es unveraendert),
      das Limit geht float-frei ueber _crParseBetrag nach cr_arm_limit_v1. Die
@@ -76722,6 +77025,10 @@ function _crTermWidgetAllowedOnChart(type, sourceId){
   if(type === 'pane' && _crTermPaneArchivedForPrivateOps(sourceId, 'chart-widget')) return false;
   if(type === 'pane') return _crTermPaneAllowedOnChart(sourceId);
   if(type === 'execCockpit' || type === 'marketSignal' || type === 'arcHud' || type === 'arcOverlay') return true;
+  // v1.0.927 — ARM · Echtgeld. Chart-only und genau EINES: die sourceId heisst
+  // 'global', weil die Scharfschaltung global bleibt (cr_arm_v1) — das Widget
+  // ZEIGT den gecharteten Token, es fuehrt kein Scharf-Bit pro Token.
+  if(type === 'arm') return sourceId === 'global';
   if(type === 'map') return true;
   if(type === 'token') return !sourceId || String(sourceId).toLowerCase() === _crTermActiveTokenId();
   if(type === 'wbterm') return _crTermIsCuratedWbTerm(sourceId);
@@ -76801,6 +77108,10 @@ function _crTermChartPackItems(packId){
   if(packId === 'currentToken') return [
     {kind:'widget', payload:tokenItem},
   ];
+  // v1.0.927 — ARM · Echtgeld als Chart-Widget.
+  if(packId === 'armLive') return [
+    {kind:'widget', payload:{ widgetType:'arm', sourceId:'global' }},
+  ];
   if(packId === 'currentMap') return [
     {kind:'widget', payload:mapItem},
   ];
@@ -76859,6 +77170,7 @@ function _crTermSpawnChartPack(packId){
     overlayStack:'Overlay Stack',
     currentToken:'Current Token',
     currentMap:'Current Map',
+    armLive:'ARM · Echtgeld',
   };
   if(packId === 'currentMap' && !(_crTermActiveMapId && _crTermActiveMapId())){
     try { if(typeof crNotify === 'function') crNotify('Current Map · no saved map yet', 'warn'); } catch(_){}
@@ -76888,7 +77200,8 @@ function _crTermRenderChartRunViews(){
     _crTermSetHTML('crTermEngineWidgetsBody',
       '<div><span class="dim">current token</span><span class="r">' + esc((asset.replace(/USDT$/, '') || tokenId || 'BTC').toUpperCase()) + '</span></div>'
       + '<div><span class="dim">map widget</span><span class="r">' + esc(mapId || 'none') + '</span></div>'
-      + '<div class="crTerm-actionRow"><button type="button" data-cr-term-pack="currentToken">Current Token</button><button type="button" data-cr-term-pack="currentMap">Current Map</button></div>');
+      // v1.0.927 — dritte Schaltflaeche: ARM · Echtgeld an den Chart legen.
+      + '<div class="crTerm-actionRow"><button type="button" data-cr-term-pack="currentToken">Current Token</button><button type="button" data-cr-term-pack="currentMap">Current Map</button><button type="button" data-cr-term-pack="armLive">⚡ ARM</button></div>');
     _crTermSetHTML('crTermRunFocusBody',
       '<div><span class="dim">asset</span><span class="r">' + esc(asset) + ' · ' + esc(tf) + '</span></div>'
       + '<div><span class="dim">bot mode</span><span class="r">' + esc((window.crBotCopilot && crBotCopilot.state && crBotCopilot.state.mode) || 'propose') + '</span></div>'
@@ -80216,38 +80529,138 @@ function _tokRenderWlBar(){
     if(db) db.addEventListener('click', () => { const a = crTokLists.active(); if(!a) return; if(crTokLists.lists().length <= 1){ try { toast('Keep at least one watchlist'); } catch(_){} return; } if(confirm('Delete watchlist "' + a.name + '"? (the tokens in it are just unpinned)')){ crTokLists.remove(a.id); try { toast('Watchlist deleted'); } catch(_){} } });
   }
 }
-// Token logos — real image when CoinGecko has one (see _tokMergeCgTop's
-// cgImg carry-through above), initials badge fallback otherwise. Ported
-// from ChartRunner_Prototype_UnlockedEcon.html's v1.0.789/790 logo work
-// (skips that file's paid "custom logo mark" feature — out of scope here).
+/* ─────────────────────────────────────────────────────────────────────────
+ * v1.0.927 — TOKEN-LOGOS: EINE KETTE STATT EINER QUELLE.
+ *
+ * WAS GEMESSEN WURDE, und es weicht vom Auftrag ab: das Logo kam NICHT aus
+ * Birdeye. `_tokLogoUrl` las AUSSCHLIESSLICH `def.cgImg` — das Feld, das
+ * _tokMergeCgTop aus der CoinGecko-Marktliste stempelt. Birdeyes `logoURI`
+ * wird zwar geholt und in `_tokLiveCache[...].logoURI` abgelegt (v1.0.64,
+ * Zeile ~80085), aber NIEMAND hat es je gelesen. Eine geholte, gespeicherte
+ * und nie benutzte Zahl ist genau die Sorte Fehler, die nicht auffaellt.
+ *
+ * Damit erklaeren sich die fuenf gemeldeten Token anders als vermutet:
+ * TIA / OP / BONK / WIF / JTO bekamen nur dann ein Bild, wenn _tokMergeCgTop
+ * vorher gelaufen war — und das passiert erst, wenn jemand den ALL-Tab
+ * oeffnet. Ohne diesen Umweg war das Feld leer, egal ob Solana-Mint oder nicht.
+ *
+ * DIE KETTE, in dieser Reihenfolge, erste nicht-leere Stufe gewinnt:
+ *   1. Birdeye  — `logoURI` aus dem Live-Eintrag. Ab jetzt wirklich gelesen.
+ *   2. CoinGecko (bereits eingemischt) — `def.cgImg`.
+ *   3. CoinGecko (Rohcache) — `cr_cg_markets_v3` nach Symbol. DIESE Stufe ist
+ *      die, die TIA und OP rettet: Nicht-Solana-Token koennen bei Birdeye
+ *      nie ein Logo haben, in der CG-Marktliste stehen sie mit `img`.
+ *   4. Jupiters verifizierte Liste — der Worker fuehrt sie ohnehin; wir lesen
+ *      das Bild aus DERSELBEN Antwort, die crMarkets fuer die Mint-Aufloesung
+ *      schon holt (crMarkets.logoOf). KEIN neuer Endpunkt, KEIN zweiter
+ *      Abruf — und damit auch keine Wette auf einen Endpunkt, den diese
+ *      Sitzung nicht messen kann (CLAUDE.md: „Gemerged ist nicht ausgerollt").
+ *      Traegt die Antwort kein Bildfeld, kostet die Stufe nichts.
+ *   5. Platzhalter — Buchstabe + eine aus dem Symbol abgeleitete Farbe.
+ *
+ * NIE ein kaputtes <img>, NIE ein leerer Kasten: `onerror` faellt auf
+ * denselben Platzhalter zurueck, eine tote URL bleibt also kein Loch.
+ * ───────────────────────────────────────────────────────────────────────── */
+let _crTokCgLogoMap = null;   // Symbol -> img, einmal aus cr_cg_markets_v3 gebaut
+function _crTokCgLogoInvalidate(){ _crTokCgLogoMap = null; }
+try { window._crTokCgLogoInvalidate = _crTokCgLogoInvalidate; } catch(_){}
+function _crTokLogoFromCgCache(def){
+  try {
+    const tag = String((def && def.tag) || '').toUpperCase();
+    if(!tag) return '';
+    if(!_crTokCgLogoMap){
+      const c = JSON.parse(localStorage.getItem(CR_CG_CACHE_KEY) || 'null');
+      const rows = (c && Array.isArray(c.rows)) ? c.rows : null;
+      if(!rows) return '';
+      _crTokCgLogoMap = {};
+      rows.forEach(r => { if(r && r.sym && r.img && !_crTokCgLogoMap[r.sym]) _crTokCgLogoMap[r.sym] = String(r.img); });
+    }
+    return _crTokCgLogoMap[tag] || '';
+  } catch(_){ return ''; }
+}
+/* Birdeyes logoURI liegt am Live-Eintrag, und der ist PRO ZEITRAHMEN
+ * geschluesselt ('<id>|<tf>'). Ein Logo haengt aber nicht am Zeitrahmen —
+ * deshalb wird jeder Eintrag dieses Tokens gefragt, nicht nur der gerade
+ * gewaehlte. Sonst haette dasselbe Token je nach TF ein Bild oder keines. */
+function _crTokLogoFromBirdeye(def){
+  try {
+    const id = def && def.id;
+    if(!id || typeof _tokLiveCache === 'undefined') return '';
+    const pre = id + '|';
+    for(const k in _tokLiveCache){
+      if(k.indexOf(pre) !== 0) continue;
+      const e = _tokLiveCache[k];
+      if(e && e.logoURI) return String(e.logoURI);
+    }
+  } catch(_){}
+  return '';
+}
+function _crTokLogoFromJup(def){
+  try {
+    if(!(window.crMarkets && typeof crMarkets.logoOf === 'function')) return '';
+    const mid = (typeof _tokMarketId === 'function') ? _tokMarketId(def) : (def && def.id);
+    return crMarkets.logoOf(mid) || '';
+  } catch(_){ return ''; }
+}
 function _tokLogoUrl(def){
-  try { return (def && def.cgImg) ? String(def.cgImg) : null; } catch(_){ return null; }
+  try {
+    if(!def) return null;
+    const chain = [
+      _crTokLogoFromBirdeye(def),
+      (def.cgImg ? String(def.cgImg) : ''),
+      _crTokLogoFromCgCache(def),
+      _crTokLogoFromJup(def),
+    ];
+    for(const u of chain){ if(u && /^(https?:)?\/\//.test(u)) return String(u); }
+    return null;
+  } catch(_){ return null; }
+}
+/* Die Farbe wird aus dem Symbol GERECHNET, nicht gewuerfelt: derselbe Token
+ * bekommt in jeder Sitzung und auf jeder Oberflaeche denselben Kasten. */
+function _crTokLogoHue(sym){
+  let h = 0;
+  const s = String(sym || '?').toUpperCase();
+  for(let i = 0; i < s.length; i++) h = ((h * 31 + s.charCodeAt(i)) >>> 0);
+  return h % 360;
+}
+function _crTokLogoPlaceholder(el, def){
+  const sym = String((def && def.tag) || '?').toUpperCase();
+  el.innerHTML = '';
+  el.textContent = sym.slice(0, 1) || '?';
+  el.style.background = 'hsl(' + _crTokLogoHue(sym) + ',58%,42%)';
+  el.style.color = '#ffffff';
+  el.setAttribute('data-cr-logo', 'ph:' + sym);
 }
 function _tokFillLogoEl(el, def){
+  if(!el) return;
   const url = _tokLogoUrl(def);
-  const initials = String((def && def.tag) || '?').slice(0, 3).toUpperCase();
-  // v1.0.823 — idempotent: if the element already shows the correct image/initials,
+  // v1.0.823 — idempotent: if the element already shows the correct image/placeholder,
   // do NOT wipe + recreate it. Recreating the <img> every render made the token
   // icons visibly FLICKER (white logo bg flashes before the cached image repaints).
   if(url){
     const existing = el.querySelector('img');
     if(existing && existing.getAttribute('src') === url) return;   // already correct → leave it
-  } else if(el.childElementCount === 0 && el.textContent === initials){
+  } else if(el.getAttribute('data-cr-logo') === 'ph:' + String((def && def.tag) || '?').toUpperCase()){
     return;
   }
   el.innerHTML = '';
   if(url){
+    el.removeAttribute('data-cr-logo');
+    el.style.background = '#ffffff';
+    el.style.color = '#0c1115';
     const img = document.createElement('img');
     img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
     img.loading = 'lazy';
     img.alt = '';
     img.src = url;
-    img.onerror = function(){ try { img.remove(); } catch(_){} el.textContent = initials; };
+    // Eine tote URL ist kein Loch: sie faellt auf denselben Platzhalter.
+    img.onerror = function(){ try { img.remove(); } catch(_){} _crTokLogoPlaceholder(el, def); };
     el.appendChild(img);
   } else {
-    el.textContent = initials;
+    _crTokLogoPlaceholder(el, def);
   }
 }
+try { window._tokLogoUrl = _tokLogoUrl; window._tokFillLogoEl = _tokFillLogoEl; } catch(_){}
 // ── v1.0.795 — HOT tab: boosted DEX tokens (DexScreener) + the boost-payment
 // panel (moved here from the Terminal solBoost pane — "boost bezahl Funktion").
 let _tokHotCache = null, _tokHotAt = 0;
@@ -83978,6 +84391,7 @@ function _wTitleFor(w){
       if(w.type === 'arcHud') return { ic:'▤' };
       if(w.type === 'arcOverlay') return { ic:'∿' };
       if(w.type === 'marketSignal') return { ic:'↗' };
+      if(w.type === 'arm') return { ic:'⚡' };
       if(w.type === 'localDesk') return { ic:'⌖' };
       return { ic:'◇' };
     })();
@@ -84046,14 +84460,70 @@ function _wTitleFor(w){
   if(w.type === 'marketSignal'){
     return { ic:'↗', name:'Promoted Signal' };
   }
+  // v1.0.927 — der Name nennt den gecharteten Token; _crArmWidgetRetitle zieht
+  // ihn nach, wenn sich das Asset ohne Neuzeichnen aendert.
+  if(w.type === 'arm'){
+    let sym = '';
+    try { if(typeof _crArmTokenSym === 'function') sym = _crArmTokenSym(); } catch(_){}
+    return { ic:'⚡', name:'ARM · Echtgeld' + (sym ? (' · ' + sym) : '') };
+  }
   if(w.type === 'localDesk'){
     return { ic:'⌖', name:'Local · ' + (typeof _crLocalTradingDeskTitle === 'function' ? _crLocalTradingDeskTitle(w.sourceId) : 'Trading Desk') };
   }
   return { ic:'◇', name: 'Widget' };
 }
+/* ═══ v1.0.927 — ARM-Widget: UMHAENGEN, NICHT NEU BAUEN ═════════════════
+ * Beide Widget-Ebenen leeren sich mit layer.innerHTML = ''. Steckt der ARM-
+ * Block gerade in der Ebene, die geleert wird, ist er danach WEG — samt der
+ * beim Boot per getElementById gesetzten Bindungen. Also: vor dem Leeren
+ * zurueck in sein Zuhause (#crArmWidgetHome), nach dem Bauen in den
+ * Widget-Koerper. Der Test dafuer ist nicht „es kracht nicht", sondern
+ * „derselbe Knoten, dieselben Handler" — deshalb wird NIE geklont.
+ *
+ * _crArmWidgetParkFrom nimmt die Ebene entgegen und raeumt NUR auf, wenn der
+ * Block wirklich in DIESER Ebene haengt: sonst wuerde ein Neuzeichnen der
+ * Desktop-Ebene das Widget aus dem Chart reissen.
+ * ═══════════════════════════════════════════════════════════════════════ */
+function _crArmWidgetBlockEl(){ try { return document.getElementById('crArmWidgetBlock'); } catch(_){ return null; } }
+function _crArmWidgetParkFrom(layer){
+  try {
+    const blk = _crArmWidgetBlockEl();
+    const home = document.getElementById('crArmWidgetHome');
+    if(blk && home && layer && layer.contains && layer.contains(blk)) home.appendChild(blk);
+  } catch(_){}
+}
+function _crArmWidgetMount(host){
+  try {
+    const blk = _crArmWidgetBlockEl();
+    if(!host || !blk) return;
+    if(blk.parentNode !== host) host.appendChild(blk);
+    if(typeof _crCCRenderArm === 'function') _crCCRenderArm();
+    if(typeof _crArmPaint === 'function') _crArmPaint();
+  } catch(_){}
+}
+function _crArmWidgetMountAll(root){
+  try {
+    const host = (root || document).querySelector('[data-cr-arm-host]');
+    if(host) _crArmWidgetMount(host);
+  } catch(_){}
+}
+/* Der Weg dorthin, von beiden Statuszeilen aus (Control Center + Settings).
+ * Es gibt genau EIN ARM-Widget; ein zweiter Aufruf holt es nur nach vorn. */
+function crArmOpenWidget(){
+  try {
+    if(typeof _cwAdd === 'function') _cwAdd('arm', 'global', (window.innerWidth || 1280) * 0.58, (window.innerHeight || 720) * 0.28);
+    if(typeof renderChartWidgets === 'function') renderChartWidgets();
+    if(typeof _crCCRenderArm === 'function') _crCCRenderArm();
+  } catch(_){}
+}
+try { window.crArmOpenWidget = crArmOpenWidget; window._crArmWidgetMount = _crArmWidgetMount; } catch(_){}
 function _wBodyHTML(w){
   // v0.8k#24cc — bodyOverride wins (any non-wbterm widget can be customized).
   if(w && w.bodyOverride != null && w.type !== 'wbterm') return w.bodyOverride;
+  /* v1.0.927 — ARM: NUR der Aufhaengepunkt. Der Block selbst wird umgehaengt
+   * (_crArmWidgetMount), nicht neu gebaut — sonst waeren die beim Boot per
+   * getElementById gesetzten Bindungen weg, und zwar lautlos. */
+  if(w.type === 'arm') return '<div class="crArmW-host" data-cr-arm-host="1"></div>';
   if(w.type === 'map'){
     const m = _crFindMapForWidget(w.sourceId);
     if(!m) return '<div class="dim">map not found</div>';
@@ -85611,6 +86081,7 @@ function renderWidgets(){
     widgets.items = _crTermPrunePrivateOpsWidgets(widgets.items, 'desktop-render');
     if(widgets.items.length !== before) _wSave();
   } catch(_){}
+  try { _crArmWidgetParkFrom(layer); } catch(_){}   // v1.0.927
   layer.innerHTML = '';
   let geometryChanged = false;
   widgets.items.forEach(w => {
@@ -86041,6 +86512,7 @@ function _cwDefaultSize(w){
   if(type === 'arcHud') return { w:360, h:sourceId === 'driftCurves' ? 220 : 196 };
   if(type === 'arcOverlay') return { w:340, h:226 };
   if(type === 'marketSignal') return { w:330, h:214 };
+  if(type === 'arm') return { w:300, h:180 };   // v1.0.927
   if(type === 'localDesk') return { w:390, h:sourceId === 'signalInbox' ? 310 : 286 };
   if(type === 'map') return { w:220, h:200 };
   if(type === 'token') return { w:220, h:180 };
@@ -86175,6 +86647,7 @@ function _cwAdd(type, sourceId, clientX, clientY){
   if(type === 'arcHud'){ item.w = 360; item.h = sourceId === 'driftCurves' ? 220 : 196; }
   if(type === 'arcOverlay'){ item.w = 340; item.h = 226; try { if(window.crTerminalArc && window.crTerminalArc.enableDefaultOverlays) window.crTerminalArc.enableDefaultOverlays(); } catch(_){} }
   if(type === 'marketSignal'){ item.w = 330; item.h = 214; }
+  if(type === 'arm'){ item.w = 300; item.h = 180; }   // v1.0.927
   if(type === 'localDesk'){ item.w = 390; item.h = sourceId === 'signalInbox' ? 310 : 286; }
   _cwResolveSpawnGeometry(item, layer, x, y);
   chartWidgets.items.push(item);
@@ -86190,6 +86663,7 @@ function renderChartWidgets(){
     chartWidgets.items = chartWidgets.items.filter(w => !_crTermWidgetArchivedForPrivateOps(w, 'chart-render') && _crTermWidgetAllowedOnChart(w.type, w.sourceId));
     if(chartWidgets.items.length !== before) _cwSave();
   } catch(_){}
+  try { _crArmWidgetParkFrom(layer); } catch(_){}   // v1.0.927
   layer.innerHTML = '';
   let geometryChanged = false;
   chartWidgets.items.forEach(w => {
@@ -86296,6 +86770,8 @@ function renderChartWidgets(){
     // v1.0.102 — Title-name click handler removed (chart layer; matches the
     // desktop renderer change above). Edit page is unreachable from the UI.
     layer.appendChild(el);
+    // v1.0.927 — den EINEN ARM-Block in seinen Aufhaengepunkt umhaengen.
+    if(w.type === 'arm'){ try { _crArmWidgetMountAll(el); } catch(_){} }
     if(_cwApplyGeometry(w, el, layer)) geometryChanged = true;
     if(w.type === 'map'){
       try {
@@ -92903,6 +93379,10 @@ function log(msg){
     bw:       'White',
     mono:     'Black',
   };
+  // v1.0.927 — die Vorgabe ist Black (mono). Sie steht ausserdem im statischen
+  // Markup (<body data-os-theme> + #splash data-theme), weil _crThemeFallback()
+  // erst laeuft, wenn Platinum schon gemalt haette. Beide muessen dasselbe sagen.
+  const THEME_DEFAULT = 'mono';
   function _crLiveThemeArchived(name){
     try {
       return !!(window.cr && window.cr.isLiveGameSurface && LIVE_THEME_ARCHIVE.has(name));
@@ -92910,18 +93390,21 @@ function log(msg){
   }
   function _crThemeList(){
     const list = THEMES.filter(t => !_crLiveThemeArchived(t));
-    return list.length ? list : ['platinum'];
+    return list.length ? list : [THEME_DEFAULT];
   }
   function _crThemeFallback(){
-    return 'platinum';
+    return THEME_DEFAULT;
   }
   function _crNormalizeThemeForSurface(name){
     let t = THEMES.includes(name) ? name : _crThemeFallback();
     if(_crLiveThemeArchived(t)) t = _crThemeFallback();
-    if(!THEMES.includes(t) || _crLiveThemeArchived(t)) t = 'platinum';
+    if(!THEMES.includes(t) || _crLiveThemeArchived(t)) t = THEME_DEFAULT;
     return t;
   }
-  let themeIdx = 0;
+  // v1.0.927 — der Zeiger startet auf der VORGABE, nicht auf Index 0. Sonst
+  // liefe der erste Klick auf „Theme" von Platinum aus weiter, obwohl Black
+  // dasteht — die Leiste haette einen anderen Stand als der Bildschirm.
+  let themeIdx = Math.max(0, THEMES.indexOf(THEME_DEFAULT));
   function applyTheme(name){
     name = _crNormalizeThemeForSurface(name);
     themeIdx = Math.max(0, THEMES.indexOf(name));
@@ -114111,7 +114594,14 @@ window.crTouch = (function(){
    ans Ende; es reicht also nicht, settings zu verschieben — bot braucht die
    Zahl, die settings hatte, und settings rueckt dahinter. */
 #osGrid .os-icon[data-prog="bot"]{order:7}
-#osGrid .os-icon[data-prog="settings"]{order:8}
+/* v1.0.927 — INTEL UND EINSTELLUNGEN TAUSCHEN DIE PLAETZE. Das Desktop-Grid
+   ordnet per CSS `order`, der App-Dock per DOM-Reihenfolge in #osGrid — der
+   Tausch muss deshalb an BEIDEN Stellen stehen, sonst greift er nur in einer
+   der beiden Anordnungen (derselbe Fallstrick wie bei bot/settings in v1.0.895).
+   Hier die eine Haelfte: settings 8 -> 9. Die andere Haelfte steht bei der
+   Intel-Selbstinjektion (_icon(): insertBefore statt appendChild) und in der
+   Regel `#osGrid #osIconWalletIntel{order:9}` -> 8. */
+#osGrid .os-icon[data-prog="settings"]{order:9}
 /* v1.0.679 -- ROOMS tab: inline connected room config (econ-style). Guest
    sees #crRoomsLite instead; the header "+ start a room" + empty-state start
    button are redundant next to the inline CREATE and are hidden. Base look
