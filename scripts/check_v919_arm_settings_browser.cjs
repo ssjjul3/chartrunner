@@ -6,14 +6,24 @@
  * des ARM-Blocks (Control Center → Settings-App, #crArmHome) und ein entfernter
  * Einstieg (das Bottom-Sheet „Handeln vom Chart" hinter CR_CHART_SHEET, Default aus).
  *
+ * NACHGEZOGEN v1.0.928 — UND DAS IST EIN BEFUND, KEIN AUFRAEUMEN: dieser Test
+ * war auf main SCHON ROT (4 Zeilen), weil v1.0.927 den ARM-Block aus Settings
+ * ans Chart gezogen und die Zustandszeile umformuliert hat, ohne die Sonden
+ * hier nachzuziehen — die v927-Nummer behauptet „Regressionen v917–v927 gruen"
+ * und war es an dieser Stelle nicht. Die geprueften SACHVERHALTE (zwei
+ * Speicher, Modus-Wahrheit, Gast-Gate, EINE Handelsflaeche, Weiche/Spion) sind
+ * unveraendert; nachgezogen ist nur, WO die Bedienung wohnt: seit v1.0.928 im
+ * Terminal-Pane data-pane-id="arm", und weder Settings noch Control Center
+ * tragen noch etwas zu ARM.
+ *
  * Scharf geprueft wird, was Wahrheit oder Geld kostet, wenn es fehlt:
- *   1. ARM-UI genau EINMAL im DOM, unter #win-settings/#crArmHome, ganz oben;
- *      im Control Center KEIN Schalter/Checkbox/Limit-Feld — nur Statuszeile
- *      (#crCCArmStatus) + Link (#crCCArmGoSettings).
- *   2. Alle ARM-Handler feuern aus Settings wie zuvor: Checkbox → cr_arm_v1,
+ *   1. ARM-UI genau EINMAL im DOM, im Terminal-Pane data-pane-id="arm";
+ *      in Settings UND im Control Center kein ARM-Element mehr.
+ *   2. Alle ARM-Handler feuern aus dem Pane wie zuvor: Checkbox → cr_arm_v1,
  *      Modus-Schalter → crArm.on(), Limit → cr_arm_limit_v1; die Weiche-Gates
- *      (crWeiche.flagOn / limitLamports) lesen dieselben Werte; die CC-Statuszeile
- *      spiegelt den WAHREN Modus (SIM trotz Bit, LIVE nur bei Bit UND Schalter).
+ *      (crWeiche.flagOn / limitLamports) lesen dieselben Werte; die Zustands-
+ *      zeile spiegelt den WAHREN Modus (SIM trotz Bit, LIVE nur bei Bit UND
+ *      Schalter).
  *   3. Gast → kein ARM-Abschnitt (Hinweis, Link versteckt); verbunden → sichtbar —
  *      live-reaktiv ueber crApplyAccessGates.
  *   4. „Handeln vom Chart" nicht mehr erreichbar (Flag aus): ein Kauf-/Verkaufs-
@@ -105,35 +115,36 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
   check('Banner meldet mindestens v1.0.919',
     bv.length === 3 && (bv[0] > 1 || (bv[0] === 1 && (bv[1] > 0 || (bv[1] === 0 && bv[2] >= 919)))), bv);
 
-  /* ===================== 1 — Genau EIN ARM-UI, unter Settings ===================== */
-  console.log('\n-- 1 · ARM-UI genau EINMAL, unter #win-settings; CC nur Status + Link --');
+  /* ===================== 1 — Genau EIN ARM-UI, im Terminal-Pane ===================== */
+  console.log('\n-- 1 · ARM-UI genau EINMAL, im Chart/Run-Terminal; Settings + CC ohne ARM --');
+  // v1.0.928 — die Chart-Flaeche des Terminals ist der Ort. Gehaengt wird ueber
+  // die Produktionsfunktion, nicht ueber einen Nachbau des Umzugs.
+  await page.evaluate(() => {
+    const win = document.getElementById('win-terminal');
+    win.classList.add('on'); win.classList.add('cr-floating');
+    _crApplyTerminalSurfaceMode(win, 'chart');
+  });
   const s1 = await page.evaluate(() => {
     const q = id => document.getElementById(id);
-    const set = q('win-settings'), home = q('crArmHome'), cc = q('crCCPop');
-    const inSet = el => !!(set && el && set.contains(el));
-    const inHome = el => !!(home && el && home.contains(el));
-    const inCC = el => !!(cc && el && cc.contains(el));
-    const body = set && set.querySelector('.os-wbody');
-    const first = body && body.firstElementChild;
-    const tabs = set && set.querySelector('.crTerm-tabs');
+    const set = q('win-settings'), cc = q('crCCPop');
+    const pane = document.querySelector('#win-terminal .crTerm-pane[data-pane-id="arm"]');
+    const inPane = el => !!(pane && el && pane.contains(el));
+    const col = pane && pane.parentNode;
+    const paneIds = col ? [...col.children].filter(el => el.classList.contains('crTerm-pane'))
+      .map(el => el.getAttribute('data-pane-id')) : [];
     return {
-      homeInSet: inSet(home),
-      tglInHome: inHome(q('crArmGlobalToggle')), swInHome: inHome(q('crArmSwitch')),
-      boxInHome: inHome(q('crArmBox')), limInHome: inHome(q('crArmLimitInput')),
-      stateInHome: inHome(q('crCCArmState')), secInHome: inHome(q('crCCArmSection')),
-      hintInHome: inHome(q('crCCArmGateHint')), warnInHome: inHome(q('crArmWarn')), infoInHome: inHome(q('crArmInfo')),
-      // ganz oben: erstes Element im Settings-Body, VOR der Tab-Leiste
-      homeIsFirst: !!(first && first === home),
-      homeBeforeTabs: !!(home && tabs && (home.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING)),
-      title: home ? (home.querySelector('h4') || {}).textContent : '',
-      // CC: kein Schalter, kein Limit-Feld, keine Checkbox
-      ccSwitch: !!(cc && cc.querySelector('#crArmSwitch, .cr-armSwitch, #crArmBox')),
-      ccToggle: !!(cc && cc.querySelector('#crArmGlobalToggle, .crCCArmToggle, input[type="checkbox"]')),
-      ccLimit: !!(cc && cc.querySelector('#crArmLimitInput, .crCCArmLimit')),
-      ccSection: !!(cc && cc.querySelector('#crCCArmSection, #crCCArmGateHint, #crCCArmState')),
-      ccStatus: inCC(q('crCCArmStatus')), ccStatusTxt: inCC(q('crCCArmStatusTxt')), ccGo: inCC(q('crCCArmGoSettings')),
-      ccGoIsButton: !!(q('crCCArmGoSettings') && q('crCCArmGoSettings').tagName === 'BUTTON'),
-      ccGoTxt: q('crCCArmGoSettings') ? q('crCCArmGoSettings').textContent : '',
+      paneExists: !!pane,
+      tglInPane: inPane(q('crArmGlobalToggle')), swInPane: inPane(q('crArmSwitch')),
+      boxInPane: inPane(q('crArmBox')), limInPane: inPane(q('crArmLimitInput')),
+      stateInPane: inPane(q('crCCArmState')), secInPane: inPane(q('crCCArmSection')),
+      hintInPane: inPane(q('crCCArmGateHint')), warnInPane: inPane(q('crArmWarn')), infoInPane: inPane(q('crArmInfo')),
+      // ganz oben: erster Pane seiner Spalte, vor ON-CHAIN
+      paneIsFirst: paneIds[0] === 'arm',
+      beforeOnchain: paneIds.indexOf('arm') >= 0 && paneIds.indexOf('arm') < paneIds.indexOf('onchainWhales'),
+      title: pane ? (pane.querySelector('.crTerm-paneHd > span:first-child') || {}).textContent : '',
+      // Settings + CC: gar nichts mehr zu ARM
+      setArm: !!(set && set.querySelector('#crArmHome, #crSetArmStatus, #crSetArmGoTerminal, #crArmSwitch, #crArmLimitInput, #crArmGlobalToggle')),
+      ccArm: !!(cc && cc.querySelector('#crCCArmStatus, #crCCArmGoSettings, #crArmSwitch, .cr-armSwitch, #crArmBox, #crArmGlobalToggle, #crArmLimitInput, .crCCArmLimit, #crCCArmSection, #crCCArmGateHint, #crCCArmState')),
       // Kein doppeltes ARM-UI
       switches: document.querySelectorAll('#crArmSwitch, [data-cr-arm-switch]').length,
       toggles:  document.querySelectorAll('#crArmGlobalToggle').length,
@@ -147,55 +158,58 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
       // CC behaelt Theme/Sprache/Apps/Notifications
       ccKeeps: !!(cc && cc.querySelector('#crCCThemeChips') && cc.querySelector('#crCCLang') && cc.querySelector('#crCCAppsLocSw') && cc.querySelector('#crCCNotifList')),
       hexBadge: !!document.getElementById('crCCBadge'),
+      armBadge: !!document.getElementById('crArmBadge'),
       // Mobile: Zahlen-Tastatur
       limInputMode: q('crArmLimitInput') ? q('crArmLimitInput').getAttribute('inputmode') : '',
     };
   });
-  check('#crArmHome ist Nachfahre von #win-settings', s1.homeInSet === true, s1);
-  check('Checkbox, Modus-Schalter, ▲/▼-Box, Limit-Feld, Zustandszeile, Sektion, Gate-Hinweis, Erklaertext, Info-Zeile: alle unter #crArmHome',
-    s1.tglInHome && s1.swInHome && s1.boxInHome && s1.limInHome && s1.stateInHome && s1.secInHome && s1.hintInHome && s1.warnInHome && s1.infoInHome, s1);
-  check('ARM-Abschnitt steht GANZ OBEN (erstes Element im Settings-Body, vor der Tab-Leiste)', s1.homeIsFirst && s1.homeBeforeTabs, s1);
-  check('Abschnitts-Titel „ARM · Echtgeld"', /ARM · Echtgeld/.test(s1.title), s1);
-  check('Control Center: KEIN Schalter, KEINE Checkbox, KEIN Limit-Feld, KEINE Sektion/Zustandszeile',
-    !s1.ccSwitch && !s1.ccToggle && !s1.ccLimit && !s1.ccSection, s1);
-  check('Control Center: Statuszeile + Link „→ Einstellungen" (Button)',
-    s1.ccStatus && s1.ccStatusTxt && s1.ccGo && s1.ccGoIsButton && /Einstellungen/.test(s1.ccGoTxt), s1);
-  check('kein doppeltes ARM-UI (genau 1x Switch, Toggle, Box, Limit, Zustandszeile, Home)',
-    s1.switches === 1 && s1.toggles === 1 && s1.boxes === 1 && s1.limits === 1 && s1.states === 1 && s1.homes === 1, s1);
+  check('der ARM-Pane existiert im Chart/Run-Terminal', s1.paneExists === true, s1);
+  check('Checkbox, Modus-Schalter, ▲/▼-Box, Limit-Feld, Zustandszeile, Sektion, Gate-Hinweis, Erklaertext, Info-Zeile: alle im ARM-Pane',
+    s1.tglInPane && s1.swInPane && s1.boxInPane && s1.limInPane && s1.stateInPane && s1.secInPane && s1.hintInPane && s1.warnInPane && s1.infoInPane, s1);
+  check('ARM steht GANZ OBEN in seiner Spalte, vor ON-CHAIN', s1.paneIsFirst && s1.beforeOnchain, s1);
+  check('Pane-Kopf „ARM · Echtgeld"', /ARM · Echtgeld/.test(s1.title), s1);
+  check('Settings traegt NICHTS mehr zu ARM', s1.setArm === false, s1);
+  check('Control Center traegt NICHTS mehr zu ARM (kein Schalter, kein Feld, keine Statuszeile)',
+    s1.ccArm === false, s1);
+  check('kein doppeltes ARM-UI (genau 1x Switch, Toggle, Box, Limit, Zustandszeile; #crArmHome existiert nicht mehr)',
+    s1.switches === 1 && s1.toggles === 1 && s1.boxes === 1 && s1.limits === 1 && s1.states === 1 && s1.homes === 0, s1);
   check('alte Behausungen leer: nicht in .header-picks, kein #crLiveBand', !s1.boxInHeader && !s1.liveBand, s1);
   check('CC behaelt Theme/Sprache/Apps/Notifications; Hex-Badge bleibt', s1.ccKeeps && s1.hexBadge, s1);
+  check('das ARM-Badge in der Menueleiste bleibt als Zustandslicht', s1.armBadge === true, s1);
   check('Session-Limit-Feld mit Zahlen-Tastatur (inputmode=decimal)', s1.limInputMode === 'decimal', s1);
 
   /* ===================== 2 — Handler feuern aus Settings ===================== */
   console.log('\n-- 2 · ARM-Handler aus Settings: Bit, Modus, Limit → crArm-Zustand + Weiche-Gates --');
   const o2 = await page.evaluate(() => {
-    // Das Bit direkt im Storage setzen, OHNE Render — nur der Oeffnungs-Hook
-    // (osRefreshSettings → _crCCRenderArm) kann die Checkbox darauf bringen.
+    // Das Bit direkt im Storage setzen, OHNE Render — nur der Umzug in den Pane
+    // (_crApplyTerminalSurfaceMode → _crArmPaneMount → _crCCRenderArm) kann die
+    // Checkbox darauf bringen.
     try { localStorage.setItem('cr_arm_v1', '1'); } catch(_){}
+    const win = document.getElementById('win-terminal');
+    _crApplyTerminalSurfaceMode(win, 'desktop');
     const before = document.getElementById('crArmGlobalToggle').checked;
-    window.osOpenWindowMulti('settings');
-    const w = document.getElementById('win-settings');
-    return { before, on: !!(w && w.classList.contains('on')),
+    _crApplyTerminalSurfaceMode(win, 'chart');
+    return { before, on: !!document.querySelector('.crTerm-pane[data-pane-id="arm"] #crArmSwitch'),
              secHidden: !!document.getElementById('crCCArmSection').hidden,
              hintHidden: !!document.getElementById('crCCArmGateHint').hidden,
              tgl: document.getElementById('crArmGlobalToggle').checked };
   });
-  check('Settings oeffnet (osOpenWindowMulti) und der Oeffnungs-Hook rendert den ARM-Block (Sektion sichtbar, Checkbox = Bit aus dem Storage)',
+  check('Chart-Flaeche haengt den Block ein und rendert ihn (Sektion sichtbar, Checkbox = Bit aus dem Storage)',
     o2.before === false && o2.on && o2.secHidden === false && o2.hintHidden === true && o2.tgl === true, o2);
 
   const b2 = await page.evaluate(() => {
     const tgl = document.getElementById('crArmGlobalToggle');
     tgl.checked = true; tgl.dispatchEvent(new Event('change'));
     const onBit = localStorage.getItem('cr_arm_v1'), onFlag = crWeiche.flagOn();
-    const stOn = document.getElementById('crCCArmStatus').getAttribute('data-cr-arm-state');
-    const ccOn = document.getElementById('crCCArmStatusTxt').textContent;
+    const stOn = document.getElementById('crCCArmState').getAttribute('data-cr-arm-state');
+    const ccOn = document.getElementById('crCCArmState').textContent;
     const lineOn = document.getElementById('crCCArmState').textContent;
     tgl.checked = false; tgl.dispatchEvent(new Event('change'));
     return { onBit, onFlag, stOn, ccOn, lineOn, offBit: localStorage.getItem('cr_arm_v1'), offFlag: crWeiche.flagOn() };
   });
   check('Checkbox in Settings an → cr_arm_v1=1, crWeiche.flagOn() true; aus → Bit weg, flagOn false',
     b2.onBit === '1' && b2.onFlag === true && b2.offBit === null && b2.offFlag === false, b2);
-  check('Modus-Wahrheit: Bit an, Schalter SIM → Zustandszeile UND CC-Status sagen SIM (nicht LIVE)',
+  check('Modus-Wahrheit: Bit an, Schalter SIM → die Zustandszeile sagt SIM (nicht LIVE)',
     b2.stOn === 'sim' && /SIM/.test(b2.ccOn) && !/LIVE/.test(b2.ccOn) && /SIM/.test(b2.lineOn), b2);
 
   // Chart handelbar machen (Wallet + Mint + Live-Kurve) — nur so kann crArm scharf werden.
@@ -211,55 +225,59 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
     const sw = document.getElementById('crArmSwitch');
     const before = { disabled: sw.disabled, on: crArm.on() };
     sw.click();
-    const st = document.getElementById('crCCArmStatus').getAttribute('data-cr-arm-state');
-    const cc = document.getElementById('crCCArmStatusTxt').textContent;
     const line = document.getElementById('crCCArmState');
-    const go = document.getElementById('crCCArmGoSettings');
+    const st = line.getAttribute('data-cr-arm-state');
+    const cc = line.textContent;
     const r = { before, on: crArm.on(), swTxt: sw.textContent, swState: sw.getAttribute('data-cr-arm-state'),
-                lineState: line.getAttribute('data-cr-arm-state'), lineTxt: line.textContent, st, cc, goHidden: !!go.hidden,
+                lineState: line.getAttribute('data-cr-arm-state'), lineTxt: line.textContent, st, cc, goHidden: false,
                 buyOn: !document.getElementById('crArmBuy').disabled, sellOn: !document.getElementById('crArmSell').disabled };
     return r;
   });
-  check('Modus-Schalter in Settings: SIM → SCHARF (crArm.on() true, Schalter sagt SCHARF, ▲/▼ frei)',
+  check('Modus-Schalter im Pane: SIM → SCHARF (crArm.on() true, Schalter sagt SCHARF, ▲/▼ frei)',
     m2.before.disabled === false && m2.before.on === false && m2.on === true && m2.swTxt === 'SCHARF' && m2.swState === 'scharf' && m2.buyOn && m2.sellOn, m2);
-  check('Bit an ∧ Modus LIVE → Gold-Band „⚡ LIVE · ECHTES GELD · LIMIT …" in Settings',
-    m2.lineState === 'live' && /LIVE · ECHTES GELD/.test(m2.lineTxt) && /LIMIT/.test(m2.lineTxt), m2);
-  check('CC-Status spiegelt: „⚡ LIVE · Limit x SOL", Link sichtbar',
-    m2.st === 'live' && /⚡ LIVE/.test(m2.cc) && /Limit/.test(m2.cc) && /SOL/.test(m2.cc) && m2.goHidden === false, m2);
+  /* v1.0.928 — der Wortlaut ist der aus _crArmStatusText (seit v1.0.927:
+     „⚡ LIVE · <TOK> · Limit x SOL"). Die alte Sonde suchte noch das Band aus
+     v919 („LIVE · ECHTES GELD · LIMIT …") und war auf main deshalb rot. */
+  check('Bit an ∧ Modus LIVE → die Zustandszeile ist gold und sagt „⚡ LIVE … Limit x SOL"',
+    m2.lineState === 'live' && /⚡ LIVE/.test(m2.lineTxt) && /Limit/.test(m2.lineTxt) && /SOL/.test(m2.lineTxt), m2);
 
   const l2 = await page.evaluate(() => {
     const lim = document.getElementById('crArmLimitInput');
     lim.value = '0.05'; lim.dispatchEvent(new Event('change'));
     const ok = { ls: localStorage.getItem('cr_arm_limit_v1'), weiche: crWeiche.limitLamports(),
-                 cc: document.getElementById('crCCArmStatusTxt').textContent,
+                 cc: document.getElementById('crCCArmState').textContent,
                  line: document.getElementById('crCCArmState').textContent };
     lim.value = 'quatsch'; lim.dispatchEvent(new Event('change'));
     const bad = { ls: localStorage.getItem('cr_arm_limit_v1'), info: document.getElementById('crArmInfo').textContent };
     return { ok, bad };
   });
-  check('Limit 0.05 in Settings → cr_arm_limit_v1=50000000, die Weiche rechnet damit; Band + CC-Status zeigen 0,05 SOL',
+  check('Limit 0.05 im Pane → cr_arm_limit_v1=50000000, die Weiche rechnet damit; die Zustandszeile zeigt 0,05 SOL',
     l2.ok.ls === '50000000' && l2.ok.weiche === 50000000 && /0,05/.test(l2.ok.line) && /0,05/.test(l2.ok.cc), l2);
   check('Unsinn-Eingabe aendert NICHTS und sagt das', l2.bad.ls === '50000000' && /Limit:/.test(l2.bad.info), l2);
 
   const back2 = await page.evaluate(() => {
     document.getElementById('crArmSwitch').click();       // SCHARF → SIM
-    return { on: crArm.on(), st: document.getElementById('crCCArmStatus').getAttribute('data-cr-arm-state'),
-             cc: document.getElementById('crCCArmStatusTxt').textContent };
+    return { on: crArm.on(), st: document.getElementById('crCCArmState').getAttribute('data-cr-arm-state'),
+             cc: document.getElementById('crCCArmState').textContent };
   });
-  check('Schalter zurueck auf SIM → crArm.on() false, CC-Status „◇ SIM" (Bit bleibt, Modus-Wahrheit)',
+  check('Schalter zurueck auf SIM → crArm.on() false, Zustandszeile „◇ SIM" (Bit bleibt, Modus-Wahrheit)',
     back2.on === false && back2.st === 'sim' && /◇ SIM/.test(back2.cc), back2);
 
-  // Der Link aus dem CC oeffnet Settings.
-  const link2 = await page.evaluate(() => {
-    const w = document.getElementById('win-settings');
-    w.classList.remove('on');
-    document.getElementById('crMenuCC').click();
-    const popOpen = document.getElementById('crCCPop').classList.contains('on');
-    document.getElementById('crCCArmGoSettings').click();
-    return { popOpen, popClosed: !document.getElementById('crCCPop').classList.contains('on'),
-             setOpen: w.classList.contains('on') };
+  /* v1.0.928 — der Weg dorthin ist nicht mehr ein Link im Control Center,
+     sondern das Hex-Badge in der Menueleiste: ein Klick oeffnet das Chart/Run-
+     Terminal mit dem ARM-Panel darin. */
+  const link2 = await page.evaluate(async () => {
+    const win = document.getElementById('win-terminal');
+    _crApplyTerminalSurfaceMode(win, 'desktop');
+    win.classList.remove('on'); win.classList.remove('cr-floating');
+    document.getElementById('crArmBadge').click();
+    await new Promise(r => setTimeout(r, 250));
+    return { on: win.classList.contains('on'),
+             surface: win.getAttribute('data-cr-terminal-surface'),
+             blockInPane: !!document.querySelector('.crTerm-pane[data-pane-id="arm"] #crArmWidgetBlock') };
   });
-  check('CC „→ Einstellungen" schliesst das Popover und oeffnet Settings', link2.popOpen && link2.popClosed && link2.setOpen, link2);
+  check('Klick aufs ARM-Badge oeffnet das Chart/Run-Terminal mit dem ARM-Panel darin',
+    link2.on && link2.surface === 'chart' && link2.blockInPane, link2);
 
   /* ===================== 3 — Gast-Gate ===================== */
   console.log('\n-- 3 · Gast → kein ARM-Abschnitt; verbunden → sichtbar (live via crApplyAccessGates) --');
@@ -271,24 +289,21 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
     return { avail: _crCCArmAvailable(),
              secHidden: !!document.getElementById('crCCArmSection').hidden,
              hintHidden: !!document.getElementById('crCCArmGateHint').hidden,
-             cc: document.getElementById('crCCArmStatusTxt').textContent,
-             st: document.getElementById('crCCArmStatus').getAttribute('data-cr-arm-state'),
-             goHidden: !!document.getElementById('crCCArmGoSettings').hidden,
+             hint: document.getElementById('crCCArmGateHint').textContent,
              armOn: crArm.on() };
   });
-  check('Gast: ARM-Sektion in Settings versteckt, Hinweis sichtbar', g3.avail === false && g3.secHidden && !g3.hintHidden, g3);
-  check('Gast: CC-Status „◇ SIM · …Anmeldung/Wallet", Link versteckt, Modus SIM',
-    g3.st === 'sim' && /SIM/.test(g3.cc) && /Anmeldung/.test(g3.cc) && g3.goHidden === true && g3.armOn === false, g3);
+  check('Gast: ARM-Sektion im Pane versteckt, Hinweis sichtbar', g3.avail === false && g3.secHidden && !g3.hintHidden, g3);
+  check('Gast: der Hinweis nennt Anmeldung/Wallet, und der Modus faellt auf SIM',
+    /Anmeldung/.test(g3.hint) && g3.armOn === false, g3);
   const c3 = await page.evaluate((a) => {
     localStorage.setItem('cr_wallet', a);
     crApplyAccessGates();
     return { secHidden: !!document.getElementById('crCCArmSection').hidden,
              hintHidden: !!document.getElementById('crCCArmGateHint').hidden,
-             goHidden: !!document.getElementById('crCCArmGoSettings').hidden,
-             cc: document.getElementById('crCCArmStatusTxt').textContent };
+             cc: document.getElementById('crCCArmState').textContent };
   }, ADDR);
-  check('Wallet verbunden → Sektion sichtbar, Hinweis weg, CC-Link sichtbar, Status „◇ SIM"',
-    c3.secHidden === false && c3.hintHidden === true && c3.goHidden === false && /◇ SIM/.test(c3.cc) && !/Anmeldung/.test(c3.cc), c3);
+  check('Wallet verbunden → Sektion sichtbar, Hinweis weg, Zustandszeile „◇ SIM"',
+    c3.secHidden === false && c3.hintHidden === true && /◇ SIM/.test(c3.cc) && !/Anmeldung/.test(c3.cc), c3);
 
   /* ===================== 4 — EINE Handelsflaeche ===================== */
   console.log('\n-- 4 · „Handeln vom Chart" unerreichbar (Flag aus); Tap bei SCHARF → Activation-Panel --');
@@ -414,16 +429,19 @@ const ADDR = 'CRtestWa11etAddre55111111111111111111111111';
   const s5 = await page.evaluate(() => {
     const bar = document.getElementById('crOSBar');
     const tb = document.querySelector('.topbar');
-    const row = document.getElementById('crCCArmStatus');
-    const home = document.getElementById('crArmHome');
-    const anim = el => el ? getComputedStyle(el).animationName : 'none';
+    /* v1.0.928 — gemessen wird an den Elementen, die es GIBT: die Zustandszeile
+       und die ARM-Sektion im Terminal-Pane. Ein getComputedStyle auf null
+       gaebe 'none' zurueck — die Zeile waere gruen und haette nichts geprueft. */
+    const row = document.getElementById('crCCArmState');
+    const sec = document.getElementById('crCCArmSection');
+    const anim = el => el ? getComputedStyle(el).animationName : 'MISSING';
     return { barBtns: bar ? bar.querySelectorAll('.cr-bar-btn').length : -1,
              topbar: tb ? tb.children.length : -1,
-             animRow: anim(row), animHome: anim(home),
-             armInBar: !!(bar && bar.querySelector('#crArmBox, #crCCArmStatus')) };
+             animRow: anim(row), animSec: anim(sec),
+             armInBar: !!(bar && bar.querySelector('#crArmBox, #crCCArmState, #crCCArmSection')) };
   });
-  check('Topbar bleibt bei ≤5; kein ARM-Element in der Topbar', s5.barBtns <= 5 && (s5.topbar === -1 || s5.topbar <= 5) && !s5.armInBar, s5);
-  check('reduced-motion: keine Animation an Statuszeile/ARM-Abschnitt', s5.animRow === 'none' && s5.animHome === 'none', s5);
+  check('Topbar bleibt bei ≤5; kein ARM-Bedienelement in der OS-Leiste', s5.barBtns <= 5 && (s5.topbar === -1 || s5.topbar <= 5) && !s5.armInBar, s5);
+  check('reduced-motion: keine Animation an Zustandszeile/ARM-Sektion', s5.animRow === 'none' && s5.animSec === 'none', s5);
 
   const hard2 = errs.filter(m => !/Failed to fetch|NetworkError|ERR_FAILED|net::|aborted/i.test(m));
   check('keine harten Page-Errors waehrend der Pruefung', hard2.length === 0, hard2.slice(0, 3));

@@ -17,17 +17,19 @@
  *  T2  Gespeichertes Theme ueberlebt: 'bw' bleibt 'bw', 'platinum' bleibt die
  *      attributlose Vorgabe.
  *      (Mutation: im Persistenz-Block den else-Zweig entfernen -> T2 rot.)
- *  T3  ARM-Widget. (a) Die Bedien-IDs gibt es GENAU EINMAL im Dokument.
- *      (b) Control Center und Settings tragen KEINEN Schalter und KEIN
- *      Limit-Feld mehr, nur je eine Statuszeile. (c) Das Widget haengt den
- *      IDENTISCHEN Knoten um, es klont nicht — sonst waeren die Boot-Bindungen
+ *  T3  ARM. NACHGEZOGEN v1.0.928: das schwebende Chart-Widget dieser Nummer
+ *      ist durch den Terminal-Pane data-pane-id="arm" ersetzt, und Control
+ *      Center wie Settings tragen seitdem GAR NICHTS mehr zu ARM (statt je
+ *      einer Statuszeile). Die Aussage der Zeilen ist unveraendert — nur der
+ *      Ort. (a) Die Bedien-IDs gibt es GENAU EINMAL im Dokument. (b) Control
+ *      Center und Settings tragen kein ARM-Element. (c) Der Pane haengt den
+ *      IDENTISCHEN Knoten um, er klont nicht — sonst waeren die Boot-Bindungen
  *      still weg. (d) Schalter und Feld schreiben cr_arm_v1 / cr_arm_limit_v1
  *      und sonst NICHTS: der localStorage-Spion vergleicht die Menge der
- *      geschriebenen Schluessel. (e) Kein neues Tor: crWeiche.flagOn /
- *      limitLamports / sessionLamports werden mit denselben Argumenten
- *      aufgerufen wie zuvor, und der Widget-Pfad ruft keine Handels-Funktion.
+ *      geschriebenen Schluessel. (e) Kein neues Tor: der Bedienpfad ruft keine
+ *      Handels-Funktion.
  *      (Mutation a: das ARM-Markup zusaetzlich in Settings stehen lassen -> T3a rot.
- *       Mutation c: in _crArmWidgetMount cloneNode(true) statt appendChild -> T3c rot.
+ *       Mutation c: in _crArmPaneMount cloneNode(true) statt appendChild -> T3c rot.
  *       Mutation d: im Limit-Handler zusaetzlich localStorage.setItem('cr_arm_tok_v1',…)
  *       -> T3d rot.)
  *  T4  Tab-Leiste: kein Minigame-Knopf, Reihenfolge Regular · Rooms · Campaign ·
@@ -197,7 +199,7 @@ async function newPage(browser, port, opts){
   }
 
   // ── T3 · ARM-Widget ─────────────────────────────────────────────────────
-  console.log('\nT3 · ARM · Echtgeld als Chart-Widget');
+  console.log('\nT3 · ARM · Echtgeld als Terminal-Pane (v1.0.928)');
   {
     const { ctx, pg } = await newPage(browser, port);
     // Das Gast-Gate oeffnen: eine verbundene Wallet reicht fuer die SICHTBARKEIT.
@@ -211,33 +213,31 @@ async function newPage(browser, port, opts){
 
     const surfaces = await pg.evaluate(() => {
       const cc  = document.getElementById('crCCPop');
-      const set = document.getElementById('crArmHome');
+      const set = document.getElementById('win-settings');
       const q = (root, sel) => root ? root.querySelectorAll(sel).length : -1;
       return {
-        ccInputs:  q(cc, 'input, select, .cr-armSwitch'),
-        ccStatus:  q(cc, '#crCCArmStatus'),
-        setInputs: q(set, 'input, select, .cr-armSwitch'),
-        setStatus: q(set, '#crSetArmStatus'),
-        ccGoLabel: (document.getElementById('crCCArmGoSettings') || {}).textContent,
+        ccArm:  q(cc, '#crCCArmStatus, #crCCArmGoSettings, #crArmSwitch, .cr-armSwitch, #crArmBox, #crArmGlobalToggle, #crArmLimitInput, #crCCArmSection, #crCCArmState'),
+        setArm: q(set, '#crArmHome, #crSetArmStatus, #crSetArmGoTerminal, #crArmSwitch, #crArmLimitInput, #crArmGlobalToggle'),
       };
     });
-    check('T3b Settings: eine ARM-Statuszeile, KEIN Schalter, KEIN Limit-Feld',
-      surfaces.setStatus === 1 && surfaces.setInputs === 0, surfaces);
-    check('T3b Control Center: ARM-Statuszeile vorhanden und verweist aufs Terminal',
-      surfaces.ccStatus === 1 && /Terminal/.test(String(surfaces.ccGoLabel || '')), surfaces);
+    check('T3b Settings traegt GAR NICHTS mehr zu ARM (v1.0.928)', surfaces.setArm === 0, surfaces);
+    check('T3b Control Center traegt GAR NICHTS mehr zu ARM (v1.0.928)', surfaces.ccArm === 0, surfaces);
 
     // Knotenidentitaet: derselbe Knoten wandert, er wird nicht geklont.
     const mounted = await pg.evaluate(() => {
       const before = document.getElementById('crArmWidgetBlock');
       before.__crMark = 'marker-927';
-      window.crArmOpenWidget();
+      const win = document.getElementById('win-terminal');
+      win.classList.add('on'); win.classList.add('cr-floating');
+      _crApplyTerminalSurfaceMode(win, 'chart');
       const after = document.getElementById('crArmWidgetBlock');
+      const pane = after && after.closest && after.closest('.crTerm-pane[data-pane-id="arm"]');
       return {
         same: before === after,
         markSurvived: after && after.__crMark === 'marker-927',
-        inWidget: !!(after && after.closest && after.closest('#crChartWidgetLayer .cr-widget')),
+        inPane: !!(pane && pane.closest('#win-terminal')),
         copies: document.querySelectorAll('#crArmSwitch').length,
-        title: (() => { const w = after && after.closest('.cr-widget'); const n = w && w.querySelector('.wTitle .nm'); return n ? n.textContent : ''; })(),
+        title: (() => { const t = document.getElementById('crArmPaneTag'); return t ? t.textContent : ''; })(),
         hasSwitch: !!(after && after.querySelector('#crArmSwitch')),
         hasLimit:  !!(after && after.querySelector('#crArmLimitInput')),
         hasState:  !!(after && after.querySelector('#crCCArmState')),
@@ -245,11 +245,11 @@ async function newPage(browser, port, opts){
         detailsHasTaps:   !!(after && after.querySelector('details #crArmBuy') && after.querySelector('details #crArmSell')),
       };
     });
-    check('T3c Widget haengt den IDENTISCHEN Knoten um (kein Klon)',
+    check('T3c der Pane haengt den IDENTISCHEN Knoten um (kein Klon)',
       mounted.same && mounted.markSurvived && mounted.copies === 1, mounted);
-    check('T3c Block sitzt in einem Widget der Chart-Ebene', mounted.inWidget, mounted);
-    check('T3c Widget-Titel nennt ARM und den Token', /^ARM · Echtgeld · \S+/.test(mounted.title), mounted.title);
-    check('T3c EIN Schalter, EIN Limit-Feld, EINE Statuszeile im Widget',
+    check('T3c Block sitzt im ARM-Pane des Chart/Run-Terminals', mounted.inPane, mounted);
+    check('T3c die Datenmarke des Panes nennt den Token', /\S/.test(mounted.title) && mounted.title !== 'active chart', mounted.title);
+    check('T3c EIN Schalter, EIN Limit-Feld, EINE Statuszeile im Pane',
       mounted.hasSwitch && mounted.hasLimit && mounted.hasState, mounted);
     check('T3c Nebenschalter + globales Bit liegen eine Ebene tiefer (Aufklapp)',
       mounted.detailsHasGlobal && mounted.detailsHasTaps, mounted);
@@ -297,7 +297,7 @@ async function newPage(browser, port, opts){
       store.keys.every(k => ['cr_arm_v1','cr_arm_limit_v1','cr_ingame_terminal_session_v1','cr_notif_log_v1'].indexOf(k) >= 0),
       store.keys);
 
-    // Spion: der Widget-Pfad ruft KEINE Handels-Funktion.
+    // Spion: der Bedienpfad ruft KEINE Handels-Funktion.
     const spy = await pg.evaluate(() => {
       const calls = [];
       const wrap = (obj, name, tag) => {
@@ -316,7 +316,7 @@ async function newPage(browser, port, opts){
       t.checked = false; t.dispatchEvent(new Event('change', { bubbles:true }));
       return calls;
     });
-    check('T3e Spion: der Widget-Pfad ruft keine Handels-/Signier-Funktion', spy.length === 0, spy);
+    check('T3e Spion: der Bedienpfad ruft keine Handels-/Signier-Funktion', spy.length === 0, spy);
     await ctx.close();
   }
 
