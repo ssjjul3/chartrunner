@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.924
-     LAST UPDATED:    2026-09-08  ·  v1.0.924 (PATCH H · CLIENT · RUHENDE ORDERS UEBER DIE ON-CHAIN-ROUTE + CANCEL): MARKET-PFAD (quote→swap→signAndSend) BIT FUER BIT UNBERUEHRT, vier Tore + Spion unveraendert, kein Broadcast, single-file, keine neue Dep. BEFUND (06.–08.09.2026): (a) Phantom und Solflare haengen beim Sign-only Lighthouse-Guard-Instruktionen an die V2-Einzahlung (Programm L2TE…3S95, #8/#9; Solflare tauscht zusaetzlich ComputeBudget #0); Jupiter Trigger V2 verlangt die Tx bytegenau -> dauerhaft 400 „Transaction accounts modified". Backpack haengt nichts an, dort lief V2 durch (Order real angelegt und spaeter gefuellt). (b) Jupiter V2 nimmt derzeit KEINE Integrator-Gebuehr — auf dem V2-Pfad verdient ChartRunner nichts. KONSEQUENZ: ruhende Orders laufen ueber Jupiter Trigger V1 (on-chain, Worker v1.26, nachlesbar unter /health.trigger.onchain); dort geht die Order-Tx SO RAUS, WIE SIE SIGNIERT WURDE, und die 50-bps-Gebuehr laeuft ueber das Referral-Konto. Der V2-Vault-Pfad bleibt als Rueckweg eingebaut. FIX: (1) crVaultApi bekommt die vier V1-Aufrufe OHNE JWT (orders/onchain/create|execute|cancel|active, PATHS_ONCHAIN getrennt von PATHS); _honest reicht missing[]/code/signature/status/verify am FEHLER durch (dieselbe Whitelist-Falle wie safety v890 und deposit_diff v922). (2) preflight(route) prueft den Pflichtsatz JE ROUTE ('health' = nur Erreichbarkeit, 'v1', 'v2'); gecacht wird die /health-Antwort, nicht das Urteil — sonst haette der V2-Pflichtsatz die Route-Wahl verdeckt. (3) crRestingRoute (neu): routeVenue() liest /health -> trigger.resting_default (heute 'v1'); ein gesetztes sessionStorage.cr_wallet_guard_v1 erzwingt V1, ABER nur wenn onchainLive() die Route misst; kein UI-Schalter. Panel-Zeile „RUN: <venue> · ON-CHAIN-LIMIT · RUHENDE ORDER". (4) crOnchainLimit (neu, Schwester zu crVaultLimit mit demselben Handle-Vertrag): prepare -> create (zeigt VOR dem Signieren Gebuehr, beide Mengen im Klartext „0,1 SOL → mind. 27,3 JTO" und den Ablauf), commit -> crSigner.signTransaction (Sign-only, KEIN signAndSend) -> execute mit signed_tx + request_id + making_amount; Journal { source:'live', kind:'limit', venue:'jupiter-v1', order, sig, status:'open' }. (5) taking_amount wird gerechnet: BUY taking = making_SOL / trigger_usd × SOL_usd, SELL umgekehrt, gerundet auf die Token-Decimals aus GET /v1/mints/resolve; SOL-Preis aus GET /v1/price. Fehlt EIN Preis oder fehlen die Decimals -> KEINE Signatur, ehrliche Meldung (kein geschaetzter Wert). (6) CANCEL (neu, es gab im Client fuer KEINE Route einen): Terminal -> OFFENE POSITIONEN -> eine Zeile mit venue jupiter-v1 traegt CANCEL -> orders/onchain/cancel -> signTransaction -> execute OHNE making_amount -> Journal status 'cancelled' + sig. Eine V2-Order zeigt stattdessen „Cancel über jup.ag" — bewusst kein V2-Cancel im Client. (7) TEXTE KORRIGIERT: „Gebuehr … bei der Einzahlung gebunden" (v923) ist WEG — er war falsch, V2 bindet nichts, weil V2 nichts nimmt. Je Route ein Satz aus EINER Konstante (crRestingRoute.feeText): v1 „Gebühr 0,5 % bei Ausführung (Referral)", v2 „Keine ChartRunner-Gebühr (Jupiter V2 unterstützt derzeit keine Integrator-Gebühr)"; das Gebuehren-Blatt fuehrt beide als zwei getrennte Zeilen mit Markierung der aktiven. Wallet-Guard-Text: „…mit dieser Wallet derzeit nicht moeglich" faellt weg, uebrig bleibt der gemessene Befund „Mit Backpack funktioniert es (hängt keine Schutz-Instruktionen an)." (8) ABGLEICH erweitert: orders/onchain/active (OHNE JWT) laeuft NEBEN orders/active + orders/history; orderKey -> orderPubkey, venue jupiter-v1. Nur ergaenzen, nie loeschen, bekannte id/txSignature nie doppelt. Zusaetzlich crOrderReconcile.runOnchain(): beim Laden OHNE JWT wird die V1-Liste trotzdem gelesen (sie braucht keinen Token) und meldet sich nur, wenn sie etwas Neues findet. (9) DIAGNOSE: verify.jupiter aus der create-Antwort steht als Notiz im Diagnose-Block; onchain-tx-unexpected traegt seinen otx-Code WOERTLICH ins Panel — das ist der Live-Beweis fuer das Argument-Layout von initialize_order, das der Worker prueft. SICHERHEIT unveraendert: jede finanzwirksame Aktion ist ein Klick plus Wallet-Signatur, der Client sendet nie selbst (signAndSend bleibt dem Market-Pfad vorbehalten), die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign) und der Spion sind unberuehrt; der Adapter traegt limitOnchain NEBEN limitVault (eigenes Spion-Ereignis), das Session-Limit zaehlt das making_amount wie bisher. TESTS: scripts/check_v924_patchH_browser.cjs (H1 commit -> execute mit signed_tx + request_id + making_amount, 0 signAndSend/sendTransaction; H2 Cancel -> cancel -> signTransaction -> execute OHNE making_amount, V2-Zeile zeigt den jup.ag-Hinweis; H3 taking_amount BUY/SELL mit Decimals 6 und 9, fehlender SOL-Preis -> kein Signieren; H4 Routing nach resting_default und nach cr_wallet_guard_v1; H5 Fee-Text je Venue + grep: „bei der Einzahlung gebunden" kommt im Build nicht mehr vor; H6 Abgleich nimmt On-Chain-Orders auf, ohne bekannte zu duplizieren; H7 Market-Pfad unveraendert). Regressionen v907/v917–v923 gruen (v922/v923 tragen die drei Textzeilen nach, die dieser Patch ausdruecklich aendert — Fee-Wortlaut, Guard-Satz, dritter Abgleich-Schritt). Gegenproben ROT (siehe Commit). NICHT GEMESSEN: der AUSGEROLLTE Worker v1.26 — ob /health trigger.resting_default und trigger.onchain wirklich fuehrt, ob orders/onchain/create die hier gesendeten Feldnamen annimmt und ob /v1/mints/resolve decimals traegt, misst Julian am Telefon (Schritte im PR). Ohne die Endpunkte in /health bricht der Arm VOR jeder Signatur ab und sagt, welche fehlen. Rollback: v1.0.923 (dann wieder V2-only, fuer Phantom/Solflare funktionslos).
+     CURRENT VERSION: v1.0.925
+     LAST UPDATED:    2026-09-08  ·  v1.0.925 (OWNERSHIP B · CLIENT · crOwnership, DER SERVER ALS AUTORITAET FUER BELEGTEN BESITZ, EHRLICHE KENNZEICHNUNG): SPIELLOGIK, RENDERING UND ABILITIES UNBERUEHRT; MARKET- UND LIMIT-PFAD BIT FUER BIT UNVERAENDERT (vier Tore + Spion, crRealAdapter/crWeiche/crVaultLimit/crOnchainLimit nur noch als Regression geprueft); single-file, keine neue Dep, kein CDN. AUSGANGSLAGE (gemessen): Besitz lebte allein im Browser — zwei Sets in localStorage (cr_owned_bots_v1, cr_owned_gear_v1), die jeder aufmachen und beschreiben kann. Fuer das Spiel reicht das, fuer Turniere und Marketplace nicht. MESSUNG VOR DEM BAU, UND SIE IST DER WICHTIGSTE SATZ DIESER ZEILE: DER SERVER AUS AUFTRAG A IST NICHT AUSGEROLLT. Supabase-Projekt gjaaxqnqohseyesctbcd fuehrt in pg_proc weder cr_ownership_claim noch cr_loadout_get/_set (14 Funktionen, alle aus den Namen-/Alerts-/Follows-Migrationen); workers/ enthaelt account, alerts-cron, hermes-proxy — keinen ownership-Worker; es gibt keinen offenen PR dafuer. Der Client ist trotzdem gebaut, WEIL sein Vertrag genau diesen Fall traegt: ohne antwortenden Server faellt jeder Pfad auf den reinen Lokalbetrieb zurueck und das Spiel verhaelt sich wie v1.0.924. Das ist Testfall O1b, kein Notbehelf. NEU crOwnership: (1) init() liest GET /ownership/list (same-origin wie /account/*, JWT im Header, ?wallet= wenn nur eine Wallet da ist) in den SPEICHER — nie in localStorage, denn ein gecachtes verified:true, das einen Neustart ueberlebt, ist eine Behauptung ohne Beleg. (2) has(kind,id) liefert {owned,verified,provenance}; crBotOwned/crGearOwned rufen hier an, die alten Sets bleiben Fallback UND Cache (Server-Bestand wird ergaenzend hineingespiegelt, damit es nach einer Sitzung online auch offline weiterlaeuft). VEREINIGUNG: angezeigter Besitz = Server ∪ lokal; der Server entfernt NIE etwas lokal Vorhandenes, und Lokales stuft NIE ein verified:true herab (beide Regeln an je EINER Stelle: has() und _note()). (3) claim(kind,id,provenance) ruft RPC cr_ownership_claim, nur 'campaign' | 'softcurrency', IMMER unverifiziert — der Client behauptet, er beweist nicht. Fehlschlag blockiert nie: der Anspruch wandert in eine Schlange und wird beim naechsten Start nachgereicht. crUnlockBot(id, provenance) traegt den Grant, crBuyBot reicht 'softcurrency' herein — genau EIN claim je Erwerb, kein doppelter. (4) syncLoadout() ueber cr_loadout_get/_set fuer equipped bots/tools/loadout, letzter Schreiber gewinnt (updated_at); ausdruecklich KEIN Autoritaetsanspruch. EINMALIGE UEBERNAHME: beim ersten Start mit Identitaet werden die vorhandenen lokalen Sets EINMAL gemeldet (Bots 'campaign', bepreiste Gear 'softcurrency'), Merker cr_ownership_migrated_v1. Starter- und Gast-Bots bleiben draussen — die bekommt jeder geschenkt, da gibt es nichts zu beanspruchen. WALLET VERKNUEPFEN: Settings → Wallet → „Link wallet to account“ (POST /ownership/link-wallet, challenge → crSigner.signMessage → verify). Eine reine NACHRICHTEN-Signatur; der Text sagt das auch so („No payment, no transaction, nothing on-chain“). Freiwillig, nicht erzwungen. EHRLICHE KENNZEICHNUNG: im Loadout-Picker traegt jeder Eintrag seine HERKUNFT — „im Spiel freigespielt“ bzw. „gekauft, belegt“. Kein Schloss, keine rote Farbe, keine Abwertung: belegter Besitz wird hervorgehoben, freigespielter steht ruhig daneben. Ein Tooltip erklaert einmal, was wofuer zaehlt. GAESTE: ohne Konto UND ohne Wallet aendert sich NICHTS — null Requests an /ownership/*, null RPCs, keine Kennzeichnung. WAEHRUNG KORRIGIERT: die Kauf-Texte sagten „$RUN“ fuer das, was aus game.run abgezogen wird. $RUN ist NICHT gelauncht (letzter Baustein der Roadmap). Sichtbar laeuft jetzt alles ueber EINE Konstante CR_INGAME_CUR = '$CHART'; die Variablennamen (CR_BOT_PRICE_RUN, game.run) bleiben absichtlich. Beide Tokenomics-Tafeln sagen jetzt „Not launched yet“ statt „Scarce on-chain SPL on Solana“ im Praesens. OFFENER WIDERSPRUCH, BEWUSST STEHENGELASSEN UND IM PR BENANNT: abgezogen wird weiter game.run, waehrend die Kauf-Zeile „$CHART“ sagt und die Topbar zwei getrennte Staende fuehrt ($CHART je Run, $RUN persistiert). Der Auftrag verlangt genau diese Umbenennung und prueft sie per grep; die restlichen rund 100 $RUN-Stellen (Topbar, Shop-Fahrzeuge, Kampagnen-Belohnungen, Missionen) sind eine spielweite Waehrungsumbenennung und brauchen Julians Entscheidung, nicht meine. SICHERHEIT: der Client behauptet nur, er beweist nicht; verifizierter Besitz entsteht ausschliesslich im Worker, dieser Auftrag baut KEINEN Weg dorthin. Keine Secrets im Client (nur der Supabase-Anon-Key wie bisher). Handelspfad, die vier Tore und der Spion unberuehrt. TESTS: scripts/check_v925_ownership_browser.cjs (O1 Vereinigung · O1b Serverausfall nimmt nichts weg · O2 keine Herabstufung · O3 genau ein claim je Erwerb mit richtiger Provenienz · O3b RPC-Ausfall blockiert den Kauf nicht · O4 Migration genau einmal, Starter ausgenommen · O5 Gast = null Netz, null RPC, null Kennzeichnung · O6 grep auf die Kauf-Strings PLUS der echte Toast · O7 Kennzeichnung ohne Schloss, verified unterscheidbar · O8 Wallet-Link: ohne Anmeldung kein Request, angemeldet genau eine Nachrichten-Signatur · O9 Loadout letzter Schreiber · O10 Handelspfade unveraendert). Gegenproben ROT (siehe Commit). NICHT GEMESSEN: der ausgerollte Server, weil es ihn nicht gibt — die Wire-Formate (Feldnamen von /ownership/list, /ownership/link-wallet und der drei RPCs) stehen im Modulkopf und muessen zum Server-Auftrag passen; ein Feldname, den beide Seiten anders schreiben, ist genau der Fehler, der v1.0.883 gekostet hat. Rollback: v1.0.924 (dann wieder rein lokaler Besitz — funktional identisch, solange der Server fehlt).
+     PREV  ·  v1.0.924 (PATCH H · CLIENT · RUHENDE ORDERS UEBER DIE ON-CHAIN-ROUTE + CANCEL): MARKET-PFAD (quote→swap→signAndSend) BIT FUER BIT UNBERUEHRT, vier Tore + Spion unveraendert, kein Broadcast, single-file, keine neue Dep. BEFUND (06.–08.09.2026): (a) Phantom und Solflare haengen beim Sign-only Lighthouse-Guard-Instruktionen an die V2-Einzahlung (Programm L2TE…3S95, #8/#9; Solflare tauscht zusaetzlich ComputeBudget #0); Jupiter Trigger V2 verlangt die Tx bytegenau -> dauerhaft 400 „Transaction accounts modified". Backpack haengt nichts an, dort lief V2 durch (Order real angelegt und spaeter gefuellt). (b) Jupiter V2 nimmt derzeit KEINE Integrator-Gebuehr — auf dem V2-Pfad verdient ChartRunner nichts. KONSEQUENZ: ruhende Orders laufen ueber Jupiter Trigger V1 (on-chain, Worker v1.26, nachlesbar unter /health.trigger.onchain); dort geht die Order-Tx SO RAUS, WIE SIE SIGNIERT WURDE, und die 50-bps-Gebuehr laeuft ueber das Referral-Konto. Der V2-Vault-Pfad bleibt als Rueckweg eingebaut. FIX: (1) crVaultApi bekommt die vier V1-Aufrufe OHNE JWT (orders/onchain/create|execute|cancel|active, PATHS_ONCHAIN getrennt von PATHS); _honest reicht missing[]/code/signature/status/verify am FEHLER durch (dieselbe Whitelist-Falle wie safety v890 und deposit_diff v922). (2) preflight(route) prueft den Pflichtsatz JE ROUTE ('health' = nur Erreichbarkeit, 'v1', 'v2'); gecacht wird die /health-Antwort, nicht das Urteil — sonst haette der V2-Pflichtsatz die Route-Wahl verdeckt. (3) crRestingRoute (neu): routeVenue() liest /health -> trigger.resting_default (heute 'v1'); ein gesetztes sessionStorage.cr_wallet_guard_v1 erzwingt V1, ABER nur wenn onchainLive() die Route misst; kein UI-Schalter. Panel-Zeile „RUN: <venue> · ON-CHAIN-LIMIT · RUHENDE ORDER". (4) crOnchainLimit (neu, Schwester zu crVaultLimit mit demselben Handle-Vertrag): prepare -> create (zeigt VOR dem Signieren Gebuehr, beide Mengen im Klartext „0,1 SOL → mind. 27,3 JTO" und den Ablauf), commit -> crSigner.signTransaction (Sign-only, KEIN signAndSend) -> execute mit signed_tx + request_id + making_amount; Journal { source:'live', kind:'limit', venue:'jupiter-v1', order, sig, status:'open' }. (5) taking_amount wird gerechnet: BUY taking = making_SOL / trigger_usd × SOL_usd, SELL umgekehrt, gerundet auf die Token-Decimals aus GET /v1/mints/resolve; SOL-Preis aus GET /v1/price. Fehlt EIN Preis oder fehlen die Decimals -> KEINE Signatur, ehrliche Meldung (kein geschaetzter Wert). (6) CANCEL (neu, es gab im Client fuer KEINE Route einen): Terminal -> OFFENE POSITIONEN -> eine Zeile mit venue jupiter-v1 traegt CANCEL -> orders/onchain/cancel -> signTransaction -> execute OHNE making_amount -> Journal status 'cancelled' + sig. Eine V2-Order zeigt stattdessen „Cancel über jup.ag" — bewusst kein V2-Cancel im Client. (7) TEXTE KORRIGIERT: „Gebuehr … bei der Einzahlung gebunden" (v923) ist WEG — er war falsch, V2 bindet nichts, weil V2 nichts nimmt. Je Route ein Satz aus EINER Konstante (crRestingRoute.feeText): v1 „Gebühr 0,5 % bei Ausführung (Referral)", v2 „Keine ChartRunner-Gebühr (Jupiter V2 unterstützt derzeit keine Integrator-Gebühr)"; das Gebuehren-Blatt fuehrt beide als zwei getrennte Zeilen mit Markierung der aktiven. Wallet-Guard-Text: „…mit dieser Wallet derzeit nicht moeglich" faellt weg, uebrig bleibt der gemessene Befund „Mit Backpack funktioniert es (hängt keine Schutz-Instruktionen an)." (8) ABGLEICH erweitert: orders/onchain/active (OHNE JWT) laeuft NEBEN orders/active + orders/history; orderKey -> orderPubkey, venue jupiter-v1. Nur ergaenzen, nie loeschen, bekannte id/txSignature nie doppelt. Zusaetzlich crOrderReconcile.runOnchain(): beim Laden OHNE JWT wird die V1-Liste trotzdem gelesen (sie braucht keinen Token) und meldet sich nur, wenn sie etwas Neues findet. (9) DIAGNOSE: verify.jupiter aus der create-Antwort steht als Notiz im Diagnose-Block; onchain-tx-unexpected traegt seinen otx-Code WOERTLICH ins Panel — das ist der Live-Beweis fuer das Argument-Layout von initialize_order, das der Worker prueft. SICHERHEIT unveraendert: jede finanzwirksame Aktion ist ein Klick plus Wallet-Signatur, der Client sendet nie selbst (signAndSend bleibt dem Market-Pfad vorbehalten), die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign) und der Spion sind unberuehrt; der Adapter traegt limitOnchain NEBEN limitVault (eigenes Spion-Ereignis), das Session-Limit zaehlt das making_amount wie bisher. TESTS: scripts/check_v924_patchH_browser.cjs (H1 commit -> execute mit signed_tx + request_id + making_amount, 0 signAndSend/sendTransaction; H2 Cancel -> cancel -> signTransaction -> execute OHNE making_amount, V2-Zeile zeigt den jup.ag-Hinweis; H3 taking_amount BUY/SELL mit Decimals 6 und 9, fehlender SOL-Preis -> kein Signieren; H4 Routing nach resting_default und nach cr_wallet_guard_v1; H5 Fee-Text je Venue + grep: „bei der Einzahlung gebunden" kommt im Build nicht mehr vor; H6 Abgleich nimmt On-Chain-Orders auf, ohne bekannte zu duplizieren; H7 Market-Pfad unveraendert). Regressionen v907/v917–v923 gruen (v922/v923 tragen die drei Textzeilen nach, die dieser Patch ausdruecklich aendert — Fee-Wortlaut, Guard-Satz, dritter Abgleich-Schritt). Gegenproben ROT (siehe Commit). NICHT GEMESSEN: der AUSGEROLLTE Worker v1.26 — ob /health trigger.resting_default und trigger.onchain wirklich fuehrt, ob orders/onchain/create die hier gesendeten Feldnamen annimmt und ob /v1/mints/resolve decimals traegt, misst Julian am Telefon (Schritte im PR). Ohne die Endpunkte in /health bricht der Arm VOR jeder Signatur ab und sagt, welche fehlen. Rollback: v1.0.923 (dann wieder V2-only, fuer Phantom/Solflare funktionslos).
      PREV  ·  v1.0.923 (PATCH G · TEIL B · CLIENT · ABGLEICH GEGEN JUPITER): KEIN TRADE-PFAD-CHANGE — Market-Pfad (quote→swap→signAndSend) unberuehrt, vier Tore + Spion unveraendert, keine neue Signatur ausser der bekannten Auth-Nachricht (nur auf Knopfdruck oder bei vorhandenem JWT), kein Broadcast, single-file, keine neue Dep. VORAUSSETZUNG: Worker Patch G · Teil A (v1.26) deployt — orders/history ist NICHT Teil des Preflight-Pflichtsatzes (404 → not-deployed → Abgleich laeuft mit orders/active allein weiter und sagt das). BEFUND (Handy, 07.09. 19:48, Backpack): Backpack signiert ohne Lighthouse-Guard → kompletter V2-Fluss lief durch, Jupiter legte die Order an (jup.ag Open Orders: SOL→JTO 0,120 SOL, Limit unter 0,432, 30 d, Gebuehr 0,5 %). Der Worker (v1.25) hielt die Antwort zurueck → Client meldete trigger-fee-echo-fehlt, kein Journal-Eintrag, Terminal leer. Der Client hatte keine Moeglichkeit, den Zustand bei Jupiter zu sehen. FIX: (1) crOrderReconcile (neu, read-only): orders/active + orders/history (crVaultApi.ordersHistory, neu) abfragen, Orders dieser Wallet, die im Journal fehlen, als { source:'live', kind:'limit', status, id, txSignature, reconciled:true } eintragen — nur ergaenzen, nie loeschen, bekannte id/orderPubkey/txSignature nie duplizieren; Panel/HUD/CC: „Order bei Jupiter gefunden und ins Journal uebernommen (id …)". (2) crVaultLimit.commit: nach JEDEM ordersPrice-Ergebnis ohne sauberes {id} (Fehler, Timeout, Netzabbruch, auch wallet-guard) laeuft der Abgleich mit dem vorhandenen JWT; Ergebnis als res.reconcile am unveraenderten Fehlerobjekt; _msgForLimitError und die Weiche haengen den Fund an. Ein ok OHNE id: Abgleich zuerst, Fund per txSignature → kein zweiter Journal-Eintrag. (3) Laden: der JWT lebt nur im Speicher, also haengt der einmalige Lade-Abgleich (je Wallet und Sitzung, crOrderReconcile.onAuth) an der ersten erfolgreichen Anmeldung (crVaultApi.ensureAuth); laeuft gerade ein Flow, wartet er bis zu dessen Ende. Ohne JWT beim Laden: CC-/Terminal-Hinweis „Ruhende Orders: Abgleich wartet auf Wallet-Signatur" — KEIN automatisches Signieren. (4) Terminal → OFFENE POSITIONEN → Knopf „Bei Jupiter nachsehen" (ensureAuth, ggf. EINE Nachrichten-Signatur, kein Geld) + Statuszeile (Hinweis / letztes Ergebnis / laeuft); LIM-Zeilen tragen id (kurz) und Ablauf. (5) Erfolgsantwort { id, txSignature, depositConfirmed, fee{bps, bound_at}, warnings[] }: fee.bound_at 'craft' → ein Gebuehrensatz, der laut v923 an die Einzahlung gebunden sei, in Panel/Journal/Gebuehren-Blatt (v924 hat diesen Satz als falsch verworfen: V2 nimmt gar keine Integrator-Gebuehr); 'craft-cache-miss' → „Gebuehrenstand: siehe Einzahlung" (kein Fehler); warnings[] als Hinweiszeile (Panel, CC, Diagnose-Notiz), nie als Abbruch; Ablauf (expiredAt) in Journal/Terminal, sonst „Laufzeit 30 Tage (Jupiter)". (6) TIF-Label: Option GTC heisst jetzt „30 Tage (Jupiter)" (Wert bleibt GTC — gespeicherte Route-States; ob orders/price ein Ablaufdatum annimmt, ist im Worker-Vertrag nicht gemessen, nichts mitgegeben). (7) Patch-F-Text: „Ruhende Orders sind mit dieser Wallet derzeit nicht moeglich. Mit Backpack funktioniert es (kein Guard)." — eine Konstante (crWalletGuard), Setup-Guide-Absatz gleich. (8) Spur: eigener Schritt reconcile (Dauer, N gefunden, M neu; history-Fehler benannt); am Knopf ein eigener Flight „reconcile". NICHT GEBAUT: ein Cancel-Pfad im Client (orders/price/cancel/:id → Auszahlungs-Tx signieren → confirm-cancel) existiert im oeffentlichen Client nicht — das waere eine neue finanzwirksame Signatur und liegt ausserhalb dieses Patches; Cancel der 19:48-Order bis dahin ueber jup.ag. TESTS: scripts/check_v923_patchG_browser.cjs (G1 ordersPrice-Fehler → orders/active + orders/history werden gerufen, fremde Fixture-Order landet mit reconciled:true im Journal + Terminal, bekannte id nicht dupliziert, Panel-Text nennt den Fund; G2 Laden: ohne JWT kein Aufruf + Hinweis sichtbar, nach ensureAuth genau EIN Abgleich, zweite (gecachte) Anmeldung loest keinen zweiten aus; G3 Erfolg mit fee.bound_at:'craft' → Journal + Fee-Text, craft-cache-miss → „siehe Einzahlung", warnings[] blockieren nicht; G4 TIF-Label „30 Tage (Jupiter)", Backpack-Satz in Guard-Text + Guide; G5 Knopf „Bei Jupiter nachsehen" → ensureAuth (1 signMessage) → Fund → Journal, Spur reconcile; history 404 → Abgleich laeuft mit active allein; G6 Market-Pfad unveraendert). Regressionen v907/v917–v922 gruen. Gegenproben ROT (siehe Commit). NICHT GEMESSEN: die Antwortform des ausgerollten Workers v1.26 fuer orders/history (orders[] / history[] / Array werden alle gelesen) und die Feldnamen der Jupiter-Orders (camel + snake werden gelesen; Ablauf nur, wenn genannt). Rollback: v1.0.922 (dann fehlt der Abgleich wieder — nur mit Worker v1.26 vertretbar).
      PREV  ·  v1.0.922 (PATCH F · CLIENT · WALLET-GUARD EHRLICH ANZEIGEN): KEIN TRADE-PFAD-CHANGE — Market-Pfad (quote→swap→signAndSend) unberuehrt, vier Tore + Spion unveraendert, keine neue Signatur, kein Broadcast, single-file, keine neue Dep. BEFUND (Handy, 06.09. 14:52 Phantom · 15:41 Solflare, Worker v1.25 mit deposit_diff): beide Wallets haengen beim Sign-only der Jupiter-Einzahlung Lighthouse-Guard-Instruktionen an (accounts_added L2TE…3S95, instructions_added #8/#9; Solflare ersetzt zusaetzlich ComputeBudget #0), signature_valid_for_crafted_message=false. Jupiter Trigger V2 prueft die signierte Tx bytegenau gegen ihren Craft → „Transaction accounts modified". Worker und Client sind sauber; die Veraenderung passiert in der Wallet und ist nicht reparierbar (Guards entfernen = Signatur ungueltig). Phantom dokumentiert keinen Opt-out, nur ein Domain-Review-Formular; Solflare dokumentiert nichts. FIX: (1) crVaultApi._honest reicht deposit_diff aus der Fehlerantwort durch (dieselbe Whitelist-Falle wie safety in v890). (2) crWalletGuard (neu): detect/classify — deposit_diff mit dem Lighthouse-Programm unter accounts_added ODER „Lighthouse" unter instructions_added → Fehlercode wallet-guard; ein blosses blockhash_changed bleibt der generische Fehler mit detail. crVaultLimit.commit klassifiziert den orders/price-Fehler; der Roh-Diff geht als crVaultFlight.note NUR in den Diagnose-Block (aufklappbar), nie in die Hauptzeile. (3) EINE Meldung (crWalletGuard.text) in Panel + HUD + Trace + Weiche: „Deine Wallet hat die Einzahlung mit Schutz-Instruktionen veraendert (Lighthouse-Guard). Jupiter nimmt nur die unveraenderte Einzahlung an. Nichts bewegt." — letzter Satz „Ruhende Orders laufen deshalb derzeit ueber die On-Chain-Route (Trigger V1)." NUR, wenn crVaultApi.triggerV1Live() den Fallback in der letzten /health-Antwort misst (trigger_v1 / features.trigger_v1 / Pfad /v1/orders/trigger unter endpoints); sonst „… sind mit dieser Wallet derzeit nicht moeglich." (4) Merken, nicht nerven: sessionStorage cr_wallet_guard_v1 = Wallet-Name nach dem ersten Treffer (KEIN localStorage — Wallet-Verhalten kann sich mit Domain-Review aendern). Solange gesetzt, zeigt _armVaultLimit den Hinweis nach dem Preflight und VOR Auth/Signatur (Spur-Schritt walletGuard; 0 signMessage, 0 signTransaction, kein auth/challenge); ist Trigger V1 live, laeuft die Order weiter ueber die On-Chain-Route. (5) Setup-Guide/Gebuehren-Blatt: aufklappbarer Absatz „Ruhende Orders & Wallet-Schutz" unter dem Klartext (nur Route Limit) mit demselben Text; Zeile Vault-Rente ~0,004 SOL NUR, wenn der V2-Pfad genutzt wird (data-cr-guide-path v2/v1/none). (6) Spur als Gruppe: crVaultFlight fuehrt einen Stapel offener Schritte — depositSign/ordersPrice/ordersActive stehen als Kinder (depth 1) unter commit, der Diagnose-Block nummeriert nur Tiefe 0 und rueckt Kinder mit „↳" ein; lines() bleibt flach (Sonden v918–v921), linesTree()/traceText() zeigen die Gruppe; end() schliesst alle offenen Schritte. TESTS: scripts/check_v922_patchF_browser.cjs (F1 Fixture deposit_diff mit Lighthouse → wallet-guard, „Nichts bewegt" in Panel/HUD/Toast, Rohdiff NUR im Diagnose-Block; F1b Lighthouse nur unter instructions_added; F2 Fixture ohne Lighthouse (blockhash_changed) → generischer Text mit detail, KEIN Merker; F3 cr_wallet_guard_v1 gesetzt → Hinweis vor Auth/Signatur, 0 signMessage, 0 signTransaction, kein auth/challenge-Request; F3b Trigger V1 live per /health → Textvariante + Flow laeuft weiter; F4 Spur-Gruppe (depth) + Diagnose-Einrueckung; F5 Guide-Absatz nur auf Route Limit, Renten-Zeile nur bei V2-Pfad; F6 Market-Pfad unveraendert; sessionStorage statt localStorage). Regressionen v907/v917–v921 gruen. Gegenproben ROT (siehe Commit). NICHT GEMESSEN: die genaue Ablageform von deposit_diff im ausgerollten Worker v1.25 (oben, unter detail, oder detail ist der Diff — alle drei werden gelesen) und ob /health einen Trigger-V1-Marker fuehrt; beides prueft Julian am Telefon. Rollback: v1.0.921.
      PREV  ·  v1.0.921 (PATCH E · TEIL B · CLIENT · DEPOSIT NUR SIGNIEREN): KEIN BROADCAST DER EINZAHLUNG MEHR — signierte Tx geht in orders/price, ehrliche Fehler. Market-Pfad (quote→swap→signAndSend) Bit fuer Bit unberuehrt, vier Tore + Spion unveraendert, single-file, keine neue Dep. BEFUND (Trace 00:46, v920): register ok · depositCraft ok · commit/depositSign → sign-failed; Phantom liess „Bestaetigen" nie zu, keine Aktivitaet. Ursache: commit rief crSigner.signAndSend(handle.transaction) — Phantom simuliert die Jupiter-Craft-Tx als EIGENSTAENDIGEN Send; die ist nur gueltig, wenn Jupiter sie zusammen mit der Order landet → Simulation scheitert → Phantom blockiert → sign-failed. Der Client hatte keinen Sign-only-Pfad, prepare erfasste die request_id aus deposit/craft nicht, ordersPrice sendete deposit_sig statt signierter Bytes, commit verwarf detail und unterschied rejected nicht. FIX: (1) crSigner.signTransaction(txBase64,{chain}) — Sign-only ueber Wallet Standard solana:signTransaction (Fallback: injizierter Provider signTransaction, nicht gemessen); Rueckgabe { signedTx: base64 }; KEIN sendTransaction, KEIN signAndSend; Fehlwege rejected / sign-failed(+detail) / no-signer. (2) crVaultLimit.prepare nimmt request_id aus dem Craft-Echo in handle.depositRequestId; fehlt sie → deposit-request-id-missing, KEIN Signieren. (3) crVaultLimit.commit: signTransaction → crVaultApi.ordersPrice({ depositSignedTx, depositRequestId }); Antwort { id, txSignature, depositConfirmed } wird durchgereicht; Journal source live · kind limit · orderPubkey/id · sig=txSignature · status open (depositConfirmed oder orders/active) sonst pending; Bestaetigung ueber orders/active wie bisher (Ausfall dort ≠ ungueltig). (4) crVaultApi.ordersPrice: Body deposit_signed_tx + deposit_request_id statt deposit_sig; fehlt eines, verlaesst kein Request die Seite. (5) Fehler ehrlich in Panel + HUD + Trace: detail ueberall durch; rejected → „Einzahlung nicht signiert — nichts bewegt.", sign-failed → „Wallet konnte nicht signieren: <detail>"; im Limit-Pfad nie mehr „Live swap failed" (Weiche + Panel sagen „Ruhende Order: …"). (6) Session-Limit zaehlt den Deposit bei Erfolg wie bisher; Fill-Marker/T-Sync unveraendert. VORAUSSETZUNG: Worker Patch E · Teil A (v1.24) ausgerollt — /health muss orders/price fuehren; ob der AUSGEROLLTE Worker deposit_signed_tx annimmt, ist eine Messung am Telefon, kein Bericht. TESTS: scripts/check_v921_patchE_browser.cjs (E1 signTransaction sendet NICHT — Spion: sendTransaction/signAndSend 0 Aufrufe im Limit-Commit, liefert base64; E2 commit → orders/price mit deposit_signed_tx + deposit_request_id, ohne request_id kein Signieren; E3 Fehlermapping rejected/sign-failed mit detail in Panel/HUD/Trace; E4 Journal mit txSignature/depositConfirmed, T-Sync zeigt die Order LIVE; E5 Market-Pfad unveraendert ueber signAndSend). Fixtures v907/v917/v918/v920 auf signTransaction + request_id nachgezogen. Gegenproben ROT (siehe Commit). Rollback: v1.0.920 (Limit-Commit ueber signAndSend — funktionslos, aber ungefaehrlich, da Phantom blockiert).
@@ -10351,7 +10352,7 @@ window.crShare = function (o) {
             </summary>
             <div class="cr-tok-body">
               <div class="cr-tok-row"><span class="cr-tok-k">$CHART</span><span class="cr-tok-v"><b>Soft currency.</b> Earned in-run from grunt kills, pickups &amp; mode entries. Resets each run; your career tally persists. Front-loaded issuance — 500 → 200 floor per run.</span></div>
-              <div class="cr-tok-row"><span class="cr-tok-k">$RUN</span><span class="cr-tok-v"><b>Hard currency.</b> Scarce on-chain SPL on Solana. Mints only on a winning trade, a boss kill, or a mission complete. Daily mint cap 50 $RUN.</span></div>
+              <div class="cr-tok-row"><span class="cr-tok-k">$RUN</span><span class="cr-tok-v"><b>Hard currency.</b> <b style="color:#ffd166">Not launched yet</b> — the token is the last block on the roadmap; what you hold today is an in-game balance, not a tradable token. <i>Planned:</i> scarce on-chain SPL on Solana, minting only on a winning trade, a boss kill, or a mission complete, daily mint cap 50.</span></div>
               <div class="cr-tok-row"><span class="cr-tok-k">Swap</span><span class="cr-tok-v">100 $CHART → 1 $RUN at the in-run shop. Reserve float drifts 100:1 → 250:1 as the reserve drains (one-way). 2% swap tax.</span></div>
               <!-- tokenomics Entry-fees row removed from public (v1.0.451) -->
               <!-- tokenomics Supply row removed from public (v1.0.451) -->
@@ -10864,7 +10865,7 @@ window.crShare = function (o) {
         </summary>
         <div class="cr-tok-body">
           <div class="cr-tok-row"><span class="cr-tok-k">$CHART</span><span class="cr-tok-v"><b>Soft currency.</b> Earned in-run from grunt kills, pickups &amp; mode entries. Resets each run; your career tally persists. Front-loaded issuance — 500 → 200 floor per run.</span></div>
-          <div class="cr-tok-row"><span class="cr-tok-k">$RUN</span><span class="cr-tok-v"><b>Hard currency.</b> Scarce on-chain SPL on Solana. Mints only on a winning trade, a boss kill, or a mission complete. Daily mint cap 50 $RUN.</span></div>
+          <div class="cr-tok-row"><span class="cr-tok-k">$RUN</span><span class="cr-tok-v"><b>Hard currency.</b> <b style="color:#ffd166">Not launched yet</b> — the token is the last block on the roadmap; what you hold today is an in-game balance, not a tradable token. <i>Planned:</i> scarce on-chain SPL on Solana, minting only on a winning trade, a boss kill, or a mission complete, daily mint cap 50.</span></div>
           <div class="cr-tok-row"><span class="cr-tok-k">Swap</span><span class="cr-tok-v">100 $CHART → 1 $RUN at the in-run shop. Reserve float drifts 100:1 → 250:1 as the reserve drains (one-way). 2% swap tax.</span></div>
           <!-- tokenomics Entry-fees row removed from public (v1.0.451) -->
           <!-- tokenomics Supply row removed from public (v1.0.451) -->
@@ -13501,6 +13502,19 @@ window.crShare = function (o) {
                 <button type="button" id="crSetAcctDisconnect" class="cr-go" style="font-size:11px;padding:6px 12px" data-i18n="set.disconnect">Disconnect</button>
               </div>
               <p style="margin:8px 0 0;font-size:10px;color:var(--dim)" data-i18n="set.walletHint">Manage multiple wallets from the standalone Wallet app once connected.</p>
+
+              <!-- v1.0.925 — Wallet mit Konto verknuepfen. EINE Nachrichten-Signatur:
+                   die Wallet unterschreibt einen kurzen Text, damit Konto und Wallet
+                   nachweislich zusammengehoeren. Kein Geld, keine Transaktion, keine
+                   Kette — und das steht auch so da, statt dass es jemand raten muss.
+                   Freiwillig: ohne die Verknuepfung funktioniert alles wie bisher. -->
+              <div id="crSetLinkWrap" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                  <button type="button" id="crSetLinkWallet" class="cr-go" style="font-size:11px;padding:6px 12px" data-i18n="set.linkWallet">Link wallet to account</button>
+                  <span id="crSetLinkStatus" style="font-size:10px;color:var(--dim)"></span>
+                </div>
+                <p style="margin:8px 0 0;font-size:10px;color:var(--dim)" data-i18n="set.linkWalletHint">Your wallet signs a short text message, so this account and this wallet are known to belong together. <b>No payment, no transaction, nothing on-chain</b> — a message signature moves nothing and costs nothing. Optional: everything you own keeps working without it.</p>
+              </div>
             </div>
           </div>
 
@@ -18397,6 +18411,11 @@ window.crAccount = (function(){
   function _gatesSync(){
     try { if(typeof window.crApplyAccessGates === 'function') window.crApplyAccessGates(); } catch(_){}
     try { if(typeof window.crRefreshIdentityPill === 'function') window.crRefreshIdentityPill(); } catch(_){}   /* v1.0.752 — sign-in/out also refreshes the identity pill */
+    /* v1.0.925 — dieselbe Stelle traegt jetzt den Besitz nach: eine Anmeldung
+     * liest /ownership/list und gleicht das Loadout ab, eine Abmeldung faellt
+     * auf den reinen Lokalbetrieb zurueck. Fuer einen Gast passiert dabei
+     * nichts — crOwnership steigt vor jedem Netzaufruf aus. */
+    try { if(window.crOwnership) crOwnership.onIdentityChange(); } catch(_){}
     // v1.0.752 — OAuth (Google/Apple) sign-ins never collect a username inline;
     // once signed in without a name, prompt for a unique one. v1.0.808 — this is now
     // RACE-SAFE: ensureUsername() awaits a fresh cloud profile pull before it decides
@@ -59833,7 +59852,7 @@ window.crLaunchMinigameRandom = crLaunchMinigameRandom;
             // Campaign bot grant: completing Ch.29/30/33 unlocks CCV/H&S/Divergence.
             try {
               var _cbot = (typeof CR_CAMPAIGN_BOT_BY_CH !== 'undefined') && CR_CAMPAIGN_BOT_BY_CH[chapter];
-              if(_cbot && typeof crUnlockBot === 'function' && crUnlockBot(_cbot)){
+              if(_cbot && typeof crUnlockBot === 'function' && crUnlockBot(_cbot, 'campaign')){
                 try { spawnFloat(window.innerWidth/2, 162, 'BOT UNLOCKED', '#14f195'); } catch(_){}
                 try { if(typeof toast === 'function') toast('New bot unlocked — equip it in Profile'); } catch(_){}
               }
@@ -69082,6 +69101,30 @@ function _crSetRenderAppsLoc(){
   if(disconnectBtn) disconnectBtn.addEventListener('click', () => {
     try { if(window.crWallet && crWallet.disconnect) crWallet.disconnect(); } catch(_){}
   });
+  /* v1.0.925 — Wallet mit Konto verknuepfen. Jeder Fehlweg wird BENANNT: eine
+   * fehlende Anmeldung, eine fehlende Wallet und eine abgelehnte Signatur
+   * sehen fuer den Spieler verschieden aus, weil sie verschiedene Dinge sind.
+   * Ein stilles Nichts waere hier das Schlimmste — es sieht aus wie Erfolg. */
+  const linkBtn = document.getElementById('crSetLinkWallet');
+  if(linkBtn) linkBtn.addEventListener('click', () => {
+    const st = document.getElementById('crSetLinkStatus');
+    const say = (t, col) => { if(st){ st.textContent = t || ''; st.style.color = col || 'var(--dim)'; } };
+    if(!window.crOwnership){ say('Ownership module not loaded.', '#ff6b6b'); return; }
+    const idn = crOwnership.identity();
+    if(!idn.signedIn){ say('Sign in first — the wallet is linked TO an account.', '#ffd166'); return; }
+    if(!idn.wallet){ say('Connect a wallet first.', '#ffd166'); return; }
+    linkBtn.disabled = true; say('Waiting for the message signature…');
+    Promise.resolve(crOwnership.linkWallet()).then(r => {
+      linkBtn.disabled = false;
+      if(r && r.ok){ say('Wallet linked to this account.', '#14f195'); try { if(typeof toast === 'function') toast('Wallet linked'); } catch(_){} return; }
+      const e = (r && r.error) || 'failed';
+      const msg = e === 'sign-message-failed' ? 'Wallet did not sign — nothing was linked.'
+                : e === 'no-signer'           ? 'This wallet cannot sign messages.'
+                : e === 'network'             ? 'Link service not reachable — nothing was linked.'
+                : ('Not linked: ' + e + ((r && r.detail) ? (' · ' + r.detail) : ''));
+      say(msg, '#ff6b6b');
+    }).catch(err => { linkBtn.disabled = false; say('Not linked: ' + String((err && err.message) || err), '#ff6b6b'); });
+  });
   document.querySelectorAll('.crSetThemeChip').forEach(btn => {
     btn.addEventListener('click', () => {
       const t = btn.getAttribute('data-theme-pick');
@@ -70876,6 +70919,20 @@ function _openPlayerSlotPop(anchor, options, currentId, onPick){
         ? ('<div>' + _nameLine + '</div><div style="margin-left:25px;color:#7a8290;font-size:10px;line-height:1.35;white-space:normal">' + _profPT(opt.sub) + '</div>')
         : _nameLine;
     }
+    /* v1.0.925 — EHRLICHE KENNZEICHNUNG. Eine Herkunftsangabe, keine Warnung:
+     * kein Schloss, keine rote Farbe, keine Abwertung — belegter Besitz wird
+     * hervorgehoben, freigespielter steht ruhig daneben. Beide sind Besitz.
+     * Eine Stelle fuer alle Icon-Zweige (Waffe/Gear/Orb/Text). */
+    if(opt.prov){
+      var _pv = document.createElement('div');
+      _pv.className = 'cr-prov';
+      _pv.setAttribute('data-cr-prov', opt.provVerified ? 'verified' : 'unverified');
+      _pv.style.cssText = 'margin-left:25px;margin-top:2px;font-size:9.5px;letter-spacing:.3px;white-space:normal;color:'
+                        + (opt.provVerified ? '#14f195' : '#7a8290');
+      _pv.textContent = opt.prov;
+      try { _pv.title = (window.crOwnership && crOwnership.tipText()) || ''; } catch(_){}
+      b.appendChild(_pv);
+    }
     b.title = opt._walletLock ? _profT('prof.s.Connect a wallet to unlock','Connect a wallet to unlock') : (opt.desc || opt.sub || '');
     // v1.0.490 — locked level-up loot: visible but dimmed (click → toast, no equip).
     if(opt._locked){ b.style.opacity = '.5'; b.style.cursor = 'help'; }
@@ -70899,6 +70956,20 @@ function _openPlayerSlotPop(anchor, options, currentId, onPick){
   setTimeout(() => document.addEventListener('mousedown', _onPlayerSlotPopOutside, true), 0);
 }
 function _findOpt(list, id){ return list.find(o => o.id === id); }
+/* v1.0.925 — Herkunft eines Eintrags fuer die Picker. Fehlt crOwnership (oder
+ * ist der Spieler Gast), bleibt beides leer und der Picker sieht aus wie in
+ * v1.0.924 — die Kennzeichnung ist additiv, nie eine Bedingung. */
+function _crProvLabel(kind, id){
+  try {
+    if(!window.crOwnership) return '';
+    var t = crOwnership.label(kind, id);
+    if(t) crOwnership.tipOnce();   /* der Tooltip erklaert es genau einmal */
+    return t || '';
+  } catch(_){ return ''; }
+}
+function _crProvVerified(kind, id){
+  try { var r = window.crOwnership && crOwnership.has(kind, id); return !!(r && r.verified); } catch(_){ return false; }
+}
 function _renderPlayerTab(){
   // Set slot card icon + name from current loadout.
   const setSlot = (slotKey, opt) => {
@@ -71019,7 +71090,8 @@ function _renderPlayerTab(){
     var _lk  = _gearLocked(g.id);
     var _eqd = (typeof playerLoadout !== 'undefined' && playerLoadout.gear === g.id);
     var _nm  = (g.nm || g.id) + (_eqd ? '  ✓' : '');
-    return Object.assign({}, g, (g.id === 'thrust' ? { gico:g.id } : {}), { nm:_nm, sub: _lk ? '🔒 Connect wallet to unlock' : g.desc, _walletLock: _lk || undefined });
+    return Object.assign({}, g, (g.id === 'thrust' ? { gico:g.id } : {}), { nm:_nm, sub: _lk ? '🔒 Connect wallet to unlock' : g.desc,
+      prov: _crProvLabel('gear', g.id), provVerified: _crProvVerified('gear', g.id), _walletLock: _lk || undefined });
   }),    'none');
   // Yellow + purple skins archived — hidden from the picker; clamp back to green.
   try { if(playerLoadout.skin === 'invader-yellow' || playerLoadout.skin === 'invader-purple'){ playerLoadout.skin = 'invader-green'; _savePlayerLoadout(); } } catch(_){}
@@ -71087,6 +71159,11 @@ function _renderPlayerTab(){
           sub: _lk ? '🔒 Connect wallet to unlock'
                    : ((typeof CR_BOT_BLURB !== 'undefined' && CR_BOT_BLURB[b.id]) || ((typeof WB_BOT_ROLES !== 'undefined' && WB_BOT_ROLES[b.role] && WB_BOT_ROLES[b.role].desc)) || 'Auto-scans for its pattern.'),
           desc: b.name || b.id,
+          /* v1.0.925 — Herkunft aus crOwnership. Fuer Gaeste liefert label()
+           * den leeren String: ohne Konto gibt es nichts zu belegen, also
+           * waere der Hinweis nur Laerm. */
+          prov: _crProvLabel('bot', b.id),
+          provVerified: _crProvVerified('bot', b.id),
           _walletLock: _lk || undefined
         });
       });
@@ -73174,6 +73251,13 @@ const CR_BOT_BLURB = {
 // Divergence (ch.33). Ch.30/31 teach Volume Climax / VWAP Reclaim, which are starter bots
 // the player already owns, so they need no grant. (Was: ch.30 → dead det_hs.)
 const CR_CAMPAIGN_BOT_BY_CH = { 29: 'det_ccv', 32: 'det_orderblock', 33: 'det_div' };
+// v1.0.925 — WAEHRUNGS-ETIKETT AN GENAU EINER STELLE. Abgezogen wird game.run
+// (die run-gebundene In-Game-Waehrung); der TOKEN $RUN ist nicht gelauncht und
+// darf deshalb in Kauf-Texten nicht als das erscheinen, was man kauft. Die
+// Variablennamen (CR_BOT_PRICE_RUN, game.run) bleiben absichtlich, wie sie
+// sind — umbenennen wuerde die halbe Datei anfassen, ohne dass ein Spieler
+// etwas davon haette. Sichtbar ist nur diese Konstante.
+const CR_INGAME_CUR = '$CHART';
 const CR_BOT_PRICE_RUN = 25;
 const _CR_OWNED_BOTS_KEY = 'cr_owned_bots_v1';
 let CR_OWNED_BOTS = (function(){
@@ -73181,18 +73265,41 @@ let CR_OWNED_BOTS = (function(){
   return new Set(CR_STARTER_BOT_IDS);
 })();
 function _crSaveOwnedBots(){ try { localStorage.setItem(_CR_OWNED_BOTS_KEY, JSON.stringify(Array.from(CR_OWNED_BOTS))); } catch(_){} }
-function crBotOwned(id){ id = String(id || ''); return _crBotGuestOk(id) || CR_OWNED_BOTS.has(id); }
-function crUnlockBot(id){ id = String(id || ''); if(!id || CR_OWNED_BOTS.has(id)) return false; CR_OWNED_BOTS.add(id); _crSaveOwnedBots(); return true; }
-// Marketplace buy with $RUN (game.run). Returns true on success.
+// v1.0.925 — die Besitzfrage laeuft ab hier ueber crOwnership: angezeigter
+// Besitz = Server ∪ lokal. Das lokale Set bleibt Fallback UND Cache (es steht
+// weiter zuerst, damit ein Serverausfall nichts wegnimmt), crOwnership.has()
+// ergaenzt, was der Server zusaetzlich fuehrt. Ist das Modul nicht da, ist
+// dieser Zweig genau der alte Code.
+function crBotOwned(id){
+  id = String(id || '');
+  if(_crBotGuestOk(id) || CR_OWNED_BOTS.has(id)) return true;
+  try { var r = window.crOwnership && crOwnership.has('bot', id); if(r && r.owned) return true; } catch(_){}
+  return false;
+}
+// v1.0.925 — provenance sagt, WOHER der Bot kommt. Default 'campaign' deckt
+// den Kampagnen-Grant und alles ohne bekannte Herkunft ab; crBuyBot reicht
+// 'softcurrency' herein. Genau EIN claim pro Erwerb — crUnlockBot steigt bei
+// bereits vorhandenem Besitz vorher aus, und crBuyBot claimt nicht selbst.
+function crUnlockBot(id, provenance){
+  id = String(id || '');
+  if(!id || CR_OWNED_BOTS.has(id)) return false;
+  CR_OWNED_BOTS.add(id); _crSaveOwnedBots();
+  // Fehlschlag darf das Spiel nie blockieren: claim() wirft nicht, wartet
+  // nicht und legt einen abgewiesenen Anspruch selbst in seine Schlange.
+  try { if(window.crOwnership) crOwnership.claim('bot', id, (provenance === 'softcurrency') ? 'softcurrency' : 'campaign'); } catch(_){}
+  return true;
+}
+// Marketplace buy with the in-game currency (game.run, shown as CR_INGAME_CUR).
+// Returns true on success.
 function crBuyBot(id){
   id = String(id || ''); if(!id) return false;
   if(crBotOwned(id)){ try { if(typeof toast === 'function') toast('Already owned'); } catch(_){} return false; }
   var bal = (typeof game !== 'undefined' && game.run) ? (game.run | 0) : 0;
-  if(bal < CR_BOT_PRICE_RUN){ try { if(typeof toast === 'function') toast('Need ' + CR_BOT_PRICE_RUN + ' $RUN for this bot (you have ' + bal + ')'); } catch(_){} return false; }
+  if(bal < CR_BOT_PRICE_RUN){ try { if(typeof toast === 'function') toast('Need ' + CR_BOT_PRICE_RUN + ' ' + CR_INGAME_CUR + ' for this bot (you have ' + bal + ')'); } catch(_){} return false; }
   try { game.run = bal - CR_BOT_PRICE_RUN; } catch(_){}
   try { var el = document.getElementById('run'); if(el) el.textContent = String(game.run | 0); } catch(_){}
-  crUnlockBot(id);
-  try { if(typeof spawnFloat === 'function') spawnFloat(window.innerWidth/2, 150, 'BOT BOUGHT · -' + CR_BOT_PRICE_RUN + ' $RUN', '#14f195'); } catch(_){}
+  crUnlockBot(id, 'softcurrency');   // v1.0.925 — der EINE claim dieses Kaufs
+  try { if(typeof spawnFloat === 'function') spawnFloat(window.innerWidth/2, 150, 'BOT BOUGHT · -' + CR_BOT_PRICE_RUN + ' ' + CR_INGAME_CUR, '#14f195'); } catch(_){}
   try { if(typeof toast === 'function') toast('Bot unlocked'); } catch(_){}
   // v1.0.609 — #58: surface the bot's dedicated lesson in the Campaign — flag its
   // chapter NEW (repainted by _crPaintCampaignStars) and nudge the player to it.
@@ -73214,23 +73321,451 @@ const CR_BOT_CHAPTER = { det_sfp:28, det_ccv:29, det_climax:30, det_vwap:31, det
 try { window.crBotOwned = crBotOwned; window.crUnlockBot = crUnlockBot; window.crBuyBot = crBuyBot; } catch(_){}
 // Gear ownership — only PRICED gear (marketplace) must be bought; the rest are free.
 const _CR_OWNED_GEAR_KEY = 'cr_owned_gear_v1';
-const CR_GEAR_PRICE = { magnet: 40 };   // $RUN — Pickup Magnet is a marketplace item
+const CR_GEAR_PRICE = { magnet: 40 };   // In-Game-Waehrung (game.run) — Pickup Magnet is a marketplace item
 let CR_OWNED_GEAR = (function(){ try { var s = JSON.parse(localStorage.getItem(_CR_OWNED_GEAR_KEY) || 'null'); if(Array.isArray(s)) return new Set(s); } catch(_){} return new Set(); })();
 function _crSaveOwnedGear(){ try { localStorage.setItem(_CR_OWNED_GEAR_KEY, JSON.stringify(Array.from(CR_OWNED_GEAR))); } catch(_){} }
-function crGearOwned(id){ id = String(id || ''); if(!(id in CR_GEAR_PRICE)) return true; return CR_OWNED_GEAR.has(id); }
+// v1.0.925 — dieselbe Vereinigung wie bei den Bots. Unbepreiste Gear ist
+// frei und war es immer — dafuer wird nichts gefragt und nichts gemeldet.
+function crGearOwned(id){
+  id = String(id || '');
+  if(!(id in CR_GEAR_PRICE)) return true;
+  if(CR_OWNED_GEAR.has(id)) return true;
+  try { var r = window.crOwnership && crOwnership.has('gear', id); if(r && r.owned) return true; } catch(_){}
+  return false;
+}
 function crBuyGear(id){
   id = String(id || ''); var price = CR_GEAR_PRICE[id]; if(price == null) return false;
   if(crGearOwned(id)){ try { if(typeof toast === 'function') toast('Already owned'); } catch(_){} return false; }
   var bal = (typeof game !== 'undefined' && game.run) ? (game.run | 0) : 0;
-  if(bal < price){ try { if(typeof toast === 'function') toast('Need ' + price + ' $RUN for this gear (you have ' + bal + ')'); } catch(_){} return false; }
+  if(bal < price){ try { if(typeof toast === 'function') toast('Need ' + price + ' ' + CR_INGAME_CUR + ' for this gear (you have ' + bal + ')'); } catch(_){} return false; }
   try { game.run = bal - price; var el = document.getElementById('run'); if(el) el.textContent = String(game.run | 0); } catch(_){}
   CR_OWNED_GEAR.add(id); _crSaveOwnedGear();
-  try { if(typeof spawnFloat === 'function') spawnFloat(window.innerWidth/2, 150, 'GEAR BOUGHT · -' + price + ' $RUN', '#e879f9'); } catch(_){}
+  // v1.0.925 — Soft-Kauf: genau ein claim, unverifiziert, blockiert nie.
+  try { if(window.crOwnership) crOwnership.claim('gear', id, 'softcurrency'); } catch(_){}
+  try { if(typeof spawnFloat === 'function') spawnFloat(window.innerWidth/2, 150, 'GEAR BOUGHT · -' + price + ' ' + CR_INGAME_CUR, '#e879f9'); } catch(_){}
   try { if(typeof toast === 'function') toast('Gear unlocked'); } catch(_){}
   return true;
 }
 try { window.crGearOwned = crGearOwned; window.crBuyGear = crBuyGear; } catch(_){}
 try { window.CR_GUEST_BOT_IDS = CR_GUEST_BOT_IDS; } catch(_){}
+
+/* =========================================================================
+ * crOwnership — der Server ist die Autorität für BELEGTEN Besitz (v1.0.925).
+ *
+ * Bis hierher lebte Besitz allein im Browser: zwei Sets in localStorage
+ * (cr_owned_bots_v1, cr_owned_gear_v1), die jeder aufmachen und beschreiben
+ * kann. Für das Spiel reicht das. Für Turniere und einen Marketplace reicht
+ * es nicht, und der Unterschied gehört AUSGESPROCHEN, nicht verwischt:
+ *
+ *   freigespielt  — im Spiel verdient oder mit der In-Game-Währung gekauft.
+ *                   Der Client BEHAUPTET das; niemand hat es geprüft.
+ *   belegt        — der Worker hat einen Beleg gesehen und verified gesetzt.
+ *                   DIESER Auftrag baut KEINEN Weg dorthin. Der Client kann
+ *                   verified nicht erzeugen, nur lesen.
+ *
+ * Regeln, die dieses Modul NIE bricht:
+ *   1. VEREINIGUNG: angezeigter Besitz = Server ∪ lokal. Ein Serverausfall
+ *      nimmt niemandem sein Zeug weg — er entfernt hier nichts, nie.
+ *   2. KEINE HERABSTUFUNG: ein verified:true vom Server überlebt jeden
+ *      lokalen Eintrag. Lokal kann nur ergänzen, nie entwerten.
+ *   3. NIE BLOCKIEREN: jeder Netzweg ist best-effort. Ein fehlgeschlagener
+ *      claim() kostet den Kauf nicht — er wandert in _pending und wird beim
+ *      nächsten Start erneut versucht.
+ *   4. GAST = NULL NETZ: ohne Supabase-Konto UND ohne verbundene Wallet
+ *      verlässt kein Request die Seite. Kein /ownership/*, kein RPC, und
+ *      auch kein Hinweis auf „fehlende Verifikation" — für einen Gast gibt
+ *      es nichts zu verifizieren.
+ *
+ * DER SERVER LEBT NOCH NICHT (gemessen 08.09.2026, siehe PR): weder die
+ * Endpunkte /ownership/list · /ownership/link-wallet noch die RPCs
+ * cr_ownership_claim · cr_loadout_get · cr_loadout_set existieren. Genau
+ * deshalb sind die vier Regeln oben keine Kür: solange nichts antwortet,
+ * fällt jeder Pfad hier auf den reinen Lokalbetrieb zurück und das Spiel
+ * verhält sich Bit für Bit wie in v1.0.924. Das ist der Testfall 1, nicht
+ * ein Notbehelf.
+ *
+ * WIRE-FORMAT (was dieser Client sendet und erwartet — der Server-Auftrag
+ * muss dazu passen; ein Feldname, den beide Seiten anders schreiben, ist
+ * genau der Fehler, den v1.0.883 gekostet hat):
+ *
+ *   GET  /ownership/list            [Authorization: Bearer <Supabase-JWT>, falls angemeldet]
+ *        ?wallet=<base58>           (falls nur eine Wallet verbunden ist)
+ *     → { items: [ { kind:'bot'|'gear', id, verified:boolean, provenance } ] }
+ *
+ *   POST /ownership/link-wallet     [Authorization: Bearer <Supabase-JWT>]
+ *        { step:'challenge', wallet } → { challenge }
+ *        { step:'verify', wallet, challenge, signature } → { ok:true }
+ *
+ *   RPC  cr_ownership_claim(p_kind, p_id, p_provenance)   → immer unverifiziert
+ *   RPC  cr_loadout_get()                                 → { equipped_bots, equipped_tools, loadout, updated_at }
+ *   RPC  cr_loadout_set(p_equipped_bots, p_equipped_tools, p_loadout)
+ *
+ * window.crOwnership = { init, has, claim, syncLoadout, linkWallet,
+ *                        identity, isGuest, label, list, _state }
+ * =======================================================================*/
+window.crOwnership = (function(){
+  'use strict';
+
+  var LIST_PATH    = '/ownership/list';
+  var LINK_PATH    = '/ownership/link-wallet';
+  var MIGRATED_KEY = 'cr_ownership_migrated_v1';
+  var LOADOUT_TS   = 'cr_loadout_synced_v1';   // Zeitstempel des zuletzt ANGEWENDETEN Server-Standes
+  var TIMEOUT_MS   = 8000;
+  var KINDS        = { bot: 1, gear: 1 };
+  var PROVENANCE   = { campaign: 1, softcurrency: 1 };   // mehr kann der Client nicht behaupten
+
+  /* Der Server-Stand lebt NUR im Speicher. Ein gecachtes verified:true, das
+   * einen Neustart überlebt, ist eine Behauptung ohne Beleg — genau das, was
+   * dieses Modul verhindern soll. Offline gilt der lokale Stand, unverifiziert. */
+  var _srv     = null;    // null = nie geladen; sonst { bot:{}, gear:{} }
+  var _initP   = null;
+  var _initKey = '';      // Identität, für die _srv gilt — wechselt sie, wird neu geladen
+  var _pending = [];      // claims, die das Netz nicht angenommen hat
+  var _tipShown = false;
+
+  /* ── Identität ─────────────────────────────────────────────────────── */
+  function _signedIn(){
+    try { return !!(window.crAccount && crAccount.isSignedIn && crAccount.isSignedIn()); } catch(_){ return false; }
+  }
+  /* Dieselbe Rangfolge wie Handels-Tafel und Anker (v1.0.891): das
+   * offengelegte Konto zuerst, sonst die zuletzt bekannte Adresse. */
+  function _wallet(){
+    try { var a = window.crSigner && crSigner.active(); if(a && a.address) return String(a.address); } catch(_){}
+    try { var k = window.crWallet && crWallet.get && crWallet.get(); if(k) return String(k); } catch(_){}
+    return '';
+  }
+  function identity(){ return { signedIn: _signedIn(), wallet: _wallet() }; }
+  function isGuest(){ var i = identity(); return !i.signedIn && !i.wallet; }
+  function _key(){ var i = identity(); return (i.signedIn ? 'a' : '-') + ':' + (i.wallet || '-'); }
+  function _token(){ try { return (window.crAccount && crAccount.token && crAccount.token()) || ''; } catch(_){ return ''; } }
+
+  /* ── Netz: best-effort, wirft nie, hält nie auf ────────────────────── */
+  function _fetchJson(path, opts){
+    var ctl = null, timer = null;
+    try { ctl = new AbortController(); } catch(_){}
+    var o = Object.assign({}, opts || {});
+    if(ctl){ o.signal = ctl.signal; timer = setTimeout(function(){ try { ctl.abort(); } catch(_){} }, TIMEOUT_MS); }
+    var url = location.origin + path + (path.indexOf('?') < 0 ? '?' : '&') + '_=' + Date.now();
+    return fetch(url, o).then(function(r){
+      return r.json().then(function(j){ return r.ok ? (j || {}) : { error: (j && j.error) || ('HTTP ' + r.status) }; },
+                           function(){ return r.ok ? {} : { error: 'HTTP ' + r.status }; });
+    }).catch(function(e){
+      return { error: 'network', detail: String((e && e.message) || e) };
+    }).then(function(res){ if(timer) clearTimeout(timer); return res; });
+  }
+  function _rpc(fn, args){
+    try {
+      if(!window.crAccount || typeof crAccount.rpc !== 'function') return Promise.resolve({ error: 'no-account' });
+      return Promise.resolve(crAccount.rpc(fn, args || {})).then(function(r){ return r; },
+                                                                 function(e){ return { error: String((e && e.message) || e) }; });
+    } catch(e){ return Promise.resolve({ error: String((e && e.message) || e) }); }
+  }
+
+  /* ── Der Server-Stand, additiv aufgenommen ─────────────────────────── */
+  function _blank(){ return { bot: {}, gear: {} }; }
+  /* Nimmt einen Eintrag auf, OHNE je herabzustufen: verified geht nur von
+   * false nach true, nie zurück. Regel 2, an genau einer Stelle. */
+  function _note(kind, id, provenance, verified){
+    if(!KINDS[kind] || !id) return;
+    if(!_srv) _srv = _blank();
+    var cur = _srv[kind][id];
+    if(!cur){ _srv[kind][id] = { verified: !!verified, provenance: provenance || '' }; return; }
+    if(verified) cur.verified = true;
+    if(provenance && !cur.provenance) cur.provenance = provenance;
+  }
+  /* Der Server-Bestand wird in die lokalen Sets GESPIEGELT (nur ergänzend) —
+   * das ist die Cache-Rolle, die die alten Sets behalten: nach einer Sitzung
+   * online funktioniert das Zeug auch offline weiter. Entfernt wird nie etwas. */
+  function _mirrorLocal(kind, id){
+    try {
+      if(kind === 'bot' && typeof CR_OWNED_BOTS !== 'undefined' && !CR_OWNED_BOTS.has(id)){
+        CR_OWNED_BOTS.add(id); if(typeof _crSaveOwnedBots === 'function') _crSaveOwnedBots();
+      } else if(kind === 'gear' && typeof CR_OWNED_GEAR !== 'undefined' && !CR_OWNED_GEAR.has(id)){
+        CR_OWNED_GEAR.add(id); if(typeof _crSaveOwnedGear === 'function') _crSaveOwnedGear();
+      }
+    } catch(_){}
+  }
+
+  /* ── init() ───────────────────────────────────────────────────────────
+   * Gast → sofort fertig, KEIN Netzaufruf (Regel 4).
+   * Sonst → /ownership/list lesen, Ergebnis in den Speicher, danach die
+   * einmalige Übernahme und die offenen claims nachreichen. */
+  function init(force){
+    if(isGuest()){ _initP = null; _initKey = ''; return Promise.resolve({ ok: true, guest: true }); }
+    if(_initP && !force && _initKey === _key()) return _initP;
+    _initKey = _key();
+    var id = identity();
+    var headers = {};
+    var tok = _token(); if(tok) headers.Authorization = 'Bearer ' + tok;
+    var q = (!id.signedIn && id.wallet) ? ('?wallet=' + encodeURIComponent(id.wallet)) : '';
+    _initP = _fetchJson(LIST_PATH + q, { headers: headers }).then(function(res){
+      if(res && !res.error && Array.isArray(res.items)){
+        _srv = _blank();
+        res.items.forEach(function(it){
+          if(!it || !KINDS[it.kind] || !it.id) return;
+          var iid = String(it.id);
+          _note(String(it.kind), iid, String(it.provenance || ''), !!it.verified);
+          _mirrorLocal(String(it.kind), iid);
+        });
+      }
+      /* Ein Ausfall lässt _srv, wie es war (im Zweifel null = „nichts vom
+       * Server bekannt"). has() liefert dann rein lokal — sichtbar und
+       * benutzbar, nur eben unverifiziert. */
+      return _migrateOnce().then(function(){ return _flushPending(); }).then(function(){
+        try { _repaint(); } catch(_){}
+        return { ok: !(res && res.error), error: res && res.error };
+      });
+    });
+    return _initP;
+  }
+
+  /* ── has(kind, id) — die Vereinigung, an genau einer Stelle ────────── */
+  function has(kind, id){
+    kind = String(kind || ''); id = String(id || '');
+    var out = { owned: false, verified: false, provenance: '' };
+    if(!KINDS[kind] || !id) return out;
+    var s = _srv && _srv[kind] && _srv[kind][id];
+    if(s){ out.owned = true; out.verified = !!s.verified; out.provenance = s.provenance || ''; }
+    var local = false;
+    try {
+      if(kind === 'bot')  local = (typeof CR_OWNED_BOTS !== 'undefined') && CR_OWNED_BOTS.has(id);
+      if(kind === 'gear') local = (typeof CR_OWNED_GEAR !== 'undefined') && CR_OWNED_GEAR.has(id);
+    } catch(_){}
+    if(local){
+      out.owned = true;                                   /* Regel 1 */
+      if(!out.provenance) out.provenance = 'local';       /* Regel 2: verified bleibt unangetastet */
+    }
+    return out;
+  }
+  /* Alles, was dieser Client über den Besitz einer Art weiß. */
+  function list(kind){
+    kind = String(kind || '');
+    var ids = {}, out = [];
+    if(_srv && _srv[kind]) Object.keys(_srv[kind]).forEach(function(k){ ids[k] = 1; });
+    try {
+      if(kind === 'bot'  && typeof CR_OWNED_BOTS  !== 'undefined') CR_OWNED_BOTS.forEach(function(k){ ids[k] = 1; });
+      if(kind === 'gear' && typeof CR_OWNED_GEAR !== 'undefined') CR_OWNED_GEAR.forEach(function(k){ ids[k] = 1; });
+    } catch(_){}
+    Object.keys(ids).forEach(function(k){ out.push(Object.assign({ id: k }, has(kind, k))); });
+    return out;
+  }
+
+  /* ── claim(kind, id, provenance) ──────────────────────────────────────
+   * Der Client BEHAUPTET, er beweist nicht. Deshalb nur die zwei Herkünfte,
+   * die er überhaupt kennen kann, und immer unverifiziert. Fehlschlag ist
+   * kein Fehler des Spielers: der Eintrag wandert in _pending. */
+  function claim(kind, id, provenance){
+    kind = String(kind || ''); id = String(id || ''); provenance = String(provenance || '');
+    if(!KINDS[kind] || !id || !PROVENANCE[provenance]) return Promise.resolve({ error: 'bad-claim' });
+    _note(kind, id, provenance, false);          /* lokal sofort sichtbar, unverifiziert */
+    if(isGuest()) return Promise.resolve({ ok: true, guest: true });   /* Regel 4 */
+    return _rpc('cr_ownership_claim', { p_kind: kind, p_id: id, p_provenance: provenance }).then(function(r){
+      if(r && r.error){ _queue(kind, id, provenance); return { error: r.error }; }
+      return { ok: true };
+    });
+  }
+  function _queue(kind, id, provenance){
+    for(var i = 0; i < _pending.length; i++){
+      var p = _pending[i];
+      if(p.kind === kind && p.id === id) return;    /* nie doppelt in der Schlange */
+    }
+    _pending.push({ kind: kind, id: id, provenance: provenance });
+  }
+  function _flushPending(){
+    if(isGuest() || !_pending.length) return Promise.resolve();
+    var batch = _pending.slice(); _pending = [];
+    return batch.reduce(function(chain, p){
+      return chain.then(function(){
+        return _rpc('cr_ownership_claim', { p_kind: p.kind, p_id: p.id, p_provenance: p.provenance })
+          .then(function(r){ if(r && r.error) _queue(p.kind, p.id, p.provenance); });
+      });
+    }, Promise.resolve());
+  }
+
+  /* ── Einmalige Übernahme des Bestands ─────────────────────────────────
+   * Was schon im Browser liegt, wird EINMAL gemeldet — als das, was es ist:
+   * unverifiziert. Starter- und Gast-Bots bleiben draußen; die bekommt jeder
+   * geschenkt, für die gibt es nichts zu beanspruchen. Der Merker verhindert
+   * die Wiederholung, auch über Geräte hinweg pro Browser. */
+  function _migrateOnce(){
+    if(isGuest()) return Promise.resolve();
+    var done = false;
+    try { done = localStorage.getItem(MIGRATED_KEY) === '1'; } catch(_){}
+    if(done) return Promise.resolve();
+    var jobs = [];
+    try {
+      var free = {};
+      if(typeof CR_STARTER_BOT_IDS !== 'undefined') CR_STARTER_BOT_IDS.forEach(function(b){ free[b] = 1; });
+      try { if(typeof CR_GUEST_BOT_IDS !== 'undefined') CR_GUEST_BOT_IDS.forEach(function(b){ free[b] = 1; }); } catch(_){}
+      if(typeof CR_OWNED_BOTS !== 'undefined') CR_OWNED_BOTS.forEach(function(b){
+        if(!free[b]) jobs.push({ kind: 'bot', id: String(b), provenance: 'campaign' });
+      });
+      /* Gear: nur BEPREISTES kann gekauft worden sein — der Rest ist frei. */
+      if(typeof CR_OWNED_GEAR !== 'undefined') CR_OWNED_GEAR.forEach(function(g){
+        var priced = (typeof CR_GEAR_PRICE !== 'undefined') && (String(g) in CR_GEAR_PRICE);
+        if(priced) jobs.push({ kind: 'gear', id: String(g), provenance: 'softcurrency' });
+      });
+    } catch(_){}
+    return jobs.reduce(function(chain, j){
+      return chain.then(function(){
+        _note(j.kind, j.id, j.provenance, false);
+        return _rpc('cr_ownership_claim', { p_kind: j.kind, p_id: j.id, p_provenance: j.provenance })
+          .then(function(r){ if(r && r.error) _queue(j.kind, j.id, j.provenance); });
+      });
+    }, Promise.resolve()).then(function(){
+      /* Der Merker wird IMMER gesetzt: was das Netz nicht annahm, liegt in
+       * _pending und wird dort weiterversucht — eine zweite volle Übernahme
+       * würde nichts hinzufügen und alles doppelt melden. */
+      try { localStorage.setItem(MIGRATED_KEY, '1'); } catch(_){}
+    });
+  }
+
+  /* ── syncLoadout() — Cross-Device, KEIN Autoritätsanspruch ────────────
+   * Loadout ist Geschmack, nicht Besitz: der letzte Schreiber gewinnt
+   * (updated_at). Fällt der Server aus, bleibt schlicht der lokale Stand. */
+  function _localLoadout(){
+    var out = { equipped_bots: [], equipped_tools: [], loadout: {} };
+    try { out.equipped_bots  = JSON.parse(localStorage.getItem(WB_EQUIP_KEY)   || '[]') || []; } catch(_){}
+    try { out.equipped_tools = JSON.parse(localStorage.getItem(WB_TOOLS_KEY)   || '[]') || []; } catch(_){}
+    try { out.loadout        = JSON.parse(localStorage.getItem(PLAYER_LOADOUT_KEY) || '{}') || {}; } catch(_){}
+    return out;
+  }
+  function _applyLoadout(row){
+    try {
+      if(Array.isArray(row.equipped_bots)){
+        localStorage.setItem(WB_EQUIP_KEY, JSON.stringify(row.equipped_bots));
+        if(typeof wb !== 'undefined') wb.equipped = row.equipped_bots.slice();
+      }
+      if(Array.isArray(row.equipped_tools)){
+        localStorage.setItem(WB_TOOLS_KEY, JSON.stringify(row.equipped_tools));
+        if(typeof wb !== 'undefined') wb.equippedTools = row.equipped_tools.slice();
+      }
+      if(row.loadout && typeof row.loadout === 'object'){
+        localStorage.setItem(PLAYER_LOADOUT_KEY, JSON.stringify(row.loadout));
+        if(typeof playerLoadout !== 'undefined'){
+          ['avatar','skin','gear','vehicle','weapon'].forEach(function(k){
+            if(row.loadout[k]) playerLoadout[k] = row.loadout[k];
+          });
+        }
+      }
+    } catch(_){}
+    try { _repaint(); } catch(_){}
+  }
+  function syncLoadout(){
+    if(isGuest()) return Promise.resolve({ ok: true, guest: true });   /* Regel 4 */
+    return _rpc('cr_loadout_get', {}).then(function(r){
+      var row = Array.isArray(r) ? r[0] : r;
+      var srvTs = 0, locTs = 0;
+      try { srvTs = row && row.updated_at ? Date.parse(row.updated_at) || 0 : 0; } catch(_){}
+      try { locTs = parseInt(localStorage.getItem(LOADOUT_TS) || '0', 10) || 0; } catch(_){}
+      if(row && !row.error && srvTs > locTs){
+        _applyLoadout(row);
+        try { localStorage.setItem(LOADOUT_TS, String(srvTs)); } catch(_){}
+        return { ok: true, applied: 'server' };
+      }
+      return push();
+    });
+  }
+  function push(){
+    if(isGuest()) return Promise.resolve({ ok: true, guest: true });
+    var l = _localLoadout();
+    return _rpc('cr_loadout_set', {
+      p_equipped_bots: JSON.stringify(l.equipped_bots),
+      p_equipped_tools: JSON.stringify(l.equipped_tools),
+      p_loadout: JSON.stringify(l.loadout),
+    }).then(function(r){
+      if(r && r.error) return { error: r.error };
+      try { localStorage.setItem(LOADOUT_TS, String(Date.now())); } catch(_){}
+      return { ok: true, applied: 'local' };
+    });
+  }
+
+  /* ── linkWallet() — EINE Nachrichtensignatur, kein Geld, keine Kette ──
+   * Verknüpft die verbundene Wallet mit dem angemeldeten Konto. Freiwillig;
+   * wer sie nicht setzt, verliert nichts, was er heute hat. */
+  function linkWallet(){
+    var id = identity();
+    if(!id.signedIn) return Promise.resolve({ error: 'not-signed-in' });
+    if(!id.wallet)   return Promise.resolve({ error: 'no-wallet' });
+    if(!window.crSigner || typeof crSigner.signMessage !== 'function')
+      return Promise.resolve({ error: 'no-signer' });
+    var tok = _token(); if(!tok) return Promise.resolve({ error: 'no-token' });
+    var h = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok };
+    return _fetchJson(LINK_PATH, {
+      method: 'POST', headers: h, body: JSON.stringify({ step: 'challenge', wallet: id.wallet }),
+    }).then(function(ch){
+      if(!ch || ch.error || !ch.challenge) return { error: (ch && ch.error) || 'challenge-failed', detail: ch && ch.detail };
+      return Promise.resolve(crSigner.signMessage(String(ch.challenge))).then(function(sg){
+        if(!sg || sg.error || !sg.signature) return { error: (sg && sg.error) || 'sign-message-failed', detail: sg && sg.detail };
+        return _fetchJson(LINK_PATH, {
+          method: 'POST', headers: h,
+          body: JSON.stringify({ step: 'verify', wallet: id.wallet, challenge: String(ch.challenge), signature: String(sg.signature) }),
+        }).then(function(vr){
+          if(!vr || vr.error) return { error: (vr && vr.error) || 'verify-failed', detail: vr && vr.detail };
+          return init(true).then(function(){ return { ok: true }; });
+        });
+      });
+    });
+  }
+
+  /* ── Ehrliche Kennzeichnung ───────────────────────────────────────────
+   * Eine HERKUNFTSANGABE, keine Warnung: kein Schloss, keine Abwertung,
+   * keine rote Farbe. Und für Gäste gar nichts — sie haben kein Konto, an
+   * dem sich etwas belegen ließe, also wäre der Hinweis nur Lärm. */
+  function label(kind, id){
+    if(isGuest()) return '';
+    var r = has(kind, id);
+    if(!r.owned) return '';
+    return r.verified ? 'gekauft, belegt' : 'im Spiel freigespielt';
+  }
+  /* Der Tooltip erklärt EINMAL, was der Unterschied bedeutet. */
+  function tipText(){
+    return 'Belegter Besitz zählt für Turniere und den Marketplace. '
+         + 'Freigespielter Besitz zählt für das Spiel — er funktioniert überall dort genauso.';
+  }
+  function tipOnce(){
+    if(_tipShown || isGuest()) return false;
+    try { if(localStorage.getItem('cr_ownership_tip_v1') === '1'){ _tipShown = true; return false; } } catch(_){}
+    _tipShown = true;
+    try { localStorage.setItem('cr_ownership_tip_v1', '1'); } catch(_){}
+    try { if(typeof toast === 'function') toast(tipText()); } catch(_){}
+    return true;
+  }
+  function _repaint(){
+    try { if(typeof window._renderPlayerTab === 'function') window._renderPlayerTab(); } catch(_){}
+  }
+
+  /* Identitätswechsel (Anmeldung, Wallet-Verbindung) → neu lesen. Für einen
+   * Gast passiert dabei weiterhin nichts: init() steigt vorher aus. */
+  function onIdentityChange(){
+    if(isGuest()){ _initP = null; _initKey = ''; _srv = null; return Promise.resolve({ ok: true, guest: true }); }
+    if(_initKey === _key() && _initP) return _initP;
+    return init(true).then(function(r){ syncLoadout(); return r; });
+  }
+
+  try {
+    if(window.crWallet && typeof crWallet.on === 'function')
+      crWallet.on(function(){ try { onIdentityChange(); } catch(_){} });
+  } catch(_){}
+
+  return {
+    init: init, has: has, list: list, claim: claim,
+    syncLoadout: syncLoadout, pushLoadout: push, linkWallet: linkWallet,
+    identity: identity, isGuest: isGuest, label: label, tipText: tipText, tipOnce: tipOnce,
+    onIdentityChange: onIdentityChange,
+    _state: function(){ return { srv: _srv, pending: _pending.slice(), key: _initKey }; },
+  };
+})();
+/* Ein Anstoss beim Start fuer den Fall, dass die Wallet schon verbunden ist,
+ * bevor irgendjemand crAccount._gatesSync ruft. Gast → Leerlauf ohne Netz. */
+try {
+  (function(){
+    var kick = function(){ setTimeout(function(){ try { if(window.crOwnership) crOwnership.onIdentityChange(); } catch(_){} }, 800); };
+    if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', kick);
+    else kick();
+  })();
+} catch(_){}
+
 // Seed detector bots into wb.bots if not already present. Idempotent — runs
 // after _wbLoad on every boot, so adding a new DETECTOR_BOTS entry in a
 // future version just appears in the next save without clobbering the
