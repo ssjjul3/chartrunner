@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIGRATION = path.join(ROOT, 'chartrunner_ownership_migration.sql');
+const REVOKE_ANON = path.join(ROOT, 'chartrunner_ownership_revoke_anon_migration.sql');
 const DB = process.env.DATABASE_URL || '';
 
 if (!DB) {
@@ -78,6 +79,13 @@ psql(`
   end
   $harness$;
   grant usage on schema public, auth to anon, authenticated, service_role;
+  -- Supabase vergibt EXECUTE auf NEU ANGELEGTE Funktionen in public per
+  -- ALTER DEFAULT PRIVILEGES direkt an anon und authenticated. Ohne diese Zeile
+  -- pruefte alles darunter eine Datenbank, die es nicht gibt: in blankem
+  -- Postgres bekommt anon nie EXECUTE, also waere jeder Rechte-Test gruen —
+  -- auch fuer eine Migration, die den Zuschuss gar nicht entzieht. Genau diese
+  -- Luecke ist einmal gruen durchs CI gekommen.
+  alter default privileges in schema public grant execute on functions to anon, authenticated;
   create table if not exists auth.users (id uuid primary key, email text);
   create or replace function auth.uid() returns uuid language sql stable as $u$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
@@ -89,6 +97,12 @@ psql(`
 // Twice, because the migration promises to be re-runnable in the SQL editor.
 psqlFile(MIGRATION);
 psqlFile(MIGRATION);
+// Der Nachtrag, wie er auf der Live-Datenbank angewandt wurde. Auf eine frische
+// Migration angewandt ist er ein No-op (die Migration enthaelt den Block seit
+// Schritt 8 selbst) — dass er trotzdem hier laeuft, prueft ihn als Datei:
+// Signaturen, Syntax und Mehrfach-Ausfuehrbarkeit.
+psqlFile(REVOKE_ANON);
+psqlFile(REVOKE_ANON);
 
 // Supabase hands anon/authenticated table privileges by default; RLS — not a
 // missing GRANT — is what has to stop them. Mirror that, or the RLS checks
@@ -235,6 +249,46 @@ test('no policy exists on any of the three tables', () => {
 test('anon may not call the claim RPC at all', () => {
   const err = psqlExpectError(`begin; set local role anon; select public.cr_ownership_claim('account', '${ALICE}', 'bot', 'det_ccv', 'campaign'); commit;`);
   if (!/permission denied/i.test(err)) throw new Error('wrong error: ' + err.split('\n')[0]);
+});
+
+// Die beiden Aufruf-Tests darunter zeigen, dass die Datenbank ABLEHNT. Diese
+// Tafel zeigt, WARUM: sie liest das Recht selbst aus dem Katalog, fuer jede
+// Rolle und jede der fuenf Funktionen. Beides zusammen faellt um, sobald der
+// revoke-Block aus der Migration verschwindet — vorher war der Rechte-Teil in
+// blankem Postgres ohne Aussage, weil dort ohnehin niemand EXECUTE bekam.
+const EXECUTE_MATRIX = [
+  ['public.cr_owner_is_caller(text,text)',                        { anon: false, authenticated: false, service_role: false }],
+  ['public.cr_ownership_list(text,text)',                         { anon: false, authenticated: true,  service_role: true }],
+  ['public.cr_ownership_claim(text,text,text,text,text)',         { anon: false, authenticated: true,  service_role: true }],
+  ['public.cr_loadout_get(text,text)',                            { anon: false, authenticated: true,  service_role: true }],
+  ['public.cr_loadout_set(text,text,jsonb,timestamptz)',          { anon: false, authenticated: true,  service_role: true }],
+];
+
+test('EXECUTE-Rechte: anon hat auf KEINER der fuenf Funktionen Ausfuehrungsrecht', () => {
+  for (const [sig, expected] of EXECUTE_MATRIX) {
+    for (const role of ['anon', 'authenticated', 'service_role']) {
+      eq(psql(`select has_function_privilege('${role}', '${sig}', 'EXECUTE');`),
+         expected[role] ? 't' : 'f',
+         `has_function_privilege(${role}, ${sig}, EXECUTE)`);
+    }
+  }
+});
+
+test('EXECUTE-Rechte: der Zuschuss, den `revoke from public` NICHT erwischt, existiert im Harness wirklich', () => {
+  // Gegenprobe zur Gegenprobe. Eine frisch angelegte Funktion bekommt IMMER
+  // EXECUTE fuer PUBLIC — das ist Postgres-Standard und sagt ueber Supabase
+  // nichts. Erst nach `revoke ... from public` zeigt sich, ob anon das Recht
+  // noch aus einem EIGENEN Zuschuss hat; genau das ist die Luecke, um die es
+  // hier geht. Ohne diese Unterscheidung war der Test hier in beiden Welten
+  // gruen, also ohne Aussage.
+  psql(`create or replace function public.cr_default_privilege_probe() returns int language sql as $p$ select 1 $p$;
+        revoke execute on function public.cr_default_privilege_probe() from public;`);
+  try {
+    eq(psql(`select has_function_privilege('anon', 'public.cr_default_privilege_probe()', 'EXECUTE');`), 't',
+       'anon nach revoke-from-public (= der Zuschuss aus ALTER DEFAULT PRIVILEGES)');
+  } finally {
+    psql(`drop function if exists public.cr_default_privilege_probe();`);
+  }
 });
 
 test('nobody may call the internal owner check directly', () => {

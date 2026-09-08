@@ -257,3 +257,19 @@ grant execute on function public.cr_ownership_list(text, text)                  
 grant execute on function public.cr_ownership_claim(text, text, text, text, text) to authenticated, service_role;
 grant execute on function public.cr_loadout_get(text, text)                        to authenticated, service_role;
 grant execute on function public.cr_loadout_set(text, text, jsonb, timestamptz)    to authenticated, service_role;
+
+-- 8) Und das, was `revoke ... from public` NICHT erwischt. --------------------
+--    Supabase setzt `ALTER DEFAULT PRIVILEGES`, das EXECUTE auf neu angelegte
+--    Funktionen in `public` direkt an `anon` und `authenticated` vergibt. Der
+--    Zuschuss geht an die Rollen, nicht an PUBLIC — Schritt 7 entfernt ihn also
+--    nicht, und nach dem ersten Lauf konnte `anon` alle fünf RPCs aufrufen.
+--    Abgelehnt hätten die Funktionen ihn trotzdem (sie prüfen `auth.uid()`
+--    selbst), aber die zweite Schicht fehlte. In blankem Postgres (CI) gibt es
+--    diese Default-Privileges nicht, deshalb kam der Fall dort nie vor.
+--    Identisch in `chartrunner_ownership_revoke_anon_migration.sql`, dem
+--    Nachtrag für die bereits laufende Datenbank.
+revoke execute on function public.cr_owner_is_caller(text, text)                   from anon, authenticated;
+revoke execute on function public.cr_ownership_list(text, text)                    from anon;
+revoke execute on function public.cr_ownership_claim(text, text, text, text, text) from anon;
+revoke execute on function public.cr_loadout_get(text, text)                       from anon;
+revoke execute on function public.cr_loadout_set(text, text, jsonb, timestamptz)   from anon;
