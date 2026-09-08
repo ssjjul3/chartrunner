@@ -45,8 +45,10 @@ eine Zeile Code — sonst könnte ein einziger unachtsamer Service-Role-Schreibz
 ### `GET /ownership/health`
 Ohne Auftrag aufrufbar. Nennt Endpunkte, Regeln (welche provenance der Client
 behaupten darf, Starter-Items, Nonce-TTL), Kill-Zustand und — als **Booleans,
-nie als Werte** — was konfiguriert ist. Ist `GIT_SHA` nicht injiziert, sagt die
-Antwort das im Klartext, statt eine Zahl zu erfinden.
+nie als Werte** — was konfiguriert ist. Unter `build.git_sha` steht der Commit,
+der tatsächlich läuft (`deploy-workers.yml` injiziert ihn beim Deploy). Ist
+`GIT_SHA` nicht injiziert, steht dort `null` plus Begründung im Klartext, statt
+einer erfundenen Zahl.
 
 ### `GET /ownership/list?owner_kind=&owner_id=`
 Liest den **eigenen** Besitz. Der Worker prüft das JWT (`GET /auth/v1/user`,

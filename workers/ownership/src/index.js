@@ -394,8 +394,13 @@ function health(env, request) {
   // A price catalog that cannot be parsed is NOT an empty catalog.
   if (keys === null) body.catalog_error = 'OWNERSHIP_CATALOG_JSON is not valid JSON — purchase_onchain is refused';
   else body.catalog_items = keys;
-  if (env.GIT_SHA) body.git_sha = env.GIT_SHA;
-  else body.git_sha_note = 'GIT_SHA not injected at deploy — this worker cannot name its own commit';
+  // Which commit is actually running. Injected at deploy time
+  // (deploy-workers.yml: `wrangler deploy --var GIT_SHA:$GITHUB_SHA`), because
+  // „gemerged ist nicht ausgerollt" is only answerable by comparing, not by
+  // guessing. Absent → say so; never invent one.
+  body.build = env.GIT_SHA
+    ? { git_sha: String(env.GIT_SHA) }
+    : { git_sha: null, note: 'GIT_SHA not injected at deploy — this worker cannot name its own commit' };
   return json(200, body, request);
 }
 

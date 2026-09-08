@@ -146,9 +146,18 @@ jobs:
             echo "No package.json in ${{ matrix.dir }} — wrangler will be fetched by npx."
           fi
 
+      # GIT_SHA wird beim Deploy injiziert, damit ein Worker seinen eigenen
+      # Commit NENNEN kann statt ihn raten zu lassen: „gemerged ist nicht
+      # ausgerollt" laesst sich nur beantworten, indem man den Commit im
+      # /health der LIVE-Instanz mit dem Commit in main vergleicht. Ein
+      # Session-Bericht ueber gebauten Code ist dafuer kein Beleg.
+      # `--var KEY:VALUE` MERGT mit [vars] aus der wrangler-Config (gemessen
+      # per `wrangler deploy --dry-run`: alle bestehenden Vars stehen danach
+      # weiter in den Bindings) — es ersetzt sie nicht. Secrets ruehrt ein
+      # Deploy ohnehin nicht an.
       - name: wrangler deploy (${{ matrix.name }})
         working-directory: ${{ matrix.dir }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler deploy
+        run: npx --yes wrangler deploy --var "GIT_SHA:${GITHUB_SHA}"
