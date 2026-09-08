@@ -12,6 +12,7 @@
  * is in the commit message — a green suite proves nothing on its own.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import worker, { linkMessage, NONCE_TTL_MS } from '../workers/ownership/src/index.js';
 
 const ALICE = '11111111-1111-4111-8111-111111111111';
@@ -66,9 +67,13 @@ function jsonResponse(status, obj) {
 // The fake PostgREST enforces the SAME owner rule the migration enforces, so a
 // worker that stopped forwarding the caller's JWT would fail these checks.
 function callerUid(headers) {
+  // Der Service-Schluessel wird auf `apikey` erkannt, NICHT auf Authorization —
+  // so wie ein neuer sb_secret_-Schluessel bei Supabase ankommt. Stuende die
+  // Erkennung weiter auf dem Bearer-Header, wuerde dieser Stub einen Worker
+  // gruen durchlassen, den Supabase ablehnt.
+  if ((headers.get('apikey') || '') === SERVICE_KEY) return { service: true, uid: null };
   const m = (headers.get('Authorization') || '').match(/^Bearer\s+(.+)$/i);
   const tok = m ? m[1] : '';
-  if (tok === SERVICE_KEY) return { service: true, uid: null };
   return { service: false, uid: USERS[tok] ? USERS[tok].id : null };
 }
 function ownerIsCaller(kind, id, uid) {
@@ -568,7 +573,25 @@ test('health names the endpoints, the rules and what is NOT configured', async (
   assert.equal(r.body.configured.treasury, false);
   assert.equal(r.body.configured.stripe, false);
   assert.equal(r.body.configured.service_role_key, true);   // whether, never what
-  assert.ok(r.body.git_sha_note, 'health must say that GIT_SHA is missing, not invent one');
+  assert.equal(r.body.build.git_sha, null, 'health must not invent a commit');
+  assert.ok(r.body.build.note, 'health must SAY that GIT_SHA is missing');
+});
+
+test('health nennt den Commit, der laeuft, sobald GIT_SHA injiziert ist', async () => {
+  const r = await call(makeEnv({ GIT_SHA: '0123456789abcdef0123456789abcdef01234567' }), 'GET', '/ownership/health');
+  assert.equal(r.body.build.git_sha, '0123456789abcdef0123456789abcdef01234567');
+  assert.equal(r.body.build.note, undefined, 'mit Commit gibt es nichts zu entschuldigen');
+});
+
+// Kein Messwert, sondern eine Konfigurationspruefung — die Datei HIER ist die,
+// die den Deploy steuert. Sie beweist nicht, dass der ausgerollte Worker einen
+// git_sha nennt (das zeigt nur ein GET auf /ownership/health gegen die Live-
+// Domain); sie verhindert, dass die Injektion still wieder verschwindet.
+test('deploy-workers.yml injiziert GIT_SHA beim Deploy (Konfigurationspruefung, keine Messung)', async () => {
+  const yml = readFileSync(new URL('../.github/workflows/deploy-workers.yml', import.meta.url), 'utf8');
+  const line = yml.split('\n').find((l) => /^\s*run:.*wrangler deploy/.test(l));
+  assert.ok(line, 'kein ausgefuehrter wrangler-deploy-Befehl gefunden');
+  assert.match(line, /--var\s+"?GIT_SHA:/, 'der Deploy-Schritt uebergibt GIT_SHA nicht: ' + line.trim());
 });
 
 test('a broken catalog is reported as broken, NOT as an empty shop', async () => {
@@ -588,6 +611,23 @@ test('the service-role key appears in NO response, NO header and NO log', async 
   const logged = logs.join('\n');
   assert.ok(!logged.includes(SERVICE_KEY), 'service-role key in a log line');
   assert.ok(!logged.includes('nonce-secret') && !logged.includes('admin-secret'), 'a secret was logged');
+});
+
+test('der Service-Schluessel faehrt auf `apikey` — und auf KEINEM Authorization-Header', async () => {
+  // Neue Supabase-Schluessel (sb_secret_...) sind keine JWTs; Supabase will sie
+  // auf `apikey` und nimmt den Bearer-Weg nur noch als Uebergangskompatibilitaet
+  // an, die irgendwann wegfaellt. Faehrt der Schluessel wieder auf beiden
+  // Headern, wird diese Zeile rot — nicht erst der Tag, an dem das Geruest faellt.
+  // Die zweite Haelfte ist genauso wichtig: mindestens EIN Aufruf muss ihn auf
+  // `apikey` tragen, sonst waere der Test auch fuer einen Worker gruen, der gar
+  // keine Service-Role-Aufrufe mehr macht.
+  let onApikey = 0;
+  for (const s of sentTo) {
+    const auth = String(s.headers.authorization || '');
+    assert.ok(!auth.includes(SERVICE_KEY), 'service-role key on Authorization → ' + s.url);
+    if (String(s.headers.apikey || '').includes(SERVICE_KEY)) onApikey++;
+  }
+  assert.ok(onApikey > 0, 'kein einziger Aufruf trug den Service-Schluessel auf apikey');
 });
 
 test('the service-role key is sent to Supabase and to nowhere else', async () => {
