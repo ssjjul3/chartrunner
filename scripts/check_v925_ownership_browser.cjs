@@ -1,6 +1,19 @@
 /* Smoke-Verifikation v1.0.925 — Ownership B (CLIENT): crOwnership, der Server
  * als Autoritaet fuer BELEGTEN Besitz, ehrliche Kennzeichnung.
  *
+ * NACHGEZOGEN IN v1.0.926 — UND ZWAR NUR DER DIALEKT, NICHT DIE REGELN.
+ * Dieses Skript sprach den Draht, den v1.0.925 gesprochen hat: items[] als
+ * kind/id, cr_ownership_claim dreistellig, cr_loadout_get mit drei Spalten,
+ * Kauf-Texte auf '$CHART'. Alles vier war am Server vorbei gebaut (siehe
+ * check_v926_ownership_contract_browser.cjs), und ein Test, der die falsche
+ * Schreibweise als Fixture einsetzt, beweist genau nichts — er beweist, dass
+ * der Client mit sich selbst einig ist. Die FIXTURES und die Argument-
+ * Erwartungen stehen deshalb jetzt in der Server-Schreibweise; die geprueften
+ * REGELN (Vereinigung, keine Herabstufung, nie blockieren, Gast = null Netz,
+ * Kennzeichnung ohne Schloss, Wallet-Link mit genau einer Nachrichten-
+ * Signatur, Migration genau einmal) sind Wort fuer Wort dieselben geblieben.
+ * O6 ist umgedreht: die Kauf-Texte nennen wieder $RUN, den Saldo, der sinkt.
+ *
  * GEMESSEN VOR DEM BAU (08.09.2026, siehe PR): der Server aus Auftrag A ist
  * NICHT ausgerollt. Supabase fuehrt weder cr_ownership_claim noch
  * cr_loadout_get/_set (pg_proc abgefragt), das Repo hat keinen
@@ -38,9 +51,11 @@
  *   O5   GAST-PFAD: null Netzaufrufe an /ownership/*, null RPCs, und keine
  *        Kennzeichnung (label() leer) — ohne Konto gibt es nichts zu belegen.
  *        (Mutation: in init() das `if(isGuest())` entfernen → O5 rot.)
- *   O6   Kein sichtbarer Kauf-Text sagt mehr „$RUN": Datei-grep auf die
- *        Kauf-Strings PLUS der echte Toast aus einem gescheiterten Kauf.
- *        (Mutation: '$RUN' in den Toast zuruecklegen → O6 rot.)
+ *   O6   Jeder sichtbare Kauf-Text sagt „$RUN" — den Saldo, der wirklich
+ *        sinkt (game.run): Datei-grep auf die Kauf-Strings PLUS der echte
+ *        Toast aus einem gescheiterten Kauf. In v925 stand hier das
+ *        Gegenteil; siehe die Kopfnotiz.
+ *        (Mutation: CR_INGAME_CUR auf '$CHART' → O6 rot.)
  *   O7   Kennzeichnung ist eine HERKUNFTSANGABE: zwei Zeilen mit
  *        data-cr-prov, kein Schloss, keine rote Farbe, verified
  *        hervorgehoben.
@@ -120,10 +135,11 @@ const seen = { list: [], link: [] };
     if(/\/ownership\/list/.test(url)){
       seen.list.push({ url, auth: req.headers()['authorization'] || '' });
       if(cfg.listMode === 'down') return J({ error: 'server-down' }, 500);
+      /* Server-Schreibweise (cr_ownership_list): item_kind/item_id. */
       return J({ ok: true, items: [
-        { kind:'bot',  id:'det_ccv',  verified:true,  provenance:'purchase' },
-        { kind:'bot',  id:'det_srv',  verified:false, provenance:'campaign' },
-        { kind:'gear', id:'magnet',   verified:true,  provenance:'purchase' },
+        { item_kind:'bot',  item_id:'det_ccv',  verified:true,  provenance:'grant' },
+        { item_kind:'bot',  item_id:'det_srv',  verified:false, provenance:'campaign' },
+        { item_kind:'gear', item_id:'magnet',   verified:true,  provenance:'grant' },
       ] });
     }
     if(/\/ownership\/link-wallet/.test(url)){
@@ -146,18 +162,21 @@ const seen = { list: [], link: [] };
     window.__rpc = [];
     window.__rpcFail = false;
     window.__msgs = [];
-    window.__loadoutRow = null;
+    window.__loadoutRows = [];
     window.__installStubs = function(){
       window.crAccount = {
         isSignedIn: () => !!window.__signedIn,
         token: () => (window.__signedIn ? 'JWT-TESTONLY-925' : ''),
         email: () => (window.__signedIn ? 'a@b.c' : ''),
         userId: () => (window.__signedIn ? 'uid-925' : ''),
+        /* supabase-js antwortet { data, error }; eine Set-Returning-Function
+         * kommt als ARRAY in data — genau das liefert cr_loadout_get. */
         rpc: (fn, args) => {
           window.__rpc.push({ fn, args });
-          if(window.__rpcFail) return Promise.resolve({ error: 'rpc-down' });
-          if(fn === 'cr_loadout_get') return Promise.resolve(window.__loadoutRow);
-          return Promise.resolve({ ok: true });
+          if(window.__rpcFail) return Promise.resolve({ data: null, error: { message: 'rpc-down' } });
+          if(fn === 'cr_loadout_get') return Promise.resolve({ data: window.__loadoutRows, error: null });
+          if(fn === 'cr_loadout_set') return Promise.resolve({ data: '2026-09-08T12:00:00Z', error: null });
+          return Promise.resolve({ data: true, error: null });
         },
         _gatesSync: () => {},
       };
@@ -243,7 +262,7 @@ const seen = { list: [], link: [] };
     const second = window.__rpc.filter(r => r.fn === 'cr_ownership_claim').map(r => r.args);
     return { first, second, marker };
   });
-  const migIds = mig.first.map(a => a.p_kind + ':' + a.p_id + ':' + a.p_provenance).sort();
+  const migIds = mig.first.map(a => a.p_item_kind + ':' + a.p_item_id + ':' + a.p_provenance).sort();
   check('O4 · Kampagnen-Bots als campaign gemeldet',
     migIds.includes('bot:det_ccv:campaign') && migIds.includes('bot:det_div:campaign'), migIds);
   check('O4 · bepreiste Gear als softcurrency gemeldet',
@@ -335,10 +354,10 @@ const seen = { list: [], link: [] };
   });
   check('O3 · Kampagnen-Grant → genau 1 claim, provenance campaign',
     claims.granted === true && claims.afterGrant.length === 1
-    && claims.afterGrant[0].p_id === 'det_camp1' && claims.afterGrant[0].p_provenance === 'campaign', claims.afterGrant);
+    && claims.afterGrant[0].p_item_id === 'det_camp1' && claims.afterGrant[0].p_provenance === 'campaign', claims.afterGrant);
   check('O3 · Soft-Kauf → genau 1 claim, provenance softcurrency',
     claims.bought === true && claims.afterBuy.length === 1
-    && claims.afterBuy[0].p_id === 'det_buy1' && claims.afterBuy[0].p_provenance === 'softcurrency', claims.afterBuy);
+    && claims.afterBuy[0].p_item_id === 'det_buy1' && claims.afterBuy[0].p_provenance === 'softcurrency', claims.afterBuy);
   check('O3 · schon Besessenes claimt nicht erneut',
     claims.again === false && claims.afterAgain === 0, claims);
 
@@ -361,8 +380,10 @@ const seen = { list: [], link: [] };
   console.log('\n-- O9 · Loadout: letzter Schreiber gewinnt --');
   const sync = await page.evaluate(async () => {
     localStorage.setItem('cr_loadout_synced_v1', String(Date.parse('2026-01-01T00:00:00Z')));
-    window.__loadoutRow = { equipped_bots: ['det_srv'], equipped_tools: ['hline'],
-                            loadout: { skin: 'invader-red' }, updated_at: '2026-09-01T00:00:00Z' };
+    /* Server-Schreibweise (cr_loadout_get): EIN jsonb `data` + updated_at. */
+    window.__loadoutRows = [{ data: { equipped_bots: ['det_srv'], equipped_tools: ['hline'],
+                                      loadout: { skin: 'invader-red' } },
+                              updated_at: '2026-09-01T00:00:00Z' }];
     window.__rpc = [];
     const a = await crOwnership.syncLoadout();
     const applied = { res: a && a.applied,
@@ -371,8 +392,8 @@ const seen = { list: [], link: [] };
                       sets: window.__rpc.filter(r => r.fn === 'cr_loadout_set').length };
 
     /* Jetzt ist der lokale Stand der juengere → der Client schreibt. */
-    window.__loadoutRow = { equipped_bots: ['det_old'], equipped_tools: [], loadout: {},
-                            updated_at: '2020-01-01T00:00:00Z' };
+    window.__loadoutRows = [{ data: { equipped_bots: ['det_old'], equipped_tools: [], loadout: {} },
+                              updated_at: '2020-01-01T00:00:00Z' }];
     window.__rpc = [];
     const b = await crOwnership.syncLoadout();
     return { applied, second: { res: b && b.applied,
@@ -461,14 +482,14 @@ const seen = { list: [], link: [] };
   /* ─────────────────────────────────────────────────────────────────────
    * O6 · Kein sichtbarer Kauf-Text sagt mehr „$RUN".
    * ──────────────────────────────────────────────────────────────────── */
-  console.log('\n-- O6 · Kauf-Texte sagen $CHART, nicht $RUN --');
+  console.log('\n-- O6 · Kauf-Texte sagen $RUN — den Saldo, der sinkt (v926) --');
   const html = fs.readFileSync(FILE, 'utf8');
   const buyStrings = html.match(/'(?:Need|BOT BOUGHT|GEAR BOUGHT)[^']*'/g) || [];
   check('O6 · die Kauf-Strings sind auffindbar', buyStrings.length >= 4, buyStrings);
-  check('O6 · KEIN Kauf-String enthaelt noch $RUN',
-    !buyStrings.some(s => s.includes('$RUN')), buyStrings.filter(s => s.includes('$RUN')));
-  check('O6 · das Etikett steht an genau einer Stelle',
-    (html.match(/const CR_INGAME_CUR = '\$CHART';/g) || []).length === 1);
+  check('O6 · KEIN Kauf-String nennt $CHART (abgezogen wird game.run)',
+    !buyStrings.some(s => s.includes('$CHART')), buyStrings.filter(s => s.includes('$CHART')));
+  check('O6 · das Etikett steht an genau einer Stelle und sagt $RUN',
+    (html.match(/const CR_INGAME_CUR = '\$RUN';/g) || []).length === 1);
   /* Und das, was der Spieler wirklich liest — der echte Toast. */
   const toastTxt = await page.evaluate(() => {
     const seenT = [];
@@ -479,8 +500,8 @@ const seen = { list: [], link: [] };
     window.toast = orig;
     return seenT;
   });
-  check('O6 · der gescheiterte Kauf sagt $CHART',
-    toastTxt.some(t => /\$CHART/.test(t)) && !toastTxt.some(t => /\$RUN/.test(t)), toastTxt);
+  check('O6 · der gescheiterte Kauf sagt $RUN',
+    toastTxt.some(t => /\$RUN/.test(t)) && !toastTxt.some(t => /\$CHART/.test(t)), toastTxt);
   check('O6 · die Tokenomics-Tafel sagt, dass $RUN nicht gelauncht ist',
     (html.match(/Not launched yet/g) || []).length >= 2);
 
