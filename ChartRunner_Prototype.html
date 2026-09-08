@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.925
-     LAST UPDATED:    2026-09-08  ·  v1.0.925 (OWNERSHIP B · CLIENT · crOwnership, DER SERVER ALS AUTORITAET FUER BELEGTEN BESITZ, EHRLICHE KENNZEICHNUNG): SPIELLOGIK, RENDERING UND ABILITIES UNBERUEHRT; MARKET- UND LIMIT-PFAD BIT FUER BIT UNVERAENDERT (vier Tore + Spion, crRealAdapter/crWeiche/crVaultLimit/crOnchainLimit nur noch als Regression geprueft); single-file, keine neue Dep, kein CDN. AUSGANGSLAGE (gemessen): Besitz lebte allein im Browser — zwei Sets in localStorage (cr_owned_bots_v1, cr_owned_gear_v1), die jeder aufmachen und beschreiben kann. Fuer das Spiel reicht das, fuer Turniere und Marketplace nicht. MESSUNG VOR DEM BAU, UND SIE IST DER WICHTIGSTE SATZ DIESER ZEILE: DER SERVER AUS AUFTRAG A IST NICHT AUSGEROLLT. Supabase-Projekt gjaaxqnqohseyesctbcd fuehrt in pg_proc weder cr_ownership_claim noch cr_loadout_get/_set (14 Funktionen, alle aus den Namen-/Alerts-/Follows-Migrationen); workers/ enthaelt account, alerts-cron, hermes-proxy — keinen ownership-Worker; es gibt keinen offenen PR dafuer. Der Client ist trotzdem gebaut, WEIL sein Vertrag genau diesen Fall traegt: ohne antwortenden Server faellt jeder Pfad auf den reinen Lokalbetrieb zurueck und das Spiel verhaelt sich wie v1.0.924. Das ist Testfall O1b, kein Notbehelf. NEU crOwnership: (1) init() liest GET /ownership/list (same-origin wie /account/*, JWT im Header, ?wallet= wenn nur eine Wallet da ist) in den SPEICHER — nie in localStorage, denn ein gecachtes verified:true, das einen Neustart ueberlebt, ist eine Behauptung ohne Beleg. (2) has(kind,id) liefert {owned,verified,provenance}; crBotOwned/crGearOwned rufen hier an, die alten Sets bleiben Fallback UND Cache (Server-Bestand wird ergaenzend hineingespiegelt, damit es nach einer Sitzung online auch offline weiterlaeuft). VEREINIGUNG: angezeigter Besitz = Server ∪ lokal; der Server entfernt NIE etwas lokal Vorhandenes, und Lokales stuft NIE ein verified:true herab (beide Regeln an je EINER Stelle: has() und _note()). (3) claim(kind,id,provenance) ruft RPC cr_ownership_claim, nur 'campaign' | 'softcurrency', IMMER unverifiziert — der Client behauptet, er beweist nicht. Fehlschlag blockiert nie: der Anspruch wandert in eine Schlange und wird beim naechsten Start nachgereicht. crUnlockBot(id, provenance) traegt den Grant, crBuyBot reicht 'softcurrency' herein — genau EIN claim je Erwerb, kein doppelter. (4) syncLoadout() ueber cr_loadout_get/_set fuer equipped bots/tools/loadout, letzter Schreiber gewinnt (updated_at); ausdruecklich KEIN Autoritaetsanspruch. EINMALIGE UEBERNAHME: beim ersten Start mit Identitaet werden die vorhandenen lokalen Sets EINMAL gemeldet (Bots 'campaign', bepreiste Gear 'softcurrency'), Merker cr_ownership_migrated_v1. Starter- und Gast-Bots bleiben draussen — die bekommt jeder geschenkt, da gibt es nichts zu beanspruchen. WALLET VERKNUEPFEN: Settings → Wallet → „Link wallet to account“ (POST /ownership/link-wallet, challenge → crSigner.signMessage → verify). Eine reine NACHRICHTEN-Signatur; der Text sagt das auch so („No payment, no transaction, nothing on-chain“). Freiwillig, nicht erzwungen. EHRLICHE KENNZEICHNUNG: im Loadout-Picker traegt jeder Eintrag seine HERKUNFT — „im Spiel freigespielt“ bzw. „gekauft, belegt“. Kein Schloss, keine rote Farbe, keine Abwertung: belegter Besitz wird hervorgehoben, freigespielter steht ruhig daneben. Ein Tooltip erklaert einmal, was wofuer zaehlt. GAESTE: ohne Konto UND ohne Wallet aendert sich NICHTS — null Requests an /ownership/*, null RPCs, keine Kennzeichnung. WAEHRUNG KORRIGIERT: die Kauf-Texte sagten „$RUN“ fuer das, was aus game.run abgezogen wird. $RUN ist NICHT gelauncht (letzter Baustein der Roadmap). Sichtbar laeuft jetzt alles ueber EINE Konstante CR_INGAME_CUR = '$CHART'; die Variablennamen (CR_BOT_PRICE_RUN, game.run) bleiben absichtlich. Beide Tokenomics-Tafeln sagen jetzt „Not launched yet“ statt „Scarce on-chain SPL on Solana“ im Praesens. OFFENER WIDERSPRUCH, BEWUSST STEHENGELASSEN UND IM PR BENANNT: abgezogen wird weiter game.run, waehrend die Kauf-Zeile „$CHART“ sagt und die Topbar zwei getrennte Staende fuehrt ($CHART je Run, $RUN persistiert). Der Auftrag verlangt genau diese Umbenennung und prueft sie per grep; die restlichen rund 100 $RUN-Stellen (Topbar, Shop-Fahrzeuge, Kampagnen-Belohnungen, Missionen) sind eine spielweite Waehrungsumbenennung und brauchen Julians Entscheidung, nicht meine. SICHERHEIT: der Client behauptet nur, er beweist nicht; verifizierter Besitz entsteht ausschliesslich im Worker, dieser Auftrag baut KEINEN Weg dorthin. Keine Secrets im Client (nur der Supabase-Anon-Key wie bisher). Handelspfad, die vier Tore und der Spion unberuehrt. TESTS: scripts/check_v925_ownership_browser.cjs (O1 Vereinigung · O1b Serverausfall nimmt nichts weg · O2 keine Herabstufung · O3 genau ein claim je Erwerb mit richtiger Provenienz · O3b RPC-Ausfall blockiert den Kauf nicht · O4 Migration genau einmal, Starter ausgenommen · O5 Gast = null Netz, null RPC, null Kennzeichnung · O6 grep auf die Kauf-Strings PLUS der echte Toast · O7 Kennzeichnung ohne Schloss, verified unterscheidbar · O8 Wallet-Link: ohne Anmeldung kein Request, angemeldet genau eine Nachrichten-Signatur · O9 Loadout letzter Schreiber · O10 Handelspfade unveraendert). Gegenproben ROT (siehe Commit). NICHT GEMESSEN: der ausgerollte Server, weil es ihn nicht gibt — die Wire-Formate (Feldnamen von /ownership/list, /ownership/link-wallet und der drei RPCs) stehen im Modulkopf und muessen zum Server-Auftrag passen; ein Feldname, den beide Seiten anders schreiben, ist genau der Fehler, der v1.0.883 gekostet hat. Rollback: v1.0.924 (dann wieder rein lokaler Besitz — funktional identisch, solange der Server fehlt).
+     CURRENT VERSION: v1.0.926
+     LAST UPDATED:    2026-09-08  ·  v1.0.926 (OWNERSHIP C · CLIENT · DEN SERVER-VERTRAG SPRECHEN, WÄHRUNGS-ETIKETT ZURÜCKGENOMMEN): SPIELLOGIK, RENDERING UND ABILITIES UNBERUEHRT; MARKET- UND LIMIT-PFAD BIT FUER BIT UNVERAENDERT (vier Tore + Spion, crRealAdapter/crWeiche/crVaultLimit/crOnchainLimit nur als Regression geprueft); single-file, keine neue Dep, kein CDN. BEFUND, GEMESSEN AM GEMERGTEN STAND cac2882: Server (PR #199) und Client (PR #200) wurden UNABHAENGIG voneinander gebaut, und niemand hat die Vertraege gegeneinander gelesen — sie passten an VIER Stellen nicht zusammen. (1) crOwnership.claim rief cr_ownership_claim(p_kind, p_id, p_provenance); die Funktion heisst (p_owner_kind, p_owner_id, p_item_kind, p_item_id, p_provenance) — PostgREST loest dreistellig nicht auf, JEDER Claim war ein 404. (2) cr_loadout_get() ohne Argumente; der Server verlangt den Eigner UND liefert EIN jsonb `data` statt drei Spalten — kein Loadout-Sync. (3) items[] wurde als it.kind/it.id gelesen; cr_ownership_list liefert item_kind/item_id — jede Server-Zeile fiel als undefined durch. (4) GET /ownership/list?wallet=<addr> im Wallet-ohne-Konto-Fall; der Worker liest `wallet` gar nicht, er verlangt ein JWT (401 no_token). WEIL crOwnership BEI JEDEM FEHLER WEICH AUF DEN LOKALBETRIEB ZURUECKFAELLT, BRACH NICHTS — das Register blieb einfach leer und wirkungslos. Genau der stille Fehlschlag, vor dem v1.0.925 im eigenen Modulkopf gewarnt hat; er hat sich prompt selbst getroffen. RICHTUNG: DER CLIENT ZIEHT NACH. Migration und Worker bleiben unangetastet — kein SQL, kein Redeploy. Der Server-Vertrag ist der bewusstere: explizite Eigner-Identitaet erlaubt die Eignerpruefung IN der Datenbank (cr_owner_is_caller) statt im Aufrufer, und er deckt sich mit cr_names. ANGEGLICHEN: claim/_flushPending/Bestandsuebernahme rufen cr_ownership_claim mit ALLEN FUENF p_*-Parametern, Eigner aus crAccount.userId(); items[] wird als item_kind/item_id gelesen und TOLERANT verworfen (fehlt ein Feld, wird die Zeile uebersprungen und in _state().trace gezaehlt — nie geraten); /ownership/list geht angemeldet OHNE Eigner-Parameter raus (der Worker leitet ihn aus dem JWT ab, ein selbst mitgeschickter owner_id waere eine zweite Wahrheit ueber dieselbe Sache), die verknuepfte Wallet als zweiter Eigner mit ?owner_kind=wallet&owner_id=<addr> PLUS JWT. LOADOUT-VARIANTE GEWAEHLT UND IM MODULKOPF FESTGEHALTEN: die RPC cr_loadout_get/_set(p_owner_kind, p_owner_id[, p_data, p_updated_at]), NICHT die Worker-Route GET|POST /loadout — derselbe Identitaetsweg wie claim, ein Mechanismus statt zwei. p_data ist EIN Objekt {equipped_bots, equipped_tools, loadout}; p_updated_at ist der Stand, den der Schreiber zu ueberschreiben glaubt, damit ein STALER Schreiber gegen ein neueres Geraet verliert statt es still zu ueberbuegeln. WALLET OHNE KONTO EHRLICH: der Server bindet Wallets ueber cr_wallet_link an ein Supabase-Konto; ohne JWT weisen RPCs (anon hat kein EXECUTE) und Worker (401) ab. Ein Spieler ohne Konto kann also serverseitig gar keinen Besitz haben — keine Luecke, sondern die Folge davon, dass Identitaet an einem Konto haengt. Also wird GAR NICHT ERST ANGEFRAGT (kein provoziertes 401), rein lokal gearbeitet, und an genau EINER Stelle — dort wo die Herkunft steht — gesagt: „Belegter Besitz braucht ein Konto. Ohne Konto bleibt alles lokal auf diesem Geraet.“ Kein Nag, kein Modal, keine Sperre. WAEHRUNGS-ETIKETT ZURUECKGENOMMEN (Fehler des Auftrags B, nicht des Clients): es gibt ZWEI Staende — game.chart (Topbar #chart, $CHART, lila) und game.run (Topbar #run, $RUN, gold). Abgezogen wird game.run, also nannte „Need 25 $CHART (you have 3)“ den falschen Saldo. CR_INGAME_CUR steht wieder auf '$RUN'; der grep-Test aus v925 ist entsprechend UMGEDREHT. Dafuer EINE Offenlegung dort, wo der Saldo erklaert wird (Menu-Drawer → Wallet, Element crRunDisclosure): „$RUN ist ein Guthaben im Spiel. Der Token ist nicht gelauncht; ein Umtausch ist weder verfuegbar noch zugesagt.“ Die „Not launched yet“-Korrektur in beiden Tokenomics-Tafeln aus v1.0.925 BLEIBT. Die spielweite Umbenennung (~100 Fundstellen) wird NICHT umgesetzt — das ist eine Produktentscheidung. UNVERAENDERT GUELTIG: Vereinigung (Server ∪ lokal, ein Ausfall nimmt nichts weg), keine Herabstufung eines verified:true, nie blockieren (abgewiesener Claim wandert in die Schlange), Gast = null Netz. TESTS: scripts/check_v926_ownership_contract_browser.cjs (C1 fuenf p_*-Parameter · C2 item_kind/item_id vollstaendig uebernommen, Zeile ohne item_id uebersprungen UND gezaehlt · C3 angemeldet ohne Eigner-Parameter, Wallet-Eigner mit owner_kind/owner_id, Wallet ohne Konto NULL Anfragen · C4 Loadout ueber die RPC mit Eigner, p_data als Objekt, letzter Schreiber · C5 Kauf-Text sagt $RUN und die Offenlegungszeile steht da · C6 Regression v917–v925 + Market-/Limit-Pfad). Gegenproben ROT (siehe Commit). NICHT VON DIESER SESSION GEMESSEN: der ausgerollte Worker — die Sandbox erreicht chartrunner.xyz nicht (Proxy 403). Julian hat /ownership/health gemessen: Worker chartrunner-ownership, Version 908d63b0, service_role_key/nonce_secret/admin_secret = true, Migration ausgefuehrt. Der Vertrag hier ist gegen chartrunner_ownership_migration.sql und workers/ownership/src/index.js GELESEN, nicht geraten. Rollback: v1.0.925 (dann wieder stiller Leerlauf des Registers — funktional wie v1.0.924).
+     PREV  ·  v1.0.925 (OWNERSHIP B · CLIENT · crOwnership, DER SERVER ALS AUTORITAET FUER BELEGTEN BESITZ, EHRLICHE KENNZEICHNUNG): SPIELLOGIK, RENDERING UND ABILITIES UNBERUEHRT; MARKET- UND LIMIT-PFAD BIT FUER BIT UNVERAENDERT (vier Tore + Spion, crRealAdapter/crWeiche/crVaultLimit/crOnchainLimit nur noch als Regression geprueft); single-file, keine neue Dep, kein CDN. AUSGANGSLAGE (gemessen): Besitz lebte allein im Browser — zwei Sets in localStorage (cr_owned_bots_v1, cr_owned_gear_v1), die jeder aufmachen und beschreiben kann. Fuer das Spiel reicht das, fuer Turniere und Marketplace nicht. MESSUNG VOR DEM BAU, UND SIE IST DER WICHTIGSTE SATZ DIESER ZEILE: DER SERVER AUS AUFTRAG A IST NICHT AUSGEROLLT. Supabase-Projekt gjaaxqnqohseyesctbcd fuehrt in pg_proc weder cr_ownership_claim noch cr_loadout_get/_set (14 Funktionen, alle aus den Namen-/Alerts-/Follows-Migrationen); workers/ enthaelt account, alerts-cron, hermes-proxy — keinen ownership-Worker; es gibt keinen offenen PR dafuer. Der Client ist trotzdem gebaut, WEIL sein Vertrag genau diesen Fall traegt: ohne antwortenden Server faellt jeder Pfad auf den reinen Lokalbetrieb zurueck und das Spiel verhaelt sich wie v1.0.924. Das ist Testfall O1b, kein Notbehelf. NEU crOwnership: (1) init() liest GET /ownership/list (same-origin wie /account/*, JWT im Header, ?wallet= wenn nur eine Wallet da ist) in den SPEICHER — nie in localStorage, denn ein gecachtes verified:true, das einen Neustart ueberlebt, ist eine Behauptung ohne Beleg. (2) has(kind,id) liefert {owned,verified,provenance}; crBotOwned/crGearOwned rufen hier an, die alten Sets bleiben Fallback UND Cache (Server-Bestand wird ergaenzend hineingespiegelt, damit es nach einer Sitzung online auch offline weiterlaeuft). VEREINIGUNG: angezeigter Besitz = Server ∪ lokal; der Server entfernt NIE etwas lokal Vorhandenes, und Lokales stuft NIE ein verified:true herab (beide Regeln an je EINER Stelle: has() und _note()). (3) claim(kind,id,provenance) ruft RPC cr_ownership_claim, nur 'campaign' | 'softcurrency', IMMER unverifiziert — der Client behauptet, er beweist nicht. Fehlschlag blockiert nie: der Anspruch wandert in eine Schlange und wird beim naechsten Start nachgereicht. crUnlockBot(id, provenance) traegt den Grant, crBuyBot reicht 'softcurrency' herein — genau EIN claim je Erwerb, kein doppelter. (4) syncLoadout() ueber cr_loadout_get/_set fuer equipped bots/tools/loadout, letzter Schreiber gewinnt (updated_at); ausdruecklich KEIN Autoritaetsanspruch. EINMALIGE UEBERNAHME: beim ersten Start mit Identitaet werden die vorhandenen lokalen Sets EINMAL gemeldet (Bots 'campaign', bepreiste Gear 'softcurrency'), Merker cr_ownership_migrated_v1. Starter- und Gast-Bots bleiben draussen — die bekommt jeder geschenkt, da gibt es nichts zu beanspruchen. WALLET VERKNUEPFEN: Settings → Wallet → „Link wallet to account“ (POST /ownership/link-wallet, challenge → crSigner.signMessage → verify). Eine reine NACHRICHTEN-Signatur; der Text sagt das auch so („No payment, no transaction, nothing on-chain“). Freiwillig, nicht erzwungen. EHRLICHE KENNZEICHNUNG: im Loadout-Picker traegt jeder Eintrag seine HERKUNFT — „im Spiel freigespielt“ bzw. „gekauft, belegt“. Kein Schloss, keine rote Farbe, keine Abwertung: belegter Besitz wird hervorgehoben, freigespielter steht ruhig daneben. Ein Tooltip erklaert einmal, was wofuer zaehlt. GAESTE: ohne Konto UND ohne Wallet aendert sich NICHTS — null Requests an /ownership/*, null RPCs, keine Kennzeichnung. WAEHRUNG KORRIGIERT: die Kauf-Texte sagten „$RUN“ fuer das, was aus game.run abgezogen wird. $RUN ist NICHT gelauncht (letzter Baustein der Roadmap). Sichtbar laeuft jetzt alles ueber EINE Konstante CR_INGAME_CUR = '$CHART'; die Variablennamen (CR_BOT_PRICE_RUN, game.run) bleiben absichtlich. Beide Tokenomics-Tafeln sagen jetzt „Not launched yet“ statt „Scarce on-chain SPL on Solana“ im Praesens. OFFENER WIDERSPRUCH, BEWUSST STEHENGELASSEN UND IM PR BENANNT: abgezogen wird weiter game.run, waehrend die Kauf-Zeile „$CHART“ sagt und die Topbar zwei getrennte Staende fuehrt ($CHART je Run, $RUN persistiert). Der Auftrag verlangt genau diese Umbenennung und prueft sie per grep; die restlichen rund 100 $RUN-Stellen (Topbar, Shop-Fahrzeuge, Kampagnen-Belohnungen, Missionen) sind eine spielweite Waehrungsumbenennung und brauchen Julians Entscheidung, nicht meine. SICHERHEIT: der Client behauptet nur, er beweist nicht; verifizierter Besitz entsteht ausschliesslich im Worker, dieser Auftrag baut KEINEN Weg dorthin. Keine Secrets im Client (nur der Supabase-Anon-Key wie bisher). Handelspfad, die vier Tore und der Spion unberuehrt. TESTS: scripts/check_v925_ownership_browser.cjs (O1 Vereinigung · O1b Serverausfall nimmt nichts weg · O2 keine Herabstufung · O3 genau ein claim je Erwerb mit richtiger Provenienz · O3b RPC-Ausfall blockiert den Kauf nicht · O4 Migration genau einmal, Starter ausgenommen · O5 Gast = null Netz, null RPC, null Kennzeichnung · O6 grep auf die Kauf-Strings PLUS der echte Toast · O7 Kennzeichnung ohne Schloss, verified unterscheidbar · O8 Wallet-Link: ohne Anmeldung kein Request, angemeldet genau eine Nachrichten-Signatur · O9 Loadout letzter Schreiber · O10 Handelspfade unveraendert). Gegenproben ROT (siehe Commit). NICHT GEMESSEN: der ausgerollte Server, weil es ihn nicht gibt — die Wire-Formate (Feldnamen von /ownership/list, /ownership/link-wallet und der drei RPCs) stehen im Modulkopf und muessen zum Server-Auftrag passen; ein Feldname, den beide Seiten anders schreiben, ist genau der Fehler, der v1.0.883 gekostet hat. Rollback: v1.0.924 (dann wieder rein lokaler Besitz — funktional identisch, solange der Server fehlt).
      PREV  ·  v1.0.924 (PATCH H · CLIENT · RUHENDE ORDERS UEBER DIE ON-CHAIN-ROUTE + CANCEL): MARKET-PFAD (quote→swap→signAndSend) BIT FUER BIT UNBERUEHRT, vier Tore + Spion unveraendert, kein Broadcast, single-file, keine neue Dep. BEFUND (06.–08.09.2026): (a) Phantom und Solflare haengen beim Sign-only Lighthouse-Guard-Instruktionen an die V2-Einzahlung (Programm L2TE…3S95, #8/#9; Solflare tauscht zusaetzlich ComputeBudget #0); Jupiter Trigger V2 verlangt die Tx bytegenau -> dauerhaft 400 „Transaction accounts modified". Backpack haengt nichts an, dort lief V2 durch (Order real angelegt und spaeter gefuellt). (b) Jupiter V2 nimmt derzeit KEINE Integrator-Gebuehr — auf dem V2-Pfad verdient ChartRunner nichts. KONSEQUENZ: ruhende Orders laufen ueber Jupiter Trigger V1 (on-chain, Worker v1.26, nachlesbar unter /health.trigger.onchain); dort geht die Order-Tx SO RAUS, WIE SIE SIGNIERT WURDE, und die 50-bps-Gebuehr laeuft ueber das Referral-Konto. Der V2-Vault-Pfad bleibt als Rueckweg eingebaut. FIX: (1) crVaultApi bekommt die vier V1-Aufrufe OHNE JWT (orders/onchain/create|execute|cancel|active, PATHS_ONCHAIN getrennt von PATHS); _honest reicht missing[]/code/signature/status/verify am FEHLER durch (dieselbe Whitelist-Falle wie safety v890 und deposit_diff v922). (2) preflight(route) prueft den Pflichtsatz JE ROUTE ('health' = nur Erreichbarkeit, 'v1', 'v2'); gecacht wird die /health-Antwort, nicht das Urteil — sonst haette der V2-Pflichtsatz die Route-Wahl verdeckt. (3) crRestingRoute (neu): routeVenue() liest /health -> trigger.resting_default (heute 'v1'); ein gesetztes sessionStorage.cr_wallet_guard_v1 erzwingt V1, ABER nur wenn onchainLive() die Route misst; kein UI-Schalter. Panel-Zeile „RUN: <venue> · ON-CHAIN-LIMIT · RUHENDE ORDER". (4) crOnchainLimit (neu, Schwester zu crVaultLimit mit demselben Handle-Vertrag): prepare -> create (zeigt VOR dem Signieren Gebuehr, beide Mengen im Klartext „0,1 SOL → mind. 27,3 JTO" und den Ablauf), commit -> crSigner.signTransaction (Sign-only, KEIN signAndSend) -> execute mit signed_tx + request_id + making_amount; Journal { source:'live', kind:'limit', venue:'jupiter-v1', order, sig, status:'open' }. (5) taking_amount wird gerechnet: BUY taking = making_SOL / trigger_usd × SOL_usd, SELL umgekehrt, gerundet auf die Token-Decimals aus GET /v1/mints/resolve; SOL-Preis aus GET /v1/price. Fehlt EIN Preis oder fehlen die Decimals -> KEINE Signatur, ehrliche Meldung (kein geschaetzter Wert). (6) CANCEL (neu, es gab im Client fuer KEINE Route einen): Terminal -> OFFENE POSITIONEN -> eine Zeile mit venue jupiter-v1 traegt CANCEL -> orders/onchain/cancel -> signTransaction -> execute OHNE making_amount -> Journal status 'cancelled' + sig. Eine V2-Order zeigt stattdessen „Cancel über jup.ag" — bewusst kein V2-Cancel im Client. (7) TEXTE KORRIGIERT: „Gebuehr … bei der Einzahlung gebunden" (v923) ist WEG — er war falsch, V2 bindet nichts, weil V2 nichts nimmt. Je Route ein Satz aus EINER Konstante (crRestingRoute.feeText): v1 „Gebühr 0,5 % bei Ausführung (Referral)", v2 „Keine ChartRunner-Gebühr (Jupiter V2 unterstützt derzeit keine Integrator-Gebühr)"; das Gebuehren-Blatt fuehrt beide als zwei getrennte Zeilen mit Markierung der aktiven. Wallet-Guard-Text: „…mit dieser Wallet derzeit nicht moeglich" faellt weg, uebrig bleibt der gemessene Befund „Mit Backpack funktioniert es (hängt keine Schutz-Instruktionen an)." (8) ABGLEICH erweitert: orders/onchain/active (OHNE JWT) laeuft NEBEN orders/active + orders/history; orderKey -> orderPubkey, venue jupiter-v1. Nur ergaenzen, nie loeschen, bekannte id/txSignature nie doppelt. Zusaetzlich crOrderReconcile.runOnchain(): beim Laden OHNE JWT wird die V1-Liste trotzdem gelesen (sie braucht keinen Token) und meldet sich nur, wenn sie etwas Neues findet. (9) DIAGNOSE: verify.jupiter aus der create-Antwort steht als Notiz im Diagnose-Block; onchain-tx-unexpected traegt seinen otx-Code WOERTLICH ins Panel — das ist der Live-Beweis fuer das Argument-Layout von initialize_order, das der Worker prueft. SICHERHEIT unveraendert: jede finanzwirksame Aktion ist ein Klick plus Wallet-Signatur, der Client sendet nie selbst (signAndSend bleibt dem Market-Pfad vorbehalten), die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign) und der Spion sind unberuehrt; der Adapter traegt limitOnchain NEBEN limitVault (eigenes Spion-Ereignis), das Session-Limit zaehlt das making_amount wie bisher. TESTS: scripts/check_v924_patchH_browser.cjs (H1 commit -> execute mit signed_tx + request_id + making_amount, 0 signAndSend/sendTransaction; H2 Cancel -> cancel -> signTransaction -> execute OHNE making_amount, V2-Zeile zeigt den jup.ag-Hinweis; H3 taking_amount BUY/SELL mit Decimals 6 und 9, fehlender SOL-Preis -> kein Signieren; H4 Routing nach resting_default und nach cr_wallet_guard_v1; H5 Fee-Text je Venue + grep: „bei der Einzahlung gebunden" kommt im Build nicht mehr vor; H6 Abgleich nimmt On-Chain-Orders auf, ohne bekannte zu duplizieren; H7 Market-Pfad unveraendert). Regressionen v907/v917–v923 gruen (v922/v923 tragen die drei Textzeilen nach, die dieser Patch ausdruecklich aendert — Fee-Wortlaut, Guard-Satz, dritter Abgleich-Schritt). Gegenproben ROT (siehe Commit). NICHT GEMESSEN: der AUSGEROLLTE Worker v1.26 — ob /health trigger.resting_default und trigger.onchain wirklich fuehrt, ob orders/onchain/create die hier gesendeten Feldnamen annimmt und ob /v1/mints/resolve decimals traegt, misst Julian am Telefon (Schritte im PR). Ohne die Endpunkte in /health bricht der Arm VOR jeder Signatur ab und sagt, welche fehlen. Rollback: v1.0.923 (dann wieder V2-only, fuer Phantom/Solflare funktionslos).
      PREV  ·  v1.0.923 (PATCH G · TEIL B · CLIENT · ABGLEICH GEGEN JUPITER): KEIN TRADE-PFAD-CHANGE — Market-Pfad (quote→swap→signAndSend) unberuehrt, vier Tore + Spion unveraendert, keine neue Signatur ausser der bekannten Auth-Nachricht (nur auf Knopfdruck oder bei vorhandenem JWT), kein Broadcast, single-file, keine neue Dep. VORAUSSETZUNG: Worker Patch G · Teil A (v1.26) deployt — orders/history ist NICHT Teil des Preflight-Pflichtsatzes (404 → not-deployed → Abgleich laeuft mit orders/active allein weiter und sagt das). BEFUND (Handy, 07.09. 19:48, Backpack): Backpack signiert ohne Lighthouse-Guard → kompletter V2-Fluss lief durch, Jupiter legte die Order an (jup.ag Open Orders: SOL→JTO 0,120 SOL, Limit unter 0,432, 30 d, Gebuehr 0,5 %). Der Worker (v1.25) hielt die Antwort zurueck → Client meldete trigger-fee-echo-fehlt, kein Journal-Eintrag, Terminal leer. Der Client hatte keine Moeglichkeit, den Zustand bei Jupiter zu sehen. FIX: (1) crOrderReconcile (neu, read-only): orders/active + orders/history (crVaultApi.ordersHistory, neu) abfragen, Orders dieser Wallet, die im Journal fehlen, als { source:'live', kind:'limit', status, id, txSignature, reconciled:true } eintragen — nur ergaenzen, nie loeschen, bekannte id/orderPubkey/txSignature nie duplizieren; Panel/HUD/CC: „Order bei Jupiter gefunden und ins Journal uebernommen (id …)". (2) crVaultLimit.commit: nach JEDEM ordersPrice-Ergebnis ohne sauberes {id} (Fehler, Timeout, Netzabbruch, auch wallet-guard) laeuft der Abgleich mit dem vorhandenen JWT; Ergebnis als res.reconcile am unveraenderten Fehlerobjekt; _msgForLimitError und die Weiche haengen den Fund an. Ein ok OHNE id: Abgleich zuerst, Fund per txSignature → kein zweiter Journal-Eintrag. (3) Laden: der JWT lebt nur im Speicher, also haengt der einmalige Lade-Abgleich (je Wallet und Sitzung, crOrderReconcile.onAuth) an der ersten erfolgreichen Anmeldung (crVaultApi.ensureAuth); laeuft gerade ein Flow, wartet er bis zu dessen Ende. Ohne JWT beim Laden: CC-/Terminal-Hinweis „Ruhende Orders: Abgleich wartet auf Wallet-Signatur" — KEIN automatisches Signieren. (4) Terminal → OFFENE POSITIONEN → Knopf „Bei Jupiter nachsehen" (ensureAuth, ggf. EINE Nachrichten-Signatur, kein Geld) + Statuszeile (Hinweis / letztes Ergebnis / laeuft); LIM-Zeilen tragen id (kurz) und Ablauf. (5) Erfolgsantwort { id, txSignature, depositConfirmed, fee{bps, bound_at}, warnings[] }: fee.bound_at 'craft' → ein Gebuehrensatz, der laut v923 an die Einzahlung gebunden sei, in Panel/Journal/Gebuehren-Blatt (v924 hat diesen Satz als falsch verworfen: V2 nimmt gar keine Integrator-Gebuehr); 'craft-cache-miss' → „Gebuehrenstand: siehe Einzahlung" (kein Fehler); warnings[] als Hinweiszeile (Panel, CC, Diagnose-Notiz), nie als Abbruch; Ablauf (expiredAt) in Journal/Terminal, sonst „Laufzeit 30 Tage (Jupiter)". (6) TIF-Label: Option GTC heisst jetzt „30 Tage (Jupiter)" (Wert bleibt GTC — gespeicherte Route-States; ob orders/price ein Ablaufdatum annimmt, ist im Worker-Vertrag nicht gemessen, nichts mitgegeben). (7) Patch-F-Text: „Ruhende Orders sind mit dieser Wallet derzeit nicht moeglich. Mit Backpack funktioniert es (kein Guard)." — eine Konstante (crWalletGuard), Setup-Guide-Absatz gleich. (8) Spur: eigener Schritt reconcile (Dauer, N gefunden, M neu; history-Fehler benannt); am Knopf ein eigener Flight „reconcile". NICHT GEBAUT: ein Cancel-Pfad im Client (orders/price/cancel/:id → Auszahlungs-Tx signieren → confirm-cancel) existiert im oeffentlichen Client nicht — das waere eine neue finanzwirksame Signatur und liegt ausserhalb dieses Patches; Cancel der 19:48-Order bis dahin ueber jup.ag. TESTS: scripts/check_v923_patchG_browser.cjs (G1 ordersPrice-Fehler → orders/active + orders/history werden gerufen, fremde Fixture-Order landet mit reconciled:true im Journal + Terminal, bekannte id nicht dupliziert, Panel-Text nennt den Fund; G2 Laden: ohne JWT kein Aufruf + Hinweis sichtbar, nach ensureAuth genau EIN Abgleich, zweite (gecachte) Anmeldung loest keinen zweiten aus; G3 Erfolg mit fee.bound_at:'craft' → Journal + Fee-Text, craft-cache-miss → „siehe Einzahlung", warnings[] blockieren nicht; G4 TIF-Label „30 Tage (Jupiter)", Backpack-Satz in Guard-Text + Guide; G5 Knopf „Bei Jupiter nachsehen" → ensureAuth (1 signMessage) → Fund → Journal, Spur reconcile; history 404 → Abgleich laeuft mit active allein; G6 Market-Pfad unveraendert). Regressionen v907/v917–v922 gruen. Gegenproben ROT (siehe Commit). NICHT GEMESSEN: die Antwortform des ausgerollten Workers v1.26 fuer orders/history (orders[] / history[] / Array werden alle gelesen) und die Feldnamen der Jupiter-Orders (camel + snake werden gelesen; Ablauf nur, wenn genannt). Rollback: v1.0.922 (dann fehlt der Abgleich wieder — nur mit Worker v1.26 vertretbar).
      PREV  ·  v1.0.922 (PATCH F · CLIENT · WALLET-GUARD EHRLICH ANZEIGEN): KEIN TRADE-PFAD-CHANGE — Market-Pfad (quote→swap→signAndSend) unberuehrt, vier Tore + Spion unveraendert, keine neue Signatur, kein Broadcast, single-file, keine neue Dep. BEFUND (Handy, 06.09. 14:52 Phantom · 15:41 Solflare, Worker v1.25 mit deposit_diff): beide Wallets haengen beim Sign-only der Jupiter-Einzahlung Lighthouse-Guard-Instruktionen an (accounts_added L2TE…3S95, instructions_added #8/#9; Solflare ersetzt zusaetzlich ComputeBudget #0), signature_valid_for_crafted_message=false. Jupiter Trigger V2 prueft die signierte Tx bytegenau gegen ihren Craft → „Transaction accounts modified". Worker und Client sind sauber; die Veraenderung passiert in der Wallet und ist nicht reparierbar (Guards entfernen = Signatur ungueltig). Phantom dokumentiert keinen Opt-out, nur ein Domain-Review-Formular; Solflare dokumentiert nichts. FIX: (1) crVaultApi._honest reicht deposit_diff aus der Fehlerantwort durch (dieselbe Whitelist-Falle wie safety in v890). (2) crWalletGuard (neu): detect/classify — deposit_diff mit dem Lighthouse-Programm unter accounts_added ODER „Lighthouse" unter instructions_added → Fehlercode wallet-guard; ein blosses blockhash_changed bleibt der generische Fehler mit detail. crVaultLimit.commit klassifiziert den orders/price-Fehler; der Roh-Diff geht als crVaultFlight.note NUR in den Diagnose-Block (aufklappbar), nie in die Hauptzeile. (3) EINE Meldung (crWalletGuard.text) in Panel + HUD + Trace + Weiche: „Deine Wallet hat die Einzahlung mit Schutz-Instruktionen veraendert (Lighthouse-Guard). Jupiter nimmt nur die unveraenderte Einzahlung an. Nichts bewegt." — letzter Satz „Ruhende Orders laufen deshalb derzeit ueber die On-Chain-Route (Trigger V1)." NUR, wenn crVaultApi.triggerV1Live() den Fallback in der letzten /health-Antwort misst (trigger_v1 / features.trigger_v1 / Pfad /v1/orders/trigger unter endpoints); sonst „… sind mit dieser Wallet derzeit nicht moeglich." (4) Merken, nicht nerven: sessionStorage cr_wallet_guard_v1 = Wallet-Name nach dem ersten Treffer (KEIN localStorage — Wallet-Verhalten kann sich mit Domain-Review aendern). Solange gesetzt, zeigt _armVaultLimit den Hinweis nach dem Preflight und VOR Auth/Signatur (Spur-Schritt walletGuard; 0 signMessage, 0 signTransaction, kein auth/challenge); ist Trigger V1 live, laeuft die Order weiter ueber die On-Chain-Route. (5) Setup-Guide/Gebuehren-Blatt: aufklappbarer Absatz „Ruhende Orders & Wallet-Schutz" unter dem Klartext (nur Route Limit) mit demselben Text; Zeile Vault-Rente ~0,004 SOL NUR, wenn der V2-Pfad genutzt wird (data-cr-guide-path v2/v1/none). (6) Spur als Gruppe: crVaultFlight fuehrt einen Stapel offener Schritte — depositSign/ordersPrice/ordersActive stehen als Kinder (depth 1) unter commit, der Diagnose-Block nummeriert nur Tiefe 0 und rueckt Kinder mit „↳" ein; lines() bleibt flach (Sonden v918–v921), linesTree()/traceText() zeigen die Gruppe; end() schliesst alle offenen Schritte. TESTS: scripts/check_v922_patchF_browser.cjs (F1 Fixture deposit_diff mit Lighthouse → wallet-guard, „Nichts bewegt" in Panel/HUD/Toast, Rohdiff NUR im Diagnose-Block; F1b Lighthouse nur unter instructions_added; F2 Fixture ohne Lighthouse (blockhash_changed) → generischer Text mit detail, KEIN Merker; F3 cr_wallet_guard_v1 gesetzt → Hinweis vor Auth/Signatur, 0 signMessage, 0 signTransaction, kein auth/challenge-Request; F3b Trigger V1 live per /health → Textvariante + Flow laeuft weiter; F4 Spur-Gruppe (depth) + Diagnose-Einrueckung; F5 Guide-Absatz nur auf Route Limit, Renten-Zeile nur bei V2-Pfad; F6 Market-Pfad unveraendert; sessionStorage statt localStorage). Regressionen v907/v917–v921 gruen. Gegenproben ROT (siehe Commit). NICHT GEMESSEN: die genaue Ablageform von deposit_diff im ausgerollten Worker v1.25 (oben, unter detail, oder detail ist der Diff — alle drei werden gelesen) und ob /health einen Trigger-V1-Marker fuehrt; beides prueft Julian am Telefon. Rollback: v1.0.921.
@@ -10779,6 +10780,11 @@ window.crShare = function (o) {
         <div class="pill"><span class="tick-dot"></span><b id="run">0</b> $RUN</div>
         <div class="pill"><span class="chart-dot"></span><b id="chart">0</b> $CHART</div>
       </div>
+      <!-- v1.0.926 — DIE EINE OFFENLEGUNG, dort wo der $RUN-Saldo erklaert
+           wird. Die Kauf-Texte nennen wieder $RUN (das ist der Saldo, der
+           sinkt); damit gehoert an genau EINE Stelle der Satz, was $RUN heute
+           ist und was es nicht ist. Kein Nag, kein Modal, keine Sperre. -->
+      <p class="md-note" id="crRunDisclosure">$RUN ist ein Guthaben im Spiel. Der Token ist nicht gelauncht; ein Umtausch ist weder verfügbar noch zugesagt.</p>
       <!-- v0.8k#11 — Coins on/off toggle. When off, tick ($RUN-style golden) and
            creds ($CHART-style purple) pickups stop spawning on the chart and can't
            be collected; restock and boss-loot orbs are unaffected. Persists via
@@ -73251,13 +73257,18 @@ const CR_BOT_BLURB = {
 // Divergence (ch.33). Ch.30/31 teach Volume Climax / VWAP Reclaim, which are starter bots
 // the player already owns, so they need no grant. (Was: ch.30 → dead det_hs.)
 const CR_CAMPAIGN_BOT_BY_CH = { 29: 'det_ccv', 32: 'det_orderblock', 33: 'det_div' };
-// v1.0.925 — WAEHRUNGS-ETIKETT AN GENAU EINER STELLE. Abgezogen wird game.run
-// (die run-gebundene In-Game-Waehrung); der TOKEN $RUN ist nicht gelauncht und
-// darf deshalb in Kauf-Texten nicht als das erscheinen, was man kauft. Die
-// Variablennamen (CR_BOT_PRICE_RUN, game.run) bleiben absichtlich, wie sie
-// sind — umbenennen wuerde die halbe Datei anfassen, ohne dass ein Spieler
-// etwas davon haette. Sichtbar ist nur diese Konstante.
-const CR_INGAME_CUR = '$CHART';
+// v1.0.926 — WAEHRUNGS-ETIKETT AN GENAU EINER STELLE, UND ES NENNT WIEDER DEN
+// SALDO, DER WIRKLICH SINKT. v1.0.925 hat es auf '$CHART' gestellt, weil der
+// Auftrag B das so verlangte. Das war falsch, und die Client-Session hat es
+// damals angezeigt: es gibt ZWEI Staende — game.chart (Topbar #chart, $CHART,
+// lila) und game.run (Topbar #run, $RUN, gold). Abgezogen wird game.run. „Need
+// 25 $CHART (you have 3)" nannte damit den falschen Saldo und las sich fuer den
+// Spieler wie ein Rechenfehler des Spiels. Zurueck auf $RUN.
+// Die Offenlegung, dass der TOKEN $RUN nicht gelauncht ist, steht dort, wo der
+// Saldo erklaert wird (Menu-Drawer → Wallet, Element crRunDisclosure) — nicht in
+// jeder Kaufzeile. Die „Not launched yet"-Korrektur in den Tokenomics-Tafeln
+// aus v1.0.925 bleibt unveraendert.
+const CR_INGAME_CUR = '$RUN';
 const CR_BOT_PRICE_RUN = 25;
 const _CR_OWNED_BOTS_KEY = 'cr_owned_bots_v1';
 let CR_OWNED_BOTS = (function(){
@@ -73350,18 +73361,35 @@ try { window.crGearOwned = crGearOwned; window.crBuyGear = crBuyGear; } catch(_)
 try { window.CR_GUEST_BOT_IDS = CR_GUEST_BOT_IDS; } catch(_){}
 
 /* =========================================================================
- * crOwnership — der Server ist die Autorität für BELEGTEN Besitz (v1.0.925).
+ * crOwnership — der Server ist die Autorität für BELEGTEN Besitz.
  *
- * Bis hierher lebte Besitz allein im Browser: zwei Sets in localStorage
- * (cr_owned_bots_v1, cr_owned_gear_v1), die jeder aufmachen und beschreiben
- * kann. Für das Spiel reicht das. Für Turniere und einen Marketplace reicht
- * es nicht, und der Unterschied gehört AUSGESPROCHEN, nicht verwischt:
+ * v1.0.926 — DER CLIENT SPRICHT JETZT DEN VERTRAG, DEN DER SERVER WIRKLICH
+ * FÜHRT. v1.0.925 (PR #200) und der Server (PR #199) wurden unabhängig
+ * voneinander gebaut; niemand hat die Verträge gegeneinander gelesen. Am
+ * gemergten Stand cac2882 gemessen, passten sie an VIER Stellen nicht:
+ *
+ *   1. claim rief cr_ownership_claim(p_kind, p_id, p_provenance) —
+ *      die Funktion heißt (p_owner_kind, p_owner_id, p_item_kind,
+ *      p_item_id, p_provenance). PostgREST löst dreistellig nicht auf: 404.
+ *   2. cr_loadout_get() ohne Argumente — der Server verlangt den Eigner,
+ *      und er liefert EIN jsonb `data`, nicht drei Spalten.
+ *   3. items[] wurde als it.kind / it.id gelesen — cr_ownership_list liefert
+ *      item_kind / item_id. Jede Server-Zeile fiel als undefined durch.
+ *   4. GET /ownership/list?wallet=<addr> — der Worker liest `wallet` nicht,
+ *      er verlangt ein JWT und leitet den Eigner daraus ab (401 no_token).
+ *
+ * Weil hier JEDER Fehlschlag weich auf den Lokalbetrieb zurückfällt, brach
+ * nichts: das Register blieb leer und wirkungslos. Genau der stille
+ * Fehlschlag, vor dem v1.0.925 im eigenen Kopf gewarnt hat — und er hat
+ * sich prompt selbst getroffen. RICHTUNG: der Client zieht nach. Migration
+ * und Worker bleiben unangetastet, kein SQL, kein Redeploy.
+ *
+ * Der Unterschied, um den es die ganze Zeit geht, bleibt ausgesprochen:
  *
  *   freigespielt  — im Spiel verdient oder mit der In-Game-Währung gekauft.
  *                   Der Client BEHAUPTET das; niemand hat es geprüft.
  *   belegt        — der Worker hat einen Beleg gesehen und verified gesetzt.
- *                   DIESER Auftrag baut KEINEN Weg dorthin. Der Client kann
- *                   verified nicht erzeugen, nur lesen.
+ *                   Der Client kann verified nicht erzeugen, nur lesen.
  *
  * Regeln, die dieses Modul NIE bricht:
  *   1. VEREINIGUNG: angezeigter Besitz = Server ∪ lokal. Ein Serverausfall
@@ -73371,37 +73399,49 @@ try { window.CR_GUEST_BOT_IDS = CR_GUEST_BOT_IDS; } catch(_){}
  *   3. NIE BLOCKIEREN: jeder Netzweg ist best-effort. Ein fehlgeschlagener
  *      claim() kostet den Kauf nicht — er wandert in _pending und wird beim
  *      nächsten Start erneut versucht.
- *   4. GAST = NULL NETZ: ohne Supabase-Konto UND ohne verbundene Wallet
- *      verlässt kein Request die Seite. Kein /ownership/*, kein RPC, und
- *      auch kein Hinweis auf „fehlende Verifikation" — für einen Gast gibt
- *      es nichts zu verifizieren.
+ *   4. OHNE KONTO: NULL NETZ. Der Server bindet Wallets über cr_wallet_link
+ *      an ein Supabase-Konto; ohne JWT weisen sowohl die RPCs (anon hat kein
+ *      EXECUTE) als auch der Worker (401 no_token) ab. Ein Spieler ohne
+ *      Konto kann also serverseitig gar keinen Besitz haben — das ist keine
+ *      Lücke, sondern die Folge davon, dass Identität an einem Konto hängt.
+ *      Also wird gar nicht erst angefragt: kein provoziertes 401, weder für
+ *      den Gast noch für die Wallet ohne Konto. Gesagt wird es an genau
+ *      EINER Stelle, dort wo die Herkunft steht (tipText()).
  *
- * DER SERVER LEBT NOCH NICHT (gemessen 08.09.2026, siehe PR): weder die
- * Endpunkte /ownership/list · /ownership/link-wallet noch die RPCs
- * cr_ownership_claim · cr_loadout_get · cr_loadout_set existieren. Genau
- * deshalb sind die vier Regeln oben keine Kür: solange nichts antwortet,
- * fällt jeder Pfad hier auf den reinen Lokalbetrieb zurück und das Spiel
- * verhält sich Bit für Bit wie in v1.0.924. Das ist der Testfall 1, nicht
- * ein Notbehelf.
+ * WIRE-FORMAT — gegen chartrunner_ownership_migration.sql und
+ * workers/ownership/src/index.js gelesen, nicht geraten:
  *
- * WIRE-FORMAT (was dieser Client sendet und erwartet — der Server-Auftrag
- * muss dazu passen; ein Feldname, den beide Seiten anders schreiben, ist
- * genau der Fehler, den v1.0.883 gekostet hat):
- *
- *   GET  /ownership/list            [Authorization: Bearer <Supabase-JWT>, falls angemeldet]
- *        ?wallet=<base58>           (falls nur eine Wallet verbunden ist)
- *     → { items: [ { kind:'bot'|'gear', id, verified:boolean, provenance } ] }
+ *   GET  /ownership/list            [Authorization: Bearer <Supabase-JWT>, PFLICHT]
+ *        angemeldet, Eigner = Konto → OHNE Eigner-Parameter (der Worker
+ *          leitet owner_kind='account', owner_id=<auth uid> aus dem JWT ab)
+ *        Eigner = verknüpfte Wallet → ?owner_kind=wallet&owner_id=<base58>
+ *          PLUS JWT (cr_owner_is_caller prüft cr_wallet_link gegen die uid)
+ *     → { ok, owner_kind, owner_id,
+ *         items: [ { item_kind, item_id, provenance, verified, created_at } ] }
  *
  *   POST /ownership/link-wallet     [Authorization: Bearer <Supabase-JWT>]
  *        { step:'challenge', wallet } → { challenge }
  *        { step:'verify', wallet, challenge, signature } → { ok:true }
  *
- *   RPC  cr_ownership_claim(p_kind, p_id, p_provenance)   → immer unverifiziert
- *   RPC  cr_loadout_get()                                 → { equipped_bots, equipped_tools, loadout, updated_at }
- *   RPC  cr_loadout_set(p_equipped_bots, p_equipped_tools, p_loadout)
+ *   RPC  cr_ownership_claim(p_owner_kind, p_owner_id, p_item_kind,
+ *                           p_item_id, p_provenance) → boolean
+ *        nur 'campaign' | 'softcurrency', immer verified = false.
  *
- * window.crOwnership = { init, has, claim, syncLoadout, linkWallet,
- *                        identity, isGuest, label, list, _state }
+ *   GEWÄHLTE LOADOUT-VARIANTE: RPC, NICHT die Worker-Route /loadout.
+ *   Beide sind zulässig; die RPC läuft über denselben Identitätsweg wie
+ *   claim (crAccount.rpc, ein Mechanismus statt zwei) und braucht keine
+ *   zweite Route im Spiel. Wer das umdreht, dreht es an dieser Stelle um:
+ *   RPC  cr_loadout_get(p_owner_kind, p_owner_id)
+ *          → Zeilen [{ data: jsonb, updated_at }]  ·  0 Zeilen = noch nichts
+ *   RPC  cr_loadout_set(p_owner_kind, p_owner_id, p_data jsonb,
+ *                       p_updated_at timestamptz|null) → updated_at
+ *        p_data ist EIN Objekt: { equipped_bots, equipped_tools, loadout }.
+ *        p_updated_at ist der Stand, den der Aufrufer zu überschreiben
+ *        glaubt — ein STALER Schreiber verliert damit gegen ein neueres Gerät.
+ *
+ * window.crOwnership = { init, has, list, claim, syncLoadout, pushLoadout,
+ *                        linkWallet, identity, owner, isGuest, label,
+ *                        tipText, tipOnce, onIdentityChange, _state }
  * =======================================================================*/
 window.crOwnership = (function(){
   'use strict';
@@ -73410,6 +73450,7 @@ window.crOwnership = (function(){
   var LINK_PATH    = '/ownership/link-wallet';
   var MIGRATED_KEY = 'cr_ownership_migrated_v1';
   var LOADOUT_TS   = 'cr_loadout_synced_v1';   // Zeitstempel des zuletzt ANGEWENDETEN Server-Standes
+  var LINKED_KEY   = 'cr_wallet_linked_v1';    // Merker: DIESE Wallet wurde mit dem Konto verknüpft
   var TIMEOUT_MS   = 8000;
   var KINDS        = { bot: 1, gear: 1 };
   var PROVENANCE   = { campaign: 1, softcurrency: 1 };   // mehr kann der Client nicht behaupten
@@ -73422,10 +73463,18 @@ window.crOwnership = (function(){
   var _initKey = '';      // Identität, für die _srv gilt — wechselt sie, wird neu geladen
   var _pending = [];      // claims, die das Netz nicht angenommen hat
   var _tipShown = false;
+  var _srvLoadoutTs = null;   // updated_at, wie zuletzt gelesen — geht als p_updated_at zurück
+  /* Was beim Lesen durchgefallen ist. Geraten wird NICHTS: eine Zeile ohne
+   * item_id wird übersprungen und hier gezählt, damit ein Feldname, den beide
+   * Seiten anders schreiben, sichtbar ist statt still. */
+  var _trace   = { rows: 0, skipped: 0, reads: 0, lastError: '' };
 
   /* ── Identität ─────────────────────────────────────────────────────── */
   function _signedIn(){
     try { return !!(window.crAccount && crAccount.isSignedIn && crAccount.isSignedIn()); } catch(_){ return false; }
+  }
+  function _uid(){
+    try { return String((window.crAccount && crAccount.userId && crAccount.userId()) || ''); } catch(_){ return ''; }
   }
   /* Dieselbe Rangfolge wie Handels-Tafel und Anker (v1.0.891): das
    * offengelegte Konto zuerst, sonst die zuletzt bekannte Adresse. */
@@ -73436,7 +73485,36 @@ window.crOwnership = (function(){
   }
   function identity(){ return { signedIn: _signedIn(), wallet: _wallet() }; }
   function isGuest(){ var i = identity(); return !i.signedIn && !i.wallet; }
-  function _key(){ var i = identity(); return (i.signedIn ? 'a' : '-') + ':' + (i.wallet || '-'); }
+
+  /* DER EIGNER, wie der Server ihn kennt. Ohne Konto gibt es keinen — und
+   * damit auch keinen Request (Regel 4). Der Client schreibt immer unter
+   * dem KONTO; Wallet-Zeilen entstehen ausschließlich im Worker. */
+  function owner(){
+    if(!_signedIn()) return null;
+    var u = _uid();
+    return u ? { kind: 'account', id: u } : null;
+  }
+  /* Die verknüpfte Wallet ist ein ZWEITER Eigner, den der Server führen kann
+   * (Zeilen aus POST /ownership/grant). Erreichbar ist sie nur mit JWT, denn
+   * cr_owner_is_caller prüft cr_wallet_link gegen die uid. Der Merker sagt
+   * bloß „wir haben das mal verknüpft" — stimmt er nicht, antwortet der
+   * Server mit der leeren Menge und es passiert nichts weiter. */
+  function _walletOwner(){
+    if(!_signedIn()) return null;
+    var w = _wallet(); if(!w) return null;
+    var linked = ''; try { linked = String(localStorage.getItem(LINKED_KEY) || ''); } catch(_){}
+    return (linked && linked === w) ? { kind: 'wallet', id: w } : null;
+  }
+  function _owners(){
+    var o = owner(); if(!o) return [];
+    var out = [o], w = _walletOwner();
+    if(w) out.push(w);
+    return out;
+  }
+  function _key(){
+    var o = owner(), w = _walletOwner();
+    return (o ? o.kind + ':' + o.id : '-') + '|' + (w ? w.id : '-');
+  }
   function _token(){ try { return (window.crAccount && crAccount.token && crAccount.token()) || ''; } catch(_){ return ''; } }
 
   /* ── Netz: best-effort, wirft nie, hält nie auf ────────────────────── */
@@ -73460,16 +73538,30 @@ window.crOwnership = (function(){
                                                                  function(e){ return { error: String((e && e.message) || e) }; });
     } catch(e){ return Promise.resolve({ error: String((e && e.message) || e) }); }
   }
+  /* supabase-js liefert { data, error }; eine Set-Returning-Function kommt als
+   * Array in data. Ein Aufrufer, der direkt das Array liefert, ist ebenfalls
+   * gültig — geraten wird trotzdem nichts: ohne erkennbare Zeilen sind es null. */
+  function _rows(r){
+    if(!r) return [];
+    if(Array.isArray(r)) return r;
+    if(r.error) return [];
+    var d = r.data;
+    if(Array.isArray(d)) return d;
+    if(d && typeof d === 'object') return [d];
+    return [];
+  }
 
   /* ── Der Server-Stand, additiv aufgenommen ─────────────────────────── */
   function _blank(){ return { bot: {}, gear: {} }; }
   /* Nimmt einen Eintrag auf, OHNE je herabzustufen: verified geht nur von
-   * false nach true, nie zurück. Regel 2, an genau einer Stelle. */
-  function _note(kind, id, provenance, verified){
+   * false nach true, nie zurück. Regel 2, an genau einer Stelle. `into`
+   * erlaubt das Sammeln in eine frische Karte, bevor sie _srv ersetzt. */
+  function _note(kind, id, provenance, verified, into){
     if(!KINDS[kind] || !id) return;
-    if(!_srv) _srv = _blank();
-    var cur = _srv[kind][id];
-    if(!cur){ _srv[kind][id] = { verified: !!verified, provenance: provenance || '' }; return; }
+    var map = into;
+    if(!map){ if(!_srv) _srv = _blank(); map = _srv; }
+    var cur = map[kind][id];
+    if(!cur){ map[kind][id] = { verified: !!verified, provenance: provenance || '' }; return; }
     if(verified) cur.verified = true;
     if(provenance && !cur.provenance) cur.provenance = provenance;
   }
@@ -73486,34 +73578,66 @@ window.crOwnership = (function(){
     } catch(_){}
   }
 
+  /* Ein Eigner, eine Leseadresse. Das Konto geht OHNE Eigner-Parameter raus —
+   * der Worker leitet ihn aus dem JWT ab, und ein selbst mitgeschickter
+   * owner_id wäre eine zweite Wahrheit über dieselbe Sache. */
+  function _listPath(o){
+    if(o.kind === 'account') return LIST_PATH;
+    return LIST_PATH + '?owner_kind=' + encodeURIComponent(o.kind) + '&owner_id=' + encodeURIComponent(o.id);
+  }
+  /* Eine Zeile aus cr_ownership_list. TOLERANT, aber nicht ratend: fehlt
+   * item_kind oder item_id, wird die Zeile übersprungen und gezählt. */
+  function _takeRow(it, into){
+    _trace.rows++;
+    if(!it || typeof it !== 'object'){ _trace.skipped++; return; }
+    var k = String(it.item_kind || '');
+    var i = String(it.item_id   || '');
+    if(!KINDS[k] || !i){ _trace.skipped++; return; }
+    _note(k, i, String(it.provenance || ''), !!it.verified, into);
+  }
+
   /* ── init() ───────────────────────────────────────────────────────────
-   * Gast → sofort fertig, KEIN Netzaufruf (Regel 4).
-   * Sonst → /ownership/list lesen, Ergebnis in den Speicher, danach die
-   * einmalige Übernahme und die offenen claims nachreichen. */
+   * Ohne Konto → sofort fertig, KEIN Netzaufruf (Regel 4).
+   * Sonst → /ownership/list je Eigner lesen, Ergebnis in den Speicher, danach
+   * die einmalige Übernahme und die offenen claims nachreichen. */
   function init(force){
-    if(isGuest()){ _initP = null; _initKey = ''; return Promise.resolve({ ok: true, guest: true }); }
+    if(!owner()){
+      _initP = null; _initKey = '';
+      return Promise.resolve({ ok: true, local: true, reason: _wallet() ? 'wallet-without-account' : 'guest' });
+    }
     if(_initP && !force && _initKey === _key()) return _initP;
     _initKey = _key();
-    var id = identity();
     var headers = {};
     var tok = _token(); if(tok) headers.Authorization = 'Bearer ' + tok;
-    var q = (!id.signedIn && id.wallet) ? ('?wallet=' + encodeURIComponent(id.wallet)) : '';
-    _initP = _fetchJson(LIST_PATH + q, { headers: headers }).then(function(res){
-      if(res && !res.error && Array.isArray(res.items)){
-        _srv = _blank();
-        res.items.forEach(function(it){
-          if(!it || !KINDS[it.kind] || !it.id) return;
-          var iid = String(it.id);
-          _note(String(it.kind), iid, String(it.provenance || ''), !!it.verified);
-          _mirrorLocal(String(it.kind), iid);
+    var next = null, anyOk = false, lastErr = '';
+
+    _initP = _owners().reduce(function(chain, o){
+      return chain.then(function(){
+        _trace.reads++;
+        return _fetchJson(_listPath(o), { headers: headers }).then(function(res){
+          if(res && !res.error && Array.isArray(res.items)){
+            anyOk = true;
+            if(!next) next = _blank();
+            res.items.forEach(function(it){ _takeRow(it, next); });
+          } else {
+            lastErr = (res && res.error) || 'no-items';
+          }
         });
-      }
+      });
+    }, Promise.resolve()).then(function(){
       /* Ein Ausfall lässt _srv, wie es war (im Zweifel null = „nichts vom
        * Server bekannt"). has() liefert dann rein lokal — sichtbar und
-       * benutzbar, nur eben unverifiziert. */
+       * benutzbar, nur eben unverifiziert. Regel 1. */
+      if(anyOk){
+        _srv = next;
+        ['bot','gear'].forEach(function(k){
+          Object.keys(_srv[k]).forEach(function(id){ _mirrorLocal(k, id); });
+        });
+      }
+      _trace.lastError = anyOk ? '' : String(lastErr || '');
       return _migrateOnce().then(function(){ return _flushPending(); }).then(function(){
         try { _repaint(); } catch(_){}
-        return { ok: !(res && res.error), error: res && res.error };
+        return { ok: anyOk, error: anyOk ? undefined : (lastErr || 'register-unavailable') };
       });
     });
     return _initP;
@@ -73553,13 +73677,26 @@ window.crOwnership = (function(){
   /* ── claim(kind, id, provenance) ──────────────────────────────────────
    * Der Client BEHAUPTET, er beweist nicht. Deshalb nur die zwei Herkünfte,
    * die er überhaupt kennen kann, und immer unverifiziert. Fehlschlag ist
-   * kein Fehler des Spielers: der Eintrag wandert in _pending. */
+   * kein Fehler des Spielers: der Eintrag wandert in _pending.
+   * Alle fünf Parameter — der Eigner steht in der Signatur, damit die
+   * Datenbank ihn prüfen kann statt der Aufrufer. */
+  function _claimRpc(kind, id, provenance){
+    var own = owner();
+    if(!own) return Promise.resolve({ error: 'no-owner' });
+    return _rpc('cr_ownership_claim', {
+      p_owner_kind: own.kind,
+      p_owner_id:   own.id,
+      p_item_kind:  kind,
+      p_item_id:    id,
+      p_provenance: provenance,
+    });
+  }
   function claim(kind, id, provenance){
     kind = String(kind || ''); id = String(id || ''); provenance = String(provenance || '');
     if(!KINDS[kind] || !id || !PROVENANCE[provenance]) return Promise.resolve({ error: 'bad-claim' });
     _note(kind, id, provenance, false);          /* lokal sofort sichtbar, unverifiziert */
-    if(isGuest()) return Promise.resolve({ ok: true, guest: true });   /* Regel 4 */
-    return _rpc('cr_ownership_claim', { p_kind: kind, p_id: id, p_provenance: provenance }).then(function(r){
+    if(!owner()) return Promise.resolve({ ok: true, local: true });   /* Regel 4 */
+    return _claimRpc(kind, id, provenance).then(function(r){
       if(r && r.error){ _queue(kind, id, provenance); return { error: r.error }; }
       return { ok: true };
     });
@@ -73572,11 +73709,11 @@ window.crOwnership = (function(){
     _pending.push({ kind: kind, id: id, provenance: provenance });
   }
   function _flushPending(){
-    if(isGuest() || !_pending.length) return Promise.resolve();
+    if(!owner() || !_pending.length) return Promise.resolve();
     var batch = _pending.slice(); _pending = [];
     return batch.reduce(function(chain, p){
       return chain.then(function(){
-        return _rpc('cr_ownership_claim', { p_kind: p.kind, p_id: p.id, p_provenance: p.provenance })
+        return _claimRpc(p.kind, p.id, p.provenance)
           .then(function(r){ if(r && r.error) _queue(p.kind, p.id, p.provenance); });
       });
     }, Promise.resolve());
@@ -73588,7 +73725,7 @@ window.crOwnership = (function(){
    * geschenkt, für die gibt es nichts zu beanspruchen. Der Merker verhindert
    * die Wiederholung, auch über Geräte hinweg pro Browser. */
   function _migrateOnce(){
-    if(isGuest()) return Promise.resolve();
+    if(!owner()) return Promise.resolve();
     var done = false;
     try { done = localStorage.getItem(MIGRATED_KEY) === '1'; } catch(_){}
     if(done) return Promise.resolve();
@@ -73609,7 +73746,7 @@ window.crOwnership = (function(){
     return jobs.reduce(function(chain, j){
       return chain.then(function(){
         _note(j.kind, j.id, j.provenance, false);
-        return _rpc('cr_ownership_claim', { p_kind: j.kind, p_id: j.id, p_provenance: j.provenance })
+        return _claimRpc(j.kind, j.id, j.provenance)
           .then(function(r){ if(r && r.error) _queue(j.kind, j.id, j.provenance); });
       });
     }, Promise.resolve()).then(function(){
@@ -73622,7 +73759,8 @@ window.crOwnership = (function(){
 
   /* ── syncLoadout() — Cross-Device, KEIN Autoritätsanspruch ────────────
    * Loadout ist Geschmack, nicht Besitz: der letzte Schreiber gewinnt
-   * (updated_at). Fällt der Server aus, bleibt schlicht der lokale Stand. */
+   * (updated_at). Fällt der Server aus, bleibt schlicht der lokale Stand.
+   * Der Server führt EIN jsonb `data` — die drei Teile stecken darin. */
   function _localLoadout(){
     var out = { equipped_bots: [], equipped_tools: [], loadout: {} };
     try { out.equipped_bots  = JSON.parse(localStorage.getItem(WB_EQUIP_KEY)   || '[]') || []; } catch(_){}
@@ -73630,21 +73768,22 @@ window.crOwnership = (function(){
     try { out.loadout        = JSON.parse(localStorage.getItem(PLAYER_LOADOUT_KEY) || '{}') || {}; } catch(_){}
     return out;
   }
-  function _applyLoadout(row){
+  function _applyLoadout(data){
+    if(!data || typeof data !== 'object') return;
     try {
-      if(Array.isArray(row.equipped_bots)){
-        localStorage.setItem(WB_EQUIP_KEY, JSON.stringify(row.equipped_bots));
-        if(typeof wb !== 'undefined') wb.equipped = row.equipped_bots.slice();
+      if(Array.isArray(data.equipped_bots)){
+        localStorage.setItem(WB_EQUIP_KEY, JSON.stringify(data.equipped_bots));
+        if(typeof wb !== 'undefined') wb.equipped = data.equipped_bots.slice();
       }
-      if(Array.isArray(row.equipped_tools)){
-        localStorage.setItem(WB_TOOLS_KEY, JSON.stringify(row.equipped_tools));
-        if(typeof wb !== 'undefined') wb.equippedTools = row.equipped_tools.slice();
+      if(Array.isArray(data.equipped_tools)){
+        localStorage.setItem(WB_TOOLS_KEY, JSON.stringify(data.equipped_tools));
+        if(typeof wb !== 'undefined') wb.equippedTools = data.equipped_tools.slice();
       }
-      if(row.loadout && typeof row.loadout === 'object'){
-        localStorage.setItem(PLAYER_LOADOUT_KEY, JSON.stringify(row.loadout));
+      if(data.loadout && typeof data.loadout === 'object'){
+        localStorage.setItem(PLAYER_LOADOUT_KEY, JSON.stringify(data.loadout));
         if(typeof playerLoadout !== 'undefined'){
           ['avatar','skin','gear','vehicle','weapon'].forEach(function(k){
-            if(row.loadout[k]) playerLoadout[k] = row.loadout[k];
+            if(data.loadout[k]) playerLoadout[k] = data.loadout[k];
           });
         }
       }
@@ -73652,14 +73791,19 @@ window.crOwnership = (function(){
     try { _repaint(); } catch(_){}
   }
   function syncLoadout(){
-    if(isGuest()) return Promise.resolve({ ok: true, guest: true });   /* Regel 4 */
-    return _rpc('cr_loadout_get', {}).then(function(r){
-      var row = Array.isArray(r) ? r[0] : r;
+    var own = owner();
+    if(!own) return Promise.resolve({ ok: true, local: true });   /* Regel 4 */
+    return _rpc('cr_loadout_get', { p_owner_kind: own.kind, p_owner_id: own.id }).then(function(r){
+      if(r && r.error) return { error: r.error };
+      /* Null Zeilen heißt „noch kein Loadout gespeichert" — eine Antwort,
+       * kein Fehler. Dann schreibt dieses Gerät seinen Stand hoch. */
+      var row = _rows(r)[0] || null;
       var srvTs = 0, locTs = 0;
-      try { srvTs = row && row.updated_at ? Date.parse(row.updated_at) || 0 : 0; } catch(_){}
+      _srvLoadoutTs = (row && row.updated_at) ? row.updated_at : null;
+      try { srvTs = _srvLoadoutTs ? (Date.parse(_srvLoadoutTs) || 0) : 0; } catch(_){}
       try { locTs = parseInt(localStorage.getItem(LOADOUT_TS) || '0', 10) || 0; } catch(_){}
-      if(row && !row.error && srvTs > locTs){
-        _applyLoadout(row);
+      if(row && srvTs > locTs){
+        _applyLoadout(row.data);
         try { localStorage.setItem(LOADOUT_TS, String(srvTs)); } catch(_){}
         return { ok: true, applied: 'server' };
       }
@@ -73667,22 +73811,32 @@ window.crOwnership = (function(){
     });
   }
   function push(){
-    if(isGuest()) return Promise.resolve({ ok: true, guest: true });
-    var l = _localLoadout();
+    var own = owner();
+    if(!own) return Promise.resolve({ ok: true, local: true });
     return _rpc('cr_loadout_set', {
-      p_equipped_bots: JSON.stringify(l.equipped_bots),
-      p_equipped_tools: JSON.stringify(l.equipped_tools),
-      p_loadout: JSON.stringify(l.loadout),
+      p_owner_kind: own.kind,
+      p_owner_id:   own.id,
+      p_data:       _localLoadout(),     /* EIN Objekt — der Server will jsonb, keinen String */
+      p_updated_at: _srvLoadoutTs,       /* der Stand, den wir zu überschreiben glauben */
     }).then(function(r){
       if(r && r.error) return { error: r.error };
-      try { localStorage.setItem(LOADOUT_TS, String(Date.now())); } catch(_){}
+      /* cr_loadout_set gibt den timestamptz der GEWINNENDEN Zeile zurueck —
+       * daran sieht der Aufrufer, ob er sich durchgesetzt hat. supabase-js
+       * legt einen Skalar unter data ab. */
+      var ts = '';
+      if(typeof r === 'string') ts = r;
+      else if(r && typeof r.data === 'string') ts = r.data;
+      if(ts) _srvLoadoutTs = ts;
+      try { localStorage.setItem(LOADOUT_TS, String((ts && Date.parse(ts)) || Date.now())); } catch(_){}
       return { ok: true, applied: 'local' };
     });
   }
 
   /* ── linkWallet() — EINE Nachrichtensignatur, kein Geld, keine Kette ──
    * Verknüpft die verbundene Wallet mit dem angemeldeten Konto. Freiwillig;
-   * wer sie nicht setzt, verliert nichts, was er heute hat. */
+   * wer sie nicht setzt, verliert nichts, was er heute hat. Erst NACH dem
+   * verify wird die Wallet als zweiter Eigner gelesen — vorher wäre sie für
+   * cr_owner_is_caller ohnehin eine fremde Identität. */
   function linkWallet(){
     var id = identity();
     if(!id.signedIn) return Promise.resolve({ error: 'not-signed-in' });
@@ -73702,6 +73856,7 @@ window.crOwnership = (function(){
           body: JSON.stringify({ step: 'verify', wallet: id.wallet, challenge: String(ch.challenge), signature: String(sg.signature) }),
         }).then(function(vr){
           if(!vr || vr.error) return { error: (vr && vr.error) || 'verify-failed', detail: vr && vr.detail };
+          try { localStorage.setItem(LINKED_KEY, id.wallet); } catch(_){}
           return init(true).then(function(){ return { ok: true }; });
         });
       });
@@ -73718,8 +73873,12 @@ window.crOwnership = (function(){
     if(!r.owned) return '';
     return r.verified ? 'gekauft, belegt' : 'im Spiel freigespielt';
   }
-  /* Der Tooltip erklärt EINMAL, was der Unterschied bedeutet. */
+  /* Der Tooltip erklärt EINMAL, was der Unterschied bedeutet — und bei einer
+   * Wallet OHNE Konto sagt er stattdessen die eine ehrliche Sache, die dort
+   * zu sagen ist. Genau EINE Stelle, kein Nag, kein Modal, keine Sperre. */
   function tipText(){
+    if(!_signedIn())
+      return 'Belegter Besitz braucht ein Konto. Ohne Konto bleibt alles lokal auf diesem Gerät.';
     return 'Belegter Besitz zählt für Turniere und den Marketplace. '
          + 'Freigespielter Besitz zählt für das Spiel — er funktioniert überall dort genauso.';
   }
@@ -73735,10 +73894,10 @@ window.crOwnership = (function(){
     try { if(typeof window._renderPlayerTab === 'function') window._renderPlayerTab(); } catch(_){}
   }
 
-  /* Identitätswechsel (Anmeldung, Wallet-Verbindung) → neu lesen. Für einen
-   * Gast passiert dabei weiterhin nichts: init() steigt vorher aus. */
+  /* Identitätswechsel (Anmeldung, Wallet-Verbindung) → neu lesen. Ohne Konto
+   * passiert dabei weiterhin nichts: init() steigt vorher aus. */
   function onIdentityChange(){
-    if(isGuest()){ _initP = null; _initKey = ''; _srv = null; return Promise.resolve({ ok: true, guest: true }); }
+    if(!owner()){ _initP = null; _initKey = ''; _srv = null; return Promise.resolve({ ok: true, local: true }); }
     if(_initKey === _key() && _initP) return _initP;
     return init(true).then(function(r){ syncLoadout(); return r; });
   }
@@ -73751,9 +73910,13 @@ window.crOwnership = (function(){
   return {
     init: init, has: has, list: list, claim: claim,
     syncLoadout: syncLoadout, pushLoadout: push, linkWallet: linkWallet,
-    identity: identity, isGuest: isGuest, label: label, tipText: tipText, tipOnce: tipOnce,
+    identity: identity, owner: owner, isGuest: isGuest,
+    label: label, tipText: tipText, tipOnce: tipOnce,
     onIdentityChange: onIdentityChange,
-    _state: function(){ return { srv: _srv, pending: _pending.slice(), key: _initKey }; },
+    _state: function(){
+      return { srv: _srv, pending: _pending.slice(), key: _initKey,
+               trace: Object.assign({}, _trace), loadoutTs: _srvLoadoutTs };
+    },
   };
 })();
 /* Ein Anstoss beim Start fuer den Fall, dass die Wallet schon verbunden ist,
