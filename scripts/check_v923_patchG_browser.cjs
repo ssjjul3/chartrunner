@@ -32,7 +32,8 @@
  *       Einzahlung"; ok OHNE id → Abgleich per txSignature, EIN Eintrag.
  *       (Mutation: feeBoundOf gibt null → rot.)
  *   G4  TIF-Option GTC heisst „30 Tage (Jupiter)"; Guard-Text und Guide
- *       tragen „Mit Backpack funktioniert es (kein Guard)".
+ *       tragen den Backpack-Satz (v924: „… hängt keine Schutz-Instruktionen
+ *       an"; der Halbsatz „mit dieser Wallet derzeit nicht möglich" ist weg).
  *   G5  Terminal-Knopf „Bei Jupiter nachsehen" → ensureAuth (1 signMessage,
  *       1 auth/challenge) → Abgleich → Journal; eigener Flight „reconcile";
  *       orders/history 404 → Abgleich laeuft mit active allein (not-deployed
@@ -414,17 +415,21 @@ function bodyOf(req){ try { return req.postDataJSON(); } catch(_){ return { __un
     return { panel, row, guide, diag, lastFee: crVaultLimit.lastFee(), feeTxt: crVaultLimit.feeText({ feeBps: 50, feeBoundAt: 'craft' }),
              cc: Array.from(document.querySelectorAll('.crNotifyMsg')).map(e => e.textContent) };
   });
-  check('Panel: „RUHENDE ORDER liegt · ORDER923 … Gebühr 0,5 % — bei der Einzahlung gebunden · Ablauf … · Hinweis: deposit confirmed after 2 retries"',
-    /RUHENDE ORDER liegt · ORDER923/.test(g3.panel.msg) && /Gebühr 0,5 % — bei der Einzahlung gebunden/.test(g3.panel.msg) && /Ablauf \d/.test(g3.panel.msg)
+  check('Panel (v924): „RUHENDE ORDER liegt · ORDER923 … Keine ChartRunner-Gebühr (Jupiter V2 …) · Ablauf … · Hinweis: deposit confirmed after 2 retries"',
+    /RUHENDE ORDER liegt · ORDER923/.test(g3.panel.msg) && /Keine ChartRunner-Gebühr \(Jupiter V2 unterstützt derzeit keine Integrator-Gebühr\)/.test(g3.panel.msg) && /Ablauf \d/.test(g3.panel.msg)
       && /Hinweis: deposit confirmed after 2 retries/.test(g3.panel.msg) && g3.panel.journalGrew === 1 && g3.panel.signs === 1 && g3.panel.sends === 0, g3.panel.msg);
   check('warnings[] blockieren nicht: Ergebnis ok, Spur commit ok, Notiz „warnings" im Diagnose-Block, CC-Hinweis',
     g3.panel.state.ok === true && g3.panel.lines.some(l => /^commit \d+ ms · ok$/.test(l)) && g3.diag.notes.some(n => n.label === 'warnings' && /2 retries/.test(n.text))
       && g3.cc.some(t => /Ruhende Order · Hinweis: deposit confirmed after 2 retries/.test(t)), { notes: g3.diag.notes, lines: g3.panel.lines });
   check('Journal: feeBoundAt craft, feeBps 50, expiresAt, warnings, notes mit Fee-Text + Ablauf; txSignature TXSIG923',
     g3.row && g3.row.feeBoundAt === 'craft' && g3.row.feeBps === 50 && g3.row.expiresAt > Date.now() && Array.isArray(g3.row.warnings) && g3.row.warnings.length === 1
-      && /Gebühr 0,5 % — bei der Einzahlung gebunden/.test(g3.row.notes) && /Ablauf \d/.test(g3.row.notes) && g3.row.txSignature === 'TXSIG923' && g3.row.reconciled !== true, g3.row);
-  check('Gebuehren-Blatt (Guide): „Letzte Order: Gebühr 0,5 % — bei der Einzahlung gebunden"; kein Abgleich bei sauberem {id} (orders/history unveraendert)',
-    g3.guide && /Letzte Order: Gebühr 0,5 % — bei der Einzahlung gebunden/.test(g3.guide.fee) && g3.lastFee && g3.lastFee.feeBoundAt === 'craft' && seen.history.length === h0, { guide: g3.guide, h: seen.history.length - h0 });
+      && /Keine ChartRunner-Gebühr \(Jupiter V2/.test(g3.row.notes) && /Ablauf \d/.test(g3.row.notes) && g3.row.txSignature === 'TXSIG923' && g3.row.reconciled !== true
+      && g3.row.venue === 'jupiter-v2', g3.row);
+  check('Gebuehren-Blatt (Guide, v924): ZWEI Zeilen — V1 „0,5 % bei Ausführung (Referral)" und V2 „Keine ChartRunner-Gebühr"; kein Abgleich bei sauberem {id} (orders/history unveraendert)',
+    g3.guide && /On-Chain \(Trigger V1\): Gebühr 0,5 % bei Ausführung \(Referral\)/.test(g3.guide.fee)
+      && /Vault \(Trigger V2\): Keine ChartRunner-Gebühr/.test(g3.guide.fee)
+      && !/bei der Einzahlung gebunden/.test(g3.guide.fee)
+      && g3.lastFee && g3.lastFee.feeBoundAt === 'craft' && seen.history.length === h0, { guide: g3.guide, h: seen.history.length - h0 });
 
   cfg.priceMode = 'ok-miss';
   const g3m = await page.evaluate(async () => {
@@ -432,9 +437,9 @@ function bodyOf(req){ try { return req.postDataJSON(); } catch(_){ return { __un
     const row = _crLiveJournalRows().find(r => r.vaultOrderId === 'ORDER923M');
     return { msg: panel.msg, ok: panel.state.ok, row, txt: crVaultLimit.feeText({ feeBps: 50, feeBoundAt: 'craft-cache-miss' }), grew: panel.journalGrew };
   });
-  check('craft-cache-miss: kein Fehler — „RUHENDE ORDER liegt · ORDER923M … Gebührenstand: siehe Einzahlung", Journal feeBoundAt craft-cache-miss',
-    /RUHENDE ORDER liegt · ORDER923M/.test(g3m.msg) && /Gebührenstand: siehe Einzahlung/.test(g3m.msg) && g3m.ok === true && g3m.row && g3m.row.feeBoundAt === 'craft-cache-miss'
-      && g3m.txt === 'Gebührenstand: siehe Einzahlung' && g3m.grew === 1, g3m);
+  check('craft-cache-miss: kein Fehler — „RUHENDE ORDER liegt · ORDER923M …"; der Fee-Text ist ab v924 der V2-Satz (bound_at bleibt im Journal)',
+    /RUHENDE ORDER liegt · ORDER923M/.test(g3m.msg) && /Keine ChartRunner-Gebühr \(Jupiter V2/.test(g3m.msg) && g3m.ok === true && g3m.row && g3m.row.feeBoundAt === 'craft-cache-miss'
+      && g3m.txt === 'Keine ChartRunner-Gebühr (Jupiter V2 unterstützt derzeit keine Integrator-Gebühr)' && g3m.grew === 1, g3m);
 
   console.log('\n-- G3b: ok OHNE id → Abgleich per txSignature, EIN Journal-Eintrag --');
   cfg.priceMode = 'ok-noid';
@@ -461,9 +466,10 @@ function bodyOf(req){ try { return req.postDataJSON(); } catch(_){ return { __un
   });
   check('TIF-Select: Option Wert GTC mit Label „30 Tage (Jupiter)", IOC bleibt',
     Array.isArray(g4.tif) && g4.tif.some(o => o.v === 'GTC' && o.l === '30 Tage (Jupiter)') && g4.tif.some(o => o.v === 'IOC') && !g4.tif.some(o => o.l === 'GTC'), g4.tif);
-  check('Guard-Text (V1 nicht live): „… derzeit nicht möglich. Mit Backpack funktioniert es (kein Guard)."; V1-Variante ohne Backpack-Satz',
-    /derzeit nicht möglich\. Mit Backpack funktioniert es \(kein Guard\)\./.test(g4.txt) && /Mit Backpack funktioniert es/.test(g4.err) && !/Backpack/.test(g4.txtV1), { txt: g4.txt, err: g4.err });
-  check('Setup-Guide-Absatz traegt denselben Satz', g4.guide && /Mit Backpack funktioniert es \(kein Guard\)/.test(g4.guide.guard), g4.guide);
+  check('Guard-Text (V1 nicht live, v924): „Mit Backpack funktioniert es (hängt keine Schutz-Instruktionen an)."; KEIN „derzeit nicht möglich" mehr; V1-Variante ohne Backpack-Satz',
+    /Mit Backpack funktioniert es \(hängt keine Schutz-Instruktionen an\)\./.test(g4.txt) && !/derzeit nicht möglich/.test(g4.txt)
+      && /Mit Backpack funktioniert es/.test(g4.err) && !/Backpack/.test(g4.txtV1), { txt: g4.txt, err: g4.err });
+  check('Setup-Guide-Absatz traegt denselben Satz', g4.guide && /Mit Backpack funktioniert es \(hängt keine Schutz-Instruktionen an\)/.test(g4.guide.guard), g4.guide);
 
   /* ===================== G5 — Knopf „Bei Jupiter nachsehen" ===================== */
   console.log('\n-- G5: Terminal-Knopf → ensureAuth (1 signMessage) → Abgleich → Journal; eigener Flight; history 404; fremde Wallet --');
@@ -490,7 +496,7 @@ function bodyOf(req){ try { return req.postDataJSON(); } catch(_){ return { __un
     g5.grew === 1 && g5.r1952 && g5.r1952.reconciled === true && !g5.foreign, { grew: g5.grew, r1952: g5.r1952, foreign: g5.foreign });
   check('Eigener Flight „reconcile": Spur signMessage → reconcile „ok · 3 gefunden · 1 neu" (fremde Wallet nicht gezaehlt), ordersActive/ordersHistory als Kinder von reconcile, beendet ok; HUD + Terminal-Zeile nennen den Fund',
     g5.state.label === 'reconcile' && g5.state.ok === true && g5.busy === false && g5.state.lines.some(l => /^signMessage \d+ ms · ok$/.test(l))
-      && g5.state.lines.some(l => /^reconcile \d+ ms · ok · 3 gefunden · 1 neu$/.test(l)) && g5.state.trace.filter(x => x.parent === 'reconcile' && x.depth === 1).map(x => x.name).join(',') === 'ordersActive,ordersHistory' && /id ORDER1952/.test(g5.hud) && /id ORDER1952/.test(g5.line || '')
+      && g5.state.lines.some(l => /^reconcile \d+ ms · ok · 3 gefunden · 1 neu$/.test(l)) && g5.state.trace.filter(x => x.parent === 'reconcile' && x.depth === 1).map(x => x.name).join(',') === 'ordersActive,ordersHistory,onchainActive' && /id ORDER1952/.test(g5.hud) && /id ORDER1952/.test(g5.line || '')
       && g5.last && g5.last.source === 'button', { state: g5.state, hud: g5.hud, line: g5.line });
 
   cfg.history404 = true;
