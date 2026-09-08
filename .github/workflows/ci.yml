@@ -68,3 +68,39 @@ jobs:
       # hosts the LANDING PAGE (different file entirely), so the diff always
       # warned. The Pages workflow stages the game at /play/index.html now,
       # not /index.html, so the two files SHOULD differ. See pages.yml:46.
+
+  # Das Besitz-Register (chartrunner_ownership_migration.sql + workers/ownership).
+  # Eigener Job, weil die Migrationspruefung eine ECHTE Postgres-Instanz braucht:
+  # ein Regex ueber die SQL-Datei wuerde nur beweisen, dass ein Wort dasteht --
+  # geprueft werden muss, dass die Datenbank ablehnt (Claim mit
+  # provenance='purchase_onchain', Claim auf fremde owner_id, Herabstufung einer
+  # verifizierten Zeile). Der Worker-Teil laeuft ohne Netz gegen ein gestubbtes
+  # Supabase/Solana/Stripe.
+  ownership:
+    name: Ownership register (migration + worker)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Ownership worker checks (stubbed network)
+        run: node scripts/check_ownership_worker.mjs
+
+      - name: Ownership migration checks (real Postgres)
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: node scripts/check_ownership_migration.mjs
