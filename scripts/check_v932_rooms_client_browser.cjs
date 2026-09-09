@@ -40,23 +40,28 @@
  * was die Zeile behauptet.
  *
  *   M1  enterRoom: `iAmCreator = !!asCreator` gestrichen (Zustand wie v931)
- *       ROT: T1a, T1b, T1c  (24 gruen)
+ *       ROT: T1a, T1b  (30 gruen). T1c bleibt gruen — der Peer war ja schon
+ *       vorher richtig 'guest'; rot wird genau der eigene Sitz.
  *   M2  leaveRoom: `iAmCreator = false` gestrichen
- *       ROT: T1e  (26 gruen) — der Host-Sitz ueberlebte den Raum.
+ *       ROT: T1d  (31 gruen) — der Host-Sitz ueberlebte den Raum.
  *   M3  crRoomOverview: 'host' aus der Sitz-Erkennung genommen
  *       (isHostSeat nur noch 'creator')
- *       ROT: T1b  (26 gruen) — roster() sagt weiter 'host', nur die Tafel
- *       schrieb wieder „guest": genau der Befund aus dem Auftrag.
- *   M4  crSocial.joinRoom auf http() zurueckgedreht (Auftrag, Test 5)
- *       ROT: T2d, T2e, T2f  (24 gruen)
- *   M5  joinById auf fetch(http() + ...) zurueckgedreht
- *       ROT: T2a, T2b, T2c  (24 gruen)
+ *       ROT: T1b  (31 gruen) — roster() sagt weiter 'host' (T1a gruen), nur die
+ *       Tafel schrieb wieder „guest": genau der Befund aus dem Auftrag.
+ *   M4  crSocial.joinRoom auf fetch(http() + …) zurueckgedreht (Auftrag, Test 5)
+ *       ROT: T2e, T2f  (30 gruen). T2d bleibt gruen und MUSS es: der Klick holt
+ *       weiter einen Raum — nur eben vom Relay. Genau dafuer steht T2d da.
+ *   M5  joinById auf die Relay-Basis zurueckgedreht
+ *       ROT: T2b, T2c  (30 gruen). T2a bleibt gruen, siehe M4.
  *   M6  _createPayload: asset/tf fest auf '' (Felder wieder leer)
- *       ROT: T3b, T3c  (25 gruen)
+ *       ROT: T3b  (31 gruen). T3c bleibt gruen — mapName wird aus currentAsset
+ *       gebaut, nicht aus dem Feld; die beiden Zeilen pruefen wirklich
+ *       Verschiedenes.
  *   M7  RoomsClient.create: `pub: !!r.pub` -> `pub: false`
- *       ROT: T3a  (26 gruen) — T3d bleibt gruen, PRIVATE war ja schon richtig.
+ *       ROT: T3a, T3g  (30 gruen). T3d bleibt gruen, PRIVATE war ja schon
+ *       richtig; T3g faellt mit, weil es „pub bleibt bool und true" mitprueft.
  *   M8  RoomsClient.create: Kappung fuer mapName entfernt (slice(0,64) raus)
- *       ROT: T3g  (26 gruen)
+ *       ROT: T3g  (31 gruen)
  *
  * Aufruf:  node scripts/check_v932_rooms_client_browser.cjs
  */
