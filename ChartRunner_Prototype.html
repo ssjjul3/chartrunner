@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.931
-     LAST UPDATED:    2026-09-09  ·  v1.0.931 (HERKUNFT DES TRACK-PINGS: EINE GERENDERTE ZEILE IST KEIN GEOEFFNETER TOKEN): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher (cr_arm_v1 / cr_arm_limit_v1) sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. An Kerzen, Charts und daran, WELCHE Token die Liste zeigt, aendert sich nichts. BEFUND (gemessen am laufenden System, /v1/subscriptions des ohlc-store): zehn Mint-Adressen dauerhaft abonniert, bei ALLEN ZEHN ist last_hit sekundenaktuell — die 900-Sekunden-Frist des Workers kann deshalb nie ablaufen, und jedes zugestellte Ereignis kostet einen Credit (~30.000/h). Die Ursache steht seit v1.0.894 in _tokRenderList: die Warm-up-Schleife meldet bis zu 20 Mints je Render als „gefragt", die Liste rendert bei JEDEM Preistick, und die 10-Minuten-Drossel in crOhlcTrack laeuft nie leer, weil die Liste lange vorher wiederkommt und die Pacht verlaengert. Der Kommentar im Code sagte weiter, ein Token werde „beim Oeffnen eines Token-Profils" registriert — das stimmte nicht mehr. UMGESETZT: (a) crOhlcTrack(chain, addr, src) BEKOMMT EIN DRITTES ARGUMENT, DIE HERKUNFT DES INTERESSES, und schickt sie als GET /v1/track/<chain>/<addr>?src=seen bzw. ?src=opened mit. „seen" heisst: der Mint kam in einer Liste vor — bleibt grosszuegig, fuettert nur den keylosen DexScreener-Sampler und kostet bei Helius nichts. „opened" heisst: der Nutzer hat den Token wirklich geoeffnet — NUR dieses Signal darf serverseitig ein Abo ausloesen. OHNE drittes Argument gilt „seen": ein alter Client bleibt damit harmlos, falls der Worker zuerst live geht. (b) DREI AUFRUFSTELLEN, ZWEI ANTWORTEN: die Warm-up-Schleife in _tokRenderList sendet ausnahmslos „seen"; der Aufruf beim Chart-Laden (neben _crRunOhlcCandles) sendet „opened"; _tokFetchMeta reicht die Herkunft vom Aufrufer durch und hat als Vorgabe „seen" — nur der Profil-Aufruf in _tokRenderProfile, wo der Knoten tokMeta_<id> wirklich im DOM steht, gibt „opened" mit. Wer dort spaeter einen Aufrufer ergaenzt, bekommt ohne Zutun den billigen Fall. (c) DIE 10-MINUTEN-DROSSEL BLEIBT, ZAEHLT ABER JE HERKUNFT GETRENNT (Schluessel „src|addr"). Ein gemeinsamer Topf waere still falsch: die Liste meldet den Mint zuerst als „seen", und das „opened" zehn Sekunden spaeter fiele in dieselbe Frist — der eine Ping, auf den es ankommt, ginge nie raus, der Chart lade trotzdem, und nichts schluege an. (d) GEGENSTUECK IM PRIVATEN REPO: „Helius B · WORKER" nimmt denselben Parameternamen entgegen. NICHT GEMESSEN, ausdruecklich: diese Sandbox erreicht *.workers.dev nicht; ob der ausgerollte Store ?src ueberhaupt liest, ist hier NICHT geprueft und wird auch nicht behauptet — die Verifikation laeuft ueber Julians Telefon und steht als Schritt-Liste im PR. Geprueft ist der CLIENT, im echten Chromium und am NETZ statt an der Funktion: scripts/check_v931_track_herkunft_browser.cjs (T1 zehn Listen-Renders -> null opened, bei nachweislich gelaufenen seen-Pings · T2 Chart laden -> genau ein opened fuer den Mint · T3 Profil oeffnen -> genau ein opened, blosse Zeilen-Aufloesung -> seen · T4 Zwei-Argument-Aufruf traegt src=seen und faellt in denselben Drossel-Topf · T5 seen unmittelbar vor opened verhindert es nicht · T6 Drossel je Herkunft + Regression). Gegenproben ROT siehe Commit. Rollback: v1.0.930.
+     CURRENT VERSION: v1.0.932
+     LAST UPDATED:    2026-09-09  ·  v1.0.932 (ROOMS B · CLIENT: HOST-KENNUNG, ZWEI FALSCHE BASIS-URLS, UND DIE VIER FELDER): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher (cr_arm_v1 / cr_arm_limit_v1) sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. Ghosts, Chat, geteilte Zeichnungen, Laser, Deep-Links und der ?relay=1-Pfad sind unberuehrt. (1) DER ERSTELLER WURDE ALS GUEST GEFUEHRT. Der Server meldet im `created`-Ereignis, dass dieser Client den Raum angelegt hat; enterRoom nahm das dritte Argument entgegen, reichte es an den URL-Stempel weiter und warf es danach weg — _rosterList schrieb fuer ALLE seat:'guest'. Jetzt haelt der Modulzustand `iAmCreator` die Auskunft (gesetzt in enterRoom, zurueckgesetzt in leaveRoom), der eigene Eintrag traegt seat:'host'. Damit die Tafel das auch ZEIGT, kennen die beiden Roster-Renderer und SEAT_COLORS 'host' als denselben Sitz wie das Alt-Wort 'creator' (Stern + Amber, Label HOST). ANZEIGE, KEINE AUTORITAET — der Server kennt keinen Host-Begriff und erzwingt nichts; ein Kick- oder Mute-Recht darf darauf NICHT aufgebaut werden, das kommt erst mit der P1-Serverfassung. Peers bleiben 'guest': wer von ihnen der Ersteller war, weiss der Client nicht. (2) ZWEI VON DREI BEITRITTSPFADEN ZEIGTEN AUF DEN LEGACY-RELAY. v1.0.863 hatte nur das Modal (crRoomsBrowser) auf crRoomsDirFetch umgestellt; joinById (die LIVE-ROOMS-Zeilen im ROOMS-Tab) und crSocial.joinRoom lasen weiter ueber http() — also relay.chartrunner.xyz, waehrend Raeume auf rooms.chartrunner.xyz liegen. Beide liefen damit dauerhaft ins Leere. Beide rufen jetzt window.crRoomsDirFetch('/rooms/'+id), dieselbe Form wie im Modal (merkt sich den zuletzt erfolgreichen Host). Die Relay-Hilfsfunktion in crMapsLiveDir ist ersatzlos raus — sie war die Vorlage, aus der dieser Fehler kopiert wurde. Die Namensabfrage in crSocial.joinRoom (Aufforderung + crNames.claim, v1.0.754) bleibt unangetastet. (3) `create` TRUG DIE RAUMDATEN NICHT MIT. Die Transportschicht sendete nur {type:'create',name}; deshalb stand im Verzeichnis `#BEF6 ·  · 1 online` und ein Beitretender landete auf SEINEM eigenen Chart. RoomsClient.create nimmt jetzt ein Objekt (ein blosser String bleibt gueltig), crRoomsNet._createPayload fuellt es: name wie bisher aus myName(), pub aus opts.pub (die PUBLIC-Karte setzt es), asset/tf aus DERSELBEN Quelle wie chartParams (_chartAssetTf), mapName wie im Altpfad (Asset in Grossbuchstaben + ' · ' + Zeitrahmen). VERTRAG, woertlich wie im Server-Auftrag: pub ist bool mit Vorgabe false; asset <= 24, tf <= 8, mapName <= 64 Zeichen — gekappt an der letzten Stelle vor dem Draht. Der Hinweis 'Public listing is coming soon' faellt weg; der Hinweis fuer moderated/curated bleibt, der ist weiterhin wahr. TEIL 3 WIRKT ERST MIT DEM SERVER: die Felder gehen raus, sichtbar werden sie, sobald die Rooms-Serverfassung sie beantwortet — gemessen wird das am Verzeichnis, nicht an diesem Text. GEGENPROBEN: scripts/check_v932_rooms_client_browser.cjs, jede Mutation einzeln gemessen (ROT/CRASH/GRUEN, siehe Kopf der Datei).
+     PREV  ·  v1.0.931 (HERKUNFT DES TRACK-PINGS: EINE GERENDERTE ZEILE IST KEIN GEOEFFNETER TOKEN): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher (cr_arm_v1 / cr_arm_limit_v1) sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. An Kerzen, Charts und daran, WELCHE Token die Liste zeigt, aendert sich nichts. BEFUND (gemessen am laufenden System, /v1/subscriptions des ohlc-store): zehn Mint-Adressen dauerhaft abonniert, bei ALLEN ZEHN ist last_hit sekundenaktuell — die 900-Sekunden-Frist des Workers kann deshalb nie ablaufen, und jedes zugestellte Ereignis kostet einen Credit (~30.000/h). Die Ursache steht seit v1.0.894 in _tokRenderList: die Warm-up-Schleife meldet bis zu 20 Mints je Render als „gefragt", die Liste rendert bei JEDEM Preistick, und die 10-Minuten-Drossel in crOhlcTrack laeuft nie leer, weil die Liste lange vorher wiederkommt und die Pacht verlaengert. Der Kommentar im Code sagte weiter, ein Token werde „beim Oeffnen eines Token-Profils" registriert — das stimmte nicht mehr. UMGESETZT: (a) crOhlcTrack(chain, addr, src) BEKOMMT EIN DRITTES ARGUMENT, DIE HERKUNFT DES INTERESSES, und schickt sie als GET /v1/track/<chain>/<addr>?src=seen bzw. ?src=opened mit. „seen" heisst: der Mint kam in einer Liste vor — bleibt grosszuegig, fuettert nur den keylosen DexScreener-Sampler und kostet bei Helius nichts. „opened" heisst: der Nutzer hat den Token wirklich geoeffnet — NUR dieses Signal darf serverseitig ein Abo ausloesen. OHNE drittes Argument gilt „seen": ein alter Client bleibt damit harmlos, falls der Worker zuerst live geht. (b) DREI AUFRUFSTELLEN, ZWEI ANTWORTEN: die Warm-up-Schleife in _tokRenderList sendet ausnahmslos „seen"; der Aufruf beim Chart-Laden (neben _crRunOhlcCandles) sendet „opened"; _tokFetchMeta reicht die Herkunft vom Aufrufer durch und hat als Vorgabe „seen" — nur der Profil-Aufruf in _tokRenderProfile, wo der Knoten tokMeta_<id> wirklich im DOM steht, gibt „opened" mit. Wer dort spaeter einen Aufrufer ergaenzt, bekommt ohne Zutun den billigen Fall. (c) DIE 10-MINUTEN-DROSSEL BLEIBT, ZAEHLT ABER JE HERKUNFT GETRENNT (Schluessel „src|addr"). Ein gemeinsamer Topf waere still falsch: die Liste meldet den Mint zuerst als „seen", und das „opened" zehn Sekunden spaeter fiele in dieselbe Frist — der eine Ping, auf den es ankommt, ginge nie raus, der Chart lade trotzdem, und nichts schluege an. (d) GEGENSTUECK IM PRIVATEN REPO: „Helius B · WORKER" nimmt denselben Parameternamen entgegen. NICHT GEMESSEN, ausdruecklich: diese Sandbox erreicht *.workers.dev nicht; ob der ausgerollte Store ?src ueberhaupt liest, ist hier NICHT geprueft und wird auch nicht behauptet — die Verifikation laeuft ueber Julians Telefon und steht als Schritt-Liste im PR. Geprueft ist der CLIENT, im echten Chromium und am NETZ statt an der Funktion: scripts/check_v931_track_herkunft_browser.cjs (T1 zehn Listen-Renders -> null opened, bei nachweislich gelaufenen seen-Pings · T2 Chart laden -> genau ein opened fuer den Mint · T3 Profil oeffnen -> genau ein opened, blosse Zeilen-Aufloesung -> seen · T4 Zwei-Argument-Aufruf traegt src=seen und faellt in denselben Drossel-Topf · T5 seen unmittelbar vor opened verhindert es nicht · T6 Drossel je Herkunft + Regression). Gegenproben ROT siehe Commit. Rollback: v1.0.930.
      PREV  ·  v1.0.930 (ABMELDEN SCHLIESST DIE FENSTER, DIE NUR ANGEMELDETEN GEHOEREN): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher (cr_arm_v1 / cr_arm_limit_v1) sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. BEFUND (gemessen im Chromium gegen die Datei, v1.0.929): die Gast-Sperre bestand aus DREI voneinander unabhaengigen Mechanismen, und keiner fing den Uebergang „angemeldet → Gast bei offenem Fenster“ ab — (1) das CSS auf den Dock-Knoepfen versteckt den STARTKNOPF, nicht das Fenster; (2) die Pruefung in open() bei Arena und Intel verhindert das OEFFNEN, nicht das OFFENBLEIBEN; (3) crApplyAccessGates schloss genau zwei Fenster (walletapp/settings) und kannte win-bot ueberhaupt nicht. Folge: das Bot-Terminal blieb nach dem Abmelden stehen — sichtbar UND bedienbar, mit Chatverlauf, Agenten und Sitzungen (#crBotChatLog, #crBotChatMsgs, #crBotAgents, #crBotChatSessionSel) des eben abgemeldeten Kontos. Genau das ist der Grund, warum es nicht kosmetisch ist. UMGESETZT: (A) EINE DEKLARATIVE LISTE STATT DREIER MECHANISMEN — CR_CONNECT_EXCLUSIVE nennt die kontogebundenen Fenster (bot → #win-bot, walletapp, settings, display/Docs inkl. der Aliasse maps+journal, arena → #crArenaWin, walletintel → #crWalletIntelWin) und bedient danach alle drei Stellen: Dock-Sichtbarkeit (eine aus ihr erzeugte body.cr-guest-Regel, !important, damit sie das sticky inline-display des Bot-Terminal-Reveals von v1.0.840 schlaegt), Oeffnen-Sperre (crConnectExclusiveBlocked in osOpenWindowMulti / osToggleWindowMulti — VOR der bot→Profile-Umleitung, sonst liefe sie ins Leere — und in crArena.open / crWalletIntel.open, deren Hinweistexte bleiben) und Schliessen. Der Satz ist NICHT geraten, sondern aus den drei heutigen Quellen zusammengetragen; runtube fehlt bewusst (archiviert, fuer alle versteckt, und ein PIP statt eines win-<id>-Fensters). (B) crApplyAccessGates schliesst beim Wechsel auf Gast JEDES Fenster der Liste — ueber denselben Weg wie der Schliessen-Knopf (closeWindow → syncDock) bzw. das eigene close() der selbst-injizierten Apps, danach Inhalt leeren und Takte anhalten (crAgentEvents.stop, crBridge._stopLoop — neu exportiert, damit der Abmelde-Pfad den Takt anhaelt, ohne die Nutzer-Einstellung umzuschreiben oder ein zweites Mal zu toasten). Ein Hinweis, einmal, kein Modal. Ein display:none ueber ein weiterlaufendes Fenster waere genau die halbe Massnahme, die den Befund erzeugt hat. (C) Gegenrichtung unveraendert: Anmelden oeffnet nichts von selbst, nur der Dock-Knopf kommt zurueck. Damit das wiedergeoeffnete Terminal nicht leer bleibt, bekam 'bot' als bis dahin EINZIGE App einen Refresh-Hook in refreshFor (__crRenderBotAgents). NICHT ANGEFASST: Chart/Run-Terminal, Token, Profil mit seinen Gast-Tabs; ein laufender Run wird nicht beruehrt. ZUR BESTAETIGUNG DURCH JULIAN: 'display' (Docs) steht in der Liste, weil der Code es HEUTE schon in beiden Richtungen gatet (body.cr-guest-CSS seit v1.0.661 und die Oeffnen-Sperre in osOpenWindowMulti); der Auftragstext nannte Docs an einer Stelle als Gast-Fenster. Eine Zeile raus, falls Docs Gast-Fenster werden soll. TESTS: scripts/check_v930_gast_fenster_browser.cjs (T1 Bot-Terminal geschlossen statt versteckt + Inhalt leer · T2 dasselbe fuer jedes Fenster der zur Laufzeit gelesenen Liste · T3 Spion auf setInterval/clearInterval: kein Takt der angemeldeten Phase ueberlebt · T4 Gast-Fenster bleiben offen und es wird GENAU die Liste geschlossen · T5 Anmelden oeffnet nichts, Dock-Knoepfe kommen zurueck · T6 mit geleerter Liste bleibt #win-bot offen — die Liste ist das, was arbeitet · T7 Oeffnen-Sperre als Gast + Regression). Gegenproben ROT siehe Commit. NICHT VON DIESER SESSION GEMESSEN und ausdruecklich nicht behauptet: nichts hiervon beruehrt einen Worker-Endpunkt; die Live-Domain ist aus dieser Sandbox nicht erreichbar. Rollback: v1.0.929.
      PREV  ·  v1.0.929 (DOCS-ANSICHTEN IN PLATINUM UND WHITE: HELLE FLAECHEN, LESBARER TEXT): REINE DARSTELLUNG. Keine Logik, keine Daten, kein Handelspfad; die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. BEFUND, GEMESSEN im echten Chromium gegen die Datei (Theme platinum): MAPS folgt dem Theme, ALERTS/PAPER/PNL/JOURNAL/SESSIONS standen als schwarze Kaesten in der hellen Fensterflaeche — effektiver Grund rgb(15,20,30) statt rgb(230,230,220) — und trugen darauf Text in #ecffef; wo die Karte doch hell war (Leerzustaende), ergab das 1.20:1, also hellgruen auf hellgrau. URSACHE, EINE fuer beide Haelften, und sie ist eine KASKADEN-Falle, kein fehlender Selektor: der App-Styleguide (v1.0.151) definiert --cr-app-panel:#0f141e DIREKT AUF .os-wbody, der ROOT FIX der hellen Themes (v1.0.673) remappt dieselbe Variable auf :is(.os-window,.crTerm) — also auf den ELTERNKNOTEN. Bei geerbten Variablen gewinnt die NAEHERE Definition, nicht die spezifischere Regel. Der Selektor der hellen Themes war die ganze Zeit richtig; er kam nur zu spaet an. UMGESETZT: (A) derselbe Root-Fix eine Ebene tiefer, auf .crDocsView — damit kippen alle var()-getriebenen Flaechen, Linien und Tinten der fuenf Ansichten auf einmal, keine Sonderregel pro Ansicht, genau wie .cr-tokrow es fuer die Token-Zeilen vormacht. (B) der Vordergrund derselben Bloecke ist NICHT ueber Variablen geschrieben, sondern als Literal (#ecffef, #7aa878) mit !important — Flaeche hell machen ohne Tinte waere genau der Fehler, vor dem der Auftrag warnt. Zur Spezifitaet, weil sie hier der eigentliche Gegner ist: die zu ueberschreibende Regel traegt in ihrer :is()-Liste #win-workbench #wbToolList > div[…] und damit (2,1,1); eine reine Klassenregel verliert dagegen AUCH MIT !important. Der Praefix ist deshalb id-getragen und misst (2,3,0). MITGENOMMEN: Platzhalter als eigener Fall (sie tragen eine eigene Farbe, gemessen 2.6:1), die Inline-Literale der Renderer (Kopf der Paper-Tabelle rgba(20,30,55,.4) — existiert erst, wenn die Liste eine Zeile hat, deshalb misst der Test mit GEFUELLTEN Listen), die Akzente uebersetzt in der Helligkeit statt in der Bedeutung, und das SIM-Abzeichen, das gruen auf lila stand, weil die Styleguide-Regel jedes Element faerbt, in dessen Inline-Stil das Lila vorkommt — auch dort, wo es der HINTERGRUND ist. UEBERLAUF IN PAPER, gemessen bei 390px: .crDocsContent ist 240px breit, scrollWidth war 314px; genau zwei Knoepfe ragten heraus (#crJrnPrefill, #crJrnClear), weil .crDocs-head/.crDocs-cardHead display:flex OHNE flex-wrap sind und .crDocs-headAct flex:none traegt. Umbrechen statt abschneiden; die breite Trades-Tabelle scrollt weiter in ihrem eigenen .crDocs-scroll, wie vorher. NICHT ANGEFASST: mono, ascii, frontier. Jede Regel haengt am Platinum/White-Scope inkl. .splash:not([data-theme]) — der attributlosen Vorgabe, deren Vergessen v1.0.673 gekostet und v1.0.680 repariert hat. TESTS: scripts/check_v929_docs_hell_browser.cjs (T1 keine wirksame Dunkelflaeche, effektiver Grund komponiert statt deklariert gelesen · T2 Kontrast aller Text-Flaeche-Paare mit gefuellten Listen · T3 Platzhalter · T4 kein Ueberlauf bei 390px · T5 dunkle Themes Element fuer Element identisch, verglichen gegen DIESELBE Datei mit dem Block mechanisch herausgeschnitten · T6 keine NEUE Unterschreitung in den dunklen Themes · T7 Regression + Version). Gegenproben ROT siehe Commit. NICHT VON DIESER SESSION GEMESSEN und ausdruecklich nicht behauptet: nichts hiervon beruehrt einen Worker-Endpunkt; die Live-Domain ist aus dieser Sandbox nicht erreichbar. Rollback: v1.0.928.
      PREV  ·  v1.0.928 (ARM · ECHTGELD: EINE FLAECHE, IM CHART/RUN-TERMINAL): KEINE LOGIKAENDERUNG. Dieselben zwei Speicher (cr_arm_v1 / cr_arm_limit_v1), dieselben zwei Handler, die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-Pfad, crVaultLimit, crOnchainLimit und die Session-Limit-Rechnung Bit fuer Bit unveraendert; kein Scharf-Bit pro Token, kein zusaetzliches Tor; single-file, keine neue Dep, keine neue Fremdcode-Quelle. BEFUND: v1.0.927 hatte ARM als SCHWEBENDES Chart-Widget eingefuehrt und Settings sowie Control Center je EINE Statuszeile mit „→ Terminal" gelassen — DREI Flaechen fuer dieselbe Sache. Dazu ein MESSBARER Fehler: das freie Widget lief am Telefon rechts aus dem Bild (Limit-Feld und rechter Rand abgeschnitten), weil es frei ueber dem Chart positioniert war und keine Breitenbindung an den Viewport hatte. SOLL, UMGESETZT: genau EINE Flaeche — ein regulaerer .crTerm-pane mit data-pane-id="arm" im Chart/Run-Terminal (data-cr-terminal-surface="chart"), GANZ OBEN in der linken Spalte, vor ON-CHAIN: es ist der Schalter, der ueber alles darunter entscheidet. UMGEHAENGT, NICHT NEU GEBAUT — das ist die wichtigste Zeile dieser Nummer und woertlich dieselbe Regel wie in v1.0.927, nur mit neuem Ziel: der Block #crArmWidgetBlock wandert per appendChild aus #crArmWidgetHome in den Pane-Host (_crArmPaneMount) und beim Verlassen der Chart-Flaeche zurueck (_crArmPanePark). Nachgebautes Markup verloere die beim Boot per getElementById gesetzten Bindungen LAUTLOS — der Schalter waere da und taete nichts. Der Test prueft deshalb Knoten-IDENTITAET, nicht „es kracht nicht". Gehaengt wird an _crApplyTerminalSurfaceMode, die EINE Stelle, an der die Flaeche entschieden wird — nicht in vier Aufrufern. ENTFALLEN: das schwebende Chart-Widget (Widget-Typ 'arm' in _wIcon/_wTitleFor/_wBodyHTML/_cwDefaultSize/_cwAdd/_crTermWidgetAllowedOnChart, der Pack armLive und sein ⚡-ARM-Knopf in der Chart-Widget-Auswahl; ein gespeichertes Alt-Widget aus v927 faellt beim naechsten renderChartWidgets heraus), die ARM-Statuszeile in SETTINGS (#crArmHome / #crSetArmStatus / #crSetArmGoTerminal) und der ARM-Abschnitt im CONTROL CENTER (#crCCArmStatus / #crCCArmStatusTxt / #crCCArmGoSettings), samt ihrer toten CSS (.crArmHome-Block, .crCCPop .crCCArmStatus) und ihres gemeinsamen Renderers (_crArmRenderStatusRow / _crCCRenderArmStatus). BENANNT, WEIL DER AUFTRAG HIER EINEN NAMEN VERWECHSELT: der Auftrag listet #crCCArmSection unter dem, was im Control Center entfaellt. Dieses Element steht seit v1.0.927 NICHT mehr im Control Center — es IST die ARM-Sektion selbst, im verlagerten Block, und traegt das Gast-Gate (v905). Es zu loeschen haette die eine Flaeche geloescht. Der Name luegt („CC"), die ID bleibt trotzdem: v899/v905/v919/v927 pruefen sie namentlich, und eine Umbenennung waere eine Risikoaenderung ohne Nutzen fuer den Spieler. WAS BLEIBT: das Hex-Badge #crArmBadge in der Menueleiste als globale Live/Nicht-Live-Anzeige — ein Zustandslicht, keine Bedienflaeche; ohne es saehe man von ausserhalb des Terminals nicht mehr, ob scharf geschaltet ist. NEU daran ist allein, dass ein Klick (bzw. Enter/Space, role=button, tabindex=0) das Chart/Run-Terminal oeffnet und das ARM-Panel in den Blick holt — kein neuer Knopf, keine neue Route, es geht ueber #crBarTerminal wie sonst auch. INHALT UNVERAENDERT auf dem Mindesten: EIN Schalter (#crArmSwitch), EIN Limit-Feld (#crArmLimitInput), EINE Statuszeile im Kontext des gecharteten Tokens (#crCCArmState, Quelle _crArmStatusText, unveraendert), der Rest hinter „Details"; der Gast-Hinweis #crCCArmGateHint bleibt wie er war. BREITE STRUKTURELL STATT PER SONDERREGEL: als .crTerm-pane erbt das Panel Breite und Rahmen des Terminals, dazu ein Deckel max-width:100% auf dem Block und overflow-x:hidden am Pane-Koerper. GEMESSEN, NICHT BEHAUPTET, und die erste Fassung lag hier falsch: min-width:0 am Aufhaengepunkt ist ein SCHUTZ, NICHT die Ursache — auf auto zurueckgesetzt blieb die Ueberlauf-Messung gruen; erst das Aufheben des max-width-Deckels faerbt sie rot. Ebenfalls gemessen und korrigiert: die erste Fassung der Ueberlauf-Zeile verglich scrollWidth/clientWidth und blieb bei einem 520 px breiten Inhalt GRUEN, weil overflow-x:hidden ihn CLIPPT statt scrollen zu lassen — sie haette den Fehler nie gesehen, den sie zu pruefen behauptet. Verglichen werden jetzt Kanten. TESTS: scripts/check_v928_arm_terminal_browser.cjs (A1 Knoten-Identitaet beim Umhaengen · A2 Schalter/Limit schreiben weiter GENAU cr_arm_v1 / cr_arm_limit_v1, Spion ohne Handelsaufruf · A3 schliessen/oeffnen: der Block haengt genau einmal · A4 Settings/Control Center/Chart-Widget-Auswahl tragen nichts zu ARM mehr · A5 Reihenfolge: ARM vor ON-CHAIN · A6 kein horizontaler Ueberlauf am Telefon in allen fuenf Themes · A7 #crArmBadge zeigt Live/Nicht-Live und oeffnet das Terminal · A8 Regression v917–v927 + Version). Gegenproben ROT siehe Commit. NICHT VON DIESER SESSION GEMESSEN und ausdruecklich nicht behauptet: nichts hiervon beruehrt einen Worker-Endpunkt; *.workers.dev ist aus dieser Sandbox nicht erreichbar. Die Optik am Telefon prueft Julian nach dem Merge (Schritte im PR). Rollback: v1.0.927 (dann wieder drei Flaechen und das abgeschnittene Widget).
@@ -48845,7 +48846,11 @@ window.crRoom = (function(){
 
   var POS_HZ      = 15;
   var PEER_TTL_MS = 12000;
-  var SEAT_COLORS = { creator:'#f5a623', wallet:'#14f195', guest:'#7aa2ff' };
+  // v1.0.932 — 'host' ist das Wort, das crRoomsNet._rosterList fuer den eigenen
+  // Ersteller-Sitz ausgibt; dieselbe Farbe wie das Alt-Wort 'creator' der
+  // Relay-Faelle. Ohne den Eintrag faerbte seatColor() den Ersteller blau wie
+  // einen Gast.
+  var SEAT_COLORS = { creator:'#f5a623', host:'#f5a623', wallet:'#14f195', guest:'#7aa2ff' };
 
   // Room params captured synchronously at load (before the sharedMap handler
   // cleans the URL). null ⇒ not a room link ⇒ this whole module stays dormant.
@@ -49412,7 +49417,24 @@ const RoomsClient = (() => {
     if(ws&&ws.readyState===1)ws.send(raw);
     else{queue.push(raw);if(!wantOpen)connect();}}
   return{connect,disconnect(){wantOpen=false;if(ws)ws.close();},
-    create(n){send({type:'create',name:n})},
+    /* v1.0.932 — `create` traegt die Raumdaten mit. Vorher ging nur der Name
+       raus, deshalb stand im Verzeichnis `#BEF6 ·  · 1 online` und ein
+       Beitretender landete auf SEINEM eigenen Chart statt auf dem des Raums.
+       VERTRAG (woertlich wie im Server-Auftrag): `pub` ist bool mit Vorgabe
+       false; `asset` <= 24, `tf` <= 8, `mapName` <= 64 Zeichen. Der Server kappt
+       zusaetzlich — der Client soll trotzdem nicht mehr senden, deshalb wird
+       hier, an der letzten Stelle vor dem Draht, gekappt. Ein blosser String
+       bleibt gueltig (Altaufruf create('name')). */
+    create(o){
+      const r = (o && typeof o === 'object') ? o : { name: o };
+      const cut = (v, n) => String(v == null ? '' : v).slice(0, n);
+      const m = { type:'create', name: cut(r.name, 32), pub: !!r.pub };
+      const asset = cut(r.asset, 24), tf = cut(r.tf, 8), mapName = cut(r.mapName, 64);
+      if(asset) m.asset = asset;
+      if(tf) m.tf = tf;
+      if(mapName) m.mapName = mapName;
+      send(m);
+    },
     join(r,n){send({type:'join',room:String(r).toUpperCase(),name:n})},
     leave(){send({type:'leave'})},
     sendState(d){send({type:'state',data:d})},
@@ -49435,6 +49457,11 @@ window.crRoomsNet = (function(){
   var ENABLED = !RELAY_ESCAPE;
 
   var inRoom = false, roomCode = '', myId = null, pumpTimer = null;
+  // v1.0.932 — hat DIESER Client den Raum angelegt? Der Server teilt es im
+  // `created`-Ereignis mit (enterRoom(..., true)); bis v1.0.931 wurde die
+  // Auskunft entgegengenommen und weggeworfen, deshalb stand im Roster auch
+  // beim Ersteller „GUEST". ANZEIGE, KEINE AUTORITAET — siehe _rosterList.
+  var iAmCreator = false;
   var ghosts = new Map();          // playerId -> {name,wx,py,pnl,last}
   var roster = new Map();          // playerId -> {name}
   var GHOST_TTL_MS = 12000, GHOST_COL = '#7aa2ff';
@@ -49512,10 +49539,16 @@ window.crRoomsNet = (function(){
   function say(m){ try { if(typeof toast==='function') toast(m); } catch(_){} }
   function peerCount(){ var n = 0; roster.forEach(function(_v, id){ if(id !== myId) n++; }); return n; }
   // v1.0.745 — crRoom-format roster for the SHARED chat chrome (self first, then
-  // peers). Seat is always 'guest' in a Rooms guest room, so seat colouring lands
-  // on the default blue. Consumed uniformly with crRoom via _crChatStack().
+  // peers). Consumed uniformly with crRoom via _crChatStack().
+  // v1.0.932 — der eigene Eintrag traegt 'host', wenn dieser Client den Raum
+  // angelegt hat. DAS IST EINE ANZEIGE, KEINE AUTORITAET: der Server kennt
+  // keinen Host-Begriff und erzwingt nichts. Auf diese Zeile darf KEIN Kick-,
+  // Mute- oder sonstiges Recht gebaut werden — das kommt erst mit der P1-
+  // Serverfassung. Wer es doch tut, baut auf Sand.
+  // Peers bleiben 'guest': wer von den anderen der Ersteller war, weiss dieser
+  // Client nicht (das Protokoll sagt es nur ueber den eigenen Raum-Eintritt).
   function _rosterList(){
-    var out = [{ handle: myName(), seat: 'guest', self: true }];
+    var out = [{ handle: myName(), seat: iAmCreator ? 'host' : 'guest', self: true }];
     roster.forEach(function(v, id){
       if(id === myId) return;
       out.push({ handle: (v && v.name) || 'runner', seat: 'guest', self: false });
@@ -49773,7 +49806,9 @@ window.crRoomsNet = (function(){
   // v1.0.744 — asCreator stamps the chart into the URL right away (the creator IS
   // the source of truth); a joiner stamps a bare ?room= and lets the chart-pin
   // one-shot fill in asset/tf once it adopts the room's chart.
-  function enterRoom(code, id, asCreator){ roomCode = code || ''; myId = id || null; inRoom = true; roster.clear(); ghosts.clear(); paintPanel(); startPump(); _stampRoomUrl(roomCode, !!asCreator); }
+  // v1.0.932 — asCreator wird jetzt AUCH behalten (iAmCreator), nicht nur an den
+  // URL-Stempel weitergereicht; _rosterList liest ihn fuer den eigenen Sitz.
+  function enterRoom(code, id, asCreator){ roomCode = code || ''; myId = id || null; inRoom = true; iAmCreator = !!asCreator; roster.clear(); ghosts.clear(); paintPanel(); startPump(); _stampRoomUrl(roomCode, !!asCreator); }
   // Tear down: leave the room, stop the pump, drop the socket, clear state + panel.
   // Called on home-exit (default path owns its own socket, so crRoom.leave() alone
   // no longer covers it now that the relay stack is quiesced).
@@ -49785,7 +49820,7 @@ window.crRoomsNet = (function(){
     if(_joinTO){ clearTimeout(_joinTO); _joinTO = null; }
     _pendCreate = null; _pendJoin = null;
     _chartSyncPending = false; _chartSyncUntil = 0;   // v1.0.744 — disarm the chart-pin one-shot on leave
-    inRoom = false; roomCode = ''; myId = null; roster.clear(); ghosts.clear();
+    inRoom = false; roomCode = ''; myId = null; iAmCreator = false; roster.clear(); ghosts.clear();   // v1.0.932 — der Host-Sitz endet mit dem Raum
     _peerDraws.clear(); _peerLaser.clear(); _outDraws.length = 0; _drawSeen.clear();   // v1.0.770
     _myDraws.length = 0; _reCursor = 0;   // v1.0.802 — drop our session tools when leaving the room
     _unstampRoomUrl();
@@ -49799,17 +49834,35 @@ window.crRoomsNet = (function(){
   var JOIN_TIMEOUT_MS = 9000;
   function _clearCreate(){ if(_createTO){ clearTimeout(_createTO); _createTO = null; } }
   function _clearJoin(){ if(_joinTO){ clearTimeout(_joinTO); _joinTO = null; } }
+  // v1.0.932 — die Raumdaten, die eine Verzeichniszeile fuellen und einen
+  // Beitretenden auf den RICHTIGEN Chart bringen. asset/tf kommen aus DERSELBEN
+  // Quelle, aus der chartParams schon liest (_chartAssetTf) — Mint bei DEX, id
+  // bei CEX, leer bei einem synthetischen Paar. mapName wie im Altpfad
+  // (crRoomWizard.doCreate): Asset in Grossbuchstaben + ' · ' + Zeitrahmen.
+  // Gekappt wird eine Ebene tiefer, in RoomsClient.create (der Vertrag).
+  function _createPayload(opts){
+    var ct = { a:'', tf:'' };
+    try { ct = _chartAssetTf() || ct; } catch(_){}
+    var mn = '';
+    try {
+      var base = (typeof currentAsset !== 'undefined' && currentAsset) ? String(currentAsset).toUpperCase() : '';
+      if(base) mn = base + ((typeof timeframe !== 'undefined' && timeframe) ? ' · ' + timeframe : '');
+    } catch(_){}
+    return { name: myName(), pub: !!(opts && opts.pub), asset: ct.a, tf: ct.tf, mapName: mn };
+  }
   function _create(opts, cb){
     if(!ENABLED) return;
     opts = opts || {};
     // The simple Rooms server has no moderated/curated/on-chain config yet —
     // degrade to a plain room instead of hard-removing the option.
+    // v1.0.932 — der Hinweis fuer `pub` ist weg: das Verzeichnis-Feld geht jetzt
+    // mit `create` raus und der Server beantwortet es. Der Hinweis fuer
+    // moderated/curated BLEIBT — der ist weiterhin wahr.
     if(opts.mode === 'moderated' || opts.mode === 'curated') say('Moderated rooms are coming soon — starting a normal room');
-    else if(opts.pub) say('Public listing is coming soon — room created, share the code');
     _pendCreate = (typeof cb === 'function') ? cb : null;
     _clearCreate();
     _createTO = setTimeout(function(){ _createTO = null; if(!inRoom){ _pendCreate = null; say('Couldn’t reach the room server — try again'); } }, JOIN_TIMEOUT_MS);
-    RoomsClient.create(myName());
+    RoomsClient.create(_createPayload(opts));   // v1.0.932 — name + pub/asset/tf/mapName
   }
   function _join(code, cb){
     if(!ENABLED){ if(cb) cb(false); return; }
@@ -49917,7 +49970,8 @@ try { window._crChatStack = _crChatStack; } catch(_){}
   function rosterRows(list){
     return (list || []).map(function(p){
       var col = (crRoom.seatColor ? crRoom.seatColor(p.seat) : '#7aa2ff');
-      var nm  = (p.seat === 'creator' ? '★ ' : '') + esc(p.handle || 'player') + (p.self ? ' <span style="color:#6a6f7a">(you)</span>' : '');
+      // v1.0.932 — 'host' (crRoomsNet) zaehlt wie 'creator' (Relay): Stern + Amber.
+      var nm  = (p.seat === 'creator' || p.seat === 'host' ? '★ ' : '') + esc(p.handle || 'player') + (p.self ? ' <span style="color:#6a6f7a">(you)</span>' : '');
       return '<div style="display:flex;align-items:center;gap:8px;margin-top:5px;overflow:hidden">'
         + '<span style="width:8px;height:8px;border-radius:50%;flex:none;background:' + col + ';box-shadow:0 0 6px ' + col + '"></span>'
         + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + nm + '</span></div>';
@@ -50084,8 +50138,11 @@ try { window._crChatStack = _crChatStack; } catch(_){}
   function rows(list){
     return (list || []).map(function(p){
       var col = (window.crRoom && crRoom.seatColor) ? crRoom.seatColor(p.seat) : '#7aa2ff';
-      var seat = p.seat === 'creator' ? 'host' : (p.seat === 'wallet' ? 'wallet' : 'guest');
-      var nm = (p.seat === 'creator' ? '★ ' : '') + esc(p.handle || 'player') + (p.self ? ' <span class="crRoYou">(you)</span>' : '');
+      // v1.0.932 — 'host' ist das Wort von crRoomsNet, 'creator' das des Relays;
+      // beide sind derselbe Sitz. Hier stand vorher fuer den Ersteller „guest".
+      var isHostSeat = (p.seat === 'creator' || p.seat === 'host');
+      var seat = isHostSeat ? 'host' : (p.seat === 'wallet' ? 'wallet' : 'guest');
+      var nm = (isHostSeat ? '★ ' : '') + esc(p.handle || 'player') + (p.self ? ' <span class="crRoYou">(you)</span>' : '');
       return '<div class="crRoRow"><span class="pdot" style="background:' + col + ';box-shadow:0 0 6px ' + col + '"></span>'
         + '<span>' + nm + '</span><span class="seat">' + seat + '</span></div>';
     }).join('');
@@ -50266,8 +50323,10 @@ try { window._crChatStack = _crChatStack; } catch(_){}
   if(typeof document === 'undefined') return;
   // v1.0.784 — i18n: live-rooms list chrome via crI18n.t() (rooms.live.* keys).
   function T(k, en, v){ try { return (window.crI18n && crI18n.t) ? crI18n.t(k, en, v) : (en!=null?en:k); } catch(_){ return en!=null?en:k; } }
-  var FALLBACK = 'https://relay.chartrunner.xyz';
-  function http(){ try { return (window.crRoom && crRoom.relayHttp) ? crRoom.relayHttp() : FALLBACK; } catch(_){ return FALLBACK; } }
+  // v1.0.932 — die Relay-Basis ist hier ersatzlos raus: /rooms liest seit v1.0.863
+  // ueber crRoomsDirFetch, joinById seit v1.0.932. Eine stehengelassene http()-
+  // Hilfsfunktion auf relay.chartrunner.xyz ist genau die Vorlage, aus der dieser
+  // Fehler dreimal kopiert wurde — deshalb gibt es sie in diesem Modul nicht mehr.
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
   var cache = [], stale = false, timer = null, lastOpen = false, inflight = false;
   function rooms(){ return cache; }
@@ -50349,7 +50408,11 @@ try { window._crChatStack = _crChatStack; } catch(_){}
   async function joinById(id){
     try {
       if(!id) return;
-      var r = await fetch(http() + '/rooms/' + encodeURIComponent(id), { cache:'no-store' });
+      // v1.0.932 — dieselbe Aufrufform wie im Modal (crRoomsBrowser, v1.0.863):
+      // Raeume liegen auf rooms.chartrunner.xyz. http() zeigt auf den Legacy-
+      // Relay (relay.chartrunner.xyz), dieser Beitrittspfad lief damit dauerhaft
+      // ins Leere. crRoomsDirFetch merkt sich den zuletzt erfolgreichen Host.
+      var r = await window.crRoomsDirFetch('/rooms/' + encodeURIComponent(id));
       if(!r.ok) throw 0;
       var rm = await r.json();
       if(!rm || !rm.id) throw 0;
@@ -50957,7 +51020,11 @@ try { window._crChatStack = _crChatStack; } catch(_){}
           }
         }
       } catch(_){}
-      var r = await fetch(http()+'/rooms/'+encodeURIComponent(id), {cache:'no-store'}); if(!r.ok) throw 0; var rm = await r.json(); if(!rm||!rm.id) throw 0;
+      // v1.0.932 — wie joinById: der Raum liegt auf rooms.chartrunner.xyz, nicht
+      // auf dem Legacy-Relay, den http() liefert. Die Namensabfrage darueber
+      // bleibt unberuehrt (v1.0.754) — sie ist der einzige Ort, an dem ein Gast
+      // vor dem Beitritt einen Namen waehlt.
+      var r = await window.crRoomsDirFetch('/rooms/'+encodeURIComponent(id)); if(!r.ok) throw 0; var rm = await r.json(); if(!rm||!rm.id) throw 0;
       var url = location.origin + location.pathname + '?sharedMap=1&room=' + encodeURIComponent(rm.id)
         + (rm.host?'&host='+encodeURIComponent(rm.host):'') + (rm.asset?'&asset='+encodeURIComponent(rm.asset):'') + (rm.tf?'&tf='+encodeURIComponent(rm.tf):'') + (rm.snapshot?('#m='+rm.snapshot):'');
       close(); location.href = url;
