@@ -18,21 +18,37 @@
  *  T1  Zehn Renders von _tokRenderList -> NULL Anfragen mit src=opened.
  *      Gegenzeuge in derselben Pruefung: es sind sehr wohl seen-Pings
  *      rausgegangen — sonst waere die Null nur die Abwesenheit von allem.
- *      (Mutation: 'seen' in der Schleife -> 'opened' ergibt T1 rot.)
  *  T2  Chart laden -> GENAU EIN src=opened, und zwar fuer den geladenen Mint.
- *      (Mutation: 'opened' an der Chart-Stelle streichen -> T2 rot.)
  *  T3  Token-Profil oeffnen -> genau ein src=opened fuer diesen Mint;
  *      eine Listenzeile bloss AUFLOESEN (_tokFetchMeta ohne Herkunft) ->
  *      kein opened, aber ein seen (sonst bewiese das Ausbleiben nichts).
- *      (Mutation: Vorgabe in _tokFetchMeta auf 'opened' -> T3 rot.)
  *  T4  Abwaertskompatibel: crOhlcTrack ohne drittes Argument traegt src=seen
  *      und faellt in DENSELBEN Drossel-Topf wie ein ausdrueckliches 'seen'
  *      (kein dritter, stiller Topf).
- *      (Mutation: Vorgabe in crOhlcTrack auf 'opened' -> T4 rot.)
  *  T5  Ein seen unmittelbar VOR einem opened verhindert das opened nicht.
- *      (Mutation: gemeinsamer Drossel-Schluessel ohne Herkunft -> T5 rot.)
  *  T6  Die 10-Minuten-Drossel lebt weiter, je Herkunft: das zweite opened
  *      derselben Adresse geht NICHT raus. Plus Regression im Quelltext.
+ *
+ * GEGENPROBEN — GEMESSEN, nicht behauptet. Jede Mutation wurde einzeln in
+ * ChartRunner_Prototype.html eingebaut, die Suite lief, danach hat
+ * `git checkout` wiederhergestellt. Keine davon war CRASH: der Lauf ging
+ * jedes Mal durch, „keine harten Page-Errors" blieb gruen, und rot wurde nur
+ * das, was die Zeile behauptet.
+ *
+ *   M1  Warm-up-Schleife 'seen' -> 'opened'
+ *       ROT: T1a, T1b, T1c, T1d  (21 gruen). Alle vier haengen an derselben
+ *       Zeile: ohne seen-Pings ist auch der Gegenzeuge weg.
+ *   M2  Chart-Stelle: drittes Argument gestrichen (wieder Zwei-Argument-Form)
+ *       ROT: T2a  (24 gruen)
+ *   M3  _tokFetchMeta reicht nicht durch, sondern sendet fest 'opened'
+ *       ROT: T3c  (24 gruen) — T3a bleibt gruen, das Profil ist ja weiter
+ *       richtig; rot wird genau die bloss aufgeloeste Zeile.
+ *   M4  crOhlcTrack: Vorgabe ohne drittes Argument auf 'opened'
+ *       ROT: T4a, T4b, T4c  (22 gruen). T4a faellt mit, weil dann ZWEI
+ *       Anfragen zu derselben Adresse rausgehen statt einer.
+ *   M5  Drossel-Schluessel ohne Herkunft (var tk = k)
+ *       ROT: T5b  (24 gruen) — das opened 100 ms nach dem seen bleibt aus,
+ *       also genau der Ping, auf den es ankommt.
  *
  * Aufruf:  node scripts/check_v931_track_herkunft_browser.cjs
  */
