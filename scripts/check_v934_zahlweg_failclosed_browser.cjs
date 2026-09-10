@@ -42,35 +42,64 @@
  * T8  Regressionen — keine harten Page-Errors, und die Handelsstrecke ist
  *     unberuehrt (crArm, crVaultLimit, crOnchainLimit, crSwap stehen).
  *
- * GEGENPROBEN — GEMESSEN, nicht behauptet. Jede Mutation wurde einzeln in
- * ChartRunner_Prototype.html eingebaut, die Suite lief, danach hat
- * `git checkout` wiederhergestellt. Ergebnis je Mutation steht im Commit.
+ * GEGENPROBEN — GEMESSEN, nicht behauptet (CLAUDE.md · ROT/CRASH/GRUEN). Jede
+ * Mutation wurde EINZELN in ChartRunner_Prototype.html eingebaut, die Suite
+ * lief vollstaendig, danach hat `git checkout` wiederhergestellt. KEINE davon
+ * war CRASH: jeder Lauf ging durch und "keine harten Page-Errors" (T8a) blieb
+ * jedes Mal gruen — rot wurde nur, was die jeweilige Zeile behauptet.
+ * Gruen gebliebene Nachbarzeilen sind mitprotokolliert: sie sagen, WELCHE
+ * Wache eine Zeile tatsaechlich misst.
  *
- *   M1  `uri()` im Pro-Dialog: die Wache
+ *   M1  Pro `uri()`: die Wache
  *       `if(!(intent && intent.treasury && intent.reference)) return '';`
- *       gestrichen und der v933-Rueckfall wieder eingesetzt
- *       (`var tre = (intent && intent.treasury) || CR_V934_OLD_TREASURY;`)
- *       ROT: T1a, T1b, T2b, T3b, T4d, T7b  — genau die Zeilen, die "kein
- *       Zahlungsziel ohne Worter-Antwort" behaupten.
- *   M2  `boot()`: `phase='signedout'` durch `phase='ready'` ersetzt
- *       ROT: T1a, T1c  — der abgemeldete Dialog malte wieder die Zahltafel.
- *   M3  `startIntent()`: `.catch(fail)` zurueck auf `.catch(function(){})`
- *       ROT: T2a, T2c  — der Fehlerzweig verschwand wieder still, der Dialog
- *       blieb im Wartezustand stehen.
- *   M4  `startIntent()`: `j.reference && j.treasury` auf `j.reference`
+ *       gestrichen, der v933-Rueckfall wieder eingesetzt (Adresse als Literal)
+ *       und der Betrag wieder auf den Ratecard-Preis zurueckfallen lassen.
+ *       ROT: T3a, T3b, T4f, T7a, T7b  (34 gruen)
+ *       T1 und T2 bleiben gruen und MUESSEN es: der abgemeldete Zustand und
+ *       der Fehlerzustand malen paintPay() nie, der Rueckfall ist dort gar
+ *       nicht erreichbar. T4d/T4e bleiben gruen, weil die ZWEITE Wache in
+ *       startIntent (j.treasury) noch steht. Die Trennung ist der Punkt:
+ *       T3/T4f messen die Wache in uri(), T4e die in startIntent.
+ *   M2  Pro `boot()`: `phase='signedout'` durch `phase='ready'` ersetzt
+ *       ROT: T1b, T1c, T1e  (36 gruen)
+ *       T1a bleibt gruen — ohne Intent malt paintPay() nur Platzhalter, es
+ *       entsteht KEINE Adresse und kein `solana:`. Kaputt ist damit nicht das
+ *       Zahlungsziel, sondern die Unterscheidbarkeit des abgemeldeten
+ *       Zustands: der Nutzer sieht eine Zahltafel, die nie eine werden kann.
+ *   M3  Pro `startIntent()`: `.catch(fail)` zurueck auf `.catch(function(){})`
+ *       ROT: T2a, T2c  (37 gruen)
+ *       T2b bleibt gruen (es wird ja nichts gemalt — genau das ist der alte
+ *       Fehler: der Dialog bleibt still im Wartezustand stehen). T2d bleibt
+ *       gruen, weil HTTP 500 ueber den then-Zweig (r.ok false -> null) laeuft
+ *       und nicht ueber catch — die beiden Zeilen pruefen wirklich zwei Wege.
+ *   M4  Pro `startIntent()`: `j.reference && j.treasury` auf `j.reference`
  *       verkuerzt (Antwort ohne treasury wird akzeptiert)
- *       ROT: T4e  — die Adresse fehlte, der Dialog behauptete trotzdem
- *       "bereit". T4d bleibt gruen: ohne Rueckfall entsteht keine falsche
- *       Adresse, nur ein leeres Feld — deshalb pruefen T4d und T4e getrennt.
- *   M5  `paintPay()`: der disabled-Zweig durch den <a href>-Zweig ersetzt
- *       ROT: T3a  (Betrag/Adresse bleiben Platzhalter, T3b gruen) — der Knopf
- *       war wieder klickbar, obwohl es kein Ziel gab.
- *   M6  `clusterIsMain`: 'devnet' zusaetzlich als mainnet gefuehrt
- *       ROT: T5a  — die Testzahlung sah aus wie eine echte.
- *   M7  Boost `uri()`: derselbe Rueckfall wie M1 wieder eingebaut
- *       ROT: T6b, T6d, T7b
+ *       ROT: T4e  (38 gruen)
+ *       T4d bleibt gruen: ohne Rueckfall entsteht keine FALSCHE Adresse, nur
+ *       ein leeres Feld. Deshalb pruefen T4d und T4e getrennt.
+ *   M5  Pro `paintPay()`: der disabled-Zweig durch den <a href>-Zweig ersetzt
+ *       ROT: T3a  (38 gruen)
+ *       T3b bleibt gruen — uri() gibt weiter '' zurueck, der Link ist leer.
+ *       Der Knopf war also wieder klickbar, ohne Ziel: eine Sackgasse, aber
+ *       keine falsche Zahlung. Genau dafuer steht T3a getrennt da.
+ *   M6  Pro `clusterIsMain`: 'devnet' zusaetzlich als mainnet gefuehrt
+ *       ROT: T5a  (38 gruen) — die Testzahlung sah aus wie eine echte.
+ *   M7  Boost: v933 vollstaendig wiederhergestellt — Rueckfall in uri() UND
+ *       paintPay(), dazu der Wachposten `j.treasury` in startIntent gestrichen.
+ *       ROT: T6b, T7a, T7b  (36 gruen)
+ *       Gemessen und wichtig: der Rueckfall ALLEIN war nicht beobachtbar. Er
+ *       liegt hinter ZWEI Wachposten (startIntent und paintPay); erst wenn
+ *       beide fallen, entsteht die Client-Adresse. T6d bleibt auch dann gruen,
+ *       weil paintWaiting() uri() gar nicht ruft.
  *   M8  Boost `startIntent()`: `paintWaiting()` gestrichen (v933-Zustand)
- *       ROT: T6c  — der Wartezustand war wieder unsichtbar.
+ *       ROT: T6c  (38 gruen) — der Wartezustand war wieder unsichtbar.
+ *
+ * NACHTRAG ZUR SCHAERFE: T7b hiess zuerst nur "kein `|| treasury`" und blieb
+ * bei M1 und M7 GRUEN — die Mutationen setzen die Adresse als Literal ein,
+ * nicht als Variable namens `treasury`. Nach CLAUDE.md zaehlt eine Zeile erst,
+ * wenn sie bei der Mutation rot wird; T7b prueft deshalb jetzt die Bauform
+ * (beide uri() bauen aus GENAU EINER Quelle, intent.treasury) und wird bei
+ * beiden rot.
  *
  * Aufruf:  node scripts/check_v934_zahlweg_failclosed_browser.cjs
  */
@@ -81,6 +110,12 @@ const { chromium } = require('playwright');
 
 const FILE = path.resolve(__dirname, '..', 'ChartRunner_Prototype.html');
 const HTML = fs.readFileSync(FILE, 'utf8');
+// Der Versions-Banner ist ein HTML-Kommentar und ZITIERT den alten Rueckfall
+// woertlich — er muss das, sonst steht im Banner nicht, was der Patch behebt.
+// T7b/T7c/T7d fragen nach CODE, also wird der Kommentar vorher entfernt.
+// T7a fragt nach der ADRESSE und scannt deshalb die ganze Datei: die darf
+// auch in Prosa nicht wieder auftauchen.
+const CODE = HTML.replace(/<!--[\s\S]*?-->/g, '');
 let pass = 0, fail = 0;
 function check(n, c, x){
   if(c){ pass++; console.log('  ok   ' + n); }
@@ -391,13 +426,21 @@ const TEST_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
   {
     const hits = (HTML.match(/F4XgsVpo3DQv7SiHA2yhqVY2uepb49p2WPKQWPMqWvnm/g) || []).length;
     check('T7a die Adresskonstante kommt NULL mal in der Spieldatei vor', hits === 0, { hits });
-    const fallback = (HTML.match(/\)\s*\|\|\s*treasury\b/g) || []).length;
-    check('T7b kein `|| treasury`-Rueckfall mehr', fallback === 0, { fallback });
-    const reader = (HTML.match(/\bpayTo\s*[:(]/g) || []).length;
+    // Gemessen wurde: der blosse `|| treasury`-Regex war ZU SCHWACH — M1/M7
+    // setzen den Rueckfall mit der Adresse als Literal ein und blieben gruen.
+    // Geprueft wird deshalb die Bauform selbst: BEIDE uri() bauen den Link aus
+    // GENAU EINER Quelle, intent.treasury, und es gibt keine lokale
+    // Ziel-Variable `tre` mehr, in die sich etwas anderes einsetzen liesse.
+    const fallback = (CODE.match(/\)\s*\|\|\s*treasury\b/g) || []).length;
+    const bound    = (CODE.match(/'solana:' \+ intent\.treasury \+ '\?'/g) || []).length;
+    const loose    = (CODE.match(/'solana:'\s*\+\s*tre\b/g) || []).length;
+    check('T7b beide uri() bauen den Link NUR aus intent.treasury, kein Rueckfall',
+      fallback === 0 && bound === 2 && loose === 0, { fallback, bound, loose });
+    const reader = (CODE.match(/\bpayTo\s*[:(]/g) || []).length;
     check('T7c kein payTo-Feld, -Zugriff und -Export mehr (nur noch der Kommentar, der sagt warum)',
       reader === 0, { reader });
     check('T7d die alte Behauptung "reaches the ChartRunner treasury on-chain" steht nirgends mehr',
-      HTML.indexOf('reaches the ChartRunner treasury on-chain') < 0);
+      CODE.indexOf('reaches the ChartRunner treasury on-chain') < 0);
   }
 
   /* ═══ T8 — REGRESSIONEN ══════════════════════════════════════════════════ */
