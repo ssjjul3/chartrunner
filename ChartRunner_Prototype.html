@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.933
-     LAST UPDATED:    2026-09-09  ·  v1.0.933 (ROOMS DEGATE — MULTIPLAYER-TRADE-KAPITEL NICHT MEHR PHASE-2-SACKGASSE, client-only): das Kapitel „Multiplayer Trade" (Anzeige Ch.63 / intern #52, broker 'copytrade') gab bisher nur den generischen phase2-Toast „Coming soon" und kehrte zurück — Rooms-Copy-Trade hing damit an einem Kapitel-Gate. Fix in _launchCampaignChapterCore: für dieses eine Kapitel (Guard broker==='copytrade') wird jetzt der Live-Public-Rooms-Browser geöffnet (crRoomsBrowser.open, Fallback crRoomOverviewOpen) + ehrlicher Hinweis, dass NUR die on-chain-Creator-Royalty die Live-Ausbaustufe ist; der Client-Flow (Raum eines Creators öffnen → Setup kopieren → traden via crSwap/Orders) funktioniert schon. Alle anderen phase2-Kapitel (Order-Lektionen 10-19, Marketplace 51) bleiben durch den unveränderten Block darunter gesperrt. Increment 1 von 4 (ROOMS_P1_P2 + degate); Increment 2 on-chain-Royalty/Settlement + 3 Hetzner-Server-Port + 4 P1-Restfehler folgen, on-chain erst live messen. — v1.0.932 (ROOMS B · CLIENT: HOST-KENNUNG, ZWEI FALSCHE BASIS-URLS, UND DIE VIER FELDER): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher (cr_arm_v1 / cr_arm_limit_v1) sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. Ghosts, Chat, geteilte Zeichnungen, Laser, Deep-Links und der ?relay=1-Pfad sind unberuehrt. (1) DER ERSTELLER WURDE ALS GUEST GEFUEHRT. Der Server meldet im `created`-Ereignis, dass dieser Client den Raum angelegt hat; enterRoom nahm das dritte Argument entgegen, reichte es an den URL-Stempel weiter und warf es danach weg — _rosterList schrieb fuer ALLE seat:'guest'. Jetzt haelt der Modulzustand `iAmCreator` die Auskunft (gesetzt in enterRoom, zurueckgesetzt in leaveRoom), der eigene Eintrag traegt seat:'host'. Damit die Tafel das auch ZEIGT, kennen die beiden Roster-Renderer und SEAT_COLORS 'host' als denselben Sitz wie das Alt-Wort 'creator' (Stern + Amber, Label HOST). ANZEIGE, KEINE AUTORITAET — der Server kennt keinen Host-Begriff und erzwingt nichts; ein Kick- oder Mute-Recht darf darauf NICHT aufgebaut werden, das kommt erst mit der P1-Serverfassung. Peers bleiben 'guest': wer von ihnen der Ersteller war, weiss der Client nicht. (2) ZWEI VON DREI BEITRITTSPFADEN ZEIGTEN AUF DEN LEGACY-RELAY. v1.0.863 hatte nur das Modal (crRoomsBrowser) auf crRoomsDirFetch umgestellt; joinById (die LIVE-ROOMS-Zeilen im ROOMS-Tab) und crSocial.joinRoom lasen weiter ueber http() — also relay.chartrunner.xyz, waehrend Raeume auf rooms.chartrunner.xyz liegen. Beide liefen damit dauerhaft ins Leere. Beide rufen jetzt window.crRoomsDirFetch('/rooms/'+id), dieselbe Form wie im Modal (merkt sich den zuletzt erfolgreichen Host). Die Relay-Hilfsfunktion in crMapsLiveDir ist ersatzlos raus — sie war die Vorlage, aus der dieser Fehler kopiert wurde. Die Namensabfrage in crSocial.joinRoom (Aufforderung + crNames.claim, v1.0.754) bleibt unangetastet. (3) `create` TRUG DIE RAUMDATEN NICHT MIT. Die Transportschicht sendete nur {type:'create',name}; deshalb stand im Verzeichnis `#BEF6 ·  · 1 online` und ein Beitretender landete auf SEINEM eigenen Chart. RoomsClient.create nimmt jetzt ein Objekt (ein blosser String bleibt gueltig), crRoomsNet._createPayload fuellt es: name wie bisher aus myName(), pub aus opts.pub (die PUBLIC-Karte setzt es), asset/tf aus DERSELBEN Quelle wie chartParams (_chartAssetTf), mapName wie im Altpfad (Asset in Grossbuchstaben + ' · ' + Zeitrahmen). VERTRAG, woertlich wie im Server-Auftrag: pub ist bool mit Vorgabe false; asset <= 24, tf <= 8, mapName <= 64 Zeichen — gekappt an der letzten Stelle vor dem Draht. Der Hinweis 'Public listing is coming soon' faellt weg; der Hinweis fuer moderated/curated bleibt, der ist weiterhin wahr. TEIL 3 WIRKT ERST MIT DEM SERVER: die Felder gehen raus, sichtbar werden sie, sobald die Rooms-Serverfassung sie beantwortet — gemessen wird das am Verzeichnis, nicht an diesem Text. GEGENPROBEN: scripts/check_v932_rooms_client_browser.cjs, jede Mutation einzeln gemessen (ROT/CRASH/GRUEN, siehe Kopf der Datei).
+     CURRENT VERSION: v1.0.934
+     LAST UPDATED:    2026-09-10  ·  v1.0.934 (DER BEZAHLDIALOG MUSS VERWEIGERN KOENNEN — FAIL-CLOSED STATT FEST VERDRAHTETER ADRESSE, reine Client-Aenderung): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE, KEIN WORKER-ANTEIL. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. BEFUND: beide Bezahldialoge — _crCryptoPayOpen (Pro) und crBoostCheckout (Boost) — hatten dieselbe Bauform. paint() lief SYNCHRON vor der Worker-Antwort, bei abgemeldeten Nutzern wurde der Intent NIE geholt, und uri() fiel ueber `(intent && intent.treasury) || treasury` auf eine fest verdrahtete Adresse in CFG.payTo zurueck. Der USDC-Pfad erzeugte damit eine VOLLSTAENDIG AUSFUEHRBARE Zahlung — Empfaenger, Betrag, Token — OHNE `reference`. Wer sie ausloest, zahlt an eine Adresse, die der Verifizierer im Worker nie zuordnet: crTier schaltet nichts frei, und einen Erstattungspfad gibt es in diesem Repo nicht (grep -i refund findet einen Kommentar, keinen Code). Der Kommentar darueber nannte das „fail-safe“ und behauptete, die Zahlung „reaches the treasury on-chain“ — fail-safe waere Verweigern, und ob die Client-Konstante die Schatzkammer ist, hat nie jemand gemessen. (1) OHNE INTENT KEIN ZAHLUNGSZIEL. Vier SICHTBARE Zustaende statt eines stillen Rueckfalls: abgemeldet (kein Betrag, keine Adresse, kein Link — ein Satz plus Knopf „Anmelden“; der Dialog bleibt offen und schaltet um, sobald ein Token da ist), Intent unterwegs (Platzhalter, leeres Adressfeld, der Wallet-Knopf ist ein <button disabled>, kein <a href>), Intent da (wie bisher, plus Polling), Intent fehlgeschlagen (ehrliche Meldung + Erneut-versuchen, KEIN Rueckfall). Der Erfolgs- WIE der Fehlerzweig von fetch malen jetzt; das leere .catch(function(){}) hat genau den Fall verschluckt, um den es geht. (2) DIE ADRESSE VERLAESST DEN CLIENT. CFG.payTo ist ERSATZLOS raus — Feld, Zugriff und Export. Alle drei Leser waren Zahlwege, also faellt auch die abgekuerzte Adresse in der Boost-Karte (_tokRenderBoostPayHtml) weg; sie stand im title-Attribut in voller Laenge. Eine Adresse im Client laesst sich nur durch ein Deploy aendern, reist in jedem Cache und Fork mit und ist nicht widerrufbar. Der Rueckfall kostete nichts: POST /v1/pay/sol/intent liefert die Adresse mit, und der Verifizierer prueft ohnehin gegen env.MERCHANT_SOL_ADDRESS — eine Abweichung waere unsichtbar geblieben. (3) DER CLUSTER KOMMT MIT. Traegt die Intent-Antwort `chain`/`cluster`, wird es angezeigt; ist es vorhanden und nicht mainnet (mainnet-beta zaehlt als mainnet), steht ein deutlicher Testzahlungs-Hinweis da. Fehlt das Feld, aendert sich nichts — kein Rateschluss. Der Worker-Teil (das Feld setzen) ist ein eigener Auftrag. (4) DERSELBE GRIFF FUER crBoostCheckout, woertlich — aber KEIN Zusammenlegen der beiden Dialoge: ein Refactor an dieser Stelle wuerde sich mit der Sicherheitsaenderung vermischen. NICHT GEAENDERT: Worker, Verifizierer, enforcePro, Ratecard, Preise, Stufen, $RUN-Rabatt; kein Erstattungspfad (dieser Patch sorgt dafuer, dass keiner gebraucht wird). NICHT IN DIESEM PATCH, ausdruecklich: chartrunner-prototype/pricing.html traegt dieselbe Adresse als eigene Konstante und baut den SOL-Betrag aus einem Coingecko-Kurs — andere Oberflaeche, eigener Auftrag. GEGENPROBEN: scripts/check_v934_zahlweg_failclosed_browser.cjs (39 Zeilen, gemessen am DOM des Dialogs, nicht an einer Absicht), jede Mutation einzeln gemessen (ROT/CRASH/GRUEN, siehe Kopf der Datei).
+     PREV  ·  v1.0.933 (ROOMS DEGATE — MULTIPLAYER-TRADE-KAPITEL NICHT MEHR PHASE-2-SACKGASSE, client-only): das Kapitel „Multiplayer Trade" (Anzeige Ch.63 / intern #52, broker 'copytrade') gab bisher nur den generischen phase2-Toast „Coming soon" und kehrte zurück — Rooms-Copy-Trade hing damit an einem Kapitel-Gate. Fix in _launchCampaignChapterCore: für dieses eine Kapitel (Guard broker==='copytrade') wird jetzt der Live-Public-Rooms-Browser geöffnet (crRoomsBrowser.open, Fallback crRoomOverviewOpen) + ehrlicher Hinweis, dass NUR die on-chain-Creator-Royalty die Live-Ausbaustufe ist; der Client-Flow (Raum eines Creators öffnen → Setup kopieren → traden via crSwap/Orders) funktioniert schon. Alle anderen phase2-Kapitel (Order-Lektionen 10-19, Marketplace 51) bleiben durch den unveränderten Block darunter gesperrt. Increment 1 von 4 (ROOMS_P1_P2 + degate); Increment 2 on-chain-Royalty/Settlement + 3 Hetzner-Server-Port + 4 P1-Restfehler folgen, on-chain erst live messen. — v1.0.932 (ROOMS B · CLIENT: HOST-KENNUNG, ZWEI FALSCHE BASIS-URLS, UND DIE VIER FELDER): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher (cr_arm_v1 / cr_arm_limit_v1) sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. Ghosts, Chat, geteilte Zeichnungen, Laser, Deep-Links und der ?relay=1-Pfad sind unberuehrt. (1) DER ERSTELLER WURDE ALS GUEST GEFUEHRT. Der Server meldet im `created`-Ereignis, dass dieser Client den Raum angelegt hat; enterRoom nahm das dritte Argument entgegen, reichte es an den URL-Stempel weiter und warf es danach weg — _rosterList schrieb fuer ALLE seat:'guest'. Jetzt haelt der Modulzustand `iAmCreator` die Auskunft (gesetzt in enterRoom, zurueckgesetzt in leaveRoom), der eigene Eintrag traegt seat:'host'. Damit die Tafel das auch ZEIGT, kennen die beiden Roster-Renderer und SEAT_COLORS 'host' als denselben Sitz wie das Alt-Wort 'creator' (Stern + Amber, Label HOST). ANZEIGE, KEINE AUTORITAET — der Server kennt keinen Host-Begriff und erzwingt nichts; ein Kick- oder Mute-Recht darf darauf NICHT aufgebaut werden, das kommt erst mit der P1-Serverfassung. Peers bleiben 'guest': wer von ihnen der Ersteller war, weiss der Client nicht. (2) ZWEI VON DREI BEITRITTSPFADEN ZEIGTEN AUF DEN LEGACY-RELAY. v1.0.863 hatte nur das Modal (crRoomsBrowser) auf crRoomsDirFetch umgestellt; joinById (die LIVE-ROOMS-Zeilen im ROOMS-Tab) und crSocial.joinRoom lasen weiter ueber http() — also relay.chartrunner.xyz, waehrend Raeume auf rooms.chartrunner.xyz liegen. Beide liefen damit dauerhaft ins Leere. Beide rufen jetzt window.crRoomsDirFetch('/rooms/'+id), dieselbe Form wie im Modal (merkt sich den zuletzt erfolgreichen Host). Die Relay-Hilfsfunktion in crMapsLiveDir ist ersatzlos raus — sie war die Vorlage, aus der dieser Fehler kopiert wurde. Die Namensabfrage in crSocial.joinRoom (Aufforderung + crNames.claim, v1.0.754) bleibt unangetastet. (3) `create` TRUG DIE RAUMDATEN NICHT MIT. Die Transportschicht sendete nur {type:'create',name}; deshalb stand im Verzeichnis `#BEF6 ·  · 1 online` und ein Beitretender landete auf SEINEM eigenen Chart. RoomsClient.create nimmt jetzt ein Objekt (ein blosser String bleibt gueltig), crRoomsNet._createPayload fuellt es: name wie bisher aus myName(), pub aus opts.pub (die PUBLIC-Karte setzt es), asset/tf aus DERSELBEN Quelle wie chartParams (_chartAssetTf), mapName wie im Altpfad (Asset in Grossbuchstaben + ' · ' + Zeitrahmen). VERTRAG, woertlich wie im Server-Auftrag: pub ist bool mit Vorgabe false; asset <= 24, tf <= 8, mapName <= 64 Zeichen — gekappt an der letzten Stelle vor dem Draht. Der Hinweis 'Public listing is coming soon' faellt weg; der Hinweis fuer moderated/curated bleibt, der ist weiterhin wahr. TEIL 3 WIRKT ERST MIT DEM SERVER: die Felder gehen raus, sichtbar werden sie, sobald die Rooms-Serverfassung sie beantwortet — gemessen wird das am Verzeichnis, nicht an diesem Text. GEGENPROBEN: scripts/check_v932_rooms_client_browser.cjs, jede Mutation einzeln gemessen (ROT/CRASH/GRUEN, siehe Kopf der Datei).
      PREV  ·  v1.0.931 (HERKUNFT DES TRACK-PINGS: EINE GERENDERTE ZEILE IST KEIN GEOEFFNETER TOKEN): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher (cr_arm_v1 / cr_arm_limit_v1) sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. An Kerzen, Charts und daran, WELCHE Token die Liste zeigt, aendert sich nichts. BEFUND (gemessen am laufenden System, /v1/subscriptions des ohlc-store): zehn Mint-Adressen dauerhaft abonniert, bei ALLEN ZEHN ist last_hit sekundenaktuell — die 900-Sekunden-Frist des Workers kann deshalb nie ablaufen, und jedes zugestellte Ereignis kostet einen Credit (~30.000/h). Die Ursache steht seit v1.0.894 in _tokRenderList: die Warm-up-Schleife meldet bis zu 20 Mints je Render als „gefragt", die Liste rendert bei JEDEM Preistick, und die 10-Minuten-Drossel in crOhlcTrack laeuft nie leer, weil die Liste lange vorher wiederkommt und die Pacht verlaengert. Der Kommentar im Code sagte weiter, ein Token werde „beim Oeffnen eines Token-Profils" registriert — das stimmte nicht mehr. UMGESETZT: (a) crOhlcTrack(chain, addr, src) BEKOMMT EIN DRITTES ARGUMENT, DIE HERKUNFT DES INTERESSES, und schickt sie als GET /v1/track/<chain>/<addr>?src=seen bzw. ?src=opened mit. „seen" heisst: der Mint kam in einer Liste vor — bleibt grosszuegig, fuettert nur den keylosen DexScreener-Sampler und kostet bei Helius nichts. „opened" heisst: der Nutzer hat den Token wirklich geoeffnet — NUR dieses Signal darf serverseitig ein Abo ausloesen. OHNE drittes Argument gilt „seen": ein alter Client bleibt damit harmlos, falls der Worker zuerst live geht. (b) DREI AUFRUFSTELLEN, ZWEI ANTWORTEN: die Warm-up-Schleife in _tokRenderList sendet ausnahmslos „seen"; der Aufruf beim Chart-Laden (neben _crRunOhlcCandles) sendet „opened"; _tokFetchMeta reicht die Herkunft vom Aufrufer durch und hat als Vorgabe „seen" — nur der Profil-Aufruf in _tokRenderProfile, wo der Knoten tokMeta_<id> wirklich im DOM steht, gibt „opened" mit. Wer dort spaeter einen Aufrufer ergaenzt, bekommt ohne Zutun den billigen Fall. (c) DIE 10-MINUTEN-DROSSEL BLEIBT, ZAEHLT ABER JE HERKUNFT GETRENNT (Schluessel „src|addr"). Ein gemeinsamer Topf waere still falsch: die Liste meldet den Mint zuerst als „seen", und das „opened" zehn Sekunden spaeter fiele in dieselbe Frist — der eine Ping, auf den es ankommt, ginge nie raus, der Chart lade trotzdem, und nichts schluege an. (d) GEGENSTUECK IM PRIVATEN REPO: „Helius B · WORKER" nimmt denselben Parameternamen entgegen. NICHT GEMESSEN, ausdruecklich: diese Sandbox erreicht *.workers.dev nicht; ob der ausgerollte Store ?src ueberhaupt liest, ist hier NICHT geprueft und wird auch nicht behauptet — die Verifikation laeuft ueber Julians Telefon und steht als Schritt-Liste im PR. Geprueft ist der CLIENT, im echten Chromium und am NETZ statt an der Funktion: scripts/check_v931_track_herkunft_browser.cjs (T1 zehn Listen-Renders -> null opened, bei nachweislich gelaufenen seen-Pings · T2 Chart laden -> genau ein opened fuer den Mint · T3 Profil oeffnen -> genau ein opened, blosse Zeilen-Aufloesung -> seen · T4 Zwei-Argument-Aufruf traegt src=seen und faellt in denselben Drossel-Topf · T5 seen unmittelbar vor opened verhindert es nicht · T6 Drossel je Herkunft + Regression). Gegenproben ROT siehe Commit. Rollback: v1.0.930.
      PREV  ·  v1.0.930 (ABMELDEN SCHLIESST DIE FENSTER, DIE NUR ANGEMELDETEN GEHOEREN): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher (cr_arm_v1 / cr_arm_limit_v1) sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. BEFUND (gemessen im Chromium gegen die Datei, v1.0.929): die Gast-Sperre bestand aus DREI voneinander unabhaengigen Mechanismen, und keiner fing den Uebergang „angemeldet → Gast bei offenem Fenster“ ab — (1) das CSS auf den Dock-Knoepfen versteckt den STARTKNOPF, nicht das Fenster; (2) die Pruefung in open() bei Arena und Intel verhindert das OEFFNEN, nicht das OFFENBLEIBEN; (3) crApplyAccessGates schloss genau zwei Fenster (walletapp/settings) und kannte win-bot ueberhaupt nicht. Folge: das Bot-Terminal blieb nach dem Abmelden stehen — sichtbar UND bedienbar, mit Chatverlauf, Agenten und Sitzungen (#crBotChatLog, #crBotChatMsgs, #crBotAgents, #crBotChatSessionSel) des eben abgemeldeten Kontos. Genau das ist der Grund, warum es nicht kosmetisch ist. UMGESETZT: (A) EINE DEKLARATIVE LISTE STATT DREIER MECHANISMEN — CR_CONNECT_EXCLUSIVE nennt die kontogebundenen Fenster (bot → #win-bot, walletapp, settings, display/Docs inkl. der Aliasse maps+journal, arena → #crArenaWin, walletintel → #crWalletIntelWin) und bedient danach alle drei Stellen: Dock-Sichtbarkeit (eine aus ihr erzeugte body.cr-guest-Regel, !important, damit sie das sticky inline-display des Bot-Terminal-Reveals von v1.0.840 schlaegt), Oeffnen-Sperre (crConnectExclusiveBlocked in osOpenWindowMulti / osToggleWindowMulti — VOR der bot→Profile-Umleitung, sonst liefe sie ins Leere — und in crArena.open / crWalletIntel.open, deren Hinweistexte bleiben) und Schliessen. Der Satz ist NICHT geraten, sondern aus den drei heutigen Quellen zusammengetragen; runtube fehlt bewusst (archiviert, fuer alle versteckt, und ein PIP statt eines win-<id>-Fensters). (B) crApplyAccessGates schliesst beim Wechsel auf Gast JEDES Fenster der Liste — ueber denselben Weg wie der Schliessen-Knopf (closeWindow → syncDock) bzw. das eigene close() der selbst-injizierten Apps, danach Inhalt leeren und Takte anhalten (crAgentEvents.stop, crBridge._stopLoop — neu exportiert, damit der Abmelde-Pfad den Takt anhaelt, ohne die Nutzer-Einstellung umzuschreiben oder ein zweites Mal zu toasten). Ein Hinweis, einmal, kein Modal. Ein display:none ueber ein weiterlaufendes Fenster waere genau die halbe Massnahme, die den Befund erzeugt hat. (C) Gegenrichtung unveraendert: Anmelden oeffnet nichts von selbst, nur der Dock-Knopf kommt zurueck. Damit das wiedergeoeffnete Terminal nicht leer bleibt, bekam 'bot' als bis dahin EINZIGE App einen Refresh-Hook in refreshFor (__crRenderBotAgents). NICHT ANGEFASST: Chart/Run-Terminal, Token, Profil mit seinen Gast-Tabs; ein laufender Run wird nicht beruehrt. ZUR BESTAETIGUNG DURCH JULIAN: 'display' (Docs) steht in der Liste, weil der Code es HEUTE schon in beiden Richtungen gatet (body.cr-guest-CSS seit v1.0.661 und die Oeffnen-Sperre in osOpenWindowMulti); der Auftragstext nannte Docs an einer Stelle als Gast-Fenster. Eine Zeile raus, falls Docs Gast-Fenster werden soll. TESTS: scripts/check_v930_gast_fenster_browser.cjs (T1 Bot-Terminal geschlossen statt versteckt + Inhalt leer · T2 dasselbe fuer jedes Fenster der zur Laufzeit gelesenen Liste · T3 Spion auf setInterval/clearInterval: kein Takt der angemeldeten Phase ueberlebt · T4 Gast-Fenster bleiben offen und es wird GENAU die Liste geschlossen · T5 Anmelden oeffnet nichts, Dock-Knoepfe kommen zurueck · T6 mit geleerter Liste bleibt #win-bot offen — die Liste ist das, was arbeitet · T7 Oeffnen-Sperre als Gast + Regression). Gegenproben ROT siehe Commit. NICHT VON DIESER SESSION GEMESSEN und ausdruecklich nicht behauptet: nichts hiervon beruehrt einen Worker-Endpunkt; die Live-Domain ist aus dieser Sandbox nicht erreichbar. Rollback: v1.0.929.
      PREV  ·  v1.0.929 (DOCS-ANSICHTEN IN PLATINUM UND WHITE: HELLE FLAECHEN, LESBARER TEXT): REINE DARSTELLUNG. Keine Logik, keine Daten, kein Handelspfad; die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. BEFUND, GEMESSEN im echten Chromium gegen die Datei (Theme platinum): MAPS folgt dem Theme, ALERTS/PAPER/PNL/JOURNAL/SESSIONS standen als schwarze Kaesten in der hellen Fensterflaeche — effektiver Grund rgb(15,20,30) statt rgb(230,230,220) — und trugen darauf Text in #ecffef; wo die Karte doch hell war (Leerzustaende), ergab das 1.20:1, also hellgruen auf hellgrau. URSACHE, EINE fuer beide Haelften, und sie ist eine KASKADEN-Falle, kein fehlender Selektor: der App-Styleguide (v1.0.151) definiert --cr-app-panel:#0f141e DIREKT AUF .os-wbody, der ROOT FIX der hellen Themes (v1.0.673) remappt dieselbe Variable auf :is(.os-window,.crTerm) — also auf den ELTERNKNOTEN. Bei geerbten Variablen gewinnt die NAEHERE Definition, nicht die spezifischere Regel. Der Selektor der hellen Themes war die ganze Zeit richtig; er kam nur zu spaet an. UMGESETZT: (A) derselbe Root-Fix eine Ebene tiefer, auf .crDocsView — damit kippen alle var()-getriebenen Flaechen, Linien und Tinten der fuenf Ansichten auf einmal, keine Sonderregel pro Ansicht, genau wie .cr-tokrow es fuer die Token-Zeilen vormacht. (B) der Vordergrund derselben Bloecke ist NICHT ueber Variablen geschrieben, sondern als Literal (#ecffef, #7aa878) mit !important — Flaeche hell machen ohne Tinte waere genau der Fehler, vor dem der Auftrag warnt. Zur Spezifitaet, weil sie hier der eigentliche Gegner ist: die zu ueberschreibende Regel traegt in ihrer :is()-Liste #win-workbench #wbToolList > div[…] und damit (2,1,1); eine reine Klassenregel verliert dagegen AUCH MIT !important. Der Praefix ist deshalb id-getragen und misst (2,3,0). MITGENOMMEN: Platzhalter als eigener Fall (sie tragen eine eigene Farbe, gemessen 2.6:1), die Inline-Literale der Renderer (Kopf der Paper-Tabelle rgba(20,30,55,.4) — existiert erst, wenn die Liste eine Zeile hat, deshalb misst der Test mit GEFUELLTEN Listen), die Akzente uebersetzt in der Helligkeit statt in der Bedeutung, und das SIM-Abzeichen, das gruen auf lila stand, weil die Styleguide-Regel jedes Element faerbt, in dessen Inline-Stil das Lila vorkommt — auch dort, wo es der HINTERGRUND ist. UEBERLAUF IN PAPER, gemessen bei 390px: .crDocsContent ist 240px breit, scrollWidth war 314px; genau zwei Knoepfe ragten heraus (#crJrnPrefill, #crJrnClear), weil .crDocs-head/.crDocs-cardHead display:flex OHNE flex-wrap sind und .crDocs-headAct flex:none traegt. Umbrechen statt abschneiden; die breite Trades-Tabelle scrollt weiter in ihrem eigenen .crDocs-scroll, wie vorher. NICHT ANGEFASST: mono, ascii, frontier. Jede Regel haengt am Platinum/White-Scope inkl. .splash:not([data-theme]) — der attributlosen Vorgabe, deren Vergessen v1.0.673 gekostet und v1.0.680 repariert hat. TESTS: scripts/check_v929_docs_hell_browser.cjs (T1 keine wirksame Dunkelflaeche, effektiver Grund komponiert statt deklariert gelesen · T2 Kontrast aller Text-Flaeche-Paare mit gefuellten Listen · T3 Platzhalter · T4 kein Ueberlauf bei 390px · T5 dunkle Themes Element fuer Element identisch, verglichen gegen DIESELBE Datei mit dem Block mechanisch herausgeschnitten · T6 keine NEUE Unterschreitung in den dunklen Themes · T7 Regression + Version). Gegenproben ROT siehe Commit. NICHT VON DIESER SESSION GEMESSEN und ausdruecklich nicht behauptet: nichts hiervon beruehrt einen Worker-Endpunkt; die Live-Domain ist aus dieser Sandbox nicht erreichbar. Rollback: v1.0.928.
@@ -64739,7 +64740,7 @@ window.crI18n = (function(){
       'alerts.price':'Preis','alerts.anchored':'verankert','alerts.localOnly':'nur lokal','alerts.armShort':'Scharf','alerts.anchoredTitle':'Verankert','alerts.anchorOnchain':'On-chain verankern',
       'alerts.enterValue':'Bitte einen Wert eingeben','alerts.armed':'⏰ Alert scharfgeschaltet',
       'rooms.searchBtn':'Öffentliche Räume suchen / durchsuchen',
-      'pay.choose.title':'Auf Runner Pro upgraden','pay.perMonth':'/Mo','pay.choose.card':'Mit Karte zahlen','pay.choose.sol':'Mit SOL / USDC zahlen','pay.sol.title':'Mit Solana zahlen · Runner Pro','pay.sol.inSol':'in SOL — Betrag im Wallet eingeben','pay.sol.sendTo':'Senden an (ChartRunner-Treasury)','pay.sol.open':'Im Wallet öffnen →','pay.sol.note':'In einem beliebigen Solana-Pay-Wallet öffnen. USDC ist 1:1 zum USD. Die Zahlung erreicht die ChartRunner-Treasury on-chain; die automatische Pro-Freischaltung wird serverseitig verifiziert und kommt mit dem Live-Trading (Phase 2).','pay.copy':'Kopieren','pay.copied':'Kopiert','pay.sol.confirmed':'Runner Pro ist jetzt aktiv','pay.sol.waiting':'Warte auf deine Zahlung… lass dieses Fenster offen','pay.sol.autoNote':'In einem beliebigen Solana-Pay-Wallet öffnen. USDC ist 1:1 zum USD. Sobald die Zahlung on-chain ankommt, wird sie verifiziert und Pro schaltet sich automatisch frei — lass dieses Fenster kurz offen.','pay.sol.signin':'Melde dich zuerst an (Einstellungen · Konto), damit Pro nach der Zahlung automatisch freigeschaltet wird.','set.manageBilling':'Abo verwalten','bill.manage.signin':'Melde dich an, um dein Abo zu verwalten.','bill.manage.loading':'Öffne…','bill.manage.lifetime':'Du hast Lifetime-Pro — es gibt kein laufendes Abo zum Kündigen.','bill.manage.crypto':'Dieses Pro wurde per SOL / USDC aktiviert — es gibt kein Karten-Abo zum Verwalten.','bill.manage.err':'Abo-Verwaltung gerade nicht erreichbar — bitte gleich noch mal versuchen.',
+      'pay.choose.title':'Auf Runner Pro upgraden','pay.perMonth':'/Mo','pay.choose.card':'Mit Karte zahlen','pay.choose.sol':'Mit SOL / USDC zahlen','pay.sol.title':'Mit Solana zahlen · Runner Pro','pay.sol.sendTo':'Senden an (vom ChartRunner-Server ausgestellt)','pay.sol.needSignin':'Melde dich zuerst an. Die Zahlungsdaten stellt der ChartRunner-Server aus und bindet sie an dein Konto — ohne sie könnte eine Zahlung dir nicht gutgeschrieben werden, deshalb wird hier keine angeboten.','pay.sol.signinBtn':'Anmelden (Einstellungen · Konto)','pay.sol.failed':'Zahlung ist gerade nicht möglich — der Server hat keine Zahlungsdaten ausgestellt. Es wurde nichts abgebucht. Bitte später erneut versuchen.','pay.retry':'Erneut versuchen','pay.sol.moment':'Einen Moment…','pay.sol.noAmount':'Kein Betrag für diese Währung — Währung wechseln','pay.sol.listPrice':'Listenpreis','pay.sol.fetching':'Die Zahlungsdaten werden beim ChartRunner-Server geholt…','pay.sol.cluster':'Netz','pay.sol.testnet':'TESTZAHLUNG — diese Aufforderung zeigt auf','pay.sol.testnet2':'nicht auf mainnet. Echtes Guthaben hierher ist kein Kauf.','pay.sol.open':'Im Wallet öffnen →','pay.copy':'Kopieren','pay.copied':'Kopiert','pay.sol.confirmed':'Runner Pro ist jetzt aktiv','pay.sol.waiting':'Warte auf deine Zahlung… lass dieses Fenster offen','pay.sol.autoNote':'In einem beliebigen Solana-Pay-Wallet öffnen. USDC ist 1:1 zum USD. Sobald die Zahlung on-chain ankommt, wird sie verifiziert und Pro schaltet sich automatisch frei — lass dieses Fenster kurz offen.','set.manageBilling':'Abo verwalten','bill.manage.signin':'Melde dich an, um dein Abo zu verwalten.','bill.manage.loading':'Öffne…','bill.manage.lifetime':'Du hast Lifetime-Pro — es gibt kein laufendes Abo zum Kündigen.','bill.manage.crypto':'Dieses Pro wurde per SOL / USDC aktiviert — es gibt kein Karten-Abo zum Verwalten.','bill.manage.err':'Abo-Verwaltung gerade nicht erreichbar — bitte gleich noch mal versuchen.',
       'tok.swapBuy':'KAUFEN','tok.swapSell':'VERKAUFEN','tok.swapStake':'Einsatz','tok.swapGet':'Erhältst: {sym}','tok.swapQuoteBtn':'PREIS ANSEHEN — es wird nichts signiert','tok.tblHead':'Bevor du signierst','tok.tblPay':'Du zahlst','tok.tblMin':'Du bekommst mindestens','tok.tblFees':'Gebühren','tok.tblImpact':'Preisauswirkung','tok.tblMore':'Details','tok.tblExp':'Erwartet','tok.tblFeeBase':'Gebühr (Basis)','tok.tblFeeTrade':'Handelsgebühr','tok.tblBal':'Dein Guthaben','tok.tblHold':'Dein Bestand','tok.tblNA':'nicht abrufbar','tok.tblUnknown':'nicht bekannt','tok.tblFrozen':'eingefroren','tok.tblRaw':'Roheinheiten','tok.tblWarnMore':'Details im Sicherheit-Feld oben','tok.safUnread':'nicht abrufbar','tok.safUnreadNote':'kein Urteil — nicht lesbar ist nicht dasselbe wie sauber','tok.safBlocked':'GESPERRT','tok.safBlockedSub':'der Herausgeber kann dich einfrieren oder verwässern','tok.safWarn':'WARNUNG','tok.safFindings':'Befund(e)','tok.safClean':'geprüft — sauber am Mint','tok.safWhy':'Details','tok.noMintReason':'kein verifizierter Solana-Mint','tok.pxUnavail':'Preis nicht verfügbar','tok.chartOnly':'nur Chart — kein Solana-Handel','tok.safSellOn':'Verkaufen bleibt offen — aus einer Position kommst du immer heraus.','tok.errSafety':'Aus Sicherheitsgründen abgelehnt','tok.tblExitOpen':'Das ist dein Ausgang — Verkaufen bleibt offen. Kaufen ist für diesen Token aus.','maps.anchorSrcChain':'auf der Kette','maps.anchorSrcOld':'alter Eintrag (Programm-Konto)','maps.anchorNA':'Anker-Liste nicht abrufbar','maps.anchorNAHint':'Der Worker hat nicht geantwortet — das heißt NICHT, dass du nichts verankert hast.','tok.safBuyOff':'Kaufen ist aus — der Herausgeber kann dein Konto einfrieren.','tok.errBlocked':'Kauf gesperrt','tok.errBlockedSub':'der Herausgeber kann dein Konto einfrieren','tok.errWhy':'Warum?','tok.legalHead':'Nicht-verwahrend · keine Anlageberatung','tok.legalDraft':'Entwurfsfassung, juristische Prüfung steht aus.','tok.legalBody':'ChartRunner hält nie deine Schlüssel und signiert nie — jede Transaktion wird gebaut, gezeigt, und nur deine Wallet signiert sie (prüfbar: /health sagt signs: false). Nichts hier ist Anlageberatung. Es gibt keine Zusage über Ausführung oder Ergebnis. Token können auf null fallen; setze nur ein, was du verlieren kannst.','tok.tradeability':'Handelbarkeit','tok.tradeImpact':'{p} Preisauswirkung bei 1 SOL','tok.tradeRoute':'{n} Hop(s) über {l}','tok.tradeNote':'Nur eine Auskunft — es wird nichts signiert und keine Order ausgelöst.','tok.tradeNoRoute':'keine Handelsroute gefunden','tok.tradeBusy':'Kursabfrage gerade ausgelastet — später erneut','tok.tradeOffline':'Kursabfrage nicht erreichbar','tok.tradeStillOpen':'Nur die Vorschau fehlt. Der Handel holt seine Zahlen selbst — du siehst sie, bevor du signierst.','intel.pos.title':'Ergebnis auf ChartRunner-Token','intel.pos.result':'Ergebnis','intel.pos.holding':'Bestand','intel.pos.bought':'gekauft','intel.pos.sold':'verkauft','intel.pos.closed':'Position geschlossen','intel.pos.flow':'Fluss','intel.pos.unknown':'—','intel.pos.err':'Der ChartRunner-Index ist gerade nicht erreichbar — hier stehen deshalb keine Zahlen.','intel.pos.none':'Diese Wallet ist auf den verfolgten Token nicht aufgetaucht.','intel.pos.partial':'Für {n} von {m} Positionen liegt gerade kein aktueller Preis vor — deren Ergebnis fehlt in der Summe.','intel.pos.math':'Ergebnis = (verkauft − gekauft) + aktueller Wert des Restbestands. „Fluss“ ist nur der Zahlungsfluss — wer noch hält, steht dort scheinbar im Minus.','intel.pos.coverage':'Gezählt wird ausschließlich, was ab Index-Start auf von ChartRunner verfolgten Token passiert ist — Handel davor oder anderswo ist hier unsichtbar.','tok.trace':'◎ Trace','tok.traceTitle':'Wer hat diesen Token früh gekauft — und hält noch?','intel.disc.forYou':'Passt zu deinen Token','intel.disc.active':'Aktive Wallets · 24h','intel.disc.noMints':'Setz Token auf deine Watchlist — dann schlage ich hier Wallets vor, die genau diese Token früh gekauft haben und noch halten.','intel.disc.noSug':'Zu deinen Watchlist-Token sind noch keine frühen Käufer im Index. Öffne ihre Charts — dann fängt der Index an, sie mitzuschreiben.','intel.disc.noTop':'In den letzten 24 h wurde in den indexierten Token nichts gehandelt — hier steht nur, was wirklich passiert ist.','intel.disc.offline':'Intel-Backend nicht erreichbar — Vorschläge und Aktivität bleiben leer, bis es antwortet.','intel.disc.notDeployed':'Dieser Teil des Intel-Backends ist noch nicht ausgerollt (Feed-Endpunkte fehlen).','intel.disc.err':'Intel-Backend antwortet mit einem Fehler ({e}).','intel.disc.coverage':'Alles hier stammt aus ChartRunners eigenem Index — also nur aus Token, die hier jemand angesehen hat. Das ist ein Ausschnitt von Solana, keine Gesamtsicht.','intel.disc.sugSub':'#{rank} früher Käufer · {usd} gekauft','intel.disc.topSub':'{n} Trades · {m} Token','intel.trace.title':'Trace','intel.trace.token':'Token','intel.trace.wallet':'Wallet','intel.trace.back':'← zurück','intel.trace.buyers':'Early Buyer','intel.trace.holding':'hält noch','intel.trace.soldOut':'ausgestiegen','intel.trace.volume':'Kaufvolumen','intel.trace.earlyMoney':'Early Money','intel.trace.bought':'gekauft','intel.trace.sold':'verkauft','intel.trace.pnl':'realisiert','intel.trace.held':'gehalten','intel.trace.holdUnknown':'Haltequote unbekannt','intel.trace.age':'{d}d alt','intel.trace.fundedBy':'finanziert von {a}','intel.trace.tokensTraded':'Gehandelte Token (im Index)','intel.trace.quota':'Kontingent: {u}/{l} heute','intel.trace.cached':'aus dem Cache','intel.trace.budget':'Das Abfragebudget für diesen Trace war erschöpft — das Ergebnis ist unvollständig.','intel.trace.noKey':'Kettendaten (Wallet-Alter, Herkunft) waren für diesen Trace nicht verfügbar — angezeigt sind nur Index-Fakten.','intel.trace.sharedFunding':'{n} Adresse(n) haben mehrere dieser Wallets finanziert.','intel.trace.empty':'Für diesen Token liegen noch keine indexierten Käufe vor.','intel.trace.walletUnknown':'Diese Wallet ist in unserem Index nicht aufgetaucht — sie hat keinen der hier verfolgten Token gehandelt.','intel.trace.running':'Trace läuft — der Index wird ausgewertet…','intel.trace.quotaHit':'Trace-Kontingent für heute aufgebraucht.','intel.trace.off':'Trace ist derzeit abgeschaltet.','intel.trace.offline':'Trace-Backend nicht erreichbar — kein Ergebnis, keine erfundenen Daten.','intel.trace.failed':'Trace fehlgeschlagen ({e}).','intel.trace.noApi':'Trace ist in dieser Version nicht verfügbar.','tok.hot.tag':'heiß','tok.hot.listTitle':'Auf ChartRunner geboostet','tok.hot.loading':'geboostete Token werden gescannt…','tok.hot.empty':'Gerade keine geboosteten Token.','tok.hot.boostedToken':'Geboosteter Token','tok.hot.boostTitle':'Booste deinen Token','tok.hot.boostIntro':'Bring deinen Token in die 🔥-Hot-Liste. Zahlbar in SOL / USDC / $RUN — mit $RUN sparst du {pct}%.','tok.hot.inRun':'in $RUN','tok.hot.boost':'Boosten','tok.hot.boostNote':'Checkout via Solana Pay — non-custodial, on-chain an die Treasury. Das Listing aktiviert automatisch nach der on-chain-Verifikation.','tok.hot.payTitle':'Boost buchen','tok.hot.mint':'Mint des Tokens, der geboostet werden soll','tok.hot.next':'Weiter → Solana Pay','tok.hot.badMint':'Keine gültige Solana-Mint-Adresse','tok.hot.waiting':'Warte auf deine Zahlung… Fenster offen lassen — das Listing aktiviert automatisch','tok.hot.confirmed':'Boost aktiv — dein Token ist in der 🔥-Liste','tok.hot.unavailable':'Der Boost-Checkout ist serverseitig noch nicht freigeschaltet. Es wird KEINE Zahlung angeboten, bis Verifikation + Auto-Listing live sind — bitte später erneut versuchen.',
       // v1.0.795 — sign-in / account modal
       'acc.google':'Mit Google fortfahren','acc.apple':'Mit Apple fortfahren','acc.or':'ODER','acc.emailCta':'Mit E-Mail fortfahren','acc.wallet':'Stattdessen Wallet verbinden','acc.ph.pass':'Passwort (mind. 6 Zeichen)','acc.ph.newpass':'Neues Passwort (mind. 6 Zeichen)','acc.updatePass':'Passwort aktualisieren','acc.cancel':'Abbrechen','acc.signedAs':'Angemeldet als','acc.signout':'Abmelden','acc.close':'Schließen','acc.title.recovery':'Neues Passwort festlegen','acc.sub.recovery':'Wähle ein neues Passwort für dein ChartRunner-Konto.','acc.title.signed':'Dein ChartRunner-Konto','acc.sub.signed':'Du bist angemeldet. Fortschritt, API-Keys und Bots sind freigeschaltet.','acc.title.signin':'Bei ChartRunner anmelden','acc.sub.signin':'Willkommen zurück — dein Fortschritt, deine API-Keys und Bots warten.','acc.submit.signin':'Anmelden','acc.title.signup':'Erstelle dein ChartRunner-Konto','acc.sub.signup':'Spiel zuerst mit einer E-Mail — Wallets kommen später. Fortschritt, API-Keys und Bots leben in einem Konto.','acc.submit.signup':'Konto erstellen','acc.foot.have':'Schon ein Konto?','acc.foot.new':'Neu hier?','acc.link.signin':'Anmelden','acc.link.create':'Konto erstellen','acc.link.guest':'Als Gast fortfahren','acc.link.forgot':'Passwort vergessen?',
@@ -64946,7 +64947,7 @@ window.crI18n = (function(){
       'alerts.price':'Precio','alerts.anchored':'anclado','alerts.localOnly':'solo local','alerts.armShort':'Armar','alerts.anchoredTitle':'Anclado','alerts.anchorOnchain':'Anclar on-chain',
       'alerts.enterValue':'Introduce un valor','alerts.armed':'⏰ Alerta armada',
       'rooms.searchBtn':'Buscar / explorar salas públicas',
-      'pay.choose.title':'Mejora a Runner Pro','pay.perMonth':'/mes','pay.choose.card':'Pagar con tarjeta','pay.choose.sol':'Pagar con SOL / USDC','pay.sol.title':'Pagar con Solana · Runner Pro','pay.sol.inSol':'en SOL — introduce el importe en tu cartera','pay.sol.sendTo':'Enviar a (tesorería de ChartRunner)','pay.sol.open':'Abrir en la cartera →','pay.sol.note':'Ábrelo en cualquier cartera con Solana Pay. USDC es 1:1 con el USD. El pago llega a la tesorería de ChartRunner on-chain; la activación automática de Pro se verifica en el servidor y llega con el trading en vivo (Fase 2).','pay.copy':'Copiar','pay.copied':'Copiado','pay.sol.confirmed':'Runner Pro ya está activo','pay.sol.waiting':'Esperando tu pago… mantén esta ventana abierta','pay.sol.autoNote':'Ábrelo en cualquier cartera con Solana Pay. USDC es 1:1 con el USD. En cuanto el pago llegue on-chain se verifica y Pro se activa automáticamente — mantén esta ventana abierta un momento.','pay.sol.signin':'Inicia sesión primero (Ajustes · Cuenta) para que Pro se active automáticamente tras el pago.','set.manageBilling':'Gestionar suscripción','bill.manage.signin':'Inicia sesión para gestionar tu suscripción.','bill.manage.loading':'Abriendo…','bill.manage.lifetime':'Tienes Pro de por vida — no hay suscripción recurrente que cancelar.','bill.manage.crypto':'Este Pro se activó con SOL / USDC — no hay suscripción con tarjeta que gestionar.','bill.manage.err':'No se pudo abrir la facturación ahora — inténtalo en un momento.',
+      'pay.choose.title':'Mejora a Runner Pro','pay.perMonth':'/mes','pay.choose.card':'Pagar con tarjeta','pay.choose.sol':'Pagar con SOL / USDC','pay.sol.title':'Pagar con Solana · Runner Pro','pay.sol.sendTo':'Enviar a (emitido por el servidor de ChartRunner)','pay.sol.needSignin':'Inicia sesión primero. El servidor de ChartRunner emite los datos de pago y los vincula a tu cuenta — sin ellos un pago no podría acreditarse, así que aquí no se ofrece ninguno.','pay.sol.signinBtn':'Iniciar sesión (Ajustes · Cuenta)','pay.sol.failed':'El pago no está disponible ahora — el servidor no emitió los datos de pago. No se ha cobrado nada. Inténtalo más tarde.','pay.retry':'Reintentar','pay.sol.moment':'Un momento…','pay.sol.noAmount':'Sin importe para esta moneda — cambia de moneda','pay.sol.listPrice':'precio de lista','pay.sol.fetching':'Obteniendo los datos de pago del servidor de ChartRunner…','pay.sol.cluster':'Red','pay.sol.testnet':'PAGO DE PRUEBA — esta solicitud apunta a','pay.sol.testnet2':'no a mainnet. Los fondos reales enviados aquí no son una compra.','pay.sol.open':'Abrir en la cartera →','pay.copy':'Copiar','pay.copied':'Copiado','pay.sol.confirmed':'Runner Pro ya está activo','pay.sol.waiting':'Esperando tu pago… mantén esta ventana abierta','pay.sol.autoNote':'Ábrelo en cualquier cartera con Solana Pay. USDC es 1:1 con el USD. En cuanto el pago llegue on-chain se verifica y Pro se activa automáticamente — mantén esta ventana abierta un momento.','set.manageBilling':'Gestionar suscripción','bill.manage.signin':'Inicia sesión para gestionar tu suscripción.','bill.manage.loading':'Abriendo…','bill.manage.lifetime':'Tienes Pro de por vida — no hay suscripción recurrente que cancelar.','bill.manage.crypto':'Este Pro se activó con SOL / USDC — no hay suscripción con tarjeta que gestionar.','bill.manage.err':'No se pudo abrir la facturación ahora — inténtalo en un momento.',
       'tok.hot.tag':'caliente','tok.hot.listTitle':'Impulsados en ChartRunner','tok.hot.loading':'buscando tokens impulsados…','tok.hot.empty':'Ahora mismo no hay tokens impulsados.','tok.hot.boostedToken':'Token impulsado','tok.hot.boostTitle':'Impulsa tu token','tok.hot.boostIntro':'Lleva tu token a la lista 🔥 Hot. Paga en SOL / USDC / $RUN — con $RUN ahorras un {pct}%.','tok.hot.inRun':'en $RUN','tok.hot.boost':'Impulsar','tok.hot.boostNote':'Vista previa — el checkout y el listado automático llegan en la Fase 2. Liquidación non-custodial, on-chain a la tesorería.','tok.hot.soon':'El checkout de impulso llega en la Fase 2 — non-custodial, on-chain.',
       // v1.0.795 — sign-in / account modal
       'acc.google':'Continuar con Google','acc.apple':'Continuar con Apple','acc.or':'O','acc.emailCta':'Continuar con correo','acc.wallet':'Conectar una cartera en su lugar','acc.ph.pass':'Contraseña (mín. 6 caracteres)','acc.ph.newpass':'Nueva contraseña (mín. 6 caracteres)','acc.updatePass':'Actualizar contraseña','acc.cancel':'Cancelar','acc.signedAs':'Sesión iniciada como','acc.signout':'Cerrar sesión','acc.close':'Cerrar','acc.title.recovery':'Establecer una nueva contraseña','acc.sub.recovery':'Elige una nueva contraseña para tu cuenta de ChartRunner.','acc.title.signed':'Tu cuenta de ChartRunner','acc.sub.signed':'Has iniciado sesión. Tu progreso, claves API y bots están desbloqueados.','acc.title.signin':'Inicia sesión en ChartRunner','acc.sub.signin':'Bienvenido de nuevo — tu progreso, claves API y bots te esperan.','acc.submit.signin':'Iniciar sesión','acc.title.signup':'Crea tu cuenta de ChartRunner','acc.sub.signup':'Juega primero con un correo — añade carteras después. Tu progreso, claves API y bots viven en una sola cuenta.','acc.submit.signup':'Crear cuenta','acc.foot.have':'¿Ya tienes una cuenta?','acc.foot.new':'¿Nuevo por aquí?','acc.link.signin':'Iniciar sesión','acc.link.create':'Crear una cuenta','acc.link.guest':'Continuar como invitado','acc.link.forgot':'¿Olvidaste tu contraseña?',
@@ -65154,7 +65155,7 @@ window.crI18n = (function(){
       'alerts.price':'价格','alerts.anchored':'已锚定','alerts.localOnly':'仅本地','alerts.armShort':'布防','alerts.anchoredTitle':'已锚定','alerts.anchorOnchain':'链上锚定',
       'alerts.enterValue':'请输入一个数值','alerts.armed':'⏰ 提醒已布防',
       'rooms.searchBtn':'搜索 / 浏览公开房间',
-      'pay.choose.title':'升级到 Runner Pro','pay.perMonth':'/月','pay.choose.card':'用银行卡支付','pay.choose.sol':'用 SOL / USDC 支付','pay.sol.title':'用 Solana 支付 · Runner Pro','pay.sol.inSol':'以 SOL 计 — 在钱包中输入金额','pay.sol.sendTo':'发送至（ChartRunner 金库）','pay.sol.open':'在钱包中打开 →','pay.sol.note':'在任意支持 Solana Pay 的钱包中打开。USDC 与美元 1:1。付款将链上到达 ChartRunner 金库；自动开通 Pro 由服务器端验证，将随实盘交易上线（第二阶段）。','pay.copy':'复制','pay.copied':'已复制','pay.sol.confirmed':'Runner Pro 已激活','pay.sol.waiting':'正在等待你的付款……请保持此窗口打开','pay.sol.autoNote':'在任意支持 Solana Pay 的钱包中打开。USDC 与美元 1:1。付款一旦链上到达即会被验证，Pro 将自动开通——请稍作等待并保持此窗口打开。','pay.sol.signin':'请先登录（设置 · 账户），以便付款后自动开通 Pro。','set.manageBilling':'管理订阅','bill.manage.signin':'请登录以管理你的订阅。','bill.manage.loading':'正在打开……','bill.manage.lifetime':'你拥有终身 Pro——没有需要取消的周期性订阅。','bill.manage.crypto':'此 Pro 通过 SOL / USDC 激活——没有可管理的银行卡订阅。','bill.manage.err':'暂时无法打开账单管理——请稍后再试。',
+      'pay.choose.title':'升级到 Runner Pro','pay.perMonth':'/月','pay.choose.card':'用银行卡支付','pay.choose.sol':'用 SOL / USDC 支付','pay.sol.title':'用 Solana 支付 · Runner Pro','pay.sol.sendTo':'发送至（由 ChartRunner 服务器签发）','pay.sol.needSignin':'请先登录。付款信息由 ChartRunner 服务器签发并绑定到你的账户——没有它，付款无法记到你名下，因此这里不提供付款方式。','pay.sol.signinBtn':'登录（设置 · 账户）','pay.sol.failed':'目前无法付款——服务器未签发付款信息。未扣除任何费用，请稍后再试。','pay.retry':'重试','pay.sol.moment':'请稍候……','pay.sol.noAmount':'该币种没有金额——请切换币种','pay.sol.listPrice':'标价','pay.sol.fetching':'正在从 ChartRunner 服务器获取付款信息……','pay.sol.cluster':'网络','pay.sol.testnet':'测试付款——此请求指向','pay.sol.testnet2':'而非 mainnet。向此处发送的真实资金不构成购买。','pay.sol.open':'在钱包中打开 →','pay.copy':'复制','pay.copied':'已复制','pay.sol.confirmed':'Runner Pro 已激活','pay.sol.waiting':'正在等待你的付款……请保持此窗口打开','pay.sol.autoNote':'在任意支持 Solana Pay 的钱包中打开。USDC 与美元 1:1。付款一旦链上到达即会被验证，Pro 将自动开通——请稍作等待并保持此窗口打开。','set.manageBilling':'管理订阅','bill.manage.signin':'请登录以管理你的订阅。','bill.manage.loading':'正在打开……','bill.manage.lifetime':'你拥有终身 Pro——没有需要取消的周期性订阅。','bill.manage.crypto':'此 Pro 通过 SOL / USDC 激活——没有可管理的银行卡订阅。','bill.manage.err':'暂时无法打开账单管理——请稍后再试。',
       'tok.hot.tag':'热门','tok.hot.listTitle':'在 ChartRunner 上被推广','tok.hot.loading':'正在扫描被加速推广的代币…','tok.hot.empty':'目前没有被加速推广的代币。','tok.hot.boostedToken':'被推广的代币','tok.hot.boostTitle':'推广你的代币','tok.hot.boostIntro':'让你的代币登上 🔥 热门榜。可用 SOL / USDC / $RUN 支付 — 用 $RUN 立省 {pct}%。','tok.hot.inRun':'用 $RUN','tok.hot.boost':'推广','tok.hot.boostNote':'预览 — 支付与自动上榜将在第二阶段上线。结算为非托管，直接上链至金库。','tok.hot.soon':'推广支付将在第二阶段上线 — 非托管、直接上链。',
       // v1.0.795 — sign-in / account modal
       'acc.google':'使用 Google 继续','acc.apple':'使用 Apple 继续','acc.or':'或','acc.emailCta':'使用邮箱继续','acc.wallet':'改为连接钱包','acc.ph.pass':'密码（至少 6 个字符）','acc.ph.newpass':'新密码（至少 6 个字符）','acc.updatePass':'更新密码','acc.cancel':'取消','acc.signedAs':'已登录为','acc.signout':'退出登录','acc.close':'关闭','acc.title.recovery':'设置新密码','acc.sub.recovery':'为你的 ChartRunner 账户设置新密码。','acc.title.signed':'你的 ChartRunner 账户','acc.sub.signed':'你已登录。进度、API 密钥和机器人均已解锁。','acc.title.signin':'登录 ChartRunner','acc.sub.signin':'欢迎回来 — 你的进度、API 密钥和机器人都在等你。','acc.submit.signin':'登录','acc.title.signup':'创建你的 ChartRunner 账户','acc.sub.signup':'先用邮箱开始玩 — 钱包稍后再加。进度、API 密钥和机器人都在一个账户里。','acc.submit.signup':'创建账户','acc.foot.have':'已有账户？','acc.foot.new':'第一次来？','acc.link.signin':'登录','acc.link.create':'创建账户','acc.link.guest':'以访客身份继续','acc.link.forgot':'忘记密码？',
@@ -67006,9 +67007,16 @@ window.crEntitlement = (function(){
       // branch — captured here, inert until the marketplace + rails ship (Phase 2).
       marketplace: { protocolFeeBps: 250, burnBps: 200, creatorRoyaltyDefaultBps: 700, creatorRoyaltyMaxBps: 5000 }
     },
-    // Where fees/boosts settle. Non-custodial: real value moves only on-chain in
-    // the Phase-2 program/worker — this is the destination it will target.
-    payTo: { chain: 'solana', treasury: 'F4XgsVpo3DQv7SiHA2yhqVY2uepb49p2WPKQWPMqWvnm', accept: ['SOL','USDC','RUN'] },
+    // v1.0.934 — payTo IST HIER ERSATZLOS RAUS. Das Feld hielt eine fest
+    // verdrahtete Zahladresse; sie war das stille Zahlungsziel, sobald der
+    // Worker-Intent fehlte oder nie geholt wurde. Eine Adresse im Client
+    // laesst sich nur durch ein Deploy aendern, reist in jedem Cache und
+    // jedem Fork mit und ist nicht widerrufbar — und der Verifizierer im
+    // Worker prueft ohnehin gegen env.MERCHANT_SOL_ADDRESS, eine Abweichung
+    // waere unsichtbar geblieben. Die maszgebliche Adresse liefert
+    // POST /v1/pay/sol/intent bzw. /v1/boost/intent mit; der Client haelt
+    // keine eigene mehr. Alle drei Leser (Pro-Dialog, Boost-Checkout,
+    // Boost-Karte) waren Zahlwege, also faellt auch der Zugriff weg.
     // #18 — project-paid promotion (Hot pane). Undercuts DexScreener (~$99→$4000).
     // $RUN payment gets a discount (a sink for the token). Payment/verify = Phase 2.
     boosts: { currency: 'USD', accept: ['SOL','USDC','RUN'], runPayDiscountPct: 15, tiers: [
@@ -67070,11 +67078,10 @@ window.crEntitlement = (function(){
   function label(){ var T=function(k,en){ try { return (window.crI18n&&crI18n.t)?crI18n.t(k,en):en; } catch(_){ return en; } };   // v1.0.787 — display-only i18n; tier() stays the logic key
     var t=tier(); if(t==='pro'){ try { return T('ent.pro','Pro')+((''+crTier.tier()).toUpperCase().indexOf('LIFE')>=0?T('ent.lifetime',' · Lifetime'):''); } catch(_){ return T('ent.pro','Pro'); } } if(t==='account'){ var fl=flags(); return T('ent.account','Account')+(fl.walletConnected?T('ent.wallet',' · Wallet'):'')+(fl.signedIn?T('ent.login',' · Login'):''); } return T('ent.guest','Guest'); }
   function pricing(){ return CFG.pricing; }
-  function payTo(){ return CFG.payTo; }
   function boosts(){ return CFG.boosts; }
   function marketplace(){ return CFG.fees.marketplace; }
   return { tier:tier, isPro:isPro, flags:flags, can:can, capacity:capacity, feePct:feePct, runFactor:runFactor, label:label,
-    pricing:pricing, payTo:payTo, boosts:boosts, marketplace:marketplace,
+    pricing:pricing, boosts:boosts, marketplace:marketplace,
     cfg:function(){ return CFG; }, tradingLive:function(){ return !!CFG.tradingLive; }, enforcePro:function(){ return !!CFG.enforcePro; } };
 })();
 
@@ -67222,70 +67229,141 @@ window._crCryptoPayOpen = function(tier, billing){
   var T = function(k,en){ try { return (window.crI18n&&crI18n.t)?crI18n.t(k,en):en; } catch(_){ return en; } };
   var USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
   var API = 'https://chartrunner-worker.jsg-951.workers.dev';
-  var pr=null, pt=null; try { pr = crEntitlement.pricing().pro; } catch(_){} try { pt = crEntitlement.payTo(); } catch(_){}
-  var usd = pr ? pr[billing] : 0;
-  var treasury = (pt && pt.treasury) || '';
+  var pr=null; try { pr = crEntitlement.pricing().pro; } catch(_){}
+  var usd = pr ? pr[billing] : 0;     // Ratecard fuer die Ueberschrift — NIE ein Zahlbetrag
   var cur = 'USDC';
   var esc = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]); }); };
-  // v1.0.798 - Solana Pay AUTO-GRANT (Phase 5). A signed-in player gets a
-  // worker-minted `reference` (POST /v1/pay/sol/intent) that ties the on-chain
-  // payment back to their account; the reference rides in the solana: request
-  // and we poll /v1/pay/sol/status until the server verifier confirms, then
-  // crTier.refresh() flips Pro live in-session. Fully ADDITIVE + fail-safe:
-  // if the endpoint isn't live yet (the verifier ships in the private repo) OR
-  // the player is signed out, we fall back to the v797 keyless overlay with the
-  // honest "verified server-side" note - no reference, no auto-grant, payment
-  // still reaches the treasury on-chain. No competitor/provider names.
+  // v1.0.934 — DER DIALOG MUSS VERWEIGERN KOENNEN. Bis v933 stand hier eine
+  // Zahlungsaufforderung, die OHNE Worker-Antwort vollstaendig ausfuehrbar war:
+  // paint() lief synchron vor dem fetch, bei abgemeldeten Nutzern wurde der
+  // Intent nie geholt, und uri() fiel ueber `|| treasury` auf eine fest
+  // verdrahtete Client-Adresse zurueck. Der USDC-Pfad erzeugte damit Empfaenger
+  // + Betrag + Token OHNE `reference` — eine Zahlung, die der Verifizierer im
+  // Worker nie findet, fuer die es in diesem Repo keinen Erstattungspfad gibt.
+  // Der alte Kommentar nannte das "fail-safe" und behauptete, die Zahlung
+  // "reaches the treasury on-chain". Beides war falsch: fail-safe waere
+  // Verweigern, und ob die Client-Konstante die Schatzkammer war, hat nie
+  // jemand geprueft — der Verifizierer prueft gegen env.MERCHANT_SOL_ADDRESS,
+  // eine Abweichung waere unsichtbar gewesen.
+  //
+  // Regel ab hier: Adresse, Betrag und `solana:`-Link stammen AUSSCHLIESSLICH
+  // aus der Antwort von POST /v1/pay/sol/intent. Fehlt die Antwort, fehlt das
+  // Zahlungsziel — vier sichtbare Zustaende statt eines stillen Rueckfalls.
   function _tok(){ try { return (window.crAccount && crAccount.token) ? crAccount.token() : ''; } catch(_){ return ''; } }
-  var intent = null;                 // { reference, usdc, sol, treasury }
-  var poll = null, confirmed = false, waiting = false;
+  var intent = null;                 // { reference, usdc, sol, treasury, chain? } — NUR aus der Worker-Antwort
+  var phase  = 'signedout';          // 'signedout' | 'loading' | 'ready' | 'error'
+  var poll = null, tokWatch = null, confirmed = false, waiting = false;
   var ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;z-index:100310;display:flex;align-items:center;justify-content:center;background:rgba(6,10,18,.7);padding:18px';
-  function close(){ if(poll){ clearInterval(poll); poll=null; } if(ov.parentNode) ov.parentNode.removeChild(ov); }
+  function close(){
+    if(poll){ clearInterval(poll); poll=null; }
+    if(tokWatch){ clearInterval(tokWatch); tokWatch=null; }
+    if(ov.parentNode) ov.parentNode.removeChild(ov);
+  }
   ov.addEventListener('click', function(e){ if(e.target===ov) close(); });
-  function amtFor(c){ if(intent){ return c==='USDC' ? intent.usdc : intent.sol; } return c==='USDC' ? usd : null; }
+  // Der Betrag kommt aus dem Intent oder gar nicht. Kein Rueckfall auf usd:
+  // ein Ratecard-Preis ist eine Behauptung des Clients, kein Zahlbetrag.
+  function amtFor(c){
+    if(!intent) return null;
+    var v = (c==='USDC') ? intent.usdc : intent.sol;
+    return (v==null) ? null : Number(v);
+  }
+  // Teil 3 — der Cluster. Traegt die Antwort `chain`/`cluster`, wird es
+  // ANGEZEIGT; fehlt es, wird nichts geraten. 'mainnet-beta' ist die
+  // kanonische Schreibweise von mainnet, beide zaehlen als Produktivnetz.
+  function cluster(){
+    if(!intent) return '';
+    var c = (intent.chain != null) ? intent.chain : intent.cluster;
+    if(c == null) return '';
+    return String(c).trim().replace(/^solana:/i, '');
+  }
+  function clusterIsMain(c){ c = String(c||'').toLowerCase(); return c==='mainnet' || c==='mainnet-beta'; }
   function uri(){
-    var tre = (intent && intent.treasury) || treasury;
-    var params = ['label=' + encodeURIComponent('ChartRunner Runner Pro'), 'message=' + encodeURIComponent('Runner Pro - ' + billing)];
-    if(intent && intent.reference){ params.push('reference=' + encodeURIComponent(intent.reference)); }
+    if(!(intent && intent.treasury && intent.reference)) return '';   // kein Intent -> kein Ziel
     var a = amtFor(cur);
-    if(cur==='USDC'){ if(a!=null){ params.unshift('spl-token=' + USDC_MINT); params.unshift('amount=' + Number(a).toFixed(2)); } }
-    else { if(a!=null){ params.unshift('amount=' + Number(a)); } }   // SOL amount only when locked by an intent
-    return 'solana:' + tre + '?' + params.join('&');
+    if(a==null) return '';                                            // kein gebundener Betrag -> kein Link
+    var params = ['label=' + encodeURIComponent('ChartRunner Runner Pro'), 'message=' + encodeURIComponent('Runner Pro - ' + billing)];
+    params.push('reference=' + encodeURIComponent(intent.reference));
+    if(cur==='USDC'){ params.unshift('spl-token=' + USDC_MINT); params.unshift('amount=' + Number(a).toFixed(2)); }
+    else { params.unshift('amount=' + Number(a)); }
+    return 'solana:' + intent.treasury + '?' + params.join('&');
   }
   function statusHTML(){
     if(confirmed) return '<div style="margin:2px 0 10px;padding:9px 11px;border:1px solid rgba(126,231,135,.5);border-radius:9px;background:rgba(20,241,149,.12);color:#bff7df;font:700 12px inherit">✓ ' + T('pay.sol.confirmed','Runner Pro is now active') + '</div>';
     if(intent && waiting) return '<div style="margin:2px 0 10px;padding:9px 11px;border:1px solid rgba(255,209,102,.4);border-radius:9px;background:rgba(255,209,102,.08);color:#ffe3a0;font:600 11px inherit">⏳ ' + T('pay.sol.waiting','Waiting for your payment… keep this open') + '</div>';
     return '';
   }
-  function noteHTML(){
-    if(confirmed) return '';
-    if(intent) return T('pay.sol.autoNote','Open in any Solana Pay wallet. USDC is 1:1 with USD. Once the payment lands on-chain it is verified and Pro activates automatically - keep this window open a moment.');
-    if(!_tok()) return T('pay.sol.signin','Sign in first (Settings · Account) so we can activate Pro automatically after payment.') + ' ' + T('pay.sol.note','Open in any Solana Pay wallet. USDC is 1:1 with USD. The payment reaches the ChartRunner treasury on-chain; automatic Pro activation is verified server-side and ships with live trading (Phase 2).');
-    return T('pay.sol.note','Open in any Solana Pay wallet. USDC is 1:1 with USD. The payment reaches the ChartRunner treasury on-chain; automatic Pro activation is verified server-side and ships with live trading (Phase 2).');
+  function clusterHTML(){
+    var c = cluster();
+    if(!c) return '';
+    if(clusterIsMain(c)) return '<div style="color:var(--dim);font-size:9.5px;margin:-6px 0 10px">' + T('pay.sol.cluster','Network') + ': ' + esc(c) + '</div>';
+    return '<div style="margin:-6px 0 10px;padding:8px 10px;border:1px solid rgba(255,138,138,.55);border-radius:9px;background:rgba(255,90,90,.12);color:#ffc9c9;font:700 11px inherit;line-height:1.45">⚠ '
+      + T('pay.sol.testnet','TEST PAYMENT — this request points at') + ' ' + esc(c) + ', ' + T('pay.sol.testnet2','not mainnet. Real funds sent here are not a Pro purchase.') + '</div>';
   }
-  function paint(){
-    var u = uri();
-    var tre = (intent && intent.treasury) || treasury;
-    var solLocked = intent && intent.sol != null;
-    var amt = cur==='USDC'
-      ? '<div style="font:800 22px ui-monospace,Menlo,monospace;color:#7ee787;margin:6px 0 12px">' + Number(amtFor('USDC')||0).toFixed(2) + ' <small style="font-size:12px;color:var(--dim)">USDC</small></div>'
-      : (solLocked
-          ? '<div style="font:800 20px ui-monospace,Menlo,monospace;color:#7ee787;margin:6px 0 12px">' + Number(intent.sol) + ' <small style="font-size:12px;color:var(--dim)">SOL</small></div>'
-          : '<div style="font:800 18px ui-monospace,Menlo,monospace;color:#7ee787;margin:6px 0 12px">$' + usd + ' <small style="font-size:12px;color:var(--dim)">' + T('pay.sol.inSol','in SOL - enter the amount in your wallet') + '</small></div>');
-    ov.innerHTML = '<div style="width:min(380px,100%);background:linear-gradient(180deg,rgba(20,30,55,.99),rgba(10,15,28,.99));border:1px solid rgba(126,231,135,.35);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.6);padding:16px;color:var(--fg);font:12px system-ui,-apple-system,sans-serif">'
+  function card(inner){
+    return '<div style="width:min(380px,100%);background:linear-gradient(180deg,rgba(20,30,55,.99),rgba(10,15,28,.99));border:1px solid rgba(126,231,135,.35);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.6);padding:16px;color:var(--fg);font:12px system-ui,-apple-system,sans-serif">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><b>' + T('pay.sol.title','Pay with Solana · Runner Pro') + '</b><button type="button" class="crPayX" style="appearance:none;border:0;background:transparent;color:var(--dim);font-size:16px;cursor:pointer">✕</button></div>'
+      + inner + '</div>';
+  }
+  // ZUSTAND 1 — abgemeldet. Kein Betrag, keine Adresse, kein Link. Der Dialog
+  // bleibt offen und schaltet um, sobald ein Token da ist (tokWatch).
+  function paintSignedOut(){
+    ov.innerHTML = card(''
+      + '<div style="padding:10px 11px;border:1px solid rgba(126,231,135,.35);border-radius:9px;background:rgba(20,241,149,.06);color:var(--fg);font:600 11.5px inherit;line-height:1.55;margin-bottom:10px">'
+      +   T('pay.sol.needSignin','Sign in first. Payment details are issued by the ChartRunner server and tied to your account — without them a payment could not be credited to you, so none is offered here.') + '</div>'
+      + '<button type="button" class="crPaySignin" style="width:100%;appearance:none;border:1px solid rgba(126,231,135,.5);border-radius:9px;background:rgba(20,241,149,.14);color:#bff7df;font:700 12px inherit;padding:11px;cursor:pointer">' + T('pay.sol.signinBtn','Sign in (Settings · Account)') + '</button>');
+    ov.querySelector('.crPayX').addEventListener('click', close);
+    ov.querySelector('.crPaySignin').addEventListener('click', function(){
+      try { if(window.crAccount && crAccount.open) crAccount.open(); } catch(_){}
+    });
+  }
+  // ZUSTAND 4 — der Intent kam nicht. Ehrliche Meldung, KEIN Rueckfall auf
+  // irgendeine Adresse. Genau dieser Fall verschwand bis v933 im leeren catch.
+  function paintError(){
+    ov.innerHTML = card(''
+      + '<div style="padding:10px 11px;border:1px solid rgba(255,138,138,.5);border-radius:9px;background:rgba(255,90,90,.10);color:#ffc9c9;font:600 11.5px inherit;line-height:1.55;margin-bottom:10px">'
+      +   T('pay.sol.failed','Payment is not available right now — the server did not issue payment details. Nothing was charged. Please try again later.') + '</div>'
+      + '<button type="button" class="crPayRetry" style="width:100%;appearance:none;border:1px solid var(--line);border-radius:9px;background:rgba(10,15,28,.6);color:var(--fg);font:700 12px inherit;padding:11px;cursor:pointer">' + T('pay.retry','Try again') + '</button>');
+    ov.querySelector('.crPayX').addEventListener('click', close);
+    ov.querySelector('.crPayRetry').addEventListener('click', function(){ startIntent(); });
+  }
+  // ZUSTAENDE 2 + 3 — Intent unterwegs bzw. da. Dieselbe Tafel: im Wartefall
+  // Platzhalter statt Betrag, leeres Adressfeld und ein DEAKTIVIERTER Knopf.
+  function paintPay(){
+    var ready = !!(intent && intent.treasury && intent.reference);
+    var tre = ready ? intent.treasury : '';
+    var a   = amtFor(cur);
+    var PH  = '—';
+    var amt = (cur==='USDC')
+      ? '<div style="font:800 22px ui-monospace,Menlo,monospace;color:#7ee787;margin:6px 0 12px">' + (a!=null ? Number(a).toFixed(2) : PH) + ' <small style="font-size:12px;color:var(--dim)">USDC</small></div>'
+      : '<div style="font:800 20px ui-monospace,Menlo,monospace;color:#7ee787;margin:6px 0 12px">' + (a!=null ? Number(a) : PH) + ' <small style="font-size:12px;color:var(--dim)">SOL</small></div>';
+    var u = uri();
+    var openBtn = u
+      ? '<a class="crPayOpen" href="' + esc(u) + '" style="display:block;text-align:center;text-decoration:none;background:rgba(20,241,149,.14);border:1px solid rgba(126,231,135,.5);color:#bff7df;border-radius:9px;padding:11px;font:700 12px inherit;margin-bottom:10px">' + T('pay.sol.open','Open in wallet →') + '</a>'
+      : '<button type="button" class="crPayOpen" disabled style="display:block;width:100%;text-align:center;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--dim);border-radius:9px;padding:11px;font:700 12px inherit;margin-bottom:10px;cursor:not-allowed">'
+        + (ready ? T('pay.sol.noAmount','No amount for this currency — switch currency') : T('pay.sol.moment','One moment…')) + '</button>';
+    ov.innerHTML = card(''
+      + '<div style="color:var(--dim);font-size:11px;margin:-4px 0 8px">' + (usd!=null ? ('$' + usd + ' ' + T('pay.sol.listPrice','list price')) : '') + '</div>'
       + '<div style="display:flex;gap:6px;margin-bottom:6px"><button type="button" data-cur="USDC" class="crPaySeg" style="flex:1;appearance:none;border:1px solid var(--line);border-radius:7px;padding:6px;cursor:pointer;font:700 11px inherit;' + (cur==='USDC'?'background:#1a1f2b;color:#fff':'background:transparent;color:var(--dim)') + '">USDC</button><button type="button" data-cur="SOL" class="crPaySeg" style="flex:1;appearance:none;border:1px solid var(--line);border-radius:7px;padding:6px;cursor:pointer;font:700 11px inherit;' + (cur==='SOL'?'background:#1a1f2b;color:#fff':'background:transparent;color:var(--dim)') + '">SOL</button></div>'
       + amt
       + statusHTML()
-      + '<div style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">' + T('pay.sol.sendTo','Send to (ChartRunner treasury)') + '</div>'
-      + '<div style="display:flex;gap:6px;margin-bottom:10px"><div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:11px ui-monospace,Menlo,monospace">' + esc(tre) + '</div><button type="button" class="crPayCopy" data-copy="' + esc(tre) + '" style="appearance:none;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6);color:var(--fg);cursor:pointer;font:600 11px inherit;padding:0 10px">' + T('pay.copy','Copy') + '</button></div>'
-      + '<a class="crPayOpen" href="' + esc(u) + '" style="display:block;text-align:center;text-decoration:none;background:rgba(20,241,149,.14);border:1px solid rgba(126,231,135,.5);color:#bff7df;border-radius:9px;padding:11px;font:700 12px inherit;margin-bottom:10px">' + T('pay.sol.open','Open in wallet →') + '</a>'
-      + '<div style="color:var(--dim);font-size:10px;line-height:1.5">' + noteHTML() + '</div>'
-      + '</div>';
+      + clusterHTML()
+      + '<div style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">' + T('pay.sol.sendTo','Send to (issued by the ChartRunner server)') + '</div>'
+      + '<div style="display:flex;gap:6px;margin-bottom:10px"><div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:11px ui-monospace,Menlo,monospace;' + (tre?'':'color:var(--dim)') + '">' + (tre ? esc(tre) : PH) + '</div>'
+      +   (tre ? ('<button type="button" class="crPayCopy" data-copy="' + esc(tre) + '" style="appearance:none;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6);color:var(--fg);cursor:pointer;font:600 11px inherit;padding:0 10px">' + T('pay.copy','Copy') + '</button>') : '')
+      + '</div>'
+      + openBtn
+      + '<div style="color:var(--dim);font-size:10px;line-height:1.5">' + (ready
+          ? T('pay.sol.autoNote','Open in any Solana Pay wallet. USDC is 1:1 with USD. Once the payment lands on-chain it is verified and Pro activates automatically - keep this window open a moment.')
+          : T('pay.sol.fetching','Fetching the payment details from the ChartRunner server…')) + '</div>');
     ov.querySelector('.crPayX').addEventListener('click', close);
     ov.querySelectorAll('.crPaySeg').forEach(function(b){ b.addEventListener('click', function(){ cur = b.getAttribute('data-cur'); paint(); }); });
     ov.querySelectorAll('.crPayCopy').forEach(function(b){ b.addEventListener('click', function(){ try { navigator.clipboard.writeText(b.getAttribute('data-copy')); b.textContent = T('pay.copied','Copied'); setTimeout(function(){ b.textContent = T('pay.copy','Copy'); }, 1200); } catch(_){} }); });
+  }
+  function paint(){
+    if(phase==='signedout') return paintSignedOut();
+    if(phase==='error')     return paintError();
+    return paintPay();
   }
   function startPoll(){
     if(!intent || !intent.reference || poll) return;
@@ -67307,22 +67385,41 @@ window._crCryptoPayOpen = function(tier, billing){
         }).catch(function(){});
     }, 4000);
   }
-  function boot(){
+  // Der ERFOLGS- WIE DER FEHLERZWEIG malen. Das leere .catch() von v933 hat
+  // genau den Fall verschluckt, um den es hier geht.
+  function startIntent(){
     var tok = _tok();
-    if(tok){
-      try {
-        fetch(API + '/v1/pay/sol/intent', { method:'POST', headers:{ 'Authorization':'Bearer ' + tok, 'Content-Type':'application/json' }, body: JSON.stringify({ tier:tier, billing:billing }) })
-          .then(function(r){ return r.ok ? r.json() : null; })
-          .then(function(j){
-            if(j && j.reference){
-              intent = { reference:j.reference, usdc:(j.usdc!=null?Number(j.usdc):usd), sol:(j.sol!=null?Number(j.sol):null), treasury:(j.treasury||treasury) };
-              try { paint(); } catch(_){}
-              startPoll();
-            }
-          }).catch(function(){});
-      } catch(_){}
+    if(!tok){ phase = 'signedout'; paint(); return; }
+    phase = 'loading'; intent = null; paint();
+    var fail = function(){ if(phase==='ready') return; phase = 'error'; try { paint(); } catch(_){} };
+    try {
+      fetch(API + '/v1/pay/sol/intent', { method:'POST', headers:{ 'Authorization':'Bearer ' + tok, 'Content-Type':'application/json' }, body: JSON.stringify({ tier:tier, billing:billing }) })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(j){
+          // OHNE reference UND treasury gibt es kein Zahlungsziel. Ein Intent
+          // ohne Adresse ist kein Grund, eine eigene zu nehmen — er ist der
+          // Fehlerfall.
+          if(j && j.reference && j.treasury){
+            intent = { reference:j.reference, usdc:(j.usdc!=null?Number(j.usdc):null), sol:(j.sol!=null?Number(j.sol):null),
+                       treasury:String(j.treasury), chain:(j.chain!=null?j.chain:(j.cluster!=null?j.cluster:null)) };
+            phase = 'ready';
+            try { paint(); } catch(_){}
+            startPoll();
+          } else { fail(); }
+        })
+        .catch(fail);
+    } catch(_){ fail(); }
+  }
+  function boot(){
+    if(_tok()){ startIntent(); }
+    else {
+      phase = 'signedout'; paint();
+      // Der Dialog bleibt offen und schaltet um, sobald eine Anmeldung da ist.
+      tokWatch = setInterval(function(){
+        if(phase !== 'signedout'){ clearInterval(tokWatch); tokWatch = null; return; }
+        if(_tok()){ clearInterval(tokWatch); tokWatch = null; startIntent(); }
+      }, 700);
     }
-    paint();
     document.body.appendChild(ov);
   }
   boot();
@@ -80821,10 +80918,16 @@ function crBoostCheckout(tierId, prefillMint){
   var USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
   var E = window.crEntitlement;
   var B = (E && E.boosts && E.boosts()) || null;
-  var PT = (E && E.payTo && E.payTo()) || null;
   var tier = B && Array.isArray(B.tiers) ? B.tiers.find(function(t){ return t.id === tierId; }) : null;
   if(!tier) return;
-  var treasury = (PT && PT.treasury) || '';
+  // v1.0.934 — derselbe Griff wie im Pro-Dialog: KEINE Client-Adresse mehr.
+  // Der Zugriff auf die Client-Adresse in crEntitlement ist weg; Adresse,
+  // Betrag und `solana:`-Link stammen ausschliesslich aus der Antwort von
+  // POST /v1/boost/intent. Der Boost-Pfad
+  // hat den Zahlungslink schon bisher an einen Intent gebunden (paintUnavailable),
+  // aber `|| treasury` in uri()/paintPay() haette eine Antwort OHNE treasury
+  // still mit der Client-Konstante aufgefuellt — genau die Stelle, an der eine
+  // Zahlung auf einer Adresse landet, auf die der Verifizierer nicht schaut.
   var esc = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]); }); };
   var T2 = _tokT;
   var intent = null, poll = null, confirmed = false, waiting = false, unavailable = false, mint = String(prefillMint || '');
@@ -80838,14 +80941,34 @@ function crBoostCheckout(tierId, prefillMint){
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><b>⚡ ' + esc(T2('tok.hot.payTitle','Boost buchen') + ' · ' + (tier.label || tier.id) + ' · $' + tier.usd) + '</b><button type="button" class="crBoostX" style="appearance:none;border:0;background:transparent;color:var(--dim);font-size:16px;cursor:pointer">✕</button></div>'
       + inner + '</div>';
   }
+  function amtFor(c){
+    if(!intent) return null;
+    var v = (c === 'USDC') ? intent.usdc : intent.sol;
+    return (v == null) ? null : Number(v);
+  }
+  function cluster(){
+    if(!intent) return '';
+    var c = (intent.chain != null) ? intent.chain : intent.cluster;
+    if(c == null) return '';
+    return String(c).trim().replace(/^solana:/i, '');
+  }
+  function clusterIsMain(c){ c = String(c || '').toLowerCase(); return c === 'mainnet' || c === 'mainnet-beta'; }
+  function clusterHTML(){
+    var c = cluster();
+    if(!c) return '';
+    if(clusterIsMain(c)) return '<div style="color:var(--dim);font-size:9.5px;margin:-6px 0 10px">' + esc(T2('pay.sol.cluster','Netz') + ': ' + c) + '</div>';
+    return '<div style="margin:-6px 0 10px;padding:8px 10px;border:1px solid rgba(255,138,138,.55);border-radius:9px;background:rgba(255,90,90,.12);color:#ffc9c9;font:700 11px inherit;line-height:1.45">⚠ '
+      + esc(T2('pay.sol.testnet','TESTZAHLUNG — diese Aufforderung zeigt auf') + ' ' + c + ', ' + T2('pay.sol.testnet2','nicht auf mainnet. Echtes Guthaben hierher ist kein Kauf.')) + '</div>';
+  }
   function uri(){
-    var tre = (intent && intent.treasury) || treasury;
+    if(!(intent && intent.treasury && intent.reference)) return '';   // kein Intent -> kein Ziel
+    var a = amtFor(cur);
+    if(a == null) return '';                                          // kein gebundener Betrag -> kein Link
     var params = ['label=' + encodeURIComponent('ChartRunner Boost ' + (tier.label || tier.id)), 'message=' + encodeURIComponent('Boost ' + mint)];
-    if(intent && intent.reference) params.push('reference=' + encodeURIComponent(intent.reference));
-    var a = (cur === 'USDC') ? (intent ? intent.usdc : tier.usd) : (intent ? intent.sol : null);
-    if(cur === 'USDC'){ if(a != null){ params.unshift('spl-token=' + USDC_MINT); params.unshift('amount=' + Number(a).toFixed(2)); } }
-    else if(a != null){ params.unshift('amount=' + Number(a)); }
-    return 'solana:' + tre + '?' + params.join('&');
+    params.push('reference=' + encodeURIComponent(intent.reference));
+    if(cur === 'USDC'){ params.unshift('spl-token=' + USDC_MINT); params.unshift('amount=' + Number(a).toFixed(2)); }
+    else { params.unshift('amount=' + Number(a)); }
+    return 'solana:' + intent.treasury + '?' + params.join('&');
   }
   function paintMint(){
     ov.innerHTML = card(''
@@ -80866,23 +80989,39 @@ function crBoostCheckout(tierId, prefillMint){
       + esc(T2('tok.hot.unavailable','Der Boost-Checkout ist serverseitig noch nicht freigeschaltet. Es wird KEINE Zahlung angeboten, bis die automatische on-chain-Verifikation + Auto-Listing live sind — bitte später erneut versuchen.')) + '</div>');
     ov.querySelector('.crBoostX').addEventListener('click', close);
   }
+  // Intent unterwegs: Platzhalter statt Betrag, leeres Adressfeld, der
+  // Wallet-Knopf DEAKTIVIERT. Bis v933 blieb hier das Mint-Formular stehen —
+  // der Wartezustand war unsichtbar.
+  function paintWaiting(){
+    ov.innerHTML = card(''
+      + '<div style="color:var(--dim);font-size:10px;margin-bottom:2px">' + esc(mint.slice(0,6) + '…' + mint.slice(-6)) + ' · ' + tier.hours + 'h</div>'
+      + '<div style="font:800 22px ui-monospace,Menlo,monospace;color:#ffcf8f;margin:8px 0 12px">— <small style="font-size:12px;color:var(--dim)">' + cur + '</small></div>'
+      + '<div style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">' + esc(T2('pay.sol.sendTo','Senden an (vom ChartRunner-Server ausgestellt)')) + '</div>'
+      + '<div style="background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:11px ui-monospace,Menlo,monospace;color:var(--dim);margin-bottom:10px">—</div>'
+      + '<button type="button" class="crBoostOpen" disabled style="display:block;width:100%;text-align:center;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--dim);border-radius:9px;padding:11px;font:700 12px inherit;cursor:not-allowed">' + esc(T2('pay.sol.moment','Einen Moment…')) + '</button>');
+    ov.querySelector('.crBoostX').addEventListener('click', close);
+  }
   function paintPay(){
-    var tre = (intent && intent.treasury) || treasury;
-    var amt = (cur === 'USDC')
-      ? '<div style="font:800 22px ui-monospace,Menlo,monospace;color:#ffcf8f;margin:6px 0 12px">' + Number(intent.usdc != null ? intent.usdc : tier.usd).toFixed(2) + ' <small style="font-size:12px;color:var(--dim)">USDC</small></div>'
-      : (intent.sol != null
-          ? '<div style="font:800 20px ui-monospace,Menlo,monospace;color:#ffcf8f;margin:6px 0 12px">' + Number(intent.sol) + ' <small style="font-size:12px;color:var(--dim)">SOL</small></div>'
-          : '<div style="font:800 18px ui-monospace,Menlo,monospace;color:#ffcf8f;margin:6px 0 12px">$' + tier.usd + ' <small style="font-size:12px;color:var(--dim)">SOL</small></div>');
+    if(!(intent && intent.treasury && intent.reference)) return paintUnavailable();
+    var tre = intent.treasury;
+    var a = amtFor(cur);
+    var amt = '<div style="font:800 22px ui-monospace,Menlo,monospace;color:#ffcf8f;margin:6px 0 12px">'
+      + (a != null ? (cur === 'USDC' ? Number(a).toFixed(2) : Number(a)) : '—')
+      + ' <small style="font-size:12px;color:var(--dim)">' + cur + '</small></div>';
     var status = confirmed
       ? '<div style="margin:2px 0 10px;padding:9px 11px;border:1px solid rgba(126,231,135,.5);border-radius:9px;background:rgba(20,241,149,.12);color:#bff7df;font:700 12px inherit">✓ ' + esc(T2('tok.hot.confirmed','Boost aktiv — dein Token ist in der 🔥-Liste')) + '</div>'
       : '<div style="margin:2px 0 10px;padding:9px 11px;border:1px solid rgba(255,209,102,.4);border-radius:9px;background:rgba(255,209,102,.08);color:#ffe3a0;font:600 11px inherit">⏳ ' + esc(T2('tok.hot.waiting','Warte auf deine Zahlung… Fenster offen lassen — das Listing aktiviert automatisch')) + '</div>';
+    var u = uri();
+    var openBtn = u
+      ? '<a class="crBoostOpen" href="' + esc(u) + '" style="display:block;text-align:center;text-decoration:none;background:rgba(255,184,77,.16);border:1px solid rgba(255,184,77,.55);color:#ffcf8f;border-radius:9px;padding:11px;font:700 12px inherit">' + esc(T2('pay.sol.open','Im Wallet öffnen →')) + '</a>'
+      : '<button type="button" class="crBoostOpen" disabled style="display:block;width:100%;text-align:center;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--dim);border-radius:9px;padding:11px;font:700 12px inherit;cursor:not-allowed">' + esc(T2('pay.sol.noAmount','Kein Betrag für diese Währung — Währung wechseln')) + '</button>';
     ov.innerHTML = card(''
       + '<div style="color:var(--dim);font-size:10px;margin-bottom:2px">' + esc(mint.slice(0,6) + '…' + mint.slice(-6)) + ' · ' + tier.hours + 'h</div>'
       + '<div style="display:flex;gap:6px;margin:8px 0 4px"><button type="button" data-cur="USDC" class="crBoostSeg" style="flex:1;appearance:none;border:1px solid var(--line);border-radius:7px;padding:6px;cursor:pointer;font:700 11px inherit;' + (cur==='USDC'?'background:#2a2313;color:#fff':'background:transparent;color:var(--dim)') + '">USDC</button><button type="button" data-cur="SOL" class="crBoostSeg" style="flex:1;appearance:none;border:1px solid var(--line);border-radius:7px;padding:6px;cursor:pointer;font:700 11px inherit;' + (cur==='SOL'?'background:#2a2313;color:#fff':'background:transparent;color:var(--dim)') + '">SOL</button></div>'
-      + amt + status
-      + '<div style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">' + esc(T2('pay.sol.sendTo','Senden an (ChartRunner-Treasury)')) + '</div>'
+      + amt + status + clusterHTML()
+      + '<div style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">' + esc(T2('pay.sol.sendTo','Senden an (vom ChartRunner-Server ausgestellt)')) + '</div>'
       + '<div style="display:flex;gap:6px;margin-bottom:10px"><div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:rgba(10,15,28,.7);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:11px ui-monospace,Menlo,monospace">' + esc(tre) + '</div><button type="button" class="crBoostCopy" data-copy="' + esc(tre) + '" style="appearance:none;border:1px solid var(--line);border-radius:6px;background:rgba(10,15,28,.6);color:var(--fg);cursor:pointer;font:600 11px inherit;padding:0 10px">' + esc(T2('pay.copy','Kopieren')) + '</button></div>'
-      + '<a class="crBoostOpen" href="' + esc(uri()) + '" style="display:block;text-align:center;text-decoration:none;background:rgba(255,184,77,.16);border:1px solid rgba(255,184,77,.55);color:#ffcf8f;border-radius:9px;padding:11px;font:700 12px inherit">' + esc(T2('pay.sol.open','Im Wallet öffnen →')) + '</a>');
+      + openBtn);
     ov.querySelector('.crBoostX').addEventListener('click', close);
     ov.querySelectorAll('.crBoostSeg').forEach(function(b){ b.addEventListener('click', function(){ cur = b.getAttribute('data-cur'); paintPay(); }); });
     ov.querySelectorAll('.crBoostCopy').forEach(function(b){ b.addEventListener('click', function(){ try { navigator.clipboard.writeText(b.getAttribute('data-copy')); b.textContent = T2('pay.copied','Kopiert'); } catch(_){} }); });
@@ -80909,11 +81048,15 @@ function crBoostCheckout(tierId, prefillMint){
     }, 4000);
   }
   function startIntent(){
+    intent = null; paintWaiting();
     fetch(API + '/v1/boost/intent', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ mint: mint, tier: tierId }) })
       .then(function(r){ return r.ok ? r.json() : null; })
       .then(function(j){
-        if(j && j.reference){
-          intent = { reference: j.reference, usdc: (j.usdc != null ? Number(j.usdc) : tier.usd), sol: (j.sol != null ? Number(j.sol) : null), treasury: (j.treasury || treasury) };
+        // Ohne reference UND treasury gibt es kein Zahlungsziel — das ist der
+        // Fehlerfall, nicht der Anlass, eine Client-Adresse einzusetzen.
+        if(j && j.reference && j.treasury){
+          intent = { reference: j.reference, usdc: (j.usdc != null ? Number(j.usdc) : null), sol: (j.sol != null ? Number(j.sol) : null),
+                     treasury: String(j.treasury), chain: (j.chain != null ? j.chain : (j.cluster != null ? j.cluster : null)) };
           paintPay(); startPoll();
         } else { unavailable = true; paintUnavailable(); }
       })
@@ -80926,7 +81069,6 @@ try { window.crBoostCheckout = crBoostCheckout; } catch(_){}
 function _tokRenderBoostPayHtml(){
   const E = window.crEntitlement;
   const B = (E && E.boosts && E.boosts()) || null;
-  const PT = (E && E.payTo && E.payTo()) || null;
   if(!B || !Array.isArray(B.tiers) || !B.tiers.length) return '';
   const disc = B.runPayDiscountPct || 15;
   const hrs = h => (h % 24 === 0 && h >= 24) ? (h / 24) + 'd' : h + 'h';
@@ -80943,7 +81085,10 @@ function _tokRenderBoostPayHtml(){
     + '<div style="font:800 11px ui-monospace,Menlo,monospace;color:#ffcf8f;letter-spacing:.5px;margin-bottom:4px">⚡ ' + _tokT('tok.hot.boostTitle','Boost your token') + '</div>'
     + '<div style="color:var(--dim);font-size:10.5px;margin-bottom:8px">' + _tokT('tok.hot.boostIntro','Put your token in the 🔥 Hot list. Pay in SOL / USDC / $RUN — $RUN saves {pct}%.').split('{pct}').join(disc) + '</div>'
     + '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">' + cards + '</div>'
-    + '<div style="color:var(--dim);font-size:9.5px;margin-top:8px">' + _tokT('tok.hot.boostNote','Checkout via Solana Pay — non-custodial, on-chain to the treasury. Listing activates automatically after on-chain verification.') + (PT && PT.treasury ? (' <span style="opacity:.7" title="' + esc(PT.treasury) + '">' + esc(String(PT.treasury).slice(0,4) + '…' + String(PT.treasury).slice(-4)) + '</span>') : '') + '</div>'
+    // v1.0.934 — die abgekuerzte Zahladresse ist hier raus. Eine angezeigte
+    // Zahladresse ist eine Zahladresse: sie stand im title-Attribut in voller
+    // Laenge und stammte aus der Client-Konstante, nicht aus dem Worker.
+    + '<div style="color:var(--dim);font-size:9.5px;margin-top:8px">' + _tokT('tok.hot.boostNote','Checkout via Solana Pay — non-custodial, on-chain to the treasury. Listing activates automatically after on-chain verification.') + '</div>'
     + '</div>';
 }
 function _tokOpenHot(addr, sym){
