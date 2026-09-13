@@ -13,43 +13,67 @@
  *     Kontrast gegen den Grund, auf dem es steht,
  *   - das SCHLIESSEN ueber einen echten Tap, nicht ueber .click().
  *
- * Jede Gegenprobe MUSS ROT werden koennen (CLAUDE.md · ROT/CRASH/GRUEN):
+ * WAS GEPRUEFT WIRD:
  *
- *  T1  Telefon, JEDES Fenster des Desktops: >= 44 x 44 zusammenhaengende
- *      CSS-Pixel treffen den Schliesser. Gemessen als groesstes achsen-
- *      paralleles Rechteck aus Rasterpunkten, an denen elementFromPoint den
- *      Schliesser liefert.  (Mutation: ::after-Zone auf 30px -> T1 rot.)
+ *  T1  Telefon, JEDES Fenster des Desktops: >= 44 x 44 CSS-Pixel treffen den
+ *      Schliesser. Gemessen als Ausdehnung durch die Mitte, plus die
+ *      deklarierte Kantenlaenge der Zone als zweite, unabhaengige Zeile.
  *  T2  Der SICHTBARE Kasten ist mitgewachsen: >= 13 px (v934: 9 px) und
  *      < 24 px — groesser heisst groesser, nicht ein Klotz.
- *      (Mutation: dot-Breite zurueck auf 9px -> T2 rot.)
  *  T3  Das Zeichen steht im RUHEZUSTAND da (kein :hover), misst >= 6 px in
  *      jeder Kante und hebt sich mit >= 3:1 vom Grund ab, in JEDEM Theme.
- *      (Mutation: opacity:1 aus der ::before-Regel -> T3 rot.
- *       Mutation: mono/bw-Tinte entfernen -> T3 rot, nur in mono/bw.)
  *  T4  Die Zone liegt VOLLSTAENDIG im Fenster — .os-window ist
  *      overflow:hidden, eine mittige Zone am linken Rand waere beschnitten.
- *      (Mutation: padding-left der Leiste zurueck auf 8px -> T4 rot.)
  *  T5  KEINE FEHLAUSLOESER: in der Zone liegt kein zweites bedienbares
  *      Element, und bis zum naechsten ist >= 8 px Luft.
- *      (Mutation: die gelben/gruenen Punkte sichtbar schalten -> T5 rot.)
- *  T6  ES SCHLIESST, und zwar beim ERSTEN Tap und ohne Zielen: getippt wird
- *      auf die Ecke der Zone, nicht auf die Mitte. Und ein Tap 12 px neben
- *      der Zone schliesst NICHT.
- *      (Mutation: pointer-events:none auf dem ::after -> T6 rot, weil die
- *       Ecke dann den Titel trifft.)
- *  T7  Die beiden anderen Fensterkoepfe: #win-l3coach (eigener ✕) und die
- *      schwebenden Profil-/Terminal-Fenster (✕ + drei Punkte). ✕ >= 44 x 44,
- *      Punkte mitgewachsen, ✕ und Punkte >= 8 px auseinander.
- *      (Mutation: den C-Block loeschen -> T7 rot.)
- *  T8  DESKTOP UNVERAENDERT, und zwar bewiesen statt behauptet: dieselbe
- *      Datei ein zweites Mal geladen, mit dem v935-Styleblock MECHANISCH
+ *  T6  ES SCHLIESST, beim ERSTEN Tap und ohne Zielen: getippt wird auf die
+ *      ECKE der Zone, nicht auf die Mitte. Und ein Tap 12 px neben der Zone
+ *      schliesst NICHT.
+ *  T7  Die beiden anderen Fensterkoepfe: #win-l3coach (eigener Schliesser)
+ *      und die schwebenden Profil-/Terminal-Fenster (Schliesser + drei
+ *      Punkte). >= 44 x 44, Punkte mitgewachsen, >= 8 px Abstand.
+ *  T8  DESKTOP UNVERAENDERT, bewiesen statt behauptet: dieselbe Datei ein
+ *      zweites Mal geladen, mit dem v935-Styleblock MECHANISCH
  *      herausgeschnitten, bei 1280 px und feinem Zeiger. Jede berechnete
- *      Eigenschaft von Leiste, Kasten und Zeichen muss Zeichen fuer Zeichen
- *      gleich sein.
- *      (Mutation: die @media-Bedingung auf `all` aendern -> T8 rot.)
+ *      Eigenschaft von Leiste, Kasten, Zeichen und Zone muss Zeichen fuer
+ *      Zeichen gleich sein.
  *  T9  Regression: Versionsbanner >= v1.0.935, der Apple-Toast nennt den
- *      Build, 7 Skriptbloecke, kein statisches <script src>, keine harten
+ *      Build, 7 Skriptbloecke, kein statisches Skript-src, keine harten
  *      Seitenfehler.
+ *
+ * GEGENPROBEN (CLAUDE.md · ROT/CRASH/GRUEN). Jede Mutation EINZELN in
+ * ChartRunner_Prototype.html eingebaut, Suite vollstaendig gelaufen, danach
+ * `git checkout`. Ohne Mutation: 33 gruen, 0 rot, 0 UNGETESTET. Keine der
+ * zehn war CRASH — jeder Lauf ging durch, T9e (keine harten Seitenfehler)
+ * blieb jedes Mal gruen:
+ *
+ *   M1   Zone 44 -> 30 px                     ROT T1a T1b T1c   (30 gruen)
+ *   M2   Kasten zurueck auf 9 px              ROT T1a T1b T2a T3b (29 gruen)
+ *   M3   Zeichen wieder opacity:0             ROT T3a           (32 gruen)
+ *   M4   mono/bw-Tinte auf --ct-bar-ink       ROT T3c           (32 gruen)
+ *   M5   Leistenrand links zurueck auf 8 px   ROT T1a T1b T4a T6a x3 (27 gruen)
+ *   M6   gelbe/gruene Punkte sichtbar         ROT T1a T1b T5a T5b (29 gruen)
+ *   M7   pointer-events:none auf der Zone     ROT T1a T1b       (31 gruen)
+ *   M8   C-Block (schwebende Fenster) raus    ROT T7d T7e T7f   (30 gruen)
+ *   M9   @media-Bedingung -> `all`            ROT T8b           (32 gruen)
+ *   M10  B-Block (#win-l3coach) raus          ROT T1a T1b T7a T7b (29 gruen)
+ *
+ * DREI SACHEN, die das Messen selbst gezeigt hat und die vorher anders
+ * dastanden:
+ *
+ * (1) M7 macht NICHT T6 rot, wie zuerst angenommen. Mit
+ *     pointer-events:none schrumpft die Zone auf den 14er Kasten — und T6
+ *     tippt auf die Ecke der GEMESSENEN Zone, trifft also weiter. Rot wird
+ *     T1, und das ist richtig so: T1 misst die Groesse, T6 die Wirkung.
+ * (2) M4 ist die Mutation, die den eigenen Fehler dieser Session
+ *     konserviert: --ct-bar-ink ist die Tinte der Titelleiste, im
+ *     White-Theme also weiss — auf dem weissen Kasten 1.00:1. Richtig ist
+ *     --ct-ink, die Tinte der Flaeche, auf der das Zeichen steht.
+ * (3) Ein Knopf mit border-radius verliert seine Ecken auch beim TREFFEN:
+ *     elementFromPoint respektiert die Rundung (l3coach 44 -> 42, schwebend
+ *     44 -> 40 im eckentreuen Rechteck). Gemessen wird deshalb die
+ *     Ausdehnung durch die Mitte; das eckentreue Rechteck steht als eigene
+ *     Zahl (sqW/sqH) daneben, statt die Messung kleinzurechnen.
  *
  * Aufruf:  node scripts/check_v935_schliessknopf_browser.cjs
  */
