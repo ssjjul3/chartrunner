@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.934
-     LAST UPDATED:    2026-09-10  ·  v1.0.934 (DER BEZAHLDIALOG MUSS VERWEIGERN KOENNEN — FAIL-CLOSED STATT FEST VERDRAHTETER ADRESSE, reine Client-Aenderung): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE, KEIN WORKER-ANTEIL. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. BEFUND: beide Bezahldialoge — _crCryptoPayOpen (Pro) und crBoostCheckout (Boost) — hatten dieselbe Bauform. paint() lief SYNCHRON vor der Worker-Antwort, bei abgemeldeten Nutzern wurde der Intent NIE geholt, und uri() fiel ueber `(intent && intent.treasury) || treasury` auf eine fest verdrahtete Adresse in CFG.payTo zurueck. Der USDC-Pfad erzeugte damit eine VOLLSTAENDIG AUSFUEHRBARE Zahlung — Empfaenger, Betrag, Token — OHNE `reference`. Wer sie ausloest, zahlt an eine Adresse, die der Verifizierer im Worker nie zuordnet: crTier schaltet nichts frei, und einen Erstattungspfad gibt es in diesem Repo nicht (grep -i refund findet einen Kommentar, keinen Code). Der Kommentar darueber nannte das „fail-safe“ und behauptete, die Zahlung „reaches the treasury on-chain“ — fail-safe waere Verweigern, und ob die Client-Konstante die Schatzkammer ist, hat nie jemand gemessen. (1) OHNE INTENT KEIN ZAHLUNGSZIEL. Vier SICHTBARE Zustaende statt eines stillen Rueckfalls: abgemeldet (kein Betrag, keine Adresse, kein Link — ein Satz plus Knopf „Anmelden“; der Dialog bleibt offen und schaltet um, sobald ein Token da ist), Intent unterwegs (Platzhalter, leeres Adressfeld, der Wallet-Knopf ist ein <button disabled>, kein <a href>), Intent da (wie bisher, plus Polling), Intent fehlgeschlagen (ehrliche Meldung + Erneut-versuchen, KEIN Rueckfall). Der Erfolgs- WIE der Fehlerzweig von fetch malen jetzt; das leere .catch(function(){}) hat genau den Fall verschluckt, um den es geht. (2) DIE ADRESSE VERLAESST DEN CLIENT. CFG.payTo ist ERSATZLOS raus — Feld, Zugriff und Export. Alle drei Leser waren Zahlwege, also faellt auch die abgekuerzte Adresse in der Boost-Karte (_tokRenderBoostPayHtml) weg; sie stand im title-Attribut in voller Laenge. Eine Adresse im Client laesst sich nur durch ein Deploy aendern, reist in jedem Cache und Fork mit und ist nicht widerrufbar. Der Rueckfall kostete nichts: POST /v1/pay/sol/intent liefert die Adresse mit, und der Verifizierer prueft ohnehin gegen env.MERCHANT_SOL_ADDRESS — eine Abweichung waere unsichtbar geblieben. (3) DER CLUSTER KOMMT MIT. Traegt die Intent-Antwort `chain`/`cluster`, wird es angezeigt; ist es vorhanden und nicht mainnet (mainnet-beta zaehlt als mainnet), steht ein deutlicher Testzahlungs-Hinweis da. Fehlt das Feld, aendert sich nichts — kein Rateschluss. Der Worker-Teil (das Feld setzen) ist ein eigener Auftrag. (4) DERSELBE GRIFF FUER crBoostCheckout, woertlich — aber KEIN Zusammenlegen der beiden Dialoge: ein Refactor an dieser Stelle wuerde sich mit der Sicherheitsaenderung vermischen. NICHT GEAENDERT: Worker, Verifizierer, enforcePro, Ratecard, Preise, Stufen, $RUN-Rabatt; kein Erstattungspfad (dieser Patch sorgt dafuer, dass keiner gebraucht wird). NICHT IN DIESEM PATCH, ausdruecklich: chartrunner-prototype/pricing.html traegt dieselbe Adresse als eigene Konstante und baut den SOL-Betrag aus einem Coingecko-Kurs — andere Oberflaeche, eigener Auftrag. GEGENPROBEN: scripts/check_v934_zahlweg_failclosed_browser.cjs (39 Zeilen, gemessen am DOM des Dialogs, nicht an einer Absicht), jede Mutation einzeln gemessen (ROT/CRASH/GRUEN, siehe Kopf der Datei).
+     CURRENT VERSION: v1.0.935
+     LAST UPDATED:    2026-09-13  ·  v1.0.935 (SCHLIESSEN-KNOPF DER FENSTER: TREFFERFLAECHE 44 PX, ZEICHEN SICHTBAR — reine Darstellung): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE, KEIN WORKER-ANTEIL. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle, kein Umbau am Fenster-Management. BEFUND, GEMESSEN im echten Chromium gegen die Datei (390x844 mit hasTouch, alle fuenf Themes, alle 16 Desktop-Fenster): der Schliesser misst 9 x 9 px, das x darin 1 x 1 px — und es steht nur bei :hover da, am Telefon also nie. Beide Zahlen sind Unfaelle: der Platinum-Kasten war als 14 px gebaut, sein x als clip-path bei inset:3px (im 14er Kasten 6 x 6 px); der spaetere Block "TradingView-uniform spacing" (v0.8k#24k) hat den Kasten per !important auf 9 px gedrueckt, ohne das inset mitzuziehen — 9 - 2 Rand - 6 inset = 1. DREI STELLEN rendern einen Fensterkopf, alle drei sind angefasst: (A) .splash .os-wbar .dot.red, der Schliesskasten ALLER Desktop-Fenster (der .wclose-✕ ist dort per CSS aus, der Kasten IST der Schliesser); (B) #win-l3coach, das COACH-Fenster baut seinen Kopf selbst (Punkte aus, ✕ 16 x 16 px); (C) body > .os-window.cr-floating, also Profil und Terminal, die fuer den Lauf aus #splash in den Body umgehaengt werden und dort drei 10-px-Punkte plus einen ✕ von 31.6 x 23 px zeigen. UMGESETZT: Trefferflaeche 44 x 44 px (Hausmass seit v1.0.918), sichtbarer Kasten 9 -> 14 px (1.56x), Zeichen 1 x 1 -> 8 x 8 px und im Ruhezustand sichtbar; der ✕ in B und C 11 -> 17 px Glyphe bei 44er Zone. Die Zone ist NICHT der Kasten: sie haengt als durchsichtiges ::after darueber (Pseudoelemente sind keine Ereignisziele, der Tap landet auf .dot selbst, und die Zieh-Wache closest(".dot") erkennt ihn unveraendert). Der linke Leistenrand geht 8 -> 16 px, weil .os-window overflow:hidden ist und eine mittige 44er Zone sonst am Fensterrand beschnitten wuerde. Leisten: 26 -> 48 px (A), 20 -> 52 px (B), 44 -> 52 px (C). NUR FUER GROBE ZEIGER: alles haengt an @media (pointer:coarse),(max-width:720px) — dieselbe Form wie der ARM-Block seit v1.0.919. Mit der Maus ist jede berechnete Eigenschaft Byte fuer Byte die von v1.0.934, gemessen. KEINE FEHLAUSLOESER: jede der drei Leisten traegt gemessen genau EIN bedienbares Element; gelbe/gruene Punkte sind auf dem Desktop display:none, der Titel ist pointer-events:none. Die Titelleiste ist am Telefon keine Ziehflaeche — der Fensterzug haengt an mousedown, ein touchstart-/pointerdown-Handler existiert an .os-wbar nirgends. NICHT REPARIERT, nur benannt: in C traegt der rote Punkt noch den Desktop-Handler, der das Fenster ausblendet statt es ueber _floatDismiss zurueckzuhaengen — deshalb bekommt er dort bewusst keine 44er Zone. MITGENOMMEN: der Apple-Menue-Toast nennt jetzt den Build aus dem Versionsbanner statt nur des Flavour-Strings "v0.9.7" — vorher stand der Stand an KEINER Stelle der Oberflaeche (gemessen: kein Textknoten der Seite enthielt ihn), und ohne ihn laesst sich am Telefon nicht ablesen, ob ein Deploy angekommen ist. GEGENPROBEN: scripts/check_v935_schliessknopf_browser.cjs, jede Mutation einzeln gemessen (ROT/CRASH/GRUEN, siehe Kopf der Datei).
+     PREV  ·  v1.0.934 (DER BEZAHLDIALOG MUSS VERWEIGERN KOENNEN — FAIL-CLOSED STATT FEST VERDRAHTETER ADRESSE, reine Client-Aenderung): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE, KEIN WORKER-ANTEIL. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. BEFUND: beide Bezahldialoge — _crCryptoPayOpen (Pro) und crBoostCheckout (Boost) — hatten dieselbe Bauform. paint() lief SYNCHRON vor der Worker-Antwort, bei abgemeldeten Nutzern wurde der Intent NIE geholt, und uri() fiel ueber `(intent && intent.treasury) || treasury` auf eine fest verdrahtete Adresse in CFG.payTo zurueck. Der USDC-Pfad erzeugte damit eine VOLLSTAENDIG AUSFUEHRBARE Zahlung — Empfaenger, Betrag, Token — OHNE `reference`. Wer sie ausloest, zahlt an eine Adresse, die der Verifizierer im Worker nie zuordnet: crTier schaltet nichts frei, und einen Erstattungspfad gibt es in diesem Repo nicht (grep -i refund findet einen Kommentar, keinen Code). Der Kommentar darueber nannte das „fail-safe“ und behauptete, die Zahlung „reaches the treasury on-chain“ — fail-safe waere Verweigern, und ob die Client-Konstante die Schatzkammer ist, hat nie jemand gemessen. (1) OHNE INTENT KEIN ZAHLUNGSZIEL. Vier SICHTBARE Zustaende statt eines stillen Rueckfalls: abgemeldet (kein Betrag, keine Adresse, kein Link — ein Satz plus Knopf „Anmelden“; der Dialog bleibt offen und schaltet um, sobald ein Token da ist), Intent unterwegs (Platzhalter, leeres Adressfeld, der Wallet-Knopf ist ein <button disabled>, kein <a href>), Intent da (wie bisher, plus Polling), Intent fehlgeschlagen (ehrliche Meldung + Erneut-versuchen, KEIN Rueckfall). Der Erfolgs- WIE der Fehlerzweig von fetch malen jetzt; das leere .catch(function(){}) hat genau den Fall verschluckt, um den es geht. (2) DIE ADRESSE VERLAESST DEN CLIENT. CFG.payTo ist ERSATZLOS raus — Feld, Zugriff und Export. Alle drei Leser waren Zahlwege, also faellt auch die abgekuerzte Adresse in der Boost-Karte (_tokRenderBoostPayHtml) weg; sie stand im title-Attribut in voller Laenge. Eine Adresse im Client laesst sich nur durch ein Deploy aendern, reist in jedem Cache und Fork mit und ist nicht widerrufbar. Der Rueckfall kostete nichts: POST /v1/pay/sol/intent liefert die Adresse mit, und der Verifizierer prueft ohnehin gegen env.MERCHANT_SOL_ADDRESS — eine Abweichung waere unsichtbar geblieben. (3) DER CLUSTER KOMMT MIT. Traegt die Intent-Antwort `chain`/`cluster`, wird es angezeigt; ist es vorhanden und nicht mainnet (mainnet-beta zaehlt als mainnet), steht ein deutlicher Testzahlungs-Hinweis da. Fehlt das Feld, aendert sich nichts — kein Rateschluss. Der Worker-Teil (das Feld setzen) ist ein eigener Auftrag. (4) DERSELBE GRIFF FUER crBoostCheckout, woertlich — aber KEIN Zusammenlegen der beiden Dialoge: ein Refactor an dieser Stelle wuerde sich mit der Sicherheitsaenderung vermischen. NICHT GEAENDERT: Worker, Verifizierer, enforcePro, Ratecard, Preise, Stufen, $RUN-Rabatt; kein Erstattungspfad (dieser Patch sorgt dafuer, dass keiner gebraucht wird). NICHT IN DIESEM PATCH, ausdruecklich: chartrunner-prototype/pricing.html traegt dieselbe Adresse als eigene Konstante und baut den SOL-Betrag aus einem Coingecko-Kurs — andere Oberflaeche, eigener Auftrag. GEGENPROBEN: scripts/check_v934_zahlweg_failclosed_browser.cjs (39 Zeilen, gemessen am DOM des Dialogs, nicht an einer Absicht), jede Mutation einzeln gemessen (ROT/CRASH/GRUEN, siehe Kopf der Datei).
      PREV  ·  v1.0.933 (ROOMS DEGATE — MULTIPLAYER-TRADE-KAPITEL NICHT MEHR PHASE-2-SACKGASSE, client-only): das Kapitel „Multiplayer Trade" (Anzeige Ch.63 / intern #52, broker 'copytrade') gab bisher nur den generischen phase2-Toast „Coming soon" und kehrte zurück — Rooms-Copy-Trade hing damit an einem Kapitel-Gate. Fix in _launchCampaignChapterCore: für dieses eine Kapitel (Guard broker==='copytrade') wird jetzt der Live-Public-Rooms-Browser geöffnet (crRoomsBrowser.open, Fallback crRoomOverviewOpen) + ehrlicher Hinweis, dass NUR die on-chain-Creator-Royalty die Live-Ausbaustufe ist; der Client-Flow (Raum eines Creators öffnen → Setup kopieren → traden via crSwap/Orders) funktioniert schon. Alle anderen phase2-Kapitel (Order-Lektionen 10-19, Marketplace 51) bleiben durch den unveränderten Block darunter gesperrt. Increment 1 von 4 (ROOMS_P1_P2 + degate); Increment 2 on-chain-Royalty/Settlement + 3 Hetzner-Server-Port + 4 P1-Restfehler folgen, on-chain erst live messen. — v1.0.932 (ROOMS B · CLIENT: HOST-KENNUNG, ZWEI FALSCHE BASIS-URLS, UND DIE VIER FELDER): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher (cr_arm_v1 / cr_arm_limit_v1) sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. Ghosts, Chat, geteilte Zeichnungen, Laser, Deep-Links und der ?relay=1-Pfad sind unberuehrt. (1) DER ERSTELLER WURDE ALS GUEST GEFUEHRT. Der Server meldet im `created`-Ereignis, dass dieser Client den Raum angelegt hat; enterRoom nahm das dritte Argument entgegen, reichte es an den URL-Stempel weiter und warf es danach weg — _rosterList schrieb fuer ALLE seat:'guest'. Jetzt haelt der Modulzustand `iAmCreator` die Auskunft (gesetzt in enterRoom, zurueckgesetzt in leaveRoom), der eigene Eintrag traegt seat:'host'. Damit die Tafel das auch ZEIGT, kennen die beiden Roster-Renderer und SEAT_COLORS 'host' als denselben Sitz wie das Alt-Wort 'creator' (Stern + Amber, Label HOST). ANZEIGE, KEINE AUTORITAET — der Server kennt keinen Host-Begriff und erzwingt nichts; ein Kick- oder Mute-Recht darf darauf NICHT aufgebaut werden, das kommt erst mit der P1-Serverfassung. Peers bleiben 'guest': wer von ihnen der Ersteller war, weiss der Client nicht. (2) ZWEI VON DREI BEITRITTSPFADEN ZEIGTEN AUF DEN LEGACY-RELAY. v1.0.863 hatte nur das Modal (crRoomsBrowser) auf crRoomsDirFetch umgestellt; joinById (die LIVE-ROOMS-Zeilen im ROOMS-Tab) und crSocial.joinRoom lasen weiter ueber http() — also relay.chartrunner.xyz, waehrend Raeume auf rooms.chartrunner.xyz liegen. Beide liefen damit dauerhaft ins Leere. Beide rufen jetzt window.crRoomsDirFetch('/rooms/'+id), dieselbe Form wie im Modal (merkt sich den zuletzt erfolgreichen Host). Die Relay-Hilfsfunktion in crMapsLiveDir ist ersatzlos raus — sie war die Vorlage, aus der dieser Fehler kopiert wurde. Die Namensabfrage in crSocial.joinRoom (Aufforderung + crNames.claim, v1.0.754) bleibt unangetastet. (3) `create` TRUG DIE RAUMDATEN NICHT MIT. Die Transportschicht sendete nur {type:'create',name}; deshalb stand im Verzeichnis `#BEF6 ·  · 1 online` und ein Beitretender landete auf SEINEM eigenen Chart. RoomsClient.create nimmt jetzt ein Objekt (ein blosser String bleibt gueltig), crRoomsNet._createPayload fuellt es: name wie bisher aus myName(), pub aus opts.pub (die PUBLIC-Karte setzt es), asset/tf aus DERSELBEN Quelle wie chartParams (_chartAssetTf), mapName wie im Altpfad (Asset in Grossbuchstaben + ' · ' + Zeitrahmen). VERTRAG, woertlich wie im Server-Auftrag: pub ist bool mit Vorgabe false; asset <= 24, tf <= 8, mapName <= 64 Zeichen — gekappt an der letzten Stelle vor dem Draht. Der Hinweis 'Public listing is coming soon' faellt weg; der Hinweis fuer moderated/curated bleibt, der ist weiterhin wahr. TEIL 3 WIRKT ERST MIT DEM SERVER: die Felder gehen raus, sichtbar werden sie, sobald die Rooms-Serverfassung sie beantwortet — gemessen wird das am Verzeichnis, nicht an diesem Text. GEGENPROBEN: scripts/check_v932_rooms_client_browser.cjs, jede Mutation einzeln gemessen (ROT/CRASH/GRUEN, siehe Kopf der Datei).
      PREV  ·  v1.0.931 (HERKUNFT DES TRACK-PINGS: EINE GERENDERTE ZEILE IST KEIN GEOEFFNETER TOKEN): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher (cr_arm_v1 / cr_arm_limit_v1) sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. An Kerzen, Charts und daran, WELCHE Token die Liste zeigt, aendert sich nichts. BEFUND (gemessen am laufenden System, /v1/subscriptions des ohlc-store): zehn Mint-Adressen dauerhaft abonniert, bei ALLEN ZEHN ist last_hit sekundenaktuell — die 900-Sekunden-Frist des Workers kann deshalb nie ablaufen, und jedes zugestellte Ereignis kostet einen Credit (~30.000/h). Die Ursache steht seit v1.0.894 in _tokRenderList: die Warm-up-Schleife meldet bis zu 20 Mints je Render als „gefragt", die Liste rendert bei JEDEM Preistick, und die 10-Minuten-Drossel in crOhlcTrack laeuft nie leer, weil die Liste lange vorher wiederkommt und die Pacht verlaengert. Der Kommentar im Code sagte weiter, ein Token werde „beim Oeffnen eines Token-Profils" registriert — das stimmte nicht mehr. UMGESETZT: (a) crOhlcTrack(chain, addr, src) BEKOMMT EIN DRITTES ARGUMENT, DIE HERKUNFT DES INTERESSES, und schickt sie als GET /v1/track/<chain>/<addr>?src=seen bzw. ?src=opened mit. „seen" heisst: der Mint kam in einer Liste vor — bleibt grosszuegig, fuettert nur den keylosen DexScreener-Sampler und kostet bei Helius nichts. „opened" heisst: der Nutzer hat den Token wirklich geoeffnet — NUR dieses Signal darf serverseitig ein Abo ausloesen. OHNE drittes Argument gilt „seen": ein alter Client bleibt damit harmlos, falls der Worker zuerst live geht. (b) DREI AUFRUFSTELLEN, ZWEI ANTWORTEN: die Warm-up-Schleife in _tokRenderList sendet ausnahmslos „seen"; der Aufruf beim Chart-Laden (neben _crRunOhlcCandles) sendet „opened"; _tokFetchMeta reicht die Herkunft vom Aufrufer durch und hat als Vorgabe „seen" — nur der Profil-Aufruf in _tokRenderProfile, wo der Knoten tokMeta_<id> wirklich im DOM steht, gibt „opened" mit. Wer dort spaeter einen Aufrufer ergaenzt, bekommt ohne Zutun den billigen Fall. (c) DIE 10-MINUTEN-DROSSEL BLEIBT, ZAEHLT ABER JE HERKUNFT GETRENNT (Schluessel „src|addr"). Ein gemeinsamer Topf waere still falsch: die Liste meldet den Mint zuerst als „seen", und das „opened" zehn Sekunden spaeter fiele in dieselbe Frist — der eine Ping, auf den es ankommt, ginge nie raus, der Chart lade trotzdem, und nichts schluege an. (d) GEGENSTUECK IM PRIVATEN REPO: „Helius B · WORKER" nimmt denselben Parameternamen entgegen. NICHT GEMESSEN, ausdruecklich: diese Sandbox erreicht *.workers.dev nicht; ob der ausgerollte Store ?src ueberhaupt liest, ist hier NICHT geprueft und wird auch nicht behauptet — die Verifikation laeuft ueber Julians Telefon und steht als Schritt-Liste im PR. Geprueft ist der CLIENT, im echten Chromium und am NETZ statt an der Funktion: scripts/check_v931_track_herkunft_browser.cjs (T1 zehn Listen-Renders -> null opened, bei nachweislich gelaufenen seen-Pings · T2 Chart laden -> genau ein opened fuer den Mint · T3 Profil oeffnen -> genau ein opened, blosse Zeilen-Aufloesung -> seen · T4 Zwei-Argument-Aufruf traegt src=seen und faellt in denselben Drossel-Topf · T5 seen unmittelbar vor opened verhindert es nicht · T6 Drossel je Herkunft + Regression). Gegenproben ROT siehe Commit. Rollback: v1.0.930.
      PREV  ·  v1.0.930 (ABMELDEN SCHLIESST DIE FENSTER, DIE NUR ANGEMELDETEN GEHOEREN): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die beiden ARM-Speicher (cr_arm_v1 / cr_arm_limit_v1) sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. BEFUND (gemessen im Chromium gegen die Datei, v1.0.929): die Gast-Sperre bestand aus DREI voneinander unabhaengigen Mechanismen, und keiner fing den Uebergang „angemeldet → Gast bei offenem Fenster“ ab — (1) das CSS auf den Dock-Knoepfen versteckt den STARTKNOPF, nicht das Fenster; (2) die Pruefung in open() bei Arena und Intel verhindert das OEFFNEN, nicht das OFFENBLEIBEN; (3) crApplyAccessGates schloss genau zwei Fenster (walletapp/settings) und kannte win-bot ueberhaupt nicht. Folge: das Bot-Terminal blieb nach dem Abmelden stehen — sichtbar UND bedienbar, mit Chatverlauf, Agenten und Sitzungen (#crBotChatLog, #crBotChatMsgs, #crBotAgents, #crBotChatSessionSel) des eben abgemeldeten Kontos. Genau das ist der Grund, warum es nicht kosmetisch ist. UMGESETZT: (A) EINE DEKLARATIVE LISTE STATT DREIER MECHANISMEN — CR_CONNECT_EXCLUSIVE nennt die kontogebundenen Fenster (bot → #win-bot, walletapp, settings, display/Docs inkl. der Aliasse maps+journal, arena → #crArenaWin, walletintel → #crWalletIntelWin) und bedient danach alle drei Stellen: Dock-Sichtbarkeit (eine aus ihr erzeugte body.cr-guest-Regel, !important, damit sie das sticky inline-display des Bot-Terminal-Reveals von v1.0.840 schlaegt), Oeffnen-Sperre (crConnectExclusiveBlocked in osOpenWindowMulti / osToggleWindowMulti — VOR der bot→Profile-Umleitung, sonst liefe sie ins Leere — und in crArena.open / crWalletIntel.open, deren Hinweistexte bleiben) und Schliessen. Der Satz ist NICHT geraten, sondern aus den drei heutigen Quellen zusammengetragen; runtube fehlt bewusst (archiviert, fuer alle versteckt, und ein PIP statt eines win-<id>-Fensters). (B) crApplyAccessGates schliesst beim Wechsel auf Gast JEDES Fenster der Liste — ueber denselben Weg wie der Schliessen-Knopf (closeWindow → syncDock) bzw. das eigene close() der selbst-injizierten Apps, danach Inhalt leeren und Takte anhalten (crAgentEvents.stop, crBridge._stopLoop — neu exportiert, damit der Abmelde-Pfad den Takt anhaelt, ohne die Nutzer-Einstellung umzuschreiben oder ein zweites Mal zu toasten). Ein Hinweis, einmal, kein Modal. Ein display:none ueber ein weiterlaufendes Fenster waere genau die halbe Massnahme, die den Befund erzeugt hat. (C) Gegenrichtung unveraendert: Anmelden oeffnet nichts von selbst, nur der Dock-Knopf kommt zurueck. Damit das wiedergeoeffnete Terminal nicht leer bleibt, bekam 'bot' als bis dahin EINZIGE App einen Refresh-Hook in refreshFor (__crRenderBotAgents). NICHT ANGEFASST: Chart/Run-Terminal, Token, Profil mit seinen Gast-Tabs; ein laufender Run wird nicht beruehrt. ZUR BESTAETIGUNG DURCH JULIAN: 'display' (Docs) steht in der Liste, weil der Code es HEUTE schon in beiden Richtungen gatet (body.cr-guest-CSS seit v1.0.661 und die Oeffnen-Sperre in osOpenWindowMulti); der Auftragstext nannte Docs an einer Stelle als Gast-Fenster. Eine Zeile raus, falls Docs Gast-Fenster werden soll. TESTS: scripts/check_v930_gast_fenster_browser.cjs (T1 Bot-Terminal geschlossen statt versteckt + Inhalt leer · T2 dasselbe fuer jedes Fenster der zur Laufzeit gelesenen Liste · T3 Spion auf setInterval/clearInterval: kein Takt der angemeldeten Phase ueberlebt · T4 Gast-Fenster bleiben offen und es wird GENAU die Liste geschlossen · T5 Anmelden oeffnet nichts, Dock-Knoepfe kommen zurueck · T6 mit geleerter Liste bleibt #win-bot offen — die Liste ist das, was arbeitet · T7 Oeffnen-Sperre als Gast + Regression). Gegenproben ROT siehe Commit. NICHT VON DIESER SESSION GEMESSEN und ausdruecklich nicht behauptet: nichts hiervon beruehrt einen Worker-Endpunkt; die Live-Domain ist aus dieser Sandbox nicht erreichbar. Rollback: v1.0.929.
@@ -92907,7 +92908,29 @@ function log(msg){
     const el = document.getElementById(id);
     if(el) el.addEventListener('click', fn);
   }
-  bindMenu('crMenuApple',  ()=> typeof toast === 'function' && toast('ChartRunnerOS v0.9.7 — Platinum Edition'));
+  // v1.0.935 — DER STAND STAND AN KEINER STELLE DER OBERFLAECHE. Gemessen im
+  // gebooteten DOM: kein einziger Textknoten der Seite enthaelt den Build
+  // („v1.0.9xx"). Die Nummer steht nur im Versionsbanner (HTML-Kommentar), und
+  // gelesen hat sie bisher ausschliesslich die #status-Seite — deren
+  // Client-Zeile aber erst gemalt wird, wenn /health antwortet. Nach CLAUDE.md
+  // ist der Versionsstring das Einzige, woran sich am Telefon ablesen laesst,
+  // ob ein Deploy angekommen ist; also nennt ihn der Apple-Menue-Toast. Der
+  // Flavour-String („v0.9.7 — Platinum Edition") ist das Mac-OS-9-Zitat und
+  // bleibt, der Build kommt als eigenes Feld dahinter.
+  window._crBannerVersion = window._crBannerVersion || function(){
+    try {
+      var it = document.createNodeIterator(document.documentElement, NodeFilter.SHOW_COMMENT);
+      var n; while((n = it.nextNode())){ var m = /CURRENT VERSION:\s*(v[\d.]+)/.exec(n.nodeValue); if(m) return m[1]; }
+    } catch(_){}
+    return '';
+  };
+  // Als window-Eigenschaft, nicht als Deklaration: die zweite Menueleiste
+  // (crBarApple) lebt in einer anderen IIFE und braucht denselben Satz.
+  window._crOSAbout = window._crOSAbout || function(){
+    var v = (window._crBannerVersion && window._crBannerVersion()) || '';
+    return 'ChartRunnerOS v0.9.7 — Platinum Edition' + (v ? '  ·  Build ' + v : '');
+  };
+  bindMenu('crMenuApple',  ()=> typeof toast === 'function' && toast(window._crOSAbout()));
   // v0.8k#24bz / v0.8k#24ca — Home (now Game) opens the LAST-PLAYED chart
   // when one exists, otherwise falls back to the ChartRunner launcher.
   // The snapshot is written by the Configure-Run "Start Run" button and
@@ -95718,7 +95741,11 @@ function log(msg){
     const el = document.getElementById(id);
     if(el) el.addEventListener('click', fn);
   }
-  bind('crBarApple',  () => typeof toast === 'function' && toast('ChartRunnerOS v0.9.7'));
+  // v1.0.935 — derselbe Build-Zusatz wie im Desktop-Apple-Menue, damit der
+  // Stand auch im Lauf ablesbar ist. window._crOSAbout wird in der
+  // ChartRunnerOSExt-IIFE gesetzt; gerufen wird es erst beim Klick.
+  bind('crBarApple',  () => typeof toast === 'function'
+    && toast(window._crOSAbout ? window._crOSAbout() : 'ChartRunnerOS v0.9.7'));
   // v0.9.24 — Body-level Home button. Was: instant `showSplash()`.
   // Now: confirm if open orders + no map loaded, then crCrtFadeOut →
   // showSplash → fade in. Same behavior the v0.9.23 #crBarHome
@@ -115326,6 +115353,144 @@ body.cr-guest #crRoomsInline{display:none!important}
   box-shadow:inset 0 -1px 0 rgba(23,184,119,.5) !important}
 :is(body[data-os-theme="platinum"],body[data-os-theme="bw"],.splash[data-theme="platinum"],.splash[data-theme="bw"],.splash:not([data-theme])) #win-display :is(#crDocsViewMaps,#crDocsViewAlerts,#crDocsViewSessions,#crDocsViewJournal) .crTerm-tabs{border-bottom-color:var(--cros-line,rgba(127,127,127,.30)) !important}
 /* ═══ v1.0.929 · END — DOCS-HELL (Flaechen + Lesbarkeit) ═════════════════ */
+</style>
+<style id="cr-win-close-touch-v935">
+/* ═══ v1.0.935 · SCHLIESSEN-KNOPF DER FENSTER — GROSS GENUG FUER EINEN DAUMEN ═══
+
+   BEFUND, GEMESSEN im echten Chromium gegen diese Datei (390x844, hasTouch,
+   alle fuenf Themes, alle 16 Fenster des Desktops) — nicht im Quelltext
+   geraten:
+
+     Trefferflaeche des Schliessers  9 x 9 px
+     sichtbarer Schliesskasten       9 x 9 px
+     x-Zeichen im Kasten             1 x 1 px UND opacity:0
+
+   Beide Zahlen sind Unfaelle, keine Entwuerfe. Der Platinum-Kasten war als
+   14 px gebaut (.splash .os-wbar .dot, Zeile ~3949) mit einem x als
+   ::before-clip-path bei inset:3px — in einem 14er Kasten ergibt das ein
+   6 x 6 grosses Zeichen. Der spaetere Block „TradingView-uniform spacing"
+   (v0.8k#24k) hat den Kasten mit !important auf 9 px gedrueckt, ohne das
+   inset mitzuziehen: 9 px Kasten - 2 px Rand - 2 x 3 px inset = 1 px. Und
+   sichtbar wird das Zeichen ausschliesslich ueber
+   `.os-window.focus .os-wbar .dot.red:hover::before` — am Telefon gibt es
+   kein :hover, das Zeichen stand dort also NIE. Julian trifft nicht daneben,
+   weil er ungenau zielt; er zielt auf einen 9-px-Kasten, in dem nichts steht.
+
+   DREI STELLEN RENDERN EINEN FENSTERKOPF, alle drei sind hier angefasst:
+
+     A  .splash .os-wbar .dot.red  — der Schliesskasten aller Fenster auf dem
+        ChartRunnerOS-Desktop (win-run, -configs, -brokerconnect, -stats,
+        -chartrunner, -missions, -wallet, -settings, -walletapp, -sdk, -mail,
+        -terminal, -display, -bot, -tokenterm + jede per Workbench erzeugte
+        App, die dieselbe Leiste baut). Der ✕-Knopf (.wclose) ist hier per CSS
+        aus; der Kasten IST der Schliesser (siehe Kommentar bei closeWindow).
+     B  #win-l3coach — das COACH-Fenster baut seinen Kopf selbst: Punkte aus,
+        dafuer der ✕ als .wclose, 16 x 16 px, Glyphe 11 px.
+     C  body > .os-window.cr-floating — Profil und Terminal werden fuer den
+        Lauf aus #splash nach <body> umgehaengt (_toggleFloatingWindow). Dort
+        greift KEINE .splash-Regel mehr: drei Punkte a 10 px und der ✕ als
+        .wclose, gemessen 31.6 x 23 px. Das ist der einzige Ort, an dem ein
+        literales ✕ in einer Fenster-Titelleiste steht.
+
+   GRENZE, absichtlich: die Trefferflaeche ist NICHT der sichtbare Kasten. Der
+   Kasten waechst auf 14 px (1.56x) und behaelt Verlauf, Rand und Farbe seines
+   Themes — 44 px sichtbares Chrom waeren ein Klotz, und der Auftrag sagt
+   „groesser heisst groesser, nicht auffaelliger". Die 44er Zone haengt als
+   durchsichtiges ::after darueber. Pseudoelemente sind keine Ereignisziele:
+   der Tap landet auf .dot selbst, also auf genau dem Knopf, der seit v0.8L
+   verdrahtet ist — und die Zieh-Wache (`e.target.closest('.dot')`) erkennt
+   ihn unveraendert.
+
+   NUR FUER GROBE ZEIGER. Alles hier haengt an
+   `@media (pointer:coarse), (max-width:720px)` — dieselbe Form, die der ARM-
+   Block seit v1.0.919 benutzt. Mit der Maus bleibt jede berechnete Eigenschaft
+   Byte fuer Byte die von v1.0.934; „Desktop unveraendert" ist damit nicht
+   versprochen, sondern per Konstruktion wahr. Die zweite Bedingung ist die
+   Ruecksicherung fuer den Fall, dass ein In-App-Browser pointer:coarse nicht
+   meldet.
+
+   KEINE FEHLAUSLOESER: gemessen traegt JEDE der drei Leisten genau EIN
+   bedienbares Element (n_inter = 1). Die gelben/gruenen Punkte sind auf dem
+   Desktop display:none, der Titel ist pointer-events:none bzw. blosser Text.
+   Es gibt also keinen Nachbarn, den die groessere Zone verschlucken koennte;
+   in C liegen ✕ und Punkte ~190 px auseinander, die Punkte untereinander
+   bekommen 10 px (>= 8). Und die Titelleiste ist am Telefon keine Ziehflaeche:
+   der Fensterzug haengt an mousedown, ein touchstart-/pointerdown-Handler
+   existiert an .os-wbar nirgends.
+   ═════════════════════════════════════════════════════════════════════ */
+@media (pointer:coarse), (max-width:720px){
+
+  /* ── A · Desktop-Fenster ─────────────────────────────────────────────
+     Die Leiste macht Platz: 48 px hoch, davon 44 px Innenraum. Der linke
+     Rand geht von 8 auf 16 px, damit die 44er Zone VOLLSTAENDIG im Fenster
+     liegt — .os-window ist overflow:hidden, eine mittig gesetzte Zone waere
+     sonst am Fensterrand um ~14 px beschnitten worden. */
+  .splash .os-wbar{
+    min-height:48px !important;
+    padding:2px 8px 2px 16px !important}
+  .splash .os-wbar .dot{
+    width:14px !important;height:14px !important}
+  /* Die Trefferflaeche. Durchsichtig, ohne Rand, ohne Schatten — sie
+     veraendert nichts am Bild, nur am Treffer. */
+  .splash .os-wbar .dot.red::after{
+    content:"";position:absolute;left:50%;top:50%;
+    width:44px;height:44px;transform:translate(-50%,-50%);
+    background:transparent;border:0}
+  /* Das Zeichen: im Ruhezustand sichtbar (am Telefon gibt es kein :hover)
+     und mitgewachsen — inset 3px -> 2px ergibt im 14er Kasten 8 x 8 px
+     statt der gemessenen 1 x 1 px. */
+  .splash .os-wbar .dot.red::before{
+    inset:2px !important;opacity:1 !important}
+  /* Tinte je Theme. Keine neue Farbe, aber die RICHTIGE: der Kasten selbst
+     ist in mono/bw auf var(--ct-panel) gemalt, also gehoert das Zeichen auf
+     die Tinte DIESER Flaeche — var(--ct-ink). Die Leisten-Tinte
+     (--ct-bar-ink) waere der naheliegende Griff und im White-Theme falsch:
+     dort ist die Titelleiste dunkel, ihre Tinte also weiss, und weiss auf dem
+     weissen Kasten misst 1.00:1. Genau so gemessen, bevor diese Zeile stand.
+     frontier bekommt das Weiss seines eigenen .ttl — #1a1a18 waere auf dem
+     dunkelgrauen Kasten dieses Themes unlesbar. */
+  .splash[data-theme="mono"] .os-wbar .dot.red::before,
+  .splash[data-theme="bw"]   .os-wbar .dot.red::before{
+    background:var(--ct-ink) !important}
+  .splash[data-theme="frontier"] .os-wbar .dot.red::before{
+    background:#fff !important}
+  /* ASCII schreibt ein echtes "X" statt der clip-path-Form; dort waechst die
+     Glyphe mit (10 -> 12 px), das inset gilt fuer sie nicht. */
+  .splash[data-theme="ascii"] .os-wbar .dot.red::before{
+    inset:auto !important;font-size:12px !important;line-height:12px !important}
+
+  /* ── B · COACH-Fenster (eigener Kopf, ✕ statt Punkt) ────────────────
+     16 -> 44 px Zone, Glyphe 11 -> 17 px (1.55x). Der Knopf ist schon
+     border:0/background:transparent — groesser heisst hier wirklich nur
+     groesser. Links davon liegt .spacer (flex:1), also weit mehr als 8 px
+     bis zum naechsten Element. */
+  .splash #win-l3coach .os-wbar,
+  #win-l3coach .os-wbar{min-height:52px !important}
+  .splash #win-l3coach .os-wbar .wclose,
+  #win-l3coach .os-wbar .wclose{
+    width:44px !important;height:44px !important;
+    font-size:17px !important;line-height:1 !important}
+
+  /* ── C · schwebende Fenster (Profil/Terminal ueber dem Chart) ───────
+     Hier ist .wclose der verdrahtete Schliesser (_floatDismiss haengt an
+     [data-close]); er bekommt die 44er Zone. Die drei Punkte sind in dieser
+     Bauform Zierde ohne eigenen Zweck — sie ziehen im selben Mass mit
+     (10 -> 14 px), damit kein grosser ✕ neben Miniaturen steht, bekommen
+     aber bewusst KEINE 44er Zone: der rote Punkt traegt hier noch den
+     Desktop-Handler, der das Fenster nur ausblendet, statt es ueber
+     _floatDismiss zurueckzuhaengen. Diesen Altbefund repariert diese Nummer
+     nicht — sie macht ihn nur nicht leichter zu treffen. */
+  body > .os-window.cr-floating .os-wbar{
+    min-height:52px !important;padding:4px 12px !important}
+  body > .os-window.cr-floating .os-wbar .wclose{
+    min-width:44px !important;min-height:44px !important;
+    display:inline-flex !important;align-items:center;justify-content:center;
+    font-size:17px !important;line-height:1 !important}
+  body > .os-window.cr-floating .os-wbar .dot{
+    width:14px !important;height:14px !important}
+  body > .os-window.cr-floating .os-wbar .dots{gap:10px !important}
+}
+/* ═══ v1.0.935 · ENDE — SCHLIESSEN-KNOPF ════════════════════════════════ */
 </style>
 </body>
 </html>
