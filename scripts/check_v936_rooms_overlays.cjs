@@ -42,7 +42,79 @@
  *      der Server sie traegt — die uebrigen Werkzeuge gehen weiter als `dw`.
  *  T11 Ausserhalb eines Raums geht nichts raus.
  *
- * Lauf:  node scripts/check_v936_rooms_overlays.cjs
+ * GEGENPROBE — GEMESSEN, nicht behauptet. Jede Mutation wurde einzeln in
+ * ChartRunner_Prototype.html eingebaut, diese Suite lief, danach wurde der
+ * Quelltext wiederhergestellt. Ergebnis: 29x ROT, 0 GRUEN, 0 CRASH. Der
+ * unveraenderte Quelltext ist gruen — die Messung faellt nicht von allein.
+ *
+ *   M1 _ovSeed misst die Faehigkeit nicht mehr (immer true)
+ *       ROT (3): T1a ohne overlays-Liste im created meldet der Client die Faehigkeit als NICHT vorhanden | T1b...
+ *   M2 die ehrliche Meldung bei fehlender Faehigkeit faellt weg
+ *       ROT (1): T1c … sagt es aber EINMAL sichtbar (nicht null, nicht zehnmal)
+ *   M3 gesendet wird trotz fehlender Faehigkeit
+ *       ROT (2): T1b … und schickt dann auch nichts (keine stille Behauptung) | T1c … sagt es aber EINMAL sich...
+ *   M4 die Anker reisen wieder als Bildschirm-/Indexmass (x,y statt t,p)
+ *       ROT (1): T2f … und KEINE Bildschirmpunkte (kein x, kein y am Anker)
+ *   M5 der Zeitanker faellt weg (wieder ein Kerzen-Indexmass)
+ *       ROT (1): T2e … die Zeit liegt IN der Serie (ein Kerzen-Index waere eine viel kleinere Zahl)
+ *   M6 die Stufen der Fib-Extension reisen nicht mehr mit (der v935-Befund)
+ *       ROT (2): T3b ihre STUFEN reisen mit — das war der Befund an v1.0.935 | T3c abgewaehlte Stufen reisen N...
+ *   M7 auch ABGEWAEHLTE Stufen reisen mit
+ *       ROT (2): T3b ihre STUFEN reisen mit — das war der Befund an v1.0.935 | T3c abgewaehlte Stufen reisen N...
+ *   M8 die Richtung der Fib-Extension faellt weg
+ *       ROT (1): T3d ihre Richtung reist mit
+ *   M9 der VWAP schickt die ganze Dialog-Einstellung (source, bandsCalc, priceLabel)
+ *       ROT (2): T4e `source` reist NICHT mit — computeVwapPoly rechnet auf beiden Seiten hlc3, egal was dort ...
+ *   M10 der VWAP schickt zwei Anker statt einem
+ *       ROT (1): T4b mit GENAU EINEM Anker — dem Ankerzeitpunkt
+ *   M11 asset/tf kommen nicht mehr aus chartParams-Quelle
+ *       ROT (1): T2g asset und tf kommen aus DERSELBEN Quelle wie chartParams()
+ *   M12 der Signaturvergleich faellt weg (Dauerlast statt Aenderung)
+ *       ROT (2): T5a ohne Aenderung geht NICHTS raus — drei Objekte mal 5 Hz waeren sonst Dauerlast | T5b eine...
+ *   M13 was aus der Liste faellt, wird nicht geloescht
+ *       ROT (1): T6a was aus der Liste faellt, wird beim Server geloescht
+ *   M14 die id traegt ihre Liste nicht mehr im Praefix (tl:/fx:/vw: kollidieren)
+ *       ROT (4): T2h die id traegt ihre Liste im Praefix (tl:), sonst kollidiert sie mit vw:/fx: | T5b eine ve...
+ *   M15 der KONTEXT-RIEGEL ist ausgebaut (fremde Linie ueber eigene, andere Kerzen)
+ *       ROT (4): T7c das auf einem ANDEREN Chart wird NICHT gezeichnet | T7d … stattdessen steht da ein Hinwei...
+ *   M16 der Riegel prueft nur das Token, nicht den Zeitrahmen
+ *       ROT (2): T7e gleicher Token, ANDERER Zeitrahmen wird ebenso wenig gezeichnet — der Riegel prueft beide...
+ *   M17 der Hinweis auf den anderen Chart faellt weg (stilles Weglassen)
+ *       ROT (2): T7d … stattdessen steht da ein Hinweis, der Token UND Zeitrahmen nennt | T7f … und auch dafue...
+ *   M18 der Hinweis nennt den Zeitrahmen nicht
+ *       ROT (2): T7d … stattdessen steht da ein Hinweis, der Token UND Zeitrahmen nennt | T7f … und auch dafue...
+ *   M19 fremde Overlays tragen den Namen ihres Urhebers nicht mehr
+ *       ROT (2): T7b das auf DEM GLEICHEN Chart wird gezeichnet — mit dem Namen seines Urhebers | T8d wieder a...
+ *   M20 der Schalter wirkt nicht (fremde Overlays bleiben immer an)
+ *       ROT (3): T8a aus: kein fremdes Overlay mehr | T8b aus: auch der Hinweis auf andere Charts ist weg — da...
+ *   M21 aus heisst spurlos (es steht nicht da, DASS etwas ausgeblendet ist)
+ *       ROT (1): T8c aus: aber es steht da, DASS etwas ausgeblendet ist (nicht spurlos)
+ *   M22 overlay_gone wird ignoriert (die Linie bleibt stehen, obwohl der Server sie nahm)
+ *       ROT (1): T9e der Server sagt "weg" — dann ist es weg
+ *   M23 der Schluessel traegt die Herkunft nicht (zwei Spieler ueberschreiben sich)
+ *       ROT (1): T9e der Server sagt "weg" — dann ist es weg
+ *   M24 der Raumwechsel raeumt die fremden Overlays nicht mehr weg
+ *       ROT (1): T11b die fremden Overlays gehen mit dem Raum
+ *   M25 echoDraw schickt die drei Arten WEITER als dw (zweiter Weg fuer dasselbe Objekt)
+ *       ROT (3): T10a trendline geht NICHT mehr als dw — sie hat ihren eigenen Weg | T10b fibExt ebenso | T10c...
+ *   M26 echoDraw laesst ALLES aus (auch die uebrigen ~50 Werkzeuge verlieren ihren Weg)
+ *       ROT (1): T10d die uebrigen ~50 Werkzeuge gehen weiter als dw (hier: rect)
+ *   M27 die Abgleichschleife laeuft nicht (nichts wird je gesendet)
+ *       ROT (22): T1c … sagt es aber EINMAL sichtbar (nicht null, nicht zehnmal) | T2a eine Trendlinie geht als...
+ *   M28 render() haengt wieder an ghosts.size (der Nachzuegler sieht nichts)
+ *       ROT (5): T7b das auf DEM GLEICHEN Chart wird gezeichnet — mit dem Namen seines Urhebers | T7d … stattd...
+ *   M29 ein fremdes Overlay wird wie ein eigenes gezeichnet (kein owner-Filter)
+ *       ROT (1): T7g das EIGENE Overlay aus dem Rundruf wird NICHT ein zweites Mal gezeichnet
+ *
+ * Drei Zeilen waren beim ERSTEN Lauf zu schwach und sind geschaerft worden
+ * (M4, M16, M29): die Zusage "der Draht traegt keine Bildschirmpunkte" hielten
+ * zwei Schichten unabhaengig voneinander, sodass keine einzelne Mutation sie
+ * rot machen konnte — die zweite ist deshalb aus RoomsClient.overlaySet
+ * entfernt worden; der Riegel wurde nur an einem Fall gemessen, der sich in
+ * Token UND Zeitrahmen unterschied; und der owner-Filter (das eigene Overlay
+ * kommt im Rundruf zurueck) war ueberhaupt nicht geprueft.
+ *
+ * Lauf:  npm i playwright acorn --no-save && node scripts/check_v936_rooms_overlays.cjs
  */
 const fs = require('fs');
 const path = require('path');
