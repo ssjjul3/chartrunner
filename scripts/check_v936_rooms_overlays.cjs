@@ -41,6 +41,10 @@
  *  T10 EIN Weg je Objekt: echoDraw laesst trendline/fibExt/avwap aus, solange
  *      der Server sie traegt — die uebrigen Werkzeuge gehen weiter als `dw`.
  *  T11 Ausserhalb eines Raums geht nichts raus.
+ *  T12 Die fremde Fib-Extension kommt als Stufen an und der fremde VWAP als
+ *      Kurve — nicht als Linie und nicht als Raute. Das war der Befund an
+ *      v1.0.935, und ohne diesen Abschnitt bliebe er auf der Empfangsseite
+ *      ungeprueft.
  *
  * GEGENPROBE — GEMESSEN, nicht behauptet. Jede Mutation wurde einzeln in
  * ChartRunner_Prototype.html eingebaut, diese Suite lief, danach wurde der
@@ -188,7 +192,7 @@ function launchOptions(){
     window.__v936.ctx = function(){
       var log = { strokes: 0, fills: 0, texts: [], dashes: [], colors: [] };
       var c = {
-        canvas: { width: 800, height: 600 },
+        canvas: { width: 1280, height: 900 },
         save(){}, restore(){}, beginPath(){}, moveTo(){}, lineTo(){}, closePath(){},
         arc(){}, rect(){}, fillRect(){}, strokeRect(){}, clip(){}, translate(){}, scale(){},
         setLineDash(d){ log.dashes.push((d || []).join(',')); },
@@ -223,7 +227,18 @@ function launchOptions(){
       var base = 100 + Math.sin(i / 7) * 5;
       candles.push({ t: t0 + i * dur, o: base, h: base + 2, l: base - 2, c: base + 0.5, v: 1000 + i });
     }
-    return { n: candles.length, step: STEP, t0: candles[0].t, tEnd: candles[candles.length-1].t };
+    /* Und eine brauchbare Projektion. Ohne sie steht die Kamera auf ihrem
+     * Startwert: priceToY(99) ergibt dann rund 28.000, sX(0) rund -8.400 —
+     * alles ausserhalb des Bildes. Die Zeilen unten pruefen, ob GEZEICHNET
+     * wird; mit einer Projektion, die nichts ins Bild bringt, waeren sie rot
+     * aus dem falschen Grund (und die Cull-Zeilen des Zeichners waeren die
+     * einzigen, die je etwas taeten). */
+    perspective = 'linear';
+    midPrice = 100; priceScale = 20;
+    camera.wx = 0; camera.zoomX = 1; camera.panX = 20;
+    camera.zoomY = 1; camera.panY = 0;
+    return { n: candles.length, step: STEP, t0: candles[0].t, tEnd: candles[candles.length-1].t,
+             W: W, H: H, y99: priceToY(99), x0: sX(0) };
   });
 
   console.log('\n-- Boot --');
@@ -235,6 +250,8 @@ function launchOptions(){
     await page.evaluate(() => typeof window.__v936 === 'object' && Array.isArray(window.__v936.sent)));
   check('eine Kerzenserie liegt (sonst waeren die Zeichen-Zeilen gruen aus dem falschen Grund)',
     seeded.n === 200 && seeded.step > 0, seeded);
+  check('und die Projektion bringt sie ins Bild (sonst zeichnet der Cull alles weg)',
+    seeded.y99 > 0 && seeded.y99 < seeded.H && seeded.x0 > -50, seeded);
 
   /* ═══ T1 — DIE FAEHIGKEIT WIRD GEMESSEN, NICHT GERATEN ══════════════════ */
   console.log('\n-- T1 · Faehigkeit --');
@@ -413,7 +430,7 @@ function launchOptions(){
       id:'tl:5', k:'trendline', a:[an(12, 102), an(42, 107)], cfg:{},
       asset: chart.a, tf: chart.tf, owner: 'me1', name:'ichselbst' } });
     var c = window.__v936.ctx();
-    crRoomsNet.render(c, 800, 600);
+    crRoomsNet.render(c, W, H);
     return { n: crRoomsNet.peerOverlayCount(), texts: c._log.texts.slice(), strokes: c._log.strokes, chart: chart };
   });
   check('T7a die drei fremden Overlays liegen im Client (das eigene zaehlt nicht mit)', t7.n === 3, t7);
@@ -434,9 +451,9 @@ function launchOptions(){
   console.log('\n-- T8 · Schalter --');
   const t8 = await page.evaluate(() => {
     crRoomsNet.showPeerOverlays(false);
-    var aus = window.__v936.ctx(); crRoomsNet.render(aus, 800, 600);
+    var aus = window.__v936.ctx(); crRoomsNet.render(aus, W, H);
     crRoomsNet.showPeerOverlays(true);
-    var an = window.__v936.ctx(); crRoomsNet.render(an, 800, 600);
+    var an = window.__v936.ctx(); crRoomsNet.render(an, W, H);
     return { ausTexts: aus._log.texts.slice(), anTexts: an._log.texts.slice(),
              stand: crRoomsNet.peerOverlaysShown() };
   });
@@ -466,7 +483,7 @@ function launchOptions(){
 
   const t9e = await page.evaluate(() => {
     window.__v936.emit({ type:'overlay_gone', owner:'peerA', ids:['tl:1'] });
-    var c = window.__v936.ctx(); crRoomsNet.render(c, 800, 600);
+    var c = window.__v936.ctx(); crRoomsNet.render(c, W, H);
     return { n: crRoomsNet.peerOverlayCount(), texts: c._log.texts.slice() };
   });
   check('T9e der Server sagt "weg" — dann ist es weg', t9e.n === 2 && t9e.texts.indexOf('anna') === -1, t9e);
@@ -513,6 +530,51 @@ function launchOptions(){
   check('T11b die fremden Overlays gehen mit dem Raum', t11.peer === 0, t11);
   check('T11c die EIGENEN Werkzeuge bleiben unangetastet — die Synchronisierung kam obendrauf',
     t11.eigene === 1, t11);
+
+  /* ═══ T12 — DIE ANDEREN BEIDEN ARTEN WERDEN AUCH GEZEICHNET ════════════
+   * T7 misst den Riegel an einer Trendlinie. Ohne diesen Abschnitt waere
+   * "jeder Client zeichnet daraus selbst" fuer Fib-Extension und VWAP
+   * ungeprueft — und eine Ausnahme in ihrem Zeichenpfad faellt still in das
+   * try/catch, das den Rest des Bildes schuetzt. Genau so sieht ein Werkzeug
+   * aus, das niemand vermisst. */
+  console.log('\n-- T12 · Fib-Extension und VWAP beim Betrachter --');
+  const t12 = await page.evaluate(async () => {
+    crRoomsNet.leave();
+    await new Promise(r => setTimeout(r, 80));
+    window.__v936.clear();
+    crRoomsNet.create({});
+    await new Promise(r => setTimeout(r, 120));
+    window.__v936.emit({ type:'created', room:'V936C', playerId:'me1', overlays: [] });
+    game.visualTrendlines.length = 0; game.tvOverlays.length = 0; game.vwapAnchors.length = 0;
+    const chart = crRoomsNet.chartParams();
+    const an = (i, p) => ({ t: candles[i].t, p: p });
+
+    window.__v936.emit({ type:'overlay', ov: {
+      id:'fx:1', k:'fibExt', a:[an(10, 99), an(40, 107)],
+      cfg:{ levels:[1, 1.272, 1.618], extend:'right' },
+      asset: chart.a, tf: chart.tf, owner:'peerF', name:'fiona' } });
+    const cf = window.__v936.ctx(); crRoomsNet.render(cf, W, H);
+
+    window.__v936.emit({ type:'overlay_gone', owner:'peerF', ids:['fx:1'] });
+    window.__v936.emit({ type:'overlay', ov: {
+      id:'vw:1', k:'avwap', a:[an(20, 103)], cfg:{ mult1: 10, band1: true },
+      asset: chart.a, tf: chart.tf, owner:'peerV', name:'viktor' } });
+    const cv = window.__v936.ctx(); crRoomsNet.render(cv, W, H);
+
+    return { fib: { strokes: cf._log.strokes, texts: cf._log.texts.slice() },
+             vwap: { strokes: cv._log.strokes, fills: cv._log.fills, texts: cv._log.texts.slice() } };
+  });
+  check('T12a die fremde Fib-Extension wird gezeichnet, mit dem Namen ihres Urhebers',
+    t12.fib.texts.indexOf('fiona') >= 0, t12.fib.texts);
+  check('T12b … und zwar als Impulsbein PLUS drei Stufen, nicht als eine Linie',
+    t12.fib.strokes >= 4, t12.fib);
+  check('T12c … die Stufenbeschriftung steht dran',
+    ['1','1.272','1.618'].every(x => t12.fib.texts.indexOf(x) >= 0), t12.fib.texts);
+  check('T12d der fremde VWAP wird gezeichnet, mit dem Namen seines Urhebers',
+    t12.vwap.texts.indexOf('viktor') >= 0, t12.vwap.texts);
+  check('T12e … als KURVE (aus den eigenen Kerzen gerechnet), nicht als Raute',
+    t12.vwap.strokes >= 1, t12.vwap);
+  check('T12f … mit dem Ankerpunkt dazu', t12.vwap.fills >= 1, t12.vwap);
 
   console.log('\n-- Ende --');
   const hard = errs.filter(m => !/Failed to fetch|NetworkError|ERR_FAILED|net::/i.test(m));
