@@ -41,6 +41,8 @@
  *  T10 EIN Weg je Objekt: echoDraw laesst trendline/fibExt/avwap aus, solange
  *      der Server sie traegt — die uebrigen Werkzeuge gehen weiter als `dw`.
  *  T11 Ausserhalb eines Raums geht nichts raus.
+ *  T13 Der Schalter steht im Werkzeugmenue, nennt den Stand, schaltet um und
+ *      laesst das Menue offen — und ausserhalb eines Raums gibt es ihn nicht.
  *  T12 Die fremde Fib-Extension kommt als Stufen an und der fremde VWAP als
  *      Kurve — nicht als Linie und nicht als Raute. Das war der Befund an
  *      v1.0.935, und ohne diesen Abschnitt bliebe er auf der Empfangsseite
@@ -575,6 +577,55 @@ function launchOptions(){
   check('T12e … als KURVE (aus den eigenen Kerzen gerechnet), nicht als Raute',
     t12.vwap.strokes >= 1, t12.vwap);
   check('T12f … mit dem Ankerpunkt dazu', t12.vwap.fills >= 1, t12.vwap);
+
+  /* ═══ T13 — DER SCHALTER IST DA, WO DIE WERKZEUGE SIND ═════════════════
+   * T8 misst, dass der Schalter WIRKT. Dass ihn jemand ERREICHT, ist eine
+   * andere Aussage: die Zeile wird in den Werkzeug-Pane gebaut, und ein
+   * Ausnahmefehler dort faellt still in ein try/catch. Ein Schalter, den es
+   * nur in der Konsole gibt, ist keiner. */
+  console.log('\n-- T13 · der Schalter im Werkzeugmenue --');
+  const t13 = await page.evaluate(() => {
+    /* Ueber _laserSpawnEl, nicht ueber einen Style-Selektor: der Browser
+     * normalisiert cssText ("z-index: 9999" mit Leerzeichen), und ein
+     * Selektor, der daran vorbeigreift, faende nie etwas und saehe wie ein
+     * Befund aus. */
+    const zeile = () => {
+      const el = (typeof _laserSpawnEl !== 'undefined') ? _laserSpawnEl : null;
+      if(!el) return null;
+      return [...el.querySelectorAll('button')].find(b => /Fremde Overlays anzeigen/.test(b.textContent || '')) || null;
+    };
+    openLaserSpawnMenu(100, 100, 10 * STEP, 101);
+    const drin = zeile();
+    const vorher = drin ? drin.textContent : null;
+    if(drin) drin.click();
+    const nachKlick = zeile();
+    const nachher = nachKlick ? nachKlick.textContent : null;
+    const stand = crRoomsNet.peerOverlaysShown();
+    if(nachKlick) nachKlick.click();          // zurueck auf an
+    closeLaserSpawnMenu();
+    return { vorhanden: !!drin, vorher, nachher, stand, offenGeblieben: !!nachKlick };
+  });
+  check('T13a die Zeile steht im Werkzeugmenue (Hotkey 2), nicht in einem Einstellungsfenster',
+    t13.vorhanden === true, t13);
+  check('T13b sie nennt den Stand: wie viele fremde Overlays gerade an sind',
+    /1 an/.test(t13.vorher || ''), t13);
+  check('T13c ein Klick schaltet um — und das Menue bleibt offen, der Schalter ist zum Vergleichen da',
+    t13.stand === false && t13.offenGeblieben === true && /1 aus/.test(t13.nachher || ''), t13);
+
+  const t13d = await page.evaluate(async () => {
+    crRoomsNet.leave();
+    await new Promise(r => setTimeout(r, 80));
+    openLaserSpawnMenu(100, 100, 10 * STEP, 101);
+    const el = (typeof _laserSpawnEl !== 'undefined') ? _laserSpawnEl : null;
+    const gebaut = !!el;
+    const drin = el ? [...el.querySelectorAll('button')].some(b => /Fremde Overlays anzeigen/.test(b.textContent || '')) : false;
+    closeLaserSpawnMenu();
+    return { drin, gebaut };
+  });
+  check('T13d das Menue baut sich auch ausserhalb eines Raums (sonst pruefte T13e nichts)',
+    t13d.gebaut === true, t13d);
+  check('T13e … aber die Zeile fehlt dort — eine tote Zeile waere eine Luege in Ruhe',
+    t13d.drin === false, t13d);
 
   console.log('\n-- Ende --');
   const hard = errs.filter(m => !/Failed to fetch|NetworkError|ERR_FAILED|net::/i.test(m));
