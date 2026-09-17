@@ -31,8 +31,10 @@
  *  T4  VWAP: genau EIN Anker, die Baender reisen mit, `source` NICHT.
  *  T5  Aendern schickt neu, Unveraendertes schickt NICHTS (Signaturvergleich).
  *  T6  Verschwinden aus der Liste -> overlay_del mit derselben id.
- *  T7  Kontext-Riegel: gleicher Chart -> gezeichnet; anderer Chart -> NICHT
- *      gezeichnet, stattdessen der Hinweis mit Token und Zeitrahmen.
+ *  T7  Kontext-Riegel: gleicher Chart -> gezeichnet; anderer Token ODER
+ *      anderer Zeitrahmen -> NICHT gezeichnet, stattdessen der Hinweis mit
+ *      Token und Zeitrahmen. Das EIGENE aus dem Rundruf wird nicht doppelt
+ *      gezeichnet.
  *  T8  Schalter: aus -> kein fremdes Overlay mehr, nur die Zeile; an -> zurueck.
  *  T9  Fremdes ist nicht bearbeitbar: es landet in KEINER der drei Spiel-Listen,
  *      und der Client loescht es nie (kein overlay_del auf eine fremde id).
@@ -324,17 +326,37 @@ function launchOptions(){
     window.__v936.emit({ type:'overlay', ov: {
       id:'tl:9', k:'trendline', a:[an(10, 101), an(40, 106)], cfg:{},
       asset:'EINANDERERTOKEN', tf:'99m', owner:'peerB', name:'bert' } });
+    /* Gleicher Token, ANDERER Zeitrahmen. Ohne diese Zeile pruefte T7c nur,
+     * ob der Riegel den Token ansieht — ein Riegel, der den Zeitrahmen
+     * vergisst, waere gruen durchgegangen. Genau das ist bei der Gegenprobe
+     * aufgefallen. */
+    window.__v936.emit({ type:'overlay', ov: {
+      id:'tl:8', k:'trendline', a:[an(10, 101), an(40, 106)], cfg:{},
+      asset: chart.a, tf:'99m', owner:'peerC', name:'clara' } });
+    /* Und das EIGENE: der Server rundfunkt an ALLE, den Absender
+     * eingeschlossen. Es darf hier nicht gezeichnet werden — das eigene Bild
+     * kommt aus den eigenen Listen, und ein zweites, gestricheltes Exemplar
+     * mit dem eigenen Namen daneben waere genau das doppelte Zeichnen. */
+    window.__v936.emit({ type:'overlay', ov: {
+      id:'tl:5', k:'trendline', a:[an(12, 102), an(42, 107)], cfg:{},
+      asset: chart.a, tf: chart.tf, owner: 'me1', name:'ichselbst' } });
     var c = window.__v936.ctx();
     crRoomsNet.render(c, 800, 600);
     return { n: crRoomsNet.peerOverlayCount(), texts: c._log.texts.slice(), strokes: c._log.strokes, chart: chart };
   });
-  check('T7a beide fremden Overlays liegen im Client', t7.n === 2, t7);
+  check('T7a die drei fremden Overlays liegen im Client (das eigene zaehlt nicht mit)', t7.n === 3, t7);
   check('T7b das auf DEM GLEICHEN Chart wird gezeichnet — mit dem Namen seines Urhebers',
     t7.texts.indexOf('anna') >= 0, t7.texts);
   check('T7c das auf einem ANDEREN Chart wird NICHT gezeichnet',
     t7.texts.indexOf('bert') === -1, t7.texts);
   check('T7d … stattdessen steht da ein Hinweis, der Token UND Zeitrahmen nennt',
     t7.texts.some(x => /bert/.test(x) && /EINANDERERTOKEN/.test(x) && /99m/.test(x)), t7.texts);
+  check('T7e gleicher Token, ANDERER Zeitrahmen wird ebenso wenig gezeichnet — der Riegel prueft beides',
+    t7.texts.indexOf('clara') === -1, t7.texts);
+  check('T7f … und auch dafuer steht der Hinweis da',
+    t7.texts.some(x => /clara/.test(x) && /99m/.test(x)), t7.texts);
+  check('T7g das EIGENE Overlay aus dem Rundruf wird NICHT ein zweites Mal gezeichnet',
+    t7.texts.indexOf('ichselbst') === -1, t7.texts);
 
   /* ═══ T8 — DER SCHALTER ════════════════════════════════════════════════ */
   console.log('\n-- T8 · Schalter --');
@@ -368,14 +390,14 @@ function launchOptions(){
   check('T9b … und der Client loescht es nie (kein overlay_del auf eine fremde id)',
     t9.del.indexOf('tl:1') === -1 && t9.del.length === 0, t9);
   check('T9c … und schickt es nie als eigenes zurueck', t9.set.length === 0, t9);
-  check('T9d … es bleibt aber liegen, solange der Server es haelt', t9.n === 2, t9);
+  check('T9d … es bleibt aber liegen, solange der Server es haelt', t9.n === 3, t9);
 
   const t9e = await page.evaluate(() => {
     window.__v936.emit({ type:'overlay_gone', owner:'peerA', ids:['tl:1'] });
     var c = window.__v936.ctx(); crRoomsNet.render(c, 800, 600);
     return { n: crRoomsNet.peerOverlayCount(), texts: c._log.texts.slice() };
   });
-  check('T9e der Server sagt "weg" — dann ist es weg', t9e.n === 1 && t9e.texts.indexOf('anna') === -1, t9e);
+  check('T9e der Server sagt "weg" — dann ist es weg', t9e.n === 2 && t9e.texts.indexOf('anna') === -1, t9e);
 
   /* ═══ T10 — EIN WEG JE OBJEKT ══════════════════════════════════════════ */
   console.log('\n-- T10 · ein Weg je Objekt --');
