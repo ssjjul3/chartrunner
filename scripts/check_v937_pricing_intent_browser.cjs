@@ -43,8 +43,76 @@
  *     Anmeldung landet auf dem echten Stripe-Link (gemessen an der URL, zu der
  *     der Browser tatsaechlich navigiert).
  *
- * GEGENPROBEN — GEMESSEN, nicht behauptet (CLAUDE.md · ROT/CRASH/GRUEN): siehe
- * den Block am Ende dieser Datei.
+ * GEGENPROBEN — GEMESSEN, nicht behauptet (CLAUDE.md · ROT/CRASH/GRUEN). Jede
+ * Mutation wurde EINZELN in chartrunner-prototype/pricing.html eingebaut, die
+ * Suite lief vollstaendig, danach hat `git checkout` wiederhergestellt. KEINE
+ * davon war CRASH: jeder Lauf ging durch und R1 ("keine harten Page-Errors")
+ * blieb jedes Mal gruen — rot wurde nur, was die jeweilige Zeile behauptet.
+ * Gruen gebliebene Nachbarzeilen sind mitprotokolliert: sie sagen, WELCHE
+ * Wache eine Zeile tatsaechlich misst.
+ *
+ *   M1  `uri()`: beide Wachen gestrichen und der v936-Rueckfall wieder
+ *       eingesetzt — Adresse als Literal, Betrag zurueck auf die Ratecard.
+ *       ROT: T4a, T4b, T5h, T8a, T8d  (44 gruen)
+ *       T2 und T3 bleiben gruen und MUESSEN es: der abgemeldete Zustand und
+ *       der Fehlerzustand malen paintPay() nie, der Rueckfall ist dort gar
+ *       nicht erreichbar. T5g bleibt gruen, weil die ZWEITE Wache in
+ *       startIntent (j.treasury) noch steht — T4/T5h messen die Wache in
+ *       uri(), T5g die in startIntent.
+ *   M2  `boot()`: `phase = _authSettled ? 'signedout' : 'auth'` durch
+ *       `phase = 'ready'` ersetzt.
+ *       ROT: T2b, T2c, T2e  (46 gruen)
+ *       T2a bleibt gruen — ohne Intent malt paintPay() nur Platzhalter, es
+ *       entsteht KEINE Adresse und kein `solana:`. Kaputt ist damit nicht das
+ *       Zahlungsziel, sondern die Unterscheidbarkeit des abgemeldeten
+ *       Zustands: der Nutzer sieht eine Zahltafel, die nie eine werden kann.
+ *       T2d bleibt gruen, weil startIntent ohne Token weiterhin abbricht.
+ *   M3  `startIntent()`: `.catch(fail)` zurueck auf `.catch(function(){})`.
+ *       ROT: T3a, T3c  (47 gruen)
+ *       T3b bleibt gruen (es wird ja nichts gemalt — genau das ist der alte
+ *       Fehler: der Dialog bleibt still im Wartezustand stehen). T3d bleibt
+ *       gruen, weil HTTP 500 ueber den then-Zweig (r.ok false -> null) laeuft
+ *       und nicht ueber catch — die beiden Zeilen pruefen wirklich zwei Wege.
+ *   M4  `startIntent()`: `j.reference && j.treasury` auf `j.reference`
+ *       verkuerzt (Antwort ohne treasury wird akzeptiert).
+ *       ROT: T5g  (48 gruen)
+ *       T5h bleibt gruen: ohne Rueckfall entsteht keine FALSCHE Adresse, nur
+ *       ein leeres Feld. Deshalb pruefen T5g und T5h getrennt.
+ *   M5  `paintPay()`: der disabled-Zweig durch den <a href>-Zweig ersetzt.
+ *       ROT: T4a  (48 gruen)
+ *       T4b bleibt gruen — uri() gibt weiter '' zurueck, der Link ist leer.
+ *       Der Knopf war also wieder klickbar, ohne Ziel: eine Sackgasse, aber
+ *       keine falsche Zahlung. Genau dafuer steht T4a getrennt da.
+ *   M6  `clusterIsMain`: 'devnet' zusaetzlich als mainnet gefuehrt.
+ *       ROT: T6a  (48 gruen) — die Testzahlung sah aus wie eine echte.
+ *   M7  die `.pay-req`-Zeile an der Pro-Karte gestrichen (Weg A wird erst im
+ *       Dialog angesagt, nicht mehr davor).
+ *       ROT: T1a, T1b, T1c  (46 gruen)
+ *       T2b bleibt gruen: der Dialog sagt es weiterhin — nur eben zu spaet.
+ *       Das ist der Unterschied, den T1 misst.
+ *   M8  `startPoll()`: die `reference` aus der Status-URL entfernt.
+ *       ROT: T7a  (48 gruen)
+ *       T7c bleibt gruen, weil das Doppel auch ohne Parameter 'confirmed'
+ *       liefert: eine Freischaltung, die nicht mehr an DIESE Zahlung gebunden
+ *       ist. Genau deshalb prueft T7a die URL und nicht nur das Ergebnis.
+ *   M9  die alte Coach-Note ("In-game trades are simulated") wieder eingesetzt.
+ *       ROT: T9a, T9b  (47 gruen)
+ *       T9c bleibt gruen — die Fussnote ist eine zweite Stelle mit derselben
+ *       Behauptung und wird getrennt geprueft.
+ *  M10  die `indexOf('REPLACE')`-Wachen im Stripe-Zweig wieder eingesetzt.
+ *       ROT: T8e  (48 gruen)
+ *       T10a/T10b bleiben gruen — und das ist der Befund, nicht ein Mangel:
+ *       die Bedingung war TOT. Mit echten Links aendert sie am Verhalten
+ *       nichts, sie tut nur so, als warne sie. Deshalb misst T8e den Quelltext
+ *       und T10 das Verhalten; nur beide zusammen sagen das Richtige.
+ *  M11  der sichtbare Versionsstempel entfernt.
+ *       ROT: T9f  (48 gruen)
+ *  M12  die Konten-Schicht liefert auch ohne Sitzung ein Token ('anon') — der
+ *       Fall "abgemeldet" verschwindet.
+ *       ROT: T2a, T2b, T2c, T2d  (45 gruen)
+ *       Hier wird `solana:` samt Adresse und Betrag fuer jemanden gebaut, dem
+ *       der Worker nichts gutschreiben koennte. T1 bleibt gruen: die Ansage an
+ *       der Karte steht noch da, sie stimmt nur nicht mehr.
  *
  * Aufruf:  node scripts/check_v937_pricing_intent_browser.cjs
  */
