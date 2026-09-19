@@ -36,6 +36,42 @@
  *  T7  Regression: Versionsbanner >= v1.0.937, 7 Skriptbloecke, kein
  *      statisches <script src>, keine harten Seitenfehler, und die
  *      Settings-Chips (.crSetThemeChip) stehen unveraendert da.
+ *
+ * ── GEGENPROBE (CLAUDE.md · ROT/CRASH/GRUEN) ───────────────────────────────
+ *
+ * 10 Mutationen, jede EINZELN in ChartRunner_Prototype.html eingebaut, Suite
+ * gelaufen, danach wiederhergestellt. Ergebnis: 10x ROT, 0 GRUEN, 0 CRASH.
+ * Der unveraenderte Quelltext ist gruen (45/0/0) — die Messung faellt also
+ * nicht von allein, und keine Mutation hat die Suite bloss zum Absturz
+ * gebracht (ein CRASH haette geheissen: die Zeile prueft etwas anderes).
+ *
+ * Gelaufen ist das in einer ISOLIERTEN KOPIE des Arbeitsbaums (das Repo
+ * bleibt sauber; ein Abbruch mitten in einer Mutation kann sonst eine
+ * kaputte Zeile im Baum zuruecklassen — genau das ist in dieser Session
+ * einmal passiert und fiel nur durch eine Integritaetspruefung vor dem
+ * Commit auf). Der Vergleichsstand kommt per GIT_DIR aus dem echten
+ * Objektspeicher, lesend.
+ *
+ *  M1  der Eintrag kehrt in die Leiste zurueck            12 rot  T1a/T1c/T1d
+ *  M2  er wird zur Laufzeit wieder eingehaengt
+ *      (die alte Wiederbelebungszeile)                    12 rot  T1a/T1c/T1d
+ *  M3  crApplyTheme wird nicht mehr exportiert             1 rot  T4a
+ *  M4  crCycleTheme wird nicht mehr exportiert             1 rot  T4b
+ *  M5  applyTheme setzt das splash-Attribut nicht mehr     7 rot  T4c/T4d/T4e
+ *  M6  der Observer schreibt cr_os_theme nicht mehr        3 rot  T4h/T4i/T4j
+ *  M7  das gespeicherte Theme wird beim Laden nicht
+ *      angewandt                                           1 rot  T4i
+ *  M8  ein Chip faellt aus dem Control Center              7 rot  T4f/T4g/T4h
+ *  M9  ein LOCH statt Entfernen: der Eintrag wird nur
+ *      unsichtbar gemacht                                 14 rot  T1a/T1c/T1d
+ *  M10 das Control Center ist IM LAUF bedienbar           3 rot  T3b/T6a/T6b
+ *
+ * M9 und M10 sind die beiden, auf die es ankommt. M9 ist der naheliegende
+ * Pfusch (display/visibility statt Entfernen) — er faellt durch, weil T1
+ * am DOM misst, nicht am Bild. M10 mutiert nicht den Patch, sondern die
+ * BEHAUPTUNG des PR-Textes ueber die Folge: macht man das Control Center
+ * im Lauf bedienbar, wird T6b rot. Die Zeile im PR ist damit an eine
+ * Messung gebunden und nicht an meine Beschreibung.
  */
 'use strict';
 
