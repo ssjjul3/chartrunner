@@ -141,7 +141,7 @@
         <span class="bill-save" id="billSave">Annual = 2 months free</span>
       </div>
       <div class="price-grid" id="priceGrid"><!-- rendered by pricing() --></div>
-      <p class="price-fine"><b>How fulfillment works:</b> <b>Card</b> runs through Stripe and works with or without an account: signed in, the worker mints a real Checkout Session and your Pro grant is automatic; signed out, the payment link carries the same price and the purchase is claimable in-game with the same e-mail. <b>On-chain</b> pay is issued per account and therefore needs you signed in: the ChartRunner server hands out the receiving address, the exact amount and a payment reference &mdash; this page builds none of them &mdash; then watches that reference, and Pro is granted automatically once the payment confirms on-chain. The game itself is always free and never pay-to-win; the Pro fee-discount applies to real on-chain trading fees, not game outcomes.</p>
+      <p class="price-fine"><b>How fulfillment works:</b> <b>Card</b> runs through Stripe and works with or without an account: signed in, the worker mints a real Checkout Session and your Pro grant is automatic; signed out, the payment link carries the same price and the purchase is claimable in-game with the same e-mail. <b>On-chain</b> pay is issued per account and therefore needs you signed in: the ChartRunner server hands out the receiving address, the exact amount and a payment reference &mdash; this page builds none of them &mdash; then watches that reference, and Pro switches on as soon as the server confirms the payment. Until it does, nothing is claimed: the page shows what it is waiting for and keeps the reference in view. The game itself is always free and never pay-to-win; the Pro fee-discount applies to real on-chain trading fees, not game outcomes.</p>
     </section>
 
     <div class="legal-band"><strong>Coach note:</strong> ChartRunner is entertainment and education — but the trading is not a simulation: orders you arm and sign in the game execute on Solana mainnet, from your own wallet, with your own funds. ChartRunner is not a broker, exchange, financial service, or financial advice. Markets are risky; learn here before touching real money. These paid tiers cover bot/API/RPC throughput only — the game itself is always free and never pay-to-win.</div>
@@ -180,12 +180,12 @@
         <a href="https://github.com/ssjjul3/chartrunner" target="_blank" rel="noopener">GitHub</a>
       </div>
     </div>
-    <div class="fine-print">ChartRunner is an entertainment and educational game. Trades you arm and sign in the game are real on-chain trades on Solana mainnet, executed from your own wallet with your own funds. ChartRunner is not a financial service, broker, or exchange, and nothing on this site or in the game is financial, investment, legal, or tax advice. Trading real assets carries risk, including loss of capital. Always do your own research and consult a licensed professional before making real-money decisions.<br><span style="color:rgba(240,239,230,.42)">Pricing page build <b>v1.0.937</b></span></div>
+    <div class="fine-print">ChartRunner is an entertainment and educational game. Trades you arm and sign in the game are real on-chain trades on Solana mainnet, executed from your own wallet with your own funds. ChartRunner is not a financial service, broker, or exchange, and nothing on this site or in the game is financial, investment, legal, or tax advice. Trading real assets carries risk, including loss of capital. Always do your own research and consult a licensed professional before making real-money decisions.<br><span style="color:rgba(240,239,230,.42)">Pricing page build <b>v1.0.938</b></span></div>
   </footer>
 
   <script>
   /* ---------- Pricing: card (Stripe) + on-chain (Solana Pay) ----------
-     v1.0.937 — DIE ZAHLADRESSE VERLAESST AUCH DIESE SEITE.
+     v1.0.938 — DIE ZAHLADRESSE VERLAESST AUCH DIESE SEITE.
 
      Bis v1.0.936 stand hier `MERCHANT_SOL`, eine fest verdrahtete Adresse, und
      der SOL-Betrag entstand im Browser aus einem Coingecko-Kurs. Die so
@@ -370,7 +370,7 @@
       var cur = 'USDC';
       var intent = null;      // { reference, usdc, sol, treasury, chain } — NUR aus der Antwort
       var phase  = 'auth';    // 'auth' | 'signedout' | 'loading' | 'ready' | 'error'
-      var poll = null, watch = null, confirmed = false, waiting = false;
+      var poll = null, watch = null, confirmed = false, waiting = false, timedOut = false;
 
       var overlay = document.createElement('div');
       overlay.className = 'pay-overlay';
@@ -461,7 +461,11 @@
             + (ready ? 'No amount for this currency — switch currency' : 'One moment…') + '</button>';
         var status = confirmed
           ? '<div class="pm-warn" style="border-color:rgba(32,255,154,.55);background:rgba(32,255,154,.10);color:#bff7df">✓ Payment confirmed — Runner Pro is active on your account. <a href="https://chartrunner.xyz/play/" style="color:var(--signal)">Open /play &rarr;</a></div>'
-          : (ready && waiting ? '<div class="pm-warn">⏳ Waiting for your payment… keep this window open. Pro activates by itself once the payment confirms on-chain.</div>' : '');
+          : (ready && timedOut
+              ? '<div class="pm-warn">Nothing confirmed for ten minutes. If you did pay, <b>do not pay again</b> — keep the payment reference below, it is what identifies your payment.<button type="button" class="pm-copy pmAgain" style="display:block;width:100%;margin-top:9px;padding:9px">Check again</button></div>'
+              : (ready && waiting
+                  ? '<div class="pm-warn">⏳ Waiting for your payment… keep this window open. Pro switches on as soon as the ChartRunner server confirms the payment.</div>'
+                  : ''));
         var c = cluster();
         var clusterLine = !c ? ''
           : (clusterIsMain(c)
@@ -486,12 +490,14 @@
                   +   '<button type="button" class="pm-copy" data-copy="' + esc(u) + '">Copy</button></div>') : '')
           + openBtn
           + '<div class="pm-note">' + (ready
-              ? 'Open in any Solana Pay wallet (Phantom, Solflare, Backpack). USDC is 1:1 with USD; the SOL amount is quoted by the ChartRunner server, not by this page. Once the payment lands on-chain it is verified against the payment reference and Pro activates automatically.'
+              ? 'Open in any Solana Pay wallet (Phantom, Solflare, Backpack). USDC is 1:1 with USD; the SOL amount is quoted by the ChartRunner server, not by this page. The request carries the payment reference above, so the payment can be matched to your account — keep this window open and Pro switches on as soon as the server confirms it.'
               : 'Fetching the payment details from the ChartRunner server…') + '</div>');
         wireShell();
         overlay.querySelectorAll('#paySeg button').forEach(function(b){
           b.onclick = function(){ cur = b.getAttribute('data-cur'); paint(); };
         });
+        var again = overlay.querySelector('.pmAgain');
+        if(again) again.onclick = function(){ timedOut = false; startPoll(); };
         overlay.querySelectorAll('[data-copy]').forEach(function(b){
           b.onclick = function(){
             var v = b.getAttribute('data-copy');
@@ -511,7 +517,10 @@
         waiting = true; var tries = 0; try { paint(); } catch(_){}
         poll = setInterval(function(){
           tries++;
-          if(tries > 150){ clearInterval(poll); poll = null; waiting = false; try { paint(); } catch(_){} return; }  // ~10 min @ 4s
+          // Nach ~10 min still aufzuhoeren waere eine stille Degradierung auf
+          // einer Seite, auf der gerade jemand Geld geschickt hat. Der Zustand
+          // wird angezeigt, und die reference bleibt sichtbar.
+          if(tries > 150){ clearInterval(poll); poll = null; waiting = false; timedOut = true; try { paint(); } catch(_){} return; }  // ~10 min @ 4s
           fetch(API_BASE + '/v1/pay/sol/status?reference=' + encodeURIComponent(intent.reference),
                 { headers: _supaTok ? { 'Authorization':'Bearer ' + _supaTok } : {} })
             .then(function(r){ return r.ok ? r.json() : null; })

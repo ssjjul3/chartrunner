@@ -1,6 +1,7 @@
-/* Smoke-Verifikation v1.0.937 — pricing.html AUF DEM INTENT-PFAD.
+/* Smoke-Verifikation v1.0.938 — pricing.html AUF DEM INTENT-PFAD.
  *
- * BEFUND, den diese Datei absichert (gemessen am Quelltext v1.0.936):
+ * BEFUND, den diese Datei absichert (gemessen am Stand auf `main` vor diesem
+ * Patch, zuletzt angefasst in v1.0.936):
  * `chartrunner-prototype/pricing.html` trug mit `MERCHANT_SOL` eine fest
  * verdrahtete Zahladresse und baute den SOL-Betrag im Browser aus einem
  * Coingecko-Kurs. Die so entstandene Zahlung trug KEINE `reference` — der
@@ -15,10 +16,10 @@
  *
  * Zwei Doppel, beide VOR jedem Skript der Seite:
  *   · supabase-js (jsdelivr) wird durch einen Stub ersetzt, der die Sitzung aus
- *     `window.__v937.session` liefert und `onAuthStateChange`-Rueckrufe
+ *     `window.__v938.session` liefert und `onAuthStateChange`-Rueckrufe
  *     sammelt. Damit wird die ECHTE Naht gemessen, an der die Seite die
  *     Anmeldung abliest, keine eigens eingezogene Testvariable.
- *   · fetch fuer /v1/pay/sol/intent und /status (window.__v937.mode:
+ *   · fetch fuer /v1/pay/sol/intent und /status (window.__v938.mode:
  *     'ok' | 'throw' | 'hang' | 'http500'). *.workers.dev ist aus dieser
  *     Sandbox ohnehin nicht erreichbar; ein Test, der davon abhinge, waere
  *     gruen aus dem falschen Grund.
@@ -42,6 +43,11 @@
  * T10 Der Kartenweg funktioniert unveraendert UND gaesteoffen: ein Klick ohne
  *     Anmeldung landet auf dem echten Stripe-Link (gemessen an der URL, zu der
  *     der Browser tatsaechlich navigiert).
+ * T11 Zeitablauf. Bestaetigt der Worker ~10 Minuten lang nichts, hoert das
+ *     Polling NICHT still auf: der Zustand wird angezeigt, die `reference`
+ *     bleibt sichtbar, und es gibt einen Knopf, der weiter fragt. Gemessen mit
+ *     Playwrights Uhr (page.clock) in einer eigenen Seite — echte zehn Minuten
+ *     zu warten waere kein Test, sondern eine Pause.
  *
  * GEGENPROBEN — GEMESSEN, nicht behauptet (CLAUDE.md · ROT/CRASH/GRUEN). Jede
  * Mutation wurde EINZELN in chartrunner-prototype/pricing.html eingebaut, die
@@ -114,7 +120,7 @@
  *       der Worker nichts gutschreiben koennte. T1 bleibt gruen: die Ansage an
  *       der Karte steht noch da, sie stimmt nur nicht mehr.
  *
- * Aufruf:  node scripts/check_v937_pricing_intent_browser.cjs
+ * Aufruf:  node scripts/check_v938_pricing_intent_browser.cjs
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -148,7 +154,7 @@ function launchOptions(){
 const OLD_TREASURY = 'F4XgsVpo3DQv7SiHA2yhqVY2uepb49p2WPKQWPMqWvnm';
 // Die Adresse, die im Test der Worker liefert — absichtlich NICHT die alte:
 // nur so ist unterscheidbar, woher die angezeigte Adresse stammt.
-const WORKER_TREASURY = 'WkR937TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
+const WORKER_TREASURY = 'WkR938TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
 
 (async () => {
   const browser = await chromium.launch(launchOptions());
@@ -163,8 +169,8 @@ const WORKER_TREASURY = 'WkR937TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
     if(/supabase-js/.test(url)){
       return route.fulfill({ status: 200, contentType: 'application/javascript', body: `
         window.supabase = { createClient: function(){ return { auth: {
-          getSession: function(){ return Promise.resolve({ data: { session: window.__v937.session } }); },
-          onAuthStateChange: function(cb){ window.__v937.authCbs.push(cb); }
+          getSession: function(){ return Promise.resolve({ data: { session: window.__v938.session } }); },
+          onAuthStateChange: function(cb){ window.__v938.authCbs.push(cb); }
         } }; } };
       ` });
     }
@@ -175,21 +181,21 @@ const WORKER_TREASURY = 'WkR937TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
   });
 
   await page.addInitScript(() => {
-    window.__v937 = { mode: 'ok', body: null, status: 'pending', session: null, authCbs: [], calls: [] };
+    window.__v938 = { mode: 'ok', body: null, status: 'pending', session: null, authCbs: [], calls: [] };
     const real = window.fetch;
     window.fetch = function(input){
       const u = String((input && input.url) ? input.url : input);
-      window.__v937.calls.push(u);
+      window.__v938.calls.push(u);
       const json = (o, st) => Promise.resolve(new Response(JSON.stringify(o), {
         status: st || 200, headers: { 'Content-Type': 'application/json' } }));
       if(/\/v1\/pay\/sol\/intent/.test(u)){
-        const m = window.__v937.mode;
-        if(m === 'throw')   return Promise.reject(new TypeError('v937: Failed to fetch'));
+        const m = window.__v938.mode;
+        if(m === 'throw')   return Promise.reject(new TypeError('v938: Failed to fetch'));
         if(m === 'hang')    return new Promise(function(){});
         if(m === 'http500') return Promise.resolve(new Response('', { status: 500 }));
-        return json(window.__v937.body || {});
+        return json(window.__v938.body || {});
       }
-      if(/\/v1\/pay\/sol\/status/.test(u)) return json({ status: window.__v937.status });
+      if(/\/v1\/pay\/sol\/status/.test(u)) return json({ status: window.__v938.status });
       return real.apply(this, arguments);
     };
   });
@@ -199,39 +205,39 @@ const WORKER_TREASURY = 'WkR937TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
   await page.waitForTimeout(700);
 
   await page.evaluate(() => {
-    window.__v937.dom = function(){
+    window.__v938.dom = function(){
       const o = document.querySelector('.pay-overlay');
       return o ? o.outerHTML : null;
     };
-    window.__v937.closeAll = function(){
+    window.__v938.closeAll = function(){
       document.querySelectorAll('.pay-overlay').forEach(d => d.remove());
     };
-    window.__v937.signIn = function(tok){
-      window.__v937.session = { access_token: tok };
-      window.__v937.authCbs.forEach(cb => { try { cb('SIGNED_IN', { access_token: tok }); } catch(_){} });
+    window.__v938.signIn = function(tok){
+      window.__v938.session = { access_token: tok };
+      window.__v938.authCbs.forEach(cb => { try { cb('SIGNED_IN', { access_token: tok }); } catch(_){} });
     };
   });
 
   const setMode = (mode, body) => page.evaluate(o => {
-    window.__v937.mode = o.mode;
-    window.__v937.body = o.body || null;
-    window.__v937.calls.length = 0;
-    window.__v937.closeAll();
+    window.__v938.mode = o.mode;
+    window.__v938.body = o.body || null;
+    window.__v938.calls.length = 0;
+    window.__v938.closeAll();
   }, { mode, body: body || null });
   const openSol = async (ms) => {
     await page.evaluate(() => document.querySelector('[data-sol]').click());
     await page.waitForTimeout(ms || 320);
   };
-  const dom = () => page.evaluate(() => window.__v937.dom());
+  const dom = () => page.evaluate(() => window.__v938.dom());
 
-  const OK_BODY = { reference: 'V937REF', usdc: 12.34, sol: 0.077, treasury: WORKER_TREASURY };
+  const OK_BODY = { reference: 'V938REF', usdc: 12.34, sol: 0.077, treasury: WORKER_TREASURY };
 
   console.log('\n-- Boot --');
   {
-    const hard = errs.filter(m => !/Failed to fetch|NetworkError|ERR_FAILED|net::|v937/i.test(m));
+    const hard = errs.filter(m => !/Failed to fetch|NetworkError|ERR_FAILED|net::|v938/i.test(m));
     check('keine harten Page-Errors', hard.length === 0, hard.slice(0, 3));
     check('das fetch-Doppel steht (sonst misst nichts hier etwas)',
-      await page.evaluate(() => typeof window.__v937 === 'object' && Array.isArray(window.__v937.calls)));
+      await page.evaluate(() => typeof window.__v938 === 'object' && Array.isArray(window.__v938.calls)));
     check('die Karten sind gerendert (Pro-Karte mit beiden Zahlknoepfen)',
       await page.evaluate(() => !!document.querySelector('[data-sol]') && !!document.querySelector('[data-stripe]')));
   }
@@ -263,10 +269,10 @@ const WORKER_TREASURY = 'WkR937TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
     check('T2c abgemeldet: kein Betrag, keine Waehrungswahl',
       !!d && d.indexOf('paySeg') < 0 && d.indexOf('12.34') < 0, d ? d.slice(0, 400) : d);
     check('T2d abgemeldet: der Intent wurde gar nicht erst geholt',
-      (await page.evaluate(() => window.__v937.calls.filter(u => /\/intent/.test(u)).length)) === 0);
+      (await page.evaluate(() => window.__v938.calls.filter(u => /\/intent/.test(u)).length)) === 0);
   }
   {
-    await page.evaluate(() => window.__v937.signIn('V937TOK'));
+    await page.evaluate(() => window.__v938.signIn('V938TOK'));
     await page.waitForTimeout(1300);
     const d = await dom();
     check('T2e Anmeldung waehrend der Dialog offen ist -> er schaltet auf die Zahltafel um',
@@ -325,7 +331,7 @@ const WORKER_TREASURY = 'WkR937TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
     check('T5b der angezeigte Betrag stammt aus der Antwort (12.34), nicht aus der Ratecard (9.99)',
       !!d && d.indexOf('12.34') >= 0 && !/>9\.99 <small>USDC/.test(d), d ? d.slice(0, 600) : d);
     check('T5c der Link traegt Adresse, Betrag UND reference — alle drei aus der Antwort',
-      !!href && href.indexOf('solana:' + WORKER_TREASURY) === 0 && /amount=12\.34/.test(href) && /reference=V937REF/.test(href), href);
+      !!href && href.indexOf('solana:' + WORKER_TREASURY) === 0 && /amount=12\.34/.test(href) && /reference=V938REF/.test(href), href);
     check('T5d nie `amount=0`', !!href && !/amount=0(&|$)/.test(href), href);
     check('T5e nirgends im DOM die alte Client-Adresse', !!d && d.indexOf('F4Xgs') < 0);
   }
@@ -335,16 +341,16 @@ const WORKER_TREASURY = 'WkR937TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
     await page.waitForTimeout(200);
     const href = await page.evaluate(() => { const a = document.querySelector('.pmOpen'); return a ? a.getAttribute('href') : null; });
     check('T5f SOL: Betrag aus der Antwort (0.077), mit reference, ohne spl-token',
-      !!href && /amount=0\.077/.test(href) && /reference=V937REF/.test(href) && href.indexOf('spl-token') < 0, href);
+      !!href && /amount=0\.077/.test(href) && /reference=V938REF/.test(href) && href.indexOf('spl-token') < 0, href);
   }
-  await setMode('ok', { reference: 'V937REF', usdc: 12.34, sol: 0.077 });
+  await setMode('ok', { reference: 'V938REF', usdc: 12.34, sol: 0.077 });
   await openSol();
   {
     const d = await dom();
     check('T5g Antwort ohne `treasury` -> Fehlerzustand, KEINE Adresse aus dem Client',
       !!d && d.indexOf('F4Xgs') < 0 && d.indexOf('solana:') < 0 && d.indexOf('pmRetry') >= 0, d ? d.slice(0, 500) : d);
   }
-  await setMode('ok', { reference: 'V937REF', treasury: WORKER_TREASURY });
+  await setMode('ok', { reference: 'V938REF', treasury: WORKER_TREASURY });
   await openSol();
   {
     const d = await dom();
@@ -380,24 +386,24 @@ const WORKER_TREASURY = 'WkR937TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
   console.log('\n-- T7 · Polling --');
   {
     await page.waitForTimeout(4400);
-    const st = await page.evaluate(() => window.__v937.calls.filter(u => /\/status/.test(u)));
+    const st = await page.evaluate(() => window.__v938.calls.filter(u => /\/status/.test(u)));
     check('T7a die Status-Abfrage laeuft und traegt die `reference` aus der Antwort',
-      st.length > 0 && /reference=V937REF/.test(st[0]), st.slice(0, 2));
+      st.length > 0 && /reference=V938REF/.test(st[0]), st.slice(0, 2));
     const d = await dom();
     check('T7b solange offen: sichtbarer Wartezustand, kein manueller Schritt verlangt',
       !!d && /Waiting for your payment/i.test(d), d ? d.slice(0, 600) : d);
   }
   {
-    await page.evaluate(() => { window.__v937.status = 'confirmed'; });
+    await page.evaluate(() => { window.__v938.status = 'confirmed'; });
     await page.waitForTimeout(4400);
     const d = await dom();
     check('T7c `confirmed` -> die Freischaltung wird angezeigt, ohne Zutun',
       !!d && /Payment confirmed/i.test(d) && /Runner Pro is active/i.test(d), d ? d.slice(0, 600) : d);
-    const n1 = await page.evaluate(() => window.__v937.calls.filter(u => /\/status/.test(u)).length);
+    const n1 = await page.evaluate(() => window.__v938.calls.filter(u => /\/status/.test(u)).length);
     await page.waitForTimeout(4400);
-    const n2 = await page.evaluate(() => window.__v937.calls.filter(u => /\/status/.test(u)).length);
+    const n2 = await page.evaluate(() => window.__v938.calls.filter(u => /\/status/.test(u)).length);
     check('T7d nach `confirmed` hoert das Polling auf', n1 === n2, { n1, n2 });
-    await page.evaluate(() => { window.__v937.status = 'pending'; window.__v937.closeAll(); });
+    await page.evaluate(() => { window.__v938.status = 'pending'; window.__v938.closeAll(); });
   }
 
   /* ═══ T8 — QUELLTEXT ═════════════════════════════════════════════════════ */
@@ -439,7 +445,7 @@ const WORKER_TREASURY = 'WkR937TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
       !/being reconfigured|being set up for the new prices/i.test(HTML), 'HTML');
     check('T9e kein "Phase 2"-Versprechen fuer die On-chain-Freischaltung mehr',
       !/Phase 2/.test(HTML) && !/the grant is manual/i.test(HTML), 'HTML');
-    check('T9f die Seite nennt die Version sichtbar', /v1\.0\.937/.test(foot), foot.slice(-120));
+    check('T9f die Seite nennt die Version sichtbar', /v1\.0\.938/.test(foot), foot.slice(-120));
     check('T9g die Erklaerzeile sagt, dass die Seite Adresse und Betrag NICHT baut',
       /builds none of them/i.test(fine), fine.slice(0, 400));
   }
@@ -459,14 +465,74 @@ const WORKER_TREASURY = 'WkR937TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
       u === 'https://buy.stripe.com/6oU4gA1b2chK3cJa7LgMw06', u);
   }
 
+  /* ═══ T11 — ZEITABLAUF ═══════════════════════════════════════════════════ */
+  console.log('\n-- T11 · Zeitablauf --');
+  {
+    // Eigene Seite mit gestellter Uhr: 150 Versuche a 4 s sind zehn echte
+    // Minuten. Gemessen wird trotzdem am DOM, nicht an der Absicht.
+    const p2 = await browser.newPage({ viewport: { width: 1280, height: 950 } });
+    await p2.clock.install();
+    await p2.route('**://**', async route => {
+      const url = route.request().url();
+      if(url.startsWith('file:')) return route.continue();
+      if(/supabase-js/.test(url)){
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: `
+          window.supabase = { createClient: function(){ return { auth: {
+            getSession: function(){ return Promise.resolve({ data: { session: { access_token: 'V938TOK' } } }); },
+            onAuthStateChange: function(){}
+          } }; } };
+        ` });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+    await p2.addInitScript(body => {
+      window.__v938b = { calls: 0 };
+      const real = window.fetch;
+      window.fetch = function(input){
+        const u = String((input && input.url) ? input.url : input);
+        const json = o => Promise.resolve(new Response(JSON.stringify(o), {
+          status: 200, headers: { 'Content-Type': 'application/json' } }));
+        if(/\/v1\/pay\/sol\/intent/.test(u)) return json(body);
+        if(/\/v1\/pay\/sol\/status/.test(u)){ window.__v938b.calls++; return json({ status: 'pending' }); }
+        return real.apply(this, arguments);
+      };
+    }, OK_BODY);
+    await p2.goto(URL0, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await p2.clock.runFor(1500);
+    await p2.evaluate(() => document.querySelector('[data-sol]').click());
+    await p2.clock.runFor(1500);
+    const before = await p2.evaluate(() => (document.querySelector('.pay-overlay') || {}).outerHTML || '');
+    check('T11a vor dem Ablauf: sichtbarer Wartezustand',
+      /Waiting for your payment/i.test(before), before.slice(0, 300));
+    // ~11 Minuten in gestellter Zeit.
+    await p2.clock.runFor(660000);
+    await p2.waitForTimeout(150);
+    const d = await p2.evaluate(() => (document.querySelector('.pay-overlay') || {}).outerHTML || '');
+    const n1 = await p2.evaluate(() => window.__v938b.calls);
+    check('T11b nach ~10 min: der Zustand wird ANGEZEIGT, es hoert nicht still auf',
+      /Nothing confirmed for ten minutes/i.test(d), d.slice(0, 700));
+    check('T11c die `reference` bleibt sichtbar (die Zahlung bleibt zuordenbar)',
+      d.indexOf('V938REF') >= 0, d.slice(0, 700));
+    check('T11d der Warnhinweis sagt ausdruecklich: nicht noch einmal zahlen',
+      /do not pay again/i.test(d), d.slice(0, 700));
+    await p2.clock.runFor(40000);
+    const n2 = await p2.evaluate(() => window.__v938b.calls);
+    check('T11e nach dem Ablauf wird nicht weiter gefragt', n1 === n2, { n1, n2 });
+    await p2.evaluate(() => document.querySelector('.pmAgain').click());
+    await p2.clock.runFor(9000);
+    const n3 = await p2.evaluate(() => window.__v938b.calls);
+    check('T11f "Check again" nimmt das Fragen wieder auf', n3 > n2, { n2, n3 });
+    await p2.close();
+  }
+
   /* ═══ REGRESSION ═════════════════════════════════════════════════════════ */
   console.log('\n-- Regression --');
   {
-    const hard = errs.filter(m => !/Failed to fetch|NetworkError|ERR_FAILED|net::|v937/i.test(m));
+    const hard = errs.filter(m => !/Failed to fetch|NetworkError|ERR_FAILED|net::|v938/i.test(m));
     check('R1 keine harten Page-Errors ueber den ganzen Lauf', hard.length === 0, hard.slice(0, 3));
   }
 
   await browser.close();
-  console.log('\nv937 pricing.html auf dem Intent-Pfad: ' + pass + '/' + (pass + fail) + ' checks passed, ' + fail + ' UNGETESTET/rot');
+  console.log('\nv938 pricing.html auf dem Intent-Pfad: ' + pass + '/' + (pass + fail) + ' checks passed, ' + fail + ' UNGETESTET/rot');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

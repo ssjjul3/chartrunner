@@ -6,7 +6,14 @@ In-house **$RUN** mint + **$CHART → $RUN** conversion valve + **licensed-agent
 > This is money-minting code. It is a **SCAFFOLD** for a human + auditor to finish.
 > - **Audit-gated (M0.5)** and **mainnet-gated (M10)**.
 > - The toolchain is known-broken here: do **not** `anchor build` / `cargo build`.
-> - `declare_id!` and the `Anchor.toml` entries are **placeholders** (`Prog11111…`).
+> - `declare_id!` (`src/lib.rs:47`) and the `Anchor.toml` entries
+>   (`anchor/Anchor.toml:15,21`) carry a real base58 id,
+>   `3jESG5WzfKsGze1rYeRpBq6FznakSfULUJkCtDjkjdu5` — **not** the literal
+>   `Prog11111…` this line used to claim. It is still **not the deploy key**:
+>   `Anchor.toml:11-14` requires a keypair generated at deploy time
+>   (`solana-keygen new -o target/deploy/chartrunner_progression-keypair.json`),
+>   and that id must then replace both places. Treat the current value as
+>   provisional, not as an address anything may be sent to.
 > - Spec of record: `docs/TOKENOMICS-PAPER-v0.5.md` (2026-07-15). Every economic
 >   constant/formula in the source cites it.
 
