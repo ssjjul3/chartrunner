@@ -93,8 +93,17 @@ Standalone SDK package source, generated SDK browser artifacts, live broker exec
   - **Card: unverified from this repo.** It hangs on a `STRIPE_SECRET_KEY` Wrangler secret;
     without it `subscription` is refused with 503. Secrets are not visible here, so whether
     the card path unlocks anything is **only measurable against the running worker**.
-  - Rebuilding this path runs as its own assignment. The text on `pricing.html` is
-    deliberately untouched here.
+  - **Client side (`v1.0.938`): a payment is at least attributable now.** On
+    `chartrunner.xyz/pricing.html` and in-game, the receiving address, the exact amount and
+    a payment reference come solely from the ChartRunner server (`POST /v1/pay/sol/intent`),
+    and the payment is watched by that reference (`GET /v1/pay/sol/status`). No public
+    surface holds a payment address any more and none computes an amount in the browser;
+    without that server response no payment request is built at all, so the on-chain path
+    requires a signed-in account. This fixes **whom a payment could be credited to**. It
+    does **not** soften the first bullet: whether anything is actually unlocked depends on
+    server configuration that is not visible from here.
+  - Rebuilding the server side of this path runs as its own assignment. `pricing.html`
+    itself was moved onto the intent path in `v1.0.938`.
 
 - Solana devnet maps/registry/oracle/match programs: public source and devnet-oriented
 - SDK package: gated until publish-ready
