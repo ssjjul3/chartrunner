@@ -28,11 +28,11 @@ game input -> ChartRunnerSDK intent -> risk/wallet/broker boundary -> result
 
 The public repo demonstrates the playable game, the SDK call shape, public devnet proof, and the wallet approval boundary. Premium execution, hosted agents, private market data, replay corpora, bot tuning, and unpublished SDK packages stay gated until they are intentionally released.
 
-Current public prototype version: `v1.0.649`. Live multiplayer rooms now run on the standalone Rooms server **by default** across every create/join entry point (see [Multiplayer Rooms](#multiplayer-rooms)). Public safety boundaries are unchanged: no live broker route, hidden order routing, signing, or production execution was added.
+Current public prototype version: `v1.0.936` (the version string carried by `ChartRunner_Prototype.html` on `main`; that the deployed page serves it is only verifiable against the live site). Live multiplayer rooms now run on the standalone Rooms server **by default** across every create/join entry point (see [Multiplayer Rooms](#multiplayer-rooms)). Public safety boundaries are unchanged: no live broker route, hidden order routing, signing, or production execution was added.
 
 ## Multiplayer Rooms
 
-Live co-op presence runs on a standalone WebSocket server, `wss://rooms.chartrunner.xyz` (verified: `/health` → ok, `/stats` → JSON). As of `v1.0.649` this is the **default** multiplayer path — no flag needed.
+Live co-op presence runs on a standalone WebSocket server, `wss://rooms.chartrunner.xyz`, which exposes `/health` and `/stats`. *(The former "verified" here carried no date. A verification without a date is not one — re-check it live: `GET https://rooms.chartrunner.xyz/health` and `/stats`.)* As of `v1.0.649` this is the **default** multiplayer path — no flag needed.
 
 - Open `https://chartrunner.xyz/play/`, then **START A ROOM** (shows a shareable code) or **JOIN A ROOM** + code (max 8 players).
 - Every entry point lands on the new server: the room wizard, the connected inline creator, the guest lite buttons, the maps-row create/join, the public-rooms browser, and `?room=<code>` deep-links. `doCreate`/`doJoin` delegate to the client at the root, so there is one switch, not one per button.
@@ -73,10 +73,24 @@ These programs are public devnet proof surfaces. They show the intended on-chain
 |---|---|---|
 | `chartrunner_maps` | [`DbzEqKfgCBqneR6Yuc17yEPc1fbVeqTeGy721f1n3UvH`](https://explorer.solana.com/address/DbzEqKfgCBqneR6Yuc17yEPc1fbVeqTeGy721f1n3UvH?cluster=devnet) | Map hash/index proof |
 | `chartrunner_registry` | [`ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn`](https://explorer.solana.com/address/ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn?cluster=devnet) | Profiles, run records, marketplace-shaped records |
-| `chartrunner_oracle` | [`4vfZVDfDzhR79qdaUdPAzRwUHYB5qbgNwTGBwfy6i5wH`](https://explorer.solana.com/address/4vfZVDfDzhR79qdaUdPAzRwUHYB5qbgNwTGBwfy6i5wH?cluster=devnet) | Price certificate proof boundary |
+| `chartrunner_oracle` | [`4vfZVDfDzhR79qdaUdPAzRwUHYB5qbgNwTGBwfy6i5wH`](https://explorer.solana.com/address/4vfZVDfDzhR79qdaUdPAzRwUHYB5qbgNwTGBwfy6i5wH?cluster=devnet) | Price certificate proof boundary — **two source variants, two IDs; see note below** |
 | `chartrunner_match` | [`3mzEAWZVtTV7sjqkRrPAbB3tT7bA3vVx5wyYQZvfp5zu`](https://explorer.solana.com/address/3mzEAWZVtTV7sjqkRrPAbB3tT7bA3vVx5wyYQZvfp5zu?cluster=devnet) | Match-state proof boundary |
 
 IDLs live at [anchor/target/idl](anchor/target/idl). Program source lives under [anchor/programs](anchor/programs).
+
+> **Note on `chartrunner_oracle`.** The program has two source variants with two
+> different IDs. `src/lib.playground.rs:45` declares `4vfZ…` — the variant actually
+> deployed to devnet (Solana Playground, no-SDK build). `src/lib.rs:40` declares
+> `7FJj…` and its own header says it is a "v0.9.11 scaffold — code-complete, NOT yet
+> deployed". The address in the table above is the deployed one.
+> `chartrunner_registry` pins the same `4vfZ…` as `ORACLE_PROGRAM_ID`
+> (`src/lib.rs:107-108`), which is correct today and becomes a trap on the pending
+> SDK re-upgrade — see [docs/STATUS-2026-09-19.md](docs/STATUS-2026-09-19.md) §5.
+> Which ID actually carries a program on devnet has not been measured here.
+
+> **Note on the addresses generally.** This table shows what the repository
+> *declares*, not what devnet *holds*. Confirm against an explorer before relying on
+> any of them.
 
 ## Local Use
 
@@ -99,10 +113,21 @@ Then visit `http://localhost:8080/chartrunner-prototype/`.
 Run these before publishing public changes:
 
 ```sh
-node scripts/check_public_leakage.mjs
-node scripts/test_public_leakage_guard.mjs
-node /Users/julianroy/.agents/skills/chartrunner-playtest-verifier/scripts/check-prototype-js.mjs ChartRunner_Prototype.html
+node scripts/check_public_leakage.mjs        # public/private boundary
+node scripts/test_public_leakage_guard.mjs   # the guard's own tests
+npm i acorn --no-save
+node scripts/check_duplicate_declarations.mjs  # same-scope name collisions
+node scripts/check_no_new_cdn.mjs              # third-party code sources
 ```
+
+These are the checks `.github/workflows/ci.yml` runs, so a PR starts green. CI also
+parses every inline `<script>` body in `ChartRunner_Prototype.html` (7 blocks; `src=`
+blocks are exempt) and runs the ownership worker/migration checks.
+
+Every command above runs from a clone of this repository with Node installed —
+no local Mac or desktop is assumed. *(The previous version of this block pointed at an
+absolute `/Users/...` path outside the repository, which nobody but its author could
+run and which contradicts the phone-first rule in `CLAUDE.md`.)*
 
 ## Repository Map
 
@@ -115,3 +140,4 @@ node /Users/julianroy/.agents/skills/chartrunner-playtest-verifier/scripts/check
 | `docs/` | Public docs only |
 | `docs/milestones/` | Public milestone notes |
 | `scripts/check_public_leakage.mjs` | CI guard for private/public boundary |
+| `docs/STATUS-2026-09-19.md` | Claim-by-claim verification ledger: what is proven from the repo, what is disproven, what only the running system can answer |
