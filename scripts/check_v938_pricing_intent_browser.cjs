@@ -120,6 +120,32 @@
  *       der Worker nichts gutschreiben koennte. T1 bleibt gruen: die Ansage an
  *       der Karte steht noch da, sie stimmt nur nicht mehr.
  *
+ * Die drei T11-Zeilen kamen erst mit dem Merge von `main` dazu (der Zeitablauf
+ * war bis dahin ein stilles Aufhoeren). Sie sind einzeln gegengeprobt:
+ *
+ *  M13  `startPoll()`: `timedOut = true` gestrichen — das Polling hoert wieder
+ *       STILL auf (der Zustand vor dem Merge).
+ *       ROT: T11b, T11d, T11f  (52 gruen)
+ *       T11c bleibt gruen, und das ist der Punkt: die `reference` steht
+ *       weiterhin im Feld "Solana Pay request" — sichtbar ist sie also, nur
+ *       sagt niemand mehr, dass man sie jetzt braucht. T11e bleibt ebenfalls
+ *       gruen: aufgehoert wird ja, nur eben unbemerkt. Erst T11b unterscheidet
+ *       "hoert auf" von "sagt, dass es aufgehoert hat".
+ *       NACHTRAG ZUR SCHAERFE: in der ersten Fassung war M13 ein CRASH statt
+ *       ROT — T11f rief `document.querySelector('.pmAgain').click()` ohne
+ *       Pruefung, und ohne Knopf warf der Lauf. Eine Gegenprobe, die CRASHt,
+ *       misst nichts (CLAUDE.md). T11f prueft den Knopf jetzt erst auf
+ *       Existenz und wird sauber rot.
+ *  M14  der Satz "do not pay again" durch "Please try again later." ersetzt.
+ *       ROT: T11d  (54 gruen)
+ *       T11b bleibt gruen — der Zustand wird weiter angezeigt, er raet dann
+ *       nur zum Falschen. Deshalb steht T11d getrennt da.
+ *  M15  der "Check again"-Knopf wird nicht mehr verdrahtet.
+ *       ROT: T11f  (54 gruen)
+ *       T11b/T11d bleiben gruen: der Knopf ist da und sieht aus wie einer.
+ *       Genau die Sorte toter Bedienelement, die dieser PR an anderer Stelle
+ *       (indexOf('REPLACE')) entfernt.
+ *
  * Aufruf:  node scripts/check_v938_pricing_intent_browser.cjs
  */
 const fs = require('node:fs');
@@ -518,10 +544,17 @@ const WORKER_TREASURY = 'WkR938TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
     await p2.clock.runFor(40000);
     const n2 = await p2.evaluate(() => window.__v938b.calls);
     check('T11e nach dem Ablauf wird nicht weiter gefragt', n1 === n2, { n1, n2 });
-    await p2.evaluate(() => document.querySelector('.pmAgain').click());
+    // Fehlt der Knopf, ist das ein FAIL dieser Zeile — kein Wurf, der den Lauf
+    // abbricht. Eine Gegenprobe, die CRASHt statt ROT zu werden, misst nichts
+    // (CLAUDE.md · ROT/CRASH/GRUEN).
+    const clicked = await p2.evaluate(() => {
+      const b = document.querySelector('.pmAgain');
+      if(!b) return false;
+      b.click(); return true;
+    });
     await p2.clock.runFor(9000);
     const n3 = await p2.evaluate(() => window.__v938b.calls);
-    check('T11f "Check again" nimmt das Fragen wieder auf', n3 > n2, { n2, n3 });
+    check('T11f "Check again" nimmt das Fragen wieder auf', clicked && n3 > n2, { clicked, n2, n3 });
     await p2.close();
   }
 
