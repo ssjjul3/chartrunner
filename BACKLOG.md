@@ -1,8 +1,17 @@
-# BACKLOG — Stand 26.08.2026, geprüft gegen HANDOFF_phase2_vollstaendig
+# BACKLOG — Stand 19.09.2026, geprüft gegen den IST-Abgleich vom 19.09.2026
+
+*(vorheriger Stand: 26.08.2026, geprüft gegen HANDOFF_phase2_vollstaendig)*
 
 Eine Liste, ein Ort. Gepflegt als Teil jedes PRs, wie das Versions-Banner.
 Quellen: das Original-Handoff (23.08.), die Messungen 24.–25.08., die
-Entscheidungen aus dem Chat.
+Entscheidungen aus dem Chat, und der IST-Abgleich des öffentlichen Repos vom
+19.09.2026.
+
+**Zu den Messwerten vom 17.09./19.09.:** sie stammen aus dem IST-Abgleich, nicht
+aus dieser Session. Diese Session erreicht weder `*.workers.dev` noch
+`chartrunner.xyz` und hat **nichts nachgemessen**. Was hier als gemessen steht,
+steht als *übernommen* da — die Unterscheidung ist der halbe Sinn dieser Liste.
+Die Ableitung Aussage für Aussage: [docs/STATUS-2026-09-19.md](docs/STATUS-2026-09-19.md).
 
 ## ERLEDIGT — gebaut UND gemessen (nicht mehr anfassen)
 
@@ -146,22 +155,31 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
    `unknown-extension` — laut Handoff gehörte es in den Stufe-2-PR; die
    Session-Antwort erwähnt es nicht. Prüfen, ggf. nachziehen.
 9. **`git_sha` in `/health`** — „ist der Merge live?" wird ein Vergleich.
-   Worker-Hälfte laut Bericht mit tx v1.15 da (`git_sha 4f06899`); **von
-   dieser Session NICHT nachgemessen**, beide Sandboxes sind für
-   `*.workers.dev` gesperrt (403 auf CONNECT). Die CI-Wächter-Hälfte ist
-   mit v891 erledigt (`stranded-commits.yml`).
-10. **Worker-`/v1/quote` ruft selbst noch `lite-api.jup.ag`** (Julians
-    Messung 26.08.: die Antwort trägt `"source": "lite-api.jup.ag"`). Der
-    Client ist mit v891 sauber — er fragt nur noch den eigenen Worker. Die
-    Fremdquelle ist damit **nicht weg, sondern eine Etage tiefer gezogen**,
-    und dort steht sie auf demselben Sterbebett: `quote-api` ist bereits tot,
-    `lite-api` ist laut Jupiter zum 31.01.2026 abgelöst. Der haltbare Weg ist
-    `api.jup.ag/swap/v1` MIT Schlüssel — und ein Schlüssel im Worker ist genau
-    richtig, er gehört nur nicht in den Browser. **Der Key-Umzug steht im
-    Worker aus, bevor `lite-api` stirbt.** Sonst wiederholt sich v877, diesmal
-    serverseitig: der Ausfall erschiene im Spiel als „Kursabfrage nicht
-    erreichbar", und niemand suchte ihn im Worker. Nur Eintrag — nicht in
-    dieser (öffentlichen) Session gebaut.
+   **Weiterhin offen, und der Rückstand ist jetzt beziffert.** Laut IST-Abgleich
+   19.09.2026 erfüllen das **2 von 9** Diensten (`tx` und Rooms) — übernommen,
+   **nicht** von dieser Session nachgemessen; beide Sandboxes sind für
+   `*.workers.dev` gesperrt (403 auf CONNECT).
+   Im öffentlichen Repo ist der Stand **belegbar** und schlechter, als die Regel
+   verspricht: von vier Workern hat **einer** überhaupt einen Health-Pfad
+   (`chartrunner-ownership`, `GET /ownership/health`), und der nennt seinen Commit
+   nur, wenn `GIT_SHA` beim Deploy injiziert wurde (`src/index.js:401-403`).
+   `chartrunner-account`, `chartrunner-alerts-cron` und `chartrunner-hermes-proxy`
+   haben **keinen**. Der Geld-Worker `chartrunner-worker` laut IST-Abgleich
+   ebenfalls keinen und kein `git_sha`.
+   Die CI-Wächter-Hälfte ist mit v891 erledigt (`stranded-commits.yml`).
+   Tabelle je Dienst: [docs/STATUS-2026-09-19.md](docs/STATUS-2026-09-19.md) §1.
+10. ~~**Worker-`/v1/quote` ruft selbst noch `lite-api.jup.ag`**~~ — **erledigt.**
+    Der Schlüsselumzug im Worker ist vollzogen: Messung vom **17.09.2026**
+    (übernommen aus dem IST-Abgleich, **nicht** von dieser Session nachgemessen)
+    — die Antwort trägt `api.jup.ag`, `keyed: true`, und die Lite-Stufe ist
+    **seit Worker-v1.16 raus**.
+    Damit ist die Befürchtung aus dem alten Eintrag erledigt, bevor sie eintrat:
+    `lite-api` stirbt zum 31.01.2026, ohne ChartRunner mitzunehmen. Der Schlüssel
+    sitzt dort, wo er hingehört — im Worker, nicht im Browser.
+    *Gegenprobe, falls je wieder zweifelhaft:* `GET /v1/quote` gegen den
+    ausgerollten Worker; `source` muss `api.jup.ag` nennen und `keyed` `true` sein.
+    Ein Commit-Hash belegt das **nicht** (`CLAUDE.md`: „Gemerged ist nicht ausgerollt").
+
 11. **Anchor-Umzug, Worker-Teil** (Julians Auftrag 25.08., PDF): Memo-Pfad auf
     Mainnet, Format `cr1:map:<name>:<hash>` (ab erstem Mainnet-Memo
     eingefroren — öffentlicher Vertrag), Grenzen im Worker (name ≤ 64 Bytes,
@@ -231,6 +249,48 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
     (`deploy-workers`, `pages`, `render-cards`, `verified-build`,
     `audit-worker-secrets`) sind ungeprüft. Einmal durchziehen, damit die
     Warnung nicht zur Abschaltung wird.
+
+22. **`/health` für die drei stummen öffentlichen Worker** (`chartrunner-account`,
+    `chartrunner-alerts-cron`, `chartrunner-hermes-proxy`). Heute lässt sich bei
+    keinem von ihnen fragen, ob der Merge live ist — es gibt keinen Pfad, den man
+    fragen könnte. `workers/ownership/src/index.js` ist die Vorlage: Health-Antwort
+    plus `git_sha` aus `env.GIT_SHA`, und wenn der Deploy es nicht injiziert, sagt
+    die Antwort das ausdrücklich, statt zu schweigen. **Belegt** aus dem Repo, keine
+    Messung nötig.
+
+23. **`GIT_SHA` beim Worker-Deploy wirklich injizieren.** `chartrunner-ownership`
+    kann seinen Commit nennen — aber nur, wenn `deploy-workers.yml` die Variable
+    setzt. Ob das passiert, sagt nur der laufende Endpunkt
+    (`GET https://chartrunner.xyz/ownership/health` → `build.git_sha`). **Nicht
+    gemessen.** Solange das offen ist, ist `git_sha` im öffentlichen Repo eine
+    Absicht, keine Eigenschaft.
+
+24. **Kein Deploy-Gate für die vier öffentlichen Worker.** `deploy-workers.yml`
+    rollt jeden `workers/*/`-Ordner mit Wrangler-Config aus; zwischen Merge und
+    `wrangler deploy` steht nichts. Der `DEPLOY_GATE`, den der IST-Abgleich nennt,
+    existiert in diesem Repo nicht (`grep`: null Treffer) — er deckt `workers/tx`
+    und `workers/ohlc-store` im privaten Repo. Entscheiden, ob die vier
+    öffentlichen Worker ein Gate bekommen oder ob ihr ungegateter Zustand die
+    bewusste Wahl ist. **Unbeantwortet ist schlechter als beides.**
+
+25. **Die gepinnte Oracle-ID in `anchor/programs/chartrunner-registry/src/lib.rs:107-108`.**
+    `ORACLE_PROGRAM_ID` steht auf `4vfZ…` — die **ausgerollte** Playground-Variante
+    (`oracle/src/lib.playground.rs:45`). Die SDK-Variante `oracle/src/lib.rs:40`
+    deklariert `7FJj…` und ist laut eigenem Kopf „code-complete, NOT yet deployed".
+    Heute ist der Pin damit **richtig**. Die Falle steht in `docs/index.html:300`:
+    für `4vfZ…` ist ein „in-place SDK upgrade pending one batched re-upgrade cycle"
+    vermerkt. Zieht die Oracle-Adresse dabei um, prüft `record_run` Zertifikate
+    gegen einen Owner, der keiner mehr ist — und lehnt **still** jedes echte
+    Zertifikat ab, statt laut zu scheitern. Vor dem Re-Upgrade klären, welche ID
+    gilt, und beide Seiten zusammen ausrollen. **Hier nur dokumentiert, nicht
+    angefasst** (so beauftragt). Welche ID auf Devnet wirklich liegt: nicht gemessen.
+
+26. **`roadmap.html` und `docs/index.html` stehen inhaltlich auf `v1.0.800`**
+    (`roadmap.html:14,221,317`, `docs/index.html:113`), das Repo auf `v1.0.936`.
+    Bewusst **nicht** hochgesetzt: `roadmap.html:14` sagt „Content current to the
+    public prototype v1.0.800" — die Zahl zu ändern, ohne den Inhalt gegen v1.0.936
+    durchzugehen, wäre eine Behauptung, die wie ein Messwert aussieht. Eigener
+    inhaltlicher Durchgang, dann die Zahl.
 
 ## AUSDRÜCKLICH NICHT (Handoff §5, unverändert gültig)
 

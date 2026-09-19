@@ -2,6 +2,21 @@
 
 This public roadmap summarizes product direction without exposing private operations, data strategy, partner submissions, or internal agent logs.
 
+## Currency of this document (19.09.2026)
+
+**The "Latest Public Milestone" list below stops at `2026-06-06` / `v1.0.225`. The
+repository is at `v1.0.936`.** The gap is real and is not closed here: this pass did
+not re-audit the milestone entries against the built state, and inventing a newer
+"latest" line would be exactly the kind of claim that looks like a measurement and is
+not one.
+
+Note also that `SYSTEM_MAP.md` names a *different* latest milestone
+(`2026-07-21` / `v1.0.701`), and `roadmap.html` / `docs/index.html` name a third
+(`v1.0.800`). Four documents, four answers, none of them the repository's.
+
+Which statements in here are proven, disproven, or only answerable against the
+running system: [docs/STATUS-2026-09-19.md](docs/STATUS-2026-09-19.md) §4.
+
 ## Current Public State
 
 - Playable browser prototype is live.

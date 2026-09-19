@@ -200,6 +200,64 @@ umgehen).
   setzt Julian im Cloudflare-Dashboard bzw. per `wrangler secret` — nicht im
   Repo.
 
+## Gesundheitspfade und `git_sha` (Stand 19.09.2026)
+
+> **Zuordnung zuerst, damit niemand im falschen Dokument sucht.** Der IST-Abgleich
+> vom 19.09.2026 führt diese Punkte unter „CLAUDE.md §3/§4". **Diese Datei hat keine
+> nummerierten Abschnitte** und kennt weder `DEPLOY_GATE` noch eine Regel „`/health`
+> ist ohne Auftrag aufrufbar" — gemeint ist die `CLAUDE.md` im privaten Repo
+> `ssjjul3/chartrunner-private-ops`, die diese Session nicht erreicht. Nachgezogen
+> ist hier der Teil, der das **öffentliche** Repo betrifft und in ihm nachprüfbar
+> ist. Der private Teil bleibt offen und gehört in eine private Session.
+
+**Die Regel bleibt:** ein Dienst soll ohne Auftrag sagen können, was er ist und
+welchen Commit er fährt — `GET /health`, und `git_sha` ganz oben in der Antwort.
+Ohne das ist „ist der Merge live?" keine Frage, die man stellen kann, sondern eine,
+die man rät. Genau dafür steht „Grüner Run ≠ live" weiter oben.
+
+**Die Regel ist überwiegend unerfüllt, und das ist ein Mangel, kein Zustand.**
+Aus dem Repo nachprüfbar, ohne jede Messung:
+
+| Worker | `/health` | `git_sha` |
+|---|---|---|
+| `workers/account/` (`chartrunner-account`) | **nein** | nein |
+| `workers/alerts-cron/` (`chartrunner-alerts-cron`) | **nein** | nein |
+| `workers/hermes-proxy/` (`chartrunner-hermes-proxy`) | **nein** | nein |
+| `workers/ownership/` (`chartrunner-ownership`) | ja — `GET /ownership/health` (`src/index.js:619`) | **nur bedingt** — `src/index.js:401-403`: nur bei injiziertem `GIT_SHA`, sonst `null` plus Notiz |
+
+**Die benannte Ausnahme: der Geld-Worker.** `chartrunner-worker` hat laut IST-Abgleich
+19.09.2026 **kein `/health` und kein `git_sha`** — ausgerechnet der Dienst, der Geld
+bewegt, ist der, den man nicht fragen kann. Er hat kein Verzeichnis in diesem Repo;
+die Aussage ist **übernommen, nicht hier gemessen**. Sie wird als **Mangel geführt**
+(`BACKLOG.md`), nicht als Ausnahme von der Regel.
+
+Über alle Dienste hinweg nennt der IST-Abgleich **2 von 9** mit `git_sha` ganz oben
+(`tx` und Rooms) — ebenfalls übernommen, nicht gemessen.
+
+**Praktische Folge für Sessions:** die Regel weiter oben — „bevor ein Client-Patch von
+einem Worker-Endpunkt abhängt, muss der Endpunkt in `GET /health` unter `endpoints`
+stehen" — lässt sich bei drei der vier öffentlichen Worker **gar nicht anwenden**.
+Dort gibt es keinen billigen Vorab-Check; er muss über Julians Telefon gegen den
+echten Endpunkt laufen. Das ist kein Grund, den Check zu überspringen — es ist der
+Grund, warum die Lücke im Backlog steht.
+
+### Deploy-Gate: welche Worker gegated sind
+
+`deploy-workers.yml` rollt per Auto-Discovery **jeden** `workers/*/`-Ordner mit
+Wrangler-Config aus. Zwischen Merge und `wrangler deploy` steht **kein Gate**:
+
+- **ungegated, öffentlich, belegt:** `workers/account/`, `workers/alerts-cron/`,
+  `workers/hermes-proxy/`, `workers/ownership/` — `DEPLOY_GATE` kommt in diesem Repo
+  **nirgends** vor (`grep`: null Treffer).
+- **gegated, privat, übernommen:** `workers/tx`, `workers/ohlc-store`.
+- **ungegated, privat, übernommen:** `my-worker` (verwaist), `trace`, `vault`,
+  `data-proxy`, `agent-bridge`.
+
+`ci.yml` ist **kein** Deploy-Gate: sie läuft auf dem PR und prüft Leakage, Parse,
+Namenskollisionen, Fremdcode-Quellen und den Ownership-Worker — nicht den Rollout.
+
+Ableitung Aussage für Aussage: [docs/STATUS-2026-09-19.md](docs/STATUS-2026-09-19.md).
+
 ## Spielregeln (unverändert gültig)
 
 - **Single-File:** Der gesamte Spielcode lebt in `ChartRunner_Prototype.html`.
