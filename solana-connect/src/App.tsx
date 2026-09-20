@@ -22,6 +22,26 @@ import {
 
 const CLUSTER = 'devnet' as const;
 
+/* v1.0.942 — KEINE ERFUNDENE KOMMASTELLE UEBER EINEM SIGNIER-KNOPF.
+ *
+ * Direkt ueber dem Knopf standen fest verdrahtete Betraege: "~0.0011 SOL rent"
+ * (save-entity, record-run, delete-entity), "~0.001 SOL" (cancel-listing) und
+ * "~0.0009 SOL rent" (save-map, zweimal). Keiner davon kam aus der Transaktion,
+ * aus einer Simulation oder aus getMinimumBalanceForRentExemption — sie standen
+ * als Literal im JSX. v1.0.891 hat genau diesen Griff schon einmal aus dem
+ * Client entfernt, Begruendung damals: "aus dem Nichts".
+ *
+ * Diese Komponente hat keinen Zugang zu einem echten Betrag: sie simuliert die
+ * Transaktion nicht (nur getBalance / getLatestBlockhash / confirmTransaction),
+ * und die Kontogroessen, aus denen sich die Mietbefreiung ergibt, liegen im
+ * Anchor-Programm, nicht hier. Den echten Wert zu holen ist mehr als ein
+ * kleiner Eingriff — also entfaellt die Zahl, statt geraten zu werden. Ein Satz
+ * ohne Betrag ist ehrlich; die Wallet zeigt den Betrag ohnehin vor der Signatur,
+ * und sie ist die Instanz, die ihn kennt. Den echten Betrag anzuzeigen ist
+ * Stufe 3 (Quelle anschliessen) und Julians Entscheidung.
+ */
+const COST_NOTE = 'Rent deposit + network fee apply — your wallet shows the exact amount before you sign.';
+
 // Phase 0.9.6 — four runtime modes selected from URL params:
 //   mode = 'memo'      → default; freeform memo demo (existing behavior)
 //   mode = 'connect'   → ?next=play; wallet-only handshake before /play/
@@ -444,7 +464,9 @@ export default function App() {
           break;
         }
         case 'delete-entity': {
-          // v0.9.8h — Closes the entity PDA, refunds rent (~0.0011 SOL).
+          // v0.9.8h — Closes the entity PDA, refunds its rent deposit.
+          // v1.0.942 — der Betrag "~0.0011 SOL" stand hier wie im JSX, ohne
+          // Quelle. Raus: die Wallet nennt ihn, wir raten ihn nicht.
           // Only owner can call (Anchor `has_one = owner` on the account).
           ix = buildDeleteEntityIx({
             owner: publicKey,
@@ -640,7 +662,7 @@ export default function App() {
               {registryParams.action === 'save-entity' && (
                 <>Anchors a SHA-256 of this {ENTITY_TYPE_NAMES[registryParams.entityType].toLowerCase()} under
                 your wallet in the chartrunner_registry program. Royalty {registryParams.royaltyBps ?? 0}/10000
-                bps. ~0.0011 SOL rent.</>
+                bps. {COST_NOTE}</>
               )}
               {registryParams.action === 'list-entity' && (
                 <>Lists this entity for sale on the in-game P2P Marketplace. Other players sign a buy
@@ -651,16 +673,18 @@ export default function App() {
                 purchase. Original creator keeps royalty rights for resales.</>
               )}
               {registryParams.action === 'cancel-listing' && (
-                <>Removes this listing from the marketplace. Listing rent (~0.001 SOL) refunds to you.</>
+                <>Removes this listing from the marketplace. The listing's rent deposit refunds to
+                you; your wallet shows the exact amounts before you sign.</>
               )}
               {registryParams.action === 'delete-entity' && (
-                <>Closes the on-chain PDA for this entity. Rent (~0.0011 SOL) refunds to your wallet.
+                <>Closes the on-chain PDA for this entity. Its rent deposit refunds to your wallet;
+                your wallet shows the exact amounts before you sign.
                 Your local copy is preserved — you can re-anchor it later if you want.</>
               )}
               {registryParams.action === 'record-run' && (
                 <>Anchors this completed run on-chain so other players see it as a ghost overlay
                 on their own runs of the same asset + timeframe. Stores score, Sharpe, duration,
-                and map hash. ~0.0011 SOL rent.</>
+                and map hash. {COST_NOTE}</>
               )}
             </p>
             <dl className="meta">
@@ -764,7 +788,7 @@ export default function App() {
             <p className="card-sub">
               ChartRunner is asking you to anchor this map's identity on Solana devnet.
               The map JSON itself stays in your browser — only the SHA-256 hash + name +
-              timestamp go on-chain. Costs ~0.0009 SOL of rent (one-time per map name).
+              timestamp go on-chain. Costs a one-time rent deposit per map name. {COST_NOTE}
             </p>
             <dl className="meta">
               <div>
@@ -785,7 +809,7 @@ export default function App() {
               </div>
             </dl>
             <div className="memo-meta" style={{ marginTop: 12 }}>
-              <span style={{ fontSize: 11, opacity: 0.7 }}>devnet · ~0.0009 SOL rent</span>
+              <span style={{ fontSize: 11, opacity: 0.7 }}>devnet · rent + network fee, shown in your wallet</span>
               <button
                 className="btn-primary"
                 onClick={sendSaveMap}
