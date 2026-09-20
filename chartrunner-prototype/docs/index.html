@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>ChartRunner SDK · Docs</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="ChartRunner SDK — gamified trading primitives on Solana. Game runtime, Anchor programs, ecosystem integrations (Phoenix Rise, MagicBlock ER, Honeycomb).">
+<meta name="description" content="ChartRunner SDK — gamified trading primitives on Solana. Game runtime, four Anchor programs on devnet, live trading through Jupiter on mainnet. Adapters for Phoenix, MagicBlock and Honeycomb are built but not wired.">
 <link rel="icon" type="image/png" href="../LOGO.png" />
 <link rel="apple-touch-icon" href="../LOGO.png" />
 <meta name="theme-color" content="#010304">
@@ -145,7 +145,7 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);background
 <main class="main">
 
 <h1 class="page">ChartRunner SDK <span class="tag">v1.0.943</span></h1>
-<div class="subtitle">A gamified trading SDK on Solana, built on three pillars — <strong>gamification</strong>, <strong>education</strong>, <strong>on-chain (industry-standard)</strong>. 17 in-game SDK primitives (bracket, OCO, ladder, hedge, radar, rescue, and 11 more), four Anchor programs live on devnet, and a three-partner ecosystem stack — Phoenix for trades, MagicBlock for matches, Honeycomb for the economy. Trades in the game are <strong>simulated by default</strong>; live trading is an optional, self-custodial opt-in that routes through <strong>Jupiter</strong> on Solana mainnet (market orders and resting limit orders, 0.5% platform fee, every transaction signed by your own wallet).</div>
+<div class="subtitle">A gamified trading SDK on Solana, built on three pillars — <strong>gamification</strong>, <strong>education</strong>, <strong>on-chain (industry-standard)</strong>. 17 in-game SDK primitives (bracket, OCO, ladder, hedge, radar, rescue, and 11 more), four Anchor programs live on devnet, and adapters for three further protocols — Phoenix, MagicBlock, Honeycomb — that are <strong>built but carry no traffic</strong>: no order, no match and no mint is routed through any of them, and none of it is dated. Trades in the game are <strong>simulated by default</strong>; live trading is an optional, self-custodial opt-in that routes through <strong>Jupiter</strong> on Solana mainnet (market orders and resting limit orders, 0.5% platform fee, every transaction signed by your own wallet).</div>
 
 <div class="callout">
 <strong>Two minutes from cold start to running a chart.</strong> Wallet-first login → on-chain leaderboard → real Solana <code>RunRecord</code> PDAs written from inside the game (devnet). Every primitive learned in the game is the same SDK call shape you'd run in production. The primitive shapes themselves execute against the simulator; real execution today is the opt-in Jupiter route (market + resting limit orders on Solana mainnet).
@@ -304,9 +304,31 @@ open ChartRunner_Prototype.html
 <span class="kw">pub fn</span> <span class="typ">read_certificate</span>(ctx: Context&lt;ReadCertificate&gt;) -&gt; Result&lt;()&gt;
 </code></pre>
 
-<h2 id="phoenix">Phoenix Rise <span class="tag">adapter · execution not wired</span></h2>
+<h2 id="phoenix">Phoenix <span class="tag gray">intent · nothing built beyond the adapter</span></h2>
 <p>
-  Phoenix is the intended <em>second</em> live-trading venue — the first one, Jupiter, is already live as an opt-in, self-custodial route. The Phoenix adapter is built: each in-game primitive maps to a Phoenix order shape, wrapped with the Phoenix <strong>Flight</strong> builder layer so that — <em>once live execution is enabled</em> — ChartRunner would accrue <code>fee_bps</code> on every routed instruction. <strong>Today the Phoenix broker path is mock + paper only; no order is routed to Phoenix.</strong> The call shape below is the target API, not a live execution path. Note on packages: the real spot path would be the Phoenix legacy spot CLOB via <code>@ellipsis-labs/phoenix-sdk</code>; Phoenix perpetuals are in closed beta and have no public adapter package to pin.
+  <strong>Phoenix is an intention, not a component.</strong> Phoenix is meant to become the <em>second</em>
+  trading venue beside Jupiter, and the reason for wanting it is <strong>perpetuals</strong>. Nothing of that is
+  built: no order is routed to Phoenix, no perpetual position can be opened anywhere in this product, and there
+  is no date. What exists is an adapter file that maps each in-game primitive onto a Phoenix order shape, wrapped
+  with the Phoenix <strong>Flight</strong> builder layer. The call shape below is a target API.
+</p>
+<div class="callout">
+  <strong>If perpetuals arrive, leverage arrives with them.</strong> Today the worst case on a live ChartRunner
+  trade is a bad price: you swap what you hold, for less than you hoped. A perpetual is a different instrument —
+  it is margined, so a position can be liquidated and a player can lose the collateral behind it, not just the
+  spread. That is the part that has to be said in the same breath as the word "perpetuals", and it is the part
+  a game surface makes easiest to forget.
+</div>
+<div class="callout dim">
+  <strong>No numbers here, on purpose.</strong> This page states no fee, no leverage cap, no market list and no
+  collateral rule for Phoenix. The 0.5% ChartRunner charges on the quote side of a Jupiter swap does not carry
+  over: perpetuals are priced as maker and taker fees on notional, plus funding, and whether an integrator share
+  exists there at all is open. Any number written here today would be invented.
+</div>
+<p>
+  Note on packages: the spot path would be the Phoenix legacy spot CLOB via <code>@ellipsis-labs/phoenix-sdk</code>;
+  Phoenix perpetuals are in closed beta and have no public adapter package to pin — which is also why the
+  perpetual half cannot be built today even if it were scheduled.
 </p>
 <pre><code><span class="kw">import</span> { buildBracketTx } <span class="kw">from</span> <span class="str">'./lib/phoenix-rise'</span>;
 
@@ -319,16 +341,16 @@ open ChartRunner_Prototype.html
   target: <span class="num">69_400n</span>,
   qty:    <span class="num">1n</span>,
   flightBuilder: CHARTRUNNER_BUILDER_AUTHORITY,
-  flightFeeBps:  CHARTRUNNER_FLIGHT_FEE_BPS, <span class="com">// 25 = 0.25%</span>
+  flightFeeBps:  CHARTRUNNER_FLIGHT_FEE_BPS, <span class="com">// value undecided — see above</span>
 });
 </code></pre>
 <p>
-  Adapter at <code>solana-connect/src/lib/phoenix-rise.ts</code>. Endpoints: <code>https://perp-api.phoenix.trade</code>, <code>https://api.mainnet-beta.solana.com</code>.
+  Adapter at <code>solana-connect/src/lib/phoenix-rise.ts</code>. The constants it carries are <code>https://perp-api.phoenix.trade</code> (<code>phoenix-rise.ts:69</code>) and <code>https://api.mainnet-beta.solana.com</code>. Nothing calls them; they are values in an unwired file, and whether the first one still resolves has not been measured.
 </p>
 
-<h2 id="magicblock">MagicBlock Ephemeral Rollups <span class="tag">program live devnet · matchmaking not wired</span></h2>
+<h2 id="magicblock">MagicBlock Ephemeral Rollups <span class="tag gray">intent · program on devnet, matchmaking not wired</span></h2>
 <p>
-  Two players running on the same chart in real time isn't possible at Solana's base-layer 400 ms slot times. Ephemeral Rollups are the intended solution — the <code>MatchState</code> PDA delegates to MagicBlock's ER validator, where every player's <code>tick_player</code> settles in ~1 ms at zero fee, committing state back to base layer every 30 s. The <code>chartrunner_match</code> program is deployed on devnet and the adapter is built, but <strong>matchmaking, the PvP UI, and anti-cheat on <code>tick_player</code> are not yet wired</strong> — scores are self-reported until anti-cheat lands, so no ranked PvP runs live today.
+  Two players running on the same chart with every move settled on-chain isn't possible at Solana's base-layer 400 ms slot times. Ephemeral Rollups are the intended solution for the <em>on-chain</em> version of that — the <code>MatchState</code> PDA delegates to MagicBlock's ER validator, where every player's <code>tick_player</code> settles in ~1 ms at zero fee, committing state back to base layer every 30 s. The <code>chartrunner_match</code> program is deployed on devnet and the adapter is built, but <strong>matchmaking, the PvP UI, and anti-cheat on <code>tick_player</code> are not yet wired</strong> — scores are self-reported until anti-cheat lands, so no ranked PvP runs live today.
 </p>
 <pre><code><span class="kw">import</span> {
   createEphemeralConnection,
@@ -339,10 +361,10 @@ open ChartRunner_Prototype.html
 <span class="kw">await</span> <span class="typ">submitErTransaction</span>(er, wallet, tickPlayerIx);
 </code></pre>
 <p>
-  Adapter at <code>solana-connect/src/lib/magicblock-ephemeral.ts</code>. Endpoints: <code>https://devnet-as.magicblock.app/</code>, <code>wss://devnet-as.magicblock.app/</code>. Validator: <code>MAS1Dt9qreoRMQ14YQuhg8UTZMMzDdKhmkZMECCzk57</code> (devnet).
+  Adapter at <code>solana-connect/src/lib/magicblock-ephemeral.ts</code>. The constants it carries (<code>magicblock-ephemeral.ts:71-72</code>) are <code>https://devnet-as.magicblock.app/</code> and <code>wss://devnet-as.magicblock.app/</code>; validator <code>MAS1Dt9qreoRMQ14YQuhg8UTZMMzDdKhmkZMECCzk57</code> (devnet). Unwired, so unmeasured.
 </p>
 
-<h2 id="honeycomb">Honeycomb Protocol <span class="tag amber">scaffold</span></h2>
+<h2 id="honeycomb">Honeycomb Protocol <span class="tag gray">intent · scaffold only</span></h2>
 <p>
   Honeycomb provides on-chain primitives for the parts of ChartRunner that <code>chartrunner_registry</code> was beginning to re-invent: profiles, characters, missions, resources, recipes, staking. Every primitive is routed through the Edge Client and stored as state-compressed accounts — <strong>99.5%+ cost reduction</strong> per the Honeycomb Cost Comparison page.
 </p>
@@ -416,12 +438,12 @@ open ChartRunner_Prototype.html
 });
 </code></pre>
 <p>
-  Adapter at <code>solana-connect/src/lib/honeycomb-economy.ts</code>. Endpoints: <code>https://edge.test.honeycombprotocol.com</code> (Edge), <code>https://rpc.test.honeycombprotocol.com</code> (Honeynet RPC).
+  Adapter at <code>solana-connect/src/lib/honeycomb-economy.ts</code>. The constants it carries (<code>honeycomb-economy.ts:147-148</code>) are <code>https://edge.test.honeycombprotocol.com</code> (Edge) and <code>https://rpc.test.honeycombprotocol.com</code> (Honeynet RPC) — both <strong>test</strong> networks, both unwired, neither measured.
 </p>
 
 <h2 id="honeycomb-gamification">Honeycomb gamification — eight concepts <span class="tag gray">design</span></h2>
 <p>
-  The adapter above is plumbing. <strong>This section is the design.</strong> Honeycomb is the gamification axis of the stack — Phoenix is for trades, MagicBlock is for matches, <strong>Honeycomb is for player progression</strong>. Eight concepts, ordered by demoability, each tied to a Honeycomb primitive. Full version lives at <a href="https://github.com/ssjjul3/chartrunner/blob/main/docs/HONEYCOMB-CONCEPT.md"><code>docs/HONEYCOMB-CONCEPT.md</code></a>.
+  The adapter above is plumbing. <strong>This section is the design.</strong> Honeycomb is the intended gamification axis — the plan is Phoenix for trades, MagicBlock for matches, <strong>Honeycomb for player progression</strong>. None of the three is wired; this section is design, not state. Eight concepts, ordered by demoability, each tied to a Honeycomb primitive. The long-form version of this concept is an internal document and is not part of the public repository.
 </p>
 
 <table>
