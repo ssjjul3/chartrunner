@@ -26,10 +26,27 @@
     // of truth for leverage now. MARKET folded in as its own box (was a floating line
     // above the boxes); peak/drawdown/liq now render as chips (dstats), not a floating
     // line either — nothing on this card is unboxed text anymore except captions.
-    pnl:         { chip:'RUN RESULT · PAPER', tag:'3x LEVERAGE', tagColor:'purple', prompt:'> RUN CLOSED _', lead:['Ride closed','in the green.'],
-                   stats:[{k:'MARKET',v:'BTC · 5m · long'},{k:'ENTRY',v:'63,180 @ 14:02'},{k:'EXIT',v:'64,510 @ 16:14'}],
-                   dstats:[{k:'PEAK',v:'+261%'},{k:'DRAWDOWN',v:'-12%'},{k:'LIQ',v:'51,900'}],
-                   value:'+247.5%', size:1, color:'green',
+    // v1.0.942 — DIESE KARTE VERLAESST DAS PRODUKT, ALSO TRAEGT SIE KEINE
+    // ERFUNDENEN ZAHLEN MEHR. Der pnl-Eintrag fuehrte einen vollstaendigen
+    // Beispiel-Trade mit (ENTRY 63,180 / EXIT 64,510 / PEAK +261% / -12% /
+    // LIQ 51,900 / +247.5% / "3x LEVERAGE"), und render() zeichnete ihn immer
+    // dann, wenn der Aufrufer keine eigenen Werte mitgab. Genau so ist das
+    // committete cards/pnl.png entstanden — und das ist das og:image jedes
+    // geteilten /s/pnl.html-Links. Erfundene Handelsergebnisse unter unserem
+    // Namen, bei Leuten, die die Seite nie geoeffnet haben.
+    //
+    // Es gibt heute KEINEN Aufrufer, der echte P&L-Werte liefert: window.crShare
+    // wird nur mit type 'chart' und 'multiplayer' aufgerufen, und share.html
+    // reicht nur value/sub/foot aus der URL durch. Die Zahlen kamen also nie aus
+    // einem Lauf, sondern immer aus dieser Vorlage.
+    //
+    // needsRun:true heisst: Zahlen auf dieser Karte kommen aus opt (value /
+    // stats / dstats / tag) oder gar nicht. Fehlen sie, zeichnet render() den
+    // Zustand — Marke, Titel, ein Strich — statt eines Beispiels.
+    // Die uebrigen Kartentypen sind in dieser Stufe unangetastet (siehe PR).
+    pnl:         { chip:'RUN RESULT · PAPER', tagColor:'purple', prompt:'> RUN CLOSED _',
+                   lead:['Ride the chart.','Share the run.'],
+                   needsRun:true, size:1, color:'green',
                    foot:'chartrunner.xyz · simulated', ftype:'PNL CARD' },
     // v1.0.630b — blabel dropped (the checkered-flag logo is the panel's identity now,
     // "SPRINT TIME" read redundant next to it); rank added (rendered under the flag);
@@ -75,6 +92,23 @@
     if (opt.value != null && opt.value !== '') t.value = String(opt.value);
     if (opt.sub   != null) t.sub = String(opt.sub);
     if (opt.foot  != null) t.foot = String(opt.foot);
+    // v1.0.942 — Laufdaten erreichen die Karte nur ueber opt. Ein Typ mit
+    // needsRun bringt keine eigenen Beispielwerte mit; kommt nichts an, zeichnet
+    // die Karte ihren Leer-Zustand statt eines erfundenen Trades.
+    if (Array.isArray(opt.stats)  && opt.stats.length)  t.stats  = opt.stats;
+    if (Array.isArray(opt.dstats) && opt.dstats.length) t.dstats = opt.dstats;
+    if (opt.tag != null && opt.tag !== ''){ t.tag = String(opt.tag); if (opt.tagColor) t.tagColor = String(opt.tagColor); }
+    if (t.needsRun && (t.value == null || t.value === '')){
+      t.chip   = 'RUN CARD · NO DATA';
+      t.prompt = '> NO RUN DATA _';
+      t.value  = '—';                 // lieber ein Strich als eine Zahl
+      t.color  = 'gray';
+      t.tag    = null;
+      t.stats  = null;
+      t.dstats = null;
+      t.dsub   = 'no run data';
+      if (opt.sub == null) t.sub = 'This card fills in from a finished run — nothing to show yet.';
+    }
 
     // background + radial green glow
     ctx.fillStyle=C.bg; ctx.fillRect(0,0,W,H);
@@ -258,7 +292,11 @@
   function fromRun(canvas, run){
     run=run||{};
     const sub=[run.symbol,run.tf,run.side].filter(Boolean).join(' · ');
-    const m={ pnl:{type:'pnl',value:run.pnl,sub}, racing:{type:'racing',value:run.time,sub},
+    // v1.0.942 — stats/dstats/tag werden durchgereicht, damit ein Lauf, der
+    // echte Entry-/Exit-/Peak-Werte mitbringt, sie auch rendern kann. Bringt er
+    // sie nicht mit, bleibt die Karte leer — sie erfindet keine mehr.
+    const m={ pnl:{type:'pnl',value:run.pnl,sub,stats:run.stats,dstats:run.dstats,tag:run.tag,tagColor:run.tagColor},
+      racing:{type:'racing',value:run.time,sub},
       monster:{type:'monster',value:run.result,sub}, version:{type:'version',value:run.version},
       map:{type:'map',value:run.map}, multiplayer:{type:'multiplayer',value:run.room},
       leaderboard:{type:'leaderboard',value:run.rank}, alert:{type:'alert',value:run.level}, general:{type:'general'} };
