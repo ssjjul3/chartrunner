@@ -1,4 +1,5 @@
-/* Smoke-Verifikation fuer v1.0.867 (Sichtbarkeits-Gate, Negativ-Cache, Pyth).
+/* Smoke-Verifikation fuer v1.0.867 (Sichtbarkeits-Gate, Negativ-Cache) —
+ * der Pyth-Abschnitt ist seit v1.0.940 ein Waechter GEGEN Pyth, siehe unten.
  *
  * Laeuft headless gegen die Einzeldatei, jeder Netzabruf wird abgefangen —
  * es geht nichts nach draussen. Der Kern ist kein Unit-Test, sondern eine
@@ -132,16 +133,24 @@ function launchOptions(){
   check('leere Antwort wird als Fehlschlag gemerkt', miss.marker > 0, miss);
   check('zweiter Aufruf innerhalb der Sperre liefert null statt neuem Fan-out', miss.second, miss);
 
-  console.log('\n-- Pyth / Hermes --');
-  const pyth = await page.evaluate(() => {
-    const out = { threw: false, kind: typeof _tokPythInflight, ttl: (typeof _TOK_PYTH_TTL_MS !== 'undefined') ? _TOK_PYTH_TTL_MS : null };
-    try { _tokFetchPyth(['sol']); } catch(e){ out.threw = true; out.msg = String(e && e.message || e); }
-    return out;
-  });
-  check('_tokFetchPyth wirft nicht mehr (const → let)', pyth.threw === false, pyth);
-  check('TTL auf 30s angehoben', pyth.ttl === 30000, pyth);
+  /* v1.0.940 — die drei Pyth-Pruefungen dieser Datei haben sich UMGEDREHT.
+   * Bis v939 stand hier „Hermes wird tatsaechlich abgerufen“. Die Quelle ist
+   * entfernt, also ist genau das Gegenteil die Anforderung: kein Abruf, keine
+   * Symbole. Die Zeilen wurden nicht geloescht, sondern gewendet — sie sind
+   * jetzt der Waechter dagegen, dass Pyth unbemerkt zurueckkommt. */
+  console.log('\n-- Pyth / Hermes: entfernt --');
+  const pyth = await page.evaluate(() => ({
+    fetchFn:  typeof _tokFetchPyth,
+    pxFn:     typeof _tokPythPx,
+    feedMap:  typeof TOK_PYTH_FEED,
+    inflight: typeof _tokPythInflight,
+    ttl:      typeof _TOK_PYTH_TTL_MS,
+  }));
+  check('_tokFetchPyth existiert nicht mehr', pyth.fetchFn === 'undefined', pyth);
+  check('_tokPythPx existiert nicht mehr', pyth.pxFn === 'undefined', pyth);
+  check('TOK_PYTH_FEED existiert nicht mehr', pyth.feedMap === 'undefined', pyth);
   await page.waitForTimeout(600);
-  check('Hermes wird tatsaechlich abgerufen', hermesHits.length > 0, { hermesHits: hermesHits.length });
+  check('Hermes wird NICHT mehr abgerufen', hermesHits.length === 0, { hermesHits });
 
   await browser.close();
   console.log('\n' + pass + ' ok, ' + fail + ' fail');
