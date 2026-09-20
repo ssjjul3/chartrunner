@@ -523,15 +523,65 @@ open ChartRunner_Prototype.html
 <div class="callout"><strong>Governance.</strong> All four ChartRunner programs' upgrade authorities are wrapped by a Squads V4 2-of-3 multisig — vault <code>fK1J2TLk2qLy3cjtiSYDSuCnWuxezphBcdqNGZEpVsp</code> (devnet) — so every upgrade is a real on-chain proposal + 2-of-3 approval cycle rather than a single signer push. The first live cycle was executed against <code>chartrunner_oracle</code> on 2026-05-19; on-chain re-verified 2026-05-25.</div>
 
 <h2 id="endpoints">Endpoints</h2>
+<p>
+  Two tables, because they are two different kinds of thing. The first lists surfaces that are
+  <strong>in service</strong> — something answers them right now, and they carry real money or real players.
+  The second lists constants inside adapters that nothing calls. Until 2026-09-20 this page had only the
+  second table, which described a product other than the one that is running.
+</p>
+
+<h3>In service</h3>
 <table>
-<tr><th>Surface</th><th>URL</th></tr>
-<tr><td>Solana devnet RPC</td><td><code>https://api.devnet.solana.com</code></td></tr>
-<tr><td>MagicBlock ER (devnet)</td><td><code>https://devnet-as.magicblock.app/</code></td></tr>
-<tr><td>MagicBlock ER WS</td><td><code>wss://devnet-as.magicblock.app/</code></td></tr>
-<tr><td>Phoenix Rise REST</td><td><code>https://perp-api.phoenix.trade</code></td></tr>
-<tr><td>Honeycomb Edge</td><td><code>https://edge.test.honeycombprotocol.com</code></td></tr>
-<tr><td>Honeynet RPC</td><td><code>https://rpc.test.honeycombprotocol.com</code></td></tr>
+<tr><th>Service</th><th>Base URL</th><th>Network</th><th>Health</th></tr>
+<tr><td><strong>Money worker</strong> — Pro and Boost checkout, market data gateway</td><td><code>https://chartrunner-worker.jsg-951.workers.dev</code></td><td>Solana <strong>mainnet</strong> payments</td><td><code>GET /health</code></td></tr>
+<tr><td><strong>tx worker</strong> — builds trade transactions; never signs, holds no key</td><td><code>https://chartrunner-tx.jsg-951.workers.dev</code></td><td>Solana <strong>mainnet</strong></td><td><code>GET /health</code></td></tr>
+<tr><td><strong>ohlc-store</strong> — own candle store (<code>/v1/ohlc</code>, <code>/v1/track</code>, whales · tape · pressure)</td><td><code>https://chartrunner-ohlc-store.jsg-951.workers.dev</code></td><td>Solana <strong>mainnet</strong> data</td><td><code>GET /health</code></td></tr>
+<tr><td><strong>Rooms server</strong> — live multiplayer, shared overlays, moderation</td><td><code>wss://rooms.chartrunner.xyz</code></td><td>n/a (game state)</td><td><code>GET /health</code> · <code>GET /stats</code></td></tr>
+<tr><td><strong>Ownership worker</strong> — server-side ownership register</td><td>see <code>workers/ownership/</code> in this repo</td><td>n/a (Supabase)</td><td><code>GET /ownership/health</code></td></tr>
 </table>
+
+<div class="callout">
+  <strong>Why <code>/health</code> is documented at all.</strong> It is the one place where a service says, without
+  being asked, what it is and which commit it runs. A merged pull request is not a rollout, and a green CI run is
+  not a deployment — so "is the change live?" is only answerable if the service answers it. Where a worker names
+  its commit it does so as <code>git_sha</code> at the top of the response.
+  <br><br>
+  <code>/health</code> is also a contract, not just a status line. The boost checkout in the game reads
+  <code>features.boost_checkout</code> from the money worker — <code>ok</code>, a <code>reason</code> when not,
+  the sellable <code>tiers</code> <em>with their prices</em>, and the <code>unavailable</code> ones with their
+  reason. The client holds no price list of its own, and offers no payment at all unless that answer says it can
+  sell (fail-closed). The trade path does the same: the resting-order flow preflights <code>GET /health</code> on
+  the tx worker and reads <code>endpoints</code>, <code>platform_fee.per_input_mint</code> and
+  <code>trigger.resting_default</code> from it rather than from constants.
+</div>
+
+<div class="callout dim">
+  <strong>Not complete, and that is the finding.</strong> Not every service can answer this yet.
+  <code>workers/account/</code> and <code>workers/alerts-cron/</code> in this repo have no <code>/health</code> at
+  all; <code>workers/ownership/</code> has one, but it can only name its commit when <code>GIT_SHA</code> is
+  injected at deploy — otherwise it answers <code>git_sha: null</code> plus a note saying it cannot name its own
+  commit (<code>workers/ownership/src/index.js:401-403</code>). The gap is tracked, not papered over.
+</div>
+
+<h3>Devnet and test endpoints of the unwired adapters</h3>
+<p>
+  Nothing in the running product calls these. They are constants in the three adapters described above, kept here
+  so the addresses are documented, not because traffic goes to them.
+</p>
+<table>
+<tr><th>Surface</th><th>URL</th><th>Network</th></tr>
+<tr><td>Solana RPC (Anchor programs, wallet bridge)</td><td><code>https://api.devnet.solana.com</code></td><td><strong>devnet</strong></td></tr>
+<tr><td>MagicBlock ER</td><td><code>https://devnet-as.magicblock.app/</code></td><td><strong>devnet</strong></td></tr>
+<tr><td>MagicBlock ER WS</td><td><code>wss://devnet-as.magicblock.app/</code></td><td><strong>devnet</strong></td></tr>
+<tr><td>Phoenix REST</td><td><code>https://perp-api.phoenix.trade</code></td><td>mainnet host, <strong>unused</strong></td></tr>
+<tr><td>Honeycomb Edge</td><td><code>https://edge.test.honeycombprotocol.com</code></td><td><strong>test</strong> (Honeynet)</td></tr>
+<tr><td>Honeynet RPC</td><td><code>https://rpc.test.honeycombprotocol.com</code></td><td><strong>test</strong> (Honeynet)</td></tr>
+</table>
+<p>
+  All six still match the constants in the repository. Whether they still <em>resolve</em> is a different question
+  and is not answerable from source: <code>quote-api.jup.ag</code> sat in this codebase long after its DNS was
+  gone, and nobody noticed, because reading a constant is not reaching a host.
+</p>
 
 <h2 id="changelog">Changelog</h2>
 <div class="callout dim">
