@@ -114,7 +114,11 @@ const SRV_TIERS = [
   { id: 'supernova', usd: 909, hours: 170 }
 ];
 const CLIENT_PRICES = ['49', '149', '399', '999'];
-const OFF_REASON = 'price_feed: Die Preisquelle (Pyth/Hermes, SOL/USD) hat nicht geantwortet: Hermes error 503';
+/* 20.09.2026 — die Begruendung, die der Worker heute schickt. Sie lautete bis
+ * zur Pyth-Entfernung „Preisquelle (Pyth/Hermes) hat nicht geantwortet“. Der
+ * Test prueft unveraendert, dass der Client den Grund des SERVERS zeigt und
+ * keinen eigenen erfindet — nur die Zeichenkette ist die heutige. */
+const OFF_REASON = 'price_feed: Keine Kursquelle konfiguriert';
 const TIER_REASON = 'BOOST_HOURS_INFERNO ist nicht gesetzt - diese Stufe wird nicht angeboten.';
 const WORKER_TREASURY = 'WkR939TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
 const REF = 'Ref939VisibleOnScreenZZZZZZZZZZZZZZZZZZZZZZZ';

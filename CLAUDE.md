@@ -189,14 +189,17 @@ umgehen).
 - **Cloudflare-Zone `chartrunner.xyz`:** Apex + `www` proxied. `rooms` sowie die
   Mail-Records sind bewusst **DNS only** — `rooms` macht sein eigenes TLS und
   darf **nie** proxied werden.
-- **Worker-Route** `chartrunner.xyz/hermes/*` → Worker
-  `chartrunner-hermes-proxy` (Pyth-Hermes-Proxy; injiziert serverseitig das
-  Secret `HERMES_API_KEY`, hält den Key vom Client fern).
+- **Pyth/Hermes ist entfernt (20.09.2026).** Es gab die Worker-Route
+  `chartrunner.xyz/hermes/*` → `chartrunner-hermes-proxy`. Das Verzeichnis
+  `workers/hermes-proxy/` ist gelöscht, also deployt die Auto-Discovery ihn
+  nicht mehr. **Route, Worker und der Secret-Platz `HERMES_API_KEY` stehen
+  weiter im Cloudflare-Dashboard** — ein gelöschtes Verzeichnis löscht kein
+  ausgerolltes Skript. Das löscht Julian von Hand.
 - **Multiplayer:** `wss://rooms.chartrunner.xyz` (Hetzner; `/health` + `/stats`;
   SSH nur Julian). `relay.chartrunner.xyz` ist Legacy/Home-Server und
   unzuverlässig — nicht als primär annehmen.
 - **CI-Secrets (Repo-Secrets):** `CLOUDFLARE_API_TOKEN` +
-  `CLOUDFLARE_ACCOUNT_ID`. Worker-**Runtime**-Secrets (z. B. `HERMES_API_KEY`)
+  `CLOUDFLARE_ACCOUNT_ID`. Worker-**Runtime**-Secrets (z. B. `STRIPE_SECRET_KEY`)
   setzt Julian im Cloudflare-Dashboard bzw. per `wrangler secret` — nicht im
   Repo.
 
@@ -222,7 +225,6 @@ Aus dem Repo nachprüfbar, ohne jede Messung:
 |---|---|---|
 | `workers/account/` (`chartrunner-account`) | **nein** | nein |
 | `workers/alerts-cron/` (`chartrunner-alerts-cron`) | **nein** | nein |
-| `workers/hermes-proxy/` (`chartrunner-hermes-proxy`) | **nein** | nein |
 | `workers/ownership/` (`chartrunner-ownership`) | ja — `GET /ownership/health` (`src/index.js:619`) | **nur bedingt** — `src/index.js:401-403`: nur bei injiziertem `GIT_SHA`, sonst `null` plus Notiz |
 
 **Die benannte Ausnahme: der Geld-Worker.** `chartrunner-worker` hat laut IST-Abgleich
@@ -236,7 +238,7 @@ die Aussage ist **übernommen, nicht hier gemessen**. Sie wird als **Mangel gef�
 
 **Praktische Folge für Sessions:** die Regel weiter oben — „bevor ein Client-Patch von
 einem Worker-Endpunkt abhängt, muss der Endpunkt in `GET /health` unter `endpoints`
-stehen" — lässt sich bei drei der vier öffentlichen Worker **gar nicht anwenden**.
+stehen" — lässt sich bei zwei der drei öffentlichen Worker **gar nicht anwenden**.
 Dort gibt es keinen billigen Vorab-Check; er muss über Julians Telefon gegen den
 echten Endpunkt laufen. Das ist kein Grund, den Check zu überspringen — es ist der
 Grund, warum die Lücke im Backlog steht.
@@ -247,7 +249,7 @@ Grund, warum die Lücke im Backlog steht.
 Wrangler-Config aus. Zwischen Merge und `wrangler deploy` steht **kein Gate**:
 
 - **ungegated, öffentlich, belegt:** `workers/account/`, `workers/alerts-cron/`,
-  `workers/hermes-proxy/`, `workers/ownership/` — `DEPLOY_GATE` kommt in diesem Repo
+  `workers/ownership/` — `DEPLOY_GATE` kommt in diesem Repo
   **nirgends** vor (`grep`: null Treffer).
 - **gegated, privat, übernommen:** `workers/tx`, `workers/ohlc-store`.
 - **ungegated, privat, übernommen:** `my-worker` (verwaist), `trace`, `vault`,

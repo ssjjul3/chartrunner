@@ -13,6 +13,13 @@
  * gesehen.
  *
  * Aufruf:  npm i playwright --no-save && node scripts/check_v876_tradeability_browser.cjs
+ *
+ * 20.09.2026 — GEMESSEN, NICHT GESCHAETZT. Das Skript stand mit 24 ok / 5 FAIL
+ * im BACKLOG als „veraltet“. Gelaufen im echten Chromium waren ALLE FUENF
+ * Fehlschlaege dieselbe Zeile: `data-cr-probe` — die Deckel-Probe-Schaltflaeche,
+ * die mit v888 weggefallen ist. Die uebrigen 24 Pruefungen sind gruen und
+ * pruefen heutiges Verhalten. Also sind nicht die Pruefungen tot, sondern fuenf
+ * Zeilen davon: die sind raus, der Rest bleibt. Das Skript ist wieder gruen.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -81,7 +88,6 @@ const BONK = 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
     const r = await render(q);
     const h = r.html || '';
     check(name + ' → Handel-Knopf ist da', /data-cr-swap="/.test(h), r.err || h.slice(0, 80));
-    check(name + ' → Deckel-Probe ist da', /data-cr-cap-probe="/.test(h));
     check(name + ' → Tafel ist da', /data-cr-swap-panel="/.test(h));
   }
 
@@ -107,7 +113,7 @@ const BONK = 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
     /nicht bekannt/.test(ohneImp) && !/0,000\s%/.test(ohneImp), ohneImp.slice(0, 200));
   check('Route steht da', /Orca, Raydium/.test(ok));
   check('kein Ausfall-Hinweis im Erfolgsfall', !/Nur die Vorschau fehlt/.test(ok));
-  check('auch hier die Knoepfe', /data-cr-swap="/.test(ok) && /data-cr-cap-probe="/.test(ok));
+  check('auch hier der Handel-Knopf', /data-cr-swap="/.test(ok));
 
   console.log('\n-- Escaping wirkt wirklich --');
   const evil = await page.evaluate(() =>
