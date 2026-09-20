@@ -39,7 +39,9 @@ Die Ableitung Aussage für Aussage: [docs/STATUS-2026-09-19.md](docs/STATUS-2026
 - **Mint-Auflösung statt Whitelist** (v891, Julians Vorgabe 26.08.): jeder
   Listeneintrag, dessen Markt-ID sich über `/v1/mints/resolve` auflöst, ist
   handelbar; ohne Mint steht „nur Chart" mit Grund. `TOK_BIRDEYE_MINT`
-  entscheidet nichts mehr. Preise aus `GET /v1/price`; Mint ohne Preisfeld
+  entscheidet nichts mehr — es steht noch als dritte, nachrangige Mint-Quelle
+  in `_tokMintOf` und ist Teil des Birdeye-Restbestands, siehe Punkt 28.
+  Preise aus `GET /v1/price`; Mint ohne Preisfeld
   → „Preis nicht verfügbar", nie eine Zahl.
 - **Exit-Regel im Client** (v891): der Fluss folgt `safety.decision`
   (allow/deny), das Schild zeigt weiter `verdict`. VERKAUFEN wird nie
@@ -137,11 +139,10 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
   während zwei Stellen `if(typeof window.renderMaps === 'function')` prüften —
   beide still tot. Und `_mapT` war eine dritte, eingesperrte Kopie des
   Übersetzer-Körpers. Beides behoben (`_crT` ist der eine Körper).
-- **Stale, NICHT von v892 verursacht** (gemessen gegen `origin/main`, gleiche
-  Zahlen): `check_v874_swap` (9 FAIL) und `check_v876_tradeability` (5 FAIL)
-  prüfen die Deckel-Probe-Schaltfläche und ein Formular ohne Betragsfeld —
-  beides ist mit **v888** weggefallen. Die Prüfungen sind veraltet, nicht der
-  Code. Eigener kleiner Aufräum-Punkt, siehe C·22.
+- ~~**Stale, NICHT von v892 verursacht**~~ — **abgearbeitet 20.09.2026**, siehe
+  C·22. Kurzfassung: bei `check_v876_tradeability` waren fünf Zeilen veraltet,
+  nicht das Skript (jetzt 25 ok, 0 fail); `check_v874_swap` bricht nach den
+  neun FAIL ab und ist gelöscht.
 
 1. **Symbol-Anzeige** aus `symbol` — „Token" wird „BONK". War A·5 und ist
    in der Handelstafel erledigt (v889); offen bleibt die Markt-Liste, wo
@@ -160,11 +161,12 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
    **nicht** von dieser Session nachgemessen; beide Sandboxes sind für
    `*.workers.dev` gesperrt (403 auf CONNECT).
    Im öffentlichen Repo ist der Stand **belegbar** und schlechter, als die Regel
-   verspricht: von vier Workern hat **einer** überhaupt einen Health-Pfad
+   verspricht: von drei Workern hat **einer** überhaupt einen Health-Pfad
    (`chartrunner-ownership`, `GET /ownership/health`), und der nennt seinen Commit
    nur, wenn `GIT_SHA` beim Deploy injiziert wurde (`src/index.js:401-403`).
-   `chartrunner-account`, `chartrunner-alerts-cron` und `chartrunner-hermes-proxy`
-   haben **keinen**. Der Geld-Worker `chartrunner-worker` laut IST-Abgleich
+   `chartrunner-account` und `chartrunner-alerts-cron` haben **keinen**.
+   (Bis 20.09.2026 stand hier ein vierter, `chartrunner-hermes-proxy`; sein
+   Verzeichnis ist mit der Pyth-Entfernung gelöscht.) Der Geld-Worker `chartrunner-worker` laut IST-Abgleich
    ebenfalls keinen und kein `git_sha`.
    Die CI-Wächter-Hälfte ist mit v891 erledigt (`stranded-commits.yml`).
    Tabelle je Dienst: [docs/STATUS-2026-09-19.md](docs/STATUS-2026-09-19.md) §1.
@@ -192,8 +194,9 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
 11. ~~**Anchor-Umzug Phase 1 — Maps**~~ — erledigt mit v891 (siehe ERLEDIGT).
 12. **Anchor-Umzug Phase 2 — Registry** (eigener PR, nach Phase 1): Memo +
     atomare Transfers; hängt an denselben Worker-Bausteinen, Marktplatz-Teil
-    mit eigener Verifikationsrunde. Oracle/Match: entfallen (Hermes-Prüfung
-    bzw. Rooms-Server decken den Zweck) — README-Absatz im anchor/-Ordner
+    mit eigener Verifikationsrunde. Oracle/Match: entfallen (die Prüfung gegen
+    die Kursquelle bzw. der Rooms-Server decken den Zweck; die Kursquelle war
+    damals Pyth/Hermes und ist seit 20.09.2026 entfernt) — README-Absatz im anchor/-Ordner
     vermerkt das Urteil mit Datum. Progression: NICHT anfassen (audit-gated).
 13. ~~**G8 — Kursabfrage hinter den Worker**~~ — erledigt mit v891.
 14. **G7 — Positionen/PnL fertig verdrahten.** Bestand (Kette, exakt) steht;
@@ -230,18 +233,24 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
     Vorarbeit: pro Worker einen `/health`-Vertrag festschreiben (welche
     Felder müssen da sein), sonst prüft das Tor nichts.
     Zahl der betroffenen Worker: **hier drei** (`account`, `alerts-cron`,
-    `hermes-proxy`). Die Zahl aus dem Auftrag (sechs, davon keiner mit Tor)
+    `ownership`; bis 20.09.2026 war `hermes-proxy` der dritte, er ist
+    stillgelegt). Die Zahl aus dem Auftrag (sechs, davon keiner mit Tor)
     schließt die Worker des privaten Repos ein — von dieser Session nicht
     einsehbar und deshalb nicht als Messwert übernommen.
-22. **Veraltete Prüfskripte aufräumen** (klein, jederzeit).
-    `check_v874_swap` und `check_v876_tradeability` prüfen zwei Dinge, die es
-    seit **v888** nicht mehr gibt: die Deckel-Probe-Schaltfläche und ein
-    Swap-Markup ohne Betragsfeld. Sie sind seither rot und waren es auch vor
-    v892 — gemessen gegen `origin/main`, gleiche Zahlen (9 bzw. 5 FAIL).
-    Gefährlich ist daran nicht das Rot, sondern die Gewöhnung: eine Suite mit
-    dauerhaft roten Zeilen wird nicht mehr gelesen. Entweder auf die heutige
-    Ansicht nachziehen oder als überholt kennzeichnen — nicht löschen, ohne zu
-    prüfen, was sie sonst noch abdecken.
+22. ~~**Veraltete Prüfskripte aufräumen**~~ — **erledigt 20.09.2026**, und die
+    Forderung „nicht löschen, ohne zu prüfen, was sie sonst noch abdecken"
+    wurde eingelöst: beide Skripte liefen im echten Chromium gegen den
+    heutigen Client.
+    **`check_v876_tradeability` war nicht veraltet** — 24 ok, 5 FAIL, und alle
+    fünf Fehlschläge dieselbe Zeile (`data-cr-cap-probe`, weggefallen mit v888).
+    Die übrigen 24 prüfen heutiges Verhalten, darunter den Live-Befund, der das
+    Skript ausgelöst hat (Handel-Knopf bleibt da, wenn die Vorschau fällt). Also
+    nur die fünf Zeilen raus; das Skript läuft **25 ok, 0 fail**.
+    **`check_v874_swap` war schlimmer als veraltet** — 9 FAIL, und danach bricht
+    es mit einem TypeError ab. Alles dahinter lief nie: `cluster=mainnet`,
+    Explorer-Link ohne cluster-Parameter, POST-Körper, Einsatzgröße, WSOL als
+    Eingabe, „der Worker wird nicht von selbst angerufen". Gelöscht — siehe
+    den neuen Punkt 27 für das, was dabei verlorengeht.
 21. **Node-20-Deprecation in den Actions** (Einzeiler für die nächste private
     Session). GitHub zwingt Actions von `actions/*@v4` bereits auf Node 24
     („being forced to run on Node.js 24" im Log). `ci.yml` ist auf
@@ -250,8 +259,9 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
     `audit-worker-secrets`) sind ungeprüft. Einmal durchziehen, damit die
     Warnung nicht zur Abschaltung wird.
 
-22. **`/health` für die drei stummen öffentlichen Worker** (`chartrunner-account`,
-    `chartrunner-alerts-cron`, `chartrunner-hermes-proxy`). Heute lässt sich bei
+22. **`/health` für die zwei stummen öffentlichen Worker** (`chartrunner-account`,
+    `chartrunner-alerts-cron`; der dritte, `chartrunner-hermes-proxy`, ist seit
+    20.09.2026 stillgelegt). Heute lässt sich bei
     keinem von ihnen fragen, ob der Merge live ist — es gibt keinen Pfad, den man
     fragen könnte. `workers/ownership/src/index.js` ist die Vorlage: Health-Antwort
     plus `git_sha` aus `env.GIT_SHA`, und wenn der Deploy es nicht injiziert, sagt
@@ -291,6 +301,47 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
     public prototype v1.0.800" — die Zahl zu ändern, ohne den Inhalt gegen v1.0.936
     durchzugehen, wäre eine Behauptung, die wie ein Messwert aussieht. Eigener
     inhaltlicher Durchgang, dann die Zahl.
+
+27. **Die Mainnet-Strecke hat wieder weniger Prüfung, als sie hatte.**
+    Mit `check_v874_swap` (gelöscht, C·22) fallen rund 15 Prüfungen weg, die
+    seit der v888-Umstellung ohnehin **nie ausgeführt** wurden — das Skript
+    stirbt vorher. Inhaltlich waren das: `cluster` wird als `mainnet`
+    mitgeschickt · Explorer-Link ohne `cluster`-Parameter · Status wird gegen
+    Mainnet abgefragt · POST statt GET · Einsatz und Eingabe-Mint im
+    Worker-Körper · während der Bestätigung holt ein Tap kein neues Angebot ·
+    ein Fehlschlag auf der Kette gilt nicht als Handel · der Worker wird nicht
+    von selbst angerufen. Das sind Aussagen über den Geldweg, und sie sind
+    heute unbewacht. Neu schreiben gegen die heutige Oberfläche (Menge +
+    Einheit), mit Gegenprobe je Zeile. **Bauen, nicht Aufräumen** — eigener
+    Auftrag.
+
+28. **Birdeye-Restbestand im Client** (aus dem Aufräum-PR vom 20.09.2026
+    berichtet, **nicht** angefasst). Der Anbieter ist im Geld-Worker entfernt
+    und `BIRDEYE_API_KEY` war nie gesetzt — die Kette zeigt also ins Leere.
+    Im Client steht sie trotzdem noch und wird gelesen:
+    `window.crBirdeye` (`ChartRunner_Prototype.html:107008`) zeigt auf
+    `chartrunner-worker…/v1/birdeye`; ein zweiter Pfad
+    (`ChartRunner_Prototype.html:108536-108540`) geht bei einem vom Spieler
+    selbst eingetragenen Schlüssel (`localStorage.cr_birdeye_key_v1`) direkt
+    an `public-api.birdeye.so`. Betroffen sind Radar-Flächen (New Listings,
+    Movers, Whale Tape), das Sicherheits-Verdikt, Holder/Marktkapitalisierung
+    und der OHLCV-Zweig. Das sauber zu entfernen ist ein Umbau von Flächen,
+    kein Aufräumen — eigener Auftrag, mit der Frage vorweg, was an diesen
+    Flächen überhaupt bleiben soll.
+
+29. **`chartrunner-alerts-cron` ruft Birdeye ohne Tor — und degradiert still.**
+    `workers/alerts-cron/src/index.js:371` ruft `bdVerdict(env, a.mint)`
+    **ohne** die `BIRDEYE_API_KEY`-Bedingung, die der Preis-Zweig in Zeile 224
+    hat. `bdVerdict` geht damit auf
+    `chartrunner-worker…/v1/birdeye/defi/token_security` — den Pfad, dessen
+    Birdeye-Hälfte entfernt wurde. Antwort nicht `ok` → `null` → `evaluate`
+    liefert `met:false` → **die Sicherheits-Alarmmail feuert nie mehr, und
+    niemand erfährt es.** Das ist genau die stille Degradierung, die die
+    Produktregeln verbieten. Abgeleitet aus dem Quelltext beider Seiten,
+    **nicht gemessen** — der Cron läuft, ich erreiche ihn nicht.
+    Entscheidung fällig: Sicherheits-Alarm einstellen und das sagen, oder auf
+    eine Quelle umstellen, die es noch gibt. **Der Worker wurde in diesem PR
+    nicht angefasst** — er trägt die Wallet-Watch-Mails.
 
 ## AUSDRÜCKLICH NICHT (Handoff §5, unverändert gültig)
 
