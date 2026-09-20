@@ -343,6 +343,31 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
     eine Quelle umstellen, die es noch gibt. **Der Worker wurde in diesem PR
     nicht angefasst** — er trägt die Wallet-Watch-Mails.
 
+30. **Die toten Birdeye-Aufrufe liegen weiter im Client** (Stand nach
+    v1.0.941). v941 hat den Anbieter **nicht** ersetzt und die Aufrufe
+    **nicht** herausgelöst — es hat nur dafür gesorgt, dass keine Fläche
+    mehr still leer läuft. Offen bleibt genau das, was Punkt 28 beschreibt:
+    `crBirdeye.fetchToken/fetchOhlcv/security/trades` fragen bei jedem Tick
+    einen Endpunkt, der nicht mehr antwortet, und `crBirdeye.hasKey()` gibt
+    weiter pauschal `true` zurück (v1.0.690) — das ist die Zeile, an der die
+    Terminal-Flächen glauben, es gäbe eine Quelle. Ehrlich wäre
+    `hasKey() === !!_apiKey()`; das blendet die drei Flächen dann aber
+    **vor** dem Abruf aus (`_crTermPrivateOpsReason`), also genau das
+    Verschwinden, das v941 abgestellt hat. Reihenfolge deshalb: erst
+    entscheiden, was an den Flächen bleiben soll, dann herauslösen.
+
+31. **`_crTermPrivateOpsReason` vergleicht Anbieternamen, die es nicht gibt.**
+    Befund aus der Gegenprobe zu v1.0.941, am Quelltext, **nicht gemessen**:
+    die Funktion prüft `meta.provider === 'on-chain'`, die Karte
+    `CR_TERMINAL_PRIVATE_OPS_PANES` schreibt aber `'on-chain data'`. Folge:
+    ein gesetzter GoldRush-Schlüssel hebt die Archivierung von `solHolders`,
+    `solSmart`, `phxWhales`, `cexWhales` **nie** auf — die Flächen bleiben
+    ausgeblendet, auch wenn der Schlüssel da ist und der Abruf liefe.
+    Dieselbe Klasse wie die Namens-Kollision aus v874: nichts schlägt an,
+    weil ein Vergleich still falsch ist. Eine Zeile Fix, aber sie ändert
+    Sichtbarkeit von Flächen — eigener, kleiner Auftrag, mit Ablesung am
+    Telefon.
+
 ## AUSDRÜCKLICH NICHT (Handoff §5, unverändert gültig)
 
 Keeper/echte Bracket-Ausführung · Multi-Wallet · eigene Kurs-Infrastruktur ·

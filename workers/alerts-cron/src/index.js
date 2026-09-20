@@ -6,9 +6,14 @@
  *
  * Every 5 minutes (see wrangler.toml [triggers]):
  *   1. Read armed alerts from Supabase cr_alerts (service-role → bypasses RLS).
- *   2. For each, check the condition server-side against Birdeye
- *      (price / 24h% / volume via /defi/token_overview; safety via
- *      /defi/token_security) — mirrors the in-browser crAlertEngine._evaluate.
+ *   2. For each, check the condition server-side — mirrors the in-browser
+ *      crAlertEngine._evaluate. Price / 24h% / volume come from CoinGecko →
+ *      DexScreener → Binance (Birdeye only with a personal key, see below).
+ *      SAFETY still asks bdVerdict(); without a key that call goes to the
+ *      /v1/birdeye proxy, whose Birdeye half is gone — so it returns null.
+ *      v1.0.941: that is now a NAMED state, not silence — the alert keeps
+ *      last_value = SAFETY_UNREADABLE and the owner gets one mail saying the
+ *      check could not be performed. See the constant for the full reasoning.
  *   3. On a match with the mail channel on: look up the owner's e-mail via the
  *      Supabase Admin API and send a Resend mail. Then mark the row triggered
  *      (recurring alerts stay armed with a 1h cooldown via last_fired_at).
@@ -28,6 +33,23 @@
  */
 
 const REFIRE_MS = 3600000; // recurring alerts: min gap between mails (1h)
+// v1.0.941 — EIN SICHERHEITSALARM DARF NICHT STILL AUSFALLEN.
+//
+// bdVerdict() laeuft ohne BIRDEYE_API_KEY ueber den /v1/birdeye-Proxy des
+// Geld-Workers. Dessen Birdeye-Haelfte ist entfernt; der Schluessel war nie
+// gesetzt. Seither liefert bdVerdict() null, evaluate() sagt folgerichtig
+// "nicht erfuellt" — und die Zeile bekam nur ein neues last_checked. Ergebnis:
+// die Sicherheits-Alarmmail feuert nie, und die Alarmliste im Client sagt
+// weiter "noch nicht geprueft", als waere es gleich soweit.
+//
+// Ab hier ist "nicht lesbar" ein EIGENER Zustand, kein Schweigen: last_value
+// traegt den Satz (die Alarmliste zeigt ihn), und der Besitzer bekommt GENAU
+// EINE Mail je Ausfall-Episode. Die Erinnerung daran steckt in last_value
+// selbst — kein neuer Spalten-Bedarf, und sobald wieder ein Verdikt ankommt,
+// ueberschreibt es den Satz und die naechste Episode darf wieder melden.
+// Ausdruecklich NICHT getan: geraten wird nichts. Ein fehlendes Verdikt ist
+// kein SAFE, und "unlesbar" ist nicht "sauber".
+const SAFETY_UNREADABLE = "Sicherheitspruefung nicht moeglich \u2014 Quelle nicht verfuegbar";
 const RANK = { SAFE: 0, CAUTION: 1, UNKNOWN: 1, RISK: 2 };
 const VALID_TYPES = new Set(["price_above", "price_below", "pct_move", "vol_mult", "safety"]);
 
@@ -43,7 +65,7 @@ function _sbHeaders(env) {
 async function sbArmedAlerts(env, limit) {
   const url =
     env.SUPABASE_URL.replace(/\/+$/, "") +
-    "/rest/v1/cr_alerts?status=eq.armed&select=owner,id,asset,symbol,mint,type,threshold,channels,recurring,status,base_vol,base_verdict,last_fired_at" +
+    "/rest/v1/cr_alerts?status=eq.armed&select=owner,id,asset,symbol,mint,type,threshold,channels,recurring,status,base_vol,base_verdict,last_fired_at,last_value" +
     "&limit=" + encodeURIComponent(limit);
   const r = await fetch(url, { headers: _sbHeaders(env) });
   if (!r.ok) throw new Error("supabase armed HTTP " + r.status);
@@ -334,7 +356,7 @@ async function sendMail(env, to, subject, bodyText, opts) {
 
 // ── Core run ────────────────────────────────────────────────────────────────
 async function runOnce(env) {
-  const summary = { scanned: 0, checked: 0, fired: 0, mailed: 0, errors: 0 };
+  const summary = { scanned: 0, checked: 0, fired: 0, mailed: 0, errors: 0, unreadable: 0 };
   if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.RESEND_API_KEY) {
     // Birdeye needs no key (proxy). Without Supabase/Resend we can't read or
     // deliver — no-op the whole run rather than consuming alerts.
@@ -382,6 +404,35 @@ async function runOnce(env) {
       const basePatch = { last_checked: iso };
       if (res.label) basePatch.last_value = res.label;
       if (res.patch) Object.assign(basePatch, res.patch); // baseline write-back (never fires)
+
+      // v1.0.941 — Sicherheitsalarm ohne Verdikt: sagen, dass nicht geprueft
+      // werden konnte, statt so zu tun, als sei nichts gewesen. Die Mail geht
+      // genau einmal je Ausfall-Episode raus (Erinnerung = last_value selbst).
+      if (a.type === "safety" && !verdict) {
+        summary.unreadable++;
+        basePatch.last_value = SAFETY_UNREADABLE;
+        if (a.last_value !== SAFETY_UNREADABLE) {
+          if (!emailCache.has(a.owner)) emailCache.set(a.owner, await sbUserEmail(env, a.owner).catch(() => ""));
+          const to = emailCache.get(a.owner);
+          if (to) {
+            if (!phraseCache.has(a.owner)) phraseCache.set(a.owner, await sbUserPhrase(env, a.owner).catch(() => ""));
+            const note =
+              a.symbol + ": die Sicherheitspruefung konnte nicht durchgefuehrt werden \u2014 die Datenquelle " +
+              "fuer das Mint-Verdikt ist nicht verfuegbar. Der Alarm bleibt scharf und meldet sich, sobald " +
+              "wieder ein Verdikt gelesen werden kann. Bis dahin gilt: kein Verdikt ist NICHT dasselbe wie sauber.";
+            const sent = await sendMail(env, to, "ChartRunner Alert \u00b7 " + a.symbol + " \u2014 Sicherheitspruefung nicht moeglich", note, {
+              heading: "\u26a0 Sicherheitspruefung nicht moeglich \u00b7 " + a.symbol,
+              preheader: note,
+              phrase: phraseCache.get(a.owner),
+            }).catch(() => false);
+            if (sent) summary.mailed++; else summary.errors++;
+          } else {
+            summary.errors++;
+          }
+        }
+        await sbPatchAlert(env, a.owner, a.id, basePatch).catch(() => {});
+        continue;   // nie feuern, nie stillschweigend weiterziehen
+      }
 
       let handled = false; // true once we've claimed+attempted delivery (basePatch already written)
       if (res.met) {

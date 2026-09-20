@@ -2,7 +2,7 @@
 
 Makes standing alerts fire **even while you're not playing**. Every 5 minutes
 this worker reads armed alerts from Supabase (`cr_alerts`), checks each one
-server-side against Birdeye, and e-mails triggers via Resend. The in-browser
+server-side, and e-mails triggers via Resend. The in-browser
 `crAlertEngine` still handles the app-open case; this covers offline.
 
 No public route — it runs only on the cron schedule (plus a token-gated manual
@@ -13,13 +13,34 @@ to `main` (just like `hermes-proxy`).
 
 Mirrors the client's `crAlertEngine._evaluate` exactly:
 
-| type          | source (Birdeye)                     | fires when                              |
-| ------------- | ------------------------------------ | --------------------------------------- |
-| `price_above` | `/defi/token_overview` `.price`      | price ≥ threshold                       |
-| `price_below` | `/defi/token_overview` `.price`      | price ≤ threshold                       |
-| `pct_move`    | `.priceChange24hPercent`             | signed threshold (≥ if +, ≤ if −)       |
-| `vol_mult`    | `.v24hUSD`                           | vol ≥ threshold × `base_vol`            |
-| `safety`      | `/defi/token_security` verdict       | verdict rank worse than `base_verdict`  |
+| type          | source                                            | fires when                              |
+| ------------- | ------------------------------------------------- | --------------------------------------- |
+| `price_above` | CoinGecko → DexScreener → Binance (→ Birdeye w/ key) | price ≥ threshold                       |
+| `price_below` | same chain                                        | price ≤ threshold                       |
+| `pct_move`    | same chain, 24h change                            | signed threshold (≥ if +, ≤ if −)       |
+| `vol_mult`    | same chain, 24h volume                            | vol ≥ threshold × `base_vol`            |
+| `safety`      | `bdVerdict()` — `/defi/token_security`             | verdict rank worse than `base_verdict`  |
+
+### The `safety` row is currently blind, and it says so (v1.0.941)
+
+`bdVerdict()` has no `BIRDEYE_API_KEY` gate (unlike the price chain), so without
+a personal key it goes to the `/v1/birdeye` proxy of `chartrunner-worker` —
+whose Birdeye half was removed. It therefore returns `null` on every run.
+
+Until that day it returned `null` **silently**: `evaluate()` correctly reported
+"not met", the row got a fresh `last_checked`, and the alert sat armed forever
+looking like a live safety promise. Since v1.0.941 the worker instead:
+
+* writes `last_value = "Sicherheitspruefung nicht moeglich — Quelle nicht verfuegbar"`
+  (the in-app alert list renders it in amber),
+* mails the owner **once per outage episode** — the reminder is `last_value`
+  itself, so a recovered verdict overwrites it and the next episode may report
+  again; no new column,
+* never fires: a missing verdict is not a finding, and unreadable is not clean,
+* counts the outage in the run summary as `unreadable`.
+
+Verified by `scripts/check_v941_alerts_cron_safety.mjs` (stubbed fetch, no live
+system touched).
 
 Only alerts with the **mail channel on** and a resolvable **mint** are handled
 server-side (app-only alerts are the browser's job). Baselines (`base_vol`,
