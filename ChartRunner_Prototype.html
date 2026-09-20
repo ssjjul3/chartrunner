@@ -52539,36 +52539,77 @@ const crOnchain = (function(){
     const tfSec = ({'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'12h':43200,'1d':86400})[timeframe] || 900;
     const endTs = mark ? (mark.ts + tfSec) : Math.floor(Date.now() / 1000);
     const startTs = endTs - Math.max(tfSec * 3, 900);
-    const facts = { asset: (currentAssetObj().label || m), window_min: Math.round((endTs - startTs) / 60), trades: 0, buys: 0, sells: 0, buy_usd: 0, sell_usd: 0, top: [], price_move: null };
+    /* v1.0.942 — NULLEN SIND KEINE FAKTEN, UND SCHON GAR NICHT GEPRUEFTE.
+     *
+     * Bis hier startete `facts` auf lauter Nullen (trades/buys/sells/buy_usd/
+     * sell_usd = 0), der Tape-Abruf hatte KEIN else und ein leeres catch. Ein
+     * Ausfall — Worker nicht erreichbar, HTTP 5xx, Mint nicht indiziert — sah
+     * danach exakt aus wie ein gemessenes Ergebnis: "0 on-chain trades ·
+     * 0B/0S · buy $0 vs sell $0". Dieselbe Null-Struktur ging woertlich mit
+     * "(already verified, do not invent numbers)" an das Sprachmodell. Das
+     * System wies also ein Modell an, erfundene Nullen als geprueft zu
+     * behandeln, und baute darauf eine Erklaerung, die nach Befund klang.
+     *
+     * Jetzt: `facts` bleibt null, solange nichts gemessen wurde. Ohne Messung
+     * gehen KEINE Zahlen in den Prompt, der Satz "already verified" entfaellt,
+     * und im Prompt steht ausdruecklich, dass keine Handelsdaten vorliegen.
+     * Die Flaeche sagt dasselbe, und das catch schweigt nicht mehr.
+     */
+    const asset = (currentAssetObj().label || m);
+    const windowMin = Math.round((endTs - startTs) / 60);
+    let facts = null;      // null = nicht gemessen. Niemals eine Null als Messwert.
+    let noDataWhy = '';    // was genau fehlt — wird gesagt, nicht geschluckt
     try {
       const r = await fetch(_base() + '/v1/tape/' + encodeURIComponent(m) + '?limit=200');
-      if(r.ok){
+      if(!r.ok){
+        noDataWhy = 'tape index answered HTTP ' + r.status;
+      } else {
         const j = await r.json();
         const inWin = (j.tape || []).filter(t => t.ts >= startTs && t.ts <= endTs);
-        facts.trades = inWin.length;
-        inWin.forEach(t => { if(t.side === 'buy'){ facts.buys++; facts.buy_usd += t.quote_usd; } else if(t.side === 'sell'){ facts.sells++; facts.sell_usd += t.quote_usd; } });
-        facts.buy_usd = Math.round(facts.buy_usd); facts.sell_usd = Math.round(facts.sell_usd);
-        facts.top = inWin.slice().sort((a,b) => b.quote_usd - a.quote_usd).slice(0, 3)
-          .map(t => ({ side:t.side, usd:Math.round(t.quote_usd), wallet:t.wallet ? (t.wallet.slice(0,4) + '…') : '' }));
-        if(inWin.length >= 2){
-          const first = inWin[inWin.length-1].price_usd, last = inWin[0].price_usd;
-          if(first > 0) facts.price_move = Math.round((last - first) / first * 1000) / 10;
+        if(!inWin.length){
+          noDataWhy = 'no on-chain swaps indexed in this window';
+        } else {
+          const f = { asset: asset, window_min: windowMin, trades: inWin.length, buys: 0, sells: 0, buy_usd: 0, sell_usd: 0, top: [], price_move: null };
+          inWin.forEach(t => { if(t.side === 'buy'){ f.buys++; f.buy_usd += t.quote_usd; } else if(t.side === 'sell'){ f.sells++; f.sell_usd += t.quote_usd; } });
+          f.buy_usd = Math.round(f.buy_usd); f.sell_usd = Math.round(f.sell_usd);
+          f.top = inWin.slice().sort((a,b) => b.quote_usd - a.quote_usd).slice(0, 3)
+            .map(t => ({ side:t.side, usd:Math.round(t.quote_usd), wallet:t.wallet ? (t.wallet.slice(0,4) + '…') : '' }));
+          if(inWin.length >= 2){
+            const first = inWin[inWin.length-1].price_usd, last = inWin[0].price_usd;
+            if(first > 0) f.price_move = Math.round((last - first) / first * 1000) / 10;
+          }
+          facts = f;
         }
       }
-    } catch(_){}
+    } catch(err){
+      noDataWhy = 'tape fetch failed: ' + ((err && err.message) || err);
+      try { console.warn('[crOnchain] whyMove: tape fetch failed', err); } catch(_){}
+      try { if(window.crReport) crReport(err, 'crOnchain/whyMove'); } catch(_){}
+    }
     const factsHtml = '<div id="crWhyOut" style="display:block;margin-top:8px;padding:8px;border:1px solid rgba(20,241,149,.3);border-radius:8px;font-size:10px">'
-      + '<div style="display:block;font-weight:700;margin-bottom:4px">FACTS · ' + _esc(facts.asset) + ' · last ' + facts.window_min + 'min</div>'
-      + '<div style="display:block">' + facts.trades + ' on-chain trades · ' + facts.buys + 'B/' + facts.sells + 'S · buy ' + _fmtUsd(facts.buy_usd) + ' vs sell ' + _fmtUsd(facts.sell_usd)
-      + (facts.price_move != null ? (' · price ' + (facts.price_move >= 0 ? '+' : '') + facts.price_move + '%') : '') + '</div>'
-      + (facts.top.length ? ('<div style="display:block;color:var(--dim)">top: ' + facts.top.map(t => t.side + ' ' + _fmtUsd(t.usd)).join(' · ') + '</div>') : '')
-      + '<div id="crWhyCoach" style="display:block;margin-top:6px;padding-top:6px;border-top:1px dashed rgba(128,128,128,.25);color:#b8f5d3">COACH: thinking…</div>'
+      + '<div style="display:block;font-weight:700;margin-bottom:4px">FACTS · ' + _esc(asset) + ' · last ' + windowMin + 'min</div>'
+      + (facts
+          ? ('<div style="display:block">' + facts.trades + ' on-chain trades · ' + facts.buys + 'B/' + facts.sells + 'S · buy ' + _fmtUsd(facts.buy_usd) + ' vs sell ' + _fmtUsd(facts.sell_usd)
+             + (facts.price_move != null ? (' · price ' + (facts.price_move >= 0 ? '+' : '') + facts.price_move + '%') : '') + '</div>'
+             + (facts.top.length ? ('<div style="display:block;color:var(--dim)">top: ' + facts.top.map(t => t.side + ' ' + _fmtUsd(t.usd)).join(' · ') + '</div>') : ''))
+          : ('<div style="display:block;color:#f7c76b">no trade data — ' + _esc(noDataWhy || 'tape index did not answer') + '</div>'
+             + '<div style="display:block;color:var(--dim)">Nothing is counted here, so nothing is shown. The note below is written without trade data.</div>'))
+      + '<div id="crWhyCoach" style="display:block;margin-top:6px;padding-top:6px;border-top:1px dashed rgba(128,128,128,.25);color:#b8f5d3">'
+      + (facts ? 'COACH: thinking…' : 'COACH (no trade data): thinking…') + '</div>'
       + '</div>';
     renderPane(factsHtml);
+    const coachLabel = facts ? 'COACH: ' : 'COACH (no trade data): ';
+    const prompt = facts
+      ? ('WHY DID THIS MOVE? Interpret ONLY these on-chain facts, measured from our own tape index for this window (do not invent numbers): ' + JSON.stringify(facts))
+      : ('WHY DID THIS MOVE? NO on-chain trade data is available for ' + asset + ' over the last ' + windowMin
+         + ' minutes (' + (noDataWhy || 'tape index did not answer') + '). There are no verified numbers to interpret. '
+         + 'Do NOT state, estimate or imply any trade count, buy/sell volume, flow or price move — not even zero. '
+         + 'Answer in one or two sentences: say plainly that no trade data was available for this window, and name what would be needed to explain the move.');
     try {
-      const reply = await window.crQvac.ask('coach', 'WHY DID THIS MOVE? Interpret ONLY these on-chain facts (already verified, do not invent numbers): ' + JSON.stringify(facts), []);
+      const reply = await window.crQvac.ask('coach', prompt, []);
       const el = document.getElementById('crWhyCoach');
-      if(el) el.textContent = 'COACH: ' + (reply || '(no reply)');
-    } catch(_){ const el = document.getElementById('crWhyCoach'); if(el) el.textContent = 'COACH: unavailable'; }
+      if(el) el.textContent = coachLabel + (reply || '(no reply)');
+    } catch(_){ const el = document.getElementById('crWhyCoach'); if(el) el.textContent = coachLabel + 'unavailable'; }
     return facts;
   }
   // Poll: Asset-Wechsel erkennen + Refresh — nur wenn Widget sichtbar oder Overlay an.
