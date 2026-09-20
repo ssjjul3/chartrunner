@@ -85,7 +85,6 @@ const HERMES_LOCKFILE_ALLOWLIST = new Set([
 
 const PYTH_HERMES_FILE_ALLOWLIST = new Set([
   'anchor/programs/chartrunner-oracle/src/lib.rs',
-  'solana-connect/src/lib/pyth-feeds.ts',
 ]);
 
 const PYTH_HERMES_LINE_ALLOWLIST = /Pyth|pythnetwork|hermes\.pyth\.network|HERMES_|VAA|verified feed|price update|price-update|price service|price feed|price snapshot|REST snapshot|WebSocket stream|benchmark endpoint|fetchLatestPrice|streamPyth|Live tape|streaming|price tape/i;
