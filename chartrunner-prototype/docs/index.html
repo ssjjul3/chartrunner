@@ -158,6 +158,9 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);background
 <ul>
   <li><strong>A canvas game</strong> — an HTML prototype that runs on real chart candles, with bear monsters, an upside-down world, and 17 trading primitives wired as in-game abilities.</li>
   <li><strong>An on-chain layer</strong> — four Anchor programs (maps · registry · match · oracle), all live on devnet under a Squads V4 2-of-3 multisig.</li>
+  <li><strong>Services that are in service</strong> — a money worker (Pro and Boost checkout), a tx worker that
+    builds trade transactions and never signs, an own candle store, an ownership register, and a rooms server for
+    live multiplayer. These carry the real traffic; see <a href="#endpoints">Endpoints</a>.</li>
   <li><strong>Three ecosystem adapters</strong> — trades (Phoenix Rise), matches (MagicBlock Ephemeral Rollups), economy (Honeycomb). All built; execution is not yet enabled. The fourth, price truth (Pyth), was removed on 2026-09-20 — as a price source and as a partner. Only our own devnet program <code>chartrunner_oracle</code> remains.</li>
 </ul>
 
@@ -192,7 +195,7 @@ open ChartRunner_Prototype.html
 
 <h2 id="deploy-surfaces">Deploy surfaces</h2>
 <p>
-  ChartRunner is intentionally deployed as four cooperating surfaces. The HTML prototype is the runtime; the React app is the wallet bridge; the Solana programs are the verifiability layer; the docs page is what you're reading now.
+  ChartRunner is deployed as several cooperating surfaces. The HTML prototype is the runtime; the React app is the wallet bridge; the Solana programs are the verifiability layer; the docs page is what you're reading now. The static surfaces ship from one Pages build; the workers and the rooms server deploy on their own paths, which is why "merged" and "live" are two different statements here.
 </p>
 <table>
 <tr><th>Surface</th><th>Path</th><th>Role</th></tr>
@@ -200,6 +203,8 @@ open ChartRunner_Prototype.html
 <tr><td>Game runtime</td><td><code>ChartRunner_Prototype.html</code></td><td>The canvas game · 17 SDK primitives · 10 detectors · 70-chapter Campaign · object alarms + bracket tools · adaptive phone/tablet shell · guided first-run tour</td></tr>
 <tr><td>Wallet bridge</td><td><code>solana-connect/</code></td><td>Vite + React app · routes <code>?action=…</code> deep links into Anchor txs</td></tr>
 <tr><td>Docs (this page)</td><td><code>chartrunner-prototype/docs/</code></td><td>SDK reference · partner integrations · changelog</td></tr>
+<tr><td>Pricing</td><td><code>chartrunner-prototype/pricing.html</code></td><td>Free vs. Pro · card via Stripe or on-chain in SOL / USDC — see <a href="https://chartrunner.xyz/pricing.html">pricing</a> for the current terms</td></tr>
+<tr><td>Workers + rooms server</td><td>see <a href="#endpoints">Endpoints</a></td><td>Checkout, transaction building, candles, ownership, live rooms — deployed separately from the Pages build, so a merge here does not move them</td></tr>
 </table>
 
 <h2 id="primitives">Primitives</h2>
@@ -352,6 +357,29 @@ open ChartRunner_Prototype.html
 <p>
   Two players running on the same chart with every move settled on-chain isn't possible at Solana's base-layer 400 ms slot times. Ephemeral Rollups are the intended solution for the <em>on-chain</em> version of that — the <code>MatchState</code> PDA delegates to MagicBlock's ER validator, where every player's <code>tick_player</code> settles in ~1 ms at zero fee, committing state back to base layer every 30 s. The <code>chartrunner_match</code> program is deployed on devnet and the adapter is built, but <strong>matchmaking, the PvP UI, and anti-cheat on <code>tick_player</code> are not yet wired</strong> — scores are self-reported until anti-cheat lands, so no ranked PvP runs live today.
 </p>
+<div class="callout">
+  <strong>Multiplayer does run today — just not this one.</strong> Live rooms are served by a standalone rooms
+  server at <code>wss://rooms.chartrunner.xyz</code>, not by an Ephemeral Rollup, and nothing about them is
+  on-chain. Since the rooms server reached v1.4.0 a room shares more than ghost runners:
+  <ul>
+    <li><strong>Shared chart overlays</strong> — trendline, Fibonacci extension and anchored VWAP. What travels is
+      the <em>configuration</em> (kind, anchors in <strong>time and price</strong> — never screen coordinates —
+      parameters, token and timeframe); each client draws it itself. The server holds the state per room, sets the
+      author from the connection, and hands a joiner the <strong>full</strong> state on arrival rather than only
+      what happens after them.</li>
+    <li><strong>A context lock.</strong> If the viewer's token or timeframe differs, the overlay is
+      <em>not</em> drawn — a notice naming both is shown instead. Somebody else's line over your different candles
+      would look like a signal and be a coincidence.</li>
+    <li><strong>Other people's overlays are marked as such</strong> — dashed, carrying their author's name and
+      colour, and not grabbable anywhere: no handle, no selection, no drag. A toggle in the tool menu hides them,
+      and it appears only inside a room.</li>
+    <li><strong>Moderation</strong> — mute/unmute and removal from a room, and a host is a host because the server
+      says so, not because a client claims it.</li>
+    <li><strong>No silent degradation.</strong> If the server does not advertise the overlay capability on
+      <code>created</code>/<code>joined</code>, the client says so once, visibly, and falls back to the old
+      anchor echo. A feature that quietly stops working is worse than one that is absent.</li>
+  </ul>
+</div>
 <pre><code><span class="kw">import</span> {
   createEphemeralConnection,
   submitErTransaction,
@@ -596,6 +624,15 @@ open ChartRunner_Prototype.html
 <table>
 <tr><th>Version</th><th>Highlights</th></tr>
 <tr><td><strong>1.0.943</strong></td><td>Pro payment takes an account <strong>or</strong> a wallet <span class="tag green">current</span> — a connected wallet is identity enough for the Pro purchase; where an account exists, the account leads and the wallet only pays. Tier lookup reads the wallet when no token is present, so a wallet that bought Pro is no longer shown as FREE.</td></tr>
+<tr><td>1.0.942</td><td>Mock-value sweep, stage 1 — four places that showed a number where there was none. The share card no longer renders a specimen trade when the caller supplies no run data (that specimen was the og:image of every shared PnL link). The "why did it move" explainer no longer starts on zeroes and no longer tells the model its zeroes were verified. The wallet-bridge signing screen dropped six hard-coded SOL amounts it had no source for — the wallet names the fee before you sign. A provider-failure path that reported success now reports the failure.</td></tr>
+<tr><td>1.0.941</td><td>Birdeye removed as a source, and nothing runs silently empty any more — market cap, FDV and 24h volume show a dash instead of a seeded random number when no source answered; the token composite score says "partly estimated" rather than emitting a verdict that looks measured; a security alert rule that could never fire says so. <strong>Provider position today:</strong> Birdeye and Pyth are gone; GoldRush is kept only for the wallet watch. Price and candles come from our own store plus CoinGecko and DexScreener.</td></tr>
+<tr><td>1.0.940</td><td>Pyth / Hermes removed — the whole price source, including the <code>chartrunner.xyz/hermes/*</code> proxy worker. It had been dead in practice since the key it required was never set; the proxy answered 503. The word "PYTH" stays where it means the <em>token</em>.</td></tr>
+<tr><td>1.0.939</td><td><strong>Boost checkout asks the server instead of asserting on its behalf.</strong> Four sellable boost tiers (Spark · Blaze · Inferno · Supernova, 8 h to 168 h). Price and duration per tier now come from <code>features.boost_checkout.tiers</code> in the worker's <code>/health</code>, so prices can change without a client deploy, and the client keeps no second copy of a price list. A tier the server will not sell is <em>named</em>, with the server's reason, not hidden. Four visible states; only "reachable and ready" shows buy buttons. The payment reference — the only thing tying an on-chain payment to a mint and a tier — is now visible with a copy button. The "≈ in $RUN" prices next to buy buttons are gone in all four languages: that token does not exist.</td></tr>
+<tr><td>1.0.938</td><td>The last hard-coded payment address is out of the product. Address, amount and <code>reference</code> now come exclusively from <code>POST /v1/pay/sol/intent</code>, polled via <code>GET /v1/pay/sol/status?reference=…</code>. No intent, no payment target — five visible states instead of a silent fallback, and a link with <code>amount=0</code> is no longer constructible. The USD→SOL rate behind that amount is taken in the worker — Jupiter first, CoinGecko as the fallback, with an age limit on it — and if neither answers in time the result is a <em>named error</em> rather than an amount. A payment built on an invented rate is worse than a payment that does not happen. <span class="tag gray">worker-side</span> readable from the deployed worker, not from this repository.</td></tr>
+<tr><td>1.0.936</td><td><strong>Shared room overlays.</strong> Trendline, Fibonacci extension and anchored VWAP travel as configuration — anchors in time and price — over the rooms server v1.4.0, with full state on join, a token/timeframe context lock, authorship marking, and an honest notice when the server lacks the capability. What shipped in v1.0.770 only echoed anchors: the fib's nine levels never travelled at all.</td></tr>
+<tr><td>1.0.934</td><td>The payment dialog can refuse. Both checkout dialogs used to fall back to a hard-coded treasury address when the intent was missing, producing a fully executable payment with no <code>reference</code> — payable, and unattributable. Fail-closed now: no intent, no target.</td></tr>
+<tr><td>1.0.928–1.0.933</td><td>Real-money arming, rooms fixes (the creator was listed as a guest; two of three join paths still pointed at the legacy relay), and the multiplayer-trade chapter un-gated.</td></tr>
+<tr><td>1.0.890–1.0.927</td><td>Ownership register server-side (Supabase + ownership worker), resting orders on the on-chain route, mint resolution via the worker instead of a seven-entry whitelist, prices from our own worker instead of synthesis, wallet guards shown honestly, touch controls, and the ARM controls moved into Settings.</td></tr>
 <tr><td>1.0.632</td><td>Docs refresh + accuracy pass — corrected campaign to 70 chapters (3 acts) and primitive count to 17; fixed the clone URL to <code>ssjjul3/chartrunner</code>; reworded Phoenix and MagicBlock from "live partner" to their real state (adapters built, execution/matchmaking not wired — simulated/paper only, no live trades routed). Game: PvP unlockable via the 10-level campaign ladder (permanent badge at level 10, PnL-only ranking after — no ELO); Weather Station removed; public build scrubbed of private-server naming and the leakage guard tightened.</td></tr>
 <tr><td>1.0.565–1.0.568</td><td>Onboarding + terminal + economy pass — rebuilt guided first-run tour (Play → Terminal → Profile → Token → Coach.llm → Connect; Maps for connected wallets), <code>&gt;_NAME</code> blinking-cursor titles, per-surface tooltips, desktop-only drag-and-drop demo, desktop locked mid-tour. Single-command in-game console with toolbar toggle + new <code>⌘ COMMAND</code> Terminal tab carrying the full run tape and missed <code>Build? Y/N</code> replay. Token terminal: <code>Buy/Strong Buy</code> → <code>UP/MOON</code>, squared gold watchlist star, <code>offline router · 100:1</code> label. Economy: per-run grind-coin <code>$CHART</code> front-loaded + hard-capped (closes short-chart farm exploit); non-Binance small-caps fall back to seeded candles after a 7s fetch timeout. No broker routing, signing, or live execution added.</td></tr>
 <tr><td>1.0.255</td><td>Public object alarms + bracket tools — tools, primitives, indicators, Blue Laser cards, and TradingView-style settings save local per-level alarms into Journal Alert V2 rows; Bracket Inputs gain trade size, leverage, round-trip fee, fee hurdle, and TP net-profit estimates.</td></tr>
