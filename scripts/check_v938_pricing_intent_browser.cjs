@@ -471,7 +471,24 @@ const WORKER_TREASURY = 'WkR938TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
       !/being reconfigured|being set up for the new prices/i.test(HTML), 'HTML');
     check('T9e kein "Phase 2"-Versprechen fuer die On-chain-Freischaltung mehr',
       !/Phase 2/.test(HTML) && !/the grant is manual/i.test(HTML), 'HTML');
-    check('T9f die Seite nennt die Version sichtbar', /v1\.0\.938/.test(foot), foot.slice(-120));
+    /* v1.0.943 — GESCHAERFT STATT NACHGEZOGEN. Hier stand `/v1\.0\.938/`, eine
+     * feste Zahl: sie wurde bei jedem Versionssprung rot und sagte dann nur,
+     * dass sich die Zahl geaendert hat. Was sie NICHT sah, ist der Fehler, um
+     * den es geht — dass die Seite eine ANDERE Version nennt als der Rest des
+     * Repos. Genau der war beim Schreiben dieser Zeile da: pricing.html stand
+     * auf v1.0.938, waehrend das Banner in ChartRunner_Prototype.html schon
+     * v1.0.942 sagte. Beide Oberflaechen deployen aus demselben Pages-Build;
+     * zwei Zahlen bedeuten, dass eine davon luegt. Geprueft wird deshalb
+     * gegen das Banner und nicht gegen eine Kopie davon. */
+    const bannerV = (function(){
+      try {
+        const game = fs.readFileSync(path.join(__dirname, '..', 'ChartRunner_Prototype.html'), 'utf8');
+        const m = /CURRENT VERSION:\s*(v[\d.]+)/.exec(game.slice(0, 20000));
+        return m ? m[1] : '';
+      } catch(_){ return ''; }
+    })();
+    check('T9f die Seite nennt die Version sichtbar, und es ist DIESELBE wie im Spiel-Banner',
+      !!bannerV && foot.includes(bannerV), 'Banner: ' + (bannerV || '(nicht gelesen)') + ' · Fuss: ' + foot.slice(-60));
     check('T9g die Erklaerzeile sagt, dass die Seite Adresse und Betrag NICHT baut',
       /builds none of them/i.test(fine), fine.slice(0, 400));
   }

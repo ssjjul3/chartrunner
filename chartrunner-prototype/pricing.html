@@ -180,7 +180,7 @@
         <a href="https://github.com/ssjjul3/chartrunner" target="_blank" rel="noopener">GitHub</a>
       </div>
     </div>
-    <div class="fine-print">ChartRunner is an entertainment and educational game. Trades you arm and sign in the game are real on-chain trades on Solana mainnet, executed from your own wallet with your own funds. ChartRunner is not a financial service, broker, or exchange, and nothing on this site or in the game is financial, investment, legal, or tax advice. Trading real assets carries risk, including loss of capital. Always do your own research and consult a licensed professional before making real-money decisions.<br><span style="color:rgba(240,239,230,.42)">Pricing page build <b>v1.0.938</b></span></div>
+    <div class="fine-print">ChartRunner is an entertainment and educational game. Trades you arm and sign in the game are real on-chain trades on Solana mainnet, executed from your own wallet with your own funds. ChartRunner is not a financial service, broker, or exchange, and nothing on this site or in the game is financial, investment, legal, or tax advice. Trading real assets carries risk, including loss of capital. Always do your own research and consult a licensed professional before making real-money decisions.<br><span style="color:rgba(240,239,230,.42)">Pricing page build <b>v1.0.943</b></span></div>
   </footer>
 
   <script>
@@ -271,6 +271,59 @@
       document.head.appendChild(el);
     })();
 
+    // ---- Wallet-Schicht (v1.0.943) --------------------------------------
+    // WALLET = KONTO fuer den Pro-Kauf (Entscheidung 20.09.2026). Diese Seite
+    // hatte bis hierher gar keine Wallet: sie kannte nur die Supabase-Sitzung
+    // und sagte deshalb "Sign in first".
+    //
+    // Was hier NICHT passiert: es wird kein Wallet-Adapter geladen, keine
+    // Bibliothek, kein CDN (der Fremdcode-Waechter zaehlt weiter zwei
+    // Altlasten). Gelesen wird nur ein bereits injizierter Anbieter, und zwar
+    // mit `onlyIfTrusted` — das FRAGT NICHT, es stellt fest. Diese Seite und
+    // /play liegen auf derselben Origin (chartrunner.xyz), also ist eine im
+    // Spiel vertraute Wallet auch hier vertraut.
+    //
+    // `_walletSettled` trennt "keine Wallet" von "noch nicht nachgesehen" —
+    // dieselbe Unterscheidung, die `_authSettled` oben fuer die Sitzung macht,
+    // und aus demselben Grund: ohne sie saehe ein Wallet-Nutzer, der schnell
+    // klickt, die falsche Tafel.
+    var _wallet = '';
+    var _walletSettled = false;
+    function _isAddr(a){ return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(a||'')); }
+    function _provider(){
+      try {
+        var p = window.solana || (window.phantom && window.phantom.solana) || null;
+        return (p && typeof p.connect === 'function') ? p : null;
+      } catch(_){ return null; }
+    }
+    function _readWallet(p){
+      try {
+        var k = p && p.publicKey ? String(p.publicKey.toString()) : '';
+        return _isAddr(k) ? k : '';
+      } catch(_){ return ''; }
+    }
+    (function(){
+      var p = _provider();
+      if(!p){ _walletSettled = true; return; }   // keine Erweiterung -> keine Wallet
+      var done = function(){ _wallet = _readWallet(p); _walletSettled = true; };
+      try {
+        p.connect({ onlyIfTrusted: true }).then(done, function(){ _walletSettled = true; });
+      } catch(_){ _walletSettled = true; }
+      // Verbindet der Nutzer spaeter (Knopf unten oder in einem anderen Tab),
+      // wird es hier nachgemeldet.
+      try { p.on && p.on('connect', done); } catch(_){}
+      try { p.on && p.on('disconnect', function(){ _wallet = ''; }); } catch(_){}
+    })();
+
+    /* Die Identitaet eines Zahlvorgangs: Konto ODER Wallet, und IST EIN KONTO
+     * DA, FUEHRT DAS KONTO. Andersherum bekaeme ein Angemeldeter sein Pro an
+     * die Wallet statt ans Konto und saehe es auf einem anderen Geraet nicht
+     * wieder. */
+    function _identity(){
+      if(_supaTok) return { kind:'account', tok:_supaTok, wallet:(_isAddr(_wallet) ? _wallet : '') };
+      return _isAddr(_wallet) ? { kind:'wallet', tok:'', wallet:_wallet } : null;
+    }
+
     function render(){
       grid.innerHTML = '';
       var save = document.getElementById('billSave');
@@ -303,7 +356,7 @@
           pay = '<div class="price-pay">'
               + '<button type="button" class="pay-btn" data-stripe="' + t.id + '">Pay with card</button>'
               + '<button type="button" class="pay-btn ghost sol" data-sol="' + t.id + '">Pay with SOL / USDC</button>'
-              + '<div class="pay-req">Card works with or without an account. <b>On-chain pay needs a signed-in ChartRunner account</b> — the address, the amount and the payment reference are issued per account, so the payment can be credited to you.</div>'
+              + '<div class="pay-req">Card works with or without an account. <b>On-chain pay needs a connected wallet or a signed-in account</b> — the address, the amount and the payment reference are issued per identity, so the payment can be credited to you.</div>'
               + '</div>';
         }
         card.innerHTML = badge
@@ -425,13 +478,49 @@
         overlay.innerHTML = shell('<div class="pm-note" style="margin-top:0">Checking your ChartRunner session…</div>');
         wireShell();
       }
-      // ZUSTAND 2 — abgemeldet. Kein Betrag, keine Adresse, kein Link. Der
-      // Dialog bleibt offen und schaltet um, sobald eine Anmeldung da ist.
+      // ZUSTAND 2 — WEDER KONTO NOCH WALLET. Kein Betrag, keine Adresse, kein
+      // Link. Der Dialog bleibt offen und schaltet um, sobald eines von beiden
+      // da ist.
+      //
+      // v1.0.943: der Text sagt nicht mehr "Sign in first" — eine verbundene
+      // Wallet genuegt. Der zweite Satz bleibt, weil er der Kern ist: ohne
+      // BEIDES gaebe es niemanden, dem eine Zahlung gutgeschrieben werden
+      // koennte, deshalb wird keine angeboten.
+      //
+      // Der Verbinden-Knopf erscheint NUR, wenn eine Wallet-Erweiterung da
+      // ist. Ein Knopf, der nichts zu verbinden hat, waere ein Angebot, das
+      // die Seite nicht halten kann.
       function paintSignedOut(){
+        var hasProvider = !!_provider();
         overlay.innerHTML = shell(''
-          + '<div class="pm-warn">Sign in first. The receiving address, the exact amount and the payment reference are issued by the ChartRunner server and tied to your account — without them a payment could not be credited to you, so none is offered here.</div>'
+          + '<div class="pm-warn">A connected wallet is enough — no ChartRunner account needed. Connect a wallet or sign in, and the server issues the receiving address, the exact amount and the payment reference for it. Without either there would be nobody to credit the payment to, so none is offered here.</div>'
+          + (hasProvider
+              ? '<button type="button" class="pm-open pmConnect">Connect wallet &rarr;</button>'
+              : '')
+          + '<a class="pm-open" href="https://chartrunner.xyz/play/" target="_blank" rel="noopener"' + (hasProvider ? ' style="margin-top:8px"' : '') + '>Sign in on /play &rarr;</a>'
+          + '<div class="pm-note">' + (hasProvider
+              ? 'This dialog switches over by itself once a wallet is connected or you are signed in.'
+              : 'No Solana wallet extension found in this browser. Connect one in the game on /play, or sign in.')
+            + ' <b>Pay with card</b> works without either.</div>');
+        wireShell();
+        var cbtn = overlay.querySelector('.pmConnect');
+        if(cbtn) cbtn.onclick = function(){
+          var p = _provider();
+          if(!p) return;
+          // Ein ausdruecklicher Klick darf fragen — der Start oben tut es nicht.
+          try { p.connect().then(function(){ _wallet = _readWallet(p); }, function(){}); } catch(_){}
+        };
+      }
+      /* ZUSTAND 6 — DER WORKER KENNT DIE WALLET-IDENTITAET NOCH NICHT.
+       * Ein 401 auf einen Wallet-Vorgang hat genau eine bekannte Ursache. Sie
+       * zu nennen ist eine Ablesung; sie unter "der Server hat keine
+       * Zahlungsdetails ausgestellt" zu begraben waere eine Behauptung ueber
+       * eine Ursache, die nie geprueft wurde. */
+      function paintServerNotReady(){
+        overlay.innerHTML = shell(''
+          + '<div class="pm-warn">The ChartRunner server did not accept this wallet as a payer (401). Nothing was charged. Signing in works; paying from a wallet alone needs a newer server version.</div>'
           + '<a class="pm-open" href="https://chartrunner.xyz/play/" target="_blank" rel="noopener">Sign in on /play &rarr;</a>'
-          + '<div class="pm-note">This dialog switches over by itself once you are signed in. No account? <b>Pay with card</b> works without one.</div>');
+          + '<div class="pm-note"><b>Pay with card</b> works without an account.</div>');
         wireShell();
       }
       // ZUSTAND 5 — der Intent kam nicht. Ehrliche Meldung, KEIN Rueckfall auf
@@ -460,7 +549,7 @@
           : '<button type="button" class="pm-open pmOpen" disabled style="opacity:.5;cursor:not-allowed">'
             + (ready ? 'No amount for this currency — switch currency' : 'One moment…') + '</button>';
         var status = confirmed
-          ? '<div class="pm-warn" style="border-color:rgba(32,255,154,.55);background:rgba(32,255,154,.10);color:#bff7df">✓ Payment confirmed — Runner Pro is active on your account. <a href="https://chartrunner.xyz/play/" style="color:var(--signal)">Open /play &rarr;</a></div>'
+          ? '<div class="pm-warn" style="border-color:rgba(32,255,154,.55);background:rgba(32,255,154,.10);color:#bff7df">✓ Payment confirmed — Runner Pro is active for the identity this payment was issued for (your account, or the wallet that paid). <a href="https://chartrunner.xyz/play/" style="color:var(--signal)">Open /play &rarr;</a></div>'
           : (ready && timedOut
               ? '<div class="pm-warn">Nothing confirmed for ten minutes. If you did pay, <b>do not pay again</b> — keep the payment reference below, it is what identifies your payment.<button type="button" class="pm-copy pmAgain" style="display:block;width:100%;margin-top:9px;padding:9px">Check again</button></div>'
               : (ready && waiting
@@ -490,7 +579,7 @@
                   +   '<button type="button" class="pm-copy" data-copy="' + esc(u) + '">Copy</button></div>') : '')
           + openBtn
           + '<div class="pm-note">' + (ready
-              ? 'Open in any Solana Pay wallet (Phantom, Solflare, Backpack). USDC is 1:1 with USD; the SOL amount is quoted by the ChartRunner server, not by this page. The request carries the payment reference above, so the payment can be matched to your account — keep this window open and Pro switches on as soon as the server confirms it.'
+              ? 'Open in any Solana Pay wallet (Phantom, Solflare, Backpack). USDC is 1:1 with USD; the SOL amount is quoted by the ChartRunner server, not by this page. The request carries the payment reference above, so the payment can be matched to the account or wallet it was issued for — keep this window open and Pro switches on as soon as the server confirms it.'
               : 'Fetching the payment details from the ChartRunner server…') + '</div>');
         wireShell();
         overlay.querySelectorAll('#paySeg button').forEach(function(b){
@@ -508,6 +597,7 @@
       function paint(){
         if(phase==='auth')      return paintAuth();
         if(phase==='signedout') return paintSignedOut();
+        if(phase==='servernotready') return paintServerNotReady();
         if(phase==='error')     return paintError();
         return paintPay();
       }
@@ -536,17 +626,30 @@
       // Der ERFOLGS- WIE DER FEHLERZWEIG malen. Ein leeres .catch() verschluckt
       // genau den Fall, um den es hier geht.
       function startIntent(){
-        if(!_supaTok){ phase = 'signedout'; paint(); return; }
+        var id = _identity();
+        if(!id){ phase = 'signedout'; paint(); return; }
         phase = 'loading'; intent = null; paint();
         var fail = function(){ if(phase==='ready') return; phase = 'error'; try { paint(); } catch(_){} };
+        var failAuth = function(){
+          if(phase==='ready') return;
+          // Nur bei einer WALLET-Identitaet ist 401 aussagekraeftig. Bei einem
+          // Konto ist es der normale Fehlerfall (abgelaufenes Token), und
+          // dieselbe Meldung waere dort eine Erfindung.
+          phase = (id.kind === 'wallet') ? 'servernotready' : 'error';
+          try { paint(); } catch(_){}
+        };
+        // Der Bearer wird NUR gesetzt, wenn es einen gibt: ein leerer Bearer
+        // waere ein vorhandener, ungueltiger Header — der Worker lehnt so
+        // etwas ab, statt still auf die Wallet auszuweichen.
+        var headers = { 'Content-Type':'application/json' };
+        if(id.tok) headers['Authorization'] = 'Bearer ' + id.tok;
+        var body = { tier:'RUNNER_PRO', billing:billing };
+        if(id.wallet) body.wallet = id.wallet;   // bei einem Konto: nur der Zahler
         try {
-          fetch(API_BASE + '/v1/pay/sol/intent', {
-            method:'POST',
-            headers:{ 'Authorization':'Bearer ' + _supaTok, 'Content-Type':'application/json' },
-            body: JSON.stringify({ tier:'RUNNER_PRO', billing:billing })
-          })
-            .then(function(r){ return r.ok ? r.json() : null; })
+          fetch(API_BASE + '/v1/pay/sol/intent', { method:'POST', headers:headers, body: JSON.stringify(body) })
+            .then(function(r){ if(r.status === 401){ failAuth(); return null; } return r.ok ? r.json() : null; })
             .then(function(j){
+              if(phase === 'servernotready') return;
               // OHNE reference UND treasury gibt es kein Zahlungsziel. Ein
               // Intent ohne Adresse ist kein Grund, eine eigene zu nehmen — er
               // ist der Fehlerfall.
@@ -566,14 +669,18 @@
       }
 
       function boot(){
-        if(_authSettled && _supaTok){ startIntent(); }
+        // "Noch nicht nachgesehen" gilt jetzt fuer BEIDE Identitaeten: solange
+        // Sitzung oder Wallet ungeklaert sind, steht die Pruef-Tafel und nicht
+        // die Absage.
+        var settled = function(){ return _authSettled && _walletSettled; };
+        if(_identity() && settled()){ startIntent(); }
         else {
-          phase = _authSettled ? 'signedout' : 'auth';
+          phase = settled() ? 'signedout' : 'auth';
           paint();
           watch = setInterval(function(){
             if(phase !== 'auth' && phase !== 'signedout'){ clearInterval(watch); watch = null; return; }
-            if(_supaTok){ clearInterval(watch); watch = null; startIntent(); return; }
-            if(_authSettled && phase === 'auth'){ phase = 'signedout'; paint(); }
+            if(_identity()){ clearInterval(watch); watch = null; startIntent(); return; }
+            if(settled() && phase === 'auth'){ phase = 'signedout'; paint(); }
           }, 700);
         }
         overlay.onclick = function(e){ if(e.target === overlay) close(); };
