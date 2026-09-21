@@ -110,7 +110,7 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);background
 
 <aside class="sidebar">
   <h1>ChartRunner SDK</h1>
-  <div class="ver">v1.0.943 · 2026-09-20<br><span style="opacity:.75">one version number for the whole repo</span></div>
+  <div class="ver">v1.0.946 · 2026-09-21<br><span style="opacity:.75">one version number for the whole repo</span></div>
   <nav>
     <div class="group">Introduction</div>
     <a href="#overview">Overview</a>
@@ -144,7 +144,7 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);background
 
 <main class="main">
 
-<h1 class="page">ChartRunner SDK <span class="tag">v1.0.943</span></h1>
+<h1 class="page">ChartRunner SDK <span class="tag">v1.0.946</span></h1>
 <div class="subtitle">A gamified trading SDK on Solana, built on three pillars — <strong>gamification</strong>, <strong>education</strong>, <strong>on-chain (industry-standard)</strong>. 17 in-game SDK primitives (bracket, OCO, ladder, hedge, radar, rescue, and 11 more), four Anchor programs live on devnet, and adapters for three further protocols — Phoenix, MagicBlock, Honeycomb — that are <strong>built but carry no traffic</strong>: no order, no match and no mint is routed through any of them, and none of it is dated. Trades in the game are <strong>simulated by default</strong>; live trading is an optional, self-custodial opt-in that routes through <strong>Jupiter</strong> on Solana mainnet (market orders and resting limit orders, 0.5% platform fee, every transaction signed by your own wallet).</div>
 
 <div class="callout">
@@ -165,7 +165,7 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);background
 </ul>
 
 <div class="gridcards">
-  <div class="card"><h4>Phase 0 — Prototype</h4><p>Single canvas runtime · 17 SDK primitives · 70-chapter Campaign (3 acts) · 10 detectors · racing/monster/snake minigames · adaptive phone/tablet shell · guided onboarding tour · ✅ live as v1.0.943</p></div>
+  <div class="card"><h4>Phase 0 — Prototype</h4><p>Single canvas runtime · 17 SDK primitives · 107-chapter Campaign (104 claimable) · 10 detectors · racing/monster/snake minigames · adaptive phone/tablet shell · guided onboarding tour · ✅ live as v1.0.946</p></div>
   <div class="card"><h4>Phase 1 — SDK pull-over</h4><p>Drop the runtime onto any chart on the web · 🟡 architecture done</p></div>
   <div class="card"><h4>Phase 2 — Solana</h4><p>4 Anchor programs · ✅ all live devnet · Squads V4 multisig-governed · ghost markers from real PDAs</p></div>
   <div class="card"><h4>Phase 3 — Mainnet partners</h4><p>Phoenix Rise · MagicBlock ER · Honeycomb · 🟡 adapters built, execution not yet wired · Pyth removed as price source <em>and partner</em> 2026-09-20; our devnet oracle program stays</p></div>
@@ -251,7 +251,7 @@ open ChartRunner_Prototype.html
   <code>SYNTH</code> on the chart itself, and the score is then a score of that.
   <br><br>
   This is <em>not</em> the same number as the token window's composite verdict (MOON … AVOID). That one is a
-  different scorer on a different input, it eats market cap, volume and liquidity, and as of v1.0.941 it says
+  different scorer on a different input, it eats market cap, volume and liquidity, and as of 1.0.941 it says
   "partly estimated" when one of those is missing instead of emitting a verdict that looks measured. The two
   should not be read as one score.
 </div>
@@ -289,13 +289,14 @@ open ChartRunner_Prototype.html
 
 <h2 id="cr-registry">chartrunner_registry <span class="tag amber">devnet</span></h2>
 <p>
-  Holds <code>RunRecord</code> PDAs (one per run, one per player) and <code>Profile</code> PDAs (one per wallet). Drives the async on-chain leaderboard. Ghost markers in the game render from real <code>RunRecord</code> data.
+  Holds <code>RunRecord</code> PDAs (one per run, one per player). There is no <code>Profile</code> account &mdash; <code>TokenProfile</code> is an <em>entity type</em> (discriminator 6) in the entity registry, not a per-wallet PDA. Drives the async on-chain leaderboard. Ghost markers in the game render from real <code>RunRecord</code> data.
 </p>
 <div class="callout dim"><strong>Program ID:</strong> <code>ER8G9BnvyrQiBeiVvjmZaUpmeBu5jxoh1vnDPPdPrdcn</code> · devnet</div>
 <pre><code><span class="kw">pub fn</span> <span class="typ">record_run</span>(ctx: Context&lt;RecordRun&gt;,
+                  nonce: <span class="kw">u64</span>,
                   asset: [<span class="kw">u8</span>; <span class="num">16</span>], timeframe: [<span class="kw">u8</span>; <span class="num">8</span>],
-                  score: u64, sharpe_x100: i32,
-                  duration_secs: u32, ghost_cid: [<span class="kw">u8</span>; <span class="num">46</span>]) -&gt; Result&lt;()&gt;
+                  score: <span class="kw">u64</span>, sharpe_x100: <span class="kw">i32</span>,
+                  duration_secs: <span class="kw">u32</span>, map_hash: [<span class="kw">u8</span>; <span class="num">32</span>]) -&gt; Result&lt;()&gt;
 </code></pre>
 <p>
   v0.9.7 added defensive caps (<code>MAX_RUN_SCORE</code>, <code>MAX_SHARPE_X100</code>, <code>MAX_DURATION_SEC</code>) so forged scores fail at the program boundary, not just client-side.
@@ -391,8 +392,10 @@ open ChartRunner_Prototype.html
     <li><strong>Other people's overlays are marked as such</strong> — dashed, carrying their author's name and
       colour, and not grabbable anywhere: no handle, no selection, no drag. A toggle in the tool menu hides them,
       and it appears only inside a room.</li>
-    <li><strong>Moderation</strong> — mute/unmute and removal from a room, and a host is a host because the server
-      says so, not because a client claims it.</li>
+    <li><strong>Moderation</strong> — mute/unmute, and a host is a host because the server
+      says so, not because a client claims it. The server has <em>no</em> per-player removal: a host cannot
+      eject somebody. Rooms themselves expire on a TTL that starts when the room falls empty
+      (<code>emptySince</code>), so a room with players in it never expires.</li>
     <li><strong>No silent degradation.</strong> If the server does not advertise the overlay capability on
       <code>created</code>/<code>joined</code>, the client says so once, visibly, and falls back to the old
       anchor echo. A feature that quietly stops working is worse than one that is absent.</li>
@@ -633,10 +636,10 @@ open ChartRunner_Prototype.html
 <div class="callout dim">
   <strong>What the version number on this page means.</strong> This repository carries <strong>one</strong>
   version number. The game runtime, the landing, <code>pricing.html</code> and this docs page ship from the
-  same Pages build, so <code>v1.0.943</code> names that build — not a separately released SDK package and not
+  same Pages build, so <code>v1.0.946</code> names that build — not a separately released SDK package and not
   a revision of this page. The same number is on <a href="https://chartrunner.xyz/roadmap.html">the roadmap</a>.
-  Until 2026-09-20 this page carried three numbers that disagreed (head <code>v1.0.800</code>, changelog
-  <code>1.0.632</code> labelled current, live <code>v1.0.943</code>); the oldest of them was the one marked
+  Until 2026-09-20 this page carried three numbers that disagreed (head <code>1.0.800</code>, changelog
+  <code>1.0.632</code> labelled current, live <code>1.0.943</code>); the oldest of them was the one marked
   current.
 </div>
 <table>
@@ -647,11 +650,11 @@ open ChartRunner_Prototype.html
 <tr><td>1.0.940</td><td>Pyth / Hermes removed — the whole price source, including the <code>chartrunner.xyz/hermes/*</code> proxy worker. It had been dead in practice since the key it required was never set; the proxy answered 503. The word "PYTH" stays where it means the <em>token</em>.</td></tr>
 <tr><td>1.0.939</td><td><strong>Boost checkout asks the server instead of asserting on its behalf.</strong> Four sellable boost tiers (Spark · Blaze · Inferno · Supernova, 8 h to 168 h). Price and duration per tier now come from <code>features.boost_checkout.tiers</code> in the worker's <code>/health</code>, so prices can change without a client deploy, and the client keeps no second copy of a price list. A tier the server will not sell is <em>named</em>, with the server's reason, not hidden. Four visible states; only "reachable and ready" shows buy buttons. The payment reference — the only thing tying an on-chain payment to a mint and a tier — is now visible with a copy button. The "≈ in $RUN" prices next to buy buttons are gone in all four languages: that token does not exist.</td></tr>
 <tr><td>1.0.938</td><td>The last hard-coded payment address is out of the product. Address, amount and <code>reference</code> now come exclusively from <code>POST /v1/pay/sol/intent</code>, polled via <code>GET /v1/pay/sol/status?reference=…</code>. No intent, no payment target — five visible states instead of a silent fallback, and a link with <code>amount=0</code> is no longer constructible. The USD→SOL rate behind that amount is taken in the worker — Jupiter first, CoinGecko as the fallback, with an age limit on it — and if neither answers in time the result is a <em>named error</em> rather than an amount. A payment built on an invented rate is worse than a payment that does not happen. <span class="tag gray">worker-side</span> readable from the deployed worker, not from this repository.</td></tr>
-<tr><td>1.0.936</td><td><strong>Shared room overlays.</strong> Trendline, Fibonacci extension and anchored VWAP travel as configuration — anchors in time and price — over the rooms server v1.4.0, with full state on join, a token/timeframe context lock, authorship marking, and an honest notice when the server lacks the capability. What shipped in v1.0.770 only echoed anchors: the fib's nine levels never travelled at all.</td></tr>
+<tr><td>1.0.936</td><td><strong>Shared room overlays.</strong> Trendline, Fibonacci extension and anchored VWAP travel as configuration — anchors in time and price — over the rooms server v1.4.0, with full state on join, a token/timeframe context lock, authorship marking, and an honest notice when the server lacks the capability. What shipped in 1.0.770 only echoed anchors: the fib's nine levels never travelled at all.</td></tr>
 <tr><td>1.0.934</td><td>The payment dialog can refuse. Both checkout dialogs used to fall back to a hard-coded treasury address when the intent was missing, producing a fully executable payment with no <code>reference</code> — payable, and unattributable. Fail-closed now: no intent, no target.</td></tr>
 <tr><td>1.0.928–1.0.933</td><td>Real-money arming, rooms fixes (the creator was listed as a guest; two of three join paths still pointed at the legacy relay), and the multiplayer-trade chapter un-gated.</td></tr>
 <tr><td>1.0.890–1.0.927</td><td>Ownership register server-side (Supabase + ownership worker), resting orders on the on-chain route, mint resolution via the worker instead of a seven-entry whitelist, prices from our own worker instead of synthesis, wallet guards shown honestly, touch controls, and the ARM controls moved into Settings.</td></tr>
-<tr><td>1.0.632</td><td>Docs refresh + accuracy pass — corrected campaign to 70 chapters (3 acts) and primitive count to 17; fixed the clone URL to <code>ssjjul3/chartrunner</code>; reworded Phoenix and MagicBlock from "live partner" to their real state (adapters built, execution/matchmaking not wired — simulated/paper only, no live trades routed). Game: PvP unlockable via the 10-level campaign ladder (permanent badge at level 10, PnL-only ranking after — no ELO); Weather Station removed; public build scrubbed of private-server naming and the leakage guard tightened.</td></tr>
+<tr><td>1.0.632</td><td>Docs refresh + accuracy pass — corrected campaign to 70 chapters (3 acts) and primitive count to 17; fixed the clone URL to <code>ssjjul3/chartrunner</code>; reworded Phoenix and MagicBlock from "live partner" to their real state (adapters built, execution/matchmaking not wired — simulated/paper only, no live trades routed). Game: PvP unlockable via the 10-level campaign ladder (permanent badge at level 10, PnL-only ranking after — no ELO); Weather Station removed; public build scrubbed of private-server naming and the leakage guard tightened. <em>Superseded:</em> the campaign has since grown to <strong>107</strong> chapters, 104 of them claimable &mdash; the 70 above is what was correct in 1.0.632.</td></tr>
 <tr><td>1.0.565–1.0.568</td><td>Onboarding + terminal + economy pass — rebuilt guided first-run tour (Play → Terminal → Profile → Token → Coach.llm → Connect; Maps for connected wallets), <code>&gt;_NAME</code> blinking-cursor titles, per-surface tooltips, desktop-only drag-and-drop demo, desktop locked mid-tour. Single-command in-game console with toolbar toggle + new <code>⌘ COMMAND</code> Terminal tab carrying the full run tape and missed <code>Build? Y/N</code> replay. Token terminal: <code>Buy/Strong Buy</code> → <code>UP/MOON</code>, squared gold watchlist star, <code>offline router · 100:1</code> label. Economy: per-run grind-coin <code>$CHART</code> front-loaded + hard-capped (closes short-chart farm exploit); non-Binance small-caps fall back to seeded candles after a 7s fetch timeout. No broker routing, signing, or live execution added.</td></tr>
 <tr><td>1.0.255</td><td>Public object alarms + bracket tools — tools, primitives, indicators, Blue Laser cards, and TradingView-style settings save local per-level alarms into Journal Alert V2 rows; Bracket Inputs gain trade size, leverage, round-trip fee, fee hurdle, and TP net-profit estimates.</td></tr>
 <tr><td>1.0.230</td><td>Unified cursor/scroller backport — hotkeys <kbd>2</kbd>/<kbd>3</kbd>/<kbd>4</kbd>/<kbd>5</kbd> share one <code>crLaserCursor</code> renderer with a dotted source-to-cursor guide; Runner folded into the Scroller toolbar cycle.</td></tr>
