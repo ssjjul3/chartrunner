@@ -1,6 +1,10 @@
-# BACKLOG — Stand 19.09.2026, geprüft gegen den IST-Abgleich vom 19.09.2026
+# BACKLOG — Stand 21.09.2026
 
-*(vorheriger Stand: 26.08.2026, geprüft gegen HANDOFF_phase2_vollstaendig)*
+*(vorherige Stände: 19.09.2026, geprüft gegen den IST-Abgleich vom 19.09.2026 · 26.08.2026,
+geprüft gegen HANDOFF_phase2_vollstaendig)*
+
+**Neu am 21.09.2026:** Punkte 32–43 aus `BACKLOG-NACHTRAG-2026-09-21.md`
+(Handoff §5/§6/§10 und Julians Antworten aus dem Taskboard-Abgleich).
 
 Eine Liste, ein Ort. Gepflegt als Teil jedes PRs, wie das Versions-Banner.
 Quellen: das Original-Handoff (23.08.), die Messungen 24.–25.08., die
@@ -295,7 +299,10 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
     gilt, und beide Seiten zusammen ausrollen. **Hier nur dokumentiert, nicht
     angefasst** (so beauftragt). Welche ID auf Devnet wirklich liegt: nicht gemessen.
 
-26. **`roadmap.html` und `docs/index.html` stehen inhaltlich auf `v1.0.800`**
+26. ~~**`roadmap.html` und `docs/index.html` stehen inhaltlich auf `v1.0.800`**~~
+    — **erledigt mit v1.0.946** (inhaltlicher Durchgang, dann die Zahl: Pro-Gebühr
+    als „planned", 107 Kapitel/Anzeige 1–100, Profile-PDA raus, `record_run`-Signatur,
+    Rooms-Moderation; danach alle Flächen auf eine Nummer). Der alte Wortlaut:
     (`roadmap.html:14,221,317`, `docs/index.html:113`), das Repo auf `v1.0.936`.
     Bewusst **nicht** hochgesetzt: `roadmap.html:14` sagt „Content current to the
     public prototype v1.0.800" — die Zahl zu ändern, ohne den Inhalt gegen v1.0.936
@@ -368,7 +375,119 @@ eigenen. Der Punkt zieht nach der Telefon-Abnahme um.
     Sichtbarkeit von Flächen — eigener, kleiner Auftrag, mit Ablesung am
     Telefon.
 
-## AUSDRÜCKLICH NICHT (Handoff §5, unverändert gültig)
+### D · Nachtrag 21.09.2026 (Punkte 32–43)
+
+**Belegklassen wie oben:** *gemessen* = am 21.09. über Browser/Konnektor abgelesen ·
+*Quelle* = Datei:Zeile · *übernommen* = aus `HANDOFF-2026-09-21.md`, nicht selbst
+gemessen. Ein Bericht über gebauten Code ist eine Beschreibung, keine Messung.
+
+#### Aus dem Handoff (§5/§6/§10), bisher ohne Zeile hier
+
+32. **Zwei Ablesungen zu Ende bringen — ein Boost-Kauf und ein Pro-Kauf
+    on-chain** (HO §10.1, *übernommen*). Beide Wege sind offen und unbewiesen:
+    es hat noch nie jemand gekauft. Billigster Fortschritt auf der Liste;
+    Ergebnis = Signatur + Zeile in der `my-worker`-Tabelle `subscriptions`
+    (`verifyIntent → upsertSubscription`, `my-worker/src/lib/solpay.ts`, privat).
+    Gegenprobe zur Messung: `boosts` und `on_chain_events` sind heute leer
+    (*gemessen 21.09.*) — eine Zeile dort ist der Beweis, kein Bericht darüber.
+
+33. **Anchor-Testschicht** (HO §5.4, *Quelle + gemessen*). Vier Programme ohne
+    Testebene; belegter Widerspruch: `chartrunner-registry` pinnt eine
+    Oracle-ID (`anchor/programs/chartrunner-registry/src/lib.rs:107-108`, siehe
+    Punkt 25), die `oracle/src/lib.rs:40` nicht deklariert. Devnet-Messung 21.09.:
+    maps, registry, oracle, match deployt; progression nicht. Werkzeuge:
+    LiteSVM, Mollusk, Surfpool; Blueshift für Signer-/PDA-/CPI-Fehler.
+    ROT/CRASH/GRÜN gilt: Test **und** Gegenprobe im selben Commit.
+
+34. **Attrappen Stufe 2** (HO §5.5, *übernommen* aus `docs/ATTRAPPEN-2026-09-20.md`,
+    privat). Vorlagen-Körper ausbauen (W1 blendet nur aus) · `cexDexFlow` ohne
+    Refresher · Phone-Terminal (EDGE FORMULAS, RISK SNAPSHOT, REGIME DETECT reines
+    Markup; `kill switch ARMED` ohne id) · **falsch etikettierte Indikatoren**:
+    VWAP-Etikett über einem TWAP, `_cvd` ohne Volumen. Letzte Gruppe = eigene
+    Klasse: nicht leer, sondern falsch benannt — und damit schlimmer als leer.
+
+35. **P2 R-1 / R-2 — Identität im Raum, dann Persistenz** (HO §5.7, privat).
+    Die offene Frage aus dem Handoff („wogegen läuft die Frist?") ist
+    **beantwortet, gemessen 21.09.** an `servers/rooms/app/server.js`
+    (943 Zeilen): die TTL läuft **seit leer** (`emptySince`); Räume mit
+    Spielern verfallen nie. Damit kann der Auftrag geschrieben werden.
+    Die öffentliche Doku sagt das seit v1.0.946 auch so (`/docs/`, Moderation).
+
+36. **BACKLOG 28 bleibt offen** (HO §5.6): Punkt 28 (Birdeye-Restbestand)
+    ist vorhanden; hier nur der Nachtrag, dass GeckoTerminal die passenden
+    Endpunkte hat, das Kontingent aber bis 1.10. leer ist (*gemessen 21.09.*:
+    CoinGecko 100.002 Calls, Overage aus, Reset 1.10.).
+
+37. **Helius-Verbrauch erklären** (*gemessen 21.09.*): 131.991 von 16 M
+    Credits, davon **+119 k innerhalb eines Tages**. Nicht dramatisch, aber
+    unerklärt — vor dem nächsten Cron-Umbau die Verbrauchsansicht lesen.
+    Kopffreiheit ist kein Argument gegen das Nachsehen.
+
+#### Aus dem Taskboard-Abgleich 21.09. (Julians Antworten)
+
+38. **Pro-Gebühr 0,35 % in den Geldweg bauen** (Julians Entscheidung 21.09.:
+    *bauen*). Befund: entschieden (`docs/HANDOFF_ECON_BOT_INDEXER_933.md`,
+    privat), im Client konfiguriert (`ChartRunner_Prototype.html:67546`,
+    `crEntitlement.fees.tradingPct {free:0.5, pro:0.35}`, `:67533`
+    `tradingLive:false`), beworben (`chartrunner-prototype/pricing.html:134`) —
+    im **tx-Worker nicht vorhanden**: kein Tier-Begriff, `ONCHAIN_FEE_BPS` 50
+    für alle, `PLATFORM_FEE_BPS` 0 (*Quelle* `workers/tx/src/index.js`, privat,
+    v1.28). Weg: tx liest die Stufe (`my-worker` Entitlement, `TIER_RANK` in
+    `src/lib/entitlement.ts:71`) je Wallet und setzt 50/35 bps; Lesung
+    **fail-closed** (keine Stufe lesbar → 50 bps, **nie** 0); neue Var
+    `PRO_FEE_BPS` (Vorgabe 35), Kill-Var `PRO_FEE_KILL`; `/health.trigger.fee`
+    trägt beide Werte; ein Spec je Fall (free/pro/unlesbar) **und** die
+    Gegenprobe, die die Stufenlesung ausbaut und rot wird.
+    **Erst wenn das live gemessen ist** (eine Pro-Wallet, eine Order,
+    Gebührenkonto abgelesen), fällt das „planned" auf `pricing.html` und
+    `roadmap.html` wieder raus — v1.0.946 hat es gesetzt, nicht entfernt.
+
+39. **Feature-Registry + Preferences** (Board P1.1–P1.3, Julians Vorgaben
+    21.09.): Registry im Client-HTML (eine Datei, kein Build); Preferences als
+    neue Supabase-Tabelle **mit Migrationsdatei**, Schreibweg über
+    `workers/ownership`; Default für bestehende Accounts: alle an; Screen =
+    Seite in der Settings-App, nur für angemeldete Konten, überspringbar.
+    Core (nicht abschaltbar): ARM-Widget, Chart/Engine, Wallet/Konto.
+    Hinweis zur Benennung: die Settings-App heißt im Client **Control Center**;
+    „Funktionsauswahl" ist eine Seite darin, kein eigenes `crSettings`.
+
+40. **Vier Supabase-Tabellen ohne Migration im Repo** (*gemessen 21.09.*
+    über den Konnektor: 13 Tabellen; `profiles`, `orders`, `subscriptions`,
+    `cr_alerts` haben keine Datei unter `my-worker/migrations/0001–0004`).
+    Nachziehen, **bevor** Punkt 39 die fünfte Tabelle anlegt.
+
+41. ~~**Roadmap-Stempel**~~ (Board P1.1.1/P1.1.2, Julians Entscheidung 21.09.:
+    M5 = „geplant", M8 = „geplant, kein Termin") — **erledigt mit v1.0.946**.
+    Umgesetzt als Textänderung, **ohne** Statusänderung: `data-id="m5"` bleibt
+    `data-status="next"` (◆ Unlocked), `data-id="m8"` bleibt `"future"`
+    (🔒 Locked), M8 endet jetzt auf „No date yet.". Gehörte zu Punkt 26, im
+    selben Durchgang gesetzt.
+
+42. ~~**Docs-Seite, Rest nach HO §5.2**~~ — **erledigt mit v1.0.946**. Die vier
+    Zeilen: „70 Kapitel" → 107 Kapitel, Anzeige 1–100 (`CAMPAIGN_CHAPTERS`
+    hat 107 Einträge, `CR_CH_DISPLAY` bildet 100 davon lückenlos auf 1–100 ab,
+    104 einlösbar) · Profile-PDAs gestrichen (es gibt nur `TokenProfile` als
+    Entity-Typ 6) · `record_run`-Signatur an `lib.rs:314-321` angeglichen
+    (`nonce` ergänzt, `ghost_cid[46]` → `map_hash[32]`) · „removal from a room"
+    gestrichen. Dazu eine Versionsnummer statt vier.
+    **Offen geblieben** aus demselben Abschnitt: der zweite `record_run`-Block
+    im Oracle-Teil der Doku-Seite beschreibt einen v0.9.11-Entwurf mit
+    `price_cert`, den es so nicht gibt — Pyth ist seit 20.09. raus. Eigener,
+    kleiner Auftrag.
+
+43. **Zwei Kopfzeilen sind alt** (privat, *Quelle*):
+    `HANDOFF_PRIVATE_OPS.md` sagt „Stand 2026-08-18",
+    `architecture/private/SYSTEM_MAP.md` sagt „always-current", zuletzt
+    21.07. Beide beim nächsten privaten PR mitziehen.
+    `HANDOFF-2026-09-21.md` selbst ist **nicht eingecheckt** — solange das so
+    ist, ist jede Zeile hier mit *übernommen* nicht nachlesbar.
+    Die öffentliche Karte ist mit diesem PR nachgezogen (`SYSTEM_MAP.md`,
+    Stand 21.09., jede Zeile mit Belegklasse).
+
+## AUSDRÜCKLICH NICHT (Handoff §5, Stand 21.09.2026)
 
 Keeper/echte Bracket-Ausführung · Multi-Wallet · eigene Kurs-Infrastruktur ·
-alles, was der Abschnitt sonst nennt.
+neues On-Chain-Programm · Progression anfassen · Agent Wallet als Bau
+(Board P5 = Entscheidungsdokument; Phase-2-Entwurf ohne Termin, existierender
+non-custodial Pfad: `workers/agent-bridge`) · alles, was der Abschnitt sonst
+nennt.
