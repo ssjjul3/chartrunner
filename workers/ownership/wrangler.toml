@@ -1,11 +1,28 @@
 # ChartRunner — Ownership worker.
 #
 # Serves chartrunner.xyz/ownership/* and chartrunner.xyz/loadout (same-origin as
-# the game). It is the ONLY writer of `verified = true` rows in cr_ownership:
-# the client can create unverified rows itself through the cr_ownership_claim
-# RPC, and nothing else. Every verified row here is written only AFTER the
+# the game). Every verified row THIS worker writes is written only AFTER the
 # evidence was checked against something outside the request (a Solana tx, a
-# live subscription, an admin secret).
+# live subscription, an admin secret). The client can create unverified rows
+# itself through the cr_ownership_claim RPC, and nothing else.
+#
+# KORREKTUR 21.09.2026 — hier stand bis zu diesem Commit: dieser Worker sei
+# „the ONLY writer of `verified = true` rows in cr_ownership". Das stimmt
+# nicht, und es stand hier lange genug, um geglaubt zu werden.
+#
+# Der Geld-Worker (chartrunner-worker, privates Repo my-worker/) schreibt
+# dieselben Zeilen selbst: my-worker/src/lib/solpay.ts (verifyIntent) ruft
+# grantWalletTier() in my-worker/src/lib/supabase.ts, und das macht einen
+# upsert auf cr_ownership mit owner_kind='wallet', item_kind='tier',
+# provenance='purchase_onchain', verified=true — mit seinem eigenen
+# Service-Role-Schluessel, ohne hier vorbeizukommen.
+#
+# Das ist nicht bloss eine Ungenauigkeit in einem Kommentar: wer sie glaubt,
+# schliesst aus einem leeren Katalog hier, dass niemand Pro bekommen kann, und
+# aus einem gefuellten, dass jeder Kauf durch diese Pruefungen gegangen ist.
+# Beides waere falsch. Was DIESER Weg kann, steht in GET /ownership/health
+# unter features.grant_onchain; was der andere kann, in GET /health des
+# Geld-Workers unter features.pay_identity. Zwei Wege, zwei Ablesungen.
 #
 # NO secrets in this file. Set them out-of-band (see README):
 #   SUPABASE_SERVICE_ROLE_KEY   service-role — writes verified rows + wallet links
@@ -38,17 +55,68 @@ SUPABASE_ANON_KEY = "sb_publishable_JcwYmWfxSbBGIbLHxJmSpQ_5SAl-LfF"
 # Where an on-chain purchase must land. NOT set: with no treasury address the
 # worker cannot check who was paid, so every purchase_onchain grant is refused
 # with 503 not_configured. That is the honest state until a treasury exists.
+#
+# ES IST EINE SICHERHEITSGRENZE UND KEIN ETIKETT. checkOnchainPayment() prueft
+# die Zahlung gegen genau diesen Wert: steht hier eine andere Adresse als die,
+# auf die der Nutzer ueberweist, wird eine ECHTE Zahlung als `wrong_recipient`
+# abgelehnt — steht hier eine FREMDE, wird eine Zahlung an einen Fremden als
+# Kauf verbucht. Sie muss deshalb DIESELBE Adresse tragen wie
+# MERCHANT_SOL_ADDRESS am Geld-Worker (my-worker/wrangler.jsonc), und beide
+# Werte sind ueber /health im Klartext ablesbar, damit der Abgleich eine
+# Ablesung ist und keine Annahme.
+#
+# Die Adresse holt Julian aus seiner Wallet — nie aus einem Screenshot, nie
+# abgetippt: ein falsches Base58-Zeichen ergibt eine andere GUELTIGE Adresse.
 # OWNERSHIP_TREASURY = "<base58 wallet>"
 
 # Read-only mainnet lookups (getTransaction). Override with a secret of the same
 # name to use a paid RPC.
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 
-# Server-side price catalog, JSON, keyed "<item_kind>:<item_id>":
-#   {"tier:pro":{"price_lamports":250000000}}
-# Empty = ChartRunner sells nothing for SOL today (bots/gear cost $RUN, which is
-# a soft currency and never verified). Prices NEVER come from the request.
+# Server-side price catalog, JSON, keyed "<item_kind>:<item_id>". Prices NEVER
+# come from the request — siehe src/catalog.js.
+#
+#   {"tier:RUNNER_PRO":{"price_lamports":250000000}}
+#
+# Schluessel  = "<item_kind>:<item_id>", item_kind aus ('bot','gear','skin',
+#               'tier'); fuer Runner Pro also "tier:RUNNER_PRO" (dieselbe
+#               item_id, die der Geld-Worker schreibt und die
+#               resolveEntitlement liest — eine zweite Schreibweise waere eine
+#               zweite Wahrheit).
+# price_lamports = ganze Zahl > 0, der MINDESTBETRAG in Lamports, den die
+#               Treasury empfangen haben muss (1 SOL = 1_000_000_000).
+# treasury    = optional, base58 — ueberschreibt OWNERSHIP_TREASURY fuer genau
+#               diesen Eintrag.
+#
+# Leer ({}) = ChartRunner verkauft ueber DIESEN Weg nichts fuer SOL (bots/gear
+# kosten $RUN, eine Weichwaehrung, die nie verifiziert wird). Das ist kein
+# Versehen, sondern der wahre Zustand des Ladens — und /ownership/health fuehrt
+# ihn seit dem 21.09.2026 als `pending` mit Grund, statt ihn als `ok: true`
+# neben neun anderen Haken verschwinden zu lassen.
+#
+# Ein Platzhalterpreis gehoert NICHT hierher: was ChartRunner fuer SOL
+# verkauft und zu welchem Preis, ist eine Produktentscheidung. Sie wird im
+# Cloudflare-Dashboard gesetzt (Settings -> Variables, danach "Promote
+# version") — und derselbe Wert gehoert in diese Zeile, sonst dreht ihn der
+# naechste `wrangler deploy` zurueck. Genau das war bei MERCHANT_SOL_ADDRESS
+# noetig.
 OWNERSHIP_CATALOG_JSON = "{}"
+
+# ── DER GIT-SHA DES DEPLOYTEN STANDS ──────────────────────────────────────
+# Hier steht ein PLATZHALTER und mit Absicht kein Wert. Gesetzt wird die Var
+# beim Deploy von aussen, durch .github/workflows/deploy-workers.yml:
+#
+#     wrangler deploy --var "GIT_SHA:${GITHUB_SHA}"
+#
+# Der Worker kann den Wert nicht selbst kennen — im Bundle gibt es kein Git.
+# Bleibt der Platzhalter stehen, sagt /ownership/health das im Klartext
+# (git_sha: null plus Grund in build.note) statt eine Zahl zu erfinden.
+#
+# Die Zeile steht hier, damit der deployte Stand einen bekannten Ausgangswert
+# hat, den man im Deploy-Diff sieht — und damit dieser Worker der Konvention
+# des Geld-Workers folgt, dessen Deploy-Workflow GIT_SHA nur fuer Worker
+# injiziert, deren wrangler-Konfiguration die Zeichenkette nennt.
+GIT_SHA = "nicht-injiziert"
 
 # Kill switch: "1" stops every WRITE (grant, wallet link, loadout set) without a
 # deploy of new code. Reads keep answering.

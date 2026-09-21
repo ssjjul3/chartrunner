@@ -354,12 +354,354 @@ function killed(env) {
   return String(env.OWNERSHIP_KILL || '') === '1';
 }
 
-function health(env, request) {
+/* ── /ownership/health: die FAEHIGKEITSPRUEFUNG ────────────────────────────
+ *
+ * WARUM DIESE DATEI AB HIER ANDERS AUSSIEHT (21.09.2026)
+ * -----------------------------------------------------
+ * Gemessen am 21.09.2026 ueber den Cloudflare-Konnektor stand an diesem
+ * Worker `OWNERSHIP_CATALOG_JSON = "{}"`, und `OWNERSHIP_TREASURY` gab es in
+ * den Variablen ueberhaupt nicht. Beides zusammen heisst: `purchase_onchain`
+ * kann hier nichts erteilen — jede Anfrage endet in `item_not_in_catalog`
+ * bzw. `503 not_configured`.
+ *
+ * Sichtbar war das vorher nur, wenn man es PROBIERT hat. `/health` sagte
+ * `ok: true` und fuehrte die beiden fehlenden Werte als zwei stille `false`
+ * in `configured` — neben acht anderen `true`. Ein Zustand, in dem ein
+ * Zahlweg nichts erteilen kann, sah damit genauso aus wie ein gesunder.
+ *
+ * Seit diesem Commit steht das Urteil VORNE und in denselben Worten wie beim
+ * Geld-Worker (chartrunner-worker, my-worker/src/lib/health.ts):
+ *
+ *   ok      — alles gruen.
+ *   pending — es fehlt nur Benanntes und Gewolltes: eine nicht gesetzte
+ *             Variable, ein Notaus. KEIN Ausfall. Die naechste Handlung ist
+ *             eine menschliche, und niemand muss suchen.
+ *   broken  — etwas, das antworten sollte, tut es nicht, oder jemand hat
+ *             einen Wert eingetragen, der nicht stimmt. Hinsehen.
+ *
+ * Der leere Katalog und die fehlende Treasury sind deshalb `pending` und
+ * nicht `broken`: sie sind eine Produktentscheidung, die niemand getroffen
+ * hat, kein Defekt. Ein KAPUTTER Katalog (JSON-Muell) und eine GESETZTE,
+ * aber ungueltige Adresse sind `broken` — dort hat jemand etwas eingetragen,
+ * und es stimmt nicht.
+ *
+ * `blocked_by` nennt die betroffenen Pruefungen als `feature.pruefung`. Ohne
+ * diese Trennung gewoehnt man sich an Rot, und dann faellt ein echter Ausfall
+ * nicht mehr auf.
+ *
+ * WAS DIESE ANTWORT NICHT SAGT, UND WARUM NICHT
+ * ---------------------------------------------
+ * Sie sagt NICHT, ob ein Spieler heute Pro bekommt. Dieser Worker ist nicht
+ * der einzige Weg zu einer verifizierten Zeile in `cr_ownership` — der
+ * Geld-Worker schreibt sie ueber `POST /v1/pay/sol/intent` selbst, mit
+ * demselben Service-Schluessel und derselben Provenienz, ohne hier
+ * vorbeizukommen (my-worker/src/lib/solpay.ts → grantWalletTier). Siehe den
+ * korrigierten Kopf von wrangler.toml.
+ *
+ * Was hier steht, ist deshalb die Faehigkeit DIESES Wegs und keine Aussage
+ * ueber den anderen. Eine Antwort, die beides vermischte, waere genau die
+ * Sorte Zusage, die dieser Commit ausbaut.
+ */
+
+const GIT_SHA_RE = /^[0-9a-f]{7,40}$/;
+
+/**
+ * Der Commit, aus dem dieser Worker deployt wurde — oder `null` PLUS Grund.
+ *
+ * Wortgleich zu my-worker/src/lib/health.ts: sieben Stellen, weil das die
+ * Laenge ist, in der GitHub einen Commit anzeigt, also die Laenge, gegen die
+ * am Telefon verglichen wird. Ein halb geratener SHA waere schlimmer als
+ * keiner — er saehe aus wie eine Antwort, und "ist der Merge live?" bekaeme
+ * wieder eine Deutung statt eines Vergleichs.
+ *
+ * Injiziert wird der Wert beim Deploy (.github/workflows/deploy-workers.yml:
+ * `wrangler deploy --var "GIT_SHA:${GITHUB_SHA}"`). Der Worker kann ihn nicht
+ * selbst kennen — im Bundle gibt es kein Git.
+ */
+export function buildGitShaFacts(env) {
+  const rawValue = env && env.GIT_SHA;
+  const raw = rawValue === undefined || rawValue === null ? '' : String(rawValue).trim();
+  const ok = GIT_SHA_RE.test(raw.toLowerCase());
+  return {
+    git_sha: ok ? raw.toLowerCase().slice(0, 7) : null,
+    git_sha_full: ok ? raw.toLowerCase() : null,
+    git_sha_raw: raw === '' ? null : raw,
+    injected: ok,
+    var: 'GIT_SHA',
+    note: ok
+      ? 'Der Commit, aus dem dieser Worker deployt wurde. Injiziert beim Deploy (wrangler deploy --var GIT_SHA), nicht vom Worker geraten. "Ist der Merge live?" ist damit ein Vergleich mit dem Merge-Commit auf GitHub.'
+      : raw === ''
+        ? 'KEIN git_sha injiziert. Dieser Worker wurde nicht ueber .github/workflows/deploy-workers.yml deployt. Damit laesst sich NICHT vergleichen, welcher Stand hier laeuft.'
+        : `GIT_SHA ist gesetzt, aber "${raw}" ist kein Commit-SHA (erwartet: 7 bis 40 hexadezimale Zeichen). Der Wert wird NICHT ausgegeben, als waere er einer.`,
+  };
+}
+
+/** Aus einzelnen Pruefungen EIN Urteil. Ein einziges `broken` schlaegt jede
+ * Zahl von `pending` — ein echter Ausfall darf nicht zwischen bekannten
+ * Luecken untergehen. */
+export function verdictOf(checks) {
+  const entries = Object.entries(checks);
+  const failed = entries.filter(([, c]) => !c.ok);
+  const broken = failed.filter(([, c]) => c.kind === 'broken').map(([name]) => name);
+  const pending = failed.filter(([, c]) => c.kind !== 'broken').map(([name]) => name);
+  const ok = failed.length === 0;
+  const v = { ok, status: broken.length ? 'broken' : pending.length ? 'pending' : 'ok', pending, broken };
+  if (!ok) {
+    v.reason = failed.map(([name, c]) => `${name}: ${c.reason || 'ohne Grund fehlgeschlagen'}`).join(' · ');
+  }
+  return v;
+}
+
+/** Aus Pruefungen ein Feature — dieselbe Form wie beim Geld-Worker. */
+function featureOf(checks, extra) {
+  const v = verdictOf(checks);
+  return { ok: v.ok, status: v.status, ...(v.reason ? { reason: v.reason } : {}), checks, ...(extra || {}) };
+}
+
+/** Ein gesetzter Wert fehlt (pending) oder ist da (ok). Nie stillschweigend. */
+function presenceCheck(value, reasonWhenMissing) {
+  return value ? { ok: true, kind: 'ok' } : { ok: false, kind: 'pending', reason: reasonWhenMissing };
+}
+
+/**
+ * Die Zieladresse dieses Wegs.
+ *
+ * NICHT GESETZT ist etwas anderes als FALSCH GESETZT. Das erste ist eine
+ * offene Aufgabe (`pending`, die naechste Handlung ist Julians im Dashboard);
+ * das zweite heisst, jemand hat eine Adresse eingetragen, und sie ist keine —
+ * das gehoert angesehen (`broken`) und nicht abgewartet.
+ *
+ * Sie ist an dieser Stelle eine SICHERHEITSGRENZE und kein Etikett:
+ * checkOnchainPayment() prueft die Zahlung gegen genau diesen Wert. Steht hier
+ * eine andere Adresse als die, auf die der Nutzer ueberweist, wird eine echte
+ * Zahlung als `wrong_recipient` abgelehnt; steht hier eine FREMDE, wird eine
+ * Zahlung an einen Fremden als Kauf verbucht. Deshalb steht sie unten im
+ * Klartext: damit der Abgleich mit `MERCHANT_SOL_ADDRESS` des Geld-Workers
+ * eine ABLESUNG ist und keine Annahme.
+ */
+function treasuryCheck(env) {
+  const raw = env.OWNERSHIP_TREASURY;
+  const treasury = raw === undefined || raw === null ? '' : String(raw).trim();
+  if (treasury === '') {
+    return {
+      check: {
+        ok: false,
+        kind: 'pending',
+        reason:
+          'OWNERSHIP_TREASURY ist nicht gesetzt — dieser Worker kann nicht pruefen, WEM bezahlt wurde, ' +
+          'und lehnt jede purchase_onchain-Erteilung mit 503 not_configured ab. Die Adresse holt Julian ' +
+          'aus seiner Wallet und setzt sie im Cloudflare-Dashboard; sie muss dieselbe sein wie ' +
+          'MERCHANT_SOL_ADDRESS am Geld-Worker.',
+      },
+      treasury: null,
+    };
+  }
+  if (!isWalletAddress(treasury)) {
+    return {
+      check: {
+        ok: false,
+        kind: 'broken',
+        reason: `OWNERSHIP_TREASURY="${treasury}" ist keine gueltige Solana-Adresse (32 Byte base58).`,
+      },
+      treasury,
+    };
+  }
+  return { check: { ok: true, kind: 'ok' }, treasury };
+}
+
+/**
+ * Der Katalog.
+ *
+ * LEER ist `pending`: ChartRunner verkauft heute nichts fuer SOL, und das ist
+ * benannt und gewollt. Was verkauft wird und zu welchem Preis, ist eine
+ * Produktentscheidung — sie gehoert ins Dashboard und nicht in einen PR, und
+ * ein erfundener Platzhalterpreis waere ein Preis, den nie jemand gesetzt hat.
+ *
+ * KAPUTT ist `broken`: ein Katalog, der sich nicht lesen laesst, ist kein
+ * leerer Katalog. Dort hat jemand etwas eingetragen, und es ist Muell.
+ *
+ * EINTRAEGE OHNE PREIS sind ebenfalls `broken`: `catalogLookup` gibt fuer sie
+ * `null` zurueck, der Eintrag steht also im Katalog und ist trotzdem nicht
+ * kaufbar. Das ist die stillste Art, einen Verkauf zu verlieren.
+ */
+function catalogCheck(env) {
   const keys = catalogKeys(env);
+  if (keys === null) {
+    return {
+      check: {
+        ok: false,
+        kind: 'broken',
+        reason: 'OWNERSHIP_CATALOG_JSON ist kein gueltiges JSON — purchase_onchain wird abgelehnt. Ein kaputter Katalog ist KEIN leerer Katalog.',
+      },
+      keys: null,
+      priced: [],
+      unpriced: [],
+    };
+  }
+  const priced = [];
+  const unpriced = [];
+  for (const key of keys) {
+    const i = key.indexOf(':');
+    const entry = i < 0 ? null : catalogLookup(env, key.slice(0, i), key.slice(i + 1));
+    if (entry) priced.push({ key, price_lamports: entry.price_lamports, ...(entry.mint ? { mint: entry.mint } : {}) });
+    else unpriced.push({ key, reason: 'kein brauchbarer price_lamports (ganze Zahl > 0) — dieser Eintrag ist nicht kaufbar' });
+  }
+  if (!keys.length) {
+    return {
+      check: {
+        ok: false,
+        kind: 'pending',
+        reason:
+          'OWNERSHIP_CATALOG_JSON ist leer ({}) — dieser Worker weiss nicht, WAS fuer SOL verkauft wird, ' +
+          'und lehnt jede purchase_onchain-Erteilung mit item_not_in_catalog ab. Was verkauft wird und zu ' +
+          'welchem Preis, setzt Julian im Cloudflare-Dashboard; ein Platzhalterpreis waere ein Preis, den ' +
+          'nie jemand gesetzt hat.',
+      },
+      keys,
+      priced,
+      unpriced,
+    };
+  }
+  if (unpriced.length) {
+    return {
+      check: {
+        ok: false,
+        kind: 'broken',
+        reason:
+          'Katalogeintraege ohne brauchbaren Preis: ' + unpriced.map((u) => u.key).join(', ') +
+          ' — sie stehen im Katalog und sind trotzdem nicht kaufbar.',
+      },
+      keys,
+      priced,
+      unpriced,
+    };
+  }
+  return { check: { ok: true, kind: 'ok' }, keys, priced, unpriced };
+}
+
+const STATUS_NOTE =
+  'status: ok = alles gruen · pending = es fehlt nur Benanntes und Gewolltes (nicht gesetzte Variable, ' +
+  'Notaus) — kein Ausfall, die naechste Handlung ist eine menschliche · broken = etwas, das antworten ' +
+  'sollte, tut es nicht, oder ein gesetzter Wert stimmt nicht. blocked_by nennt die betroffenen ' +
+  'Pruefungen als feature.pruefung. `ok` bleibt true nur, wenn ALLES gruen ist.';
+
+const GRANT_NOTE =
+  'Dieser Worker ist NICHT der einzige Schreiber verifizierter Zeilen in cr_ownership: der Geld-Worker ' +
+  '(chartrunner-worker) schreibt sie ueber POST /v1/pay/sol/intent selbst, mit demselben Service-' +
+  'Schluessel und derselben Provenienz purchase_onchain, ohne hier vorbeizukommen. Was hier steht, ist ' +
+  'die Faehigkeit DIESES Wegs (POST /ownership/grant) und keine Aussage ueber den anderen — dessen ' +
+  'Faehigkeit steht in GET /health des Geld-Workers unter features.pay_identity.';
+
+function health(env, request) {
+  const build = buildGitShaFacts(env);
+  const cat = catalogCheck(env);
+  const tre = treasuryCheck(env);
+
+  /* Das Register selbst — ohne diese drei kann dieser Worker GAR NICHTS
+   * erteilen, gleich ueber welchen Weg. Der Notaus steht mit drin und zaehlt
+   * als `pending`: er ist eine Entscheidung und kein Ausfall. */
+  const register = featureOf({
+    supabase: presenceCheck(
+      env.SUPABASE_URL && env.SUPABASE_ANON_KEY,
+      'SUPABASE_URL/SUPABASE_ANON_KEY fehlen — ohne sie laesst sich nicht einmal ein Aufrufer-Token pruefen.'
+    ),
+    service_role: presenceCheck(
+      env.SUPABASE_SERVICE_ROLE_KEY,
+      'SUPABASE_SERVICE_ROLE_KEY ist nicht gesetzt (wrangler secret put) — ohne ihn wird keine Zeile geschrieben.'
+    ),
+    nonce_secret: presenceCheck(
+      env.OWNERSHIP_NONCE_SECRET,
+      'OWNERSHIP_NONCE_SECRET ist nicht gesetzt (wrangler secret put) — ohne ihn laesst sich keine Wallet verbinden, und ohne verbundene Wallet gibt es keinen purchase_onchain.'
+    ),
+    writes_kill: killed(env)
+      ? { ok: false, kind: 'pending', reason: 'OWNERSHIP_KILL=1 — JEDER Schreibvorgang (grant, link, loadout) wird mit 503 abgelehnt. Notaus, kein Ausfall.' }
+      : { ok: true, kind: 'ok' },
+  });
+
+  /* Der Weg, um den es geht: eine bezahlte Erteilung. Er haengt an drei
+   * Dingen, und alle drei werden NACHGESEHEN statt behauptet. */
+  const grantOnchain = featureOf(
+    {
+      catalog: cat.check,
+      treasury: tre.check,
+      solana_rpc: presenceCheck(
+        env.SOLANA_RPC_URL,
+        'SOLANA_RPC_URL ist nicht gesetzt — ohne sie kann keine Zahlung auf der Kette nachgesehen werden.'
+      ),
+    },
+    {
+      /* Was JETZT kaufbar waere. Eine Liste aus dem Katalog UND der
+       * Preispruefung, nicht ein Echo der Schluessel: ein Eintrag ohne
+       * brauchbaren Preis steht in `unsellable` mit Grund. */
+      sellable: cat.priced,
+      unsellable: cat.unpriced,
+      /* Im Klartext, damit der Abgleich mit MERCHANT_SOL_ADDRESS eine
+       * Ablesung ist. Eine Empfaengeradresse ist kein Geheimnis — sie steht
+       * in jeder Zahlungsaufforderung. */
+      treasury: tre.treasury,
+      note: GRANT_NOTE,
+    }
+  );
+
+  /* Der Stripe-Weg. Ob der Schluessel GESETZT ist, laesst sich hier ablesen;
+   * ob er GUELTIG ist und heute tatsaechlich ein Abo bestaetigt, NICHT — das
+   * zeigte erst ein Aufruf an Stripe, und den macht /health nicht (er kostet
+   * ein fremdes Kontingent und braucht eine Abo-ID, die es hier nicht gibt).
+   * Genau das steht deshalb in `note`, statt geschaetzt zu werden. */
+  const grantSubscription = featureOf(
+    {
+      stripe: presenceCheck(
+        env.STRIPE_SECRET_KEY,
+        'STRIPE_SECRET_KEY ist nicht gesetzt — provenance "subscription" wird mit 503 subscription_verifier_not_configured abgelehnt.'
+      ),
+    },
+    {
+      note:
+        'Gesagt wird nur, ob der Schluessel GESETZT ist. Ob er gueltig ist und ein Abo heute tatsaechlich ' +
+        'bestaetigt wird, zeigt erst ein echter Aufruf an Stripe mit einer Abo-ID — den macht /health nicht.',
+    }
+  );
+
+  /* Die Notverfuegung. Ohne Secret gibt es sie nicht — das ist gewollt und
+   * kein Mangel, aber es soll ablesbar sein. */
+  const grantAdmin = featureOf({
+    admin_secret: presenceCheck(
+      env.OWNERSHIP_ADMIN_SECRET,
+      'OWNERSHIP_ADMIN_SECRET ist nicht gesetzt — provenance "grant" (die Notverfuegung von Hand) ist nicht moeglich.'
+    ),
+  });
+
+  const features = {
+    register,
+    grant_onchain: grantOnchain,
+    grant_subscription: grantSubscription,
+    grant_admin: grantAdmin,
+  };
+
+  /* Die zwei Listen entstehen aus den Pruefungen SELBST und werden nicht
+   * nebenher gepflegt — eine zweite Liste waere die naechste Stelle, an der
+   * etwas auseinanderlaeuft. */
+  const blocked = { pending: [], broken: [] };
+  for (const [name, feature] of Object.entries(features)) {
+    const v = verdictOf(feature.checks);
+    for (const c of v.broken) blocked.broken.push(`${name}.${c}`);
+    for (const c of v.pending) blocked.pending.push(`${name}.${c}`);
+  }
+
   const body = {
-    ok: true,
+    ok: blocked.pending.length === 0 && blocked.broken.length === 0,
+    status: blocked.broken.length ? 'broken' : blocked.pending.length ? 'pending' : 'ok',
+    blocked_by: blocked,
+    status_note: STATUS_NOTE,
     worker: 'chartrunner-ownership',
     version: VERSION,
+    /* GANZ OBEN und nicht in einem Unterobjekt (CLAUDE.md §4): das ist die
+     * Zeile, die am Telefon gegen den Merge-Commit gehalten wird. `null`
+     * heisst ausdruecklich "nicht injiziert"; der Unterschied steht in
+     * build.note. Bis zu diesem Commit stand der Wert NUR unter `build` und
+     * ungeprueft — ein beliebiger String waere dort als Commit durchgegangen. */
+    git_sha: build.git_sha,
+    build,
     endpoints: [
       'GET /ownership/health',
       'GET /ownership/list?owner_kind=&owner_id=',
@@ -381,6 +723,11 @@ function health(env, request) {
       worker_signs_nothing: true,
     },
     kill: { ownership_writes: killed(env) },
+    features,
+    /* Unveraendert und absichtlich behalten: `configured` sagt WEITER nur, OB
+     * etwas gesetzt ist, nie WAS. Es ist der aeltere, flachere Blick auf
+     * dieselben Werte — wer ihn liest, liest weiter dasselbe. Das Urteil
+     * darueber steht jetzt in `features`. */
     configured: {
       supabase_url: !!env.SUPABASE_URL,
       service_role_key: !!env.SUPABASE_SERVICE_ROLE_KEY,
@@ -390,17 +737,11 @@ function health(env, request) {
       solana_rpc: !!env.SOLANA_RPC_URL,
       stripe: !!env.STRIPE_SECRET_KEY,
     },
+    time: new Date().toISOString(),
   };
   // A price catalog that cannot be parsed is NOT an empty catalog.
-  if (keys === null) body.catalog_error = 'OWNERSHIP_CATALOG_JSON is not valid JSON — purchase_onchain is refused';
-  else body.catalog_items = keys;
-  // Which commit is actually running. Injected at deploy time
-  // (deploy-workers.yml: `wrangler deploy --var GIT_SHA:$GITHUB_SHA`), because
-  // „gemerged ist nicht ausgerollt" is only answerable by comparing, not by
-  // guessing. Absent → say so; never invent one.
-  body.build = env.GIT_SHA
-    ? { git_sha: String(env.GIT_SHA) }
-    : { git_sha: null, note: 'GIT_SHA not injected at deploy — this worker cannot name its own commit' };
+  if (cat.keys === null) body.catalog_error = 'OWNERSHIP_CATALOG_JSON is not valid JSON — purchase_onchain is refused';
+  else body.catalog_items = cat.keys;
   return json(200, body, request);
 }
 

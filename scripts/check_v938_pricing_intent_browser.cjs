@@ -207,7 +207,15 @@ const WORKER_TREASURY = 'WkR938TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
   });
 
   await page.addInitScript(() => {
-    window.__v938 = { mode: 'ok', body: null, status: 'pending', session: null, authCbs: [], calls: [] };
+    /* `health` / `healthMode` kamen mit v1.0.945 dazu. Die Seite fragt seit
+     * dem den Geld-Worker, OB eine Freischaltung ueberhaupt erteilt werden
+     * kann, BEVOR sie eine Zahlung anbietet — ohne diese Antwort landet jeder
+     * Zustand unten im neuen 'blocked'. Die Vorgabe ist deshalb ein Worker,
+     * der erteilen KANN: diese Datei misst die Intent-Kette, nicht das Tor
+     * davor (das misst check_v945_freischaltung_tor_browser.cjs). */
+    window.__v938 = { mode: 'ok', body: null, status: 'pending', session: null, authCbs: [], calls: [],
+                      healthMode: 'ok',
+                      health: { ok: true, status: 'ok', features: { pay_identity: { ok: true, status: 'ok' } } } };
     const real = window.fetch;
     window.fetch = function(input){
       const u = String((input && input.url) ? input.url : input);
@@ -222,6 +230,13 @@ const WORKER_TREASURY = 'WkR938TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
         return json(window.__v938.body || {});
       }
       if(/\/v1\/pay\/sol\/status/.test(u)) return json({ status: window.__v938.status });
+      if(/\/health(\?|$)/.test(u)){
+        const hm = window.__v938.healthMode;
+        if(hm === 'throw')   return Promise.reject(new TypeError('v938: Failed to fetch'));
+        if(hm === 'hang')    return new Promise(function(){});
+        if(hm === 'http500') return Promise.resolve(new Response('', { status: 500 }));
+        return json(window.__v938.health);
+      }
       return real.apply(this, arguments);
     };
   });
@@ -537,6 +552,10 @@ const WORKER_TREASURY = 'WkR938TreasuryFromWorkerZZZZZZZZZZZZZZZZZZZZ';
           status: 200, headers: { 'Content-Type': 'application/json' } }));
         if(/\/v1\/pay\/sol\/intent/.test(u)) return json(body);
         if(/\/v1\/pay\/sol\/status/.test(u)){ window.__v938b.calls++; return json({ status: 'pending' }); }
+        // Seit v1.0.945 fragt die Seite ZUERST, ob eine Freischaltung erteilt
+        // werden kann. Ohne diese Antwort kaeme dieser Abschnitt gar nicht bis
+        // zur Zahltafel, und T11 wuerde das Tor messen statt des Zeitablaufs.
+        if(/\/health(\?|$)/.test(u)) return json({ ok: true, status: 'ok', features: { pay_identity: { ok: true, status: 'ok' } } });
         return real.apply(this, arguments);
       };
     }, OK_BODY);
