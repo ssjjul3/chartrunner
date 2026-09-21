@@ -180,7 +180,7 @@
         <a href="https://github.com/ssjjul3/chartrunner" target="_blank" rel="noopener">GitHub</a>
       </div>
     </div>
-    <div class="fine-print">ChartRunner is an entertainment and educational game. Trades you arm and sign in the game are real on-chain trades on Solana mainnet, executed from your own wallet with your own funds. ChartRunner is not a financial service, broker, or exchange, and nothing on this site or in the game is financial, investment, legal, or tax advice. Trading real assets carries risk, including loss of capital. Always do your own research and consult a licensed professional before making real-money decisions.<br><span style="color:rgba(240,239,230,.42)">Pricing page build <b>v1.0.943</b></span></div>
+    <div class="fine-print">ChartRunner is an entertainment and educational game. Trades you arm and sign in the game are real on-chain trades on Solana mainnet, executed from your own wallet with your own funds. ChartRunner is not a financial service, broker, or exchange, and nothing on this site or in the game is financial, investment, legal, or tax advice. Trading real assets carries risk, including loss of capital. Always do your own research and consult a licensed professional before making real-money decisions.<br><span style="color:rgba(240,239,230,.42)">Pricing page build <b>v1.0.945</b></span></div>
   </footer>
 
   <script>
@@ -377,6 +377,10 @@
       grid.querySelectorAll('[data-sol]').forEach(function(b){
         b.onclick = function(){ solanaPay(); };
       });
+      // Danach, nicht davor: erst haengen die Klicks, dann wird das Tor
+      // gesetzt. Umgekehrt koennte ein spaeter verdrahteter Klick das
+      // deaktivierte Feld wiederbeleben.
+      gateSolButtons();
     }
 
     // ---- Stripe (card) --------------------------------------------------------
@@ -413,6 +417,110 @@
       window.location.href = link;
     }
 
+    /* ---- KANN DIE FREISCHALTUNG UEBERHAUPT ERTEILT WERDEN? -------------------
+     *
+     * Der Befund, der diesen Block ausgeloest hat (21.09.2026): die Kette
+     * „Zahlung entstehen lassen -> zuordnen -> on-chain bestaetigen ->
+     * FREISCHALTUNG erteilen" war an der letzten Stelle nie nachgesehen. Diese
+     * Seite bot eine Zahlung an, sobald ein Intent zu bekommen war — und ein
+     * Intent ist nur der ANFANG des Wegs, nicht sein Ende.
+     *
+     * FAIL-CLOSED AM ANFANG, NICHT AM ENDE. Wer bezahlt hat, hat bezahlt; es
+     * gibt in diesem Produkt keinen Erstattungspfad (grep -i refund findet
+     * einen Kommentar, keinen Code). Die einzige Stelle, an der sich das noch
+     * folgenlos abbiegen laesst, ist DIESE — bevor jemand eine Adresse und
+     * einen Betrag sieht.
+     *
+     * Gefragt wird der Worker, der die Freischaltung TATSAECHLICH erteilt: der
+     * Geld-Worker schreibt sie selbst (cr_ownership bei einer Wallet,
+     * subscriptions bei einem Konto) und nennt in GET /health unter
+     * features.pay_identity, ob die dafuer noetigen Speicher antworten. NICHT
+     * gefragt wird der Ownership-Worker: sein purchase_onchain-Weg ist ein
+     * zweiter, den dieser Kaufweg nicht benutzt — ein Tor an seinem leeren
+     * Katalog waere ein Tor an der falschen Tuer.
+     *
+     * EIN AUSFALL IST KEINE AUSKUNFT. Antwortet /health nicht, ist das kein
+     * „wird schon gehen": dann ist die Faehigkeit UNBEKANNT, und unbekannt
+     * heisst hier zu. Ein leeres .catch() waere genau der Fall, um den es geht.
+     *
+     * Der Client LIEST diese Antwort und duplizert sie nicht: welcher Grund
+     * dasteht, entscheidet der Worker. Eine zweite Liste von Gruenden hier
+     * waere die naechste Stelle, an der etwas auseinanderlaeuft. */
+    /* Gemerkt, aber nicht fuer immer: /health des Geld-Workers ist dort selbst
+     * 20 s zwischengespeichert, und ein Notaus soll am Telefon SICHTBAR
+     * werden. 15 s sind kurz genug dafuer und lang genug, dass ein zweimal
+     * geoeffneter Dialog nicht zweimal fragt. */
+    var CAP_TTL_MS = 15000;
+    var _capPromise = null, _capAt = 0;
+    function payCapability(){
+      if(_capPromise && (Date.now() - _capAt) < CAP_TTL_MS) return _capPromise;
+      _capAt = Date.now();
+      _capPromise = new Promise(function(resolve){
+        var done = false;
+        var settle = function(v){ if(done) return; done = true; resolve(v); };
+        // Eine Zeitgrenze, damit die Seite nicht an einem haengenden /health
+        // stehen bleibt. Abgelaufen heisst UNBEKANNT, also zu.
+        var to = setTimeout(function(){
+          settle({ ok:false, known:false, reason:'The server did not answer in time, so it is unknown whether a payment could be credited.' });
+        }, 8000);
+        var fin = function(v){ clearTimeout(to); settle(v); };
+        try {
+          fetch(API_BASE + '/health', { headers:{ 'Accept':'application/json' } })
+            .then(function(r){ return r.ok ? r.json() : null; })
+            .then(function(j){
+              var f = j && j.features && j.features.pay_identity;
+              if(!f || typeof f.ok !== 'boolean'){
+                // Kein Feld heisst nicht „in Ordnung". Es heisst, dass diese
+                // Seite einen Worker vor sich hat, der die Frage nicht
+                // beantwortet — und das ist ein Grund zu schliessen.
+                fin({ ok:false, known:false, reason:'This server build does not report whether an unlock can be granted.' });
+                return;
+              }
+              fin({ ok: f.ok === true, known:true, status: f.status || '', reason: f.reason || '' });
+            })
+            .catch(function(){
+              fin({ ok:false, known:false, reason:'The server could not be reached, so it is unknown whether a payment could be credited.' });
+            });
+        } catch(_){
+          fin({ ok:false, known:false, reason:'The server could not be reached, so it is unknown whether a payment could be credited.' });
+        }
+      });
+      return _capPromise;
+    }
+
+    /* Das Tor AN DER KARTE, nicht erst im Dialog: solange die Freischaltung
+     * nicht erteilt werden kann, wird die SOL-Zahlung gar nicht erst
+     * angeboten. Der Kartenweg wird dabei NICHT angefasst — er laeuft ueber
+     * Stripe und haengt an keiner dieser Pruefungen. */
+    function gateSolButtons(){
+      payCapability().then(function(cap){
+        if(cap.ok) return;
+        grid.querySelectorAll('[data-sol]').forEach(function(b){
+          b.disabled = true;
+          b.style.opacity = '.45';
+          b.style.cursor = 'not-allowed';
+          b.textContent = 'SOL / USDC unavailable';
+          /* Der Klick-Handler bleibt ABSICHTLICH haengen. Gesperrt wird ueber
+           * `disabled` — und der Dialog hat sein EIGENES Tor. Zwei Tore statt
+           * eines abgeklemmten Handlers: wer auf irgendeinem Weg doch im
+           * Dialog landet (ein Skript, das `disabled` zuruecksetzt, eine
+           * spaeter verdrahtete Flaeche), bekommt dort dieselbe Absage und
+           * nicht eine Zahlungsaufforderung. */
+          var box = b.parentNode;
+          if(box && !box.querySelector('.pay-blocked')){
+            var n = document.createElement('div');
+            n.className = 'pay-req pay-blocked';
+            n.style.color = 'var(--warn, #ffb020)';
+            // Der Grund kommt vom Worker. Der Satz davor ist der, der am
+            // Telefon gebraucht wird: es wurde nichts abgebucht.
+            n.textContent = 'On-chain pay is switched off right now because a paid unlock could not be granted. Nothing was charged. Reason from the server: '
+                          + (cap.reason || 'not stated') + ' — pay with card works.';
+            box.appendChild(n);
+          }
+        });
+      });
+    }
+
     // ---- Solana Pay (SOL / USDC) ----------------------------------------------
     // Portiert aus _crCryptoPayOpen (v1.0.934). Dieselbe Regel, dieselben
     // Zustaende, dieselbe Reihenfolge — nur die Huelle ist die der Preisseite.
@@ -422,7 +530,10 @@
       var billLabel = (billing==='lifetime') ? 'lifetime Pro (one-time)' : billing + ' Pro';
       var cur = 'USDC';
       var intent = null;      // { reference, usdc, sol, treasury, chain } — NUR aus der Antwort
-      var phase  = 'auth';    // 'auth' | 'signedout' | 'loading' | 'ready' | 'error'
+      // 'capcheck'  — wird nachgesehen, ob eine Freischaltung erteilt werden kann
+      // 'blocked'   — sie kann es NICHT: keine Zahlung, mit Grund vom Worker
+      var phase  = 'capcheck'; // 'capcheck' | 'blocked' | 'auth' | 'signedout' | 'loading' | 'ready' | 'error'
+      var blockedReason = '';
       var poll = null, watch = null, confirmed = false, waiting = false, timedOut = false;
 
       var overlay = document.createElement('div');
@@ -476,6 +587,30 @@
       // ZUSTAND 1 — die Sitzung wird noch geprueft.
       function paintAuth(){
         overlay.innerHTML = shell('<div class="pm-note" style="margin-top:0">Checking your ChartRunner session…</div>');
+        wireShell();
+      }
+      /* ZUSTAND 0 — es wird NACHGESEHEN, ob die Freischaltung erteilt werden
+       * kann. Dieser Zustand steht VOR allen anderen: die Sitzung zu pruefen,
+       * bevor feststeht, dass ueberhaupt jemand etwas gutschreiben koennte,
+       * hiesse, den Nutzer einen Schritt gehen zu lassen, der ins Leere
+       * fuehrt. */
+      function paintCapCheck(){
+        overlay.innerHTML = shell('<div class="pm-note" style="margin-top:0">Checking whether the server can grant a paid unlock…</div>');
+        wireShell();
+      }
+      /* ZUSTAND 7 — SIE KANN ES NICHT. Kein Betrag, keine Adresse, kein Link,
+       * kein „Erneut versuchen" auf einen Intent, den es nicht geben darf.
+       *
+       * Der Grund steht so da, wie der Worker ihn nennt. Ihn hier zu
+       * uebersetzen oder zu kuerzen hiesse, eine zweite Erklaerung zu pflegen
+       * — und die naechste Abweichung waere eine Meldung, die eine Ursache
+       * nennt, die niemand geprueft hat. Genau das hat der Boost-Dialog
+       * monatelang getan und einen halben Tag Suche gekostet. */
+      function paintBlocked(){
+        overlay.innerHTML = shell(''
+          + '<div class="pm-warn">On-chain payment is switched off right now: a paid unlock could not be granted, so no payment is offered. <b>Nothing was charged.</b></div>'
+          + '<div class="pm-note" style="margin-top:10px"><b>Reason from the server:</b> ' + esc(blockedReason || 'not stated') + '</div>'
+          + '<div class="pm-note"><b>Pay with card</b> is unaffected and works.</div>');
         wireShell();
       }
       // ZUSTAND 2 — WEDER KONTO NOCH WALLET. Kein Betrag, keine Adresse, kein
@@ -595,6 +730,8 @@
         });
       }
       function paint(){
+        if(phase==='capcheck')  return paintCapCheck();
+        if(phase==='blocked')   return paintBlocked();
         if(phase==='auth')      return paintAuth();
         if(phase==='signedout') return paintSignedOut();
         if(phase==='servernotready') return paintServerNotReady();
@@ -669,6 +806,23 @@
       }
 
       function boot(){
+        // ZUERST die Faehigkeit, DANN die Identitaet. Die Reihenfolge ist der
+        // Punkt: eine Anmeldung zu verlangen fuer eine Zahlung, die niemand
+        // gutschreiben koennte, waere zwei Schritte zu spaet.
+        phase = 'capcheck'; paint();
+        overlay.onclick = function(e){ if(e.target === overlay) close(); };
+        document.body.appendChild(overlay);
+        payCapability().then(function(cap){
+          if(!overlay.parentNode) return;     // inzwischen geschlossen
+          if(!cap.ok){
+            blockedReason = cap.reason || 'not stated';
+            phase = 'blocked'; paint();
+            return;
+          }
+          bootIdentity();
+        });
+      }
+      function bootIdentity(){
         // "Noch nicht nachgesehen" gilt jetzt fuer BEIDE Identitaeten: solange
         // Sitzung oder Wallet ungeklaert sind, steht die Pruef-Tafel und nicht
         // die Absage.
@@ -683,8 +837,9 @@
             if(settled() && phase === 'auth'){ phase = 'signedout'; paint(); }
           }, 700);
         }
-        overlay.onclick = function(e){ if(e.target === overlay) close(); };
-        document.body.appendChild(overlay);
+        // overlay.onclick und das Anhaengen an <body> passieren in boot(),
+        // VOR der Faehigkeitsabfrage — sonst stuende der Dialog erst da, wenn
+        // /health geantwortet hat, und ein Klick ins Leere waere die Folge.
       }
       boot();
     }

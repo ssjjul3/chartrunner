@@ -213,6 +213,12 @@ async function pricingPart(browser){
         return json(window.__v943.body || {});
       }
       if(/\/v1\/pay\/sol\/status/.test(u)) return json({ status: 'pending' });
+      /* Seit v1.0.945 fragen BEIDE Dialoge zuerst, ob eine Freischaltung
+       * ueberhaupt erteilt werden kann (GET /health, features.pay_identity).
+       * Ohne diese Antwort landet jeder Zustand unten im neuen 'blocked', und
+       * diese Datei wuerde das Tor messen statt der Identitaetslogik. Die
+       * Vorgabe ist deshalb ein Worker, der erteilen KANN. */
+      if(/\/health(\?|$)/.test(u)) return json({ ok: true, status: 'ok', features: { pay_identity: { ok: true, status: 'ok' } } });
       return real.apply(this, arguments);
     };
   });
@@ -361,6 +367,12 @@ async function gamePart(browser){
       }
       if(/\/v1\/billing\/status/.test(u)){ window.__v943.statusCalls.push(u); return json({ tier: 'RUNNER_PRO', limits: {} }); }
       if(/\/v1\/pay\/sol\/status/.test(u)) return json({ status: 'pending' });
+      /* Seit v1.0.945 fragen BEIDE Dialoge zuerst, ob eine Freischaltung
+       * ueberhaupt erteilt werden kann (GET /health, features.pay_identity).
+       * Ohne diese Antwort landet jeder Zustand unten im neuen 'blocked', und
+       * diese Datei wuerde das Tor messen statt der Identitaetslogik. Die
+       * Vorgabe ist deshalb ein Worker, der erteilen KANN. */
+      if(/\/health(\?|$)/.test(u)) return json({ ok: true, status: 'ok', features: { pay_identity: { ok: true, status: 'ok' } } });
       return real.apply(this, arguments);
     };
   });

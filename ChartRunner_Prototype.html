@@ -111,8 +111,9 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.944
-     LAST UPDATED:    2026-09-21  ·  v1.0.944 (UI-LESBARKEIT: AUFKLAPP-LISTEN UND BROKER-KARTEN): REINE DARSTELLUNG. KEIN HANDELSPFAD, KEINE TORE, KEINE WEICHE, KEINE ORDER-, ARM- ODER VAULT-LOGIK BERUEHRT; KEINE NEUE DEP, KEINE NEUE FREMDCODE-QUELLE, SINGLE-FILE. BEFUND A, GEMESSEN in Chromium gegen diese Datei (1280x900, Platinum und White): die Asset-Aufklapp-Liste (.os-more-pop, "More ▾" bei ASSET im Run-Dialog) rechnete zu background-color rgba(127,127,127,0.06) und background-image none — also praktisch durchsichtig; der Text der Zeilen ASSET/TOKEN/TIMEFRAME schlug durch, beide Texte unlesbar. URSACHE: ihr Hintergrund stand INLINE im style-Attribut, und die Zeichenkette "border:1px solid var(--line)" darin liess sie in den Licht-Theme-Fang :is(div,details)[style*="border:1px"] (v1.0.680) laufen, der background:var(--cros-surface)!important setzt. Die Platinum-Sonderregel fuer die Liste konnte nicht gegenhalten: sie verlangte body[data-os-theme="platinum"], und Platinum ist das ATTRIBUTLOSE Theme (gemessen: das Attribut war null). KORREKTUR: Hintergrund, Rahmen, Radius und Schatten beider Aufklapp-Listen wohnen jetzt in EINER Klasse .cr-pop-surface — nichts davon mehr im style-Attribut, also kein Treffer mehr im Fang; die Theme-Regeln zeigen auf diese Klasse und gelten damit fuer BEIDE Listen (ASSET und TIMEFRAME), der Platinum-Scope ist um die attributlose Form erweitert. ABWEICHUNG VOM AUFTRAG, GEMESSEN STATT UEBERNOMMEN: die TIMEFRAME-Liste war NICHT durchsichtig — sie trug ihren Hintergrund per CSS-Klasse, nicht inline, und war in allen drei Themes deckend, aber immer im Dunkel-Navy des Dark-Themes, in Platinum und White also themefremd. Sie geht denselben Weg mit, aus dem zweiten Grund. ZWEITE ABWEICHUNG: der Auftrag schreibt START RUN die verdeckten Eintraege zu. Gemessen liegt die Liste bereits ueber dem Knopf (z-index 1000 gegen 22, elementFromPoint am Ueberschnitt traf die Liste) — sichtbar war er nur, WEIL die Liste durchsichtig war. Abgeschnitten wurden Eintraege von etwas anderem: das overflow:auto des Fensterkoerpers endete bei y=341, die Liste reichte bis y=407. Deshalb deckelt die Liste ihre Hoehe jetzt auf den sichtbaren Platz — abzueglich der Zeile, unter der sie haengt, damit die nicht ihrerseits oben herausfaellt (Untergrenze 96 px, sonst bleibt der CSS-Wert 240 px) — und der Fensterkoerper scrollt um genau den Rest nach. BEFUND B, GEMESSEN: im Reiter BROKERS rechnete .crBrokerRow zu rgba(10,15,28,.4) — Dunkel-Navy mit 40 % Deckung auf einem Fenster von #e6e6dc (Platinum) bzw. #ffffff (White), also ein flaechig mittelgraues Feld mit dunklem Text. Die gleichartige .crPingRow in NOTIFICATIONS rechnete daneben zu rgba(127,127,127,.06). URSACHE: die Klassenliste der Licht-Theme-Kartenregel (v1.0.680) fuehrt .crPingRow, aber nicht .crBrokerRow/.crBrokerHead. KORREKTUR: beide stehen jetzt in DERSELBEN Regel — kein zweites Regelwerk, das gleich aussehen soll. Dazu die gleiche Rundung und dieselben Abstaende wie .crPingRow, der Chip "1 connected" und die Routing-Kennzeichnung auf den hellen Akzent (--cros-accent), und die gruene Toenung wird nach der !important-Regel zurueckgeholt. EINE ZUSTANDSKLASSE NEU: bis hier trug nur die GEROUTETE Karte die gruene Toenung, eine verbundene aber nicht geroutete sah aus wie eine nicht verbundene; .crBrokerRow.connected haengt an derselben Auskunft, die die Karte ohnehin schon zeigt ("· paper connected"). Die Speicher cr_broker_v1 / cr_broker_connection_v1, das Verbinden, das Routen und die Bedeutung von "paper connected" sind unveraendert. NICHT GEMESSEN: nichts hiervon beruehrt einen Worker, einen Endpunkt oder den Rooms-Server. Ob es RICHTIG AUSSIEHT, liest Julian im Browser ab — diese Session hat Farben, Deckung und Stapelung gemessen, nicht das Aussehen beurteilt. Rollback: v1.0.943.
+     CURRENT VERSION: v1.0.945
+     LAST UPDATED:    2026-09-21  ·  v1.0.945 (DIE FREISCHALTUNG — DER PRO-KAUF WIRD NICHT MEHR ANGEBOTEN, WENN NIEMAND ETWAS GUTSCHREIBEN KANN): KEIN HANDELSPFAD, KEINE TORE, KEINE ORDER-, ARM- ODER VAULT-LOGIK BERUEHRT; KEINE NEUE DEP, KEINE NEUE FREMDCODE-QUELLE, SINGLE-FILE. Der KARTENWEG ist unveraendert — er laeuft ueber Stripe und haengt an keiner dieser Pruefungen. BEFUND: die Kette "Zahlung entstehen lassen -> zuordnen -> on-chain bestaetigen -> FREISCHALTUNG erteilen" war an der LETZTEN Stelle nie nachgesehen. Beide Bezahldialoge (_crCryptoPayOpen im Spiel, solanaPay in pricing.html) boten eine Zahlung an, sobald ein Intent zu bekommen war — und ein Intent ist der ANFANG des Wegs, nicht sein Ende. Wer bezahlt hat, hat bezahlt: einen Erstattungspfad gibt es in diesem Repo nicht (grep -i refund findet einen Kommentar, keinen Code). KORREKTUR — FAIL-CLOSED AM ANFANG: beide Dialoge fragen jetzt ZUERST GET /health des Geld-Workers und lesen features.pay_identity.ok. Steht dort nicht ausdruecklich true, wird KEINE Zahlung angeboten: kein Betrag, keine Adresse, kein Link, und der Grund steht so da, wie der Worker ihn nennt — der Client LIEST ihn und pflegt keine zweite Liste von Gruenden (CLAUDE.md §4). EIN AUSFALL IST KEINE AUSKUNFT: antwortet /health nicht, fehlt das Feld, oder laeuft die Abfrage in ihre Zeitgrenze, gilt die Faehigkeit als UNBEKANNT — und unbekannt heisst hier ZU, nicht "wird schon gehen". Die Reihenfolge ist Teil der Sache: die Faehigkeit VOR der Identitaet, sonst verlangt der Dialog eine Anmeldung fuer eine Zahlung, die niemand gutschreiben koennte. In pricing.html sitzt dasselbe Tor zusaetzlich AN DER KARTE, also vor dem Klick. NICHT GEFRAGT wird der Ownership-Worker: sein purchase_onchain-Weg ist ein ZWEITER, den dieser Kaufweg nicht benutzt (der Geld-Worker schreibt cr_ownership selbst) — ein Tor an dessen leerem Katalog waere ein Tor an der falschen Tuer. TESTS: scripts/check_v945_freischaltung_tor_browser.cjs (echtes Chromium, beide Oberflaechen, gemessen am DOM und an den rausgehenden Anfragen), Gegenproben einzeln gemessen — siehe Dateikopf. check_v938 und check_v943 wurden um die /health-Antwort in ihrer Stub-Welt ergaenzt: die Seite hat eine neue Abhaengigkeit, also braucht die Testwelt sie auch. NICHT GEMESSEN: das laufende System; diese Session erreicht *.workers.dev nicht. GEMERGED IST NICHT AUSGEROLLT — dieser Client darf erst nach dem Worker-PR mergen, sonst liest er ein /health ohne features.pay_identity und schliesst den SOL-Weg (genau das ist der gewollte Fail-closed-Zustand, aber er waere dann eine Folge des Deploy-Zeitpunkts). Rollback: v1.0.944.
+     PREV  ·  v1.0.944 (UI-LESBARKEIT: AUFKLAPP-LISTEN UND BROKER-KARTEN): REINE DARSTELLUNG. KEIN HANDELSPFAD, KEINE TORE, KEINE WEICHE, KEINE ORDER-, ARM- ODER VAULT-LOGIK BERUEHRT; KEINE NEUE DEP, KEINE NEUE FREMDCODE-QUELLE, SINGLE-FILE. BEFUND A, GEMESSEN in Chromium gegen diese Datei (1280x900, Platinum und White): die Asset-Aufklapp-Liste (.os-more-pop, "More ▾" bei ASSET im Run-Dialog) rechnete zu background-color rgba(127,127,127,0.06) und background-image none — also praktisch durchsichtig; der Text der Zeilen ASSET/TOKEN/TIMEFRAME schlug durch, beide Texte unlesbar. URSACHE: ihr Hintergrund stand INLINE im style-Attribut, und die Zeichenkette "border:1px solid var(--line)" darin liess sie in den Licht-Theme-Fang :is(div,details)[style*="border:1px"] (v1.0.680) laufen, der background:var(--cros-surface)!important setzt. Die Platinum-Sonderregel fuer die Liste konnte nicht gegenhalten: sie verlangte body[data-os-theme="platinum"], und Platinum ist das ATTRIBUTLOSE Theme (gemessen: das Attribut war null). KORREKTUR: Hintergrund, Rahmen, Radius und Schatten beider Aufklapp-Listen wohnen jetzt in EINER Klasse .cr-pop-surface — nichts davon mehr im style-Attribut, also kein Treffer mehr im Fang; die Theme-Regeln zeigen auf diese Klasse und gelten damit fuer BEIDE Listen (ASSET und TIMEFRAME), der Platinum-Scope ist um die attributlose Form erweitert. ABWEICHUNG VOM AUFTRAG, GEMESSEN STATT UEBERNOMMEN: die TIMEFRAME-Liste war NICHT durchsichtig — sie trug ihren Hintergrund per CSS-Klasse, nicht inline, und war in allen drei Themes deckend, aber immer im Dunkel-Navy des Dark-Themes, in Platinum und White also themefremd. Sie geht denselben Weg mit, aus dem zweiten Grund. ZWEITE ABWEICHUNG: der Auftrag schreibt START RUN die verdeckten Eintraege zu. Gemessen liegt die Liste bereits ueber dem Knopf (z-index 1000 gegen 22, elementFromPoint am Ueberschnitt traf die Liste) — sichtbar war er nur, WEIL die Liste durchsichtig war. Abgeschnitten wurden Eintraege von etwas anderem: das overflow:auto des Fensterkoerpers endete bei y=341, die Liste reichte bis y=407. Deshalb deckelt die Liste ihre Hoehe jetzt auf den sichtbaren Platz — abzueglich der Zeile, unter der sie haengt, damit die nicht ihrerseits oben herausfaellt (Untergrenze 96 px, sonst bleibt der CSS-Wert 240 px) — und der Fensterkoerper scrollt um genau den Rest nach. BEFUND B, GEMESSEN: im Reiter BROKERS rechnete .crBrokerRow zu rgba(10,15,28,.4) — Dunkel-Navy mit 40 % Deckung auf einem Fenster von #e6e6dc (Platinum) bzw. #ffffff (White), also ein flaechig mittelgraues Feld mit dunklem Text. Die gleichartige .crPingRow in NOTIFICATIONS rechnete daneben zu rgba(127,127,127,.06). URSACHE: die Klassenliste der Licht-Theme-Kartenregel (v1.0.680) fuehrt .crPingRow, aber nicht .crBrokerRow/.crBrokerHead. KORREKTUR: beide stehen jetzt in DERSELBEN Regel — kein zweites Regelwerk, das gleich aussehen soll. Dazu die gleiche Rundung und dieselben Abstaende wie .crPingRow, der Chip "1 connected" und die Routing-Kennzeichnung auf den hellen Akzent (--cros-accent), und die gruene Toenung wird nach der !important-Regel zurueckgeholt. EINE ZUSTANDSKLASSE NEU: bis hier trug nur die GEROUTETE Karte die gruene Toenung, eine verbundene aber nicht geroutete sah aus wie eine nicht verbundene; .crBrokerRow.connected haengt an derselben Auskunft, die die Karte ohnehin schon zeigt ("· paper connected"). Die Speicher cr_broker_v1 / cr_broker_connection_v1, das Verbinden, das Routen und die Bedeutung von "paper connected" sind unveraendert. NICHT GEMESSEN: nichts hiervon beruehrt einen Worker, einen Endpunkt oder den Rooms-Server. Ob es RICHTIG AUSSIEHT, liest Julian im Browser ab — diese Session hat Farben, Deckung und Stapelung gemessen, nicht das Aussehen beurteilt. Rollback: v1.0.943.
      PREV:            2026-09-20  ·  v1.0.943 (PRO-ZAHLWEG: KONTO ODER WALLET — WALLET = KONTO): KEIN HANDELSPFAD BERUEHRT, KEINE NEUE QUELLE, KEINE NEUE DEP, KEIN CDN, KEIN NEUER DIALOG. AUSGANGSLAGE: der SOL-Dialog sagte "Sign in first", WAEHREND DIE WALLET DES NUTZERS OBEN RECHTS STAND — und sie ist es, die signiert und bezahlt. Entscheidung vom 20.09.2026: fuer den Pro-Kauf gilt Wallet = Konto. DER DIALOG (_crCryptoPayOpen): neue Identitaetsstufe _identity() — Konto ODER verbundene Wallet (crWallet.isConnected() VOR get(), dieselbe Prueffolge wie im Rest der Datei; eine Adresse aus einer nicht verbundenen Wallet ist keine Identitaet). IST EIN KONTO DA, FUEHRT DAS KONTO und die Wallet faehrt nur als Zahler mit — andersherum bekaeme ein Angemeldeter sein Pro an die Wallet und saehe es auf einem anderen Geraet nicht wieder. Der Bearer wird NUR gesetzt, wenn es einen gibt: ein leerer Bearer waere ein vorhandener, ungueltiger Header, und der Worker lehnt so etwas ab statt still auf die Wallet auszuweichen. TEXT: pay.sol.needSignin → pay.sol.needIdentity ("A connected wallet is enough — no account needed"); der zweite Satz bleibt, weil er der Kern ist: ohne BEIDES gaebe es niemanden, dem eine Zahlung gutgeschrieben werden koennte, deshalb wird keine angeboten. Zwei Knoepfe statt einem (Connect wallet / Sign in), beide auf vorhandene Wege (crWallet.connect, crAccount.open). NEUER ZUSTAND 5 statt einer Erfindung: ein 401 auf einen WALLET-Vorgang wird als "der Server kennt diese Wallet-Identitaet noch nicht" gezeigt und nicht als "keine Zahlungsdetails" — bei einem KONTO-Vorgang bleibt 401 der normale Fehlerfall, dort waere dieselbe Meldung eine Erfindung. crTier: refresh() liest jetzt ?wallet= wenn kein Token da ist — bis hierher war "kein Konto = FREE", auch fuer jemanden, der mit genau dieser Wallet Pro GEKAUFT hat; ein 502 (Worker laesst `tier` weg statt FREE zu sagen) laesst den Stand ABSICHTLICH unveraendert. pricing.html: derselbe Text, dazu eine bereits vertraute Browser-Wallet als Identitaet (connect({onlyIfTrusted:true}) — kein Prompt, kein Adapter, keine neue Quelle; dieselbe Origin wie /play, also gilt dort Vertrautes auch hier). WAS NICHT GEBAUT WURDE UND WARUM: die Verknuepfungs-Zeremonie (Ed25519, HMAC-Nonce, 409 fuer eine schon vergebene Wallet) bleibt im Ownership-Worker, wo sie vollstaendig IST — eine zweite Fassung waere die naechste Stelle, an der zwei Auslegungen derselben Regel auseinanderlaufen. TESTS: scripts/check_v943_pay_identity_browser.cjs (echtes Chromium, beide Oberflaechen, gemessen am DOM UND an der rausgehenden Anfrage); Gegenproben GEMESSEN, siehe Dateikopf. NICHT GEMESSEN: das laufende System; diese Session erreicht *.workers.dev nicht. GEMERGED IST NICHT AUSGEROLLT — dieser Client darf erst nach dem Worker-PR (private-ops #94) mergen, sonst trifft ein Wallet-Vorgang auf einen Worker, der ihn mit 401 ablehnt (Zustand 5 zeigt genau das). Rollback: v1.0.942.
      PREV  ·  v1.0.942 (ATTRAPPEN STUFE 1 — VIER STELLEN, DIE EINE ZAHL ZEIGTEN, WO KEINE WAR): KEIN HANDELSPFAD BERUEHRT, KEINE NEUE QUELLE ANGESCHLOSSEN, KEINE WORKER-AENDERUNG. Grundlage ist die Attrappen-Tabelle vom 20.09.2026; vier Eintraege, Reihenfolge nach Reichweite. (1) SHARE-KARTE (chartrunner-prototype/assets/cr-share-card.js) — der pnl-Eintrag fuehrte einen vollstaendigen Beispiel-Trade als Vorlagenwert (ENTRY 63,180 / EXIT 64,510 / PEAK +261% / LIQ 51,900 / +247.5% / "3x LEVERAGE"), und render() zeichnete ihn, wann immer der Aufrufer nichts mitgab. Genau so entstand das committete cards/pnl.png, und das ist das og:image jedes geteilten /s/pnl.html-Links: erfundene Handelsergebnisse unter unserem Namen, bei Leuten, die die Seite nie geoeffnet haben. Belegbar kamen die Zahlen IMMER aus der Vorlage — crShare wird nur mit type 'chart' und 'multiplayer' aufgerufen, share.html reicht nur URL-Werte durch. Jetzt: Zahlen nur noch aus opt (value/stats/dstats/tag), sonst Marke, Titel, ein Strich und "no run data". cards/pnl.png neu gerendert; die neun anderen Karten sind unveraendert. Die uebrigen Kartentypen behalten ihre Vorlagenwerte — Stufe 2. (2) whyMove — facts startete auf lauter Nullen, der Tape-Abruf hatte kein else und ein leeres catch; jeder Ausfall sah aus wie "0 on-chain trades · buy $0 vs sell $0" und ging woertlich mit "(already verified, do not invent numbers)" an das Sprachmodell. Jetzt bleibt facts null, solange nichts gemessen wurde: keine Zahlen im Prompt, der Satz "already verified" entfaellt, im Prompt steht ausdruecklich, dass keine Handelsdaten vorliegen, die Flaeche sagt es ("no trade data — <Grund>", COACH-Zeile mit Etikett), und das catch schweigt nicht mehr. (3) SOLANA-CONNECT — sechs fest verdrahtete Betraege ueber dem Signier-Knopf ("~0.0011 SOL rent" u. a.) ohne Quelle; die Komponente simuliert nicht und kennt die Kontogroessen nicht. Die Zahlen entfallen, ein Satz ohne Betrag bleibt: die Wallet nennt ihn vor der Signatur. Echten Wert holen ist Stufe 3. (4) W1 — _crTermArchiveProviderFailure prueft jetzt den Rueckgabewert von _crTermArchivePanePrivateOps. Der steigt fuer onFailure:true sofort mit false aus (v1.0.358, richtig so), wurde aber weggeworfen und trotzdem als Erfolg gemeldet: kein Ausblenden, kein Warnchip, kein Ersetzen des Koerpers, und der fallbackFn lief auch nicht — die Flaeche behielt ihr Vorlagen-Markup, teils unter einem LIVE-Chip. Jetzt wird der Fehlschlag durchgereicht: Chip 'no source' plus ein Satz, der Anbieter und Grund nennt; der Vorlagen-Koerper wird ersetzt, nicht gerendert. GEMESSEN, nicht geschaetzt: das aendert GENAU ZWEI Flaechen, phxFunding und phxOI (beide Drift, beide mit je 5 Vorlagenzeilen im HTML) — nicht zwoelf. Zwoelf Flaechen rufen die Funktion auf, aber nur diese zwei tragen onFailure:true; die uebrigen zehn liefen schon vorher richtig (drei ueber Zweig A 'no source', sieben strukturell privat = ausgeblendet+archiviert). NICHT DAZU: keine echten Quellen angeschlossen, Phone-Terminal, cexDexFlow, die falsch etikettierten Indikatoren und die uebrigen Vorlagen-Koerper bleiben unangetastet (Stufe 2); GoldRush unberuehrt. NICHT GEMESSEN: diese Session erreicht *.workers.dev und chartrunner.xyz nicht — alle Aussagen ueber das laufende System stammen aus dem Quelltext und aus Stub-Laeufen gegen die extrahierte Originalquelle, nicht aus einer Messung am Live-System.
      PREV  ·  v1.0.941 (BIRDEYE-RESTBESTAND — NICHTS LAEUFT MEHR STILL LEER): KEIN ERSATZ, KEIN NEUER ANBIETER, KEIN HANDELSPFAD BERUEHRT. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad und die ARM-Speicher sind unveraendert. BEFUND: die Birdeye-Aufrufe im Client liefen ohne persoenlichen Schluessel ueber den /v1/birdeye-Proxy des Geld-Workers; dessen Birdeye-Haelfte ist entfernt. crBirdeye.hasKey() sagt seit v690 pauschal ja, also glaubten die Flaechen weiter an eine Quelle, die nicht mehr antwortet. Die meisten Flaechen sind laengst anders versorgt (Preis/Kerzen: eigener ohlc-store + CoinGecko; Sicherheits-Verdikt im Token-Fenster: eigener /v1/token/safety seit v890; Logo: Jupiter/CoinGecko; Whales/Tape/Pressure: eigener Store). GEAENDERT wurde nur dort, wo eine Flaeche STILL leer lief: (a) TERMINAL — solPrice, solTopTokens und solTrending trugen erfundene Koerper ($184,27 / SOL,JUP,BONK… / POPCAT…) und verschwanden nach dem fehlgeschlagenen Abruf per display:none. Die Schein-Koerper sind raus, und _crTermArchiveProviderFailure blendet Live-Daten-Flaechen nicht mehr aus, sondern schreibt 'no source' plus einen Satz hinein. Der Ausblend-Weg bleibt unveraendert fuer die strukturell privaten Flaechen (on-chain, pump.fun, eigener RPC). (b) TOKEN-FENSTER — Marktkapitalisierung, FDV und 24h-Volumen standen als einzige drei Felder des Gitters IMMER als Zahl da, notfalls aus gesaetem Zufall (rng()*80e9 bzw. mc*(1+rng()*0.4) bzw. rng()*800e6); Liquiditaet, Holders und Top-10 daneben zeigen seit v814 einen Strich. Jetzt zeigen alle sechs einen Strich, wenn keine Quelle geantwortet hat. Dafuer decken mcLive/fdvLive/volLive jetzt auch die DexScreener-Stufe (_meta.mcDex/fdvDex, _mDex.volDex, seit v832 echt) ab — sonst haette der ehrliche Zustand echte Daten versteckt. (c) Der Gesamt-Score isst Marktkapitalisierung, Volumen und Liquiditaet; fehlt eine davon, sagt er 'teilweise geschaetzt' dazu, statt ein MOND/MEIDEN auszugeben, das aussieht wie gemessen. (d) ALARME — eine Sicherheits-Regel bekam ohne Verdikt gar nichts und stand dauerhaft auf '— noch nicht geprueft'; sie sagt jetzt 'Sicherheitspruefung nicht verfuegbar' in Bernstein. Gefeuert wird NICHT: ein fehlendes Verdikt ist kein Befund und kein SAFE. (e) WORKER alerts-cron — bdVerdict() lief ohne die BIRDEYE_API_KEY-Bedingung, die der Preis-Zweig hat; die Sicherheits-Alarmmail feuerte seit unbekannter Zeit nie. Jetzt traegt die Zeile last_value = 'Sicherheitspruefung nicht moeglich' und der Besitzer bekommt GENAU EINE Mail je Ausfall-Episode (Erinnerung = last_value selbst, keine neue Spalte). Die Wallet-Watch-Mails ueber GoldRush sind unberuehrt. NICHT DAZU: kein Ersatz fuer Birdeye, kein Herauslosen der toten Aufrufe (BACKLOG 28), keine Aenderung am Geld-Worker. NICHT GEMESSEN: diese Session erreicht *.workers.dev nicht — alle Aussagen ueber das laufende System stammen aus dem Quelltext, nicht aus einer Messung.
@@ -67825,7 +67826,21 @@ window._crCryptoPayOpen = function(tier, billing){
     return _isAddr(w) ? { kind:'wallet', tok:'', wallet:w } : null;
   }
   var intent = null;                 // { reference, usdc, sol, treasury, chain? } — NUR aus der Worker-Antwort
-  var phase  = 'signedout';          // 'signedout' | 'loading' | 'ready' | 'error' | 'servernotready'
+  /* v1.0.945 — ZUERST DIE FAEHIGKEIT, DANN DIE IDENTITAET.
+   *
+   * 'capcheck' steht VOR allen anderen Zustaenden. Bis hierher fing dieser
+   * Dialog bei 'signedout' an: er verlangte eine Anmeldung fuer eine Zahlung,
+   * von der niemand geprueft hatte, ob sie ueberhaupt gutgeschrieben werden
+   * kann. Die Kette „Zahlung entstehen lassen -> zuordnen -> on-chain
+   * bestaetigen -> FREISCHALTUNG erteilen" war an der letzten Stelle nie
+   * nachgesehen, und ein Intent ist der ANFANG des Wegs, nicht sein Ende.
+   *
+   * 'blocked' ist der Zustand, in dem KEINE Zahlung angeboten wird: kein
+   * Betrag, keine Adresse, kein Link. Fail-closed am Anfang und nicht am
+   * Ende — wer bezahlt hat, hat bezahlt, und einen Erstattungspfad gibt es in
+   * diesem Repo nicht. */
+  var phase  = 'capcheck';           // 'capcheck' | 'blocked' | 'signedout' | 'loading' | 'ready' | 'error' | 'servernotready'
+  var blockedReason = '';
   var poll = null, tokWatch = null, confirmed = false, waiting = false;
   var ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;z-index:100310;display:flex;align-items:center;justify-content:center;background:rgba(6,10,18,.7);padding:18px';
@@ -67887,6 +67902,29 @@ window._crCryptoPayOpen = function(tier, billing){
   // Wallet genuegt. Was er weiterhin sagt, und das ist der Kern: ohne BEIDES
   // gaebe es niemanden, dem eine Zahlung gutgeschrieben werden koennte,
   // deshalb wird keine angeboten.
+  /* ZUSTAND 0 — es wird NACHGESEHEN, ob die Freischaltung erteilt werden kann. */
+  function paintCapCheck(){
+    ov.innerHTML = card('<div style="padding:10px 11px;color:var(--dim);font:600 11.5px inherit;line-height:1.55">'
+      + T('pay.sol.capcheck','Checking whether the server can grant a paid unlock…') + '</div>');
+    try { ov.querySelector('.crPayX').addEventListener('click', close); } catch(_){}
+  }
+  /* ZUSTAND 6 — SIE KANN ES NICHT. Kein Betrag, keine Adresse, kein Link und
+   * kein „Erneut versuchen" auf einen Intent, den es nicht geben darf.
+   *
+   * Der Grund steht so da, wie der WORKER ihn nennt. Ihn hier zu uebersetzen
+   * oder zu kuerzen hiesse, eine zweite Erklaerung zu pflegen — und die
+   * naechste Abweichung waere eine Meldung, die eine Ursache nennt, die
+   * niemand geprueft hat. Genau das hat der Boost-Dialog monatelang getan. */
+  function paintBlocked(){
+    ov.innerHTML = card(''
+      + '<div style="padding:10px 11px;border:1px solid rgba(255,176,32,.45);border-radius:9px;background:rgba(255,176,32,.08);color:var(--fg);font:600 11.5px inherit;line-height:1.55;margin-bottom:10px">'
+      +   T('pay.sol.blocked','On-chain payment is switched off right now: a paid unlock could not be granted, so no payment is offered. Nothing was charged.') + '</div>'
+      + '<div style="padding:9px 11px;border:1px solid var(--line);border-radius:9px;color:var(--dim);font:600 11px inherit;line-height:1.5;margin-bottom:8px"><b>'
+      +   T('pay.sol.blockedReasonLabel','Reason from the server:') + '</b> ' + esc(blockedReason || T('pay.sol.blockedNoReason','not stated')) + '</div>'
+      + '<div style="color:var(--dim);font:600 11px inherit;line-height:1.5">'
+      +   T('pay.sol.blockedCard','Paying by card is unaffected and works.') + '</div>');
+    try { ov.querySelector('.crPayX').addEventListener('click', close); } catch(_){}
+  }
   function paintSignedOut(){
     ov.innerHTML = card(''
       + '<div style="padding:10px 11px;border:1px solid rgba(126,231,135,.35);border-radius:9px;background:rgba(20,241,149,.06);color:var(--fg);font:600 11.5px inherit;line-height:1.55;margin-bottom:10px">'
@@ -67966,6 +68004,8 @@ window._crCryptoPayOpen = function(tier, billing){
     ov.querySelectorAll('.crPayCopy').forEach(function(b){ b.addEventListener('click', function(){ try { navigator.clipboard.writeText(b.getAttribute('data-copy')); b.textContent = T('pay.copied','Copied'); setTimeout(function(){ b.textContent = T('pay.copy','Copy'); }, 1200); } catch(_){} }); });
   }
   function paint(){
+    if(phase==='capcheck')  return paintCapCheck();
+    if(phase==='blocked')   return paintBlocked();
     if(phase==='signedout') return paintSignedOut();
     if(phase==='servernotready') return paintServerNotReady();
     if(phase==='error')     return paintError();
@@ -68035,7 +68075,63 @@ window._crCryptoPayOpen = function(tier, billing){
         .catch(fail);
     } catch(_){ fail(); }
   }
+  /* KANN DIE FREISCHALTUNG UEBERHAUPT ERTEILT WERDEN?
+   *
+   * Gefragt wird der Worker, der sie TATSAECHLICH erteilt: der Geld-Worker
+   * schreibt sie selbst (cr_ownership bei einer Wallet, subscriptions bei
+   * einem Konto) und nennt in GET /health unter features.pay_identity, ob die
+   * dafuer noetigen Speicher antworten. NICHT gefragt wird der
+   * Ownership-Worker: sein purchase_onchain-Weg ist ein zweiter, den dieser
+   * Kaufweg nicht benutzt — ein Tor an dessen leerem Katalog waere ein Tor an
+   * der falschen Tuer.
+   *
+   * EIN AUSFALL IST KEINE AUSKUNFT. Antwortet /health nicht, fehlt das Feld,
+   * oder laeuft die Abfrage in ihre Zeitgrenze, ist die Faehigkeit UNBEKANNT
+   * — und unbekannt heisst hier ZU. Ein leeres .catch() waere genau der Fall,
+   * um den es geht.
+   *
+   * Der Client LIEST den Grund und pflegt keine zweite Liste (CLAUDE.md §4). */
+  function payCapability(){
+    return new Promise(function(resolve){
+      var done = false;
+      var settle = function(v){ if(done) return; done = true; resolve(v); };
+      var to = setTimeout(function(){
+        settle({ ok:false, reason: T('pay.sol.capTimeout','The server did not answer in time, so it is unknown whether a payment could be credited.') });
+      }, 8000);
+      var fin = function(v){ clearTimeout(to); settle(v); };
+      try {
+        fetch(API + '/health', { headers:{ 'Accept':'application/json' } })
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(j){
+            var f = j && j.features && j.features.pay_identity;
+            // Kein Feld heisst NICHT „in Ordnung": es heisst, dass hier ein
+            // Worker antwortet, der die Frage nicht beantwortet.
+            if(!f || typeof f.ok !== 'boolean'){
+              fin({ ok:false, reason: T('pay.sol.capUnknown','This server build does not report whether an unlock can be granted.') });
+              return;
+            }
+            fin({ ok: f.ok === true, reason: f.reason || '' });
+          })
+          .catch(function(){
+            fin({ ok:false, reason: T('pay.sol.capUnreachable','The server could not be reached, so it is unknown whether a payment could be credited.') });
+          });
+      } catch(_){
+        fin({ ok:false, reason: T('pay.sol.capUnreachable','The server could not be reached, so it is unknown whether a payment could be credited.') });
+      }
+    });
+  }
   function boot(){
+    // Der Dialog steht SOFORT da (sonst ginge ein Klick ins Leere), zeigt aber
+    // die Pruef-Tafel und noch keine Zahlung.
+    phase = 'capcheck'; paint();
+    document.body.appendChild(ov);
+    payCapability().then(function(cap){
+      if(!ov.parentNode) return;            // inzwischen geschlossen
+      if(!cap.ok){ blockedReason = cap.reason || ''; phase = 'blocked'; paint(); return; }
+      bootIdentity();
+    });
+  }
+  function bootIdentity(){
     if(_identity()){ startIntent(); }
     else {
       phase = 'signedout'; paint();
@@ -68046,7 +68142,6 @@ window._crCryptoPayOpen = function(tier, billing){
         if(_identity()){ clearInterval(tokWatch); tokWatch = null; startIntent(); }
       }, 700);
     }
-    document.body.appendChild(ov);
   }
   boot();
 };

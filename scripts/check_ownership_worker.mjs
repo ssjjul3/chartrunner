@@ -573,14 +573,127 @@ test('health names the endpoints, the rules and what is NOT configured', async (
   assert.equal(r.body.configured.treasury, false);
   assert.equal(r.body.configured.stripe, false);
   assert.equal(r.body.configured.service_role_key, true);   // whether, never what
-  assert.equal(r.body.build.git_sha, null, 'health must not invent a commit');
+  assert.equal(r.body.git_sha, null, 'health must not invent a commit');
+  assert.equal(r.body.build.git_sha, null);
   assert.ok(r.body.build.note, 'health must SAY that GIT_SHA is missing');
 });
 
-test('health nennt den Commit, der laeuft, sobald GIT_SHA injiziert ist', async () => {
+/* ── git_sha: ganz oben, und nur, wenn er einer IST ──────────────────────
+ * Bis zum 21.09.2026 stand der Wert NUR unter `build` und ungeprueft: ein
+ * beliebiger String waere dort als Commit durchgegangen. Beides ist jetzt
+ * anders, und beides wird hier gemessen. */
+test('git_sha steht GANZ OBEN und ist auf sieben Stellen gekuerzt', async () => {
   const r = await call(makeEnv({ GIT_SHA: '0123456789abcdef0123456789abcdef01234567' }), 'GET', '/ownership/health');
-  assert.equal(r.body.build.git_sha, '0123456789abcdef0123456789abcdef01234567');
-  assert.equal(r.body.build.note, undefined, 'mit Commit gibt es nichts zu entschuldigen');
+  assert.equal(r.body.git_sha, '0123456', 'die Laenge, in der GitHub einen Commit anzeigt');
+  assert.equal(r.body.build.git_sha_full, '0123456789abcdef0123456789abcdef01234567');
+  assert.equal(r.body.build.injected, true);
+  assert.ok(r.body.build.note.includes('Vergleich'), 'die Notiz sagt, wozu der Wert da ist');
+});
+
+test('ein GIT_SHA, der KEIN Commit ist, wird nicht als einer ausgegeben', async () => {
+  // Der teure Fall: ein falscher SHA sieht aus wie eine Antwort und ist keine.
+  const r = await call(makeEnv({ GIT_SHA: 'nicht-injiziert' }), 'GET', '/ownership/health');
+  assert.equal(r.body.git_sha, null);
+  assert.equal(r.body.build.injected, false);
+  assert.equal(r.body.build.git_sha_raw, 'nicht-injiziert', 'was dasteht, wird GENANNT — nur nicht als Commit');
+  assert.ok(r.body.build.note.includes('kein Commit-SHA'));
+});
+
+/* ── die Faehigkeitspruefung ─────────────────────────────────────────────
+ * Der Befund vom 21.09.2026: Katalog leer, Treasury nicht gesetzt. Vorher
+ * sagte /health dazu `ok: true` und zwei stille `false` in `configured`.
+ * Diese vier Pruefungen sind die Gegenprobe dazu. */
+test('leerer Katalog + fehlende Treasury => pending mit Grund, nicht ok und nicht broken', async () => {
+  const r = await call(makeEnv({ OWNERSHIP_CATALOG_JSON: '{}', OWNERSHIP_TREASURY: '' }), 'GET', '/ownership/health');
+  assert.equal(r.body.ok, false, 'ein Weg, der nichts erteilen kann, ist NICHT ok');
+  assert.equal(r.body.status, 'pending', 'benannt und gewollt ist kein Ausfall');
+  assert.deepEqual(r.body.blocked_by.broken, [], 'nichts hiervon ist kaputt');
+  assert.ok(r.body.blocked_by.pending.includes('grant_onchain.catalog'));
+  assert.ok(r.body.blocked_by.pending.includes('grant_onchain.treasury'));
+  assert.equal(r.body.features.grant_onchain.ok, false);
+  assert.equal(r.body.features.grant_onchain.status, 'pending');
+  assert.ok(/OWNERSHIP_CATALOG_JSON/.test(r.body.features.grant_onchain.checks.catalog.reason));
+  assert.ok(/OWNERSHIP_TREASURY/.test(r.body.features.grant_onchain.checks.treasury.reason));
+  assert.deepEqual(r.body.features.grant_onchain.sellable, [], 'nichts ist kaufbar');
+  assert.equal(r.body.features.grant_onchain.treasury, null);
+});
+
+test('beides gesetzt => grant_onchain ist gruen und nennt, WAS kaufbar ist', async () => {
+  const r = await call(makeEnv({ OWNERSHIP_CATALOG_JSON: JSON.stringify({ 'tier:RUNNER_PRO': { price_lamports: 250000000 } }) }), 'GET', '/ownership/health');
+  assert.equal(r.body.features.grant_onchain.ok, true);
+  assert.equal(r.body.features.grant_onchain.status, 'ok');
+  assert.deepEqual(r.body.features.grant_onchain.sellable, [{ key: 'tier:RUNNER_PRO', price_lamports: 250000000 }]);
+  // Im Klartext, damit der Abgleich mit MERCHANT_SOL_ADDRESS eine ABLESUNG ist.
+  assert.equal(r.body.features.grant_onchain.treasury, TREASURY);
+});
+
+test('eine GESETZTE, aber ungueltige Treasury ist broken — nicht pending', async () => {
+  // Nicht gesetzt = offene Aufgabe. Gesetzt und falsch = jemand hat etwas
+  // eingetragen, und es stimmt nicht. Das gehoert angesehen, nicht abgewartet.
+  const r = await call(makeEnv({ OWNERSHIP_TREASURY: 'nicht-base58-0OIl' }), 'GET', '/ownership/health');
+  assert.equal(r.body.status, 'broken');
+  assert.ok(r.body.blocked_by.broken.includes('grant_onchain.treasury'));
+  assert.equal(r.body.features.grant_onchain.checks.treasury.kind, 'broken');
+});
+
+test('ein Katalogeintrag OHNE brauchbaren Preis ist broken, nicht stillschweigend weg', async () => {
+  // Die stillste Art, einen Verkauf zu verlieren: der Eintrag steht im
+  // Katalog, catalogLookup gibt null, und niemand sieht es.
+  const r = await call(makeEnv({ OWNERSHIP_CATALOG_JSON: JSON.stringify({ 'tier:RUNNER_PRO': { price_lamports: 0 } }) }), 'GET', '/ownership/health');
+  assert.equal(r.body.status, 'broken');
+  assert.equal(r.body.features.grant_onchain.checks.catalog.kind, 'broken');
+  assert.deepEqual(r.body.features.grant_onchain.sellable, []);
+  assert.equal(r.body.features.grant_onchain.unsellable[0].key, 'tier:RUNNER_PRO');
+});
+
+test('ein einziges broken schlaegt jede Zahl von pending — oben UND je Feature', async () => {
+  // Die Gegenprobe hat gezeigt, dass die erste Fassung dieses Tests nur das
+  // Urteil GANZ OBEN traf: das entsteht aus blocked_by und nicht aus
+  // verdictOf. Die Rangfolge IN verdictOf blieb dabei ungeprueft — ein
+  // Pruefer, den nie jemand beim Pruefen gesehen hat. Deshalb beide Ebenen.
+  const r = await call(makeEnv({ OWNERSHIP_CATALOG_JSON: '{oops', OWNERSHIP_TREASURY: '', STRIPE_SECRET_KEY: '' }), 'GET', '/ownership/health');
+  assert.equal(r.body.status, 'broken');
+  assert.ok(r.body.blocked_by.pending.length > 0, 'die pending-Liste bleibt trotzdem vollstaendig');
+  // grant_onchain traegt hier BEIDES: catalog ist kaputt, treasury fehlt.
+  assert.equal(r.body.features.grant_onchain.checks.catalog.kind, 'broken');
+  assert.equal(r.body.features.grant_onchain.checks.treasury.kind, 'pending');
+  assert.equal(r.body.features.grant_onchain.status, 'broken', 'das Feature-Urteil darf das broken nicht verschlucken');
+  // Und der Grund nennt BEIDE, nicht nur den lauteren.
+  assert.ok(/OWNERSHIP_CATALOG_JSON/.test(r.body.features.grant_onchain.reason));
+  assert.ok(/OWNERSHIP_TREASURY/.test(r.body.features.grant_onchain.reason));
+});
+
+test('der Notaus ist pending (eine Entscheidung), kein Ausfall', async () => {
+  const r = await call(makeEnv({ OWNERSHIP_KILL: '1' }), 'GET', '/ownership/health');
+  assert.equal(r.body.status, 'pending');
+  assert.ok(r.body.blocked_by.pending.includes('register.writes_kill'));
+  assert.equal(r.body.kill.ownership_writes, true);
+});
+
+test('fehlender Stripe-Schluessel: pending, und /health SCHAETZT nicht, ob der Weg erteilt', async () => {
+  const r = await call(makeEnv({ STRIPE_SECRET_KEY: '' }), 'GET', '/ownership/health');
+  assert.equal(r.body.features.grant_subscription.ok, false);
+  assert.equal(r.body.features.grant_subscription.status, 'pending');
+  assert.ok(/STRIPE_SECRET_KEY/.test(r.body.features.grant_subscription.checks.stripe.reason));
+  // Am Code nicht entscheidbar — also wird es gesagt und nicht geraten.
+  assert.ok(/nicht/.test(r.body.features.grant_subscription.note));
+});
+
+test('health sagt, dass dieser Worker NICHT der einzige Schreiber ist', async () => {
+  // Der Kommentar in wrangler.toml behauptete bis zum 21.09.2026 das
+  // Gegenteil. Wer das glaubt, schliesst aus einem leeren Katalog, dass
+  // niemand Pro bekommen kann — und das waere falsch.
+  const r = await call(makeEnv(), 'GET', '/ownership/health');
+  const note = r.body.features.grant_onchain.note;
+  assert.ok(/NICHT der einzige/.test(note), 'die Einschraenkung fehlt');
+  assert.ok(/chartrunner-worker/.test(note), 'der andere Schreiber wird beim Namen genannt');
+});
+
+test('ein GEHEIMNIS steht nie in /health — nur, OB es gesetzt ist', async () => {
+  const r = await call(makeEnv({ STRIPE_SECRET_KEY: 'sk_live_LEAK_SENTINEL' }), 'GET', '/ownership/health');
+  assert.ok(!r.text.includes('sk_live_LEAK_SENTINEL'));
+  assert.ok(!r.text.includes('nonce-secret') && !r.text.includes('admin-secret'));
+  assert.equal(r.body.configured.stripe, true);
 });
 
 // Kein Messwert, sondern eine Konfigurationspruefung — die Datei HIER ist die,
