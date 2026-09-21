@@ -111,9 +111,10 @@ window.crShare = function (o) {
 })();
 </script>
 <!-- ChartRunner — version banner  ·  full history: CHANGELOG.md
-     CURRENT VERSION: v1.0.943
-     LAST UPDATED:    2026-09-20  ·  v1.0.943 (PRO-ZAHLWEG: KONTO ODER WALLET — WALLET = KONTO): KEIN HANDELSPFAD BERUEHRT, KEINE NEUE QUELLE, KEINE NEUE DEP, KEIN CDN, KEIN NEUER DIALOG. AUSGANGSLAGE: der SOL-Dialog sagte "Sign in first", WAEHREND DIE WALLET DES NUTZERS OBEN RECHTS STAND — und sie ist es, die signiert und bezahlt. Entscheidung vom 20.09.2026: fuer den Pro-Kauf gilt Wallet = Konto. DER DIALOG (_crCryptoPayOpen): neue Identitaetsstufe _identity() — Konto ODER verbundene Wallet (crWallet.isConnected() VOR get(), dieselbe Prueffolge wie im Rest der Datei; eine Adresse aus einer nicht verbundenen Wallet ist keine Identitaet). IST EIN KONTO DA, FUEHRT DAS KONTO und die Wallet faehrt nur als Zahler mit — andersherum bekaeme ein Angemeldeter sein Pro an die Wallet und saehe es auf einem anderen Geraet nicht wieder. Der Bearer wird NUR gesetzt, wenn es einen gibt: ein leerer Bearer waere ein vorhandener, ungueltiger Header, und der Worker lehnt so etwas ab statt still auf die Wallet auszuweichen. TEXT: pay.sol.needSignin → pay.sol.needIdentity ("A connected wallet is enough — no account needed"); der zweite Satz bleibt, weil er der Kern ist: ohne BEIDES gaebe es niemanden, dem eine Zahlung gutgeschrieben werden koennte, deshalb wird keine angeboten. Zwei Knoepfe statt einem (Connect wallet / Sign in), beide auf vorhandene Wege (crWallet.connect, crAccount.open). NEUER ZUSTAND 5 statt einer Erfindung: ein 401 auf einen WALLET-Vorgang wird als "der Server kennt diese Wallet-Identitaet noch nicht" gezeigt und nicht als "keine Zahlungsdetails" — bei einem KONTO-Vorgang bleibt 401 der normale Fehlerfall, dort waere dieselbe Meldung eine Erfindung. crTier: refresh() liest jetzt ?wallet= wenn kein Token da ist — bis hierher war "kein Konto = FREE", auch fuer jemanden, der mit genau dieser Wallet Pro GEKAUFT hat; ein 502 (Worker laesst `tier` weg statt FREE zu sagen) laesst den Stand ABSICHTLICH unveraendert. pricing.html: derselbe Text, dazu eine bereits vertraute Browser-Wallet als Identitaet (connect({onlyIfTrusted:true}) — kein Prompt, kein Adapter, keine neue Quelle; dieselbe Origin wie /play, also gilt dort Vertrautes auch hier). WAS NICHT GEBAUT WURDE UND WARUM: die Verknuepfungs-Zeremonie (Ed25519, HMAC-Nonce, 409 fuer eine schon vergebene Wallet) bleibt im Ownership-Worker, wo sie vollstaendig IST — eine zweite Fassung waere die naechste Stelle, an der zwei Auslegungen derselben Regel auseinanderlaufen. TESTS: scripts/check_v943_pay_identity_browser.cjs (echtes Chromium, beide Oberflaechen, gemessen am DOM UND an der rausgehenden Anfrage); Gegenproben GEMESSEN, siehe Dateikopf. NICHT GEMESSEN: das laufende System; diese Session erreicht *.workers.dev nicht. GEMERGED IST NICHT AUSGEROLLT — dieser Client darf erst nach dem Worker-PR (private-ops #94) mergen, sonst trifft ein Wallet-Vorgang auf einen Worker, der ihn mit 401 ablehnt (Zustand 5 zeigt genau das). Rollback: v1.0.942.
-     PREV:            2026-09-20  ·  v1.0.942 (ATTRAPPEN STUFE 1 — VIER STELLEN, DIE EINE ZAHL ZEIGTEN, WO KEINE WAR): KEIN HANDELSPFAD BERUEHRT, KEINE NEUE QUELLE ANGESCHLOSSEN, KEINE WORKER-AENDERUNG. Grundlage ist die Attrappen-Tabelle vom 20.09.2026; vier Eintraege, Reihenfolge nach Reichweite. (1) SHARE-KARTE (chartrunner-prototype/assets/cr-share-card.js) — der pnl-Eintrag fuehrte einen vollstaendigen Beispiel-Trade als Vorlagenwert (ENTRY 63,180 / EXIT 64,510 / PEAK +261% / LIQ 51,900 / +247.5% / "3x LEVERAGE"), und render() zeichnete ihn, wann immer der Aufrufer nichts mitgab. Genau so entstand das committete cards/pnl.png, und das ist das og:image jedes geteilten /s/pnl.html-Links: erfundene Handelsergebnisse unter unserem Namen, bei Leuten, die die Seite nie geoeffnet haben. Belegbar kamen die Zahlen IMMER aus der Vorlage — crShare wird nur mit type 'chart' und 'multiplayer' aufgerufen, share.html reicht nur URL-Werte durch. Jetzt: Zahlen nur noch aus opt (value/stats/dstats/tag), sonst Marke, Titel, ein Strich und "no run data". cards/pnl.png neu gerendert; die neun anderen Karten sind unveraendert. Die uebrigen Kartentypen behalten ihre Vorlagenwerte — Stufe 2. (2) whyMove — facts startete auf lauter Nullen, der Tape-Abruf hatte kein else und ein leeres catch; jeder Ausfall sah aus wie "0 on-chain trades · buy $0 vs sell $0" und ging woertlich mit "(already verified, do not invent numbers)" an das Sprachmodell. Jetzt bleibt facts null, solange nichts gemessen wurde: keine Zahlen im Prompt, der Satz "already verified" entfaellt, im Prompt steht ausdruecklich, dass keine Handelsdaten vorliegen, die Flaeche sagt es ("no trade data — <Grund>", COACH-Zeile mit Etikett), und das catch schweigt nicht mehr. (3) SOLANA-CONNECT — sechs fest verdrahtete Betraege ueber dem Signier-Knopf ("~0.0011 SOL rent" u. a.) ohne Quelle; die Komponente simuliert nicht und kennt die Kontogroessen nicht. Die Zahlen entfallen, ein Satz ohne Betrag bleibt: die Wallet nennt ihn vor der Signatur. Echten Wert holen ist Stufe 3. (4) W1 — _crTermArchiveProviderFailure prueft jetzt den Rueckgabewert von _crTermArchivePanePrivateOps. Der steigt fuer onFailure:true sofort mit false aus (v1.0.358, richtig so), wurde aber weggeworfen und trotzdem als Erfolg gemeldet: kein Ausblenden, kein Warnchip, kein Ersetzen des Koerpers, und der fallbackFn lief auch nicht — die Flaeche behielt ihr Vorlagen-Markup, teils unter einem LIVE-Chip. Jetzt wird der Fehlschlag durchgereicht: Chip 'no source' plus ein Satz, der Anbieter und Grund nennt; der Vorlagen-Koerper wird ersetzt, nicht gerendert. GEMESSEN, nicht geschaetzt: das aendert GENAU ZWEI Flaechen, phxFunding und phxOI (beide Drift, beide mit je 5 Vorlagenzeilen im HTML) — nicht zwoelf. Zwoelf Flaechen rufen die Funktion auf, aber nur diese zwei tragen onFailure:true; die uebrigen zehn liefen schon vorher richtig (drei ueber Zweig A 'no source', sieben strukturell privat = ausgeblendet+archiviert). NICHT DAZU: keine echten Quellen angeschlossen, Phone-Terminal, cexDexFlow, die falsch etikettierten Indikatoren und die uebrigen Vorlagen-Koerper bleiben unangetastet (Stufe 2); GoldRush unberuehrt. NICHT GEMESSEN: diese Session erreicht *.workers.dev und chartrunner.xyz nicht — alle Aussagen ueber das laufende System stammen aus dem Quelltext und aus Stub-Laeufen gegen die extrahierte Originalquelle, nicht aus einer Messung am Live-System.
+     CURRENT VERSION: v1.0.944
+     LAST UPDATED:    2026-09-21  ·  v1.0.944 (UI-LESBARKEIT: AUFKLAPP-LISTEN UND BROKER-KARTEN): REINE DARSTELLUNG. KEIN HANDELSPFAD, KEINE TORE, KEINE WEICHE, KEINE ORDER-, ARM- ODER VAULT-LOGIK BERUEHRT; KEINE NEUE DEP, KEINE NEUE FREMDCODE-QUELLE, SINGLE-FILE. BEFUND A, GEMESSEN in Chromium gegen diese Datei (1280x900, Platinum und White): die Asset-Aufklapp-Liste (.os-more-pop, "More ▾" bei ASSET im Run-Dialog) rechnete zu background-color rgba(127,127,127,0.06) und background-image none — also praktisch durchsichtig; der Text der Zeilen ASSET/TOKEN/TIMEFRAME schlug durch, beide Texte unlesbar. URSACHE: ihr Hintergrund stand INLINE im style-Attribut, und die Zeichenkette "border:1px solid var(--line)" darin liess sie in den Licht-Theme-Fang :is(div,details)[style*="border:1px"] (v1.0.680) laufen, der background:var(--cros-surface)!important setzt. Die Platinum-Sonderregel fuer die Liste konnte nicht gegenhalten: sie verlangte body[data-os-theme="platinum"], und Platinum ist das ATTRIBUTLOSE Theme (gemessen: das Attribut war null). KORREKTUR: Hintergrund, Rahmen, Radius und Schatten beider Aufklapp-Listen wohnen jetzt in EINER Klasse .cr-pop-surface — nichts davon mehr im style-Attribut, also kein Treffer mehr im Fang; die Theme-Regeln zeigen auf diese Klasse und gelten damit fuer BEIDE Listen (ASSET und TIMEFRAME), der Platinum-Scope ist um die attributlose Form erweitert. ABWEICHUNG VOM AUFTRAG, GEMESSEN STATT UEBERNOMMEN: die TIMEFRAME-Liste war NICHT durchsichtig — sie trug ihren Hintergrund per CSS-Klasse, nicht inline, und war in allen drei Themes deckend, aber immer im Dunkel-Navy des Dark-Themes, in Platinum und White also themefremd. Sie geht denselben Weg mit, aus dem zweiten Grund. ZWEITE ABWEICHUNG: der Auftrag schreibt START RUN die verdeckten Eintraege zu. Gemessen liegt die Liste bereits ueber dem Knopf (z-index 1000 gegen 22, elementFromPoint am Ueberschnitt traf die Liste) — sichtbar war er nur, WEIL die Liste durchsichtig war. Abgeschnitten wurden Eintraege von etwas anderem: das overflow:auto des Fensterkoerpers endete bei y=341, die Liste reichte bis y=407. Deshalb deckelt die Liste ihre Hoehe jetzt auf den sichtbaren Platz — abzueglich der Zeile, unter der sie haengt, damit die nicht ihrerseits oben herausfaellt (Untergrenze 96 px, sonst bleibt der CSS-Wert 240 px) — und der Fensterkoerper scrollt um genau den Rest nach. BEFUND B, GEMESSEN: im Reiter BROKERS rechnete .crBrokerRow zu rgba(10,15,28,.4) — Dunkel-Navy mit 40 % Deckung auf einem Fenster von #e6e6dc (Platinum) bzw. #ffffff (White), also ein flaechig mittelgraues Feld mit dunklem Text. Die gleichartige .crPingRow in NOTIFICATIONS rechnete daneben zu rgba(127,127,127,.06). URSACHE: die Klassenliste der Licht-Theme-Kartenregel (v1.0.680) fuehrt .crPingRow, aber nicht .crBrokerRow/.crBrokerHead. KORREKTUR: beide stehen jetzt in DERSELBEN Regel — kein zweites Regelwerk, das gleich aussehen soll. Dazu die gleiche Rundung und dieselben Abstaende wie .crPingRow, der Chip "1 connected" und die Routing-Kennzeichnung auf den hellen Akzent (--cros-accent), und die gruene Toenung wird nach der !important-Regel zurueckgeholt. EINE ZUSTANDSKLASSE NEU: bis hier trug nur die GEROUTETE Karte die gruene Toenung, eine verbundene aber nicht geroutete sah aus wie eine nicht verbundene; .crBrokerRow.connected haengt an derselben Auskunft, die die Karte ohnehin schon zeigt ("· paper connected"). Die Speicher cr_broker_v1 / cr_broker_connection_v1, das Verbinden, das Routen und die Bedeutung von "paper connected" sind unveraendert. NICHT GEMESSEN: nichts hiervon beruehrt einen Worker, einen Endpunkt oder den Rooms-Server. Ob es RICHTIG AUSSIEHT, liest Julian im Browser ab — diese Session hat Farben, Deckung und Stapelung gemessen, nicht das Aussehen beurteilt. Rollback: v1.0.943.
+     PREV:            2026-09-20  ·  v1.0.943 (PRO-ZAHLWEG: KONTO ODER WALLET — WALLET = KONTO): KEIN HANDELSPFAD BERUEHRT, KEINE NEUE QUELLE, KEINE NEUE DEP, KEIN CDN, KEIN NEUER DIALOG. AUSGANGSLAGE: der SOL-Dialog sagte "Sign in first", WAEHREND DIE WALLET DES NUTZERS OBEN RECHTS STAND — und sie ist es, die signiert und bezahlt. Entscheidung vom 20.09.2026: fuer den Pro-Kauf gilt Wallet = Konto. DER DIALOG (_crCryptoPayOpen): neue Identitaetsstufe _identity() — Konto ODER verbundene Wallet (crWallet.isConnected() VOR get(), dieselbe Prueffolge wie im Rest der Datei; eine Adresse aus einer nicht verbundenen Wallet ist keine Identitaet). IST EIN KONTO DA, FUEHRT DAS KONTO und die Wallet faehrt nur als Zahler mit — andersherum bekaeme ein Angemeldeter sein Pro an die Wallet und saehe es auf einem anderen Geraet nicht wieder. Der Bearer wird NUR gesetzt, wenn es einen gibt: ein leerer Bearer waere ein vorhandener, ungueltiger Header, und der Worker lehnt so etwas ab statt still auf die Wallet auszuweichen. TEXT: pay.sol.needSignin → pay.sol.needIdentity ("A connected wallet is enough — no account needed"); der zweite Satz bleibt, weil er der Kern ist: ohne BEIDES gaebe es niemanden, dem eine Zahlung gutgeschrieben werden koennte, deshalb wird keine angeboten. Zwei Knoepfe statt einem (Connect wallet / Sign in), beide auf vorhandene Wege (crWallet.connect, crAccount.open). NEUER ZUSTAND 5 statt einer Erfindung: ein 401 auf einen WALLET-Vorgang wird als "der Server kennt diese Wallet-Identitaet noch nicht" gezeigt und nicht als "keine Zahlungsdetails" — bei einem KONTO-Vorgang bleibt 401 der normale Fehlerfall, dort waere dieselbe Meldung eine Erfindung. crTier: refresh() liest jetzt ?wallet= wenn kein Token da ist — bis hierher war "kein Konto = FREE", auch fuer jemanden, der mit genau dieser Wallet Pro GEKAUFT hat; ein 502 (Worker laesst `tier` weg statt FREE zu sagen) laesst den Stand ABSICHTLICH unveraendert. pricing.html: derselbe Text, dazu eine bereits vertraute Browser-Wallet als Identitaet (connect({onlyIfTrusted:true}) — kein Prompt, kein Adapter, keine neue Quelle; dieselbe Origin wie /play, also gilt dort Vertrautes auch hier). WAS NICHT GEBAUT WURDE UND WARUM: die Verknuepfungs-Zeremonie (Ed25519, HMAC-Nonce, 409 fuer eine schon vergebene Wallet) bleibt im Ownership-Worker, wo sie vollstaendig IST — eine zweite Fassung waere die naechste Stelle, an der zwei Auslegungen derselben Regel auseinanderlaufen. TESTS: scripts/check_v943_pay_identity_browser.cjs (echtes Chromium, beide Oberflaechen, gemessen am DOM UND an der rausgehenden Anfrage); Gegenproben GEMESSEN, siehe Dateikopf. NICHT GEMESSEN: das laufende System; diese Session erreicht *.workers.dev nicht. GEMERGED IST NICHT AUSGEROLLT — dieser Client darf erst nach dem Worker-PR (private-ops #94) mergen, sonst trifft ein Wallet-Vorgang auf einen Worker, der ihn mit 401 ablehnt (Zustand 5 zeigt genau das). Rollback: v1.0.942.
+     PREV  ·  v1.0.942 (ATTRAPPEN STUFE 1 — VIER STELLEN, DIE EINE ZAHL ZEIGTEN, WO KEINE WAR): KEIN HANDELSPFAD BERUEHRT, KEINE NEUE QUELLE ANGESCHLOSSEN, KEINE WORKER-AENDERUNG. Grundlage ist die Attrappen-Tabelle vom 20.09.2026; vier Eintraege, Reihenfolge nach Reichweite. (1) SHARE-KARTE (chartrunner-prototype/assets/cr-share-card.js) — der pnl-Eintrag fuehrte einen vollstaendigen Beispiel-Trade als Vorlagenwert (ENTRY 63,180 / EXIT 64,510 / PEAK +261% / LIQ 51,900 / +247.5% / "3x LEVERAGE"), und render() zeichnete ihn, wann immer der Aufrufer nichts mitgab. Genau so entstand das committete cards/pnl.png, und das ist das og:image jedes geteilten /s/pnl.html-Links: erfundene Handelsergebnisse unter unserem Namen, bei Leuten, die die Seite nie geoeffnet haben. Belegbar kamen die Zahlen IMMER aus der Vorlage — crShare wird nur mit type 'chart' und 'multiplayer' aufgerufen, share.html reicht nur URL-Werte durch. Jetzt: Zahlen nur noch aus opt (value/stats/dstats/tag), sonst Marke, Titel, ein Strich und "no run data". cards/pnl.png neu gerendert; die neun anderen Karten sind unveraendert. Die uebrigen Kartentypen behalten ihre Vorlagenwerte — Stufe 2. (2) whyMove — facts startete auf lauter Nullen, der Tape-Abruf hatte kein else und ein leeres catch; jeder Ausfall sah aus wie "0 on-chain trades · buy $0 vs sell $0" und ging woertlich mit "(already verified, do not invent numbers)" an das Sprachmodell. Jetzt bleibt facts null, solange nichts gemessen wurde: keine Zahlen im Prompt, der Satz "already verified" entfaellt, im Prompt steht ausdruecklich, dass keine Handelsdaten vorliegen, die Flaeche sagt es ("no trade data — <Grund>", COACH-Zeile mit Etikett), und das catch schweigt nicht mehr. (3) SOLANA-CONNECT — sechs fest verdrahtete Betraege ueber dem Signier-Knopf ("~0.0011 SOL rent" u. a.) ohne Quelle; die Komponente simuliert nicht und kennt die Kontogroessen nicht. Die Zahlen entfallen, ein Satz ohne Betrag bleibt: die Wallet nennt ihn vor der Signatur. Echten Wert holen ist Stufe 3. (4) W1 — _crTermArchiveProviderFailure prueft jetzt den Rueckgabewert von _crTermArchivePanePrivateOps. Der steigt fuer onFailure:true sofort mit false aus (v1.0.358, richtig so), wurde aber weggeworfen und trotzdem als Erfolg gemeldet: kein Ausblenden, kein Warnchip, kein Ersetzen des Koerpers, und der fallbackFn lief auch nicht — die Flaeche behielt ihr Vorlagen-Markup, teils unter einem LIVE-Chip. Jetzt wird der Fehlschlag durchgereicht: Chip 'no source' plus ein Satz, der Anbieter und Grund nennt; der Vorlagen-Koerper wird ersetzt, nicht gerendert. GEMESSEN, nicht geschaetzt: das aendert GENAU ZWEI Flaechen, phxFunding und phxOI (beide Drift, beide mit je 5 Vorlagenzeilen im HTML) — nicht zwoelf. Zwoelf Flaechen rufen die Funktion auf, aber nur diese zwei tragen onFailure:true; die uebrigen zehn liefen schon vorher richtig (drei ueber Zweig A 'no source', sieben strukturell privat = ausgeblendet+archiviert). NICHT DAZU: keine echten Quellen angeschlossen, Phone-Terminal, cexDexFlow, die falsch etikettierten Indikatoren und die uebrigen Vorlagen-Koerper bleiben unangetastet (Stufe 2); GoldRush unberuehrt. NICHT GEMESSEN: diese Session erreicht *.workers.dev und chartrunner.xyz nicht — alle Aussagen ueber das laufende System stammen aus dem Quelltext und aus Stub-Laeufen gegen die extrahierte Originalquelle, nicht aus einer Messung am Live-System.
      PREV  ·  v1.0.941 (BIRDEYE-RESTBESTAND — NICHTS LAEUFT MEHR STILL LEER): KEIN ERSATZ, KEIN NEUER ANBIETER, KEIN HANDELSPFAD BERUEHRT. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad und die ARM-Speicher sind unveraendert. BEFUND: die Birdeye-Aufrufe im Client liefen ohne persoenlichen Schluessel ueber den /v1/birdeye-Proxy des Geld-Workers; dessen Birdeye-Haelfte ist entfernt. crBirdeye.hasKey() sagt seit v690 pauschal ja, also glaubten die Flaechen weiter an eine Quelle, die nicht mehr antwortet. Die meisten Flaechen sind laengst anders versorgt (Preis/Kerzen: eigener ohlc-store + CoinGecko; Sicherheits-Verdikt im Token-Fenster: eigener /v1/token/safety seit v890; Logo: Jupiter/CoinGecko; Whales/Tape/Pressure: eigener Store). GEAENDERT wurde nur dort, wo eine Flaeche STILL leer lief: (a) TERMINAL — solPrice, solTopTokens und solTrending trugen erfundene Koerper ($184,27 / SOL,JUP,BONK… / POPCAT…) und verschwanden nach dem fehlgeschlagenen Abruf per display:none. Die Schein-Koerper sind raus, und _crTermArchiveProviderFailure blendet Live-Daten-Flaechen nicht mehr aus, sondern schreibt 'no source' plus einen Satz hinein. Der Ausblend-Weg bleibt unveraendert fuer die strukturell privaten Flaechen (on-chain, pump.fun, eigener RPC). (b) TOKEN-FENSTER — Marktkapitalisierung, FDV und 24h-Volumen standen als einzige drei Felder des Gitters IMMER als Zahl da, notfalls aus gesaetem Zufall (rng()*80e9 bzw. mc*(1+rng()*0.4) bzw. rng()*800e6); Liquiditaet, Holders und Top-10 daneben zeigen seit v814 einen Strich. Jetzt zeigen alle sechs einen Strich, wenn keine Quelle geantwortet hat. Dafuer decken mcLive/fdvLive/volLive jetzt auch die DexScreener-Stufe (_meta.mcDex/fdvDex, _mDex.volDex, seit v832 echt) ab — sonst haette der ehrliche Zustand echte Daten versteckt. (c) Der Gesamt-Score isst Marktkapitalisierung, Volumen und Liquiditaet; fehlt eine davon, sagt er 'teilweise geschaetzt' dazu, statt ein MOND/MEIDEN auszugeben, das aussieht wie gemessen. (d) ALARME — eine Sicherheits-Regel bekam ohne Verdikt gar nichts und stand dauerhaft auf '— noch nicht geprueft'; sie sagt jetzt 'Sicherheitspruefung nicht verfuegbar' in Bernstein. Gefeuert wird NICHT: ein fehlendes Verdikt ist kein Befund und kein SAFE. (e) WORKER alerts-cron — bdVerdict() lief ohne die BIRDEYE_API_KEY-Bedingung, die der Preis-Zweig hat; die Sicherheits-Alarmmail feuerte seit unbekannter Zeit nie. Jetzt traegt die Zeile last_value = 'Sicherheitspruefung nicht moeglich' und der Besitzer bekommt GENAU EINE Mail je Ausfall-Episode (Erinnerung = last_value selbst, keine neue Spalte). Die Wallet-Watch-Mails ueber GoldRush sind unberuehrt. NICHT DAZU: kein Ersatz fuer Birdeye, kein Herauslosen der toten Aufrufe (BACKLOG 28), keine Aenderung am Geld-Worker. NICHT GEMESSEN: diese Session erreicht *.workers.dev nicht — alle Aussagen ueber das laufende System stammen aus dem Quelltext, nicht aus einer Messung.
      PREV  ·  v1.0.940 (PYTH/HERMES RAUS — AUFRAEUMEN, KEINE FUNKTION): KEIN HANDELSPFAD, KEINE TORE, KEIN WORKER-ANTEIL. Die vier Tore (armedGlobal ∧ source.armed ∧ badgeGate ∧ walletCanSign), Spion, Weiche, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die ARM-Speicher sind unveraendert. ENTFERNT: TOK_PYTH_FEED, _crHermesBase(), HERMES_LATEST_URL, _tokFetchPyth(), _tokPythPx(), die Snapshot-Felder hasPyth/pythPx und das PYTH-✓-Abzeichen im Token-Widget — also die gesamte Kursquelle Pyth/Hermes samt dem Proxy chartrunner.xyz/hermes/*, dessen Worker mit diesem PR stillgelegt wird. FOLGE FUER DEN SCHIRM: der Kopfpreis eines Tokens kommt jetzt aus derselben Kette wie bisher schon der Rest (Binance › #lastPx › DexScreener › eigener Worker); der Preis wird dadurch nicht schlechter, denn die Pyth-Stufe stand seit v1.0.755 ohnehin nur bei gesetztem HERMES_API_KEY, und der war nie gesetzt — der Proxy antwortete 503 hermes_key_unset. Das Wort PYTH bleibt an den Stellen stehen, an denen es den TOKEN meint (Watchlist-Id, PYTHUSDT, Asset-Liste) — ein handelbares Papier ist keine Kursquelle. Die Persona Hermes im Agenten-Panel ist ein anderer Hermes und unberuehrt. BIRDEYE und GOLDRUSH sind in dieser Version NICHT angefasst.
      PREV  ·  v1.0.939 (BOOST-CHECKOUT: DER CLIENT FRAGT DEN SERVER, STATT UEBER IHN ZU BEHAUPTEN — reine Client-Aenderung): KEIN HANDELSPFAD, KEINE TORE, KEINE DATENQUELLE. Die vier Tore, Market-/Limit-Pfad, crVaultLimit, crOnchainLimit und die ARM-Speicher sind unveraendert; single-file, keine neue Dep, keine neue Fremdcode-Quelle. BEFUND: die Sperrmeldung im Boost-Dialog war KEIN Schalter. paintUnavailable() ist der else-/catch-Zweig von startIntent() und erschien bei JEDEM Fehlschlag von POST /v1/boost/intent — und nannte dabei eine Ursache ("serverseitig noch nicht freigeschaltet"), die der Client nie geprueft hatte. Gemessen am ausgerollten Worker-Bundle: /v1/boost/intent, /v1/boost/status und /v1/boosts SIND enthalten; der Worker lehnte einen Boost-Kauf nie ab. Der Satz war eine Behauptung ueber den Server, gemacht vom Client. (1) DER CLIENT FRAGT: crBoostHealth() liest GET /health (Worker-PR #90) — features.boost_checkout.ok/reason/tiers/unavailable, 60 s gecacht, geteilt zwischen Tafel und Dialog. (2) VIER SICHTBARE ZUSTAENDE statt eines festen Satzes: pruefend · erreichbar+bereit (Knoepfe) · erreichbar+nicht bereit (Grund VOM SERVER, keine Knoepfe) · nicht erreichbar (sagt ausdruecklich, dass das KEINE Aussage ueber die Freischaltung ist, keine Knoepfe). Nur der zweite Zustand bietet eine Zahlung an. Lehnt der Worker mit 503 ab, wird sein `reason` GELESEN und angezeigt; bis v938 warf `r.ok ? r.json() : null` ihn weg. (3) DIE PREISE WERDEN GELESEN, NICHT DUPLIZIERT. Preis und Laufzeit je Stufe stammen ab hier aus /health; crEntitlement.boosts() liefert nur noch das Label. Der Worker kann Preise ohne Deploy aendern — eine Client-Kopie waere die naechste Stelle, an der etwas auseinanderlaeuft. Eine vom Server nicht verkaufte Stufe wird BENANNT (mit Grund), nicht verschwiegen. (4) KEIN $RUN-PREIS NEBEN EINEM KAUFKNOPF. "≈ $42 in $RUN" und "$RUN saves 15%" sind raus, in allen vier Sprachen — der Token existiert nicht. (5) DIE REFERENZ STEHT SICHTBAR DA (mit Kopierknopf). Sie ist das Einzige, was die on-chain-Zahlung dem Mint und der Stufe zuordnet; bis v938 war sie nur im solana:-Link versteckt. NICHT GEAENDERT: Worker, Verifizierer, Pro-Weg, enforcePro, Stufen-IDs, Hot-Liste. GEGENPROBE: scripts/check_v939_boost_health_browser.cjs (im echten Chromium, am DOM gemessen), jede Mutation einzeln ROT/GRUEN. Vorbedingung: der Worker-PR muss AUSGEROLLT sein — GET /health am Geld-Worker muss antworten, sonst zeigt diese Version durchgehend den Zustand "nicht erreichbar" und bietet keine Zahlung an (fail-closed, und das ist richtig so).
@@ -961,16 +962,29 @@ window.crShare = function (o) {
      #win-configs-scoped .cfg-wheel* overrides further down were ALREADY dead
      before this change (the wheel moved out of Configure Run in v1.0.359), so
      leaving them is not a new regression. */
+  /* v1.0.944 — dieselbe Flaeche wie die Karten darunter und wie .crPingRow
+     (war .5 gegen .4 — ein Unterschied ohne Grund). */
   .crBrokerHead{display:flex;align-items:center;gap:12px;padding:10px 12px;
-    border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.5)}
+    border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.4)}
   .crBrokerHeadK{font-size:9px;letter-spacing:.8px;text-transform:uppercase;color:var(--dim)}
   .crBrokerHeadV{font-size:13px;font-weight:700;color:var(--fg);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .crBrokerBadge{flex:none;font:700 10px ui-monospace,Menlo,monospace;padding:4px 9px;border-radius:999px;
     background:rgba(61,220,151,.12);color:#3ddc97;border:1px solid rgba(61,220,151,.3);white-space:nowrap}
   .crBrokerSec{margin:14px 0 8px;font:700 10px ui-monospace,Menlo,monospace;letter-spacing:1.1px;
     text-transform:uppercase;color:var(--dim)}
-  .crBrokerRow{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:6px;
-    border:1px solid var(--line);border-radius:8px;background:rgba(10,15,28,.4)}
+  /* v1.0.944 — Geometrie der Broker-Karten auf die Ping-Class-Zeilen aus
+     Settings → NOTIFICATIONS gezogen (.crPingRow: padding 10px 12px,
+     border-radius 10px). Gleiche Rundung, gleiche Abstaende — dieselbe
+     Karte, nur mit anderem Inhalt. */
+  .crBrokerRow{display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:6px;
+    border:1px solid var(--line);border-radius:10px;background:rgba(10,15,28,.4)}
+  /* v1.0.944 — VERBUNDEN ist jetzt sichtbar, nicht nur ROUTED. Bis hier trug
+     ausschliesslich die geroutete Karte die gruene Toenung; eine verbundene,
+     aber nicht geroutete Karte sah aus wie eine nicht verbundene. Die
+     Verbindungslogik und die Speicher (cr_broker_connection_v1 / cr_broker_v1)
+     sind unberuehrt — hier haengt nur eine Klasse an derselben Auskunft, die
+     die Karte ohnehin schon anzeigt ("· paper connected"). */
+  .crBrokerRow.connected{border-color:rgba(61,220,151,.3);background:rgba(61,220,151,.045)}
   .crBrokerRow.routed{border-color:rgba(61,220,151,.45);background:rgba(61,220,151,.06)}
   .crBrokerRow .nm{font-size:12.5px;font-weight:700;color:var(--fg)}
   .crBrokerRow .sub{font-size:10px;color:var(--dim);margin-top:2px}
@@ -1460,22 +1474,43 @@ window.crShare = function (o) {
   .asset-box button{border:0;background:transparent;color:var(--dim);padding:6px 9px;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.4px;pointer-events:auto}
   .asset-box button.on{background:#121a30;color:var(--fg)}
   .asset-box button:hover{color:var(--fg)}
-  /* v0.8k#24bs — Themed dropdown popup for asset "More" picker. Default
-     (dark navy) palette is set inline in JS; theme overrides repaint the
-     popup so it matches Platinum / Solana / ASCII desktop themes. */
-  body[data-os-theme="platinum"] .os-more-pop{
+  /* v0.8k#24bs — Themed dropdown popup for asset "More" picker.
+     v1.0.944 — DER HINTERGRUND STAND BIS HIER INLINE IM style-ATTRIBUT, und
+     genau daran ist er in den hellen Themes gestorben: die Zeichenkette
+     "border:1px solid var(--line)" im Attribut liess die Liste in den
+     Licht-Theme-Fang `:is(div,details)[style*="border:1px"]` (v1.0.680)
+     laufen, der ihr `background:var(--cros-surface)!important` verpasst —
+     6 % Grau, also praktisch durchsichtig. GEMESSEN in Chromium gegen diese
+     Datei: `.os-more-pop` rechnete in Platinum UND in White zu
+     background-color rgba(127,127,127,0.06) / background-image none. Der
+     Text der Zeilen darunter schlug durch, beide Texte unlesbar.
+     Der Hintergrund wohnt jetzt in EINER Klasse, `.cr-pop-surface`, die
+     BEIDE Aufklapp-Listen tragen (Asset "More ▾" und Timeframe "More ▾") —
+     ein Baustein statt zweier Kopien, und nichts davon mehr im
+     style-Attribut, also kein Treffer mehr im Fang.
+     Die Theme-Regeln darunter zeigen deshalb auf `.cr-pop-surface` statt auf
+     `.os-more-pop`: sie gelten damit fuer beide Listen. */
+  .cr-pop-surface{
+    background:linear-gradient(180deg,rgba(18,26,48,.98),rgba(10,15,28,.99));
+    border:1px solid var(--line);border-radius:8px;
+    box-shadow:0 12px 28px rgba(0,0,0,.5);color:var(--fg)}
+  /* Platinum ist das ATTRIBUTLOSE Theme (applyTheme entfernt data-os-theme,
+     v1.0.351/v1.0.538) — die alte Fassung dieser Regel verlangte das Attribut
+     und hat deshalb LIVE nie gegriffen. Gemessen: body[data-os-theme] war in
+     Platinum null. Also derselbe Dreier-Scope wie in v1.0.680. */
+  :is(body[data-os-theme="platinum"],.splash[data-theme="platinum"],.splash:not([data-theme])) .cr-pop-surface{
     background:linear-gradient(180deg,#f4f3ec,#dcdcd2)!important;
     border:1px solid #6a6a62!important;border-radius:0!important;
     box-shadow:2px 3px 0 rgba(0,0,0,.3),inset 1px 1px 0 #fff!important;
     color:#1a1a18!important;font-family:Geneva,Verdana,sans-serif!important}
-  body[data-os-theme="platinum"] .os-more-pop button{
+  :is(body[data-os-theme="platinum"],.splash[data-theme="platinum"],.splash:not([data-theme])) .cr-pop-surface button{
     color:#1a1a18!important;border-radius:0!important}
-  body[data-os-theme="ascii"] .os-more-pop{
+  body[data-os-theme="ascii"] .cr-pop-surface{
     background:#000!important;border:1px solid #33ff66!important;
     border-radius:0!important;color:#33ff66!important;
     font-family:Monaco,"Andale Mono",ui-monospace,monospace!important;
     box-shadow:0 0 0 1px rgba(51,255,102,.15),0 8px 22px rgba(0,0,0,.6)!important}
-  body[data-os-theme="ascii"] .os-more-pop button{
+  body[data-os-theme="ascii"] .cr-pop-surface button{
     color:#33ff66!important;border-radius:0!important}
 
   .hint{position:absolute;top:auto;left:auto;right:14px;bottom:14px;color:var(--dim);font-size:11px;z-index:3;text-align:right;line-height:1.55;pointer-events:none}
@@ -5051,12 +5086,12 @@ window.crShare = function (o) {
     background:rgba(0,0,0,.06)}
   body[data-os-theme="frontier"] .player-slot-pop button.active{
     background:var(--fr-dark);color:#fff}
-  body[data-os-theme="frontier"] .os-more-pop{
+  body[data-os-theme="frontier"] .cr-pop-surface{
     background:#fdfaf3;color:var(--fr-fg);border:1px solid var(--fr-line);
     box-shadow:0 12px 32px rgba(60,40,20,.18)}
-  body[data-os-theme="frontier"] .os-more-pop button{
+  body[data-os-theme="frontier"] .cr-pop-surface button{
     color:var(--fr-fg);background:transparent}
-  body[data-os-theme="frontier"] .os-more-pop button:hover{
+  body[data-os-theme="frontier"] .cr-pop-surface button:hover{
     background:rgba(0,0,0,.06)}
   /* Coach tutorial card — light card with metallic edge, dark text */
   body[data-os-theme="frontier"] .cr-tut .cr-tut-card{
@@ -5481,26 +5516,26 @@ window.crShare = function (o) {
   body[data-os-theme="mono"] .crChrome.right .rCoachLine{
     background:var(--ct-panel-2);border:1px solid var(--ct-line);color:var(--ct-ink);border-radius:var(--ct-radius)}
   body[data-os-theme="bw"] .crTvSymMenu,
-  body[data-os-theme="bw"] .os-more-pop,
+  body[data-os-theme="bw"] .cr-pop-surface,
   body[data-os-theme="bw"] .player-slot-pop,
   body[data-os-theme="bw"] #crLightProfile,
   body[data-os-theme="mono"] .crTvSymMenu,
-  body[data-os-theme="mono"] .os-more-pop,
+  body[data-os-theme="mono"] .cr-pop-surface,
   body[data-os-theme="mono"] .player-slot-pop,
   body[data-os-theme="mono"] #crLightProfile{
     background:var(--ct-panel);color:var(--ct-ink);border:1px solid var(--ct-line);
     box-shadow:var(--ct-shadow);font-family:var(--ct-font)}
   body[data-os-theme="bw"] .crTvSymMenu .row,
-  body[data-os-theme="bw"] .os-more-pop button,
+  body[data-os-theme="bw"] .cr-pop-surface button,
   body[data-os-theme="bw"] .player-slot-pop button,
   body[data-os-theme="mono"] .crTvSymMenu .row,
-  body[data-os-theme="mono"] .os-more-pop button,
+  body[data-os-theme="mono"] .cr-pop-surface button,
   body[data-os-theme="mono"] .player-slot-pop button{color:var(--ct-ink)}
   body[data-os-theme="bw"] .crTvSymMenu .row:hover,
-  body[data-os-theme="bw"] .os-more-pop button:hover,
+  body[data-os-theme="bw"] .cr-pop-surface button:hover,
   body[data-os-theme="bw"] .player-slot-pop button:hover,
   body[data-os-theme="mono"] .crTvSymMenu .row:hover,
-  body[data-os-theme="mono"] .os-more-pop button:hover,
+  body[data-os-theme="mono"] .cr-pop-surface button:hover,
   body[data-os-theme="mono"] .player-slot-pop button:hover{
     background:var(--ct-active);color:var(--ct-active-ink)}
   body[data-os-theme="bw"] .player-slot-pop button.active,
@@ -9066,12 +9101,15 @@ window.crShare = function (o) {
      window into horizontal-scroll. Float the popup absolutely under the track
      instead (track gets position:relative) so it overlays without resizing. */
   #win-configs .tfbox{ position:relative !important; }
+  /* v1.0.944 — Hintergrund, Rahmen, Radius und Schatten stehen NICHT mehr hier,
+     sondern in `.cr-pop-surface` (siehe dort): derselbe Baustein wie die
+     Asset-Liste, damit beide Aufklapp-Listen in jedem Theme gleich aussehen.
+     Diese Regel ist spezifischer als eine Klasse — stuenden die Farben hier
+     weiter drin, haetten sie den gemeinsamen Baustein ueberstimmt. */
   #win-configs .tfbox .cfg-tf-pop{
     position:absolute !important; top:calc(100% + 6px); left:0; z-index:1000;   /* v1.0.816 — was 60; sit above the START RUN button + sibling rows on mobile */
     display:flex; flex-wrap:wrap; gap:6px; width:max-content; max-width:240px;
-    padding:6px; border:1px solid var(--line); border-radius:8px;
-    background:linear-gradient(180deg,rgba(18,26,48,.98),rgba(10,15,28,.99));
-    box-shadow:0 12px 28px rgba(0,0,0,.5);
+    padding:6px;
   }
   @media (max-width:560px){ #win-configs .cfg-row{ grid-template-columns:1fr !important; } }
   #win-configs .cfg-line{
@@ -72537,7 +72575,7 @@ function osRenderTfBox(){
     e.stopPropagation();
     const existing = box.querySelector('.cfg-tf-pop');
     if(existing){ existing.remove(); return; }
-    const pop = document.createElement('div'); pop.className = 'cfg-tf-pop';
+    const pop = document.createElement('div'); pop.className = 'cfg-tf-pop cr-pop-surface';   // v1.0.944 — gemeinsamer Overlay-Baustein
     rest.forEach(tf => {
       const r = document.createElement('button'); r.type = 'button'; r.dataset.tf = tf; r.textContent = _CFG_TF_LABEL[tf] || tf;
       if(tf === cur) r.classList.add('on');
@@ -72678,7 +72716,9 @@ function osRenderTfBox(){
         const routed = !!(route && route.type === fam && route.name === name);
         const sub = fam.toUpperCase() + (connected ? (rec.mode === 'wallet' ? _bT('brk.sub.wallet',' · wallet authorized') : rec.mode === 'apikey' ? _bT('brk.sub.apikey',' · API key saved') : _bT('brk.sub.paper',' · paper connected')) : '');
         const row = document.createElement('div');
-        row.className = 'crBrokerRow' + (routed ? ' routed' : '');
+        // v1.0.944 — 'connected' fuer die gruene Toenung einer verbundenen Karte,
+        // 'routed' wie bisher fuer die eine Karte, die tatsaechlich routet.
+        row.className = 'crBrokerRow' + (connected ? ' connected' : '') + (routed ? ' routed' : '');
         row.innerHTML = '<div style="flex:1;min-width:0"><div class="nm">' + esc(name) + '</div><div class="sub">' + esc(sub) + '</div></div>';
         if(routed){
           const pill = document.createElement('span'); pill.className = 'crBrokerRoutePill'; pill.textContent = _bT('brk.routing','● Routing');
@@ -87953,10 +87993,14 @@ function osRenderAssetBox(hostId){
     e.stopPropagation();
     if(pop){ closePop(); return; }
     pop = document.createElement('div');
-    pop.className = 'os-more-pop';
+    pop.className = 'os-more-pop cr-pop-surface';   // v1.0.944 — gemeinsamer Overlay-Baustein (Hintergrund/Rahmen/Schatten kommen aus der Klasse, nicht mehr inline)
     // v1.0.402 — float the picker absolutely under the asset row so it overlays
     // instead of widening the segmented track / pushing the window into h-scroll.
-    pop.style.cssText = 'position:absolute;top:100%;left:0;width:100%;box-sizing:border-box;z-index:1000;margin-top:6px;background:linear-gradient(180deg,rgba(18,26,48,.98),rgba(10,15,28,.99));border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 28px rgba(0,0,0,0.5);padding:6px;font:11px ui-monospace,Menlo,monospace;color:var(--fg)';
+    // v1.0.944 — KEIN background/border/box-shadow/color mehr im style-Attribut:
+    // die Zeichenkette "border:1px" darin liess die Liste in den Licht-Theme-Fang
+    // `:is(div,details)[style*="border:1px"]` laufen und machte sie durchsichtig.
+    // Lage + Stapelung bleiben inline, die Flaeche kommt aus `.cr-pop-surface`.
+    pop.style.cssText = 'position:absolute;top:100%;left:0;width:100%;box-sizing:border-box;z-index:1000;margin-top:6px;padding:6px;font:11px ui-monospace,Menlo,monospace';
     const search = document.createElement('input');
     search.type = 'text'; search.placeholder = 'Search any token…';
     search.style.cssText = 'width:100%;box-sizing:border-box;background:rgba(10,15,28,.85);border:1px solid var(--line);border-radius:6px;color:var(--fg);font:inherit;padding:6px 8px;margin-bottom:6px;outline:none';
@@ -88053,6 +88097,36 @@ function osRenderAssetBox(hostId){
     }).catch(() => { if(loadingRow.parentNode) loadingRow.textContent = '⚠ market-cap list unavailable (offline) — search still works'; });
     // inline, in normal flow, inside the relayed window → clicks register
     host.parentNode.insertBefore(pop, host.nextSibling);
+    // v1.0.944 — DIE LISTE SCROLLT IN SICH, STATT UNTEN AUS DEM FENSTER ZU LAUFEN.
+    // Gemessen am Stand v1.0.943 (Chromium, 1280x900, alle drei Themes gleich):
+    // das Popup war 207 px hoch und begann bei y=200, der scrollende
+    // Fensterkoerper (.os-wbody, overflow:auto) endete bei y=341 — die letzten
+    // 66 px lagen hinter der Fensterkante und waren von aussen unerreichbar.
+    // Deshalb zwei Schritte, beide rein darstellend:
+    //  (1) die Listenhoehe wird auf das gedeckelt, was UEBERHAUPT in den
+    //      sichtbaren Fensterkoerper passt (dessen clientHeight, nicht der Rest
+    //      unterhalb der Zeile) — der CSS-Wert 240 px bleibt die Obergrenze,
+    //      96 px die Untergrenze, darunter wird gar nicht erst gedeckelt;
+    //      Abgezogen wird dabei auch die Hoehe der Zeile, unter der die Liste
+    //      haengt — sonst fuellt die Liste den Koerper so vollstaendig, dass
+    //      nach dem Nachscrollen die ASSET-Zeile selbst oben herausfaellt und
+    //      man nicht mehr sieht, welches Feld man gerade bearbeitet;
+    //  (2) reicht das Popup danach IMMER NOCH ueber die Unterkante, scrollt der
+    //      Fensterkoerper um genau diesen Rest nach — kein scrollIntoView, das
+    //      mehr bewegt als noetig.
+    // Kein Eintrag, keine Auswahl und kein Klick aendern sich dadurch.
+    try {
+      var _sc = pop.parentElement;
+      while(_sc && _sc !== document.body && !/(auto|scroll)/.test(getComputedStyle(_sc).overflowY)) _sc = _sc.parentElement;
+      if(_sc && _sc !== document.body){
+        var _chrome = pop.getBoundingClientRect().height - list.getBoundingClientRect().height;   // Suchfeld + Innenabstand
+        var _anchor = pop.parentElement.getBoundingClientRect().height;                            // die Zeile, unter der sie haengt
+        var _fits = Math.round(_sc.clientHeight - _chrome - _anchor - 14);
+        if(_fits >= 96 && _fits < 240) list.style.maxHeight = _fits + 'px';
+        var _over = Math.round(pop.getBoundingClientRect().bottom - _sc.getBoundingClientRect().bottom + 8);
+        if(_over > 0) _sc.scrollTop += _over;
+      }
+    } catch(_){}
     setTimeout(() => { document.addEventListener('mousedown', onOutside, true); try { search.focus(); } catch(_){} }, 0);
   });
   host.appendChild(moreBtn);
@@ -115839,12 +115913,35 @@ body.cr-guest #crRoomsInline{display:none!important}
    matched live -- .splash:not([data-theme]) added to every scope above.
    Plus: class-styled dark panels the inline-border catch missed (Settings
    ping rows, phone cards, API rows) join the light-gray field treatment. */
-:is(body[data-os-theme="platinum"],body[data-os-theme="bw"],.splash[data-theme="platinum"],.splash[data-theme="bw"],.splash:not([data-theme])) :is(.os-wbody,.crTerm) :is(.crPingRow,.m-card,.api-row,.cr-list .row){
+:is(body[data-os-theme="platinum"],body[data-os-theme="bw"],.splash[data-theme="platinum"],.splash[data-theme="bw"],.splash:not([data-theme])) :is(.os-wbody,.crTerm) :is(.crPingRow,.crBrokerRow,.crBrokerHead,.m-card,.api-row,.cr-list .row){
   background:var(--cros-surface,rgba(127,127,127,.06)) !important;
   border-color:var(--cros-line,rgba(127,127,127,.30)) !important;
   color:var(--cros-ink,#16181b) !important;box-shadow:none !important}
-:is(body[data-os-theme="platinum"],body[data-os-theme="bw"],.splash[data-theme="platinum"],.splash[data-theme="bw"],.splash:not([data-theme])) :is(.os-wbody,.crTerm) :is(.crPingRow,.m-card,.api-row) :is(.ds,.sub,.k,.desc){
+:is(body[data-os-theme="platinum"],body[data-os-theme="bw"],.splash[data-theme="platinum"],.splash[data-theme="bw"],.splash:not([data-theme])) :is(.os-wbody,.crTerm) :is(.crPingRow,.crBrokerRow,.crBrokerHead,.m-card,.api-row) :is(.ds,.sub,.k,.desc,.crBrokerHeadK){
   color:#5b6068 !important}
+/* v1.0.944 — BROKER-KARTEN SEHEN AUS WIE DIE ZEILEN IN NOTIFICATIONS.
+   BEFUND, GEMESSEN in Chromium gegen diese Datei (Platinum und White):
+   `.crBrokerRow` rechnete zu background rgba(10,15,28,.4) — dunkles Navy mit
+   40 % Deckung auf einem Fenster von #e6e6dc bzw. #ffffff, also ein flaechig
+   mittelgraues Feld mit dunklem Text. `.crPingRow` im Reiter NOTIFICATIONS
+   rechnete danebenliegend zu rgba(127,127,127,.06) — heller Grund, feine
+   Kontur. URSACHE: die Klassenliste eine Zeile weiter oben (v1.0.680) fuehrte
+   `.crPingRow`, aber nicht `.crBrokerRow`/`.crBrokerHead`. Sie stehen jetzt
+   drin — dieselbe Regel, kein zweites Regelwerk, das gleich aussehen soll.
+   Die gruene Toenung der verbundenen bzw. gerouteten Karte muss danach
+   zurueckgeholt werden: die Regel oben traegt !important, und ohne die
+   folgenden zwei Zeilen waere Binance so neutral wie alle anderen. */
+:is(body[data-os-theme="platinum"],body[data-os-theme="bw"],.splash[data-theme="platinum"],.splash[data-theme="bw"],.splash:not([data-theme])) :is(.os-wbody,.crTerm) .crBrokerRow.connected{
+  background:rgba(23,184,119,.09) !important;border-color:rgba(23,184,119,.42) !important}
+:is(body[data-os-theme="platinum"],body[data-os-theme="bw"],.splash[data-theme="platinum"],.splash[data-theme="bw"],.splash:not([data-theme])) :is(.os-wbody,.crTerm) .crBrokerRow.routed{
+  background:rgba(23,184,119,.14) !important;border-color:rgba(23,184,119,.55) !important}
+/* v1.0.944 — der Chip "1 connected" und die "● Routing"-Kennzeichnung: das
+   Dunkel-Theme-Gruen #3ddc97 steht auf hellem Grund praktisch nicht mehr da.
+   Beide nehmen den Akzent der hellen Themes (--cros-accent:#17b877). */
+:is(body[data-os-theme="platinum"],body[data-os-theme="bw"],.splash[data-theme="platinum"],.splash[data-theme="bw"],.splash:not([data-theme])) :is(.os-wbody,.crTerm) :is(.crBrokerBadge,.crBrokerRoutePill){
+  color:var(--cros-accent,#17b877) !important}
+:is(body[data-os-theme="platinum"],body[data-os-theme="bw"],.splash[data-theme="platinum"],.splash[data-theme="bw"],.splash:not([data-theme])) :is(.os-wbody,.crTerm) .crBrokerBadge{
+  background:rgba(23,184,119,.12) !important;border-color:rgba(23,184,119,.42) !important}
 /* Platinum (attr-less) crTerm surfaces go light -- the original intent of the
    dead .splash[data-theme="platinum"] .crTerm rule, now on the real scope. */
 .splash:not([data-theme]) .crTerm{background:#f1f1ee !important;color:#16181b}
