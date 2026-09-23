@@ -63,6 +63,39 @@ jobs:
           # Carry .nojekyll to /play/ too, defensive.
           touch _site/play/.nojekyll
 
+      # Vorschau der neuen Oberflaeche (UI v2) unter /play-v2/, gebaut aus dem
+      # Branch ui-v2 — NICHT aus main. /play/ bleibt, was main ist. Der Schritt
+      # ist nicht blockierend: fehlt der Branch oder passt die Aktivierungszeile
+      # nicht, faellt /play-v2/ weg und der Kern-Deploy laeuft weiter.
+      # Aktualisiert wird die Vorschau bei jedem Deploy von main; nach einem
+      # Merge nach ui-v2 dieses Workflow per „Run workflow" anstossen.
+      # ui-v2 selbst loest KEINEN Deploy aus (branches: [main]) — sonst wuerde
+      # ein Push dorthin die ganze Seite aus ui-v2 ausrollen.
+      - name: Stage ui-v2 preview at /play-v2/ (non-blocking)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin ui-v2
+          f=_site/play-v2/index.html
+          mkdir -p _site/play-v2
+          git show FETCH_HEAD:ChartRunner_Prototype.html > "$f"
+          # v2 ist in der Datei nur mit ?ui=v2 aktiv. In DIESER Kopie gilt es
+          # auf dem Pfad /play-v2 immer — ohne cr_ui_v2 im localStorage zu
+          # setzen, damit /play/ im selben Browser nicht mit umschaltet.
+          n=$(grep -c '^  if(!_want()) return;$' "$f" || true)
+          if [ "$n" != "1" ]; then
+            echo "::warning title=play-v2 skipped::Aktivierungszeile in ui-v2 nicht genau einmal gefunden ($n); /play-v2/ wird nicht ausgerollt"
+            rm -rf _site/play-v2
+            exit 0
+          fi
+          sed -i "s#^  if(!_want()) return;\$#  if(!_want() \&\& location.pathname.indexOf('/play-v2') !== 0) return;#" "$f"
+          grep -q "location.pathname.indexOf('/play-v2') !== 0) return;" "$f"
+          # Vorschau nicht in Suchmaschinen
+          sed -i '0,/<head>/s##<head>\n<meta name="robots" content="noindex">#' "$f"
+          touch _site/play-v2/.nojekyll
+          echo "play-v2: ui-v2 @ $(git rev-parse --short FETCH_HEAD)" >> _site/BUILD-INFO
+          echo "play-v2: staged from ui-v2 @ $(git rev-parse --short FETCH_HEAD)"
+
       # ---------------------------------------------------------------------
       # OPTIONAL SURFACES — decoupled from the core deploy.
       # Everything below is best-effort: a broken telegram/ or solana-connect
