@@ -111,7 +111,7 @@ async function mock(ctx, opts){
 async function boot(browser, url, opts){
   opts = opts || {};
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 } });
-  await ctx.addInitScript(() => { try { localStorage.setItem('cr_onboarding_v1', JSON.stringify({ done: true })); } catch(_){} });
+  await ctx.addInitScript(() => { try { localStorage.setItem('cr_onboarding_v1', JSON.stringify({ done: true })); localStorage.setItem('cr_ui_v2_welcome_v1', JSON.stringify({ done: true })); } catch(_){} });
   await mock(ctx, opts);
   const page = await ctx.newPage();
   const errs = [];
