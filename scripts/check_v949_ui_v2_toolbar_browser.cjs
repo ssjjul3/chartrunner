@@ -198,7 +198,8 @@ const VIS = `el => { if(!el) return false; const cs = getComputedStyle(el); cons
         tilesVis: vis(document.getElementById('cr2T-coins')) }; })()`);
     check('T3d Terminal offen und sichtbar', a.on && a.vis, a);
     check('T3e … schwebt (nicht Vollbild), rechts der Toolbar, unter Leiste+Tabs', a.w < 1536 && a.t >= 78 && a.l >= 64, a);
-    check('T3f … liegt ueber der Kachel-Ebene; Kacheln bleiben sichtbar', a.wz > a.lz && a.tilesVis, a);
+    // seit v1.0.951 teilen Module und Fenster EINE Stapelordnung — ein neu geoeffnetes Fenster liegt ueber allen Modulen
+    check('T3f … liegt ueber allen Modulen; Module bleiben sichtbar', a.wz > a.tz && a.tilesVis, a);
     check('T3g Tab „terminal" steht und ist markiert', a.tabs.indexOf('terminal') >= 0 && a.tabFocus, a);
 
     await goHome();
