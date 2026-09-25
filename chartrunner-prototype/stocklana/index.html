@@ -14,541 +14,114 @@
 <meta name="twitter:site" content="@ChartRunner_xyz">
 <meta name="twitter:image" content="https://chartrunner.xyz/og-card.png">
 <link rel="canonical" href="https://chartrunner.xyz/stocklana/">
-<link rel="stylesheet" href="../shared.css">
-<link rel="icon" type="image/png" href="https://chartrunner.xyz/LOGO.png">
-<meta name="theme-color" content="#010304">
-<script type="application/ld+json">
-{"@context":"https://schema.org","@type":["VideoGame","SoftwareApplication"],"name":"ChartRunner Stocks","url":"https://chartrunner.xyz/stocklana/","isPartOf":{"@type":"WebSite","name":"ChartRunner","url":"https://chartrunner.xyz/"},"description":"Pick a tokenized stock (xStocks, PreStocks, Tessera) and play its real Solana chart in ChartRunner. Play is simulated unless the player connects a wallet and signs a trade. Not financial advice.","applicationCategory":"GameApplication","operatingSystem":"Any (web browser)","playMode":"SinglePlayer","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"isAccessibleForFree":true}
-</script>
-  <style>
-    body {
-      background:
-        radial-gradient(circle at 76% 3%, rgba(78,232,255,.16), transparent 20rem),
-        radial-gradient(circle at 12% 26%, rgba(32,255,154,.12), transparent 18rem),
-        #010304;
-    }
-    .osbar nav { flex-wrap: wrap; row-gap: 5px; }
-    .osbar a:hover { color: #064b31; }
-
-    /* ---- CRT boot overlay (once per session) ---- */
-    #boot {
-      position: fixed;
-      inset: 0;
-      z-index: 200;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 18px;
-      background: #010304;
-      color: var(--signal);
-      font-weight: 900;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      transition: opacity .45s ease;
-      /* safety net: if JS never runs, fade the overlay out anyway so the page is never blocked */
-      animation: crBootFailsafe .4s ease 3s forwards;
-    }
-    @keyframes crBootFailsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
-    #boot .boot-logo { font-size: clamp(22px, 6vw, 40px); text-shadow: 0 0 24px rgba(32,255,154,.5); }
-    #boot .boot-line { font-size: 12px; color: var(--muted); min-height: 16px; }
-    #boot .boot-bar { width: min(260px, 64vw); height: 8px; border: 1px solid var(--line); background: #000; }
-    #boot .boot-bar i { display: block; height: 100%; width: 0; background: var(--signal); transition: width .12s linear; }
-    #boot.gone { opacity: 0; pointer-events: none; }
-
-    /* blinking cursor on terminal prompts */
-    .prompt::after {
-      content: "_";
-      margin-left: 4px;
-      animation: crBlink 1.05s steps(1) infinite;
-    }
-    @keyframes crBlink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
-
-    .hero {
-      position: relative;
-      min-height: calc(92svh - 25px);
-      overflow: hidden;
-      background:
-        linear-gradient(90deg, rgba(1,3,4,.97), rgba(1,3,4,.78) 46%, rgba(1,3,4,.18)),
-        url("../assets/game-runner-flight.png") center / cover no-repeat;
-      border-bottom: 1px solid rgba(32,255,154,.3);
-    }
-    /* live attract-mode canvas sits over the still, under the gradient veil + copy */
-    #heroCanvas {
-      position: absolute;
-      inset: 0;
-      z-index: 1;
-      width: 100%;
-      height: 100%;
-      opacity: .9;
-      mix-blend-mode: screen;
-    }
-    .hero::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: 2;
-      background:
-        linear-gradient(90deg, rgba(1,3,4,.92), rgba(1,3,4,.55) 46%, rgba(1,3,4,0) 78%),
-        radial-gradient(circle at 58% 23%, rgba(32,255,154,.16), transparent 22%);
-      pointer-events: none;
-    }
-    .hero-inner {
-      position: relative;
-      z-index: 3;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 370px;
-      gap: 44px;
-      /* v1.0 — content sits at the TOP of the hero (above the chart animation/candles
-         that fill the lower area) instead of being bottom-aligned with a big top gap. */
-      align-items: start;
-      max-width: 1240px;
-      min-height: calc(92svh - 25px);
-      margin: 0 auto;
-      padding: 52px 28px 64px;
-    }
-    .kicker-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 14px;
-    }
-    .mini-chip {
-      border: 1px solid rgba(32,255,154,.42);
-      background: rgba(0,0,0,.56);
-      color: var(--signal);
-      padding: 5px 8px;
-      font-size: 11px;
-      font-weight: 900;
-      text-transform: uppercase;
-    }
-    h1 {
-      max-width: 820px;
-      margin: 12px 0 0;
-      font-size: 82px;
-      line-height: .92;
-      text-transform: uppercase;
-      text-shadow: 0 5px 0 #000, 0 0 35px rgba(32,255,154,.28);
-    }
-    .lede {
-      max-width: 740px;
-      margin: 24px 0 0;
-      font-size: 24px;
-      line-height: 1.24;
-      font-weight: 900;
-      text-transform: uppercase;
-    }
-    .note {
-      max-width: 700px;
-      margin: 15px 0 0;
-      color: var(--muted);
-      font-size: 15px;
-      line-height: 1.5;
-    }
-    .actions {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-top: 30px;
-    }
-    .btn.sm { min-height: 38px; font-size: 12px; padding: 0 13px; }
-    .btn.lg { min-height: 60px; font-size: 18px; font-weight: 900; padding: 0 30px; letter-spacing: .5px; display: inline-flex; align-items: center; justify-content: center; }
-    .actions.hero-cta { margin-top: 22px; gap: 14px; }
-    .hero-cta .btn.lg { min-width: 152px; }
-    /* COACH.llm streaming feed — exactly 3 lines tall; new messages push up */
-    .coach-feed {
-      display: flex; flex-direction: column; justify-content: flex-end; gap: 9px;
-      height: calc(3 * 1.5em + 2 * 9px); overflow: hidden;
-    }
-    .coach-feed p { margin: 0; line-height: 1.5; opacity: 0; transform: translateY(8px); transition: opacity .4s ease, transform .4s ease; }
-    .coach-feed p.in { opacity: 1; transform: none; }
-
-    /* ---- live ticker (real prices) ---- */
-    .ticker .tk-quote { display: inline-flex; align-items: baseline; gap: 7px; padding: 14px 11px; white-space: nowrap; }
-    .ticker .tk-sym { color: var(--paper); font-weight: 900; }
-    .ticker .tk-px { color: var(--signal); font-weight: 900; }
-    .ticker .tk-chg.up { color: var(--signal2); }
-    .ticker .tk-chg.down { color: var(--red); }
-    .ticker .tk-live { color: var(--cyan); font-size: 11px; letter-spacing: 1px; }
-    .ticker .tk-sep { color: rgba(255,255,255,.22); font-weight: 700; }
-
-    /* ---- deep-link "run a live market" cards ---- */
-    .run-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
-      margin-top: 34px;
-    }
-    .run-card {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      border: 1px solid rgba(32,255,154,.32);
-      background: rgba(4,7,12,.78);
-      padding: 20px;
-      transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
-    }
-    .run-card:hover { transform: translateY(-3px); border-color: var(--signal); box-shadow: 0 0 28px rgba(32,255,154,.18); }
-    .run-card .rc-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-    .run-card .rc-sym { color: var(--paper); font-size: 26px; font-weight: 900; text-transform: uppercase; }
-    .run-card .rc-px { color: var(--signal); font-size: 16px; font-weight: 900; }
-    .run-card .rc-chg { font-size: 13px; font-weight: 900; }
-    .run-card .rc-chg.up { color: var(--signal2); }
-    .run-card .rc-chg.down { color: var(--red); }
-    .run-card .rc-cta { margin-top: auto; color: var(--signal); font-size: 13px; font-weight: 900; text-transform: uppercase; }
-    /* v1.0 — each run card hosts a tiny playable ChartRunner demo on real 15m candles. */
-    .run-card { min-height: 248px; }
-    .run-card .rc-game { width: 100%; flex: 1 1 auto; min-height: 132px; display: block; cursor: pointer; }
-    .run-card .rc-hint { font-size: 10px; font-weight: 700; letter-spacing: .4px; color: #56685b; text-transform: uppercase; transition: color .15s; }
-    .run-card:hover .rc-hint { color: var(--signal); }
-
-    .link-grid {
-      display: grid;
-      /* Two cards since the racing/monster cards went — a 4-column track would
-         leave half the row empty. Mobile stays 1fr (see the breakpoint below). */
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      margin-top: 26px;
-    }
-    .link-card {
-      display: block;
-      min-height: 104px;
-      border: 1px solid rgba(32,255,154,.28);
-      background: rgba(4,7,12,.72);
-      padding: 15px;
-      transition: transform .12s ease, border-color .12s ease;
-    }
-    .link-card:hover { transform: translateY(-2px); border-color: var(--signal); }
-    .link-card strong {
-      display: block;
-      color: var(--signal);
-      font-size: 22px;
-    }
-    .link-card span {
-      display: block;
-      margin-top: 7px;
-      color: var(--paper);
-      font-size: 13px;
-      line-height: 1.35;
-      text-transform: uppercase;
-    }
-    .modes {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
-      margin-top: 34px;
-    }
-    .mode-card {
-      position: relative;
-      border: 1px solid rgba(32,255,154,.28);
-      background: rgba(4,7,12,.72);
-      padding: 22px;
-      min-height: 190px;
-      overflow: hidden;
-      transition: transform .12s ease, border-color .12s ease;
-    }
-    .mode-card:hover { transform: translateY(-3px); border-color: var(--signal); }
-    .mode-card .mc-canvas {
-      position: absolute;
-      inset: auto 0 0 0;
-      width: 100%;
-      height: 64px;
-      opacity: .32;
-      transition: opacity .2s ease;
-      pointer-events: none;
-    }
-    .mode-card:hover .mc-canvas { opacity: .7; }
-    .mode-card strong {
-      position: relative;
-      z-index: 1;
-      display: inline-flex;
-      min-width: 38px;
-      min-height: 34px;
-      align-items: center;
-      justify-content: center;
-      color: #00110a;
-      background: var(--signal);
-      margin-bottom: 16px;
-    }
-    .mode-card h3 {
-      position: relative;
-      z-index: 1;
-      margin: 0;
-      font-size: 24px;
-      line-height: 1.05;
-      text-transform: uppercase;
-    }
-    .mode-card p {
-      position: relative;
-      z-index: 1;
-      margin: 14px 0 0;
-      color: var(--muted);
-      font-size: 15px;
-      line-height: 1.48;
-    }
-    .quick-steps {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
-      margin-top: 34px;
-    }
-    .quick-step {
-      border: 1px solid rgba(32,255,154,.28);
-      background: rgba(0,0,0,.42);
-      padding: 22px;
-    }
-    .quick-step strong {
-      display: block;
-      color: var(--signal);
-      font-size: 24px;
-    }
-    .quick-step h3 {
-      margin: 14px 0 0;
-      text-transform: uppercase;
-      font-size: 21px;
-    }
-    .quick-step p {
-      margin: 12px 0 0;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
-    /* ---- trust row ---- */
-    .trust {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 30px;
-    }
-    .trust a, .trust div {
-      border: 1px solid rgba(32,255,154,.24);
-      background: rgba(4,7,12,.7);
-      padding: 16px;
-    }
-    .trust strong { display: block; color: var(--signal); font-size: 14px; text-transform: uppercase; }
-    .trust span { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.45; }
-    .trust a:hover { border-color: var(--signal); }
-
-    .faq details {
-      border: 1px solid rgba(32,255,154,.28);
-      background: rgba(4,7,12,.72);
-      margin-top: 10px;
-      padding: 0 16px;
-    }
-    .faq summary {
-      cursor: pointer;
-      padding: 16px 0;
-      color: var(--paper);
-      font-weight: 900;
-      text-transform: uppercase;
-    }
-    .faq p {
-      margin: 0 0 16px;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
-    /* ---- sticky CTA (appears after hero) ---- */
-    #stickyCta {
-      position: fixed;
-      right: 20px;
-      bottom: 20px;
-      z-index: 60;
-      opacity: 0;
-      transform: translateY(14px);
-      pointer-events: none;
-      transition: opacity .25s ease, transform .25s ease;
-      box-shadow: 0 8px 30px rgba(0,0,0,.55), 0 0 24px rgba(32,255,154,.35);
-    }
-    #stickyCta.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
-
-    footer {
-      border-top: 1px solid rgba(32,255,154,.28);
-      padding: 46px 28px 58px;
-      background: #000;
-    }
-    .footer-grid {
-      display: grid;
-      grid-template-columns: 1.4fr repeat(4, minmax(130px, 1fr));
-      gap: 28px;
-      max-width: 1240px;
-      margin: 0 auto;
-    }
-    .footer-grid h3, .footer-grid h4 {
-      margin: 0 0 12px;
-      color: var(--signal);
-      text-transform: uppercase;
-    }
-    .footer-grid a {
-      display: block;
-      margin: 0 0 8px;
-      color: var(--muted);
-      font-size: 14px;
-    }
-    .fine-print {
-      max-width: 1240px;
-      margin: 30px auto 0;
-      padding-top: 20px;
-      border-top: 1px solid rgba(32,255,154,.18);
-      color: rgba(240,239,230,.52);
-      font-size: 12px;
-      line-height: 1.7;
-    }
-    @media (max-width: 980px) {
-      .hero, .hero-inner { min-height: auto; }
-      .hero-inner {
-        grid-template-columns: 1fr;
-        padding: 54px 20px 52px;
-      }
-      h1 { font-size: clamp(24px, 9vw, 44px); white-space: nowrap; }
-      .lede { font-size: 19px; }
-      .actions { flex-direction: column; }
-      .link-grid, .modes, .quick-steps, .run-grid, .trust, .footer-grid { grid-template-columns: 1fr; }
-      /* v1.0 — the playable run-card demos are desktop-only; hide the whole section on mobile. */
-      #run-live { display: none !important; }
-      .mode-card, .quick-step, .link-card { min-height: 0; }
-      #stickyCta { left: 14px; right: 14px; bottom: 14px; }
-      #stickyCta .btn { width: 100%; }
-      .osbar {
-        align-items: flex-start;
-        gap: 8px;
-        padding: 5px 10px;
-      }
-      .osbar strong { padding-top: 1px; }
-      .section, .split, .final { padding: 56px 20px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      #heroCanvas, .mode-card .mc-canvas { display: none; }
-      .prompt::after { animation: none; }
-      .ticker div { animation: none; }
-      #boot { display: none; }
-    }
-
-  </style>
 <style>
-  /* stocklana — only additions on top of the landing styles */
-  .hero{min-height:0;background:radial-gradient(circle at 80% 30%,rgba(32,255,154,.10),transparent 26rem),#010304}
-  .hero::after{display:none}
-  .hero-inner{grid-template-columns:1fr;padding-bottom:56px;min-height:0}
-  @media (max-width:760px){h1{white-space:normal}}
-  .stock-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px;margin-top:18px}
-  .stock-grid .run-card{min-height:150px}
-  .stock-grid .run-card .rc-sym{font-size:22px}
-  .rc-name{color:var(--muted);font-size:13px}
-  .rc-iss{align-self:flex-start;font-size:10px;font-weight:900;letter-spacing:.8px;text-transform:uppercase;border:1px solid var(--line);color:var(--signal);padding:2px 6px}
-  .rc-iss.t{border-color:rgba(78,232,255,.5);color:var(--cyan)}
-  .run-card.wait{opacity:.55;pointer-events:none}
-  @media (max-width:760px){.stock-grid{grid-template-columns:1fr 1fr;gap:10px}.stock-grid .run-card{min-height:120px;padding:14px}.stock-grid .run-card .rc-sym{font-size:18px}}
+:root{--bg:#0e1218;--fg:#e8eef5;--dim:rgba(232,238,245,.55);--acc:#2ee88f;--acc-d:rgba(46,232,143,.14);--line:rgba(255,255,255,.14);
+  --mono:"DejaVu Sans Mono","Liberation Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{color:var(--fg);font-family:var(--sans);min-height:100vh;
+  background:
+    radial-gradient(ellipse at 18% 12%,rgba(255,255,255,.07),transparent 42%),
+    linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px) 0 0/64px 64px,
+    linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px) 0 0/64px 64px,
+    linear-gradient(135deg,#141922,#0b0e13 70%);
+  background-attachment:fixed}
+.menubar{position:sticky;top:0;z-index:20;height:24px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;
+  background:#0a0d12;border-bottom:1px solid rgba(255,255,255,.12);font-size:12px}
+.menubar a{color:var(--fg);text-decoration:none}
+.menubar nav{display:flex;gap:16px}
+.menubar .os{font-weight:700;color:rgba(232,238,245,.28)}
+.desk{padding:16px 18px 340px;max-width:1200px}
+.group{font-family:var(--mono);font-size:11px;color:var(--acc);letter-spacing:.08em;text-transform:uppercase;margin:14px 4px 10px}
+.icons{display:grid;grid-template-columns:repeat(auto-fill,84px);gap:14px 0}
+.ico{display:flex;flex-direction:column;align-items:center;gap:6px;text-decoration:none;color:var(--fg);width:84px;padding:2px 0;border-radius:6px;-webkit-tap-highlight-color:transparent}
+.ico .box{width:48px;height:48px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
+  display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;font-size:11px;letter-spacing:-.2px;color:#fff;position:relative;transition:transform .12s,border-color .12s,box-shadow .12s}
+.ico .box::after{content:"";position:absolute;left:9px;right:9px;bottom:9px;height:2px;border-radius:2px;background:rgba(255,255,255,.35)}
+.ico .box.pre{color:#d7c6ff}
+.ico .box.tes{color:#9fe9ff}
+.ico .lbl{font-size:12px;font-weight:700;text-align:center;line-height:1.15;text-shadow:0 1px 2px #000}
+.ico .sub{font-size:10px;color:var(--dim);margin-top:-4px;text-align:center}
+.ico:hover .box,.ico:focus .box{transform:translateY(-2px);border-color:var(--acc);box-shadow:0 0 14px rgba(46,232,143,.35)}
+.ico.wait{opacity:.45;pointer-events:none}
+.win{position:fixed;right:22px;bottom:18px;z-index:30;width:min(380px,calc(100vw - 24px));background:#0a0e13;border:2px solid var(--acc);border-radius:9px;
+  box-shadow:0 0 0 1px rgba(46,232,143,.15),0 20px 60px rgba(0,0,0,.6);font-family:var(--mono);color:var(--acc)}
+.win[hidden]{display:none}
+.win .tb{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(46,232,143,.35);font-size:11px;font-weight:700}
+.win .tb .inv{width:16px;height:11px;background:
+  conic-gradient(from 0deg,var(--acc) 0 0) ;clip-path:polygon(15% 0,30% 0,30% 20%,70% 20%,70% 0,85% 0,85% 20%,100% 20%,100% 70%,85% 70%,85% 100%,70% 100%,70% 70%,30% 70%,30% 100%,15% 100%,15% 70%,0 70%,0 20%,15% 20%)}
+.win .tb .sp{flex:1}
+.win .tb .dot{width:5px;height:5px;border-radius:50%;background:var(--acc);opacity:.6}
+.win .x{width:24px;height:24px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--fg);font:inherit;cursor:pointer}
+.win .bd{padding:14px 14px 16px;font-size:13px;line-height:1.55}
+.win h2{margin:0 0 10px;font-size:14px;letter-spacing:.04em}
+.win p{margin:0 0 10px}
+.win .go{display:inline-flex;align-items:center;gap:8px;margin-top:4px;padding:10px 16px;border:1px solid var(--acc);border-radius:9px;background:var(--acc-d);color:#fff;font:700 13px var(--mono);letter-spacing:.06em;text-decoration:none;box-shadow:0 0 14px rgba(46,232,143,.25)}
+.win .fine{margin-top:12px;font-size:10.5px;color:var(--dim)}
+.win .fine a{color:var(--dim)}
+.reopen{position:fixed;right:18px;bottom:18px;z-index:29;border:1px solid var(--acc);background:#0a0e13;color:var(--acc);font:700 11px var(--mono);border-radius:8px;padding:8px 10px;cursor:pointer}
+@media (max-width:600px){
+  .menubar{padding:0 12px}.menubar nav{gap:12px}
+  .desk{padding:14px 10px 360px}
+  .icons{grid-template-columns:repeat(4,1fr)}
+  .ico{width:auto}
+  .win{left:0;right:0;bottom:0;width:100%;border-radius:9px 9px 0 0;border-bottom:0}
+}
 </style>
 </head>
 <body>
-  <header class="osbar">
-    <nav aria-label="Primary">
-      <a href="https://chartrunner.xyz/">Home</a>
-      <a href="https://chartrunner.xyz/play/">Play</a>
-      <a href="https://chartrunner.xyz/docs/">Docs</a>
-      <a href="https://chartrunner.xyz/pricing.html">Pricing</a>
-      <a href="https://chartrunner.xyz/roadmap.html">Roadmap</a>
-    </nav>
-    <strong>ChartRunnerOS</strong>
-  </header>
+  <div class="menubar">
+    <nav><a href="https://chartrunner.xyz/">Home</a><a href="https://chartrunner.xyz/play/">Play</a><a href="#" id="about">Stocklana</a></nav>
+    <span class="os">ChartRunnerOS</span>
+  </div>
 
-  <main>
-    <section class="hero">
-      <div class="hero-inner">
-        <div>
-          <div class="kicker-row" aria-label="Highlights">
-            <span class="mini-chip">Stocklana</span>
-            <span class="mini-chip">24/7</span>
-            <span class="mini-chip">Guest mode</span>
-            <span class="mini-chip">Real candles</span>
-          </div>
-          <p class="prompt">&gt; pick a stock to run its chart</p>
-          <h1>Chartrunner Stocks</h1>
-          <p class="lede">Tokenized stocks, played as a game.</p>
-          <div class="actions hero-cta">
-            <a class="btn primary lg" href="#xstocks">▶ pick a stock</a>
-            <a class="btn lg" href="https://chartrunner.xyz/play/">ChartRunner</a>
-          </div>
-          <p class="note">Wall Street closes at 4pm. Tokenized stocks on Solana don't. Tap a stock and ChartRunner drops you onto its real on-chain candles: bodies are platforms, wicks are hazards, trend is the slope. Guest play needs no sign-up; connect a wallet and your abilities become real, self-custodial Jupiter trades.</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="ticker" aria-label="Stock tokens">
-      <div>
-        <span>AAPLx // TSLAx // NVDAx // SPYx // QQQx // METAx // GOOGLx // COINx // SPACEX // OPENAI // ANTHROPIC // KALSHI //</span>
-        <span>AAPLx // TSLAx // NVDAx // SPYx // QQQx // METAx // GOOGLx // COINx // SPACEX // OPENAI // ANTHROPIC // KALSHI //</span>
-      </div>
-    </section>
-
-    <section class="section" id="xstocks">
-      <p class="prompt">&gt; xstocks</p>
-      <h2>US stocks. Now a level.</h2>
-      <p>Tokenized US stocks and ETFs on Solana. Tap one and drop straight into a run on its candles.</p>
-      <div class="stock-grid" id="xGrid"></div>
-    </section>
-
-    <section class="section" id="preipo">
-      <p class="prompt">&gt; pre-ipo</p>
-      <h2>Run the companies that aren't public yet.</h2>
-      <p>SpaceX, OpenAI, Anthropic and more, tokenized by PreStocks and Tessera.</p>
-      <div class="stock-grid" id="pGrid"></div>
-    </section>
+  <main class="desk">
+    <div class="group">&gt; xstocks · us equities</div>
+    <div class="icons" id="xGrid"></div>
+    <div class="group">&gt; pre-ipo · prestocks + tessera</div>
+    <div class="icons" id="pGrid"></div>
   </main>
 
-  <footer>
-    <div class="footer-grid">
-      <div>
-        <h3>ChartRunnerOS</h3>
-        <p style="color:var(--muted);margin:0;line-height:1.55">The trading game played on real charts. Built for <a href="https://hackathons.solana.com/hackathons/stocklana" style="display:inline">Stocklana</a>.</p>
-      </div>
-      <div>
-        <h4>Play</h4>
-        <a href="https://chartrunner.xyz/play/">▶ Play the game</a>
-        <a href="#xstocks">xStocks</a>
-        <a href="#preipo">Pre-IPO</a>
-      </div>
-      <div>
-        <h4>Legal</h4>
-        <a href="https://chartrunner.xyz/disclaimer.html">Disclaimer</a>
-        <a href="https://chartrunner.xyz/terms.html">Terms of Use / AGB</a>
-        <a href="https://chartrunner.xyz/privacy.html">Privacy / Datenschutz</a>
-        <a href="https://chartrunner.xyz/impressum.html">Impressum</a>
-      </div>
-      <div>
-        <h4>Follow</h4>
-        <a href="https://x.com/ChartRunner_xyz" target="_blank" rel="noopener">X / Twitter</a>
-        <a href="https://github.com/ssjjul3/chartrunner" target="_blank" rel="noopener">GitHub</a>
-      </div>
+  <section class="win" id="coach" aria-live="polite">
+    <div class="tb"><span class="inv" aria-hidden="true"></span>COACH.llm<span class="sp"></span><span class="dot"></span><button class="x" id="close" aria-label="Close">×</button></div>
+    <div class="bd">
+      <h2>&gt;_ STOCKS MODE</h2>
+      <p>Wall Street closes at 4pm. Tokenized stocks on Solana don't.</p>
+      <p>Tap a stock icon and you drop into a run on its real on-chain candles: bodies are platforms, wicks are hazards. Guest play, no sign-up. Connect a wallet in the game and your abilities become real Jupiter trades, signed by you.</p>
+      <a class="go" id="quick" href="#">PLAY AAPLx ▶</a>
+      <div class="fine">Not financial advice. Tokenized stocks may not be available where you live. <a href="https://chartrunner.xyz/disclaimer.html">Disclaimer</a> · <a href="https://chartrunner.xyz/impressum.html">Impressum</a> · <span id="ver">stocklana v1.3.0</span></div>
     </div>
-    <div class="fine-print">ChartRunner is an entertainment and educational game. Play is simulated unless you connect a wallet and sign a trade yourself; live trades execute on Solana through Jupiter, ChartRunner never takes custody of your funds, and a 0.5% platform fee applies. Tokenized and pre-IPO stocks carry issuer, liquidity and structural risk and may not be available where you live (xStocks are not offered to US persons). Nothing here is financial, investment, legal, or tax advice. <span id="ver">stocklana v1.2.0</span></div>
-  </footer>
+  </section>
+  <button class="reopen" id="reopen" hidden>COACH.llm</button>
+
 <script>
 (function(){
   "use strict";
   var GT="https://api.geckoterminal.com/api/v2";
   var PLAY="https://chartrunner.xyz/play/?tf=15m&symbol=";
-  var X=[["AAPLx","Apple"],["TSLAx","Tesla"],["NVDAx","NVIDIA"],["SPYx","S&P 500 ETF"],["QQQx","Nasdaq-100 ETF"],["METAx","Meta"],["GOOGLx","Alphabet"],["COINx","Coinbase"],["MSTRx","MicroStrategy"],["AMZNx","Amazon"]];
+  var X=[["AAPLx","Apple"],["TSLAx","Tesla"],["NVDAx","NVIDIA"],["SPYx","S&P 500"],["QQQx","Nasdaq-100"],["METAx","Meta"],["GOOGLx","Alphabet"],["COINx","Coinbase"],["MSTRx","Strategy"],["AMZNx","Amazon"]];
   // Mints as published by the issuers' own APIs (25.09.2026).
   var P=[["SpaceX","SPACEX","PreStocks","PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh"],["OpenAI","OPENAI","PreStocks","PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF"],["Anthropic","ANTHROPIC","PreStocks","Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw"],["Kalshi","KALSHI","PreStocks","PreLWGkkeqG1s4HEfFZSy9moCrJ7btsHuUtfcCeoRua"],["Polymarket","POLYMARKET","PreStocks","Pre8AREmFPtoJFT8mQSXQLh56cwJmM7CFDRuoGBZiUP"],["Anduril","ANDURIL","PreStocks","PresTj4Yc2bAR197Er7wz4UUKSfqt6FryBEdAriBoQB"],["Neuralink","NEURALINK","PreStocks","PrekqLJvJ3qVdXmBGDiexvwUTF4rLFDa6HWS4HJbw9S"],["Figure AI","FIGUREAI","PreStocks","PreZad18qfPtbxNpMtMuAuX2zVpvkEU8DnJx56faCWd"],["SpaceX","T-SpaceX","Tessera","TSPXcLV76s6V2zDiZQ18kBfcbnjaE2ZzNT3ga2Pd99v"],["OpenAI","T-OpenAI","Tessera","oPAiAikWTaFj9RYoRFD35ccfwhnMcB3ThgBZRHSkjTZ"],["Kalshi","T-Kalshi","Tessera","TKLSidmLVt3cqGaaodG8tyRzoANfQwoh67AccjmubeZ"]];
   function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
-  function tile(sym,name,tag,mint){
-    var a=document.createElement("a"); a.className="run-card"+(mint?"":" wait");
+  function glyph(sym){ var g=sym.replace(/^T-/,"").replace(/x$/,""); g=g.toUpperCase(); return g.length>5?g.slice(0,4):g; }
+  function icon(sym,sub,kind,mint){
+    var a=document.createElement("a"); a.className="ico"+(mint?"":" wait");
     if(mint) a.href=PLAY+encodeURIComponent(mint);
-    a.innerHTML='<div class="rc-top"><span class="rc-sym">'+esc(sym)+'</span></div><span class="rc-name">'+esc(name)+'</span>'+(tag?'<span class="rc-iss'+(tag==="Tessera"?" t":"")+'">'+esc(tag)+'</span>':'')+'<span class="rc-cta">'+(mint?'▶ run it':'resolving…')+'</span>';
+    a.title=sym+" · "+sub;
+    a.innerHTML='<span class="box'+(kind==="PreStocks"?" pre":kind==="Tessera"?" tes":"")+'">'+esc(glyph(sym))+'</span><span class="lbl">'+esc(sym)+'</span><span class="sub">'+esc(mint?sub:"resolving…")+'</span>';
     return a;
   }
   var pg=document.getElementById("pGrid");
-  P.forEach(function(p){ pg.appendChild(tile(p[1],p[0],p[2],p[3])); });
-  var xg=document.getElementById("xGrid");
-  X.forEach(function(x){
-    var t=tile(x[0],x[1],null,null); xg.appendChild(t);
+  P.forEach(function(p){ pg.appendChild(icon(p[1],p[2]==="Tessera"?p[0]+" · T":p[0],p[2],p[3])); });
+  var xg=document.getElementById("xGrid"), quick=document.getElementById("quick");
+  X.forEach(function(x,i){
+    var t=icon(x[0],x[1],"x",null); xg.appendChild(t);
     // Resolve the xStock mint at runtime: exact symbol + Backed's "Xs" mint prefix, deepest pool wins.
     fetch(GT+"/search/pools?network=solana&include=base_token&query="+encodeURIComponent(x[0]))
       .then(function(r){ if(!r.ok) throw 0; return r.json(); })
       .then(function(j){
-        var tok={}; (j.included||[]).forEach(function(i){ tok[i.id]=i.attributes||{}; });
+        var tok={}; (j.included||[]).forEach(function(k){ tok[k.id]=k.attributes||{}; });
         var best=null,liq=-1;
         (j.data||[]).forEach(function(p){
           var id=p.relationships&&p.relationships.base_token&&p.relationships.base_token.data&&p.relationships.base_token.data.id;
@@ -559,10 +132,19 @@
           if(isFinite(l)&&l>liq){liq=l;best=m;}
         });
         if(!best) throw 0;
-        var n=tile(x[0],x[1],null,best); xg.replaceChild(n,t);
+        xg.replaceChild(icon(x[0],x[1],"x",best),t);
+        if(i===0) quick.href=PLAY+encodeURIComponent(best);
       })
-      .catch(function(){ t.querySelector(".rc-cta").textContent="not found"; });
+      .catch(function(){ t.querySelector(".sub").textContent="not found"; if(i===0){ quick.href=PLAY+encodeURIComponent(P[0][3]); quick.textContent="PLAY SPACEX ▶"; } });
   });
+  quick.href=PLAY+encodeURIComponent(P[0][3]); quick.textContent="PLAY SPACEX ▶";
+  // once AAPLx resolves, the quick button switches to it
+  var mo=new MutationObserver(function(){ if(/XsA|Xs/.test(quick.href) ) { quick.textContent="PLAY AAPLx ▶"; mo.disconnect(); } });
+  mo.observe(quick,{attributes:true,attributeFilter:["href"]});
+  var coach=document.getElementById("coach"), re=document.getElementById("reopen");
+  document.getElementById("close").onclick=function(){ coach.hidden=true; re.hidden=false; };
+  re.onclick=function(){ coach.hidden=false; re.hidden=true; };
+  document.getElementById("about").onclick=function(e){ e.preventDefault(); re.onclick(); };
 })();
 </script>
 </body>
